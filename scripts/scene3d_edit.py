@@ -23,7 +23,7 @@ def apply_commands(graph, library, commands):
     the successful batch itself commits one public graph revision.
     """
     working = SceneGraph(graph.document(), external_references=graph._references,
-                         asset_bounds=graph._asset_bounds, animation_documents=graph._animation_documents)
+                         asset_bounds=graph._asset_bounds, animation_documents=graph._animation_documents, animation_payloads=graph._animation_payloads)
     catalog = PrefabLibrary()
     # Catalog values are immutable by API: only the three mapping containers
     # change during registration, avoiding a duplicate copy of all payload bytes.
@@ -31,7 +31,8 @@ def apply_commands(graph, library, commands):
     catalog._payloads = dict(library._payloads)
     catalog._references = dict(library._references)
     result = _apply_commands(working, catalog, commands)
-    committed = graph.replace_document(working.document(), expected_revision=graph.revision)
+    committed = graph.replace_document(working.document(), expected_revision=graph.revision, derived_documents=working._derived_documents)
+    graph._animation_payloads = working._animation_payloads
     graph._animation_documents = working._animation_documents
     graph._derived_documents.update(working._derived_documents)
     library._documents, library._payloads, library._references = catalog._documents, catalog._payloads, catalog._references
@@ -118,7 +119,7 @@ def main(argv=None):
     parser.add_argument('--evaluate', action='store_true', help='Report base-pose matrices, not rendered animation')
     args = parser.parse_args(argv)
     bundle = load_project(args.project)
-    graph = SceneGraph.from_bundle(bundle, args.scene)
+    graph = SceneGraph.from_bundle(bundle, args.scene, source_root=args.project)
     library = PrefabLibrary.from_files(args.project, bundle)
     if args.commands is None:
         require(args.evaluate and args.destination is None, 'Choose --evaluate or an edit batch plus new destination.')

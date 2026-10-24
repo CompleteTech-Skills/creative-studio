@@ -8,7 +8,7 @@ production frame timing, state definitions and source/review bytes are unchanged
 ## Graph operations
 
 `scene3d_graph.SceneGraph` owns one in-memory working scene. Construct it through
-`SceneGraph.from_bundle(load_project(root), scene_path)` to include external shot
+`SceneGraph.from_bundle(load_project(root), scene_path, source_root=root)` to include external shot
 and bound-clip references. A caller constructing a graph directly must supply an
 explicit complete `external_references` map before deletion. Unknown reference
 context fails closed. The service is single-owner; editor multiwriter storage,
@@ -191,3 +191,5 @@ Run `python scripts/demonstrate_scene3d_service.py --destination NEW_DIRECTORY` 
 Bound Scene3D animations duplicate through `SceneGraph.from_bundle`'s verified animation context. Each copied clip receives a new immutable identity and remapped subtree targets; nested clips and original manifests remain dependencies. The graph exposes `derived_documents()`, and snapshots automatically materialize them. Direct graphs without the required clip context reject animated duplication before changing the scene. Native rig clips retain their native evaluator and IDs.
 
 The independent validator checks both original source declarations and normalized exports. Mixed mesh/camera/light glTF nodes use one editable Scene3D role; other declared roles remain in original bytes/hierarchy and receive explicit per-feature loss entries. Invalid omitted-role indices or configurations still fail original-source validation. Setting `HATCH_SCENE3D_EVIDENCE` retains actual native test results or structured subprocess failures before fixture cleanup; the dedicated workflow uploads them even when assertions fail.
+
+Animated editing retains exact source bytes through `source_root` or an explicit bounded `animation_payloads` mapping. Parsed animation dictionaries alone cannot authenticate references, including noncanonical JSON. Shared clip DAG derivation uses a per-copy memo and explicit operation/file/byte budgets. Every candidate edit rechecks remaining binding subtrees through the contract validator; removed bindings release their targets while genuine external shot references remain protected. Source-resolution of an optional-child upgrade conflict removes that entire optional subtree.

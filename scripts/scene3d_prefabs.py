@@ -102,8 +102,9 @@ class PrefabLibrary:
         return deepcopy(reference)
 
     def register(self, document, path=None):
+        document = validate_document(document)
         payload = canonical_bytes(document)
-        path = path or ('prefabs/' if document['kind'] == 'scene3d-prefab' else 'animations/') + document['id'] + '/' + document['version'] + '.json'
+        path = ('prefabs/' if document['kind'] == 'scene3d-prefab' else 'animations/') + document['id'] + '/' + document['version'] + '.json' if path is None else path
         return self.register_bytes(payload, path)
 
     def resolve(self, reference):
@@ -164,8 +165,9 @@ class PrefabLibrary:
         used_collections = {i for n in copied for i in n['collections']}
         used_layers = {i for n in copied for i in n['layers']}
         document = dict(schema_version=1, kind='scene3d-prefab', id=identifier, version=version,
-            name=name or nodes[root_id]['name'], roots=[root_id], nodes=copied,
-            parameters=deepcopy(parameters or {}), parameter_bindings=deepcopy(parameter_bindings or []),
+            name=nodes[root_id]['name'] if name is None else name, roots=[root_id], nodes=copied,
+            parameters=deepcopy({} if parameters is None else parameters),
+            parameter_bindings=deepcopy([] if parameter_bindings is None else parameter_bindings),
             material_slots=sorted({o['slot'] for n in copied for o in n['material_overrides']}),
             sockets=[n['id'] for n in copied if n['type'] == 'socket'], overrides=[],
             dependencies=_refs(copied), provenance=deepcopy(scene['provenance']),
@@ -185,8 +187,8 @@ class PrefabLibrary:
         require(source['kind'] == 'scene3d-prefab', 'Instantiate a prefab, not an animation.')
         instance = make_node(identifier, 'prefab_instance', parent)
         instance['prefab'] = deepcopy(reference)
-        instance['transform'] = deepcopy(transform or TRANSFORM)
-        instance['prefab_overrides'] = deepcopy(overrides or dict(parameters={}, materials={}, nodes=[]))
+        instance['transform'] = deepcopy(TRANSFORM if transform is None else transform)
+        instance['prefab_overrides'] = deepcopy(dict(parameters={}, materials={}, nodes=[]) if overrides is None else overrides)
         self._effective(source, instance['prefab_overrides'])
         scene = graph.document()
         scene['nodes'].append(instance)
@@ -303,7 +305,9 @@ class PrefabLibrary:
                 overrides['materials'].pop(parts[1], None)
             else:
                 require(choice == 'source', 'Conflicting optional children need an explicit separate edit.')
-                overrides['children'] = [n for n in overrides.get('children', []) if n['id'] != parts[1]]
+                children = {n['id']:n for n in overrides.get('children', [])}
+                removed = set(_subtree(children, parts[1])) if parts[1] in children else set()
+                overrides['children'] = [n for n in children.values() if n['id'] not in removed]
         overrides['nodes'] = [o for o in overrides['nodes'] if len(o) > 1 and o['node'] in b]
         self._effective(new, overrides)
         target['prefab'] = deepcopy(new_reference)
@@ -418,5 +422,5 @@ class PrefabLibrary:
                 'Choose a prefab instance.')
         # Expand the selected instance inside its complete external context.
         expanded = self.expand(original, instances={identifier})
-        result = graph.replace_document(expanded['scene'], expected_revision=graph.revision)
+        result = graph.replace_document(expanded['scene'], expected_revision=graph.revision, derived_documents=expanded['derived_documents'])
         return dict(**result, derived_documents=expanded['derived_documents'], mappings=expanded['mappings'])

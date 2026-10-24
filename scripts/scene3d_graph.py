@@ -14,9 +14,9 @@ import json
 
 import numpy as np
 
-from rig_errors import RigError, finite_json
+from rig_errors import RigError, decode_json, finite_json
 from rig_math import compose, decompose, matrix_quaternion, slerp
-from scene3d_contracts import MAX_DEPTH, all_refs, canonical_bytes, validate_document, validator
+from scene3d_contracts import MAX_DEPTH, MAX_FILES, MAX_TOTAL_BYTES, all_refs, canonical_bytes, validate_document, validator
 from scene3d_math import local_matrix
 
 KEEP_PARENT = object()
@@ -127,10 +127,10 @@ def _invalidate_closure(nodes, seeds):
 
 
 def _subtree(nodes, identifier):
-    require(identifier in nodes, 'Unknown node: ' + str(identifier))
+    require(isinstance(identifier,str) and identifier in nodes, 'Unknown node: ' + str(identifier))
     children = {i: [] for i in nodes}
     for n in nodes.values():
-        if n['parent'] is not None:
+        if n['parent'] in children:
             children[n['parent']].append(n['id'])
     result, pending = [], [identifier]
     while pending:
@@ -175,21 +175,30 @@ class SceneGraph:
     closed rather than silently deleting a shot's referenced node.
     """
 
-    def __init__(self, scene, *, external_references=None, asset_bounds=None, animation_documents=None):
+    def __init__(self, scene, *, external_references=None, asset_bounds=None, animation_documents=None, animation_payloads=None):
         finite_json(scene)
         finite_json(external_references)
         finite_json(asset_bounds)
-        validate_document(scene, 'scene')
+        scene = validate_document(scene, 'scene')
         require(len(canonical_bytes(scene)) <= 16*1024*1024, 'Working scene exceeds the document byte bound.')
-        self._animation_documents = deepcopy(animation_documents or {})
+        require(animation_payloads is None or isinstance(animation_payloads,dict), 'Invalid animation byte mapping.')
+        self._animation_payloads = dict(animation_payloads or {})
+        self._animation_documents = {}
+        require((animation_documents is None or isinstance(animation_documents, dict)) and
+                len(self._animation_payloads) <= MAX_FILES and
+                all(isinstance(p,str) and isinstance(raw,bytes) for p,raw in self._animation_payloads.items()) and
+                sum(len(raw) for raw in self._animation_payloads.values()) <= MAX_TOTAL_BYTES,
+                'Invalid or excessive exact animation byte context.')
+        for path, payload in self._animation_payloads.items():
+            self._animation_documents[path] = validate_document(decode_json(payload), 'animation')
+        require(animation_documents is None or set(animation_documents) == set(self._animation_documents) and
+                all(canonical_bytes(animation_documents[p]) == canonical_bytes(d) for p,d in self._animation_documents.items()),
+                'Parsed animation context must match its exact verified source bytes.', 'SCENE3D_ANIMATION_CONTEXT')
         self._derived_documents = {}
-        require(isinstance(self._animation_documents, dict), "Invalid animation document context.")
-        for path, clip in self._animation_documents.items():
-            require(isinstance(path, str), "Invalid animation document path.")
-            validate_document(clip, "animation")
         self._scene = deepcopy(scene)
         self._references = deepcopy(external_references)
-        self._asset_bounds = deepcopy(asset_bounds or {})
+        require(asset_bounds is None or isinstance(asset_bounds,dict), 'Invalid asset bounds context.')
+        self._asset_bounds = deepcopy({} if asset_bounds is None else asset_bounds)
         require(isinstance(self._asset_bounds, dict) and all(isinstance(k, str) and
                 (v is None or next(validator('bounds').iter_errors(v), None) is None and
                  all(a <= b for a, b in zip(v['minimum'], v['maximum'])))
@@ -202,7 +211,7 @@ class SceneGraph:
         self._check_service_semantics(self._scene)
 
     @classmethod
-    def from_bundle(cls, bundle, scene_path):
+    def from_bundle(cls, bundle, scene_path, *, source_root=None):
         require(scene_path in bundle['documents'], 'Scene is absent from verified bundle.')
         scene = bundle['documents'][scene_path]
         require(scene['kind'] == 'scene3d-scene', 'Choose a scene manifest.')
@@ -211,7 +220,7 @@ class SceneGraph:
         for path, document in bundle['documents'].items():
             if document['kind'] == 'scene3d-shot' and document['scene']['path'] == scene_path:
                 relevant.append((path, document))
-        pending = [(scene_path, scene)] + relevant
+        pending = list(relevant)  # Scene-owned bindings are recomputed from each candidate.
         seen = set()
         while pending:
             path, document = pending.pop()
@@ -236,8 +245,19 @@ class SceneGraph:
                     pending.append((p, bundle['documents'][p]))
         bounds = {d['id'] + '@' + d['version']: d['bounds'] for d in bundle['documents'].values()
                   if d['kind'] == 'scene3d-asset'}
-        return cls(scene, external_references=references, asset_bounds=bounds,
-                   animation_documents={p:d for p,d in bundle["documents"].items() if d["kind"] == "scene3d-animation"})
+        payloads = {}
+        if source_root is not None:
+            from asset_library import read_source_bytes
+            from pathlib import Path
+            for path, document in bundle['documents'].items():
+                if document['kind'] == 'scene3d-animation':
+                    raw = read_source_bytes(Path(source_root)/path, 16*1024*1024)
+                    require(hashlib.sha256(raw).hexdigest() == bundle['inventory'][path]['sha256'],
+                            'Animation source changed after verified load.', 'SCENE3D_ANIMATION_CONTEXT')
+                    require(canonical_bytes(validate_document(decode_json(raw),'animation')) == canonical_bytes(document),
+                            'Parsed animation context differs from verified bytes.', 'SCENE3D_ANIMATION_CONTEXT')
+                    payloads[path] = raw
+        return cls(scene, external_references=references, asset_bounds=bounds, animation_payloads=payloads)
 
     @staticmethod
     def _check_service_semantics(scene):
@@ -278,14 +298,45 @@ class SceneGraph:
         require(not node['locked'] and not membership_locked, 'Node or inherited membership is locked.', 'SCENE3D_LOCKED')
         return node
 
-    def _commit(self, candidate, *, expected_revision=None):
+    def _check_animation_bindings(self, candidate, documents, payloads):
+        from scene3d_contracts import _binding_context
+        checked = set()
+        def verify(reference, depth=0):
+            if reference['kind'] != 'scene3d-animation':
+                return
+            require(depth <= MAX_DEPTH, 'Animation binding closure exceeds depth bound.')
+            path = reference['path']
+            key = (path,reference['sha256'])
+            if key in checked:
+                return
+            require(path in documents and path in payloads and
+                    hashlib.sha256(payloads[path]).hexdigest() == reference['sha256'] and
+                    (documents[path]['id'],documents[path]['version']) == (reference['id'],reference['version']),
+                    'Editing a bound Scene3D clip requires complete exact byte context.', 'SCENE3D_ANIMATION_CONTEXT')
+            checked.add(key)
+            for nested in documents[path]['bindings']:
+                verify(nested['clip'],depth+1)
+        context = {'seen':set(),'checks':0}
+        for node in candidate['nodes']:
+            for binding in node['animation_bindings']:
+                verify(binding['clip'])
+                _binding_context(binding,candidate,documents,context)
+
+    def _commit(self, candidate, *, expected_revision=None, derived_documents=None):
         require(expected_revision is None or type(expected_revision) is int and expected_revision == self.revision,
                 'Scene revision conflict.', 'SCENE3D_CONFLICT')
         _inventories(candidate)
         candidate['revision'] = self.revision + 1
-        validate_document(candidate, 'scene')
+        candidate = validate_document(candidate, 'scene')
         require(len(canonical_bytes(candidate)) <= 16*1024*1024, 'Working scene exceeds the document byte bound.')
         self._check_service_semantics(candidate)
+        require(derived_documents is None or isinstance(derived_documents,dict), 'Invalid derived animation mapping.')
+        additions = {p:validate_document(d,'animation') for p,d in (derived_documents or {}).items()}
+        require(all(p not in self._animation_payloads or canonical_bytes(d) == self._animation_payloads[p]
+                    for p,d in additions.items()), 'Derived animation cannot replace immutable source bytes.')
+        payloads = {**self._animation_payloads, **{p:canonical_bytes(d) for p,d in additions.items()}}
+        documents = {**self._animation_documents, **additions}
+        self._check_animation_bindings(candidate, documents, payloads)
         old, new = self._nodes(), {n['id']: n for n in candidate['nodes']}
         seeds = {identifier for identifier in old.keys() | new.keys()
                  if identifier not in old or identifier not in new or
@@ -296,6 +347,8 @@ class SceneGraph:
             candidate['bounds'] = None  # Explicitly invalidate derived scene bounds.
         dirty = _invalidate_closure(old, seeds) | _invalidate_closure(new, seeds)
         self._scene = candidate
+        self._animation_documents, self._animation_payloads = documents, payloads
+        self._derived_documents.update(additions)
         for identifier in dirty:
             self._cache.pop(identifier, None)
         bounds_dirty = set(dirty)
@@ -311,10 +364,10 @@ class SceneGraph:
             self._isolate.intersection_update(new)
         return dict(revision=self.revision, dirty=sorted(dirty), removed=sorted(old.keys()-new.keys()))
 
-    def replace_document(self, scene, *, expected_revision):
+    def replace_document(self, scene, *, expected_revision, derived_documents=None):
         """Atomic in-memory replacement, also used by prefab/import services."""
         finite_json(scene)
-        return self._commit(deepcopy(scene), expected_revision=expected_revision)
+        return self._commit(deepcopy(scene), expected_revision=expected_revision, derived_documents=derived_documents)
 
     def create(self, node, *, expected_revision=None):
         finite_json(node)
@@ -339,7 +392,7 @@ class SceneGraph:
         return self._commit(candidate, expected_revision=expected_revision)
 
     def transform(self, identifier, *, space='local'):
-        require(identifier in self._nodes(), 'Unknown transform node.')
+        require(isinstance(identifier,str) and identifier in self._nodes(), 'Unknown transform node.')
         require(space in ('local', 'world'), 'Transform space must be local or world.')
         return (deepcopy(self._nodes()[identifier]['transform']) if space == 'local'
                 else self.evaluate_base(identifier)['world_matrix'])
@@ -397,6 +450,7 @@ class SceneGraph:
         if identifiers is None:
             self._isolate = None
         else:
+            require(isinstance(identifiers,(list,tuple,set)) and all(isinstance(i,str) for i in identifiers), 'Invalid isolation node list.')
             nodes = self._nodes()
             selected = set()
             for identifier in identifiers:
@@ -444,24 +498,33 @@ class SceneGraph:
     def derived_documents(self):
         return deepcopy(self._derived_documents)
 
-    def _map_clip(self, reference, mapping, context, derived, depth=0):
+    def _map_clip(self, reference, mapping, context, derived, depth=0, state=None):
         if reference['kind'] != 'scene3d-animation':
             return deepcopy(reference)
+        state = {'calls':0,'bytes':0,'memo':{}} if state is None else state
+        state['calls'] += 1
+        require(state['calls'] <= 100000, 'Animation derivation operation budget exceeded.')
+        key = (reference['path'], reference['sha256'])
+        if key in state['memo']:
+            return deepcopy(state['memo'][key])
         require(depth <= MAX_DEPTH, 'Animation derivation exceeds depth bound.')
         source = self._animation_documents.get(reference['path'])
         require(source is not None, 'Duplicating a bound Scene3D clip requires complete animation context.',
                 'SCENE3D_ANIMATION_CONTEXT')
-        require((source['id'], source['version']) == (reference['id'], reference['version']),
+        require(hashlib.sha256(self._animation_payloads[reference['path']]).hexdigest() == reference['sha256'] and
+                (source['id'], source['version']) == (reference['id'], reference['version']),
                 'Animation context identity mismatch.', 'SCENE3D_ANIMATION_CONTEXT')
         clip = deepcopy(source)
-        clip['id'] = 'a-'+hashlib.sha256((context+'\0'+reference['sha256']).encode()).hexdigest()[:48]
+        clip['id'] = 'a-'+hashlib.sha256((context+'\0'+reference['path']+'\0'+reference['sha256']).encode()).hexdigest()[:48]
+        derived_path = 'derived-animations/'+clip['id']+'/'+clip['version']+'.json'
+        require(len(derived) < MAX_FILES, 'Derived animation count exceeds bound.')
         for track in clip['tracks']:
             require(track['target'] in mapping, 'Duplicated clip targets outside the copied subtree.')
             track['target'] = mapping[track['target']]
         for binding in clip['bindings']:
             require(binding['target'] in mapping, 'Duplicated nested clip targets outside the copied subtree.')
             binding['target'] = mapping[binding['target']]
-            binding['clip'] = self._map_clip(binding['clip'], mapping, context, derived, depth+1)
+            binding['clip'] = self._map_clip(binding['clip'], mapping, context, derived, depth+1, state)
         dependencies = {r['path']:deepcopy(r) for r in clip['dependencies']}
         dependencies[reference['path']] = deepcopy(reference)
         for binding in clip['bindings']:
@@ -474,9 +537,14 @@ class SceneGraph:
         path = 'derived-animations/'+clip['id']+'/'+clip['version']+'.json'
         payload = canonical_bytes(clip)
         require(path not in derived or derived[path] == clip, 'Conflicting derived animation identity.')
+        state['bytes'] += len(payload)
+        require(state['bytes'] <= MAX_TOTAL_BYTES,
+                'Derived animation bytes exceed bound.')
         derived[path] = clip
-        return dict(id=clip['id'],version=clip['version'],kind=clip['kind'],path=path,
-                    sha256=hashlib.sha256(payload).hexdigest())
+        result = dict(id=clip['id'],version=clip['version'],kind=clip['kind'],path=path,
+                      sha256=hashlib.sha256(payload).hexdigest())
+        state['memo'][key] = result
+        return deepcopy(result)
 
     def duplicate(self, identifier, new_id, *, parent=KEEP_PARENT, preserve_world=True):
         self._editable(identifier)
@@ -501,13 +569,15 @@ class SceneGraph:
             copies[0]['transform'] = transform_for_matrix(_inverse(p) @ np.asarray(self.evaluate_base(identifier)['world_matrix']),
                                                          pivot=nodes[identifier]['transform'].get('pivot'))
         derived = {}
+        state = {'calls':0,'bytes':0,'memo':{}}
         for copied in copies:
             for binding in copied['animation_bindings']:
-                binding['clip'] = self._map_clip(binding['clip'], mapping, new_id, derived)
+                binding['clip'] = self._map_clip(binding['clip'], mapping, new_id, derived, state=state)
         candidate['nodes'].extend(copies)
-        result = self._commit(candidate)
+        result = self._commit(candidate, derived_documents=derived)
         self._derived_documents.update(derived)
         self._animation_documents.update(derived)
+        self._animation_payloads.update({p:canonical_bytes(d) for p,d in derived.items()})
         result['derived_documents'] = deepcopy(derived)
         result['mapping'] = mapping
         return result
@@ -548,6 +618,7 @@ class SceneGraph:
         says ``base_pose_only``; this is not a render/animation evaluation receipt.
         """
         nodes = self._nodes()
+        require(identifier is None or isinstance(identifier,str) and identifier in nodes, 'Unknown evaluation node.')
         children = {i: [] for i in nodes}
         for n in nodes.values():
             if n['parent'] is not None:
@@ -626,6 +697,8 @@ class SceneGraph:
 
     def bounds(self, identifiers=None):
         values = self.evaluate_base()
+        require(identifiers is None or isinstance(identifiers,(list,tuple,set)) and all(isinstance(i,str) for i in identifiers),
+                'Invalid bounds node list.')
         identifiers = list(values) if identifiers is None else list(identifiers)
         require(all(i in values for i in identifiers), 'Unknown bounds node.')
         boxes = [values[i]['world_bounds'] for i in identifiers if values[i]['world_bounds'] is not None]

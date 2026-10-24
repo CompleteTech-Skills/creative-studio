@@ -49,6 +49,118 @@ class SceneServiceTests(unittest.TestCase):
         mesh['constraints'] = []
         self.assertEqual(actual, self.graph(scene).evaluate_base('mesh')['world_matrix'])
 
+    def test_review_explicit_falsey_optional_values_are_not_defaults(self):
+        library = PrefabLibrary.from_bundle(self.bundle)
+        reference = self.bundle['project']['prefabs'][0]
+        for key, values in [('overrides',[[],False,'']),('transform',[[],False,''])]:
+            for value in values:
+                graph = self.graph()
+                before = graph.document()
+                with self.subTest(key=key,value=value),self.assertRaises(RigError):
+                    library.instantiate(graph,reference,'invalid',**{key:value})
+                self.assertEqual(before,graph.document())
+        for values in (dict(parameters=[]),dict(parameters=False),dict(parameter_bindings={}),dict(parameter_bindings=False)):
+            before = library.payloads()
+            with self.subTest(values=values),self.assertRaises(RigError):
+                library.create(self.graph(),'mesh','invalid','1.0.0',**values)
+            self.assertEqual(before,library.payloads())
+        for values in (dict(asset_bounds=False),dict(animation_documents=False),dict(animation_payloads=False)):
+            with self.subTest(values=values),self.assertRaises(RigError):
+                SceneGraph(self.scene,**values)
+
+    def test_review_animation_context_binds_exact_noncanonical_bytes(self):
+        source = deepcopy(self.bundle['documents']['example-animation.json'])
+        payload = (json.dumps(source,indent=4)+'  \n').encode()
+        reference = deepcopy(self.bundle['project']['animations'][0])
+        reference['sha256'] = hashlib.sha256(payload).hexdigest()
+        scene = deepcopy(self.scene)
+        scene['nodes'][1]['animation_bindings'] = [dict(target='mesh',clip=reference,start_frame=0,end_frame=24,speed=1.,loop=False)]
+        tampered = deepcopy(source)
+        tampered['tracks'][0]['keys'][0]['value'] = [99,99,99]
+        with self.assertRaises(RigError):
+            SceneGraph(scene,animation_documents={reference['path']:tampered},animation_payloads={reference['path']:payload})
+        with self.assertRaises(RigError):
+            SceneGraph(scene,animation_documents={reference['path']:tampered})
+        graph = SceneGraph(scene,external_references={},animation_payloads={reference['path']:payload})
+        derived = graph.duplicate('mesh','copy')['derived_documents']
+        self.assertEqual(next(iter(derived.values()))['provenance']['inputs'][-1]['sha256'], reference['sha256'])
+        self.assertEqual(graph._animation_payloads[reference['path']], payload)
+        # A real noncanonical source closure reopens without rewriting its bytes.
+        (self.root/'source'/reference['path']).write_bytes(payload)
+        project = deepcopy(self.bundle['project'])
+        for field in ('animations','dependency_lock'):
+            for item in project[field]:
+                if item['path'] == reference['path']:
+                    item['sha256'] = reference['sha256']
+        (self.root/'source/project.json').write_bytes(canonical_bytes(project))
+        bundle = load_project(self.root/'source')
+        bundle['documents']['example-scene.json'] = scene
+        exact = SceneGraph.from_bundle(bundle,'example-scene.json',source_root=self.root/'source')
+        exact.duplicate('mesh','portable-copy')
+        snapshot_project(self.root/'source',self.root/'noncanonical-copy',exact,scene_path='example-scene.json')
+        self.assertEqual((self.root/'noncanonical-copy'/reference['path']).read_bytes(),payload)
+        load_project(self.root/'noncanonical-copy')
+
+    def test_review_duplicate_clip_dag_is_memoized(self):
+        payloads, reference = {}, None
+        for index in range(30):
+            clip = deepcopy(self.bundle['documents']['example-animation.json'])
+            clip['id'] = 'dag-'+str(index)
+            clip['bindings'] = [] if reference is None else [dict(target='mesh',clip=deepcopy(reference),start_frame=0,end_frame=24,speed=1.,loop=False) for _ in range(2)]
+            clip['dependencies'] = [] if reference is None else [reference]
+            payload = canonical_bytes(clip)
+            path = 'dag/'+str(index)+'.json'
+            payloads[path] = payload
+            reference = dict(id=clip['id'],version=clip['version'],kind=clip['kind'],path=path,sha256=hashlib.sha256(payload).hexdigest())
+        scene = deepcopy(self.scene)
+        scene['nodes'][1]['animation_bindings'] = [dict(target='mesh',clip=reference,start_frame=0,end_frame=24,speed=1.,loop=False)]
+        graph = SceneGraph(scene,animation_payloads=payloads)
+        with patch.object(graph,'_map_clip',wraps=graph._map_clip) as calls:
+            result = graph.duplicate('mesh','copy')
+        self.assertEqual(len(result['derived_documents']),30)
+        self.assertLessEqual(calls.call_count,60)
+
+    def test_review_remaining_derived_bindings_protect_targets_and_removed_bindings_release_them(self):
+        clip = deepcopy(self.bundle['documents']['example-animation.json'])
+        clip['tracks'][0]['target'] = 'child'
+        payload = canonical_bytes(clip)
+        reference = deepcopy(self.bundle['project']['animations'][0])
+        reference['sha256'] = hashlib.sha256(payload).hexdigest()
+        scene = deepcopy(self.scene)
+        scene['nodes'].append(node('child',parent='mesh'))
+        scene['nodes'][1]['animation_bindings'] = [dict(target='mesh',clip=reference,start_frame=0,end_frame=24,speed=1.,loop=False)]
+        graph = SceneGraph(scene,external_references={},animation_payloads={reference['path']:payload})
+        copied = graph.duplicate('mesh','copy')
+        child = copied['mapping']['child']
+        before = graph.document()
+        for operation in (lambda:graph.delete(child),lambda:graph.reparent(child,None)):
+            with self.assertRaises(RigError): operation()
+            self.assertEqual(before,graph.document())
+        changed = graph.document()
+        next(n for n in changed['nodes'] if n['id']=='copy')['animation_bindings'] = []
+        graph.replace_document(changed,expected_revision=graph.revision)
+        graph.delete(child)
+        self.assertNotIn(child,{n['id'] for n in graph.document()['nodes']})
+
+    def test_review_upgrade_optional_child_source_resolution_removes_entire_subtree(self):
+        library = PrefabLibrary()
+        old = deepcopy(self.bundle['documents']['example-prefab.json'])
+        reference = library.register(old)
+        new = deepcopy(old)
+        new['version'] = '2.0.0'
+        new['nodes'] = new['nodes'][:1]
+        upgraded = library.register(new)
+        graph = self.graph()
+        library.instantiate(graph,reference,'instance',overrides=dict(parameters={},materials={},nodes=[],
+            children=[node('optional',parent='prefab-mesh'),node('grandchild',parent='optional')]))
+        result = library.upgrade(graph,'instance',upgraded)
+        self.assertEqual(result['conflicts'],['child:optional'])
+        result = library.upgrade(graph,'instance',upgraded,resolutions={'child:optional':'source'})
+        self.assertTrue(result['applied'])
+        instance = next(n for n in graph.document()['nodes'] if n['id']=='instance')
+        self.assertEqual(instance['prefab_overrides']['children'],[])
+        library.expand(graph.document())
+
     def test_review_world_matrix_batch_preserves_supported_transform_interface(self):
         graph = self.graph()
         before = graph.evaluate_base('mesh')['world_matrix']
@@ -107,7 +219,7 @@ class SceneServiceTests(unittest.TestCase):
         bundle = deepcopy(self.bundle)
         scene = bundle['documents']['example-scene.json']
         scene['nodes'][1]['animation_bindings'] = [dict(target='mesh',clip=bundle['project']['animations'][0],start_frame=0,end_frame=24,speed=1.,loop=False)]
-        graph = SceneGraph.from_bundle(bundle, 'example-scene.json')
+        graph = SceneGraph.from_bundle(bundle, 'example-scene.json', source_root=self.root/'source')
         original = deepcopy(bundle['documents']['example-animation.json'])
         copied = graph.duplicate('mesh', 'mesh-copy')
         self.assertTrue(copied['derived_documents'])
