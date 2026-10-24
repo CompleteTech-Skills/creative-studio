@@ -1,0 +1,36 @@
+{
+  "audited_main": "bb5a6810afd06cf57185ffdfe2234e0fdc6e6240",
+  "initial": {
+    "snapshot_utc": "2026-10-24T16:59:51.119677+00:00",
+    "issues": 184,
+    "open_issues": 171,
+    "closed_issues": 13,
+    "prs": 31,
+    "open_prs": 9,
+    "closed_prs": 22,
+    "issue_comments": 102,
+    "review_comments": 13,
+    "labels": 10,
+    "branches": 28,
+    "tags": 0,
+    "releases": 0,
+    "milestones": 0,
+    "commits": 117,
+    "native_parent_edges": 168,
+    "native_dependency_edges": 200,
+    "body_dependency_edges_not_native": 0
+  },
+  "final_at_generation": {
+    "issues": 185,
+    "open_issues": 173,
+    "closed_issues": 12,
+    "prs": 31,
+    "open_prs": 9,
+    "labels": 40
+  },
+  "original_issue_assessments": 184,
+  "additional_audit_issues": 1,
+  "original_pr_assessments": 31,
+  "mutation_count": 299,
+  "generated_at": "2026-10-24T17:10:09.721690+00:00"
+}

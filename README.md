@@ -392,6 +392,8 @@ For the existing 2D suite, use a separate environment with `requirements-deliver
 
 See [contributor and triage guidance](CONTRIBUTING.md) for evidence terminology,
 label governance and the separation between local tests, CI and production review.
+The [24 October repository audit](docs/audits/2026-10-24/README.md) records the
+complete issue/PR inventory, subsystem findings and verified governance changes.
 
 ### Director engineering baseline
 

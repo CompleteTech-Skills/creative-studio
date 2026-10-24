@@ -1,0 +1,122 @@
+[
+  {
+    "id": 12746417973,
+    "node_id": "LA_kwDOVPBEAM8AAAAC977nNQ",
+    "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/labels/accessibility",
+    "name": "accessibility",
+    "color": "f143ab",
+    "default": true,
+    "description": "Barrier affecting people with disabilities",
+    "archived_at": null,
+    "archived_by": null,
+    "usage_count": 0
+  },
+  {
+    "id": 12746417958,
+    "node_id": "LA_kwDOVPBEAM8AAAAC977nJg",
+    "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/labels/bug",
+    "name": "bug",
+    "color": "d73a4a",
+    "default": true,
+    "description": "Something isn't working",
+    "archived_at": null,
+    "archived_by": null,
+    "usage_count": 0
+  },
+  {
+    "id": 12746417982,
+    "node_id": "LA_kwDOVPBEAM8AAAAC977nPg",
+    "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/labels/documentation",
+    "name": "documentation",
+    "color": "0075ca",
+    "default": true,
+    "description": "Improvements or additions to documentation",
+    "archived_at": null,
+    "archived_by": null,
+    "usage_count": 0
+  },
+  {
+    "id": 12746417994,
+    "node_id": "LA_kwDOVPBEAM8AAAAC977nSg",
+    "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/labels/duplicate",
+    "name": "duplicate",
+    "color": "cfd3d7",
+    "default": true,
+    "description": "This issue or pull request already exists",
+    "archived_at": null,
+    "archived_by": null,
+    "usage_count": 0
+  },
+  {
+    "id": 12746418004,
+    "node_id": "LA_kwDOVPBEAM8AAAAC977nVA",
+    "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/labels/enhancement",
+    "name": "enhancement",
+    "color": "a2eeef",
+    "default": true,
+    "description": "New feature or request",
+    "archived_at": null,
+    "archived_by": null,
+    "usage_count": 0
+  },
+  {
+    "id": 12746418022,
+    "node_id": "LA_kwDOVPBEAM8AAAAC977nZg",
+    "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/labels/good%20first%20issue",
+    "name": "good first issue",
+    "color": "7057ff",
+    "default": true,
+    "description": "Good for newcomers",
+    "archived_at": null,
+    "archived_by": null,
+    "usage_count": 0
+  },
+  {
+    "id": 12746418015,
+    "node_id": "LA_kwDOVPBEAM8AAAAC977nXw",
+    "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/labels/help%20wanted",
+    "name": "help wanted",
+    "color": "008672",
+    "default": true,
+    "description": "Extra attention is needed",
+    "archived_at": null,
+    "archived_by": null,
+    "usage_count": 0
+  },
+  {
+    "id": 12746418031,
+    "node_id": "LA_kwDOVPBEAM8AAAAC977nbw",
+    "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/labels/invalid",
+    "name": "invalid",
+    "color": "e4e669",
+    "default": true,
+    "description": "This doesn't seem right",
+    "archived_at": null,
+    "archived_by": null,
+    "usage_count": 0
+  },
+  {
+    "id": 12746418041,
+    "node_id": "LA_kwDOVPBEAM8AAAAC977neQ",
+    "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/labels/question",
+    "name": "question",
+    "color": "d876e3",
+    "default": true,
+    "description": "Further information is requested",
+    "archived_at": null,
+    "archived_by": null,
+    "usage_count": 0
+  },
+  {
+    "id": 12746418050,
+    "node_id": "LA_kwDOVPBEAM8AAAAC977ngg",
+    "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/labels/wontfix",
+    "name": "wontfix",
+    "color": "ffffff",
+    "default": true,
+    "description": "This will not be worked on",
+    "archived_at": null,
+    "archived_by": null,
+    "usage_count": 0
+  }
+]

@@ -1,0 +1,409 @@
+{
+  "scope": "10 registered active workflows; source-only review of all 10 saved sources",
+  "records": [
+    {
+      "id": 394356214,
+      "registered_name": "Model3D contract and payload verification",
+      "source_name": "Model3D contract and payload verification",
+      "path": ".github/workflows/model3d-contracts.yml",
+      "registered_state": "active",
+      "source_file": "raw\\workflow-394356214.yml",
+      "source_sha256": "7639e749e74fd38ae6cace3d586002f1acf0c19f7e9a3bc722a912eba9f6703a",
+      "classification": "main",
+      "triggers": "push, pull_request, workflow_dispatch",
+      "permissions": {
+        "contents": "read"
+      },
+      "explicit_job_timeout_minutes": 15,
+      "actions": [
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/upload-artifact@v4"
+      ],
+      "purpose": "Current Model3D contract and payload CI",
+      "latest_run": {
+        "id": 40069812958,
+        "branch": "main",
+        "sha": "bb5a6810afd06cf57185ffdfe2234e0fdc6e6240",
+        "event": "push",
+        "conclusion": "success",
+        "actor": "CompleteDotTech"
+      },
+      "ownership": {
+        "repository": "CompleteTech-Skills/creative-studio",
+        "observed_latest_actor": "CompleteDotTech",
+        "accountable_owner": "Not established by source/latest actor; repository maintainers must designate"
+      },
+      "recommendation": "Keep; pin action references to immutable commits and retain required-check ownership.",
+      "review_scope": "All saved workflow source read; no execution or mutation"
+    },
+    {
+      "id": 394350696,
+      "registered_name": "Transfer verified Model3D source objects",
+      "source_name": "Transfer verified Model3D source objects",
+      "path": ".github/workflows/model3d-source-transfer.yml",
+      "registered_state": "active",
+      "source_file": "raw\\workflow-394350696.yml",
+      "source_sha256": "4ab484f91baea6c067c54510b7920b48f9817ef4ff87312e03e3ee124a8a0a4b",
+      "classification": "historical-operational",
+      "triggers": "push agent/roadmap-capture-20261023 with workflow or operations/model3d-transfer-20261023/** path changes",
+      "permissions": {
+        "contents": "write"
+      },
+      "explicit_job_timeout_minutes": 10,
+      "actions": [
+        "actions/checkout@v4",
+        "actions/upload-artifact@v4"
+      ],
+      "purpose": "Checksum-bound initial Model3D source transfer using unreferenced Git blobs and tree",
+      "latest_run": {
+        "id": 39996403225,
+        "branch": "agent/roadmap-capture-20261023",
+        "sha": "508b254e722bc44317d62b39ee8b8c3e30f088af",
+        "event": "push",
+        "conclusion": "failure",
+        "actor": "CompleteDotTech"
+      },
+      "ownership": {
+        "repository": "CompleteTech-Skills/creative-studio",
+        "observed_latest_actor": "CompleteDotTech",
+        "accountable_owner": "Not established by source/latest actor; repository maintainers must designate"
+      },
+      "recommendation": "Preserve receipts/source history; disable dormant registered workflow after owner confirms transfer complete. Do not repair or rerun merely to make it green.",
+      "review_scope": "All saved workflow source read; no execution or mutation",
+      "api_effects": "Only Git blob/tree endpoints; no commits, refs, pull requests or merge writes in reviewed code",
+      "hardcoded_repository": "CompleteTech-Skills/hatch-pet",
+      "redirect_policy": "Redirect handler raises before following",
+      "rename_risk": "Old repository endpoint with forbidden redirects may fail after rename; no rerun attempted",
+      "artifact_retention_days": 7
+    },
+    {
+      "id": 394394294,
+      "registered_name": "Transfer Model3D stat correction",
+      "source_name": "Transfer Model3D stat correction",
+      "path": ".github/workflows/model3d-stat-transfer.yml",
+      "registered_state": "active",
+      "source_file": "raw\\workflow-394394294.yml",
+      "source_sha256": "33684cdfa12d48f49998093c1910f693b091932d30966f8ee50932391aadcba2",
+      "classification": "historical-operational",
+      "triggers": "push agent/roadmap-capture-20261023 with this workflow path changed",
+      "permissions": {
+        "contents": "write"
+      },
+      "explicit_job_timeout_minutes": 5,
+      "actions": [
+        "actions/upload-artifact@v4"
+      ],
+      "purpose": "Exact-source stat-clock correction, continuing fixture transfer tree",
+      "latest_run": {
+        "id": 40001754371,
+        "branch": "agent/roadmap-capture-20261023",
+        "sha": "b89c4e5747fa2c8116a723704ec94dcd886280f1",
+        "event": "push",
+        "conclusion": "success",
+        "actor": "CompleteDotTech"
+      },
+      "ownership": {
+        "repository": "CompleteTech-Skills/creative-studio",
+        "observed_latest_actor": "CompleteDotTech",
+        "accountable_owner": "Not established by source/latest actor; repository maintainers must designate"
+      },
+      "recommendation": "Preserve receipts/source history; disable dormant registered workflow after owner confirms transfer complete.",
+      "review_scope": "All saved workflow source read; no execution or mutation",
+      "api_effects": "Only Git blob/tree endpoints; no commits, refs, pull requests or merge writes in reviewed code",
+      "hardcoded_repository": "CompleteTech-Skills/hatch-pet",
+      "redirect_policy": "Redirect handler raises before following",
+      "rename_risk": "Old repository endpoint with forbidden redirects may fail after rename; no rerun attempted",
+      "artifact_retention_days": 7
+    },
+    {
+      "id": 394370612,
+      "registered_name": "Transfer Model3D fixture correction",
+      "source_name": "Transfer Model3D snapshot correction",
+      "path": ".github/workflows/model3d-test-fixture-transfer.yml",
+      "registered_state": "active",
+      "source_file": "raw\\workflow-394370612.yml",
+      "source_sha256": "443a8a41784cb8faffbc8d4424f1151a710cafb89fe865b198ab05e12e370be4",
+      "classification": "historical-operational",
+      "triggers": "push agent/roadmap-capture-20261023 with this workflow path changed",
+      "permissions": {
+        "contents": "write"
+      },
+      "explicit_job_timeout_minutes": 5,
+      "actions": [
+        "actions/checkout@v4",
+        "actions/upload-artifact@v4"
+      ],
+      "purpose": "Exact-source correction for aliased temporary-directory fixture/snapshot behavior",
+      "latest_run": {
+        "id": 40000945867,
+        "branch": "agent/roadmap-capture-20261023",
+        "sha": "6694bab04d5befc6d2f35e0fec9cf819ab4ebc31",
+        "event": "push",
+        "conclusion": "success",
+        "actor": "CompleteDotTech"
+      },
+      "ownership": {
+        "repository": "CompleteTech-Skills/creative-studio",
+        "observed_latest_actor": "CompleteDotTech",
+        "accountable_owner": "Not established by source/latest actor; repository maintainers must designate"
+      },
+      "recommendation": "Preserve receipts/source history; disable dormant registered workflow after owner confirms transfer complete.",
+      "review_scope": "All saved workflow source read; no execution or mutation",
+      "api_effects": "Only Git blob/tree endpoints; no commits, refs, pull requests or merge writes in reviewed code",
+      "hardcoded_repository": "CompleteTech-Skills/hatch-pet",
+      "redirect_policy": "Redirect handler raises before following",
+      "rename_risk": "Old repository endpoint with forbidden redirects may fail after rename; no rerun attempted",
+      "artifact_retention_days": 7
+    },
+    {
+      "id": 394853102,
+      "registered_name": "Trusted physics backend lifecycle",
+      "source_name": "Trusted physics backend lifecycle",
+      "path": ".github/workflows/physics-backends.yml",
+      "registered_state": "active",
+      "source_file": "raw\\workflow-394853102.yml",
+      "source_sha256": "903f32284068e72bbef91323c5bac95daf8d6dfd50930f9c7c359ea4ed97493a",
+      "classification": "active-unmerged-feature",
+      "triggers": "pull_request; push main; workflow_dispatch",
+      "permissions": {
+        "contents": "read"
+      },
+      "explicit_job_timeout_minutes": 20,
+      "actions": [
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+        "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+      ],
+      "purpose": "Real Blender/PyBullet lifecycle, timing and cache feature CI",
+      "latest_run": {
+        "id": 40067362145,
+        "branch": "agent/issue-169-exact-stepping-20261024",
+        "sha": "5cbd2e352021ef760588df56b08a697251df5334",
+        "event": "pull_request",
+        "conclusion": "success",
+        "actor": "CompleteDotTech"
+      },
+      "ownership": {
+        "repository": "CompleteTech-Skills/creative-studio",
+        "observed_latest_actor": "CompleteDotTech",
+        "accountable_owner": "Not established by source/latest actor; repository maintainers must designate"
+      },
+      "recommendation": "Keep with feature PR owner until merge/disposition; promote to main only through its reviewed PR.",
+      "review_scope": "All saved workflow source read; no execution or mutation"
+    },
+    {
+      "id": 390391411,
+      "registered_name": "Public production delivery",
+      "source_name": "Public production delivery",
+      "path": ".github/workflows/public-delivery.yml",
+      "registered_state": "active",
+      "source_file": "raw\\workflow-390391411.yml",
+      "source_sha256": "3e93acfed148c42e8f17f9fa13e755ec294a9608a395f2acc43747272ab191af",
+      "classification": "main",
+      "triggers": "push main and fix/public-production-delivery; pull_request; workflow_dispatch",
+      "permissions": {
+        "contents": "read"
+      },
+      "explicit_job_timeout_minutes": 45,
+      "actions": [
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+      ],
+      "purpose": "Current public 2D production delivery CI",
+      "latest_run": {
+        "id": 40069812951,
+        "branch": "main",
+        "sha": "bb5a6810afd06cf57185ffdfe2234e0fdc6e6240",
+        "event": "push",
+        "conclusion": "success",
+        "actor": "CompleteDotTech"
+      },
+      "ownership": {
+        "repository": "CompleteTech-Skills/creative-studio",
+        "observed_latest_actor": "CompleteDotTech",
+        "accountable_owner": "Not established by source/latest actor; repository maintainers must designate"
+      },
+      "recommendation": "Keep; maintain release evidence and account for platform package-manager variability.",
+      "review_scope": "All saved workflow source read; no execution or mutation"
+    },
+    {
+      "id": 390468376,
+      "registered_name": "3D rigging and compatibility gates",
+      "source_name": "3D rigging and compatibility gates",
+      "path": ".github/workflows/rig-3d.yml",
+      "registered_state": "active",
+      "source_file": "raw\\workflow-390468376.yml",
+      "source_sha256": "5869e4196133782e4f717b2c7295b8e88da9facf5194e857c3ac5d544654522d",
+      "classification": "main",
+      "triggers": "push, pull_request, workflow_dispatch",
+      "permissions": {
+        "contents": "read"
+      },
+      "explicit_job_timeout_minutes": null,
+      "actions": [
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/upload-artifact@v4",
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/upload-artifact@v4",
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/upload-artifact@v4",
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/upload-artifact@v4",
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/setup-node@v4",
+        "actions/upload-artifact@v4",
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/cache@v4",
+        "actions/upload-artifact@v4",
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/upload-artifact@v4",
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/setup-node@v4",
+        "actions/upload-artifact@v4",
+        "actions/checkout@v4",
+        "actions/setup-python@v5",
+        "actions/upload-artifact@v4"
+      ],
+      "purpose": "Current multi-job 2D compatibility and 3D rig CI",
+      "latest_run": {
+        "id": 40069813064,
+        "branch": "main",
+        "sha": "bb5a6810afd06cf57185ffdfe2234e0fdc6e6240",
+        "event": "push",
+        "conclusion": "success",
+        "actor": "CompleteDotTech"
+      },
+      "ownership": {
+        "repository": "CompleteTech-Skills/creative-studio",
+        "observed_latest_actor": "CompleteDotTech",
+        "accountable_owner": "Not established by source/latest actor; repository maintainers must designate"
+      },
+      "recommendation": "Keep; use explicit job deadlines, immutable action pins and persist-credentials:false consistently.",
+      "review_scope": "All saved workflow source read; no execution or mutation"
+    },
+    {
+      "id": 394264892,
+      "registered_name": "Roadmap source and dependency capture",
+      "source_name": "Roadmap source and dependency capture",
+      "path": ".github/workflows/roadmap-capture.yml",
+      "registered_state": "active",
+      "source_file": "raw\\workflow-394264892.yml",
+      "source_sha256": "8142e80d0612fa72a6e3bb5acbf5f07c6baa7c7783c88b931a190139860ad345",
+      "classification": "historical-operational",
+      "triggers": "push agent/roadmap-capture-20261023; workflow_dispatch",
+      "permissions": {
+        "contents": "read",
+        "issues": "read",
+        "pull-requests": "read"
+      },
+      "explicit_job_timeout_minutes": 15,
+      "actions": [
+        "actions/checkout@v4",
+        "actions/upload-artifact@v4"
+      ],
+      "purpose": "Historical full Git bundle and roadmap issue/dependency/comment snapshot",
+      "latest_run": {
+        "id": 40001754253,
+        "branch": "agent/roadmap-capture-20261023",
+        "sha": "b89c4e5747fa2c8116a723704ec94dcd886280f1",
+        "event": "push",
+        "conclusion": "success",
+        "actor": "CompleteDotTech"
+      },
+      "ownership": {
+        "repository": "CompleteTech-Skills/creative-studio",
+        "observed_latest_actor": "CompleteDotTech",
+        "accountable_owner": "Not established by source/latest actor; repository maintainers must designate"
+      },
+      "recommendation": "Preserve bundle/checksums; disable if capture complete, or deliberately replace with current-repository read-only capture under named ownership.",
+      "review_scope": "All saved workflow source read; no execution or mutation",
+      "api_effects": "Read repository API and archive full fetched Git history",
+      "hardcoded_repository": "CompleteTech-Skills/hatch-pet",
+      "redirect_policy": "Default urllib redirects followed; final response URL must start with old base plus slash",
+      "rename_risk": "Canonical renamed endpoint fails post-response URL check; no rerun attempted",
+      "artifact_retention_days": 7
+    },
+    {
+      "id": 394275719,
+      "registered_name": "Roadmap interchange test tools",
+      "source_name": "Roadmap interchange test tools",
+      "path": ".github/workflows/roadmap-test-tools.yml",
+      "registered_state": "active",
+      "source_file": "raw\\workflow-394275719.yml",
+      "source_sha256": "948bb745c93186f88eba2ddbe5e848888f5735620ebf774aa6d3c4621e4882af",
+      "classification": "historical-operational",
+      "triggers": "push agent/roadmap-capture-20261023 with this workflow path changed",
+      "permissions": {
+        "contents": "read"
+      },
+      "explicit_job_timeout_minutes": 10,
+      "actions": [
+        "actions/setup-python@v5",
+        "actions/upload-artifact@v4"
+      ],
+      "purpose": "Download pygltflib1.16.5 and resolved wheel dependencies into checksum artifact",
+      "latest_run": {
+        "id": 39987029689,
+        "branch": "agent/roadmap-capture-20261023",
+        "sha": "6fef3fdaa6e68973be2ae750fd8c4b273afc8dd9",
+        "event": "push",
+        "conclusion": "success",
+        "actor": "CompleteDotTech"
+      },
+      "ownership": {
+        "repository": "CompleteTech-Skills/creative-studio",
+        "observed_latest_actor": "CompleteDotTech",
+        "accountable_owner": "Not established by source/latest actor; repository maintainers must designate"
+      },
+      "recommendation": "Preserve historical artifact; disable if transfer tooling is complete. A reusable replacement needs fully pinned resolved dependencies.",
+      "review_scope": "All saved workflow source read; no execution or mutation"
+    },
+    {
+      "id": 394850441,
+      "registered_name": "Strict JPEG decoder admission",
+      "source_name": "Strict JPEG decoder admission",
+      "path": ".github/workflows/strict-jpeg.yml",
+      "registered_state": "active",
+      "source_file": "raw\\workflow-394850441.yml",
+      "source_sha256": "17fb5f8b8f600e4868efe9d51d8f595452c2f208cb9dbf03f370102d2ffc7a03",
+      "classification": "active-unmerged-feature",
+      "triggers": "path-filtered pull_request; path-filtered push main; workflow_dispatch",
+      "permissions": {
+        "contents": "read"
+      },
+      "explicit_job_timeout_minutes": 10,
+      "actions": [
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+        "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+      ],
+      "purpose": "Strict JPEG and texture integrity feature CI on three operating systems",
+      "latest_run": {
+        "id": 40067769437,
+        "branch": "agent/native-texture-integrity-fleet",
+        "sha": "e9ef226816f747b2790c73168c38606ddbcb00f3",
+        "event": "pull_request",
+        "conclusion": "success",
+        "actor": "CompleteDotTech"
+      },
+      "ownership": {
+        "repository": "CompleteTech-Skills/creative-studio",
+        "observed_latest_actor": "CompleteDotTech",
+        "accountable_owner": "Not established by source/latest actor; repository maintainers must designate"
+      },
+      "recommendation": "Keep with feature PR owner until merge/disposition; promote to main only through its reviewed PR.",
+      "review_scope": "All saved workflow source read; no execution or mutation"
+    }
+  ]
+}
