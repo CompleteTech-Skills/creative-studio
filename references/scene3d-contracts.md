@@ -48,7 +48,10 @@ policy; versions use exact `major.minor.patch` with no leading zeros.
 quaternions, bounds, reference inventories, graph/constraint/attachment cycles,
 unique identities, timestamp ordering, fixture declarations and exact timing.
 Schema-only validation is explicitly insufficient for these relational rules.
-`canonical_bytes` produces deterministic UTF-8 JSON; `document_hash` hashes that
+Strings must contain encodable Unicode scalar values; escaped lone surrogates
+are rejected instead of admitting documents that cannot serialize/reopen. Free-form
+metadata/parameter string values have explicit 4096-character caps.
+`canonical_bytes` streams deterministic UTF-8 JSON under the manifest byte cap; `document_hash` hashes that
 canonical serialization. Referenced **files** are always hashed as their actual
 bytes, including original whitespace, not canonical reserializations.
 
@@ -57,6 +60,10 @@ returning `{project, documents, inventory, bytes, status}`. `documents` maps
 project-relative paths to validated manifests. `inventory` maps actual paths to
 `{sha256, bytes}`; status is `hash-and-contract-verified`. Manifest identities must
 match their references; every typed reference must be in the dependency lock.
+Reference and transform traversal follows authoritative schema positions, so
+annotation keys resembling paths/bounds/transforms never become resources or
+geometry. The public project-relative manifest filename uses the same scalar/
+portable spelling checks as document references.
 Conflicting hashes, duplicate version identities, portable aliases, dangling
 shot/camera/node references, dependency cycles and missing/corrupt files fail.
 Asset byte estimates are checked against actual content; vertex/triangle counts
@@ -179,7 +186,9 @@ without changing this public shape.
 
 ## Reproducible example and validation
 
-The checked-in [example](../examples/scene3d-contracts) contains seven actual
+The checked-in [example](../examples/scene3d-contracts) is marked `-text` in
+Git attributes, preserving its hash-bound bytes even with `core.autocrlf=true`.
+It contains seven actual
 manifests and an original 3-vertex/1-triangle OBJ. Its fixture provenance and
 unreviewed asset status are explicit. It demonstrates serialization and secure
 hash/dependency admission, not a rendered environment.
@@ -201,7 +210,7 @@ contract/file-loading tests also run in the existing 2D gate with NumPy blocked.
 The example refuses an existing destination. Its direct file creation is for a
 new, caller-owned fixture directory only; it is not a package publisher.
 
-The implementation's focused execution passed **64 tests**, including real
+The implementation's focused execution passed **72 tests**, including real
 fresh-process reopening and actual geometry-byte/hash tampering. Source delivery
 inventory and generated schema/template checks passed. Exact source revision,
 full legacy regression results, CI and independent Astra review are recorded in

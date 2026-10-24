@@ -602,7 +602,8 @@
                   "number",
                   "string",
                   "boolean"
-                ]
+                ],
+                "maxLength": 4096
               },
               "maxProperties": 256
             },
@@ -867,7 +868,8 @@
               "number",
               "boolean",
               "null"
-            ]
+            ],
+            "maxLength": 4096
           },
           "maxProperties": 64
         },
@@ -1188,7 +1190,8 @@
                   "number",
                   "boolean",
                   "null"
-                ]
+                ],
+                "maxLength": 4096
               },
               "maxProperties": 64
             }
@@ -1351,7 +1354,8 @@
               "number",
               "boolean",
               "null"
-            ]
+            ],
+            "maxLength": 4096
           },
           "maxProperties": 64
         },
@@ -1437,7 +1441,8 @@
               "number",
               "string",
               "boolean"
-            ]
+            ],
+            "maxLength": 4096
           },
           "maxProperties": 256
         },
@@ -2284,7 +2289,8 @@
               "number",
               "boolean",
               "null"
-            ]
+            ],
+            "maxLength": 4096
           },
           "maxProperties": 64
         }
@@ -2653,7 +2659,8 @@
               "number",
               "boolean",
               "null"
-            ]
+            ],
+            "maxLength": 4096
           },
           "maxProperties": 64
         }

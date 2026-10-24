@@ -31,6 +31,14 @@ def fixture(name):
 
 
 class SceneContractTests(unittest.TestCase):
+    def test_hash_bound_example_files_disable_checkout_newline_conversion(self):
+        result = subprocess.run(['git', 'check-attr', 'text', '--',
+                                 'examples/scene3d-contracts/project.json',
+                                 'examples/scene3d-contracts/triangle.obj'],
+                                cwd=ROOT, capture_output=True, text=True, check=True)
+        self.assertEqual(len(result.stdout.splitlines()), 2)
+        self.assertTrue(all(line.endswith(': text: unset') for line in result.stdout.splitlines()), result.stdout)
+
     def test_every_generated_schema_is_current_and_valid(self):
         self.assertEqual(len(schemas()), 8)
         for name, schema in schemas().items():
@@ -320,6 +328,46 @@ class SceneContractTests(unittest.TestCase):
                                     keys=[dict(frame=0, value='unbound@1.0.0')])]
         with self.assertRaisesRegex(RigError, 'hash-bound material'):
             validate_document(animation)
+
+    def test_utf8_scalar_strings_are_required_for_reopenable_canonical_documents(self):
+        for bad in ('\ud800', '\udfff', 'note\ud800tail'):
+            doc = fixture('project')
+            doc['metadata']['note'] = bad
+            with self.subTest(bad=repr(bad)), self.assertRaisesRegex(RigError, 'Unicode scalar'):
+                validate_document(doc)
+        doc = fixture('project')
+        doc['metadata']['note'] = 'é😀'
+        self.assertEqual(decode_json(canonical_bytes(doc)), doc)
+
+    def test_free_form_string_values_have_explicit_bounded_lengths(self):
+        for kind, field in (('project', 'metadata'), ('example-prefab', 'parameters')):
+            doc = fixture(kind)
+            doc[field]['oversized'] = 'x' * 4097
+            with self.subTest(kind=kind), self.assertRaises(RigError):
+                validate_document(doc)
+
+    def test_streamed_canonical_encoding_enforces_exact_utf8_manifest_byte_cap(self):
+        doc = fixture('project')
+        doc['metadata']['note'] = 'é😀'
+        expected = canonical_bytes(doc)
+        with patch('scene3d_contracts.MAX_DOCUMENT_BYTES', len(expected)):
+            self.assertEqual(canonical_bytes(doc), expected)
+        with patch('scene3d_contracts.MAX_DOCUMENT_BYTES', len(expected)-1):
+            with self.assertRaisesRegex(RigError, 'manifest exceeds'):
+                canonical_bytes(doc)
+
+    def test_metadata_and_parameter_names_do_not_impersonate_transform_schemas(self):
+        doc = fixture('project')
+        doc['metadata'] = dict(minimum=0, maximum=1)
+        self.assertEqual(decode_json(canonical_bytes(doc)), doc)
+        prefab = fixture('example-prefab')
+        prefab['parameters'] = dict(translation=0, rotation=1, scale=2)
+        self.assertEqual(decode_json(canonical_bytes(prefab)), prefab)
+
+    def test_portable_path_entry_rejects_surrogates_even_outside_a_document(self):
+        for path in ('\udcff.json', 'x/\ud800.json'):
+            with self.subTest(path=repr(path)), self.assertRaisesRegex(RigError, 'Unicode scalar'):
+                portable_path(path)
 
     def test_canonical_serialization_is_stable_without_mutation(self):
         doc = fixture('example-scene')
@@ -761,6 +809,26 @@ class SceneClosureTests(unittest.TestCase):
             with patch.object(Path, 'resolve', resolved):
                 with self.assertRaisesRegex(RigError, 'outside'):
                     load_project(self.root)
+
+    def test_annotation_metadata_does_not_create_undeclared_file_dependencies(self):
+        project = fixture('project')
+        project['metadata'] = dict(path='annotation-only.txt', sha256='a descriptive label',
+                                   kind='scene3d-project', id='metadata-id', version='99.0.0')
+        self.write('project.json', project)
+        bundle = load_project(self.root)
+        self.assertEqual(len(bundle['inventory']), 8)
+        self.assertNotIn('annotation-only.txt', bundle['inventory'])
+
+    def test_root_manifest_filename_requires_portable_unicode_scalar_spelling(self):
+        name = '\udcff.json'
+        try:
+            (self.root / name).write_bytes((self.root / 'project.json').read_bytes())
+        except UnicodeError:
+            # Some native filesystems reject the name themselves. Admission
+            # still must reject it before consulting the native filesystem.
+            pass
+        with self.assertRaisesRegex(RigError, 'Unicode scalar'):
+            load_project(self.root, name)
 
     def test_optional_3d_imports_remain_unnecessary_for_loading(self):
         code = '''import sys,importlib.abc
