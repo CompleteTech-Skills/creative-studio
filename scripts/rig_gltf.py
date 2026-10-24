@@ -171,8 +171,24 @@ def node_matrix(node: dict) -> np.ndarray:
         rotation = quaternion(node.get('rotation', [0, 0, 0, 1]), strict=True)
         scale = vector(node.get('scale', [1, 1, 1]));translation = vector(node.get('translation', [0, 0, 0]))
         result = np.eye(4);result[:3, :3] = qmatrix(rotation) @ np.diag(scale);result[:3, 3] = translation
-    require(np.allclose(result[3], [0, 0, 0, 1]) and abs(np.linalg.det(result[:3, :3])) > 1e-12,
+    require(np.allclose(result[3], [0, 0, 0, 1]),
             'RIG_SINGULAR_TRANSFORM', 'Node transform must be affine and nonsingular.')
+    # Determinants carry cubic units: a well-conditioned micrometer conversion
+    # has det=1e-18. Test column directions independently of their magnitudes,
+    # retaining the existing tolerance against almost dependent directions.
+    linear = result[:3, :3]
+    magnitudes = np.max(np.abs(linear), axis=0)
+    require(np.all(magnitudes > 0), 'RIG_SINGULAR_TRANSFORM', 'Node transform has a zero scale axis.')
+    require(abs(np.linalg.det(linear / magnitudes)) > 1e-12,
+            'RIG_SINGULAR_TRANSFORM', 'Node transform axes are numerically dependent.')
+    # A nonzero determinant alone does not guarantee that downstream inverse
+    # transforms (including translation) are representable in float64.
+    try:
+        with np.errstate(over='ignore', invalid='ignore', divide='ignore'):
+            inverse = np.linalg.inv(result)
+    except np.linalg.LinAlgError as exc:
+        raise RigError('RIG_SINGULAR_TRANSFORM', 'Node transform cannot be inverted.') from exc
+    require(np.isfinite(inverse).all(), 'RIG_SINGULAR_TRANSFORM', 'Node transform inverse is not finite.')
     return result
 
 
