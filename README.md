@@ -42,6 +42,22 @@ Deterministic scripts preserve motion, validate provenance, compose the atlas, a
 </tr>
 </table>
 
+## Model3D contract and payload verification
+
+The additive [Model3D foundation](references/model3d-contracts.md) validates strict
+requests, sources, assets and lifecycle records, then verifies exact payload hashes
+and decodes real geometry through the existing rig importer. It does not generate
+models, execute providers, or grant visual approval.
+
+```bash
+python scripts/model3d.py capabilities
+python scripts/model3d.py validate --file examples/model3d-contracts/robotic.json --root .
+```
+
+Use the existing optional rig dependencies below. The [executable example](examples/model3d-contracts/README.md)
+reuses unchanged source and animated GLB files; missing or corrupt required content
+fails verification. Structural-only checks explicitly leave payloads unverified.
+
 ## Real 3D rigs and animation
 
 The optional 3D engine imports real GLB/glTF, OBJ or packed Blender models, preserves original assets, constructs editable skeletons, generates normalized skin weights, and evaluates FK, spatial IK, contacts, expressions and animation channels. It includes humanoid, quadruped, six-legged winged, robotic and extensible custom templates; manual corrections, semantic retargeting, local review, animated GLB export and independently reopened Blender files.

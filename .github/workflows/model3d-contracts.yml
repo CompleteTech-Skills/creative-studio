@@ -1,0 +1,38 @@
+name: Model3D contract and payload verification
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    name: Model3D real payloads (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash --noprofile --norc -eo pipefail {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-rig-test.txt
+      - run: python scripts/generate_schemas.py --check
+      - run: python -m unittest discover -s tests -p test_model3d_contracts.py -v 2>&1 | tee model3d-tests.log
+      - run: python scripts/model3d.py validate --file examples/model3d-contracts/robotic.json --root . > model3d-verification.json
+      - run: python scripts/model3d.py capabilities > model3d-capabilities.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: model3d-contracts-${{ runner.os }}-${{ github.sha }}
+          path: |
+            model3d-tests.log
+            model3d-verification.json
+            model3d-capabilities.json
+          if-no-files-found: error
+          retention-days: 30

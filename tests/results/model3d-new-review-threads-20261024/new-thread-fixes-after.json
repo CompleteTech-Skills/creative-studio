@@ -1,0 +1,15 @@
+{
+  "transitive_file_ceiling": {
+    "rejected": true,
+    "code": "MODEL3D_BUDGET",
+    "middle_ceiling": 100000,
+    "descendant_bytes": 200000
+  },
+  "integral_float_bytes": {
+    "exit_code": 0,
+    "traceback": false,
+    "verified_bytes": 3,
+    "inputs_preserved": true,
+    "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+  }
+}
