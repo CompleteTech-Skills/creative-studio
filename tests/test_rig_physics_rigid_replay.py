@@ -2,6 +2,8 @@
 from contextlib import nullcontext
 from copy import deepcopy
 from io import BytesIO
+import ast
+import math
 import os
 import shutil
 from pathlib import Path
@@ -91,6 +93,19 @@ class ReplayAdmissionTests(unittest.TestCase):
         with self.assertRaises(p.BackendError): _png(valid[:24])
         with self.assertRaises(p.BackendError): _png(valid[:50]+b'corrupted')
 
+    def test_worker_read_sizes_accept_integral_floats_only_within_bounds(self):
+        # Extract only the pure size guard; importing the real worker requires bpy.
+        source = (Path(__file__).resolve().parents[1]/'scripts'/'physics_blender_worker.py').read_text()
+        tree = ast.parse(source)
+        guard = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'replay_byte_count')
+        namespace = {'math': math}
+        exec(compile(ast.Module(body=[guard], type_ignores=[]), '<real-worker-size-guard>', 'exec'), namespace)
+        checked = namespace['replay_byte_count']
+        for value in [0, 0.0, 12, 12.0, 256*1024*1024.0]:
+            self.assertEqual(checked(value), int(value)); self.assertIs(type(checked(value)), int)
+        for value in [True, False, None, '12', -1, .5, float('inf'), float('nan'), 256*1024*1024+1, 10**400]:
+            with self.subTest(value=value), self.assertRaises(ValueError): checked(value)
+
     def test_private_binding_rejects_changed_bytes_and_links(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); (root/'worker.py').write_bytes(b'package bytes')
@@ -149,6 +164,21 @@ class NativeReplayTests(unittest.TestCase):
                         blue = sum(1 for red, green, blue, alpha in preview.convert('RGBA').getdata()
                                    if alpha > 128 and blue > red*1.2 and blue > green*1.2 and blue-red > 20)
                     self.assertGreaterEqual(blue, 4, 'Actual dynamic diagnostic body must remain identifiable.')
+                # Contract-valid whole JSON floats compile to integer I/O counts,
+                # while original source manifest bytes remain byte-for-byte intact.
+                shutil.copytree(root/'cache', root/'float-cache')
+                float_manifest = p.parse((root/'float-cache'/'cache.json').read_bytes())
+                for item in float_manifest['files']: item['bytes'] = float(item['bytes'])
+                float_bytes = p.canonical(float_manifest)
+                (root/'float-cache'/'cache.json').write_bytes(float_bytes)
+                p.verify_cache(root/'float-cache')
+                float_report = render_direct_cache(root/'float-cache', root/'float-replay', os.environ['HATCH_BLENDER'])
+                self.assertEqual(float_report['reports'][1]['verified_frames'], 25)
+                self.assertLessEqual(float_report['reports'][1]['maximum_replay_error'], 1e-5)
+                self.assertEqual((root/'float-replay'/'source-cache'/'cache.json').read_bytes(), float_bytes)
+                self.assertEqual((root/'float-replay'/'source-cache'/'states.json').read_bytes(), before)
+                compiled = p.parse((root/'float-replay'/'worker-job.json').read_bytes())
+                self.assertTrue(all(type(item['bytes']) is int for item in compiled['replay']['source_files']))
                 # Retained inputs are exact solver bytes; corrupt source never starts Blender.
                 shutil.copytree(root/'cache', root/'corrupt-cache')
                 (root/'corrupt-cache'/'states.json').write_bytes(before+b' ')

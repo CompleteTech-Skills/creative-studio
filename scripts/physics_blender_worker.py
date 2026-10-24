@@ -368,6 +368,14 @@ def reopen(root, job):
                 maximum_replay_error=maximum, replay_tolerance=1e-5)
 
 
+def replay_byte_count(value):
+    """JSON Schema integer also permits finite integral-valued JSON floats."""
+    if (type(value) not in (int, float) or not 0 <= value <= 256*1024*1024 or
+        (type(value) is float and (not math.isfinite(value) or not value.is_integer()))):
+        raise ValueError('Unbounded or nonintegral replay source size.')
+    return int(value)
+
+
 def replay_inputs(root, job):
     """Reject substitutions before loading our own generated .blend."""
     replay = job['replay']
@@ -380,6 +388,7 @@ def replay_inputs(root, job):
     for item in replay['source_files']:
         if set(item) != {'path', 'bytes', 'sha256'}:
             raise ValueError('Invalid replay inventory.')
+        byte_count = replay_byte_count(item['bytes'])
         parts = item['path'].split('/')
         if any(part in ('', '.', '..') for part in parts) or item['path'].startswith('/'):
             raise ValueError('Invalid replay source path.')
@@ -392,11 +401,11 @@ def replay_inputs(root, job):
             with os.fdopen(file_fd, 'rb') as stream:
                 import stat
                 before = os.fstat(stream.fileno())
-                if not stat.S_ISREG(before.st_mode) or not 0 <= item['bytes'] <= 256*1024*1024 or before.st_size != item['bytes']:
+                if not stat.S_ISREG(before.st_mode) or before.st_size != byte_count:
                     raise ValueError('Unbounded replay source.')
-                data = stream.read(item['bytes']+1)
+                data = stream.read(byte_count+1)
                 after = os.fstat(stream.fileno())
-                if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) or len(data) != item['bytes'] or hashlib.sha256(data).hexdigest() != item['sha256']:
+                if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) or len(data) != byte_count or hashlib.sha256(data).hexdigest() != item['sha256']:
                     raise ValueError('Replay source changed.')
         finally:
             os.close(fd)

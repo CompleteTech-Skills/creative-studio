@@ -122,7 +122,7 @@ def render_direct_cache(cache, destination, executable=None):
         worker = p._worker_bytes('blender')
         p._write(root/'worker.py', worker)
         files = [{'path': 'cache.json', 'bytes': len(manifest_bytes), 'sha256': p.digest(manifest_bytes)},
-                 *manifest['files']]
+                 *[{**item, 'bytes': int(item['bytes'])} for item in manifest['files']]]
         replay = dict(cache_manifest_sha256=p.digest(manifest_bytes),
                       states_sha256=p.digest((source/'states.json').read_bytes()),
                       source_files=files, project_manifest=receipt['project_manifest'],
