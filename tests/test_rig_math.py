@@ -54,6 +54,9 @@ class RigMathTests(unittest.TestCase):
                 node_matrix({'matrix': matrix.T.ravel().tolist()})
         for scale in ([0, 1, 1], [1, 0, 1], [1, 1, 0]):
             with self.subTest(scale=scale), self.assertRaises(RigError):node_matrix({'scale': scale})
+        near_affine = np.diag([1e-160, 1, 1, 1.]);near_affine[0, 3] = 1;near_affine[3, 0] = 1e-9
+        with self.assertRaises(RigError) as error:node_matrix({'matrix': near_affine.T.ravel().tolist()})
+        self.assertEqual(error.exception.report['code'], 'RIG_GLTF_NUMERIC_RANGE')
 
     def test_extreme_multimesh_import_fails_before_losing_handedness_or_normals(self):
         # An ordinary second mesh makes the whole asset's extent valid, so a
@@ -97,6 +100,36 @@ class RigMathTests(unittest.TestCase):
                     load_character_model(path, scale=import_scale)
                 self.assertEqual(error.exception.report['code'], 'RIG_GLTF_NUMERIC_RANGE')
                 self.assertEqual(sha256(path), before)
+
+    def test_required_anisotropy_then_child_rotation_keeps_valid_world_transforms(self):
+        from rig_gltf import scene_graph, read_gltf
+        rotation = np.array([1, 2, 3, 4.])/np.sqrt(30)
+        with tempfile.TemporaryDirectory() as temporary:
+            for scale in ([.1, .1, 1e6], [1e-3, 1e-3, 1e6]):
+                builder = GltfBuilder()
+                builder.json['asset']['extras'] = {'hatchSource': {'fixture': True}}
+                vertices = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0.]])
+                builder.json['meshes'] = [dict(primitives=[dict(attributes={
+                    'POSITION': builder.accessor(vertices, 'VEC3')})])]
+                builder.json['nodes'] = [dict(scale=scale, children=[1]), dict(mesh=0, rotation=rotation.tolist())]
+                builder.json['scenes'] = [dict(nodes=[0])]
+                source = Path(temporary)/'anisotropic.glb';builder.write(source);before = sha256(source)
+                expected = np.diag([*scale, 1.]);expected[:3, :3] = np.diag(scale) @ qmatrix(rotation)
+                _, worlds, _ = scene_graph(read_gltf(source), import_scale=1e-6)
+                np.testing.assert_allclose(worlds[1], expected, rtol=1e-14, atol=1e-14)
+                model = load_character_model(source)
+                np.testing.assert_allclose(model.geometry.meshes[0].positions, vertices @ expected[:3, :3].T,
+                                           rtol=1e-14, atol=1e-14)
+                self.assertEqual(sha256(source), before)
+                # Flattening the hierarchy into an equivalent static matrix
+                # must retain the importer's existing shear/anisotropy support.
+                builder.json['nodes'] = [dict(mesh=0, matrix=expected.T.ravel().tolist())]
+                builder.write(source);before = sha256(source)
+                np.testing.assert_allclose(node_matrix(builder.json['nodes'][0]), expected, rtol=1e-14, atol=1e-14)
+                flattened = load_character_model(source)
+                np.testing.assert_allclose(flattened.geometry.meshes[0].positions, model.geometry.meshes[0].positions,
+                                           rtol=1e-14, atol=1e-14)
+                self.assertEqual(sha256(source), before)
 
     def test_real_gltf_and_glb_scale_import_roundtrip_preserves_geometry_and_source(self):
         positions = np.array([[0, 0, 0], [2, 0, 0], [0, 3, 1]], dtype=float)
