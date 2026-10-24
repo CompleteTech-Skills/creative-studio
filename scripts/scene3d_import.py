@@ -56,7 +56,11 @@ def _local_uri(uri):
     require(isinstance(uri, str), 'Resource URI must be text.', 'SCENE3D_IMPORT_URI')
     if uri.startswith('data:'):
         return None
-    parsed = urlsplit(uri)
+    try:
+        parsed = urlsplit(uri)
+    except ValueError as exc:
+        raise RigError('SCENE3D_IMPORT_URI', 'Malformed local resource URI.',
+                       stage='scene3d-import', asset=uri) from exc
     require(not parsed.scheme and not parsed.netloc and not parsed.query and not parsed.fragment,
             'Only explicit local glTF resources are supported.', 'SCENE3D_IMPORT_URI')
     try:
@@ -216,12 +220,19 @@ def _hierarchy(document, rig, unit_scale):
             if light.get('spot') or 'range' in light:
                 warnings.append(dict(node=index, feature='light-cone/range',
                                      disposition='retained-in-source-hierarchy; not-in-basic-scene-light-proxy'))
+        if 'camera' in raw and n['type'] != 'camera':
+            warnings.append(dict(node=index, feature='combined-node-camera',
+                disposition='retained-in-source-hierarchy; omitted-from-single-role-scene-node'))
+        if 'KHR_lights_punctual' in raw.get('extensions', {}) and n['type'] != 'light':
+            warnings.append(dict(node=index, feature='combined-node-light',
+                disposition='retained-in-source-hierarchy; omitted-from-single-role-scene-node'))
         n['metadata'] = dict(source_node=index)
         nodes.append(n)
         records.append(dict(source_node=index, semantic_path='/'.join(
             source[i].get('name', 'node-'+str(i)) for i in _ancestry(parents, index)),
             parent=parents.get(index), name=raw.get('name', ''), mesh=raw.get('mesh'), skin=raw.get('skin'),
-            camera=raw.get('camera'), local_matrix=node_matrix(raw).tolist(),
+            camera=raw.get('camera'), light=raw.get('extensions', {}).get('KHR_lights_punctual', {}).get('light'),
+            local_matrix=node_matrix(raw).tolist(),
             world_matrix=(np.diag([unit_scale]*3+[1.])@world[index]).tolist(),
             mesh_components=component_ids.get(identifier, []), extras=deepcopy(raw.get('extras', {}))))
     return nodes, records, component_ids, warnings
@@ -276,6 +287,10 @@ def import_gltf(source, library: AssetLibrary, *, asset_id, version='1.0.0',
     with tempfile.TemporaryDirectory(prefix='scene3d-import-') as temporary:
         private = Path(temporary).resolve()
         source_info = source_snapshot(source, private/'source')
+        from rig_interop import validate_gltf
+        source_validation = validate_gltf(source_info['path'])
+        require(source_validation['ok'], 'Independent Khronos validation rejected original source declarations.',
+                'SCENE3D_IMPORT_VALIDATION')
         package = private/'package'
         base = package/prefix
         base.mkdir(parents=True)
@@ -314,6 +329,7 @@ def import_gltf(source, library: AssetLibrary, *, asset_id, version='1.0.0',
             require(validation['ok'], 'Independent Khronos validation rejected normalized geometry.',
                     'SCENE3D_IMPORT_VALIDATION')
             _dump(base/'khronos.json', validation)
+            _dump(base/'source-khronos.json', source_validation)
             _dump(base/'hierarchy.json', dict(nodes=hierarchy, components=components,
                     original_cameras=document.json.get('cameras', []),
                     original_lights=document.json.get('extensions', {}).get('KHR_lights_punctual', {}),

@@ -128,7 +128,11 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         require(path not in files or files[path] == payload, 'Additional payload conflicts with original bytes.',
                 'SCENE3D_IMMUTABLE')
         files[path] = payload
+    combined_derived = graph.derived_documents() if graph is not None else {}
     for path, document in (derived_documents or {}).items():
+        require(path not in combined_derived or combined_derived[path] == document, 'Conflicting derived document.')
+        combined_derived[path] = document
+    for path, document in combined_derived.items():
         add_document(document, path)
     if graph is not None:
         require(scene_path in bundle['documents'] and bundle['documents'][scene_path]['kind'] == 'scene3d-scene',

@@ -36,6 +36,94 @@ class SceneServiceTests(unittest.TestCase):
         self.bundle = build_example(self.root/'source')
         self.scene = deepcopy(self.bundle['documents']['example-scene.json'])
 
+    def test_review_disabled_look_at_is_noop_even_when_coincident(self):
+        scene = deepcopy(self.scene)
+        mesh = next(n for n in scene['nodes'] if n['id'] == 'mesh')
+        target = node('coincident')
+        target['transform'] = deepcopy(mesh['transform'])
+        scene['nodes'].append(target)
+        scene['roots'].append('coincident')
+        mesh['constraints'] = [dict(id='disabled',type='look-at',target='coincident',influence=0.)]
+        graph = self.graph(scene)
+        actual = graph.evaluate_base('mesh')['world_matrix']
+        mesh['constraints'] = []
+        self.assertEqual(actual, self.graph(scene).evaluate_base('mesh')['world_matrix'])
+
+    def test_review_command_types_reject_before_any_mutation(self):
+        invalid = [('transform', dict(identifier=[], transform=TRANSFORM)),
+                   ('duplicate', dict(identifier='mesh', new_id=[])),
+                   ('reparent', dict(identifier='mesh', parent=[], preserve_world=True)),
+                   ('reparent', dict(identifier='mesh', parent=None, preserve_world='false')),
+                   ('collection', dict(identifier='new', name='New', layer='false'))]
+        for operation, parameters in invalid:
+            graph, catalog = self.graph(), PrefabLibrary()
+            before = graph.document()
+            with self.subTest(operation=operation), self.assertRaises(RigError):
+                apply_commands(graph, catalog, dict(schema_version=1, commands=[dict(operation=operation, parameters=parameters)]))
+            self.assertEqual(before, graph.document())
+            self.assertEqual({}, catalog.payloads())
+
+    def test_review_integral_float_component_is_schema_valid_and_effective(self):
+        source = deepcopy(self.bundle['documents']['example-prefab.json'])
+        source['parameters'] = {'offset': 2.0}
+        source['parameter_bindings'] = [dict(parameter='offset',node='prefab-mesh',property='translation',component=0.0)]
+        validate_document(source, 'prefab')
+        library = PrefabLibrary()
+        reference = library.register(source)
+        graph = self.graph()
+        library.instantiate(graph, reference, 'instance')
+        expanded = library.expand(graph.document())
+        target = expanded['mappings']['instance']['prefab-mesh']
+        self.assertEqual(next(n for n in expanded['scene']['nodes'] if n['id'] == target)['transform']['translation'][0], 2.)
+        self.assertEqual(library.resolve(reference)['parameter_bindings'][0]['component'], 0.0)
+
+    def test_review_prefab_create_with_linked_context_is_atomic(self):
+        library = PrefabLibrary.from_bundle(self.bundle)
+        graph = self.graph()
+        reference = self.bundle['project']['prefabs'][0]
+        library.instantiate(graph, reference, 'instance')
+        created = library.create(graph, 'mesh', 'extracted', '1.0.0')
+        self.assertEqual(created['placement'], SceneGraph(library.expand(graph.document())['scene']).evaluate_base('mesh')['world_matrix'])
+        before = library.payloads()
+        with self.assertRaises(RigError):
+            library.create(graph, 'missing', 'missing', '1.0.0')
+        self.assertEqual(before, library.payloads())
+
+    def test_review_duplicate_animated_subtree_derives_complete_clip_closure(self):
+        bundle = deepcopy(self.bundle)
+        scene = bundle['documents']['example-scene.json']
+        scene['nodes'][1]['animation_bindings'] = [dict(target='mesh',clip=bundle['project']['animations'][0],start_frame=0,end_frame=24,speed=1.,loop=False)]
+        graph = SceneGraph.from_bundle(bundle, 'example-scene.json')
+        original = deepcopy(bundle['documents']['example-animation.json'])
+        copied = graph.duplicate('mesh', 'mesh-copy')
+        self.assertTrue(copied['derived_documents'])
+        clip = next(iter(copied['derived_documents'].values()))
+        self.assertEqual(clip['tracks'][0]['target'], 'mesh-copy')
+        self.assertEqual(original, bundle['documents']['example-animation.json'])
+        snapshot_project(self.root/'source', self.root/'animated-copy', graph, scene_path='example-scene.json')
+        reopened = load_project(self.root/'animated-copy')
+        self.assertTrue(any(d['kind'] == 'scene3d-animation' and d['id'] == clip['id'] for d in reopened['documents'].values()))
+        missing = self.graph(scene)
+        before = missing.document()
+        with self.assertRaises(RigError):
+            missing.duplicate('mesh', 'requires-context')
+        self.assertEqual(before, missing.document())
+
+    def test_review_detach_keeps_external_constraints_and_other_linked_instances(self):
+        library = PrefabLibrary.from_bundle(self.bundle)
+        graph = self.graph()
+        reference = self.bundle['project']['prefabs'][0]
+        library.instantiate(graph, reference, 'instance')
+        library.instantiate(graph, reference, 'other')
+        scene = graph.document()
+        instance = next(n for n in scene['nodes'] if n['id'] == 'instance')
+        instance['constraints'] = [dict(id='follow',type='copy-transform',target='mesh',influence=1.)]
+        graph.replace_document(scene, expected_revision=graph.revision)
+        result = library.detach(graph, 'instance')
+        self.assertIn('instance', result['mappings'])
+        self.assertEqual(next(n for n in graph.document()['nodes'] if n['id'] == 'other')['type'], 'prefab_instance')
+        self.assertEqual(next(n for n in graph.document()['nodes'] if n['id'] == 'instance')['constraints'][0]['target'], 'mesh')
+
     def graph(self, scene=None, *, references=None):
         return SceneGraph(scene or self.scene, external_references={} if references is None else references)
 
@@ -519,6 +607,34 @@ class RealSceneImportTests(unittest.TestCase):
             path.write_text(json.dumps(document))
         return path
 
+    def test_review_malformed_uri_and_mixed_camera_light_declarations(self):
+        path = self.source('gltf')
+        document = json.loads(path.read_text())
+        document['buffers'][0]['uri'] = 'http://['
+        path.write_text(json.dumps(document))
+        with self.assertRaises(RigError):
+            source_snapshot(path, self.root/'bad-uri')
+        path = self.source('gltf')
+        document = json.loads(path.read_text())
+        document['cameras'] = [dict(type='perspective',perspective=dict(yfov=.8,znear=.1,zfar=100.))]
+        document['extensionsUsed'] = ['KHR_lights_punctual']
+        document['extensions'] = {'KHR_lights_punctual': {'lights':[dict(type='point')]}}
+        document['nodes'][1]['camera'] = 0
+        document['nodes'][1]['extensions'] = {'KHR_lights_punctual': {'light':0}}
+        path.write_text(json.dumps(document))
+        imported = self.do_import(path)
+        self.assertTrue({'combined-node-camera','combined-node-light'} <= {loss['feature'] for loss in imported.report['losses']})
+        for key, value in [('camera',99), ('camera',False)]:
+            document['nodes'][1][key] = value
+            path.write_text(json.dumps(document))
+            with self.subTest(value=value), self.assertRaises(RigError):
+                self.do_import(path, asset_id='invalid-camera')
+        document['nodes'][1]['camera'] = 0
+        document['cameras'][0]['perspective']['znear'] = -1
+        path.write_text(json.dumps(document))
+        with self.assertRaises(RigError):
+            self.do_import(path, asset_id='invalid-config')
+
     def do_import(self, path, asset_id='imported', **kwargs):
         return import_gltf(path, self.library, asset_id=asset_id, attribution='Test author',
                            license_file=self.license, **kwargs)
@@ -666,6 +782,21 @@ class RealSceneImportTests(unittest.TestCase):
         self.assertGreater(len(colors), 1)
         self.assertGreater(sum(count for count, rgb in colors if rgb != (20, 28, 40)), 50)
 
+    def native_evidence(self, label, function):
+        def retain(report):
+            destination = os.environ.get('HATCH_SCENE3D_EVIDENCE')
+            if destination:
+                output = Path(destination)/self.id()
+                output.mkdir(parents=True, exist_ok=True)
+                (output/(label+'.json')).write_text(json.dumps(report,sort_keys=True,indent=2,allow_nan=False)+'\n')
+        try:
+            result = function()
+        except BaseException as exc:
+            retain(dict(ok=False, exception=type(exc).__name__, error=getattr(exc,'report',str(exc))))
+            raise
+        retain(result)
+        return result
+
     def _imported_rig(self):
         original = rig_fixture(self.root, name='original')
         source = self.root/'animated.glb'
@@ -680,7 +811,7 @@ class RealSceneImportTests(unittest.TestCase):
     def test_actual_imported_service_asset_blender_reopens_and_deforms(self):
         from rig_blender import export_blender
         rig = self._imported_rig()
-        result = export_blender(rig, self.root/'imported-editable.blend')
+        result = self.native_evidence('blender', lambda: export_blender(rig, self.root/'imported-editable.blend'))
         self.assertTrue(result['ok'])
         self.assertTrue(result['reopened'])
         self.assertGreater(result['compared_vertices'], 0)
@@ -693,7 +824,7 @@ class RealSceneImportTests(unittest.TestCase):
         from rig_viewer import create_review_ui
         rig = self._imported_rig()
         create_review_ui(rig, self.root/'viewer')
-        result = verify_browser(rig, self.root/'viewer')
+        result = self.native_evidence('browser-rest', lambda: verify_browser(rig, self.root/'viewer'))
         self.assertTrue(result['ok'])
         self.assertTrue(result['ui_playback'])
 
@@ -707,7 +838,7 @@ class RealSceneImportTests(unittest.TestCase):
         create_review_ui(rig, self.root/'mapped-viewer', clip_aliases={'neutral': neutral})
         configuration = json.loads((self.root/'mapped-viewer/review.json').read_text())
         self.assertEqual(configuration['reduced_motion_clip'], neutral)
-        result = verify_browser(rig, self.root/'mapped-viewer')
+        result = self.native_evidence('browser-mapped', lambda: verify_browser(rig, self.root/'mapped-viewer'))
         self.assertTrue(result['ok'])
         self.assertTrue(result['ui_reduced_motion'])
 

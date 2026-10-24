@@ -16,7 +16,7 @@ import numpy as np
 
 from rig_errors import RigError, finite_json
 from rig_math import compose, decompose, matrix_quaternion, slerp
-from scene3d_contracts import canonical_bytes, validate_document, validator
+from scene3d_contracts import MAX_DEPTH, all_refs, canonical_bytes, validate_document, validator
 from scene3d_math import local_matrix
 
 KEEP_PARENT = object()
@@ -175,12 +175,18 @@ class SceneGraph:
     closed rather than silently deleting a shot's referenced node.
     """
 
-    def __init__(self, scene, *, external_references=None, asset_bounds=None):
+    def __init__(self, scene, *, external_references=None, asset_bounds=None, animation_documents=None):
         finite_json(scene)
         finite_json(external_references)
         finite_json(asset_bounds)
         validate_document(scene, 'scene')
         require(len(canonical_bytes(scene)) <= 16*1024*1024, 'Working scene exceeds the document byte bound.')
+        self._animation_documents = deepcopy(animation_documents or {})
+        self._derived_documents = {}
+        require(isinstance(self._animation_documents, dict), "Invalid animation document context.")
+        for path, clip in self._animation_documents.items():
+            require(isinstance(path, str), "Invalid animation document path.")
+            validate_document(clip, "animation")
         self._scene = deepcopy(scene)
         self._references = deepcopy(external_references)
         self._asset_bounds = deepcopy(asset_bounds or {})
@@ -230,7 +236,8 @@ class SceneGraph:
                     pending.append((p, bundle['documents'][p]))
         bounds = {d['id'] + '@' + d['version']: d['bounds'] for d in bundle['documents'].values()
                   if d['kind'] == 'scene3d-asset'}
-        return cls(scene, external_references=references, asset_bounds=bounds)
+        return cls(scene, external_references=references, asset_bounds=bounds,
+                   animation_documents={p:d for p,d in bundle["documents"].items() if d["kind"] == "scene3d-animation"})
 
     @staticmethod
     def _check_service_semantics(scene):
@@ -258,7 +265,7 @@ class SceneGraph:
 
     def _editable(self, identifier):
         nodes = self._nodes()
-        require(identifier in nodes, 'Unknown node: ' + str(identifier))
+        require(isinstance(identifier, str) and identifier in nodes, 'Unknown node: ' + str(identifier))
         node = nodes[identifier]
         collections = {c['id']: c for c in self._scene['collections']}
         layers = {c['id']: c for c in self._scene['layers']}
@@ -371,6 +378,7 @@ class SceneGraph:
         return self._commit(candidate)
 
     def collection(self, identifier, *, name=None, layer=False, **flags):
+        require(type(layer) is bool, 'layer must be a boolean.')
         require(set(flags) <= {'visible', 'editor_visible', 'render_visible', 'locked'} and
                 all(type(value) is bool for value in flags.values()), 'Invalid collection flags.')
         candidate = self.document()
@@ -403,7 +411,8 @@ class SceneGraph:
     def reparent(self, identifier, parent, *, preserve_world=True, expected_revision=None):
         node = self._editable(identifier)
         nodes = self._nodes()
-        require(parent is None or parent in nodes, 'Unknown new parent.')
+        require(type(preserve_world) is bool, 'preserve_world must be a boolean.')
+        require(parent is None or isinstance(parent, str) and parent in nodes, 'Unknown new parent.')
         require(parent not in _subtree(nodes, identifier), 'Cannot reparent beneath a descendant.')
         candidate = self.document()
         target = next(n for n in candidate['nodes'] if n['id'] == identifier)
@@ -432,10 +441,48 @@ class SceneGraph:
         candidate['nodes'] = ordered
         return self._commit(candidate)
 
+    def derived_documents(self):
+        return deepcopy(self._derived_documents)
+
+    def _map_clip(self, reference, mapping, context, derived, depth=0):
+        if reference['kind'] != 'scene3d-animation':
+            return deepcopy(reference)
+        require(depth <= MAX_DEPTH, 'Animation derivation exceeds depth bound.')
+        source = self._animation_documents.get(reference['path'])
+        require(source is not None, 'Duplicating a bound Scene3D clip requires complete animation context.',
+                'SCENE3D_ANIMATION_CONTEXT')
+        require((source['id'], source['version']) == (reference['id'], reference['version']),
+                'Animation context identity mismatch.', 'SCENE3D_ANIMATION_CONTEXT')
+        clip = deepcopy(source)
+        clip['id'] = 'a-'+hashlib.sha256((context+'\0'+reference['sha256']).encode()).hexdigest()[:48]
+        for track in clip['tracks']:
+            require(track['target'] in mapping, 'Duplicated clip targets outside the copied subtree.')
+            track['target'] = mapping[track['target']]
+        for binding in clip['bindings']:
+            require(binding['target'] in mapping, 'Duplicated nested clip targets outside the copied subtree.')
+            binding['target'] = mapping[binding['target']]
+            binding['clip'] = self._map_clip(binding['clip'], mapping, context, derived, depth+1)
+        dependencies = {r['path']:deepcopy(r) for r in clip['dependencies']}
+        dependencies[reference['path']] = deepcopy(reference)
+        for binding in clip['bindings']:
+            dependencies[binding['clip']['path']] = deepcopy(binding['clip'])
+        clip['dependencies'] = list(dependencies.values())
+        clip['provenance']['origin'] = 'derived'
+        clip['provenance']['tool'] = 'scene3d-duplicate-animation-target-map-v1'
+        clip['provenance']['inputs'].append(dict(path=reference['path'], sha256=reference['sha256']))
+        validate_document(clip, 'animation')
+        path = 'derived-animations/'+clip['id']+'/'+clip['version']+'.json'
+        payload = canonical_bytes(clip)
+        require(path not in derived or derived[path] == clip, 'Conflicting derived animation identity.')
+        derived[path] = clip
+        return dict(id=clip['id'],version=clip['version'],kind=clip['kind'],path=path,
+                    sha256=hashlib.sha256(payload).hexdigest())
+
     def duplicate(self, identifier, new_id, *, parent=KEEP_PARENT, preserve_world=True):
         self._editable(identifier)
         nodes = self._nodes()
-        require(new_id not in nodes, 'Duplicate destination ID exists.')
+        require(isinstance(new_id, str) and next(validator('node').iter_errors({**nodes[identifier], 'id': new_id}), None) is None and new_id not in nodes, 'Invalid or existing duplicate destination ID.')
+        require(type(preserve_world) is bool, 'preserve_world must be a boolean.')
         selected = _subtree(nodes, identifier)
         mapping = {identifier: new_id}
         for old in selected[1:]:
@@ -443,7 +490,7 @@ class SceneGraph:
         require(len(set(mapping.values())) == len(mapping) and not set(mapping.values()) & nodes.keys(),
                 'Duplicate identifier collision.')
         target_parent = nodes[identifier]['parent'] if parent is KEEP_PARENT else parent
-        require(target_parent is None or target_parent in nodes, 'Unknown duplicate parent.')
+        require(target_parent is None or isinstance(target_parent, str) and target_parent in nodes, 'Unknown duplicate parent.')
         candidate = self.document()
         copies = [_relink(nodes[old], mapping) for old in selected]
         copies[0]['parent'] = target_parent
@@ -453,8 +500,15 @@ class SceneGraph:
             p = np.eye(4) if target_parent is None else np.asarray(self.evaluate_base(target_parent)['world_matrix'])
             copies[0]['transform'] = transform_for_matrix(_inverse(p) @ np.asarray(self.evaluate_base(identifier)['world_matrix']),
                                                          pivot=nodes[identifier]['transform'].get('pivot'))
+        derived = {}
+        for copied in copies:
+            for binding in copied['animation_bindings']:
+                binding['clip'] = self._map_clip(binding['clip'], mapping, new_id, derived)
         candidate['nodes'].extend(copies)
         result = self._commit(candidate)
+        self._derived_documents.update(derived)
+        self._animation_documents.update(derived)
+        result['derived_documents'] = deepcopy(derived)
         result['mapping'] = mapping
         return result
 
@@ -513,6 +567,8 @@ class SceneGraph:
                 a = node['attachment']
                 world = self._cache[a['socket']]['_matrix'] @ local_matrix(a['offset']) @ local_matrix(node['transform'])
             for constraint in node['constraints']:
+                if constraint['influence'] == 0:
+                    continue
                 target = self._cache[constraint['target']]['_matrix']
                 desired = _aim(world, target[:3, 3], node['type'] == 'camera') if constraint['type'] == 'look-at' else target
                 world = _blend(world, desired, constraint['influence'])

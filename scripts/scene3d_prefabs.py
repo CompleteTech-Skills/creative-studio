@@ -174,9 +174,10 @@ class PrefabLibrary:
         document['provenance']['origin'] = 'derived'
         document['provenance']['tool'] = 'scene3d-prefab-extraction-v1'
         validate_document(document, 'prefab')
+        # Evaluate against the complete expanded context before catalog mutation.
+        placement = SceneGraph(self.expand(scene)['scene']).evaluate_base(root_id)['world_matrix']
         reference = self.register(document)
-        return dict(reference=reference, prefab=document,
-                    placement=graph.evaluate_base(root_id)['world_matrix'])
+        return dict(reference=reference, prefab=document, placement=placement)
 
     def instantiate(self, graph, reference, identifier, *, parent=None, transform=None, overrides=None):
         finite_json(overrides)
@@ -216,7 +217,7 @@ class PrefabLibrary:
             if binding['property'] == 'visible':
                 target['visible'] = value
             else:
-                target['transform'][binding['property']][binding['component']] = value
+                target['transform'][binding['property']][int(binding['component'])] = value
         covered = set()
         for target in nodes.values():
             for material in target['material_overrides']:
@@ -312,7 +313,7 @@ class PrefabLibrary:
         result = graph.replace_document(scene, expected_revision=graph.revision)
         return dict(applied=True, conflicts=conflicts, comparison=comparison, **result)
 
-    def expand(self, scene):
+    def expand(self, scene, *, instances=None):
         validate_document(scene, 'scene')
         result = deepcopy(scene)
         output, derived, mapping_report = [], {}, {}
@@ -354,7 +355,7 @@ class PrefabLibrary:
             nonlocal work
             require(depth <= MAX_DEPTH, 'Prefab expansion exceeds depth bound.', 'SCENE3D_PREFAB_DEPTH')
             require(len(output) < MAX_NODES, 'Expanded scene exceeds its node budget.', 'SCENE3D_PREFAB_LIMIT')
-            if node['type'] != 'prefab_instance':
+            if node['type'] != 'prefab_instance' or (depth == 0 and instances is not None and node['id'] not in instances):
                 output.append(node)
                 return
             reference = node['prefab']
@@ -415,23 +416,7 @@ class PrefabLibrary:
         original = graph.document()
         require(any(n['id'] == identifier and n['type'] == 'prefab_instance' for n in original['nodes']),
                 'Choose a prefab instance.')
-        # Only the selected instance is flattened; unrelated instances stay linked.
-        selected = deepcopy(original)
-        nodes = {n['id']: n for n in selected['nodes']}
-        selected_ids = set(_subtree(nodes, identifier))
-        selected['nodes'] = [n for n in selected['nodes'] if n['id'] in selected_ids]
-        selected['nodes'][next(i for i, n in enumerate(selected['nodes']) if n['id'] == identifier)]['parent'] = None
-        _inventories(selected)
-        expanded = self.expand(selected)
-        for n in expanded['scene']['nodes']:
-            if n['id'] == identifier:
-                n['parent'] = nodes[identifier]['parent']
-        replacement = deepcopy(original)
-        replacement['provenance']['fixture'] |= expanded['scene']['provenance']['fixture']
-        replacement['nodes'] = [n for n in original['nodes'] if n['id'] not in selected_ids] + expanded['scene']['nodes']
-        for field in ('collections', 'layers'):
-            present = {c['id'] for c in replacement[field]}
-            replacement[field].extend(c for c in expanded['scene'][field] if c['id'] not in present)
-        replacement['dependencies'] = _refs([replacement['dependencies'], expanded['scene']['dependencies']])
-        result = graph.replace_document(replacement, expected_revision=graph.revision)
+        # Expand the selected instance inside its complete external context.
+        expanded = self.expand(original, instances={identifier})
+        result = graph.replace_document(expanded['scene'], expected_revision=graph.revision)
         return dict(**result, derived_documents=expanded['derived_documents'], mappings=expanded['mappings'])

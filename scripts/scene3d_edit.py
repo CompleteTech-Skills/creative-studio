@@ -4,12 +4,13 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 import json
+import re
 from pathlib import Path
 import sys
 
 from asset_library import read_source_bytes
 from rig_errors import RigError, decode_json, finite_json
-from scene3d_contracts import load_project
+from scene3d_contracts import ID, load_project
 from scene3d_graph import SceneGraph, require
 from scene3d_prefabs import PrefabLibrary
 from scene3d_snapshot import snapshot_project
@@ -22,7 +23,7 @@ def apply_commands(graph, library, commands):
     the successful batch itself commits one public graph revision.
     """
     working = SceneGraph(graph.document(), external_references=graph._references,
-                         asset_bounds=graph._asset_bounds)
+                         asset_bounds=graph._asset_bounds, animation_documents=graph._animation_documents)
     catalog = PrefabLibrary()
     # Catalog values are immutable by API: only the three mapping containers
     # change during registration, avoiding a duplicate copy of all payload bytes.
@@ -31,6 +32,8 @@ def apply_commands(graph, library, commands):
     catalog._references = dict(library._references)
     result = _apply_commands(working, catalog, commands)
     committed = graph.replace_document(working.document(), expected_revision=graph.revision)
+    graph._animation_documents = working._animation_documents
+    graph._derived_documents.update(working._derived_documents)
     library._documents, library._payloads, library._references = catalog._documents, catalog._payloads, catalog._references
     return dict(**result, revision=committed['revision'])
 
@@ -73,6 +76,23 @@ def _apply_commands(graph, library, commands):
         parameters = command['parameters']
         require(required <= set(parameters) <= required | optional, 'Command parameters do not match its typed scope.',
                 'SCENE3D_COMMAND')
+        for key, value in parameters.items():
+            if key in ('identifier', 'root_id', 'new_id'):
+                valid = isinstance(value, str) and re.fullmatch(ID['pattern'], value) is not None
+            elif key == 'parent':
+                valid = value is None or isinstance(value, str) and re.fullmatch(ID['pattern'], value) is not None
+            elif key in ('preserve_world', 'layer', 'visible', 'selectable', 'locked', 'render_visible',
+                         'editor_visible', 'camera_visible', 'cast_shadow', 'receive_shadow'):
+                valid = type(value) is bool
+            elif key in ('index', 'expected_revision'):
+                valid = type(value) is int and value >= 0
+            elif key in ('name', 'version', 'space', 'policy'):
+                valid = isinstance(value, str)
+            elif key in ('collections', 'layers', 'tags', 'parameter_bindings'):
+                valid = isinstance(value, list)
+            else:
+                valid = isinstance(value, dict)
+            require(valid, 'Invalid typed command parameter: '+key, 'SCENE3D_COMMAND')
         result = function(**parameters)
         if isinstance(result, dict):
             require(result.get('applied') is not False, 'Prefab upgrade has unresolved conflicts: '+str(result.get('unresolved')),
