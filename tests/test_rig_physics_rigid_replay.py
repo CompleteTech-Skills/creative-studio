@@ -1,5 +1,7 @@
 """Actual DIRECT-to-Blender replay plus fail-closed input admission."""
 from contextlib import nullcontext
+from copy import deepcopy
+from io import BytesIO
 import os
 import shutil
 from pathlib import Path
@@ -9,7 +11,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 import physics_backends as p
-from physics_rigid_render import render_direct_cache, _check_report, _unchanged
+from physics_rigid_render import render_direct_cache, _check_report, _unchanged, _renderer_identity, _png
 from physics_backend_example import build_inputs
 
 
@@ -51,10 +53,43 @@ class ReplayAdmissionTests(unittest.TestCase):
         report.update(ok=True, operation='render-replay', source_cache_sha256='a'*64,
                       states_sha256='b'*64, worker_sha256='c'*64, world_sha256='d'*64,
                       source_backend=binding['source_backend'], verified_frames=12)
-        for value in ['0', None, True, float('nan'), float('inf'), -1]:
+        for value in ['0', None, True, float('nan'), float('inf'), -1, 10**400]:
             report['maximum_replay_error'] = value
             with self.subTest(value=value), self.assertRaises(p.BackendError):
                 _check_report(report, 'render-replay', binding, 12, worker_sha256='c'*64, world_sha256='d'*64)
+
+    def test_native_identity_rejects_fabricated_platform_and_discovery(self):
+        # Synthetic negative validator inputs; these are not execution evidence.
+        native = dict(application_version='4.5.3 LTS', application_build=p.SUPPORTED_BLENDER_BUILD,
+                      solver_name='Blender Bullet rigid-body world',
+                      solver_version='not exposed separately by Blender', platform='linux', precision='mixed',
+                      device='cpu', physics_gpu_support='unsupported', render_gpu_execution='not-executed',
+                      render_device_discovery='not-available', render_devices=[])
+        binding = dict(cache_manifest_sha256='a'*64, states_sha256='b'*64, source_backend={'id': 'pybullet'})
+        report = dict(ok=True, operation='reopen-replay', backend=native, verified_frames=12,
+                      maximum_replay_error=0, source_cache_sha256='a'*64, states_sha256='b'*64,
+                      previews=[], blend_sha256='e'*64, scope='DIRECT solved-state replay; Blender rendering only',
+                      artistic_review='not-performed', worker_sha256='c'*64, world_sha256='d'*64,
+                      source_backend=binding['source_backend'])
+        for key, value in [('platform', 'fabricated-os'), ('render_device_discovery', 'invented success')]:
+            bad = deepcopy(report); bad['backend'][key] = value
+            with self.subTest(key=key), self.assertRaises(p.BackendError):
+                _check_report(bad, 'reopen-replay', binding, 12, worker_sha256='c'*64, world_sha256='d'*64)
+        discovered = {key: native[key] for key in ('solver_name', 'solver_version', 'precision', 'device')}
+        discovered.update(application_version='Blender 4.5.3 LTS', platform='Linux-test')
+        for key, value in [('platform', 'Darwin-test'), ('application_version', 'Blender 4.5.2')]:
+            bad = dict(discovered); bad[key] = value
+            with self.subTest(discovery=key), self.assertRaises(p.BackendError):
+                _renderer_identity(native, bad)
+        changed = deepcopy(native); changed['render_device_discovery'] = 'executed-device-enumeration-only'
+        with self.assertRaises(p.BackendError): _renderer_identity(changed, discovered, native)
+
+    def test_png_header_alone_cannot_pass_native_preview_validation(self):
+        from PIL import Image
+        stream = BytesIO(); Image.new('RGBA', (128, 128), (0, 0, 0, 0)).save(stream, format='PNG')
+        valid = stream.getvalue(); _png(valid)
+        with self.assertRaises(p.BackendError): _png(valid[:24])
+        with self.assertRaises(p.BackendError): _png(valid[:50]+b'corrupted')
 
     def test_private_binding_rejects_changed_bytes_and_links(self):
         with tempfile.TemporaryDirectory() as tmp:

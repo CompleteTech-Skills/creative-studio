@@ -3,6 +3,7 @@
 Only integer cached poses are verified. Animation between samples is not a
 solver result. This produces diagnostic evidence, never artistic approval.
 """
+from io import BytesIO
 from pathlib import Path
 import math
 import re
@@ -11,6 +12,7 @@ import tempfile
 import time
 
 import physics_backends as p
+from physics_backend_evidence import EvidenceError, blender_identity
 
 
 def _check_report(report, mode, replay, frame_count, *, worker_sha256, world_sha256):
@@ -28,28 +30,14 @@ def _check_report(report, mode, replay, frame_count, *, worker_sha256, world_sha
          report['source_backend'] == replay['source_backend'] and
          type(report['verified_frames']) is int and report['verified_frames'] == frame_count and
          type(report['maximum_replay_error']) in (int, float) and
-         math.isfinite(report['maximum_replay_error']) and 0 <= report['maximum_replay_error'] <= 1e-5 and
+         0 <= report['maximum_replay_error'] <= 1e-5 and math.isfinite(report['maximum_replay_error']) and
          type(report['blend_sha256']) is str and re.fullmatch('[0-9a-f]{64}', report['blend_sha256']) is not None and
          report['scope'] == 'DIRECT solved-state replay; Blender rendering only' and
          report['artistic_review'] == 'not-performed')
-    backend = report['backend']
-    fail(type(backend) is dict)
-    fail(set(backend) == {'application_version', 'application_build', 'solver_name', 'solver_version',
-                          'platform', 'precision', 'device', 'render_device_discovery', 'render_devices',
-                          'physics_gpu_support', 'render_gpu_execution'})
-    fail(type(backend.get('application_version')) is str and
-         re.fullmatch(r'4\.5\.3(?: LTS)?', backend['application_version']) is not None and
-         backend.get('application_build') == p.SUPPORTED_BLENDER_BUILD and
-         backend.get('solver_name') == 'Blender Bullet rigid-body world' and
-         backend.get('device') == 'cpu' and backend.get('physics_gpu_support') == 'unsupported' and
-         backend.get('render_gpu_execution') == 'not-executed' and
-         backend.get('solver_version') == 'not exposed separately by Blender' and
-         backend.get('precision') == 'mixed' and type(backend.get('platform')) is str and
-         type(backend.get('render_device_discovery')) is str and
-         type(backend.get('render_devices')) is list and len(backend['render_devices']) <= 64)
-    for device in backend['render_devices']:
-        fail(type(device) is dict and set(device) == {'name', 'type'} and
-             all(type(device[key]) is str and len(device[key]) <= 256 for key in ('name', 'type')))
+    try:
+        blender_identity(report['backend'])
+    except EvidenceError as exc:
+        raise p.BackendError('PHYSICS_REPLAY_FAILED', 'Invalid native Blender replay identity: '+str(exc)) from exc
     previews = report['previews']
     fail(type(previews) is list)
     frames = sorted({0, frame_count//2, frame_count-1}) if mode == 'render-replay' else []
@@ -66,6 +54,28 @@ def _check_report(report, mode, replay, frame_count, *, worker_sha256, world_sha
              (image['width'], image['height'], image['samples']) == (128, 128, 4) and
              image['scope'] == 'DIRECT solved-state replay; neutral diagnostic only' and
              image['visual_review'] == 'not-performed')
+
+
+def _renderer_identity(native, discovered, previous=None):
+    p.require(discovered['application_version'] == 'Blender '+native['application_version'] and
+              all(discovered[key] == native[key] for key in ('solver_name', 'solver_version', 'precision', 'device')) and
+              ((native['platform'] == 'linux' and discovered['platform'].startswith('Linux-')) or
+               (native['platform'] == 'darwin' and discovered['platform'].startswith(('macOS-', 'Darwin-')))) and
+              (previous is None or native == previous),
+              'PHYSICS_REPLAY_FAILED', 'Native renderer identities contradict discovery or independent reopen.')
+
+
+def _png(payload):
+    from PIL import Image, UnidentifiedImageError
+    try:
+        with Image.open(BytesIO(payload)) as image:
+            p.require(image.format == 'PNG' and image.size == (128, 128) and image.mode == 'RGBA',
+                      'PHYSICS_REPLAY_FAILED', 'Replay preview is not a native 128px RGBA PNG.')
+            image.verify()
+        with Image.open(BytesIO(payload)) as image:
+            image.load()
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError) as exc:
+        raise p.BackendError('PHYSICS_REPLAY_FAILED', 'Replay PNG cannot be decoded: '+str(exc)) from exc
 
 
 def _unchanged(root, bindings):
@@ -145,6 +155,7 @@ def render_direct_cache(cache, destination, executable=None):
                 report = p.parse(reader.read('worker-report.json', p.MAX_DOCUMENT_BYTES))
             _check_report(report, mode, replay, frame_count, worker_sha256=job['worker_sha256'],
                           world_sha256=job['world_sha256'])
+            _renderer_identity(report['backend'], identity, reports[0]['backend'] if reports else None)
             with p._Reader(root) as reader:
                 p.require(p.digest(reader.read('scene.blend')) == report['blend_sha256'],
                           'PHYSICS_REPLAY_FAILED', 'Actual retained blend differs from report.')
@@ -165,6 +176,7 @@ def render_direct_cache(cache, destination, executable=None):
                           len(payload) > 24 and int.from_bytes(payload[16:20], 'big') == 128 and
                           int.from_bytes(payload[20:24], 'big') == 128,
                           'PHYSICS_REPLAY_FAILED', 'Actual neutral replay PNG differs.')
+                _png(payload)
         # Both the retained native scene and every source byte survive independent reopen.
         p.verify_cache(source)
         p.require(reports[0]['blend_sha256'] == reports[1]['blend_sha256'],
