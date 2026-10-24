@@ -55,9 +55,12 @@ def checked_job(path):
             value[key] = item
         return value
     value = json.loads(payload, object_pairs_hook=pairs)
-    if set(value) != {'protocol', 'mode', 'world', 'world_sha256', 'meshes', 'worker_sha256', 'fixture'}:
+    keys = {'protocol', 'mode', 'world', 'world_sha256', 'meshes', 'worker_sha256', 'fixture'}
+    if value.get('mode') in ('render-replay', 'reopen-replay'):
+        keys.add('replay')
+    if set(value) != keys:
         raise ValueError('Unknown or missing worker input.')
-    if value['protocol'] != PROTOCOL or value['mode'] not in ('simulate', 'reopen', 'consumption-control'):
+    if value['protocol'] != PROTOCOL or value['mode'] not in ('simulate', 'reopen', 'consumption-control', 'render-replay', 'reopen-replay'):
         raise ValueError('Unsupported worker operation.')
     if hashlib.sha256(canonical(value['world'])).hexdigest() != value['world_sha256']:
         raise ValueError('World digest differs from admitted configuration.')
@@ -356,6 +359,157 @@ def reopen(root, job):
                 maximum_replay_error=maximum, replay_tolerance=1e-5)
 
 
+def replay_inputs(root, job):
+    """Reject substitutions before loading our own generated .blend."""
+    replay = job['replay']
+    if set(replay) != {'cache_manifest_sha256', 'states_sha256', 'source_files',
+                       'project_manifest', 'source_backend', 'meshes_sha256'}:
+        raise ValueError('Unexpected replay binding.')
+    source = root/'source-cache'
+    payloads = {}
+    # Descriptor relative, no-follow reads, including every ancestor.
+    for item in replay['source_files']:
+        if set(item) != {'path', 'bytes', 'sha256'}:
+            raise ValueError('Invalid replay inventory.')
+        parts = item['path'].split('/')
+        if any(part in ('', '.', '..') for part in parts) or item['path'].startswith('/'):
+            raise ValueError('Invalid replay source path.')
+        fd = os.open(source, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            for part in parts[:-1]:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                os.close(fd); fd = child
+            file_fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+            with os.fdopen(file_fd, 'rb') as stream:
+                import stat
+                before = os.fstat(stream.fileno())
+                if not stat.S_ISREG(before.st_mode) or not 0 <= item['bytes'] <= 256*1024*1024 or before.st_size != item['bytes']:
+                    raise ValueError('Unbounded replay source.')
+                data = stream.read(item['bytes']+1)
+                after = os.fstat(stream.fileno())
+                if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) or len(data) != item['bytes'] or hashlib.sha256(data).hexdigest() != item['sha256']:
+                    raise ValueError('Replay source changed.')
+        finally:
+            os.close(fd)
+        if item['path'] in payloads:
+            raise ValueError('Duplicate replay source.')
+        payloads[item['path']] = data
+    manifest = json.loads(payloads['cache.json'])
+    if (hashlib.sha256(payloads['cache.json']).hexdigest() != replay['cache_manifest_sha256'] or
+        hashlib.sha256(payloads['states.json']).hexdigest() != replay['states_sha256'] or
+        manifest['backend'] != replay['source_backend'] or manifest['backend']['id'] != 'pybullet' or
+        manifest['world_sha256'] != job['world_sha256'] or
+        hashlib.sha256(payloads['world.json']).hexdigest() != job['world_sha256'] or
+        hashlib.sha256(canonical(job['meshes'])).hexdigest() != replay['meshes_sha256'] or
+        {item['path'] for item in manifest['files']} | {'cache.json'} != set(payloads)):
+        raise ValueError('Replay source identity mismatch.')
+    for item in manifest['files']:
+        if hashlib.sha256(payloads[item['path']]).hexdigest() != item['sha256'] or len(payloads[item['path']]) != item['bytes']:
+            raise ValueError('Replay manifest mismatch.')
+    states = json.loads(payloads['states.json'])
+    if states['world_sha256'] != job['world_sha256']:
+        raise ValueError('Replay states world mismatch.')
+    expected = list(range(job['world']['frame_range']['end']))
+    if [sample['frame'] for sample in states['samples']] != expected:
+        raise ValueError('Replay requires every integer cached frame.')
+    ids = [body['id'] for body in job['world']['bodies']]
+    for sample in states['samples']:
+        if [body['id'] for body in sample['bodies']] != ids:
+            raise ValueError('Replay body identity mismatch.')
+        for body in sample['bodies']:
+            if not all(math.isfinite(v) for v in body['translation']+body['rotation']):
+                raise ValueError('Nonfinite replay pose.')
+    return states
+
+
+def replay_scene(root, job):
+    states = replay_inputs(root, job)
+    bodies = job['world']['bodies']
+    images = []
+    if job['mode'] == 'render-replay':
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        bpy.context.preferences.filepaths.save_version = 0
+        scene = bpy.context.scene
+        scene.frame_start = 1
+        scene.frame_end = len(states['samples'])
+        scene['physics_scope'] = 'DIRECT solved-state replay; Blender rendering only'
+        scene['source_cache_sha256'] = job['replay']['cache_manifest_sha256']
+        scene['states_sha256'] = job['replay']['states_sha256']
+        scene['source_backend'] = canonical(job['replay']['source_backend']).decode('utf-8')
+        scene['interpolation_accuracy'] = 'not-established; only integer cached frames verified'
+        scene.render.fps = int(job['world']['fps']['numerator'])
+        scene.render.fps_base = float(job['world']['fps']['denominator'])
+        for body in bodies:
+            source = job['meshes'][body['id']]
+            if len(source['vertices']) > 4096 or len(source['triangles']) > 8192:
+                raise ValueError('Replay geometry bound exceeded.')
+            mesh = bpy.data.meshes.new(body['id']+'-mesh')
+            mesh.from_pydata([tuple(BASIS.to_3x3() @ Vector(v)) for v in source['vertices']], [], source['triangles'])
+            if mesh.validate(verbose=False):
+                raise ValueError('Replay mesh changed during native validation.')
+            mesh.update()
+            obj = bpy.data.objects.new(body['id'], mesh)
+            scene.collection.objects.link(obj)
+            obj.rotation_mode = 'QUATERNION'
+            for sample in states['samples']:
+                pose = next(item for item in sample['bodies'] if item['id'] == body['id'])
+                obj.location = BASIS.to_3x3() @ Vector(pose['translation'])
+                x,y,z,w = pose['rotation']
+                obj.rotation_quaternion = (BASIS @ Quaternion((w,x,y,z)).to_matrix().to_4x4() @ BASIS.transposed()).to_quaternion()
+                obj.keyframe_insert(data_path='location', frame=sample['frame']+1)
+                obj.keyframe_insert(data_path='rotation_quaternion', frame=sample['frame']+1)
+        scene.frame_set(1)
+        # Setup camera, lights and neutral materials exactly once.
+        image = preview(root, scene, bodies)
+        frames = sorted({0, len(states['samples'])//2, len(states['samples'])-1})
+        image['frame'] = 0; image['scope'] = 'DIRECT solved-state replay; neutral diagnostic only'
+        images.append(image)
+        for frame in frames[1:]:
+            scene.frame_set(frame+1)
+            name = 'preview-%04d.png' % frame
+            scene.render.filepath = str(root/name)
+            if bpy.ops.render.render(write_still=True) != {'FINISHED'}:
+                raise ValueError('Replay render failed.')
+            images.append(dict(image, frame=frame, path=name, sha256=hashlib.sha256((root/name).read_bytes()).hexdigest()))
+        bpy.ops.wm.save_as_mainfile(filepath=str(root/'scene.blend'))
+    else:
+        if (root/'scene.blend').is_symlink():
+            raise ValueError('Unsafe replay scene.')
+        bpy.ops.wm.open_mainfile(filepath=str(root/'scene.blend'), load_ui=False, use_scripts=False)
+        scene = bpy.context.scene
+    if (scene.rigidbody_world is not None or scene.get('source_cache_sha256') != job['replay']['cache_manifest_sha256'] or
+        scene.get('states_sha256') != job['replay']['states_sha256'] or
+        {obj.name for obj in scene.objects if obj.type == 'MESH'} != {body['id'] for body in bodies}):
+        raise ValueError('Saved replay native identity differs.')
+    for body in bodies:
+        obj = bpy.data.objects[body['id']]
+        source = job['meshes'][body['id']]
+        if obj.rigid_body is not None or len(obj.data.vertices) != len(source['vertices']) or len(obj.data.polygons) != len(source['triangles']):
+            raise ValueError('Replay geometry/native solver identity differs.')
+        for vertex, expected in zip(obj.data.vertices, source['vertices']):
+            if (vertex.co - BASIS.to_3x3() @ Vector(expected)).length > 1e-6:
+                raise ValueError('Reopened actual mesh vertices differ.')
+        if [list(face.vertices) for face in obj.data.polygons] != source['triangles']:
+            raise ValueError('Reopened actual mesh topology differs.')
+    actual = samples(scene, bodies, reversed(range(len(states['samples']))))
+    maximum = 0.
+    for sample in actual:
+        reference = states['samples'][sample['frame']]
+        for pose, expected in zip(sample['bodies'], reference['bodies']):
+            maximum = max(maximum, max(abs(a-b) for a,b in zip(pose['translation'], expected['translation'])))
+            # q and -q encode the identical rotation.
+            maximum = max(maximum, min(max(abs(a-b) for a,b in zip(pose['rotation'], expected['rotation'])),
+                                       max(abs(a+b) for a,b in zip(pose['rotation'], expected['rotation']))))
+    if maximum > 1e-5:
+        raise ValueError('Native replay cached poses differ.')
+    return dict(ok=True, operation=job['mode'], backend=backend_identity(),
+                verified_frames=len(actual), maximum_replay_error=maximum,
+                source_cache_sha256=job['replay']['cache_manifest_sha256'],
+                states_sha256=job['replay']['states_sha256'], previews=images,
+                blend_sha256=hashlib.sha256((root/'scene.blend').read_bytes()).hexdigest(),
+                scope='DIRECT solved-state replay; Blender rendering only', artistic_review='not-performed')
+
+
 def main():
     root, job = checked_job(sys.argv[sys.argv.index('--') + 1])
     if tuple(bpy.app.version) != (4, 5, 3) or bpy.app.build_hash.decode('ascii') != '67807e1800cc':
@@ -364,6 +518,8 @@ def main():
         result = create(root, job)
     elif job['mode'] == 'reopen':
         result = reopen(root, job)
+    elif job['mode'] in ('render-replay', 'reopen-replay'):
+        result = replay_scene(root, job)
     else:
         result = consumption_control(root, job)
     emit(root, result)
