@@ -33,14 +33,12 @@ bundle bytes, 64 times retained JSON bytes, and four times decoded RGBA texture
 bytes. PNG IHDR and JPEG SOF dimension-only probes follow the [PNG specification](https://www.w3.org/TR/png/#11IHDR) and [ITU-T T.81 frame header](https://www.w3.org/Graphics/JPEG/itu-t81.pdf). They do not instantiate image decoders or decompress ancillary text, and do not certify raster integrity. Repeated image records share one immutable encoded byte copy per native data key; locked-index header length must match its descriptor before any array/list allocation.
 
 All geometry, attributes, morphs, skins, clips and retained review JSON share
-one budget; per-file admission cannot waive the aggregate. Actual decoded texture
-pixels count even when their encoded PNG is tiny. JSON and NPY input sizes are
+one budget; per-file admission cannot waive the aggregate. Header-derived RGBA capacity counts even when the encoded PNG is tiny. JSON and NPY input sizes are
 bounded before materializing their payloads. Source/dependency bytes also have a
 shared byte inventory. A second aggregate check during loading prevents a changed
 input from escaping the preflight limits.
 
-`rig.resource_usage` reports this estimate and the measured input/array/JSON/texture
-byte components. These are conservative **loading-only admission estimates**, not
+`rig.resource_usage` reports this estimate and the observed input/array/JSON bytes plus header-derived texture capacity. These are conservative **loading-only admission estimates**, not
 measured peak RSS, an operating-system memory sandbox, CPU scheduling, proof that
 an image is visually correct, or authorization for later rendering/evaluation.
 NumPy/Python/library resident memory is outside this additional-load estimate.
