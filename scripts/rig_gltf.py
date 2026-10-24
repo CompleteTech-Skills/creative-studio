@@ -183,6 +183,11 @@ def node_matrix(node: dict) -> np.ndarray:
         rotation = quaternion(node.get('rotation', [0, 0, 0, 1]), strict=True)
         scale = vector(node.get('scale', [1, 1, 1]));translation = vector(node.get('translation', [0, 0, 0]))
         result = np.eye(4);result[:3, :3] = qmatrix(rotation) @ np.diag(scale);result[:3, 3] = translation
+    return _validate_node_transform(result)
+
+
+def _validate_node_transform(result: np.ndarray) -> np.ndarray:
+    require(np.isfinite(result).all(), 'RIG_GLTF_NUMERIC_RANGE', 'Composed node transform is not finite.')
     require(np.allclose(result[3], [0, 0, 0, 1]),
             'RIG_SINGULAR_TRANSFORM', 'Node transform must be affine and nonsingular.')
     # Determinants carry cubic units: a well-conditioned micrometer conversion
@@ -193,6 +198,13 @@ def node_matrix(node: dict) -> np.ndarray:
     require(np.all(magnitudes > 0), 'RIG_SINGULAR_TRANSFORM', 'Node transform has a zero scale axis.')
     require(abs(np.linalg.det(linear / magnitudes)) > 1e-12,
             'RIG_SINGULAR_TRANSFORM', 'Node transform axes are numerically dependent.')
+    # Existing mesh consumers use this determinant's sign for winding and
+    # tangent handedness. Do not admit a scale whose signed volume underflows
+    # to zero or overflows, even if its abstract inverse would exist.
+    with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+        determinant = np.linalg.det(linear)
+    require(np.isfinite(determinant) and determinant != 0,
+            'RIG_GLTF_NUMERIC_RANGE', 'Node transform handedness is outside the float64 range.')
     # A nonzero determinant alone does not guarantee that downstream inverse
     # transforms (including translation) are representable in float64.
     try:
@@ -200,11 +212,20 @@ def node_matrix(node: dict) -> np.ndarray:
             inverse = np.linalg.inv(result)
     except np.linalg.LinAlgError as exc:
         raise RigError('RIG_SINGULAR_TRANSFORM', 'Node transform cannot be inverted.') from exc
-    require(np.isfinite(inverse).all(), 'RIG_SINGULAR_TRANSFORM', 'Node transform inverse is not finite.')
+    require(np.isfinite(inverse).all(), 'RIG_GLTF_NUMERIC_RANGE', 'Node transform inverse is not finite.')
+    # A unit normal has components <=1. Each transformed component is bounded
+    # by 3*max(inverse), and its squared length by 27*max(inverse)**2. Leave
+    # headroom below float64's maximum for the existing direction normalization.
+    require(np.max(np.abs(inverse[:3, :3])) <= np.sqrt(np.finfo(float).max)/6,
+            'RIG_GLTF_NUMERIC_RANGE', 'Node inverse directions exceed the float64 normalization range.')
     return result
 
 
-def scene_graph(document: GltfDocument) -> tuple[dict, dict, list[int]]:
+def scene_graph(document: GltfDocument, *, import_scale=1.) -> tuple[dict, dict, list[int]]:
+    """Return source worlds, checking their eventual import-unit conversion too."""
+    require(np.isfinite(import_scale) and 0 < import_scale <= 10000,
+            'RIG_SCALE', 'Import scale must be finite and positive.')
+    conversion = np.diag([import_scale, import_scale, import_scale, 1.])
     nodes = document.json.get('nodes', [])
     require(len(nodes) <= 10000, 'RIG_LIMIT_NODES', 'Scene node count exceeds the bound.')
     parents = {}
@@ -222,7 +243,11 @@ def scene_graph(document: GltfDocument) -> tuple[dict, dict, list[int]]:
     def visit(i, parent_world):
         _index(i, len(nodes), 'scene node')
         require(i not in active and i not in world, 'RIG_GLTF_HIERARCHY', 'Scene node hierarchy has a cycle or repeated instance.')
-        active.add(i);world[i] = parent_world @ node_matrix(nodes[i]);order.append(i)
+        active.add(i)
+        with np.errstate(over='ignore', under='ignore', invalid='ignore'):
+            world[i] = _validate_node_transform(parent_world @ node_matrix(nodes[i]))
+            if import_scale != 1.:_validate_node_transform(conversion @ world[i])
+        order.append(i)
         for child in nodes[i].get('children', []):visit(child, world[i])
         active.remove(i)
     for root in roots:
