@@ -222,14 +222,22 @@ def records(manifest,world,receipt,request,simulation,last_report,source_meshes,
 
 
 def rigid_report(report,world,backend):
-    requested = bool(world['forces']) or any(body['mode']=='kinematic' or 'sleep' in body or
+    def custom_inertia(body):
+        shape=body['colliders'][0]['shape'];mass=body['mass']['kilograms']
+        if body['mode']!='dynamic':return False
+        if shape['type']=='sphere':diagonal=[.4*mass*shape['radius']**2]*3
+        elif shape['type']=='box':
+            x,y,z=shape['size'];diagonal=[mass*(y*y+z*z)/12,mass*(x*x+z*z)/12,mass*(x*x+y*y)/12]
+        else:return True
+        return any(abs(body['mass']['inertia'][i][j]-(diagonal[i] if i==j else 0))>max(diagonal)*1e-6 for i in range(3) for j in range(3))
+    requested = bool(world['forces']) or any(body['mode']=='kinematic' or 'sleep' in body or custom_inertia(body) or
         any(body['linear_velocity']+body['angular_velocity']+body['mass']['center_of_mass']) for body in world['bodies'])
     if 'rigid_controls' not in report:
         need(not requested, 'Native report omits requested physical controls.')
         return
     value=report['rigid_controls']
     object_fields(value,('version','bodies','force_policy','forces')+(('effectors',) if backend=='blender' else ()),'Rigid control observations')
-    need(value['version']==1 and value['forces']==world['forces'] and type(value['bodies']) is list and len(value['bodies'])==len(world['bodies']),
+    need(integer(value['version']) and value['version']==1 and same_json(value['forces'],world['forces']) and type(value['bodies']) is list and len(value['bodies'])==len(world['bodies']),
          'Rigid control identity/count differs.')
     need(value['force_policy']==('Blender native WIND plane effector central force only' if backend=='blender' else
          'native external force/torque per fixed step; discrete impulse is integrated wrench over one complete native step'), 'Unknown physical control policy.')
@@ -260,4 +268,14 @@ def rigid_report(report,world,backend):
         for observed,force in zip(value['effectors'],world['forces']):
             object_fields(observed,('id','object','type','shape','flow','falloff_power'),'Native force effector')
             need(observed['id']==force['id'] and type(observed['object']) is str and observed['type']=='WIND' and observed['shape']=='PLANE' and
-                 observed['flow']==0 and observed['falloff_power']==0,'Native central force mapping differs.')
+                 number(observed['flow']) and observed['flow']==0 and number(observed['falloff_power']) and observed['falloff_power']==0,'Native central force mapping differs.')
+
+
+def same_json(actual,expected):
+    """Compare bounded known-shape records without bool/number equivalence."""
+    if type(expected) is dict:
+        return type(actual) is dict and set(actual)==set(expected) and all(same_json(actual[k],v) for k,v in expected.items())
+    if type(expected) is list:
+        return type(actual) is list and len(actual)==len(expected) and all(same_json(a,b) for a,b in zip(actual,expected))
+    if type(expected) in (int,float):return number(actual) and actual==expected
+    return type(actual) is type(expected) and actual==expected
