@@ -29,8 +29,8 @@ The ten historical PNGs were recovered by deterministic reconstruction from the 
 The [delivery manifest](examples/production-pilot/delivery-manifest.json) pins all five ordinary-Git transport indexes, the production model, supporting metadata and original ledger identity. The [derived-source recovery audit](references/public-derived-recovery.json) binds the original project and 42 derived assets to their pre-existing model hashes. Restoration does not recalculate platform-dependent PNG or animation values. The five transports contain **129 logical files and 462 parts**. Each index inventories canonical paths, sizes, SHA-256 hashes and ordered content-addressed fragments. No LFS installation, release download, private artifact store or model account is needed to restore the public project.
 
 ```bash
-git clone https://github.com/CompleteDotTech/hatch-pet.git
-cd hatch-pet
+git clone https://github.com/CompleteTech-Skills/creative-studio.git
+cd creative-studio
 python -m pip install -r requirements-delivery.txt
 python scripts/production_sources.py verify-delivery
 python scripts/production_sources.py restore-pilot --destination output/milo-luma
