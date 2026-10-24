@@ -30,6 +30,7 @@ def enforce_conversion_profile():
         if obj.constraints or any(m.type!='ARMATURE' for m in obj.modifiers):
             fail('Unsupported native constraints/modifiers require a separately verified baking adapter.')
     for material in list(bpy.data.materials):
+        if material.animation_data:fail('Animated native materials are unsupported by this conversion profile.')
         if not material.use_nodes:continue
         nodes=list(material.node_tree.nodes)
         if len(nodes)!=2 or {n.bl_idname for n in nodes}!={'ShaderNodeBsdfPrincipled','ShaderNodeOutputMaterial'}:

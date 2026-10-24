@@ -29,7 +29,10 @@ been validated. `capabilities(probe_blender=True)` executes a real version probe
 `import_asset(source, identity=..., version=..., metadata=..., license_file=...)`
 requires the #138 identity/metadata schemas and explicit license evidence. Missing
 license bytes and invalid metadata fail. Fixture inputs must remain `fixture=True`.
-No human approval is produced. The default runs actual Blender save/reopen,
+No human approval is produced. Explicit fixture classification is embedded in the
+normalized runtime payload as reserved provenance metadata, including otherwise
+unmarked sources, and survives saved Blender/GLB reimports. Original bytes remain
+unchanged. The default runs actual Blender save/reopen,
 independent GLB validation and a diagnostic 128-pixel render.
 
 The CLI supports `probe`, `import`, `generate`, and `capabilities`; `--library`

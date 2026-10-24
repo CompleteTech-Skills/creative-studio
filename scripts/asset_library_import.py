@@ -327,7 +327,7 @@ def native_observation(path, limits):
         independent=False, reader='hatch-native')
 
 
-def _pack_glb(document, buffers, image_payloads, *, unit_scale=1., basis='canonical', ground_offset=0.):
+def _pack_glb(document, buffers, image_payloads, *, unit_scale=1., basis='canonical', ground_offset=0., fixture=False):
     """Preserve all declared glTF objects/channels; add explicit basis root only."""
     import numpy as np
     value = deepcopy(document); blob = bytearray(); offsets = []
@@ -344,6 +344,11 @@ def _pack_glb(document, buffers, image_payloads, *, unit_scale=1., basis='canoni
             image.pop('uri'); image['bufferView']=len(value['bufferViews'])-1
             image['mimeType']=detect_format(data)[1]
     value['buffers']=[dict(byteLength=len(blob))]
+    if fixture and not document_fixture(value):
+        # An inert, unreferenced metadata node preserves arbitrary original
+        # asset/scene extras and all original hierarchy/channel indices.
+        value.setdefault('nodes',[]).append(dict(name='HatchAssetFixtureProvenance',
+            extras=dict(hatchAssetSourceFixture=True)))
     matrix = np.eye(4)
     if basis == 'right-handed-z-up': matrix[:3,:3]=[[1,0,0],[0,0,1],[0,-1,0]]
     elif basis == 'left-handed-y-up': matrix[:3,:3]=[[1,0,0],[0,1,0],[0,0,-1]]
@@ -376,7 +381,7 @@ def _pack_glb(document, buffers, image_payloads, *, unit_scale=1., basis='canoni
     return struct.pack('<4sII',b'glTF',2,size)+struct.pack('<II',len(encoded),0x4E4F534A)+encoded+(struct.pack('<II',len(binary),0x004E4942)+binary if binary else b'')
 
 
-def normalize_gltf(snapshot, destination, *, unit_scale=1., basis='canonical', ground=False, limits=None):
+def normalize_gltf(snapshot, destination, *, unit_scale=1., basis='canonical', ground=False, limits=None, fixture=False):
     if isinstance(unit_scale,bool) or not isinstance(unit_scale,(int,float)) or not math.isfinite(unit_scale) or not 1e-6 <= unit_scale <= 1e6:
         fail('NORMALIZATION','Unit scale must be finite in [1e-6,1e6].')
     if basis not in BASIS or type(ground) is not bool: fail('NORMALIZATION','Unsupported basis/ground policy.')
@@ -387,14 +392,14 @@ def normalize_gltf(snapshot, destination, *, unit_scale=1., basis='canonical', g
         else:
             content,start,length,_=document.view(image['bufferView']);data=content[start:start+length]
         images.append(data)
-    payload=_pack_glb(document.json,document.buffers,images,unit_scale=float(unit_scale),basis=basis)
+    payload=_pack_glb(document.json,document.buffers,images,unit_scale=float(unit_scale),basis=basis,fixture=fixture)
     target=Path(destination);target.write_bytes(payload)
     observation=_native_or_unavailable(target, limits)
     offset=0.
     if ground:
         if 'bounds' not in observation:fail('UNSUPPORTED','Ground alignment requires the supported native geometry profile.')
         offset=-float(observation['bounds'][0][1])
-        payload=_pack_glb(document.json,document.buffers,images,unit_scale=float(unit_scale),basis=basis,ground_offset=offset)
+        payload=_pack_glb(document.json,document.buffers,images,unit_scale=float(unit_scale),basis=basis,ground_offset=offset,fixture=fixture)
         target.write_bytes(payload);observation=_native_or_unavailable(target,limits)
     if len(payload)>MAX_FILE_BYTES: fail('LIMIT','Normalized GLB exceeds library file bound.')
     report=dict(source_basis=basis, source_unit_scale=float(unit_scale), ground_offset=offset,
@@ -657,14 +662,14 @@ class ImportPipeline:
             if snapshot.format in ('glb','gltf'):
                 source_doc,source_validation=_check_gltf(input_path,limits,snapshot.native_document)
                 target,observation,conversion=normalize_gltf(snapshot,root/'normalized.glb',unit_scale=unit_scale,
-                                                             basis=basis,ground=ground,limits=limits)
+                                                             basis=basis,ground=ground,limits=limits,fixture=fixture)
             else:
                 # Blender handles format-specific decoding; mandatory original
                 # source closure was already captured and is never rewritten.
-                tool=self.blender.execute(snapshot.format,input_path,root/'conversion',trusted_blend=trusted_packed_blend)
+                tool=self.blender.execute(snapshot.format,input_path,root/'conversion',trusted_blend=trusted_packed_blend,fixture=fixture)
                 converted=SourceSnapshot(tool['outputs']['glb'],root/'converted',cancelled=self.cancelled)
                 target,observation,conversion=normalize_gltf(converted,root/'normalized.glb',unit_scale=unit_scale,
-                                                              basis=basis,ground=ground,limits=limits)
+                                                              basis=basis,ground=ground,limits=limits,fixture=fixture)
                 if tool['inspection'].get('fixture') and not fixture:fail('PROVENANCE','Blender fixture source cannot be relabeled as production.')
                 source_validation=dict(reader='Blender',inspection=tool['inspection'],
                     conversion_profile='simple Principled surface only; unsupported native shader graphs fail closed',

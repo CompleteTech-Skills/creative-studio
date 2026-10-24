@@ -73,6 +73,15 @@ class ImportTests(unittest.TestCase):
         texture.unlink()
         with self.assertRaises((RigError,OSError)):SourceSnapshot(source,self.root/'missing-texture')
 
+    def test_runtime_retains_explicit_fixture_classification(self):
+        from asset_library_import import document_fixture
+        source=self.external();document=json.loads(source.read_text());document['asset'].pop('extras',None)
+        self.assertFalse(document_fixture(document));source.write_text(json.dumps(document))
+        result=self.pipeline.import_asset(source,**self.request(blender_roundtrip=False))
+        runtime=self.root/'runtime.glb';runtime.write_bytes(self.library.read_file(result['reference'],'runtime/asset.glb'))
+        self.assertTrue(document_fixture(_gltf_json(runtime.read_bytes(),'glb')[0]))
+        with self.assertRaises(RigError):self.pipeline.import_asset(runtime,**self.request(version='1.0.1',fixture=False,blender_roundtrip=False))
+
     def test_integral_json_number_counts(self):
         source=self.external();document=json.loads(source.read_text())
         document['buffers'][0]['byteLength']=float(document['buffers'][0]['byteLength'])
@@ -165,6 +174,11 @@ class ImportTests(unittest.TestCase):
         subsurface_workspace=self.root/'subsurface-fixture';subsurface_workspace.mkdir()
         self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(subsurface_script)],subsurface_workspace)
         with self.assertRaises(RigError):self.pipeline.import_asset(subsurface,**self.request(version='1.4.0',trusted_packed_blend=True))
+        animated=self.root/'animated-material.blend';animated_script=self.root/'make_animated_material.py'
+        animated_script.write_text('import bpy\nbpy.ops.mesh.primitive_cube_add()\nm=bpy.data.materials.new("AnimatedDiffuse");m.use_nodes=False\nm.diffuse_color=(1,0,0,1);m.keyframe_insert(data_path="diffuse_color",frame=1)\nm.diffuse_color=(0,1,0,1);m.keyframe_insert(data_path="diffuse_color",frame=24)\nbpy.context.object.data.materials.append(m)\nbpy.ops.wm.save_as_mainfile(filepath='+repr(str(animated))+')\n')
+        animated_workspace=self.root/'animated-material-fixture';animated_workspace.mkdir()
+        self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(animated_script)],animated_workspace)
+        with self.assertRaises(RigError):self.pipeline.import_asset(animated,**self.request(version='1.5.0',trusted_packed_blend=True))
         generated=self.pipeline.generate(**self.request(version='2.0.0',parameters=dict(primitive='box',dimensions=[1,2,3],color=[.2,.4,.6,1],animated=True)))
         self.assertEqual(generated['report']['native_observation']['triangles'],12)
         self.assertEqual(self.library.resolve(generated['reference'])['provenance']['method'],'fixture')
