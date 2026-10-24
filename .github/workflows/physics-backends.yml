@@ -61,6 +61,12 @@ jobs:
           HATCH_TIMING_EVIDENCE: ${{ github.workspace }}/physics-evidence/timing/numerical.json
         run: |
           python -B -m unittest discover -s tests -p test_physics_timing.py -v 2>&1 | tee physics-evidence/timing-tests.log
+      - name: Real rigid-body forces, inertia, damping and kinematic authorities
+        env:
+          HATCH_RIGID_EVIDENCE: physics-evidence/rigid-bodies
+        run: |
+          mkdir physics-evidence/rigid-bodies
+          python -B -m unittest discover -s tests -p test_rig_physics_rigid.py -v 2>&1 | tee physics-evidence/rigid-body-tests.log
       - name: Actual category/shape/headless probes
         run: |
           python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json
