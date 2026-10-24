@@ -206,6 +206,21 @@ class NativeLoadLimitTests(unittest.TestCase):
         np.testing.assert_array_equal(arrays['safe'], np.arange(9).reshape(3, 3))
         self.assertNotEqual(sha256(path), expected_hash)
 
+    def test_noncanonical_zip_offsets_rejected_before_directory_construction(self):
+        # A harmless metadata-only archive with an extra directory prefix tests
+        # the core profile's no-concatenation boundary without allocating entries.
+        path = Path(self.temp.name) / 'prefixed.npz'
+        canonical = bytearray(_binary_bundle({}, {}))
+        end = canonical.rfind(b'PK\x05\x06')
+        size, start = struct.unpack_from('<LL', canonical, end + 12)
+        prefix = canonical[start:start + size]
+        struct.pack_into('<L', canonical, end + 16, 0)
+        path.write_bytes(prefix + canonical)
+        with patch('rig_load_limits.zipfile.ZipFile', side_effect=AssertionError('directory constructed too early')):
+            with self.assertRaises(RigError) as caught:
+                _read_bundle(path, DEFAULT_LIMITS)
+            self.assertEqual(caught.exception.report['code'], 'RIG_BINARY')
+
     def test_runtime_bundle_snapshot_hash_is_checked_before_arrays(self):
         path = Path(self.temp.name) / 'valid.npz'
         path.write_bytes(_binary_bundle({}, {'safe': np.zeros(3)}))

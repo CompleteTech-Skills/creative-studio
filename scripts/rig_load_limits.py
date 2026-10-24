@@ -109,9 +109,11 @@ def _zip_directory(payload: bytes, budget: LoadBudget):
     require(disk == directory_disk == 0 and disk_count == count and count != 65535
             and directory_offset != 0xffffffff and directory_size != 0xffffffff
             and offset + 22 + comment == len(tail)
-            and directory_offset + directory_size <= size - len(tail) + offset,
+            and directory_offset + directory_size == size - len(tail) + offset,
             'RIG_BINARY', 'Unsupported or malformed native ZIP directory.')
     require(count <= budget.limits['archive_files'], 'RIG_LIMIT_BINARY', 'Too many binary members.')
+    # Canonical directory equality above rejects offset reconciliation for
+    # prepended/concatenated ZIPs; our scan and zipfile must inspect the same bytes.
     # Do not trust EOCD's entry count: zipfile itself walks the entire central
     # directory, including entries beyond a forged count, before exposing infos.
     cursor = directory_offset
