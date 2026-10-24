@@ -35,3 +35,23 @@ def build_falling_inputs(*,backend='blender',frames=73):
     validate_document(project,'project');payloads['project.json']=canonical(project)
     validate_contract(world)
     return world,payloads
+
+
+def build_stack_inputs(*,backend='blender'):
+    from physics_backends import canonical,digest
+    world,payloads=build_falling_inputs(backend=backend,frames=73)
+    positions={'cube':[0,.5,0],'heavy':[0,1.5,0]}
+    for body in world['bodies']:
+        if body['id'] in positions:body['transform']['translation']=positions[body['id']]
+    scene=json.loads(payloads['physics-scene.json'])
+    for node in scene['nodes']:
+        if node['id'] in positions:node['transform']['translation']=positions[node['id']]
+    scene['description']='Actual two-cube mass-ratio10 stack and independent falling sphere; engineering fixture.'
+    validate_document(scene,'scene');payloads['physics-scene.json']=canonical(scene)
+    reference={**world['scene'],'kind':'scene3d-scene','sha256':digest(payloads['physics-scene.json'])}
+    world['scene']={**reference,'kind':'scene'}
+    project=json.loads(payloads['project.json']);project['scenes']=[reference]
+    project['dependency_lock']=[reference if r['kind']=='scene3d-scene' else r for r in project['dependency_lock']]
+    validate_document(project,'project');payloads['project.json']=canonical(project)
+    validate_contract(world)
+    return world,payloads

@@ -31,12 +31,12 @@ checks. Initial linear velocity is the center-of-mass velocity in canonical worl
 It uses the distinct native initial-state setter once,
 before dynamics. It is never used to stand in for a sustained force.
 
-The admitted initial and observed native speed bounds are 50 m/s and 50 rad/s.
+For DIRECT, admitted initial and observed native speed bounds are 50 m/s and 50 rad/s.
 An actual pinned DIRECT characterization clamps requested 200 m/s and 200 rad/s
-to 100 after one step. The adapter rejects excessive initial requests and fails
+to 100 after one step. The DIRECT adapter rejects excessive initial requests and fails
 closed if forces/collisions produce observed speed above its conservative bound;
-it never publishes that clamp as physically faithful motion. Kinematic track
-speeds have the same bound.
+it never publishes that clamp as physically faithful motion. The shared authored kinematic track-speed cap is 50 m/s; this is distinct from
+DIRECT's observed solver-speed guard, which is not implemented for Blender.
 
 DIRECT's principal-axis inertia frame is calculated from the validated symmetric
 physical tensor. The native diagonal and inertial frame are read back and must

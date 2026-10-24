@@ -89,6 +89,13 @@ class RigidContractTests(unittest.TestCase):
         report['rigid_controls']=dict(version=1,forces=[],force_policy='native external force/torque per fixed step; discrete impulse is integrated wrench over one complete native step',bodies=[])
         for body in admitted['bodies']:
             report['rigid_controls']['bodies'].append(dict(id=body['id'],mode=body['mode'],inertial_position=[0,0,0],inertial_rotation=[0,0,0,1],principal_inertia=[0,0,0],initial_linear_velocity=[0,0,0],initial_angular_velocity=[0,0,0],collision=dict(type=body['colliders'][0]['shape']['type'],dimensions=[body['colliders'][0]['shape']['radius']]*3 if body['colliders'][0]['shape']['type']=='sphere' else body['colliders'][0]['shape']['size'],translation=[0,0,0],rotation=[0,0,0,1]),sleep=dict(enabled=False,initially_sleeping=False,linear_threshold=None,angular_threshold=None)))
+        report['rigid_controls']['bodies'][0]['principal_inertia']=[1e-9]*3
+        report['actual_bodies'][0]['inertia']=[1e-9]*3
+        physics._check_pybullet_report(report,admitted,report['backend'])
+        report['rigid_controls']['bodies'][1]['collision']['rotation']=[math.sin(.001/2),0,0,math.cos(.001/2)]
+        with self.assertRaises(physics.BackendError):physics._check_pybullet_report(report,admitted,report['backend'])
+        report['rigid_controls']['bodies'][1]['collision']['rotation']=[0,0,0,1]
+        report['rigid_controls']['bodies'][0]['principal_inertia']=[0,0,0]
         report['actual_bodies'][0]['inertia']=[0,0,0]
         with self.assertRaises(physics.BackendError) as raised:physics._check_pybullet_report(report,admitted,report['backend'])
         self.assertIn('inertia',str(raised.exception))
@@ -163,6 +170,7 @@ class NativeRigidTests(unittest.TestCase):
                 failed.parent.mkdir(parents=True,exist_ok=True)
                 shutil.copytree(prepared.root,failed,symlinks=True)
                 (failed/'failure.json').write_bytes(physics.canonical(dict(status='FAILED; not a verified physics cache',exception=type(exc).__name__,message=str(exc),diagnostic=getattr(exc,'report',None))))
+            self.counter+=1
             raise
         finally:adapter.cleanup(prepared)
 
@@ -281,6 +289,12 @@ class NativeRigidTests(unittest.TestCase):
         with self.assertRaises(physics.BackendError) as raised:self.run_world('pybullet',world,payloads)
         self.assertEqual(raised.exception.report['code'],'PHYSICS_NUMERICAL_INSTABILITY')
         self.assertEqual(raised.exception.report['limit'],50)
+        world,payloads=build_inputs(backend='pybullet');world['bodies'][0]['linear_velocity']=[.1,0,0]
+        world['solver']['stability']=dict(max_linear_velocity=.001)
+        with self.assertRaises(physics.BackendError) as raised:self.run_world('pybullet',world,payloads)
+        self.assertEqual(raised.exception.report['code'],'PHYSICS_NUMERICAL_INSTABILITY')
+        self.assertEqual(raised.exception.report['solver_step'],0)
+        self.assertIsNone(raised.exception.report['last_valid_frame'])
 
     def test_real_finite_pulse_timestep_convergence(self):
         errors=[]
@@ -290,8 +304,30 @@ class NativeRigidTests(unittest.TestCase):
             world['forces']=[force('impulse',[1,0,0],start=6,end=7)]
             states,_=self.run_world('pybullet',world,payloads)
             self.assertAlmostEqual(self.pose(states,6)['translation'][0],0,delta=1e-10)
-            # At t=.5, a unit impulse's ideal trajectory travels .25m.
-            # This finite-step pulse must converge to it without a velocity edit.
-            errors.append(abs(self.pose(states,12)['translation'][0]-.25))
-        self.assertLess(errors[1],errors[0]+1e-12);self.assertLess(errors[2],errors[1]+1e-12)
+            # A continuous rectangular pulse of duration dt has displacement
+            # .25-dt/2 at t=.5. Native semi-implicit integration must converge
+            # to that finite-duration physical oracle without a velocity edit.
+            errors.append(abs(self.pose(states,12)['translation'][0]-(.25-.5/denominator)))
+        self.assertLess(errors[1],errors[0]);self.assertLess(errors[2],errors[1])
         self.assertLess(errors[-1],1/480+1e-9)
+
+    def test_real_native_bounce_and_rest(self):
+        for backend in ['blender','pybullet']:
+            world,payloads=build_inputs(backend=backend,frames=97);world['materials'][0]['restitution']=.65
+            states,_=self.run_world(backend,world,payloads)
+            heights=[self.pose(states,frame)['translation'][1] for frame in range(97)]
+            impact=next(i for i,y in enumerate(heights) if y<.55)
+            self.assertGreater(max(heights[impact+1:impact+19]),.75)
+            self.assertTrue(all(abs(y-.5)<.03 for y in heights[-12:]))
+
+    def test_real_native_stack_tail_is_stable(self):
+        from physics_rigid_example import build_stack_inputs
+        for backend in ['blender','pybullet']:
+            world,payloads=build_stack_inputs(backend=backend)
+            states,_=self.run_world(backend,world,payloads)
+            for frame in range(49,73):
+                for identifier,height in [('cube',.5),('heavy',1.5)]:
+                    pose=self.pose(states,frame,identifier)
+                    self.assertAlmostEqual(pose['translation'][1],height,delta=.03)
+                    self.assertLess(abs(pose['translation'][0]),.03)
+                    self.assertLess(abs(pose['translation'][2]),.03)

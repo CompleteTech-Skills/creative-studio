@@ -1239,13 +1239,13 @@ class PyBulletBackend(BlenderBackend):
                 fields={'code','world_sha256','solver_step','solver_time','setting','limit','observed'}
                 require(type(failure) is dict and set(failure)==fields and failure['code']=='PHYSICS_NUMERICAL_INSTABILITY' and
                         failure['world_sha256']==prepared.world_sha256 and type(failure['solver_step']) is int and
-                        1<=failure['solver_step']<=timing_clock(world)['solver_steps'] and failure['setting'] in world['solver'].get('stability',{}) and
-                        failure['limit']==world['solver']['stability'][failure['setting']] and type(failure['observed']) in (int,float) and failure['observed']>failure['limit'],
+                        0<=failure['solver_step']<=timing_clock(world)['solver_steps'] and failure['setting'] in ('max_linear_velocity','max_angular_velocity') and
+                        failure['limit']==min(world['solver'].get('stability',{}).get(failure['setting'],50.),50.) and type(failure['observed']) in (int,float) and failure['observed']>failure['limit'],
                         'PHYSICS_BACKEND_CRASH','Malformed numerical failure observations.',category='backend-crash')
                 time_value=failure['solver_step']*_ratio(world['solver']['fixed_step'])/world['solver']['substeps']
                 require(failure['solver_time']==rational(time_value),'PHYSICS_BACKEND_CRASH','Failure solver clock differs.',category='backend-crash')
                 error=BackendError('PHYSICS_NUMERICAL_INSTABILITY','Observed '+failure['setting']+' exceeded limit at solver step '+str(failure['solver_step'])+' time '+str(time_value),
-                    category='numerical-instability',last_valid_frame=max(0,math.floor((time_value-_ratio(world['solver']['fixed_step'])/world['solver']['substeps'])*_ratio(world['fps']))))
+                    category='numerical-instability',last_valid_frame=None if failure['solver_step']==0 else max(0,math.floor((time_value-_ratio(world['solver']['fixed_step'])/world['solver']['substeps'])*_ratio(world['fps']))))
                 error.report.update(solver_step=failure['solver_step'],solver_time=failure['solver_time'],setting=failure['setting'],limit=failure['limit'],observed=failure['observed'])
                 raise error
             raise
@@ -1378,7 +1378,7 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
             expected_dimensions=[native_shape['radius']]*3 if native_shape['type']=='sphere' else native_shape['size']
             require(collision['type']==native_shape['type'] and np.allclose(collision['dimensions'],expected_dimensions,rtol=1e-6,atol=0) and
                     np.max(np.abs(rotation @ np.asarray(collision['translation'])+np.asarray(body['mass']['center_of_mass'])))<=1e-6 and
-                    abs(abs(float(qmul(controls['inertial_rotation'],collision['rotation'])[3]))-1)<=1e-6,
+                    np.allclose(qmatrix(qmul(controls['inertial_rotation'],collision['rotation'])),np.eye(3),rtol=0,atol=1e-6),
                     'PHYSICS_BAKE_FAILED','Native collision child/frame differs from the unchanged declared primitive.',category='backend-crash')
             tensor=rotation @ np.diag(controls['principal_inertia']) @ rotation.T
             requested=np.asarray(body['mass']['inertia'])
