@@ -26,8 +26,11 @@ not a security boundary or a way to load user-specified commands.
 `Policy` is trusted host configuration. Request fields cannot grant asset rights,
 add owners, enable a network provider or increase any resource limit. Admission
 validates all exact references globally, including checks whose backend is absent.
-The complete project/request closure and retained evidence are rechecked between
-checks and before returning a usable report; changed earlier references stale
+The complete request is hashed once initially. New/observably changed exact refs
+are checked incrementally; a single flattened, deduplicated fresh final hash pass
+rechecks the entire request, snapshots and retained evidence before returning a
+usable report. Cheap observation fingerprints avoid repeated large-content reads;
+final hashes remain authoritative even when metadata appears unchanged; changed earlier references stale
 the whole integrity gate while retaining diagnostics. A conflicting hash, missing canonical reference or unsafe path is an integrity
 failure, not an optional missing capability. No fallback can waive integrity,
 permissions, network policy, owner exclusivity or resource ceilings.
@@ -37,7 +40,10 @@ adapter uses `rig_errors.job_lock`, not a second job ledger, and reloads verifie
 native data before and after evaluation. The image-master adapter reserves only
 its bounded, read-only image inspection. Admission serializes its own in-process
 call but does not pretend that this replaces project/native resource ownership.
-CPU and disk reservations are summed over the complete request; peak memory/GPU
+Complete admission CPU/wall accounting includes request validation, integrity
+hashing, native operations, schema checks and bounded report preparation. Budget
+is enforced again after final digest emission; the timing measurement itself is
+taken before that digest to avoid a self-referential hash. CPU and disk reservations are summed over the complete request; peak memory/GPU
 ceilings apply to serial checks. Native evidence emission enforces its disk
 reservation before writing. Working-memory estimates are admission bounds, not
 OS allocation enforcement. The host must authorize the explicit owner probe before registering it. Creating

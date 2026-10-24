@@ -11,6 +11,8 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 import threading
+import time
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from continuity_capabilities import Admission, Policy, MATRIX, MANDATORY_FIELDS, OwnerAdapter, schemas, validate, discover
@@ -414,6 +416,62 @@ class CapabilityTest(unittest.TestCase):
         parsed=validate(result,'result')
         self.assertIs(type(parsed['checks'][0]['snapshot']['limits']['memory_bytes']),int)
         self.assertIs(type(result['checks'][0]['snapshot']['limits']['memory_bytes']),float)
+
+
+    def test_owner_required_review_records_missing_field_and_gate(self):
+        owner,native=self.policy_owner('visual-reference',malformed=dict(outcome='needs_visual_review'))
+        request=self.request('visual-reference');request['checks'][0]['inputs']=[native]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'needs_visual_review')
+        self.assertIn('visual-approval',result['checks'][0]['missing_fields'])
+        self.assertIn('visual-approval',result['checks'][0]['unsatisfied_gates'])
+
+    def test_duplicate_probe_and_input_hashing_is_linear_in_unique_bytes(self):
+        import continuity_capabilities as module
+        original=module.verify_references
+        records=[]
+        def counted(*args,**kwargs):
+            start=time.process_time()
+            result=original(*args,**kwargs)
+            records.append(dict(seconds=time.process_time()-start,bytes=result['total_bytes']))
+            return result
+        owner,native=self.policy_owner('geometry-inspection')
+        request=self.request(*(['geometry-inspection']*16))
+        for check in request['checks']:check['inputs']=[native]
+        with patch.object(module,'verify_references',counted):result=self.engine(owner).run(request)
+        self.assertEqual(len(records),2,records)  # initial unique closure and final fresh closure
+        self.assertEqual(sum(r['bytes'] for r in records),2*((self.root/'project.json').stat().st_size+(self.root/'rig/rig.json').stat().st_size))
+        self.assertGreaterEqual(result['admission_resources']['process_cpu_seconds'],sum(r['seconds'] for r in records))
+        self.assertEqual(len(result['checks']),16)
+
+    def test_budget_includes_validation_and_hashing_not_only_owner_calls(self):
+        import continuity_capabilities as module
+        owner,native=self.policy_owner('geometry-inspection')
+        request=self.request('geometry-inspection');request['checks'][0].update(inputs=[native])
+        request['checks'][0]['resources']['cpu_seconds']=1
+        original=module.verify_references
+        def expensive(*args,**kwargs):
+            result=original(*args,**kwargs)
+            until=time.process_time()+.55
+            while time.process_time()<until:pass
+            return result
+        with patch.object(module,'verify_references',expensive):result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('resource-admission',result['checks'][0]['unsatisfied_gates'])
+        self.assertGreater(result['admission_resources']['process_cpu_seconds'],1)
+
+    def test_final_hash_pass_detects_changes_despite_unreliable_fingerprint(self):
+        import continuity_capabilities as module
+        owner,native=self.policy_owner('geometry-inspection')
+        request=self.request('geometry-inspection');request['checks'][0]['inputs']=[native]
+        def change(result):(self.root/'project.json').write_bytes(b'{"changed":true}')
+        owner.execute=lambda check:(change({}) or dict(outcome='executed',evidence=[],measurements={},verified_fields=[],limitations=[]))
+        # Simulate a platform reporting an unchanged metadata fingerprint. Final
+        # hash verification must still catch the changed canonical project bytes.
+        with patch.object(module.ReferencePass,'_fingerprint',return_value=(1,2,3,4,5)):
+            result=self.engine(owner).run(request)
+        self.assertEqual(result['integrity'],'failed')
+        self.assertEqual(result['outcome'],'failed')
 
     def test_imports_do_not_import_optional_engines(self):
         # Import at module scope is stdlib + shared JSON safety only. Static

@@ -293,6 +293,34 @@
         "outcome"
       ]
     },
+    "admission-resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wall_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "process_cpu_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reserved_cpu_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "scope": {
+          "const": "Complete admission including reference/schema/report work; conservative wall deadline equals CPU reservation."
+        }
+      },
+      "required": [
+        "wall_seconds",
+        "process_cpu_seconds",
+        "reserved_cpu_seconds",
+        "scope"
+      ]
+    },
     "snapshot": {
       "type": "object",
       "additionalProperties": false,
@@ -501,6 +529,9 @@
         "host_policy": {
           "$ref": "#/$defs/host-policy"
         },
+        "admission_resources": {
+          "$ref": "#/$defs/admission-resources"
+        },
         "report_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
@@ -516,6 +547,7 @@
         "integrity",
         "visual_approval",
         "host_policy",
+        "admission_resources",
         "report_sha256"
       ]
     },

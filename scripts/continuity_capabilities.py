@@ -24,7 +24,7 @@ import time
 
 from continuity_contracts import (ID, SHA, SEMVER, TEXT, PATH, STAMP, VERSION,
     arr, obj, enum, nullable, ref, integer, canonical_bytes, digest,
-    portable_path, verify_references, _read_regular_bytes)
+    portable_path, verify_references, _read_regular_bytes, MAX_DEPENDENCY_BYTES)
 from rig_errors import decode_json
 
 OUTCOMES = ('executed', 'supported_fallback', 'partial', 'blocked_missing_capability',
@@ -87,6 +87,7 @@ def definitions():
     result = obj(dict(schema_version=dict(const=VERSION), kind=dict(const='continuity-capability-result'),
         request_sha256=SHA, request_id=ID, outcome=enum(*OUTCOMES), checks=arr(ref('check-result'), maximum=128),
         integrity=enum('verified', 'failed'), visual_approval=dict(const=False), host_policy=ref('host-policy'),
+        admission_resources=ref('admission-resources'),
         report_sha256=SHA))
     check_result = obj(dict(id=ID, capability=enum(*MATRIX), outcome=enum(*OUTCOMES),
         implementation_id=nullable(ID), owner=nullable(ID), backend=nullable(ID),
@@ -97,11 +98,14 @@ def definitions():
         error=nullable(TEXT)))
     host_policy = obj(dict(offline=dict(type='boolean'), asset_rights=dict(type='boolean'),
         allowed_owners=arr(ID, maximum=128, unique=True), limits=ref('limits')))
+    admission_resources = obj(dict(wall_seconds=dict(type='number',minimum=0),
+        process_cpu_seconds=dict(type='number',minimum=0),reserved_cpu_seconds=integer(1),
+        scope=dict(const='Complete admission including reference/schema/report work; conservative wall deadline equals CPU reservation.')))
     execution = obj(dict(evidence=arr(ref('pointer'), maximum=128), measurements=nullable(dict(type='object')),
         verified_fields=arr(ID, maximum=128, unique=True), limitations=arr(TEXT, maximum=128),
         outcome=enum('executed','partial','needs_visual_review','failed','canceled')))
     return dict(pointer=pointer, limits=limits, check=check, request=request,
-                **{'host-policy':host_policy, 'execution-result':execution},
+                **{'host-policy':host_policy, 'execution-result':execution, 'admission-resources':admission_resources},
                 snapshot=snapshot, result=result, **{'check-result': check_result})
 
 
@@ -206,6 +210,62 @@ def _failure(check, message=None):
         limitations=[], elapsed_seconds=0., error=message)
 
 
+class ReferencePass:
+    """Per-admission verified references, with cheap observed-change guards.
+
+    New/observably changed refs are hashed once. A single final fresh hash pass
+    verifies the entire flattened closure, including earlier evidence. A forged
+    unchanged metadata fingerprint cannot manufacture final integrity success.
+    """
+    def __init__(self, root):
+        self.root=root
+        self.refs={}
+        self.fingerprints={}
+        self.sizes={}
+        self.hash_passes=0
+
+    def _fingerprint(self, pointer):
+        path=self.root/portable_path(pointer['path'])
+        current=self.root
+        for part in pointer['path'].split('/'):
+            current/=part
+            if current.is_symlink():
+                raise ValueError('CONTINUITY_CAPABILITY_PATH: reference symlink is forbidden')
+        value=path.stat(follow_symlinks=False)
+        return (value.st_dev,value.st_ino,value.st_size,value.st_mtime_ns,value.st_ctime_ns)
+
+    def verify(self, pointers, *, force=False):
+        selected={}
+        for pointer in pointers:
+            key=portable_path(pointer['path']).casefold()
+            prior=self.refs.get(key)
+            if prior is not None and prior!=pointer:
+                raise ValueError('CONTINUITY_CAPABILITY_REFERENCE: conflicting exact reference')
+            if key in selected and selected[key]!=pointer:
+                raise ValueError('CONTINUITY_CAPABILITY_REFERENCE: conflicting exact reference')
+            selected[key]=pointer
+        changed={key:p for key,p in selected.items() if force or key not in self.refs
+                 or self._fingerprint(p)!=self.fingerprints[key]}
+        if changed:
+            retained=sum(v for k,v in self.sizes.items() if k not in changed)
+            available=MAX_DEPENDENCY_BYTES-retained
+            if available<1:
+                raise ValueError('CONTINUITY_CAPABILITY_LIMIT: reference closure exceeds byte budget')
+            # Explicit pointer list; no arbitrary metadata is traversed. This
+            # compatibility boundary switches to owner113's final typed-list API.
+            observed=verify_references(self.root,dict(refs=list(changed.values())),maximum_bytes=available)
+            self.hash_passes+=1
+            sizes={f['path'].casefold():f['byte_size'] for f in observed['files']}
+            for key,pointer in changed.items():
+                self.refs[key]=deepcopy(pointer)
+                self.fingerprints[key]=self._fingerprint(pointer)
+                self.sizes[key]=sizes[key]
+        return dict(files=len(self.refs),byte_size=sum(self.sizes.values()),hash_passes=self.hash_passes)
+
+    def final(self):
+        return self.verify(list(self.refs.values()),force=True)
+
+
 class Admission:
     def __init__(self, root, *, policy, owners=(), clock=None):
         self.root = Path(root).resolve(strict=True)
@@ -219,8 +279,9 @@ class Admission:
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def run(self, request, *, canceled=lambda: False, now=None):
-        request = validate(request, 'request')
         start_clock = time.monotonic()
+        start_cpu = time.process_time()
+        request = validate(request, 'request')
         initial = now or self.clock()
         clock = (lambda: initial + timedelta(seconds=time.monotonic()-start_clock)) if now is not None else self.clock
         if not isinstance(initial, datetime) or initial.tzinfo is None:
@@ -228,31 +289,40 @@ class Admission:
         totals = {key: sum(c['resources'][key] for c in request['checks']) for key in ('cpu_seconds', 'disk_bytes')}
         if any(totals[key] > getattr(self.policy, 'max_' + key) for key in totals):
             raise ValueError('CONTINUITY_CAPABILITY_LIMIT: aggregate CPU/disk reservation exceeds host budget')
+        reserved = sum(c['resources']['cpu_seconds'] for c in request['checks'])
+        meter=dict(wall_start=start_clock,cpu_start=start_cpu,reserved_cpu_seconds=reserved)
+        references=ReferencePass(self.root)
         output = dict(schema_version=VERSION, kind='continuity-capability-result', request_sha256=digest(request),
             request_id=request['request_id'], outcome='blocked_missing_capability', checks=[],
             integrity='verified', visual_approval=False, host_policy=dict(offline=self.policy.offline,
                 asset_rights=self.policy.asset_rights, allowed_owners=sorted(self.policy.allowed_owners),
-                limits={key:getattr(self.policy,'max_'+key) for key in RESOURCES}), report_sha256='0'*64)
+                limits={key:getattr(self.policy,'max_'+key) for key in RESOURCES}),
+            admission_resources=dict(wall_seconds=0.,process_cpu_seconds=0.,reserved_cpu_seconds=reserved,
+                scope='Complete admission including reference/schema/report work; conservative wall deadline equals CPU reservation.'),report_sha256='0'*64)
         # Integrity is global, never a missing optional capability. Verify ALL
         # refs even when a requested capability is missing/canceled.
         try:
-            self._verify_request(request)
+            references.verify([request['project_revision'],*[p for c in request['checks'] for p in c['inputs']]])
         except (ValueError, OSError) as exc:
             output['integrity'] = 'failed'
             for check in request['checks']:
                 item = _failure(check, 'CONTINUITY_CAPABILITY_INTEGRITY: ' + _message(exc))
                 item.update(outcome='failed', unsatisfied_gates=['integrity'])
                 output['checks'].append(item)
-            return self._finish(output)
+            return self._finish(output,meter)
         if not self._busy.acquire(blocking=False):
             for check in request['checks']:
                 item = _failure(check, 'CONTINUITY_CAPABILITY_BUSY: admission already active')
                 item.update(outcome='failed', unsatisfied_gates=['ownership'])
                 output['checks'].append(item)
-            return self._finish(output)
+            return self._finish(output,meter)
         try:
+            report_bytes=0
             for check in request['checks']:
-                if output['integrity'] == 'failed':
+                if (time.monotonic()-meter['wall_start']>reserved or time.process_time()-meter['cpu_start']>reserved):
+                    item=_failure(check,'CONTINUITY_CAPABILITY_LIMIT: complete admission budget exhausted')
+                    item.update(outcome='failed',unsatisfied_gates=['resource-admission'])
+                elif output['integrity'] == 'failed':
                     item = _failure(check, 'CONTINUITY_CAPABILITY_INTEGRITY: earlier reference changed')
                     item.update(outcome='failed', unsatisfied_gates=['integrity'])
                 elif canceled():
@@ -260,41 +330,45 @@ class Admission:
                     item.update(outcome='canceled', unsatisfied_gates=['cancellation'])
                 else:
                     try:
-                        self._verify_request(request)
-                        item = self._check(check, clock, canceled)
+                        references.verify([request['project_revision'],*check['inputs']])
+                        item = self._check(check, clock, canceled,references)
                     except Exception as exc:
                         item = _failure(check, 'CONTINUITY_CAPABILITY_OWNER: ' + _message(exc))
                         item.update(outcome='failed', unsatisfied_gates=['owner-contract'])
                 try:
                     item = validate(item, 'check-result')
-                    if len(canonical_bytes(item)) > 1024*1024:
+                    encoded_bytes=len(canonical_bytes(item))
+                    if encoded_bytes > 1024*1024:
                         raise ValueError('CONTINUITY_CAPABILITY_REPORT_LIMIT: check exceeds 1 MiB')
-                    if sum(len(canonical_bytes(x)) for x in output['checks']) + len(canonical_bytes(item)) > 4*1024*1024:
+                    if report_bytes + encoded_bytes > 4*1024*1024:
                         raise ValueError('CONTINUITY_CAPABILITY_REPORT_LIMIT: cumulative checks exceed 4 MiB')
                 except Exception as exc:
                     item = _failure(check, _message(exc))
                     item.update(outcome='failed', unsatisfied_gates=['owner-contract'])
+                report_bytes+=len(canonical_bytes(item))
                 output['checks'].append(item)
                 try:
-                    self._verify_request(request)
-                    for previous in output['checks']:
-                        verify_references(self.root, dict(evidence=previous['evidence']))
-                        if previous['snapshot'] is not None:
-                            verify_references(self.root, dict(evidence=previous['snapshot']['evidence']))
-                except (ValueError, OSError) as exc:
-                    output['integrity'] = 'failed'
-                    for previous in output['checks']:
-                        previous.update(outcome='failed', error='CONTINUITY_CAPABILITY_INTEGRITY: '+_message(exc),
-                            unsatisfied_gates=sorted(set(previous['unsatisfied_gates'])|{'integrity'}))
+                    references.verify([request['project_revision'],*check['inputs']])
+                    references.verify(item['evidence'])
+                    if item['snapshot'] is not None:references.verify(item['snapshot']['evidence'])
+                except (ValueError,OSError) as exc:
+                    self._invalidate(output,exc)
+            try:
+                references.final()
+            except (ValueError,OSError) as exc:
+                self._invalidate(output,exc)
         finally:
             self._busy.release()
-        return self._finish(output)
+        return self._finish(output,meter)
 
-    def _verify_request(self, request):
-        refs = [request['project_revision'], *[p for c in request['checks'] for p in c['inputs']]]
-        return verify_references(self.root, dict(refs=refs))
+    @staticmethod
+    def _invalidate(output,exc):
+        output['integrity']='failed'
+        for previous in output['checks']:
+            previous.update(outcome='failed',error='CONTINUITY_CAPABILITY_INTEGRITY: '+_message(exc),
+                unsatisfied_gates=sorted(set(previous['unsatisfied_gates'])|{'integrity'}))
 
-    def _finish(self, output):
+    def _finish(self, output,meter):
         statuses = [c['outcome'] for c in output['checks']]
         if 'failed' in statuses: result = 'failed'
         elif 'canceled' in statuses: result = 'canceled'
@@ -305,9 +379,27 @@ class Admission:
         else: result = 'blocked_missing_capability'
         output['outcome'] = result
         output['report_sha256'] = digest({k:v for k,v in output.items() if k != 'report_sha256'})
-        return validate(output, 'result')
+        output=validate(output,'result')
+        wall=time.monotonic()-meter['wall_start'];cpu=time.process_time()-meter['cpu_start']
+        output['admission_resources'].update(wall_seconds=wall,process_cpu_seconds=cpu)
+        if wall>meter['reserved_cpu_seconds'] or cpu>meter['reserved_cpu_seconds']:
+            output['outcome']='failed'
+            for check in output['checks']:
+                check.update(outcome='failed',error='CONTINUITY_CAPABILITY_LIMIT: complete admission budget exhausted',
+                    unsatisfied_gates=sorted(set(check['unsatisfied_gates'])|{'resource-admission'}))
+        output['report_sha256']=digest({k:v for k,v in output.items() if k!='report_sha256'})
+        # Enforce once more after the bounded final digest. Measurements are
+        # taken before digest emission to avoid self-referential timing hashes.
+        if (time.monotonic()-meter['wall_start']>meter['reserved_cpu_seconds']
+                or time.process_time()-meter['cpu_start']>meter['reserved_cpu_seconds']):
+            output['outcome']='failed'
+            for check in output['checks']:
+                check.update(outcome='failed',error='CONTINUITY_CAPABILITY_LIMIT: complete admission budget exhausted',
+                    unsatisfied_gates=sorted(set(check['unsatisfied_gates'])|{'resource-admission'}))
+            output['report_sha256']=digest({k:v for k,v in output.items() if k!='report_sha256'})
+        return output
 
-    def _check(self, check, clock, canceled):
+    def _check(self, check, clock, canceled,references):
         item = _failure(check)
         candidates = []
         rejected = []
@@ -357,7 +449,7 @@ class Admission:
                 item.update(outcome='failed', unsatisfied_gates=sorted(set(gates)))
                 return item  # A fallback never waives a hard gate.
             try:
-                verify_references(self.root, snap)
+                references.verify(snap['evidence'])
                 start = time.monotonic()
                 cpu_start = time.process_time()
                 with adapter.reserve(deepcopy(check)):
@@ -371,7 +463,7 @@ class Admission:
                     result = adapter.execute(deepcopy(check))
                     # Exact source hashes are checked again before declaring any
                     # result usable. Native adapters must snapshot parsed inputs.
-                    verify_references(self.root, dict(inputs=check['inputs']))
+                    references.verify(check['inputs'])
                 elapsed = time.monotonic()-start
                 cpu_used = time.process_time()-cpu_start
                 result = validate(result, 'execution-result')
@@ -381,7 +473,7 @@ class Admission:
                     raise ValueError('CONTINUITY_CAPABILITY_OWNER: malformed execution result')
                 if result['outcome'] not in ('executed', 'partial', 'needs_visual_review', 'failed', 'canceled'):
                     raise ValueError('CONTINUITY_CAPABILITY_OWNER: illegal native outcome')
-                verify_references(self.root, dict(evidence=result['evidence']))
+                references.verify(result['evidence'])
                 fields = result['verified_fields']
                 if not isinstance(fields, list) or not all(isinstance(f, str) for f in fields):
                     raise ValueError('CONTINUITY_CAPABILITY_OWNER: verified fields must be typed names')
@@ -410,9 +502,10 @@ class Admission:
                 if canceled(): status = 'canceled'
                 if status == 'executed' and missing: status = 'partial'
                 if status == 'executed' and fallback: status = 'supported_fallback'
-                if (check['needs_visual_approval'] or check['capability'] == 'visual-comparison' or status == 'needs_visual_review') and status in ('executed', 'supported_fallback', 'partial'):
+                if status == 'needs_visual_review' or ((check['needs_visual_approval'] or check['capability'] == 'visual-comparison') and status in ('executed','supported_fallback','partial')):
                     status = 'needs_visual_review'
                     if 'visual-approval' not in missing: missing.append('visual-approval')
+                    item['unsatisfied_gates'].append('visual-approval')
                 measurements = deepcopy(result['measurements']) or {}
                 try:
                     import resource
