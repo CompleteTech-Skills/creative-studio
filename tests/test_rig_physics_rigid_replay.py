@@ -144,6 +144,11 @@ class NativeReplayTests(unittest.TestCase):
                     payload = (root/'replay'/image['path']).read_bytes()
                     self.assertEqual(payload[:8], b'\x89PNG\r\n\x1a\n')
                     self.assertEqual(p.digest(payload), image['sha256'])
+                    from PIL import Image
+                    with Image.open(BytesIO(payload)) as preview:
+                        blue = sum(1 for red, green, blue, alpha in preview.convert('RGBA').getdata()
+                                   if alpha > 128 and blue > red*1.2 and blue > green*1.2 and blue-red > 20)
+                    self.assertGreaterEqual(blue, 4, 'Actual dynamic diagnostic body must remain identifiable.')
                 # Retained inputs are exact solver bytes; corrupt source never starts Blender.
                 shutil.copytree(root/'cache', root/'corrupt-cache')
                 (root/'corrupt-cache'/'states.json').write_bytes(before+b' ')
