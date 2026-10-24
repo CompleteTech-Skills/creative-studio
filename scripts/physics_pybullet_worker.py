@@ -152,8 +152,16 @@ def main():
             position,rotation=p.getBasePositionAndOrientation(body_index,physicsClientId=client)
             inertia=p.getDynamicsInfo(body_index,-1,physicsClientId=client)
             if list(inertia[3])==[0,0,0] and list(inertia[4])==[0,0,0,1]:return position,rotation
-            inverse=p.invertTransform(inertia[3],inertia[4])
-            return p.multiplyTransforms(position,rotation,*inverse)
+            def multiply(q,r):
+                x,y,z,w=q;a,b,c,d=r
+                return [w*a+x*d+y*c-z*b,w*b-x*c+y*d+z*a,w*c+x*b-y*a+z*d,w*d-x*a-y*b-z*c]
+            x,y,z,w=inertia[4]
+            body_rotation=multiply(rotation,[-x,-y,-z,w])
+            norm=math.sqrt(sum(x*x for x in body_rotation));body_rotation=[x/norm for x in body_rotation]
+            # Preserve double precision for large translated COM frames. Native
+            # multiplyTransforms helpers round through their float transform API.
+            shifted=multiply(multiply(body_rotation,[*inertia[3],0]),[-body_rotation[0],-body_rotation[1],-body_rotation[2],body_rotation[3]])[:3]
+            return [x-y for x,y in zip(position,shifted)],body_rotation
         def motion_at(motion,time):
             coordinate=time*Fraction(motion['fps']['numerator'],motion['fps']['denominator'])
             keys=motion['keys']

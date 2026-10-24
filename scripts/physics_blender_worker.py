@@ -269,11 +269,11 @@ def create(root, job):
         effector=bpy.context.object;effector.name='physical-force-'+force['id']
         effector.rotation_euler=vector.to_track_quat('Z','Y').to_euler() if vector.length else (0,0,0)
         field=effector.field;field.shape='PLANE';field.flow=0;field.noise=0;field.falloff_power=0
-        for frame,strength in [(1,0),(force['frame_range']['start']+2,vector.length),(force['frame_range']['end']+2,0)]:
+        for frame,strength in [(1,0),(force['frame_range']['start']+2,vector.length*scene.render.fps),(force['frame_range']['end']+2,0)]:
             field.strength=strength;field.keyframe_insert(data_path='strength',frame=frame)
         for curve in effector.animation_data.action.fcurves:
             for key in curve.keyframe_points:key.interpolation='CONSTANT'
-        effectors.append(dict(id=force['id'],object=effector.name,type=field.type,shape=field.shape,flow=field.flow,falloff_power=field.falloff_power))
+        effectors.append(dict(id=force['id'],object=effector.name,type=field.type,shape=field.shape,flow=field.flow,falloff_power=field.falloff_power,strength_per_newton=scene.render.fps))
     physics = scene.rigidbody_world
     if physics is None:
         raise ValueError('Native rigid-body world was not created.')

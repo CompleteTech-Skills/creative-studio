@@ -181,13 +181,19 @@ class NativeRigidTests(unittest.TestCase):
 
     def test_real_native_central_force_is_mass_dependent(self):
         for backend in ['blender','pybullet']:
-            observed=[]
-            for mass in [1,2]:
-                world,payloads=build_inputs(backend=backend);world['gravity']=[0,0,0];world['forces']=[force()]
-                body=world['bodies'][0];body['mass']['kilograms']=mass;body['mass']['inertia']=[[x*mass for x in row] for row in body['mass']['inertia']]
-                states,_=self.run_world(backend,world,payloads)
-                x=self.pose(states,6)['translation'][0];self.assertLess(abs(x-(2/mass)*(.25**2)/2),.03);observed.append(x)
-            self.assertAlmostEqual(observed[0]/observed[1],2,delta=.03)
+            for numerator,denominator in [(24,1),(30000,1001)]:
+                observed=[]
+                for mass in [1,2]:
+                    world,payloads=build_inputs(backend=backend);world['gravity']=[0,0,0];world['forces']=[force()]
+                    world['fps']=dict(numerator=numerator,denominator=denominator)
+                    if backend=='blender' and denominator!=1:world['solver']['fixed_step']=dict(numerator=1001,denominator=240000)
+                    body=world['bodies'][0];body['mass']['kilograms']=mass;body['mass']['inertia']=[[x*mass for x in row] for row in body['mass']['inertia']]
+                    states,_=self.run_world(backend,world,payloads)
+                    time=6*denominator/numerator;x=self.pose(states,6)['translation'][0]
+                    self.assertLess(abs(x-(2/mass)*(time**2)/2),.003)
+                    self.assertAlmostEqual(self.pose(states,6)['translation'][1],3,delta=1e-5)
+                    observed.append(x)
+                self.assertAlmostEqual(observed[0]/observed[1],2,delta=.01)
 
     def test_real_direct_impulse_torque_initial_velocity_and_custom_inertia(self):
         for kind,vector in [('impulse',[1,0,0]),('angular-impulse',[0,0,.1]),('torque',[0,0,.1])]:

@@ -54,7 +54,11 @@ them. Its receipt records those unexposed thresholds as `null` rather than
 inventing a readback.
 
 Blender central forces use real WIND plane effectors with zero flow/noise and no
-distance attenuation. Their direction and strength represent a central force,
+distance attenuation. The pinned native effector code divides force by the
+integer render-fps numerator (`frs_sec`), so field strength is explicitly multiplied
+by that numerator, including rational rates with a separate fps base. Readback
+retains this conversion and actual two-mass/two-rate acceleration tests must
+verify newtons independently of gravity/contact. Their direction and strength represent a central force,
 not an airflow velocity. This bounded profile applies each such force to **all**
 dynamic bodies in the world. Unsupported target subsets fail admission. Native
 frame-end evaluation is accounted for when keying the half-open force interval.

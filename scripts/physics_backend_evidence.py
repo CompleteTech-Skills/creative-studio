@@ -266,9 +266,10 @@ def rigid_report(report,world,backend):
     if backend=='blender':
         need(type(value['effectors']) is list and len(value['effectors'])==len(world['forces']),'Native force effector count differs.')
         for observed,force in zip(value['effectors'],world['forces']):
-            object_fields(observed,('id','object','type','shape','flow','falloff_power'),'Native force effector')
+            object_fields(observed,('id','object','type','shape','flow','falloff_power','strength_per_newton'),'Native force effector')
             need(observed['id']==force['id'] and type(observed['object']) is str and observed['type']=='WIND' and observed['shape']=='PLANE' and
-                 number(observed['flow']) and observed['flow']==0 and number(observed['falloff_power']) and observed['falloff_power']==0,'Native central force mapping differs.')
+                 number(observed['flow']) and observed['flow']==0 and number(observed['falloff_power']) and observed['falloff_power']==0 and number(observed['strength_per_newton']) and
+                 observed['strength_per_newton']==world['fps']['numerator'],'Native central force mapping differs.')
 
 
 def same_json(actual,expected):
