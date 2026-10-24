@@ -169,7 +169,7 @@ def preview(root,scene,bodies, replay_framing=None):
     # Include actual mesh extents, so a broad floor is not cropped to its origin.
     extent=max(extent,max(max(bpy.data.objects[body['id']].dimensions) for body in bodies))
     if replay_framing is not None:
-        center, extent = replay_framing
+        center, extent, replay_ortho_scale = replay_framing
     camera_data=bpy.data.cameras.new('physics-diagnostic-camera')
     camera=bpy.data.objects.new('physics-diagnostic-camera',camera_data)
     scene.collection.objects.link(camera)
@@ -177,6 +177,7 @@ def preview(root,scene,bodies, replay_framing=None):
     camera.rotation_euler=(center-camera.location).to_track_quat('-Z','Y').to_euler()
     camera_data.type='ORTHO';camera_data.ortho_scale=extent*1.8
     if replay_framing is not None:
+        camera_data.ortho_scale=replay_ortho_scale
         camera_data.clip_end=max(1000., extent*10.)
     scene.camera=camera
     light_data=bpy.data.lights.new('physics-diagnostic-light','AREA')
@@ -194,11 +195,18 @@ def preview(root,scene,bodies, replay_framing=None):
         material=bpy.data.materials.new(body['id']+'-neutral-diagnostic')
         material.diffuse_color=(.1,.4,.8,1) if body['mode']=='dynamic' else (.35,.35,.35,1)
         if replay_framing is not None:
+            material.diffuse_color=(.005,.02,.65,1) if body['mode']=='dynamic' else (.22,.22,.22,1)
             material.use_nodes=True
             surface=material.node_tree.nodes.get('Principled BSDF')
             surface.inputs['Base Color'].default_value=material.diffuse_color
-            surface.inputs['Roughness'].default_value=.65
+            surface.inputs['Roughness'].default_value=.8
+            surface.inputs['Specular IOR Level'].default_value=.15
         bpy.data.objects[body['id']].data.materials.append(material)
+    if replay_framing is not None:
+        scene.view_settings.view_transform='Standard'
+        scene.view_settings.look='None'
+        scene.view_settings.exposure=0.
+        scene.view_settings.gamma=1.
     scene.render.engine='CYCLES';scene.cycles.device='CPU';scene.cycles.samples=4
     scene.render.resolution_x=128;scene.render.resolution_y=128;scene.render.resolution_percentage=100
     scene.render.image_settings.file_format='PNG';scene.render.image_settings.color_mode='RGBA'
@@ -486,6 +494,10 @@ def replay_scene(root, job):
             vertices = job['meshes'][body['id']]['vertices']
             bounds = [(min(v[axis] for v in vertices), max(v[axis] for v in vertices)) for axis in range(3)]
             corners[body['id']] = [Vector(point) for point in itertools.product(*bounds)]
+        view_rotation = (-Vector((1.,-1.4,1.1)).normalized()).to_track_quat('-Z','Y')
+        view_inverse = view_rotation.inverted()
+        projected_low = Vector((math.inf, math.inf, math.inf))
+        projected_high = Vector((-math.inf, -math.inf, -math.inf))
         low = Vector((math.inf, math.inf, math.inf))
         high = Vector((-math.inf, -math.inf, -math.inf))
         for sample in states['samples']:
@@ -495,15 +507,20 @@ def replay_scene(root, job):
                 rotation = Quaternion((w,x,y,z))
                 for corner in corners[pose['id']]:
                     point = BASIS.to_3x3() @ (origin + rotation @ corner)
+                    projected = view_inverse @ point
                     for axis in range(3):
+                        projected_low[axis] = min(projected_low[axis], projected[axis])
+                        projected_high[axis] = max(projected_high[axis], projected[axis])
                         low[axis] = min(low[axis], point[axis])
                         high[axis] = max(high[axis], point[axis])
-        center = (low+high)*.5
-        # Half diagonal bounds the projected radius for every camera direction;
-        # 1.3 * existing 1.8 scale leaves margin around its full diameter.
-        extent = max(1., (high-low).length*.5)*1.3
+        center = view_rotation @ ((projected_low+projected_high)*.5)
+        # Fixed square orthographic camera fits every transformed corner in
+        # screen space, with 12 percent margin across the full trajectory.
+        screen_span = max(projected_high.x-projected_low.x, projected_high.y-projected_low.y, 1.)
+        ortho_scale = screen_span*1.12
+        extent = max(1., (high-low).length*.5)
         scene['replay_camera_scope'] = 'complete cached trajectory and transformed actual mesh bounds'
-        image = preview(root, scene, bodies, replay_framing=(center, extent))
+        image = preview(root, scene, bodies, replay_framing=(center, extent, ortho_scale))
         frames = sorted({0, len(states['samples'])//2, len(states['samples'])-1})
         image['frame'] = 0; image['scope'] = 'DIRECT solved-state replay; neutral diagnostic only'
         images.append(image)
