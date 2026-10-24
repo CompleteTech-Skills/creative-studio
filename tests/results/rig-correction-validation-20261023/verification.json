@@ -1,0 +1,39 @@
+{
+  "base_sha": "a5dc729ebb2c31c4be0357afc3dd08e6fe15677e",
+  "scope": "Issue #201 only; does not complete #52 or #11",
+  "runtime": "Python 3.14.7 Linux; numpy 2.5.4, jsonschema 4.26.0, Pillow 13.0.0 (not pinned CI environment)",
+  "results": {
+    "focused_and_regression": "50 tests passed in 10.324 seconds; no skips",
+    "operations_archive_gate": "24 tests passed in 6.580 seconds; no skips",
+    "baseline_control": "Exact pre-fix runtime loaded in-memory: 10 failing negative subcases, zero errors; no repository source writes; retained diagnostic log strips trailing whitespace only",
+    "generation_checks": "generate_schemas.py --check and generate_rig_templates.py --check passed",
+    "compatibility": "795 existing 2D tests discovered with optional 3D imports blocked; discovery is not execution"
+  },
+  "limitations": [
+    "No Blender/browser/production-art review claimed",
+    "GitHub CI and fresh independent review pending"
+  ],
+  "files": {
+    "baseline-control.log": {
+      "sha256": "7a8bf3776b068dc5004bdad3a97021c2383ecb4479aab459c2be87fadeb33b12",
+      "bytes": 14981
+    },
+    "operations-archive.log": {
+      "sha256": "1c06f1fa84fadf8e4ea26da00d0b910355c257c92320ff256133494783b3d2bf",
+      "bytes": 3823
+    },
+    "regression.log": {
+      "sha256": "734fc72c6a36768733e7931e58e6bf6c4bf5755efda350d8cc2cad36e5bd93fd",
+      "bytes": 8029
+    },
+    "scripts/rig_corrections.py": {
+      "sha256": "10920a679ec2a446945b3314488447d1153d38ce04591d600786a2ced8015cab"
+    },
+    "scripts/test_rig_gate.py": {
+      "sha256": "81726354e224bec75377c494b8cfed3ae280c99ff8f63cebb9d1bfbb0c1feb1c"
+    },
+    "tests/test_rig_correction_validation.py": {
+      "sha256": "d1ae5c47451912d248853d3423e2b929bf608abe0b7b24fa17e1728c43e5db33"
+    }
+  }
+}

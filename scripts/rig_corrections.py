@@ -7,7 +7,7 @@ from rig_errors import atomic_json, object_hash, require, safe_path, sha256
 from rig_jobs import next_version, save_rig
 from rig_models import rig_signature
 from rig_skeleton import skeleton_from_heads, validate_skeleton
-from rig_constraints import constraint_order
+from rig_ik import validate_controllers
 from rig_skinning import edit_weights, copy_weights, smooth_weights, validate_skin
 
 
@@ -138,7 +138,8 @@ def apply_rig_corrections(rig, correction, *, persist=True):
         invalidated=['skins','animations','state_mapping','review','validation'];result.weights={};result.clips={};result.manifest['state_mapping']={}
         for u in result.manifest['uncertainties']:
             if evidence.get(u['element'],{}).get('source')=='human-landmark':u['resolution']='corrected'
-    validate_skeleton(result.skeleton,result.manifest['limits']);constraint_order(result.skeleton,result.manifest['controllers']['constraints'])
+    validate_skeleton(result.skeleton,result.manifest['limits'])
+    validate_controllers(result.skeleton,result.manifest['controllers'])
     bone_ids={b['id'] for b in result.skeleton['bones']}
     require(all(s['bone'] in bone_ids for s in result.manifest['attachments']),'RIG_ATTACHMENT_REFERENCE','Attachment bone is missing.')
     require(set(result.manifest['facial']['eyes']) <= bone_ids,'RIG_EYE_REFERENCE','Eye control bone is missing.')
