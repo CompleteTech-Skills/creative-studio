@@ -19,7 +19,7 @@ The output includes `scene.blend`, three representative first/middle/last neutra
 128×128 CPU Cycles diagnostic renders (four samples), package worker and job,
 actual process logs, and `replay.json` with the full output inventory and hashes.
 One setup creates the camera, light and neutral materials; subsequent frames use
-that same setup, fitted to the complete cached trajectory and actual mesh radii. These are diagnostic images without artistic approval.
+that same setup, fitted to the complete cached trajectory and transformed actual mesh bounds. These are diagnostic images without artistic approval.
 
 A separate Blender process reopens only the freshly generated private `.blend`,
 checks its source identity, actual mesh vertices/topology and absence of a rigid

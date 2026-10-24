@@ -185,8 +185,6 @@ def preview(root,scene,bodies, replay_framing=None):
     light.location=center+Vector((2.,-2.,4.)).normalized()*extent
     light.rotation_euler=(center-light.location).to_track_quat('-Z','Y').to_euler()
     light_data.energy=1000.;light_data.shape='DISK';light_data.size=extent
-    if replay_framing is not None:
-        light_data.energy=1000.*max(1., extent*extent)
     environment=bpy.data.worlds.new('physics-diagnostic-world')
     environment.use_nodes=True
     environment.node_tree.nodes['Background'].inputs['Color'].default_value=(.3,.3,.3,1)
@@ -195,6 +193,11 @@ def preview(root,scene,bodies, replay_framing=None):
     for body in bodies:
         material=bpy.data.materials.new(body['id']+'-neutral-diagnostic')
         material.diffuse_color=(.1,.4,.8,1) if body['mode']=='dynamic' else (.35,.35,.35,1)
+        if replay_framing is not None:
+            material.use_nodes=True
+            surface=material.node_tree.nodes.get('Principled BSDF')
+            surface.inputs['Base Color'].default_value=material.diffuse_color
+            surface.inputs['Roughness'].default_value=.65
         bpy.data.objects[body['id']].data.materials.append(material)
     scene.render.engine='CYCLES';scene.cycles.device='CPU';scene.cycles.samples=4
     scene.render.resolution_x=128;scene.render.resolution_y=128;scene.render.resolution_percentage=100
@@ -466,24 +469,31 @@ def replay_scene(root, job):
                 obj.keyframe_insert(data_path='rotation_quaternion', frame=sample['frame']+1)
         scene.frame_set(1)
         # Setup camera, lights and neutral materials exactly once.
-        # A rotation-invariant radius encloses each actual source mesh at every
-        # cached origin. Fit one fixed view to the complete solved trajectory.
-        radii = {body['id']: max(Vector(vertex).length for vertex in job['meshes'][body['id']]['vertices'])
-                 for body in bodies}
+        # Transform all eight corners of each admitted mesh's local bounds at
+        # every solved pose. Thin floors retain their actual vertical extent.
+        import itertools
+        corners = {}
+        for body in bodies:
+            vertices = job['meshes'][body['id']]['vertices']
+            bounds = [(min(v[axis] for v in vertices), max(v[axis] for v in vertices)) for axis in range(3)]
+            corners[body['id']] = [Vector(point) for point in itertools.product(*bounds)]
         low = Vector((math.inf, math.inf, math.inf))
         high = Vector((-math.inf, -math.inf, -math.inf))
         for sample in states['samples']:
             for pose in sample['bodies']:
-                origin = BASIS.to_3x3() @ Vector(pose['translation'])
-                radius = radii[pose['id']]
-                for axis in range(3):
-                    low[axis] = min(low[axis], origin[axis]-radius)
-                    high[axis] = max(high[axis], origin[axis]+radius)
+                origin = Vector(pose['translation'])
+                x,y,z,w = pose['rotation']
+                rotation = Quaternion((w,x,y,z))
+                for corner in corners[pose['id']]:
+                    point = BASIS.to_3x3() @ (origin + rotation @ corner)
+                    for axis in range(3):
+                        low[axis] = min(low[axis], point[axis])
+                        high[axis] = max(high[axis], point[axis])
         center = (low+high)*.5
         # Half diagonal bounds the projected radius for every camera direction;
         # 1.3 * existing 1.8 scale leaves margin around its full diameter.
         extent = max(1., (high-low).length*.5)*1.3
-        scene['replay_camera_scope'] = 'complete cached trajectory and actual mesh radii'
+        scene['replay_camera_scope'] = 'complete cached trajectory and transformed actual mesh bounds'
         image = preview(root, scene, bodies, replay_framing=(center, extent))
         frames = sorted({0, len(states['samples'])//2, len(states['samples'])-1})
         image['frame'] = 0; image['scope'] = 'DIRECT solved-state replay; neutral diagnostic only'
