@@ -3,6 +3,8 @@
 No NumPy import: these also exercise the optional-dependency boundary in 2D CI.
 """
 from copy import deepcopy
+from contextlib import ExitStack
+import errno
 from fractions import Fraction
 import hashlib
 import json
@@ -874,14 +876,38 @@ class SceneClosureTests(unittest.TestCase):
 
     def test_root_manifest_filename_requires_portable_unicode_scalar_spelling(self):
         name = '\udcff.json'
-        try:
-            (self.root / name).write_bytes((self.root / 'project.json').read_bytes())
-        except UnicodeError:
-            # Some native filesystems reject the name themselves. Admission
-            # still must reject it before consulting the native filesystem.
-            pass
-        with self.assertRaisesRegex(RigError, 'Unicode scalar'):
-            load_project(self.root, name)
+        payload = (self.root / 'project.json').read_bytes()
+        invalid_io = []
+        # The API must reject the project-relative spelling before any host
+        # operation on that spelling, even on hosts that cannot create it.
+        # Legitimate checks of the already-existing root directory stay allowed.
+        with ExitStack() as stack:
+            for method in ('open', 'stat', 'lstat', 'is_file', 'is_symlink', 'resolve', 'is_junction'):
+                original = getattr(Path, method, None)
+                if original is None:
+                    continue
+                def guarded(path, *args, _original=original, _method=method, **kwargs):
+                    if name in path.parts:
+                        invalid_io.append(_method)
+                        raise AssertionError('Invalid portable name reached filesystem operation: ' + _method)
+                    return _original(path, *args, **kwargs)
+                stack.enter_context(patch.object(Path, method, guarded))
+            with self.assertRaisesRegex(RigError, 'Unicode scalar'):
+                load_project(self.root, name)
+        self.assertEqual(invalid_io, [])
+        # Linux filesystems commonly support arbitrary filename bytes through
+        # surrogateescape. APFS/Windows need no illegal-name setup: the real
+        # load_project assertion above is mandatory and already ran there.
+        if sys.platform.startswith('linux') and sys.getfilesystemencodeerrors() == 'surrogateescape':
+            try:
+                (self.root / name).write_bytes(payload)
+            except OSError as exc:
+                if exc.errno != errno.EILSEQ:
+                    raise
+            else:
+                with self.assertRaisesRegex(RigError, 'Unicode scalar'):
+                    load_project(self.root, name)
+
 
     def test_real_cli_loads_integral_float_fields_without_changing_source_hashes(self):
         from scene3d_contracts import all_refs
