@@ -210,7 +210,7 @@ class SourceSnapshot:
         if source.is_symlink(): fail('SYMLINK', 'Source leaf cannot be a symlink.')
         self.source_root = source.parent
         self.source = self.source_root / source.name
-        self.files = {}; self.roles = {}; self.embedded = []; self._aliases = {}
+        self.files = {}; self.roles = {}; self.embedded = []; self._aliases = {}; self._directories = {}
         self.entry = self.add(relative(source.name), 'source')
         payload = self.files[self.entry]
         self.format, self.mime = detect_format(payload)
@@ -230,6 +230,14 @@ class SourceSnapshot:
         self.check_cancelled(); name = relative(name)
         alias = name.casefold()
         if alias in self._aliases and self._aliases[alias] != name: fail('ALIAS', 'Case-aliased source resources are not portable.')
+        if alias in self._directories:fail('ALIAS','Source file aliases an existing resource directory.')
+        parts=name.split('/')
+        for depth in range(1,len(parts)):
+            directory='/'.join(parts[:depth]);folded=directory.casefold()
+            if folded in self._aliases:fail('ALIAS','Source resource directory aliases a file.')
+            if folded in self._directories and self._directories[folded]!=directory:fail('ALIAS','Source directory spelling is not portable across case-insensitive hosts.')
+        for depth in range(1,len(parts)):
+            directory='/'.join(parts[:depth]);self._directories[directory.casefold()]=directory
         self._aliases[alias] = name
         if name not in self.files:
             if len(self.files) >= MAX_FILES: fail('LIMIT', 'Source dependency count exceeded.')
@@ -560,6 +568,47 @@ def _check_gltf(path, limits, captured_document=None):
     return document,report
 
 
+def skin_associations(path,limits):
+    """Verify rest-space vertex/joint-weight associations across Blender export.
+
+    Sorting ignores harmless primitive/vertex reordering and normal splits.
+    Unnamed/ambiguous joints require a separate correspondence adapter.
+    """
+    from rig_gltf import read_gltf,scene_graph
+    import numpy as np
+    document=read_gltf(path,limits);_,world,order=scene_graph(document)
+    value=document.json;rows=set();used_names=set();joint_names={}
+    for skin in value.get('skins',[]):
+        names=[]
+        for index in skin['joints']:
+            name=value['nodes'][index].get('name')
+            if not isinstance(name,str) or not name:fail('UNSUPPORTED','Blender skin verification requires named joints.')
+            if index not in joint_names and name in used_names:fail('UNSUPPORTED','Blender skin verification requires unambiguous joint names.')
+            joint_names[index]=name;used_names.add(name);names.append(name)
+    maximum=0
+    for node_index in order:
+        node=value['nodes'][node_index]
+        if 'mesh' not in node or 'skin' not in node:continue
+        skin=value['skins'][node['skin']];names=[joint_names[i] for i in skin['joints']]
+        for primitive in value['meshes'][node['mesh']]['primitives']:
+            attrs=primitive['attributes'];positions=document.accessor(attrs['POSITION'])
+            positions=(np.c_[positions,np.ones(len(positions))]@world[node_index].T)[:,:3]
+            groups=sorted(int(k[7:]) for k in attrs if k.startswith('JOINTS_'))
+            pairs=[(document.accessor(attrs['JOINTS_'+str(g)]),document.accessor(attrs['WEIGHTS_'+str(g)])) for g in groups]
+            for vertex,position in enumerate(positions):
+                weights={}
+                for joints,values in pairs:
+                    for joint,weight in zip(joints[vertex],values[vertex]):
+                        if weight>0:
+                            name=names[int(joint)];weights[name]=weights.get(name,0.)+float(weight)
+                total=sum(weights.values())
+                if total<=0:fail('LOSS','A declared skinned vertex has no positive binding.')
+                maximum=max(maximum,len(weights))
+                association=tuple(sorted((name,round(weight/total,6)) for name,weight in weights.items() if round(weight/total,6)>0))
+                rows.add((tuple(round(float(v),5) for v in position),association))
+    return dict(rows=sorted(rows),max_influences=maximum)
+
+
 def _native_or_unavailable(path,limits):
     try:
         _,result=native_observation(path,limits)
@@ -672,12 +721,14 @@ class ImportPipeline:
                                                               basis=basis,ground=ground,limits=limits,fixture=fixture)
                 if tool['inspection'].get('fixture') and not fixture:fail('PROVENANCE','Blender fixture source cannot be relabeled as production.')
                 converted_doc,_=_gltf_json(read_source_bytes(target),'glb')
+                if len({b['armature'] for b in tool['inspection']['skin_bindings']})>len(converted_doc.get('skins',[])):fail('LOSS','Initial native conversion lost admitted skin bindings.')
                 if tool['inspection']['shape_keys']>observation.get('morph_targets',-1):fail('LOSS','Initial native conversion lost shape-key channels.')
                 if tool['inspection']['animation_paths'] and not converted_doc.get('animations'):fail('LOSS','Initial native conversion lost all admitted animation channels.')
                 source_validation=dict(reader='Blender',inspection=tool['inspection'],
                     conversion_profile='MESH/ARMATURE/EMPTY, positive TRS/pose/shape-value channel admission, simple Principled surface',
                     declared_losses=['Blender animation curves are sampled into glTF channels; native controls/interpolation/NLA editing metadata are not runtime channels.',
-                        'Source world lighting and unused application datablocks are not represented in the runtime asset. Originals remain exact.'],
+                        'Source world lighting and unused application datablocks are not represented in the runtime asset. Originals remain exact.',
+                        'Native skin export uses Blender numeric precision; differences below the reported association precision are not certified. Exact native originals remain available.'],
                     limitations=['Blender/OBJ source semantics are represented by inspected glTF export; unused datablocks and unsupported application-only metadata are not runtime channels.'])
             source_fixture=document_fixture(snapshot.document) if snapshot.document else False
             if source_fixture and not fixture:fail('PROVENANCE','Fixture source cannot be relabeled as production.')
@@ -697,10 +748,17 @@ class ImportPipeline:
                 for key in ('skins','animations'):
                     if normalized_doc.get(key) and len(raw_roundtrip.get(key,[]))<len(normalized_doc[key]):
                         fail('LOSS','Blender roundtrip lost declared '+key+'; output was not published.')
+                source_binding=skin_associations(target,limits)
+                derivative_binding=skin_associations(blender['outputs']['glb'],limits)
+                if source_binding['rows']!=derivative_binding['rows']:fail('LOSS','Blender roundtrip changed rest-space vertex/joint-weight associations.')
+                binding_check=dict(independent=False,reader='hatch-native-accessor/actual-Blender-output',
+                    association_sha256=object_hash(source_binding['rows']),max_influences=source_binding['max_influences'],
+                    unique_weighted_vertices=len(source_binding['rows']),position_precision_m=1e-5,weight_precision=1e-6,ok=True)
                 derivative_losses=[]
+                if normalized_doc.get('skins'):derivative_losses.append('Blender skin associations checked at weight precision 1e-6 and rest-position precision 1e-5m; smaller derivative differences are not certified. Primary GLB retains input weights.')
                 source_names=[a.get('name') for a in normalized_doc.get('animations',[])]
                 converted_names=[a.get('name') for a in raw_roundtrip.get('animations',[])]
-                if source_names!=converted_names:derivative_losses.append('Blender derivative animation names/order differ; normalized GLB preserves originals.')
+                if source_names!=converted_names:derivative_losses.append('Blender derivative animation names/order differ; primary GLB retains its names, and initial native authoring losses are declared.')
                 if normalized_doc.get('animations'):derivative_losses.append('Blender derivative animation is frame-sampled; primary retains input glTF interpolation. Native Blender source interpolation remains in exact originals; see source_validation.declared_losses.')
                 omitted=set(normalized_doc.get('extensionsUsed',[]))-set(raw_roundtrip.get('extensionsUsed',[]))
                 if omitted:derivative_losses.append('Blender derivative omits optional extensions: '+','.join(sorted(omitted)))
@@ -729,9 +787,10 @@ class ImportPipeline:
                 independent_output=independent,blender=blender,
                 roundtrip_observation=roundtrip_observation,fixture=fixture,
                 native_derivative_losses=derivative_losses if blender else [],
+                skin_binding_comparison=binding_check if blender else None,
                 source_sha256=digest(snapshot.files[snapshot.entry]),output_sha256=digest(primary),
                 estimate=dict(memory_bytes=estimate,input_bytes=source_bytes),
-                limitations=['No human/production approval inferred.','Native GLB retains original hierarchy, skins, morphs, materials and channels.',
+                limitations=['No human/production approval inferred.','Primary retains admitted glTF hierarchy/skin/morph/material/channels; initial native conversion losses are explicit in source_validation.',
                              'Additional format adapters return unsupported; no remote AI generation provider is implemented.'],
                 production_approved=False)
             # Never store ephemeral absolute private paths as portable outputs.

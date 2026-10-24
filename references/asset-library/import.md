@@ -11,7 +11,14 @@ until a verified baking adapter exists. Native source objects are limited to
 MESH/ARMATURE/EMPTY; collection/particle instances, physics and pose constraints
 are unsupported. Positive animation admission covers object transforms, bound
 pose transforms and shape-key values, including actual layered action bags and
-NLA action bindings; visibility and other unsupported channels fail. First
+NLA action bindings; non-finite values and out-of-range bound components fail.
+Armature modifiers require local, unmasked linear vertex-group binding; envelopes,
+dual-quaternion preserve-volume and multiple modifier blending are unsupported.
+Every influence is exported. A separate decoded source/derivative comparison checks
+rest-space vertex/joint-weight associations at explicitly reported precision
+(1e-5m position, 1e-6 weights); unnamed/ambiguous joints require a separate
+correspondence adapter. Input glTF primary weights remain exact; initial native Blender export uses
+Blender numeric precision and declares its uncertainty. Visibility and other unsupported channels fail. First
 conversion explicitly declares sampled animation and omitted source world lighting
 and authoring metadata. Exact native originals retain that source information. Inventoried OBJ texture maps can therefore
 be refused by this narrower conversion profile. Unknown formats and unsupported glTF extensions fail before

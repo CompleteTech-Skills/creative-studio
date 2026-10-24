@@ -42,7 +42,7 @@ def animation_profile():
             if curve.modifiers or curve.sampled_points:fail('Native curve modifiers/sampled points require a verified baking adapter.')
             paths.add(curve.data_path);keyframes+=len(curve.keyframe_points)
             if keyframes>1000000:fail('Native keyframe budget exceeded.')
-            if any(not math.isfinite(float(p.co[0])) or abs(p.co[0])>24000 for p in curve.keyframe_points):fail('Native animation time exceeds admission.')
+            if any(not math.isfinite(float(p.co[0])) or not math.isfinite(float(p.co[1])) or abs(p.co[0])>24000 for p in curve.keyframe_points):fail('Native animation time exceeds admission.')
     return sorted(paths)
 
 
@@ -63,8 +63,24 @@ def owner_animation(owner,kind):
             elif kind=='object':accepted=path in ('location','rotation_quaternion','rotation_euler','scale') or (getattr(owner,'type',None)=='ARMATURE' and path.startswith('pose.bones['))
             else:accepted=False
             if not accepted:fail('Unsupported native animation owner/path: '+kind+'/'+path)
-            try:owner.path_resolve(path)
+            try:resolved=owner.path_resolve(path)
             except (ValueError,TypeError):fail('Native action is not bound to its admitted owner path.')
+            width=len(resolved) if hasattr(resolved,'__len__') else 1
+            if not 0<=curve.array_index<width:fail('Native action component is outside its admitted owner path.')
+
+
+def skin_bindings():
+    result=[]
+    for obj in bpy.context.scene.objects:
+        modifiers=[m for m in obj.modifiers if m.type=='ARMATURE']
+        if len(modifiers)>1:fail('Multiple armature modifiers require a verified deformation adapter.')
+        for modifier in modifiers:
+            if obj.type!='MESH' or not modifier.object or modifier.object.type!='ARMATURE' or modifier.object.name not in bpy.context.scene.objects:
+                fail('Armature modifier requires a local scene mesh/armature binding.')
+            if not modifier.use_vertex_groups or modifier.use_bone_envelopes or modifier.use_deform_preserve_volume or modifier.use_multi_modifier or modifier.vertex_group or not modifier.show_viewport or not modifier.show_render:
+                fail('Unsupported armature deformation options: only unmasked linear vertex-group skinning is admitted.')
+            result.append(dict(mesh=obj.name,armature=modifier.object.name))
+    return result
 
 
 def enforce_conversion_profile():
@@ -73,6 +89,7 @@ def enforce_conversion_profile():
     # materials while reporting empty loss lists.
     if len(bpy.context.scene.objects)>4096 or len(bpy.data.actions)>4096:fail('Native object/action budget exceeded.')
     animation_profile()
+    skin_bindings()
     for obj in bpy.context.scene.objects:
         if obj.type not in ('MESH','ARMATURE','EMPTY'):fail('Unsupported native object type: '+obj.type)
         if obj.instance_type!='NONE':fail('Native collection/particle instancing requires a verified realization adapter.')
@@ -113,7 +130,7 @@ def enforce_conversion_profile():
 
 def inspect_scene():
     meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
-    return dict(fixture=source_fixture(),objects=[dict(name=o.name, type=o.type, parent=o.parent.name if o.parent else None,
+    return dict(fixture=source_fixture(),skin_bindings=skin_bindings(),objects=[dict(name=o.name, type=o.type, parent=o.parent.name if o.parent else None,
                              vertices=len(o.data.vertices) if o.type == 'MESH' else 0,
                              triangles=sum(len(p.vertices)-2 for p in o.data.polygons) if o.type == 'MESH' else 0)
                          for o in bpy.context.scene.objects],
@@ -211,7 +228,7 @@ def main(job):
     bpy.ops.file.pack_all()
     bpy.ops.wm.save_as_mainfile(filepath=job['blend'])
     bpy.ops.export_scene.gltf(filepath=job['glb'], export_format='GLB', export_extras=True,
-                             export_animations=True, export_morph=True, export_skins=True, export_cameras=True,
+                             export_animations=True, export_morph=True, export_skins=True, export_all_influences=True, export_cameras=True,
                              export_lights=True, export_frame_range=False)
     preview(job['preview'])
     Path(job['report']).write_text(json.dumps(dict(result, blender_version=bpy.app.version_string)), encoding='utf-8')

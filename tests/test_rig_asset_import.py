@@ -90,6 +90,51 @@ class ImportTests(unittest.TestCase):
         self.assertTrue(document_fixture(_gltf_json(runtime.read_bytes(),'glb')[0]))
         with self.assertRaises(RigError):self.pipeline.import_asset(runtime,**self.request(version='1.0.1',fixture=False,blender_roundtrip=False))
 
+    def test_source_file_directory_prefix_alias_never_publishes(self):
+        from PIL import Image
+        import io
+        image=io.BytesIO();Image.new('RGB',(2,2),(20,80,120)).save(image,format='PNG')
+        for buffer_name,image_name in [('A','a/texture.png'),('a/geometry.bin','A')]:
+            with self.subTest(buffer=buffer_name,image=image_name):
+                case=self.root/('case'+str(len(list(self.root.glob('case*')))));case.mkdir()
+                document,binary=_gltf_json(self.source.read_bytes(),'glb')
+                document['buffers'][0]['uri']=buffer_name;document['images']=[dict(uri=image_name)]
+                for name,data in [(buffer_name,binary[:document['buffers'][0]['byteLength']]),(image_name,image.getvalue())]:
+                    target=case/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
+                source=case/'source.gltf';source.write_text(json.dumps(document))
+                with self.assertRaises(RigError) as caught:self.pipeline.import_asset(source,**self.request(blender_roundtrip=False))
+                self.assertEqual(caught.exception.report['code'],'LIBRARY_IMPORT_ALIAS')
+                with sqlite3.connect(self.library.database) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],0)
+
+    @unittest.skipUnless(os.environ.get('HATCH_BLENDER'),'Pinned Blender optional integration not configured')
+    def test_actual_eight_weight_blender_associations(self):
+        import numpy as np
+        from rig_gltf import GltfBuilder
+        from asset_library_import import skin_associations
+        from rig_contracts import DEFAULT_LIMITS
+        builder=GltfBuilder();attrs=dict(POSITION=builder.accessor([[0,0,0],[1,0,0],[0,1,0]],'VEC3',bounds=True))
+        weights=[.05,.06,.07,.08,.09,.10,.20,.35]
+        for group in (0,1):
+            attrs['JOINTS_'+str(group)]=builder.accessor([[group*4+i for i in range(4)]]*3,'VEC4',5121)
+            attrs['WEIGHTS_'+str(group)]=builder.accessor([weights[group*4:group*4+4]]*3,'VEC4')
+        nodes=[dict(mesh=0,skin=0,name='SkinMesh')]+[dict(name='Joint'+str(i),translation=[0,.1 if i else 0,0],**({'children':[i+2]} if i<7 else {})) for i in range(8)]
+        matrices=np.tile(np.eye(4),(8,1,1));matrices[:,1,3]=[-.1*i for i in range(8)]
+        builder.json.update(meshes=[dict(primitives=[dict(attributes=attrs)])],nodes=nodes,
+            skins=[dict(joints=list(range(1,9)),skeleton=1,inverseBindMatrices=builder.accessor(matrices,'MAT4'))],scenes=[dict(nodes=[0,1])])
+        source=self.root/'eight.glb';builder.write(source)
+        result=self.pipeline.import_asset(source,**self.request())
+        check=result['report']['skin_binding_comparison'];self.assertTrue(check['ok']);self.assertEqual(check['max_influences'],8)
+        packed=self.root/'eight.blend';packed.write_bytes(self.library.read_file(result['reference'],'native/asset.blend'))
+        native=self.pipeline.import_asset(packed,**self.request(version='2.0.0',trusted_packed_blend=True))
+        self.assertEqual(native['report']['skin_binding_comparison']['max_influences'],8)
+        for logical in ('runtime/asset.glb','native/roundtrip.glb'):
+            path=self.root/(logical.split('/')[0]+'.glb');path.write_bytes(self.library.read_file(result['reference'],logical))
+            observed=skin_associations(path,{**DEFAULT_LIMITS,'influences':8})
+            self.assertEqual(observed['max_influences'],8)
+            for _,association in observed['rows']:
+                self.assertEqual(set(dict(association)),{'Joint'+str(i) for i in range(8)})
+                for i,weight in enumerate(weights):self.assertAlmostEqual(dict(association)['Joint'+str(i)],weight,places=6)
+
     def test_integral_json_number_counts(self):
         source=self.external();document=json.loads(source.read_text())
         document['buffers'][0]['byteLength']=float(document['buffers'][0]['byteLength'])
@@ -189,12 +234,19 @@ class ImportTests(unittest.TestCase):
         with self.assertRaises(RigError):self.pipeline.import_asset(animated,**self.request(version='1.5.0',trusted_packed_blend=True))
         for kind,body in (
             ('metaball','bpy.ops.object.metaball_add();bpy.context.object.name="RequiredMetaball"'),
-            ('visibility','o=bpy.context.object;o.hide_render=False;o.keyframe_insert(data_path="hide_render",frame=1);o.hide_render=True;o.keyframe_insert(data_path="hide_render",frame=24)')):
+            ('visibility','o=bpy.context.object;o.hide_render=False;o.keyframe_insert(data_path="hide_render",frame=1);o.hide_render=True;o.keyframe_insert(data_path="hide_render",frame=24)'),
+            ('component','o=bpy.context.object;o.keyframe_insert(data_path="location",frame=1);f=o.animation_data.action.fcurves.new(data_path="location",index=9);f.keyframe_points.insert(1,3)')):
             rejected=self.root/(kind+'.blend');creation=self.root/('make_'+kind+'.py')
             creation.write_text('import bpy\nbpy.ops.object.select_all(action="SELECT");bpy.ops.object.delete(use_global=False)\nbpy.ops.mesh.primitive_cube_add()\n'+body+'\nbpy.ops.wm.save_as_mainfile(filepath='+repr(str(rejected))+')\n')
             workspace=self.root/(kind+'-fixture');workspace.mkdir()
             self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(creation)],workspace)
             with self.assertRaises(RigError):self.pipeline.import_asset(rejected,**self.request(version='1.6.0',trusted_packed_blend=True))
+        for kind,options in [('envelope','mod.use_vertex_groups=False;mod.use_bone_envelopes=True'),('dual-quaternion','mod.use_deform_preserve_volume=True')]:
+            rejected=self.root/(kind+'.blend');creation=self.root/('make_'+kind+'.py')
+            creation.write_text('import bpy\nbpy.ops.object.select_all(action="SELECT");bpy.ops.object.delete(use_global=False)\nbpy.ops.mesh.primitive_cube_add();obj=bpy.context.object\nbpy.ops.object.armature_add();rig=bpy.context.object\nmod=obj.modifiers.new("UnsupportedSkin","ARMATURE");mod.object=rig\n'+options+'\nbpy.ops.wm.save_as_mainfile(filepath='+repr(str(rejected))+')\n')
+            workspace=self.root/(kind+'-fixture');workspace.mkdir()
+            self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(creation)],workspace)
+            with self.assertRaisesRegex(RigError,'Unsupported armature deformation options'):self.pipeline.import_asset(rejected,**self.request(version='1.7.0',trusted_packed_blend=True))
         generated=self.pipeline.generate(**self.request(version='2.0.0',parameters=dict(primitive='box',dimensions=[1,2,3],color=[.2,.4,.6,1],animated=True)))
         self.assertEqual(generated['report']['native_observation']['triangles'],12)
         self.assertEqual(self.library.resolve(generated['reference'])['provenance']['method'],'fixture')
