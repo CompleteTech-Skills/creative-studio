@@ -28,3 +28,16 @@ rig-templates/*.json text eol=lf
 
 # Scene3D example manifests hash the exact original JSON and mesh bytes.
 examples/scene3d-contracts/** -text
+# Shared JSON decoder evidence and its source-bound test retain exact bytes.
+tests/results/shared-json-decoder-20261024/** -text
+tests/test_rig_contracts.py text eol=lf
+
+# Shared provenance policy: immutable examples and validation receipts retain
+# authoritative Git bytes; source-bound test programs use LF on every platform.
+tests/results/** -text
+tests/*.py text eol=lf
+examples/** -text
+
+# Existing frozen playback/catalog compatibility contracts are byte-bound too.
+assets/playback.js text eol=lf
+state-library/catalog.json text eol=lf
