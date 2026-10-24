@@ -161,8 +161,11 @@ class NativeReplayTests(unittest.TestCase):
                     self.assertEqual(p.digest(payload), image['sha256'])
                     from PIL import Image
                     with Image.open(BytesIO(payload)) as preview:
-                        blue = sum(1 for red, green, blue, alpha in preview.convert('RGBA').getdata()
-                                   if alpha > 128 and blue > red*1.2 and blue > green*1.2 and blue-red > 20)
+                        rgba = preview.convert('RGBA')
+                        pixels = rgba.load()
+                        blue = sum(1 for y in range(rgba.height) for x in range(rgba.width)
+                                   if (lambda red, green, blue, alpha: alpha > 128 and blue > red*1.2 and
+                                       blue > green*1.2 and blue-red > 20)(*pixels[x, y]))
                     self.assertGreaterEqual(blue, 4, 'Actual dynamic diagnostic body must remain identifiable.')
                 # Contract-valid whole JSON floats compile to integer I/O counts,
                 # while original source manifest bytes remain byte-for-byte intact.
