@@ -102,7 +102,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
       - run: python -m pip install -r requirements-rig-test.txt
+      - run: npm ci --ignore-scripts --prefix tools/rig
       - uses: actions/cache@v4
         id: blender-cache
         with:
@@ -116,11 +120,15 @@ jobs:
           tar -xJf /tmp/blender.tar.xz -C /tmp
       - run: echo 'HATCH_BLENDER=/tmp/blender-4.5.3-linux-x64/blender' >> "$GITHUB_ENV"
       - run: python scripts/verify_rig_demos.py --generate --destination /tmp/rig-blender-gate --blender
+      - name: Actual asset import and generation acceptance
+        run: PYTHONPATH=scripts:tests python -m unittest tests/test_rig_asset_import.py -v 2>&1 | tee asset-import.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: blender-evidence
-          path: /tmp/rig-blender-gate/**/validation/*.json
+          path: |
+            /tmp/rig-blender-gate/**/validation/*.json
+            asset-import.log
   browser:
     name: Three.js browser playback and vertex comparison
     runs-on: ubuntu-latest
