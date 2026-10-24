@@ -36,6 +36,109 @@ class SceneServiceTests(unittest.TestCase):
         self.bundle = build_example(self.root/'source')
         self.scene = deepcopy(self.bundle['documents']['example-scene.json'])
 
+    def nested_catalog(self, *, property='translation'):
+        library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+        outer = deepcopy(self.bundle['documents']['example-prefab.json'])
+        outer.update(id='outer-source', nodes=outer['nodes'][:1], dependencies=[], material_slots=[], sockets=[])
+        outer['provenance'].update(origin='authored', fixture=False, inputs=[])
+        outer_ref = library.register(outer)
+        inner = deepcopy(self.bundle['documents']['example-prefab.json'])
+        inner['id'] = 'inner-source'
+        inner['parameters'] = {'amount': 1. if property == 'scale' else 0.}
+        inner['parameter_bindings'] = [dict(parameter='amount', node='prefab-mesh', property=property, component=0)]
+        inner_ref = library.register(inner)
+        return library, outer_ref, inner_ref, outer, inner
+
+    def test_nested_effective_override_admission_snapshot_and_reopen_fail_closed(self):
+        for index, (property, parameters) in enumerate([
+                ('translation', {'unknown': 1}), ('translation', {'amount': 'bad'}),
+                ('scale', {'amount': 0.}), ('rotation', {'amount': .5})]):
+            # Each case has a separate immutable source catalog.
+            library, outer, inner, outer_doc, inner_doc = self.nested_catalog(property=property)
+            child = node('optional-instance', 'prefab_instance', parent='prefab-root')
+            child['prefab'] = inner
+            child['prefab_overrides'] = dict(parameters=parameters, materials={}, nodes=[])
+            overrides = dict(parameters={}, materials={}, nodes=[], children=[child])
+            graph = self.graph()
+            before = graph.document()
+            with self.subTest(property=property, parameters=parameters), self.assertRaises(RigError):
+                library.instantiate(graph, outer, 'outer-instance', overrides=overrides)
+            self.assertEqual(before, graph.document())
+            # Bypass the service to exercise actual staged reopening of a foreign document.
+            foreign = graph.document()
+            instance = node('outer-instance', 'prefab_instance', parent='root')
+            instance.update(prefab=outer, prefab_overrides=overrides)
+            foreign['nodes'].append(instance)
+            malformed = SceneGraph(foreign, external_references={})
+            destination = self.root/('invalid-nested-'+str(index))
+            with self.assertRaises(RigError):
+                snapshot_project(self.root/'source', destination, malformed, scene_path='example-scene.json',
+                    derived_documents={outer['path']:outer_doc, inner['path']:inner_doc})
+            self.assertFalse(destination.exists())
+
+    def test_valid_nested_effective_controls_propagate_fixture_and_match_expansion_counts(self):
+        from scene3d_contracts import validate_prefab_instances
+        library, outer, inner, outer_doc, inner_doc = self.nested_catalog()
+        child = node('optional-instance', 'prefab_instance', parent='prefab-root')
+        child['prefab'] = inner
+        child['prefab_overrides'] = dict(parameters={'amount': 2.}, materials={}, nodes=[])
+        scene = self.graph().document()
+        scene['provenance'].update(origin='authored', fixture=False)
+        graph = SceneGraph(scene, external_references={})
+        library.instantiate(graph, outer, 'outer-instance', overrides=dict(parameters={}, materials={}, nodes=[], children=[child]))
+        self.assertTrue(graph.document()['provenance']['fixture'])
+        expanded = library.expand(graph.document())
+        evidence = validate_prefab_instances(graph.document(), library.resolve)
+        self.assertEqual(evidence['expanded_nodes'], len(expanded['scene']['nodes']))
+        with self.assertRaises(RigError):
+            validate_prefab_instances(graph.document(), library.resolve, max_nodes=evidence['expanded_nodes']-1)
+        destination = self.root/'valid-nested'
+        snapshot = snapshot_project(self.root/'source', destination, graph, scene_path='example-scene.json',
+            derived_documents={outer['path']:outer_doc, inner['path']:inner_doc})
+        reopened = load_project(destination)
+        self.assertEqual(reopened['status'], 'hash-and-contract-verified')
+        self.assertTrue(reopened['documents'][snapshot['active_scene']['path']]['provenance']['fixture'])
+
+    def test_effective_prefab_depth_counts_actual_transform_ancestors(self):
+        library = PrefabLibrary()
+        base = deepcopy(self.bundle['documents']['example-prefab.json'])
+        base.update(id='deep-inner', nodes=[node('inner-'+str(i), parent=None if i == 0 else 'inner-'+str(i-1))
+                                        for i in range(70)], roots=['inner-0'], material_slots=[], sockets=[], dependencies=[])
+        inner = library.register(base)
+        outer = deepcopy(base)
+        outer.update(id='deep-outer', nodes=[node('outer-'+str(i), parent=None if i == 0 else 'outer-'+str(i-1))
+                                          for i in range(70)], roots=['outer-0'])
+        outer['nodes'][-1].update(type='prefab_instance', prefab=inner)
+        reference = library.register(outer)
+        graph = self.graph()
+        before = graph.document()
+        with self.assertRaises(RigError):
+            library.instantiate(graph, reference, 'too-deep')
+        self.assertEqual(before, graph.document())
+
+    def test_effective_closure_memo_keeps_logical_budgets_and_scoped_id_collisions(self):
+        from scene3d_contracts import prefab_scoped_id, validate_prefab_instances
+        library, outer, inner, outer_doc, inner_doc = self.nested_catalog()
+        scene = self.graph().document()
+        scene['metadata'] = dict(kind='scene3d-prefab', path='missing.json', id='missing', version='1.0.0', sha256='f'*64)
+        for index in range(8):
+            instance = node('instance-'+str(index), 'prefab_instance', parent='root')
+            instance['prefab'] = inner
+            scene['nodes'].append(instance)
+        with patch.object(library, 'resolve', wraps=library.resolve) as resolve:
+            evidence = validate_prefab_instances(scene, resolve)
+        self.assertEqual(resolve.call_count, 1)
+        self.assertEqual(evidence['expanded_nodes'], len(scene['nodes'])+8*len(inner_doc['nodes']))
+        with self.assertRaises(RigError):
+            validate_prefab_instances(scene, library.resolve, max_nodes=evidence['expanded_nodes']-1)
+        graph = self.graph()
+        collision = prefab_scoped_id('/collision-instance', 'prefab-root')
+        graph.create(node(collision, parent='root'))
+        before = graph.document()
+        with self.assertRaises(RigError):
+            library.instantiate(graph, inner, 'collision-instance')
+        self.assertEqual(before, graph.document())
+
     def test_review_disabled_look_at_is_noop_even_when_coincident(self):
         scene = deepcopy(self.scene)
         mesh = next(n for n in scene['nodes'] if n['id'] == 'mesh')
@@ -467,11 +570,9 @@ class SceneServiceTests(unittest.TestCase):
         p = deepcopy(self.bundle['documents']['example-prefab.json'])
         p['parameters'] = {'w': .5}
         p['parameter_bindings'] = [dict(parameter='w', node='prefab-root', property='rotation', component=3)]
-        r = library.register(p)
-        graph = self.graph()
-        before = graph.document()
-        with self.assertRaises(RigError): library.instantiate(graph, r, 'invalid')
-        self.assertEqual(graph.document(), before)
+        before = library.payloads()
+        with self.assertRaises(RigError): library.register(p)
+        self.assertEqual(library.payloads(), before)
 
     def test_prefab_creation_extracts_subtree_and_material_slot_override(self):
         graph = self.graph()

@@ -18,8 +18,8 @@ from scene3d_graph import SceneGraph, _inventories, _relink, _subtree, fail, req
 
 
 def scoped_id(instance, source, namespace='node'):
-    digest = hashlib.sha256((namespace+'\0'+instance+'\0'+source).encode('utf-8')).hexdigest()
-    return 'p-' + digest[:48]
+    from scene3d_contracts import prefab_scoped_id
+    return prefab_scoped_id(instance,source,namespace)
 
 
 def _reference(document, payload, path):
@@ -84,6 +84,8 @@ class PrefabLibrary:
                 'Prefab catalog file/byte budget exceeded.', 'SCENE3D_PREFAB_LIMIT')
         require(document['kind'] in ('scene3d-prefab', 'scene3d-animation'),
                 'This catalog accepts Scene3D prefab and animation documents only.')
+        if document['kind'] == 'scene3d-prefab':
+            self._effective(document,dict(parameters={},materials={},nodes=[]))
         identity = (document['kind'], document['id'], document['version'])
         reference = _reference(document, payload, path)
         require(identity not in self._references, 'This immutable version is already registered.', 'SCENE3D_IMMUTABLE')
@@ -181,6 +183,13 @@ class PrefabLibrary:
         reference = self.register(document)
         return dict(reference=reference, prefab=document, placement=placement)
 
+    def _validate_scene(self, scene):
+        from scene3d_contracts import validate_prefab_instances
+        _inventories(scene)
+        evidence = validate_prefab_instances(scene,self.resolve)
+        scene['provenance']['fixture'] |= evidence['fixture']
+        return evidence
+
     def instantiate(self, graph, reference, identifier, *, parent=None, transform=None, overrides=None):
         finite_json(overrides)
         source = self.resolve(reference)
@@ -195,49 +204,13 @@ class PrefabLibrary:
         scene['dependencies'] = _refs([scene['dependencies'], reference])
         if self._has_fixture(reference):
             scene['provenance']['fixture'] = True
+        self._validate_scene(scene)
         return graph.replace_document(scene, expected_revision=graph.revision)
 
     @staticmethod
     def _effective(source, overrides):
-        from scene3d_contracts import _prefab_overrides
-        from jsonschema import Draft202012Validator
-        finite_json(overrides)
-        errors = Draft202012Validator({'$defs': definitions(),
-            '$ref': '#/$defs/node/properties/prefab_overrides'}).iter_errors(overrides)
-        require(next(errors, None) is None, 'Invalid typed prefab override.', 'SCENE3D_PREFAB_OVERRIDE')
-        _prefab_overrides(overrides, source)
-        result = deepcopy(source)
-        nodes = {n['id']: n for n in result['nodes']}
-        for override in result['overrides']:
-            for key, value in override.items():
-                if key != 'node':
-                    nodes[override['node']][key] = deepcopy(value)
-        parameters = {**result['parameters'], **overrides['parameters']}
-        for binding in result.get('parameter_bindings', []):
-            value = parameters[binding['parameter']]
-            target = nodes[binding['node']]
-            if binding['property'] == 'visible':
-                target['visible'] = value
-            else:
-                target['transform'][binding['property']][int(binding['component'])] = value
-        covered = set()
-        for target in nodes.values():
-            for material in target['material_overrides']:
-                if material['slot'] in overrides['materials']:
-                    material['material'] = deepcopy(overrides['materials'][material['slot']])
-                    covered.add(material['slot'])
-        require(covered == set(overrides['materials']), 'An exposed material slot has no authored node binding.',
-                'SCENE3D_PREFAB_OVERRIDE')
-        for override in overrides['nodes']:
-            for key, value in override.items():
-                if key != 'node':
-                    nodes[override['node']][key] = deepcopy(value)
-        result['nodes'].extend(deepcopy(overrides.get('children', [])))
-        result['roots'] = [n['id'] for n in result['nodes'] if n['parent'] is None]
-        result['parameters'] = parameters
-        # All simultaneous quaternion/scale bindings are validated as a whole.
-        validate_document(result, 'prefab')
-        return result
+        from scene3d_contracts import effective_prefab
+        return effective_prefab(source, overrides)
 
     def set_overrides(self, graph, identifier, overrides):
         scene = graph.document()
@@ -246,6 +219,7 @@ class PrefabLibrary:
         graph._editable(identifier)
         self._effective(self.resolve(target['prefab']), overrides)
         target['prefab_overrides'] = deepcopy(overrides)
+        self._validate_scene(scene)
         return graph.replace_document(scene, expected_revision=graph.revision)
 
     def reset(self, graph, identifier):
@@ -314,11 +288,13 @@ class PrefabLibrary:
         target['prefab_overrides'] = overrides
         if self._has_fixture(new_reference):
             scene['provenance']['fixture'] = True
+        self._validate_scene(scene)
         result = graph.replace_document(scene, expected_revision=graph.revision)
         return dict(applied=True, conflicts=conflicts, comparison=comparison, **result)
 
     def expand(self, scene, *, instances=None):
-        validate_document(scene, 'scene')
+        scene = validate_document(scene, 'scene')
+        self._validate_scene(scene)
         result = deepcopy(scene)
         output, derived, mapping_report = [], {}, {}
         collections = {c['id']: deepcopy(c) for c in scene['collections']}
