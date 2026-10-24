@@ -45,12 +45,14 @@ Shared JSON ingestion bounds document size in encoded bytes and nesting, rejects
 
 Transforms must be finite and nonsingular. Rest transforms that contain shear or a reflection are rejected for the skeletal core; apply those transforms in an editor first. Static reflected geometry is baked with corrected winding. Original files are copied byte for byte and hash checked. `identity.json` locks the source identity, origin, fixture classification and import scale. An imported procedural fixture stays a fixture when exported and reimported.
 
-glTF node admission tests linear-axis independence after dividing each column by
-its largest absolute component. The dimensionless determinant must exceed
-`1e-12` in absolute value, and the complete inverse must remain finite in
-float64. This admits well-conditioned small or large unit conversions and
-nonuniform scales without accepting zero axes, almost dependent axes, or
-nonrepresentable inverses. Extreme scales whose raw determinant underflows or
+glTF node admission retains the existing `abs(det(linear)) > 1e-12` admission,
+and additionally admits smaller determinants when the determinant after dividing
+each column by its largest absolute component exceeds `1e-12` in absolute value.
+This extends admission to well-conditioned small unit conversions without
+narrowing existing static shear or anisotropy support. It does not establish a
+new scale-invariant conditioning policy for previously accepted transforms.
+Zero axes and newly admitted almost dependent directions remain rejected.
+The complete inverse must remain finite in float64. Extreme scales whose raw determinant underflows or
 overflows, or whose inverse directions exceed the float64 squared-normalization
 budget, fail with `RIG_GLTF_NUMERIC_RANGE` before importing mesh data. The latter
 bound is `max(abs(inverse_linear)) <= sqrt(float64_max)/6`; a unit direction's
