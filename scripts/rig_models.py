@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 import hashlib
 import io
 import json
+import math
+import sys
 from pathlib import Path
 import stat
 from typing import Any
@@ -12,7 +14,7 @@ import zipfile
 import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS, validate_contract
-from rig_errors import (atomic_bytes, decode_json, object_hash, read_json, require,
+from rig_errors import (atomic_bytes, decode_json, finite_json, object_hash, read_json, require,
                         safe_path, sha256)
 
 
@@ -77,12 +79,149 @@ class RigAsset:
     weights: dict[str, SkinWeights] = field(default_factory=dict)
     clips: dict[str, dict] = field(default_factory=dict)
     root: Path | None = None
+    # Runtime admission data is deliberately outside the signed source manifest.
+    resource_usage: dict | None = None
 
     @property
     def skeleton(self) -> dict:
         require(self.manifest.get('skeleton') is not None, 'RIG_NO_SKELETON',
                 'Generate or import a skeleton before this operation.')
         return self.manifest['skeleton']
+
+
+# Texture fields in the material extensions already supported by rig_gltf.
+# Only declared texture slots are traversed: arbitrary extras are not bindings.
+_MATERIAL_TEXTURE_SLOTS = {
+    'KHR_materials_clearcoat': ('clearcoatTexture', 'clearcoatRoughnessTexture', 'clearcoatNormalTexture'),
+    'KHR_materials_iridescence': ('iridescenceTexture', 'iridescenceThicknessTexture'),
+    'KHR_materials_sheen': ('sheenColorTexture', 'sheenRoughnessTexture'),
+    'KHR_materials_specular': ('specularTexture', 'specularColorTexture'),
+    'KHR_materials_transmission': ('transmissionTexture',),
+    'KHR_materials_volume': ('thicknessTexture',),
+    'KHR_materials_anisotropy': ('anisotropyTexture',),
+}
+
+
+def _material_number(value, label: str, *, minimum=None, maximum=None) -> None:
+    # Compare ints before isfinite (which converts to float) so even malicious
+    # huge native integers fail with a domain diagnostic rather than OverflowError.
+    require(isinstance(value, (int, float)) and not isinstance(value, bool)
+            and -sys.float_info.max <= value <= sys.float_info.max
+            and math.isfinite(value)
+            and (minimum is None or value >= minimum)
+            and (maximum is None or value <= maximum),
+            'RIG_MATERIAL', 'Material numeric parameter is invalid.', asset=label)
+
+
+def _material_index(value, size: int, label: str, *, code='RIG_TEXTURE_REFERENCE') -> int:
+    # Keep the existing native glTF _index profile: actual ints, never bools.
+    require(type(value) is int and 0 <= value < size,
+            code, 'Material/texture reference index is invalid.', asset=label)
+    return value
+
+
+def _texcoord_index(value, label: str) -> int:
+    require(type(value) is int and value >= 0, 'RIG_TEXTURE_REFERENCE',
+            'Texture coordinate set must be a nonnegative integer.', asset=label)
+    return value
+
+
+def _material_vector(value, width: int, label: str, *, minimum=None, maximum=None) -> None:
+    require(isinstance(value, (list, tuple)) and len(value) == width,
+            'RIG_MATERIAL', 'Material vector has an invalid shape.', asset=label)
+    for item in value:
+        _material_number(item, label, minimum=minimum, maximum=maximum)
+
+
+def _texture_binding(info, geometry: Geometry, label: str, *, normal=False, occlusion=False) -> int:
+    require(isinstance(info, dict), 'RIG_TEXTURE_REFERENCE', 'Texture information must be an object.', asset=label)
+    _material_index(info.get('index'), len(geometry.textures), label)
+    # A coordinate-set index need not refer to a globally declared resource;
+    # its actual availability is checked on every assigned primitive below.
+    coord = info.get('texCoord', 0)
+    coord = _texcoord_index(coord, label + ':texCoord')
+    extensions = info.get('extensions', {})
+    require(isinstance(extensions, dict), 'RIG_MATERIAL', 'Texture extensions must be an object.', asset=label)
+    if 'KHR_texture_transform' in extensions:
+        transform = extensions['KHR_texture_transform']
+        require(isinstance(transform, dict), 'RIG_MATERIAL', 'Texture transform must be an object.', asset=label)
+        for field in ('offset', 'scale'):
+            if field in transform:
+                _material_vector(transform[field], 2, label + ':' + field)
+        if 'rotation' in transform:
+            _material_number(transform['rotation'], label + ':rotation')
+        if 'texCoord' in transform:
+            coord = _texcoord_index(transform['texCoord'], label + ':transform.texCoord')
+    if normal and 'scale' in info:
+        # glTF normal scale is finite, not restricted to [0,1] or nonnegative.
+        _material_number(info['scale'], label + ':scale')
+    if occlusion and 'strength' in info:
+        _material_number(info['strength'], label + ':strength', minimum=0, maximum=1)
+    return coord
+
+
+def _validate_materials(geometry: Geometry) -> list[set[int]]:
+    """Validate portable core bindings without changing source material dictionaries."""
+    require(isinstance(geometry.materials, list) and isinstance(geometry.textures, list)
+            and isinstance(geometry.samplers, list), 'RIG_MATERIAL', 'Material resources must be arrays.')
+    finite_json(geometry.materials)
+    finite_json(geometry.textures)
+    finite_json(geometry.samplers)
+    for index, sampler in enumerate(geometry.samplers):
+        require(isinstance(sampler, dict), 'RIG_TEXTURE_SAMPLER', 'Texture sampler must be an object.')
+        for key, allowed in (('magFilter', (9728, 9729)),
+                             ('minFilter', (9728, 9729, 9984, 9985, 9986, 9987)),
+                             ('wrapS', (33071, 33648, 10497)), ('wrapT', (33071, 33648, 10497))):
+            if key in sampler:
+                value = sampler[key]
+                require(type(value) is int and value in allowed, 'RIG_TEXTURE_SAMPLER', 'Unsupported texture sampler parameter.',
+                        asset=str(index) + ':' + key)
+    for index, texture in enumerate(geometry.textures):
+        require(isinstance(texture, dict), 'RIG_TEXTURE_REFERENCE', 'Texture must be an object.')
+        _material_index(texture.get('source'), len(geometry.images), str(index) + ':source')
+        if 'sampler' in texture:
+            _material_index(texture['sampler'], len(geometry.samplers), str(index) + ':sampler')
+    bindings = []
+    for index, material in enumerate(geometry.materials):
+        label = 'material-' + str(index)
+        require(isinstance(material, dict), 'RIG_MATERIAL', 'Material must be an object.', asset=label)
+        pbr = material.get('pbrMetallicRoughness', {})
+        require(isinstance(pbr, dict), 'RIG_MATERIAL', 'PBR parameters must be an object.', asset=label)
+        if 'baseColorFactor' in pbr:
+            _material_vector(pbr['baseColorFactor'], 4, label + ':baseColorFactor', minimum=0, maximum=1)
+        for key in ('metallicFactor', 'roughnessFactor'):
+            if key in pbr:
+                _material_number(pbr[key], label + ':' + key, minimum=0, maximum=1)
+        if 'emissiveFactor' in material:
+            _material_vector(material['emissiveFactor'], 3, label + ':emissiveFactor', minimum=0, maximum=1)
+        if 'alphaCutoff' in material:
+            _material_number(material['alphaCutoff'], label + ':alphaCutoff', minimum=0)
+        if 'alphaMode' in material:
+            require(material['alphaMode'] in ('OPAQUE', 'MASK', 'BLEND'),
+                    'RIG_MATERIAL', 'Unsupported alpha mode.', asset=label)
+        if 'doubleSided' in material:
+            require(type(material['doubleSided']) is bool, 'RIG_MATERIAL', 'doubleSided must be boolean.', asset=label)
+        coords = set()
+        for key in ('baseColorTexture', 'metallicRoughnessTexture'):
+            if key in pbr:
+                coords.add(_texture_binding(pbr[key], geometry, label + ':' + key))
+        for key in ('normalTexture', 'occlusionTexture', 'emissiveTexture'):
+            if key in material:
+                coords.add(_texture_binding(material[key], geometry, label + ':' + key,
+                                            normal=key == 'normalTexture', occlusion=key == 'occlusionTexture'))
+        extensions = material.get('extensions', {})
+        require(isinstance(extensions, dict), 'RIG_MATERIAL', 'Material extensions must be an object.', asset=label)
+        for name, fields in _MATERIAL_TEXTURE_SLOTS.items():
+            if name not in extensions:
+                continue
+            extension = extensions[name]
+            require(isinstance(extension, dict), 'RIG_MATERIAL', 'Material extension must be an object.', asset=name)
+            for key in fields:
+                if key in extension:
+                    coords.add(_texture_binding(extension[key], geometry, label + ':' + name + ':' + key,
+                                                normal=key == 'clearcoatNormalTexture'))
+        bindings.append(coords)
+    return bindings
 
 
 def validate_geometry(geometry: Geometry, limits: dict | None = None) -> None:
@@ -92,6 +231,7 @@ def validate_geometry(geometry: Geometry, limits: dict | None = None) -> None:
             expected=limits['vertices'], observed=geometry.vertex_count)
     require(geometry.triangle_count <= limits['triangles'], 'RIG_LIMIT_TRIANGLES', 'Triangle budget exceeded.')
     require(len(geometry.by_id()) == len(geometry.meshes), 'RIG_DUPLICATE_MESH', 'Mesh IDs must be unique.')
+    bindings = _validate_materials(geometry)
     allocation = 0
     for mesh in geometry.meshes:
         v, f = np.asarray(mesh.positions), np.asarray(mesh.triangles)
@@ -99,7 +239,10 @@ def validate_geometry(geometry: Geometry, limits: dict | None = None) -> None:
                 'RIG_VERTICES', 'Mesh positions must be nonempty finite Nx3 arrays.', asset=mesh.id)
         require(f.ndim == 2 and f.shape[1] == 3 and len(f) > 0 and f.dtype.kind in 'iu'
                 and f.min() >= 0 and f.max() < len(v), 'RIG_TRIANGLES', 'Triangle indices are invalid.', asset=mesh.id)
-        require(0 <= mesh.material < len(geometry.materials), 'RIG_MATERIAL', 'Missing mesh material.', asset=mesh.id)
+        material = _material_index(mesh.material, len(geometry.materials), mesh.id, code='RIG_MATERIAL')
+        for coord in bindings[material]:
+            require(coord in (0, 1) and 'TEXCOORD_' + str(coord) in mesh.attributes, 'RIG_TEXTURE_UV',
+                    'Assigned material requires a missing texture coordinate set.', asset=mesh.id)
         require(len(mesh.morphs) <= limits['morphs'], 'RIG_LIMIT_MORPHS', 'Morph target budget exceeded.')
         require(set(mesh.morph_defaults) <= set(mesh.morphs) and all(np.isfinite(v) and -2 <= v <= 2 for v in mesh.morph_defaults.values()),
                 'RIG_MORPH_RANGE', 'Default morph weights must reference targets within [-2, 2].')
@@ -109,6 +252,9 @@ def validate_geometry(geometry: Geometry, limits: dict | None = None) -> None:
                     'RIG_ATTRIBUTE', 'Unsupported native attribute: ' + name)
             require(values.shape == (len(v), width) and np.isfinite(values).all(),
                     'RIG_ATTRIBUTE', 'Invalid vertex attribute array.', asset=mesh.id + ':' + name)
+            if name == 'COLOR_0':
+                require(np.all((values >= 0) & (values <= 1)), 'RIG_COLOR_RANGE',
+                        'Vertex color components must be in [0, 1].', asset=mesh.id)
             allocation += values.nbytes
         for name, targets in mesh.morphs.items():
             require('POSITION' in targets, 'RIG_MORPH', 'Each native morph needs position deltas.', asset=name)
@@ -120,8 +266,6 @@ def validate_geometry(geometry: Geometry, limits: dict | None = None) -> None:
         allocation += v.nbytes + f.nbytes
     require(all(i.mime_type in ('image/png', 'image/jpeg') for i in geometry.images),
             'RIG_TEXTURE_FORMAT', 'Use PNG or JPEG textures for the portable core profile.')
-    require(all(isinstance(t.get('source'), int) and 0 <= t['source'] < len(geometry.images)
-                for t in geometry.textures), 'RIG_TEXTURE_REFERENCE', 'Texture image reference is invalid.')
     allocation += sum(len(i.data) for i in geometry.images)
     require(allocation * 4 <= limits['memory_bytes'], 'RIG_LIMIT_MEMORY',
             'Estimated geometry processing allocation exceeds the memory budget.', observed=allocation * 4)
@@ -144,38 +288,26 @@ def _binary_bundle(metadata: dict, arrays: dict[str, np.ndarray]) -> bytes:
     return stream.getvalue()
 
 
-def _read_bundle(path: Path, limits: dict) -> tuple[dict, dict]:
-    require(path.stat().st_size <= limits['dependency_bytes'], 'RIG_LIMIT_BINARY', 'Binary asset exceeds its byte budget.')
-    with zipfile.ZipFile(path) as archive:
-        infos = archive.infolist()
-        require(len(infos) <= limits['archive_files'], 'RIG_LIMIT_BINARY', 'Too many binary members.')
-        names = [i.filename for i in infos]
-        require(len(set(names)) == len(names) and 'metadata.json' in names,
-                'RIG_BINARY', 'Binary data needs unique members and metadata.')
-        require(sum(i.file_size for i in infos) * 3 <= limits['memory_bytes'],
-                'RIG_LIMIT_MEMORY', 'Expanded binary data exceeds its processing budget.')
-        for info in infos:
-            require(info.orig_filename == info.filename and '/' not in info.filename
-                    and '\\' not in info.filename and (info.filename == 'metadata.json'
-                    or info.filename.endswith('.npy')) and stat.S_IFMT(info.external_attr >> 16) != stat.S_IFLNK,
-                    'RIG_BINARY', 'Unsafe binary member name or type.')
-        metadata = decode_json(archive.read('metadata.json'))
-        arrays = {}
-        for name in names:
-            if name.endswith('.npy'):
-                with archive.open(name) as raw:
-                    version = np.lib.format.read_magic(raw)
-                    require(version in ((1, 0), (2, 0)), 'RIG_BINARY', 'Unsupported NumPy array format.')
-                    shape, _, dtype = (np.lib.format.read_array_header_1_0(raw) if version == (1, 0)
-                                       else np.lib.format.read_array_header_2_0(raw))
-                    count = 1
-                    for size in shape:
-                        require(isinstance(size, int) and 0 <= size <= 2_000_000, 'RIG_BINARY', 'Invalid array dimensions.')
-                        count *= size
-                    require(not dtype.hasobject and dtype.kind in 'fiu' and count * dtype.itemsize <= limits['memory_bytes'] // 3,
-                            'RIG_LIMIT_MEMORY', 'Unsafe or oversized NumPy array header.')
-                with archive.open(name) as raw:
-                    arrays[name[:-4]] = np.lib.format.read_array(raw, allow_pickle=False)
+def _materialize_array(payload, shape, dtype, offset, fortran):
+    return np.frombuffer(payload, dtype=dtype, offset=offset).reshape(shape, order='F' if fortran else 'C').copy()
+
+
+def _read_bundle(path: Path, limits: dict, budget=None, kind=None, expected_hash=None, descriptor=None) -> tuple[dict, dict]:
+    from rig_load_limits import LoadBudget, scan_bundle
+    budget = budget if budget is not None else LoadBudget(limits)
+    metadata, headers, snapshot = scan_bundle(path, limits, budget, expected_hash)
+    _check_load_headers(metadata, headers, limits, kind, descriptor)
+    arrays = {}
+    try:
+        with zipfile.ZipFile(io.BytesIO(snapshot)) as archive:
+            for name, (shape, dtype, offset, fortran) in headers.items():
+                # The verified header and byte payload are from the same immutable
+                # archive snapshot. No NumPy allocator consumes untrusted headers.
+                payload = archive.read(name + '.npy')
+                arrays[name] = _materialize_array(payload, shape, dtype, offset, fortran)
+    except (OSError, ValueError, EOFError, zipfile.BadZipFile, RuntimeError) as exc:
+        from rig_errors import RigError
+        raise RigError('RIG_BINARY', 'Invalid native array data: ' + str(exc), asset=path.name) from exc
     return metadata, arrays
 
 
@@ -217,17 +349,23 @@ def save_geometry(root: Path, geometry: Geometry, limits=None) -> dict:
                 meshes=[m.id for m in geometry.meshes], vertices=geometry.vertex_count, triangles=geometry.triangle_count)
 
 
-def load_geometry(root: Path, descriptor: dict, limits=None) -> Geometry:
+def load_geometry(root: Path, descriptor: dict, limits=None, *, budget=None) -> Geometry:
     limits = limits or DEFAULT_LIMITS
     path = safe_path(root, descriptor['data']['path'], exists=True)
     require(sha256(path) == descriptor['data']['sha256'], 'RIG_HASH', 'Geometry bytes differ from their manifest.')
-    meta, arrays = _read_bundle(path, limits)
+    meta, arrays = _read_bundle(path, limits, budget, 'geometry', descriptor['data']['sha256'], descriptor)
     require(meta.get('schema_version') == 1, 'RIG_BINARY_VERSION', 'Unsupported geometry data version.')
     meshes = [Mesh(m['id'], arrays[m['positions']], arrays[m['triangles']], m['material'],
                    {k: arrays[v] for k, v in m['attributes'].items()},
                    {k: {s: arrays[v] for s, v in fields.items()} for k, fields in m['morphs'].items()},
                    m['name'], m['region'], m['source_node'], m.get('morph_defaults', {})) for m in meta['meshes']]
-    images = [TextureImage(i['name'], i['mime_type'], arrays[i['data']].tobytes()) for i in meta['images']]
+    # Distinct image metadata can legally share one native byte vector. Retain
+    # one immutable byte copy per data key, not an unbudgeted copy per reference.
+    encoded_images = {}
+    for image in meta['images']:
+        if image['data'] not in encoded_images:
+            encoded_images[image['data']] = arrays[image['data']].tobytes()
+    images = [TextureImage(i['name'], i['mime_type'], encoded_images[i['data']]) for i in meta['images']]
     value = Geometry(meshes, meta['materials'], images, meta['textures'], meta['samplers'], meta['extensions_used'])
     validate_geometry(value, limits)
     require(value.vertex_count == descriptor['vertices'] and value.triangle_count == descriptor['triangles']
@@ -244,10 +382,10 @@ def save_weights(root: Path, weights: SkinWeights, version='1.0.0') -> dict:
                 locked_vertices=weights.locked.tolist(), fallback_reason=weights.fallback_reason)
 
 
-def load_weights(root: Path, descriptor: dict, limits=None) -> SkinWeights:
+def load_weights(root: Path, descriptor: dict, limits=None, *, budget=None) -> SkinWeights:
     path = safe_path(root, descriptor['data']['path'], exists=True)
     require(sha256(path) == descriptor['data']['sha256'], 'RIG_HASH', 'Skin bytes differ from their manifest.')
-    meta, arrays = _read_bundle(path, limits or DEFAULT_LIMITS)
+    meta, arrays = _read_bundle(path, limits or DEFAULT_LIMITS, budget, 'skin', descriptor['data']['sha256'], descriptor)
     require(meta == dict(schema_version=1, mesh=descriptor['mesh'], joints=descriptor['joints']),
             'RIG_SKIN', 'Skin metadata differs from the rig.')
     require(set(arrays) == {'indices', 'weights', 'inverse_bind', 'locked'}, 'RIG_SKIN', 'Skin arrays are incomplete.')
@@ -261,13 +399,92 @@ def rig_signature(manifest: dict) -> str:
     return object_hash({k: v for k, v in manifest.items() if k not in ('review', 'validation')})
 
 
-def load_rig(root: str | Path, verify_source: bool = True) -> RigAsset:
+def _check_load_headers(metadata, headers, limits, kind, descriptor):
+    """Enforce structural counts from actual headers, before array allocation."""
+    try:
+        if kind == 'geometry':
+            meshes = metadata['meshes']
+            require(isinstance(meshes, list) and 0 < len(meshes) <= 4096,
+                    'RIG_GEOMETRY', 'Expected 1–4096 native mesh primitives.')
+            vertices = triangles = 0
+            for mesh in meshes:
+                v = headers[mesh['positions']][0]
+                t = headers[mesh['triangles']][0]
+                require(len(v) == len(t) == 2 and v[1] == t[1] == 3,
+                        'RIG_BINARY', 'Invalid native mesh array shapes.')
+                vertices += v[0]
+                triangles += t[0]
+                require(isinstance(mesh['morphs'], dict) and len(mesh['morphs']) <= limits['morphs'],
+                        'RIG_LIMIT_MORPHS', 'Morph target count exceeds the load budget.')
+            require(vertices <= limits['vertices'], 'RIG_LIMIT_VERTICES', 'Actual native vertex count exceeds the load budget.')
+            require(triangles <= limits['triangles'], 'RIG_LIMIT_TRIANGLES', 'Actual native triangle count exceeds the load budget.')
+        elif kind == 'skin':
+            require(len(metadata['joints']) <= limits['bones'], 'RIG_LIMIT_BONES', 'Native skin joint count exceeds the load budget.')
+            for name in ('weights', 'indices'):
+                shape = headers[name][0]
+                require(len(shape) == 2 and shape[0] <= limits['vertices'] and shape[1] <= limits['influences'],
+                        'RIG_LIMIT_INFLUENCES', 'Native skin array exceeds the load budget.')
+            locked_shape, locked_dtype = headers['locked'][:2]
+            require(len(locked_shape) == 1 and locked_dtype.kind in 'iu' and locked_shape[0] <= limits['vertices']
+                    and (descriptor is None or locked_shape[0] == len(descriptor['locked_vertices'])),
+                    'RIG_SKIN', 'Native locked-vertex header differs from its bounded descriptor.')
+    except (KeyError, TypeError, IndexError) as exc:
+        from rig_errors import RigError
+        raise RigError('RIG_BINARY', 'Invalid native metadata/header inventory.') from exc
+
+
+def _preflight_load(root, manifest, limits, verify_source):
+    from rig_load_limits import LoadBudget, scan_bundle
+    budget = LoadBudget(limits)
+    budget.charge_json(safe_path(root, 'rig.json', exists=True))
+    budget.json(safe_path(root, 'identity.json', exists=True))
+    if verify_source:
+        for descriptor in manifest['source']['dependencies']:
+            budget.file(safe_path(root, descriptor['path'], exists=True),
+                        source=descriptor['path'] == manifest['source']['path'])
+    if manifest['skeleton'] is not None:
+        require(len(manifest['skeleton']['bones']) <= limits['bones'], 'RIG_LIMIT_BONES',
+                'Skeleton exceeds the caller/manifest bone budget.')
+    require(len(manifest['animations']) <= limits['clips'], 'RIG_LIMIT_CLIPS', 'Animation count exceeds the load budget.')
+    for descriptor, kind in [(manifest['geometry'], 'geometry')] + [(d, 'skin') for d in manifest['skins']]:
+        path = safe_path(root, descriptor['data']['path'], exists=True)
+        meta, headers, _ = scan_bundle(path, limits, budget, descriptor['data']['sha256'])
+        _check_load_headers(meta, headers, limits, kind, descriptor)
+    keyframes = 0
+    for descriptor in manifest['animations']:
+        clip = validate_contract(budget.json(safe_path(root, descriptor['path'], exists=True)), 'AnimationClip')
+        require(clip['duration'] <= limits['duration'] and clip['fps'] <= limits['fps'],
+                'RIG_LIMIT_ANIMATION', 'Clip timing exceeds the caller/manifest budget.')
+        keyframes += sum(len(track['times']) for track in clip['tracks'])
+        require(keyframes <= limits['keyframes'], 'RIG_LIMIT_KEYFRAMES', 'Aggregate animation keys exceed the load budget.')
+    for descriptor in manifest['validation']:
+        budget.file(safe_path(root, descriptor['path'], exists=True))
+    for descriptor in manifest['review']['receipts']:
+        receipt = validate_contract(budget.json(safe_path(root, descriptor['path'], exists=True)), 'RigReviewReceipt')
+        for evidence in receipt['evidence']:
+            budget.file(safe_path(root, evidence['path'], exists=True))
+    return budget.report()
+
+
+def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | None = None) -> RigAsset:
+    """Load using restrictive caller caps without modifying source/review identity.
+
+    Aggregate admission precedes every NumPy allocation. Limits cover native input
+    loading, not an OS memory sandbox or subsequent evaluation/render operations.
+    """
+    from rig_load_limits import LoadBudget, effective_limits
     root = Path(root).resolve()
-    manifest = validate_contract(read_json(root/'rig.json'), 'Rig')
-    limits = manifest['limits']
+    preliminary = effective_limits(DEFAULT_LIMITS, limits)
+    manifest_budget = LoadBudget(preliminary)
+    manifest = validate_contract(manifest_budget.json(safe_path(root, 'rig.json', exists=True)), 'Rig')
+    limits = effective_limits(manifest['limits'], limits)
+    _preflight_load(root, manifest, limits, verify_source)
+    budget = LoadBudget(limits)
+    # Count the already parsed manifest in the live aggregate as well.
+    budget.charge_json(safe_path(root, 'rig.json', exists=True))
     require(sha256(safe_path(root, 'identity.json', exists=True)) == manifest['character']['identity_sha256'],
             'RIG_IDENTITY_CHANGED', 'Character identity bytes differ from the manifest.')
-    identity=read_json(root/'identity.json')
+    identity=budget.json(safe_path(root, 'identity.json', exists=True))
     require(identity['id']==manifest['character']['id']==manifest['id'] and identity['fixture']==manifest['source']['fixture']
             and identity['source_sha256']==manifest['source']['sha256'] and identity['origin']==manifest['source']['origin'],
             'RIG_IDENTITY_CHANGED','Source origin, fixture classification and character identity must match their immutable record.')
@@ -281,30 +498,34 @@ def load_rig(root: str | Path, verify_source: bool = True) -> RigAsset:
     if verify_source:
         for descriptor in manifest['source']['dependencies']:
             path = safe_path(root, descriptor['path'], exists=True)
+            budget.file(path, source=descriptor['path'] == manifest['source']['path'])
             require(sha256(path) == descriptor['sha256'], 'RIG_SOURCE_CHANGED',
                     'Original source changed; dependent rig evidence is stale.', asset=descriptor['path'])
-    geometry = load_geometry(root, manifest['geometry'], limits)
-    weights = {d['mesh']: load_weights(root, d, limits) for d in manifest['skins']}
+    geometry = load_geometry(root, manifest['geometry'], limits, budget=budget)
+    weights = {d['mesh']: load_weights(root, d, limits, budget=budget) for d in manifest['skins']}
     clips = {}
     for descriptor in manifest['animations']:
         path = safe_path(root, descriptor['path'], exists=True)
         require(sha256(path) == descriptor['sha256'], 'RIG_HASH', 'Animation content changed.', asset=descriptor['id'])
-        clip = validate_contract(read_json(path), 'AnimationClip')
+        clip = validate_contract(budget.json(path), 'AnimationClip')
         require(clip['id'] == descriptor['id'] and clip['version'] == descriptor['version'],
                 'RIG_ANIMATION', 'Animation identity/version mismatch.')
         clips[clip['id']] = clip
     for descriptor in manifest['review']['receipts']+manifest['validation']:
+        budget.file(safe_path(root, descriptor['path'], exists=True))
         require(sha256(safe_path(root,descriptor['path'],exists=True))==descriptor['sha256'],
                 'RIG_EVIDENCE_CHANGED','Referenced review or validation evidence was modified.')
+    receipts = []
     for descriptor in manifest['review']['receipts']:
-        receipt=validate_contract(read_json(safe_path(root,descriptor['path'],exists=True)),'RigReviewReceipt')
+        receipt=validate_contract(budget.json(safe_path(root,descriptor['path'],exists=True)),'RigReviewReceipt')
+        receipts.append(receipt)
         for evidence in receipt['evidence']:
+            budget.file(safe_path(root, evidence['path'], exists=True))
             require(sha256(safe_path(root,evidence['path'],exists=True))==evidence['sha256'],
                     'RIG_EVIDENCE_CHANGED','Evidence covered by a retained review was modified.')
     if manifest['review']['status']=='approved':
         from rig_validation import REVIEW_DIMENSIONS
-        receipts=[read_json(safe_path(root,d['path'],exists=True)) for d in manifest['review']['receipts']]
         require(any(r.get('expected_sha256')==rig_signature(manifest) and r.get('reviewer_kind') in ('human','agent')
                     and set(r.get('dimensions',{}))==set(REVIEW_DIMENSIONS) and all(v['verdict']=='approved' for v in r['dimensions'].values()) for r in receipts),
                 'RIG_REVIEW_MISSING','Approved status requires a matching real visual review receipt.')
-    return RigAsset(manifest, geometry, weights, clips, root)
+    return RigAsset(manifest, geometry, weights, clips, root, budget.report())
