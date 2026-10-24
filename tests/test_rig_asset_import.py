@@ -70,6 +70,14 @@ class ImportTests(unittest.TestCase):
         texture=self.root/'texture.png';texture.write_bytes(image.getvalue())
         result=self.pipeline.import_asset(source,**self.request(blender_roundtrip=False))
         self.assertEqual(result['report']['native_observation']['textures'],1)
+        jpeg=(ROOT/'tests/fixtures/strict-jpeg-valid.jpg').read_bytes()
+        corrupt_png=bytearray(image.getvalue());corrupt_png[-1]^=1
+        for version,data in [('2.0.0',bytes(corrupt_png)),('3.0.0',jpeg[:-20]+b'\xff\xd9')]:
+            with self.subTest(corruption=version):
+                texture.write_bytes(data)
+                with self.assertRaises(RigError):self.pipeline.import_asset(source,**self.request(version=version,blender_roundtrip=False))
+                self.assertEqual(texture.read_bytes(),data)
+                with sqlite3.connect(self.library.database) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],1)
         texture.unlink()
         with self.assertRaises((RigError,OSError)):SourceSnapshot(source,self.root/'missing-texture')
 
