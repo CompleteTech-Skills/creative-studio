@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from copy import deepcopy
+from functools import wraps
 import base64
 import hashlib
+import io
 import json
 import math
 import os
@@ -41,6 +43,15 @@ BASIS = ('canonical', 'right-handed-z-up', 'left-handed-y-up')
 
 def fail(code, message, asset=None):
     raise RigError('LIBRARY_IMPORT_' + code, message, stage='asset-import', asset=str(asset) if asset else None)
+
+
+def dependency_errors(function):
+    @wraps(function)
+    def checked(*args,**kwargs):
+        try:return function(*args,**kwargs)
+        except ImportError as exc:
+            fail('DEPENDENCY','Install optional requirements-rig.txt for real 3D operations: '+str(exc)[:512])
+    return checked
 
 
 def integer(value, minimum, maximum):
@@ -88,6 +99,22 @@ def digest(payload):
 
 
 def _json(payload):
+    # Bound Python container allocation before the ordinary JSON decoder builds
+    # the object graph. Embedded binary strings do not consume structural tokens.
+    if not isinstance(payload,bytes) or len(payload)>32*1024**2:fail('LIMIT','JSON exceeds the bounded import profile.')
+    quoted=False;escaped=False;depth=0;tokens=0
+    for byte in payload:
+        if quoted:
+            if escaped:escaped=False
+            elif byte==92:escaped=True
+            elif byte==34:quoted=False
+        elif byte==34:quoted=True
+        elif byte in (123,91):
+            depth+=1;tokens+=1
+            if depth>128:fail('LIMIT','JSON nesting exceeds admission.')
+        elif byte in (125,93):depth-=1
+        elif byte in (44,58):tokens+=1
+        if tokens>500000:fail('LIMIT','JSON structural complexity exceeds admission.')
     try: return decode_json(payload)
     except RigError: raise
     except (ValueError, TypeError, UnicodeError) as exc: fail('JSON', 'Invalid asset JSON: ' + str(exc))
@@ -301,14 +328,22 @@ class SourceSnapshot:
 
     def _obj_closure(self):
         import shlex
-        try: lines = self.files[self.entry].decode('utf-8').splitlines()
+        try: lines = io.StringIO(self.files[self.entry].decode('utf-8'),newline=None)
         except UnicodeError as exc: fail('FORMAT', str(exc))
-        for line in lines:
+        for number,line in enumerate(lines):
+            if number>=1000000 or len(line)>65536:fail('LIMIT','OBJ text record budget exceeded.')
             tokens = shlex.split(line, comments=True)
+            if tokens and tokens[0] not in {'v','vn','vt','f','o','g','s','mtllib','usemtl'}:
+                fail('UNSUPPORTED','Unsupported OBJ directive: '+tokens[0])
+            if tokens and tokens[0] in ('v','vn') and len(tokens)!=4:
+                fail('UNSUPPORTED','OBJ profile requires explicit three-component positions/normals.')
+            if tokens and tokens[0]=='vt' and len(tokens)!=3:
+                fail('UNSUPPORTED','OBJ profile requires two-component UV coordinates.')
             if tokens and tokens[0] == 'mtllib':
                 if len(tokens) != 2: fail('UNSUPPORTED', 'OBJ profile requires one quoted MTL filename per declaration.')
                 mtl = self.add(relative(tokens[1]), 'material')
-                for item in self.files[mtl].decode('utf-8').splitlines():
+                for number,item in enumerate(io.StringIO(self.files[mtl].decode('utf-8'),newline=None)):
+                    if number>=1000000 or len(item)>65536:fail('LIMIT','MTL text record budget exceeded.')
                     words = shlex.split(item, comments=True)
                     if words and words[0].startswith(('map_', 'bump', 'disp', 'decal')):
                         if words[0] != 'map_Kd' or len(words) != 2: fail('UNSUPPORTED', 'OBJ profile supports only plain diffuse texture maps.')
@@ -455,7 +490,7 @@ class BlenderAdapter:
         start=time.monotonic(); peak=0
         with log.open('xb') as stream:
             try: process=subprocess.Popen(resource_command,stdin=subprocess.DEVNULL,stdout=stream,stderr=subprocess.STDOUT,
-                                          env=env,start_new_session=True)
+                                          env=env,cwd=root,start_new_session=True)
             except OSError as exc: fail('UNAVAILABLE','Cannot launch trusted Blender: '+str(exc))
             reason=None
             try:
@@ -483,7 +518,7 @@ class BlenderAdapter:
             finally:
                 _stop(process)
         return dict(seconds=time.monotonic()-start,peak_rss_bytes=peak,log_sha256=digest(log.read_bytes()),
-                    command_policy='fixed-package-worker/no-shell/factory/autoexec-disabled')
+                    command_policy='fixed-package-worker/private-cwd/no-shell/factory/autoexec-disabled')
 
     def capabilities(self):
         if self._version:return deepcopy(self._version)
@@ -497,6 +532,7 @@ class BlenderAdapter:
                                trusted_scripts=True,untrusted_blend=False,platform='linux',executed_probe=True)
             return deepcopy(self._version)
 
+    @dependency_errors
     def execute(self, mode, source, destination, *, parameters=None, trusted_blend=False, fixture=False):
         capability=self.capabilities(); destination=Path(destination);destination.mkdir(mode=0o700)
         if mode=='blend' and not trusted_blend:fail('QUARANTINE','Untrusted .blend requires explicit trusted-packed policy; no file was opened.')
@@ -678,9 +714,10 @@ class ImportPipeline:
             except RigError as exc:result['blender']=dict(status='unavailable',diagnostic=exc.report)
         return result
 
+    @dependency_errors
     def probe(self,source):
         with tempfile.TemporaryDirectory(prefix='hatch-library-probe-') as temp:
-            snapshot=SourceSnapshot(source,Path(temp)/'source',cancelled=self.cancelled)
+            snapshot=SourceSnapshot(source,Path(temp)/'source',maximum_bytes=min(MAX_INPUT_BYTES,(self.memory-256*1024**2)//12),cancelled=self.cancelled)
             return dict(schema_version=1,format=snapshot.format,source_sha256=digest(snapshot.files[snapshot.entry]),
                         files=snapshot.inventory(),embedded=snapshot.embedded,
                         estimated_memory_bytes=256*1024**2+12*sum(map(len,snapshot.files.values())),
@@ -697,7 +734,7 @@ class ImportPipeline:
         if provenance_method not in ('import','generated','fixture'):fail('REQUEST','Unsupported provenance method.')
         if provenance_method=='generated' and generator_record is None:fail('PROVENANCE','Generated imports require actual generator evidence.')
         with tempfile.TemporaryDirectory(prefix='hatch-library-import-') as temp:
-            root=Path(temp);snapshot=SourceSnapshot(source,root/'source',cancelled=self.cancelled)
+            root=Path(temp);snapshot=SourceSnapshot(source,root/'source',maximum_bytes=min(MAX_INPUT_BYTES,(self.memory-256*1024**2)//12),cancelled=self.cancelled)
             if snapshot.format=='blend' and not trusted_packed_blend:
                 fail('QUARANTINE','Untrusted Blender input preserved; select explicit trusted-packed policy after independent source review.')
             source_bytes=sum(map(len,snapshot.files.values()))
@@ -727,7 +764,7 @@ class ImportPipeline:
                 source_validation=dict(reader='Blender',inspection=tool['inspection'],
                     conversion_profile='MESH/ARMATURE/EMPTY, positive TRS/pose/shape-value channel admission, simple Principled surface',
                     declared_losses=['Blender animation curves are sampled into glTF channels; native controls/interpolation/NLA editing metadata are not runtime channels.',
-                        'Source world lighting and unused application datablocks are not represented in the runtime asset. Originals remain exact.',
+                        'Source world lighting/compositing and unused application datablocks are not represented in the runtime asset or neutral diagnostic render. Originals remain exact.',
                         'Native skin export uses Blender numeric precision; differences below the reported association precision are not certified. Exact native originals remain available.'],
                     limitations=['Blender/OBJ source semantics are represented by inspected glTF export; unused datablocks and unsupported application-only metadata are not runtime channels.'])
             source_fixture=document_fixture(snapshot.document) if snapshot.document else False
@@ -835,6 +872,7 @@ class ImportPipeline:
             self.library.resolve(reference)
             return dict(reference=reference,report=report,manifest_sha256=reference['sha256'],status='imported-payload-verified')
 
+    @dependency_errors
     def import_asset(self,source,*,identity,version,metadata,license_file,fixture=False,
                      unit_scale=1.,basis='canonical',ground=False,blender_roundtrip=True,
                      trusted_packed_blend=False):
@@ -886,6 +924,7 @@ class ImportPipeline:
             if stage.exists():shutil.rmtree(stage)
         return dict(entry=str(destination/mapping['entry']),files={n:digest(p) for n,p in payloads.items()},restored_exact_bytes=True)
 
+    @dependency_errors
     def generate(self,*,identity,version,metadata,license_file,parameters,fixture=False):
         if not isinstance(parameters,dict) or set(parameters)!={'primitive','dimensions','color','animated'}:
             fail('REQUEST','Generator needs explicit primitive/dimensions/color/animated parameters.')

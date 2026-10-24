@@ -79,6 +79,15 @@ def skin_bindings():
                 fail('Armature modifier requires a local scene mesh/armature binding.')
             if not modifier.use_vertex_groups or modifier.use_bone_envelopes or modifier.use_deform_preserve_volume or modifier.use_multi_modifier or modifier.vertex_group or not modifier.show_viewport or not modifier.show_render:
                 fail('Unsupported armature deformation options: only unmasked linear vertex-group skinning is admitted.')
+            if modifier.object.data.pose_position!='POSE':fail('Native rest-display armatures require a verified pose adapter.')
+            for bone in modifier.object.data.bones:
+                if bone.bbone_segments!=1 or bone.use_envelope_multiply or bone.inherit_scale!='FULL' or not bone.use_inherit_rotation or not bone.use_local_location:
+                    fail('Unsupported native bone deformation: only unsegmented conventional inherited linear bones are admitted.')
+            groups={g.index:g.name for g in obj.vertex_groups}
+            for vertex in obj.data.vertices:
+                for item in vertex.groups:
+                    bone=modifier.object.data.bones.get(groups[item.group])
+                    if item.weight>0 and bone is not None and not bone.use_deform:fail('Weighted non-deforming native bones require a verified adapter.')
             result.append(dict(mesh=obj.name,armature=modifier.object.name))
     return result
 
@@ -130,7 +139,7 @@ def enforce_conversion_profile():
 
 def inspect_scene():
     meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
-    return dict(fixture=source_fixture(),skin_bindings=skin_bindings(),objects=[dict(name=o.name, type=o.type, parent=o.parent.name if o.parent else None,
+    return dict(fixture=source_fixture(),scene_compositing=bool(bpy.context.scene.use_nodes),skin_bindings=skin_bindings(),objects=[dict(name=o.name, type=o.type, parent=o.parent.name if o.parent else None,
                              vertices=len(o.data.vertices) if o.type == 'MESH' else 0,
                              triangles=sum(len(p.vertices)-2 for p in o.data.polygons) if o.type == 'MESH' else 0)
                          for o in bpy.context.scene.objects],
@@ -146,6 +155,8 @@ def ensure_packed():
         fail('Trusted blend profile forbids linked libraries, text blocks and expression drivers.')
     owners=[bpy.context.scene,*bpy.data.meshes,*bpy.data.armatures,*bpy.data.shape_keys,*bpy.data.materials,*bpy.data.worlds]
     if any(getattr(o,'animation_data',None) and o.animation_data.drivers for o in owners):fail('Native datablock drivers are unsupported.')
+    if bpy.data.movieclips or any(not sound.packed_file for sound in bpy.data.sounds):fail('Unpacked native movie/audio media is outside the packed mesh profile.')
+    if bpy.context.scene.sequence_editor and bpy.context.scene.sequence_editor.strips:fail('Native sequencer media requires a separate verified adapter.')
     for image in bpy.data.images:
         if image.type not in ('RENDER_RESULT', 'COMPOSITING') and image.source == 'FILE' and not image.packed_file:
             fail('Trusted blend profile requires packed images.')
@@ -153,6 +164,13 @@ def ensure_packed():
 
 def preview(path):
     scene = bpy.context.scene
+    # Application-owned diagnostics never execute source compositor file-output
+    # nodes or replace geometry with source sequencer footage.
+    scene.render.use_compositing=False;scene.render.use_sequencer=False
+    world=bpy.data.worlds.new('HatchImportInspectionWorld');world.use_nodes=True
+    world.node_tree.nodes['Background'].inputs['Color'].default_value=(.05,.05,.05,1.)
+    world.node_tree.nodes['Background'].inputs['Strength'].default_value=1.
+    scene.world=world
     meshes = [o for o in scene.objects if o.type == 'MESH']
     points = [o.matrix_world @ Vector(corner) for o in meshes for corner in o.bound_box]
     if not points:
@@ -191,7 +209,7 @@ def main(job):
     if mode == 'gltf':
         bpy.ops.import_scene.gltf(filepath=source)
     elif mode == 'obj':
-        bpy.ops.wm.obj_import(filepath=source, forward_axis='Z', up_axis='Y')
+        bpy.ops.wm.obj_import(filepath=source, forward_axis='NEGATIVE_Z', up_axis='Y')
     elif mode == 'blend':
         bpy.ops.wm.open_mainfile(filepath=source, load_ui=False, use_scripts=False)
         ensure_packed()
@@ -228,7 +246,7 @@ def main(job):
     bpy.ops.file.pack_all()
     bpy.ops.wm.save_as_mainfile(filepath=job['blend'])
     bpy.ops.export_scene.gltf(filepath=job['glb'], export_format='GLB', export_extras=True,
-                             export_animations=True, export_morph=True, export_skins=True, export_all_influences=True, export_cameras=True,
+                             export_animations=True, export_force_sampling=True, export_morph=True, export_skins=True, export_all_influences=True, export_cameras=True,
                              export_lights=True, export_frame_range=False)
     preview(job['preview'])
     Path(job['report']).write_text(json.dumps(dict(result, blender_version=bpy.app.version_string)), encoding='utf-8')

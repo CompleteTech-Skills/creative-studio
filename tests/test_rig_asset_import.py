@@ -106,6 +106,33 @@ class ImportTests(unittest.TestCase):
                 self.assertEqual(caught.exception.report['code'],'LIBRARY_IMPORT_ALIAS')
                 with sqlite3.connect(self.library.database) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],0)
 
+    def test_obj_freeform_directives_rejected_before_blender(self):
+        source=self.root/'freeform.obj'
+        source.write_text('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\nv 10 0 0\nv 11 0 0\nv 12 1 0\nv 13 0 0\ncstype bezier\ndeg 3\ncurv 0 1 4 5 6 7\nparm u 0 1\nend\n')
+        with self.assertRaisesRegex(RigError,'Unsupported OBJ directive'):self.pipeline.import_asset(source,**self.request())
+        with sqlite3.connect(self.library.database) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],0)
+
+    @unittest.skipUnless(os.environ.get('HATCH_BLENDER'),'Pinned Blender optional integration not configured')
+    def test_actual_obj_canonical_axes(self):
+        source=self.root/'triangle.obj';source.write_text('o AxisTriangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+        result=self.pipeline.import_asset(source,**self.request())
+        observed=result['report']['native_observation']
+        self.assertEqual(observed['triangles'],1)
+        for actual,expected in zip(observed['bounds'],[[0,0,0],[1,1,0]]):
+            for a,b in zip(actual,expected):self.assertAlmostEqual(a,b,places=6)
+
+    @unittest.skipUnless(os.environ.get('HATCH_BLENDER'),'Pinned Blender optional integration not configured')
+    def test_native_compositor_cannot_publish_unrequested_files(self):
+        source=self.root/'compositor.blend';escaped=self.root/'outside-worker'
+        script=self.root/'make_compositor.py'
+        script.write_text('import bpy\nbpy.ops.object.select_all(action="SELECT");bpy.ops.object.delete(use_global=False)\nbpy.ops.mesh.primitive_cube_add()\ns=bpy.context.scene;s.use_nodes=True\nf=s.node_tree.nodes.new("CompositorNodeOutputFile");f.base_path='+repr(str(escaped))+'\ns.node_tree.links.new(s.node_tree.nodes.get("Render Layers").outputs["Image"],f.inputs[0])\nbpy.ops.wm.save_as_mainfile(filepath='+repr(str(source))+')\n')
+        workspace=self.root/'compositor-fixture';workspace.mkdir()
+        self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(script)],workspace)
+        result=self.pipeline.import_asset(source,**self.request(trusted_packed_blend=True))
+        self.assertEqual(result['report']['native_observation']['triangles'],12)
+        self.assertTrue(result['report']['source_validation']['inspection']['scene_compositing'])
+        self.assertFalse(escaped.exists())
+
     @unittest.skipUnless(os.environ.get('HATCH_BLENDER'),'Pinned Blender optional integration not configured')
     def test_actual_eight_weight_blender_associations(self):
         import numpy as np
@@ -193,6 +220,25 @@ class ImportTests(unittest.TestCase):
             adapter._run([sys.executable,'-c','import time;time.sleep(10)'],target)
         self.assertLess(time.monotonic()-start,4)
 
+    def test_structural_json_and_obj_records_are_bounded_before_decode(self):
+        from asset_library_import import _json
+        deep=b'['*129+b'0'+b']'*129
+        with self.assertRaisesRegex(RigError,'nesting'):_json(deep)
+        broad=b'['+b'{},'*260000+b'{}]'
+        with self.assertRaisesRegex(RigError,'complexity'):_json(broad)
+        source=self.root/'long-line.obj';source.write_text('o '+('x'*65536)+'\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+        with self.assertRaisesRegex(RigError,'record budget'):self.pipeline.import_asset(source,**self.request())
+
+    def test_actual_missing_optional_environment_is_structured(self):
+        import subprocess,sys
+        result=subprocess.run([sys.executable,'-S',str(ROOT/'scripts/asset_library_import.py'),'probe','--library',str(self.library.root),'--source',str(self.source)],capture_output=True,text=True,timeout=10)
+        self.assertEqual(result.returncode,2)
+        report=json.loads(result.stdout)
+        self.assertEqual(report['diagnostic']['code'],'LIBRARY_IMPORT_DEPENDENCY')
+        self.assertIn('requirements-rig.txt',report['diagnostic']['message'])
+        self.assertNotIn('Traceback',result.stderr)
+        with sqlite3.connect(self.library.database) as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],0)
+
     def test_request_and_path_bounds(self):
         for value in (True,1.1,float('inf'),-1):
             with self.assertRaises(RigError):integer(value,0,8)
@@ -241,12 +287,12 @@ class ImportTests(unittest.TestCase):
             workspace=self.root/(kind+'-fixture');workspace.mkdir()
             self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(creation)],workspace)
             with self.assertRaises(RigError):self.pipeline.import_asset(rejected,**self.request(version='1.6.0',trusted_packed_blend=True))
-        for kind,options in [('envelope','mod.use_vertex_groups=False;mod.use_bone_envelopes=True'),('dual-quaternion','mod.use_deform_preserve_volume=True')]:
+        for kind,options in [('envelope','mod.use_vertex_groups=False;mod.use_bone_envelopes=True'),('dual-quaternion','mod.use_deform_preserve_volume=True'),('bendy','rig.data.bones[0].bbone_segments=8;rig.pose.bones[0].bbone_curveinx=2;rig.pose.bones[0].bbone_curveoutx=-2;group=obj.vertex_groups.new(name=rig.data.bones[0].name);group.add(list(range(len(obj.data.vertices))),1,"REPLACE")')]:
             rejected=self.root/(kind+'.blend');creation=self.root/('make_'+kind+'.py')
             creation.write_text('import bpy\nbpy.ops.object.select_all(action="SELECT");bpy.ops.object.delete(use_global=False)\nbpy.ops.mesh.primitive_cube_add();obj=bpy.context.object\nbpy.ops.object.armature_add();rig=bpy.context.object\nmod=obj.modifiers.new("UnsupportedSkin","ARMATURE");mod.object=rig\n'+options+'\nbpy.ops.wm.save_as_mainfile(filepath='+repr(str(rejected))+')\n')
             workspace=self.root/(kind+'-fixture');workspace.mkdir()
             self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(creation)],workspace)
-            with self.assertRaisesRegex(RigError,'Unsupported armature deformation options'):self.pipeline.import_asset(rejected,**self.request(version='1.7.0',trusted_packed_blend=True))
+            with self.assertRaisesRegex(RigError,'Unsupported (armature|native bone) deformation'):self.pipeline.import_asset(rejected,**self.request(version='1.7.0',trusted_packed_blend=True))
         generated=self.pipeline.generate(**self.request(version='2.0.0',parameters=dict(primitive='box',dimensions=[1,2,3],color=[.2,.4,.6,1],animated=True)))
         self.assertEqual(generated['report']['native_observation']['triangles'],12)
         self.assertEqual(self.library.resolve(generated['reference'])['provenance']['method'],'fixture')
