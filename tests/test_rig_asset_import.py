@@ -146,6 +146,8 @@ class ImportTests(unittest.TestCase):
         self.assertIn('native/asset.blend',paths)
         packed=self.root/'packed.blend';packed.write_bytes(self.library.read_file(result['reference'],'native/asset.blend'))
         with self.assertRaises(RigError):self.pipeline.import_asset(packed,**self.request(version='1.0.1',fixture=False,trusted_packed_blend=True))
+        derivative=self.root/'roundtrip.glb';derivative.write_bytes(self.library.read_file(result['reference'],'native/roundtrip.glb'))
+        with self.assertRaises(RigError):self.pipeline.import_asset(derivative,**self.request(version='1.0.2',fixture=False,blender_roundtrip=False))
         trusted=self.pipeline.import_asset(packed,**self.request(version='1.1.0',trusted_packed_blend=True))
         self.assertGreater(trusted['report']['native_observation']['vertices'],0)
         scripted=self.root/'scripted.blend';script=self.root/'make_scripted.py'
@@ -158,6 +160,11 @@ class ImportTests(unittest.TestCase):
         shader_workspace=self.root/'shader-fixture';shader_workspace.mkdir()
         self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(shader_script)],shader_workspace)
         with self.assertRaises(RigError):self.pipeline.import_asset(procedural,**self.request(version='1.3.0',trusted_packed_blend=True))
+        subsurface=self.root/'subsurface.blend';subsurface_script=self.root/'make_subsurface.py'
+        subsurface_script.write_text('import bpy\nbpy.ops.mesh.primitive_cube_add()\nm=bpy.data.materials.new("Subsurface");m.use_nodes=True\nm.node_tree.nodes["Principled BSDF"].inputs["Subsurface Weight"].default_value=1.0\nbpy.context.object.data.materials.append(m)\nbpy.ops.wm.save_as_mainfile(filepath='+repr(str(subsurface))+')\n')
+        subsurface_workspace=self.root/'subsurface-fixture';subsurface_workspace.mkdir()
+        self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(subsurface_script)],subsurface_workspace)
+        with self.assertRaises(RigError):self.pipeline.import_asset(subsurface,**self.request(version='1.4.0',trusted_packed_blend=True))
         generated=self.pipeline.generate(**self.request(version='2.0.0',parameters=dict(primitive='box',dimensions=[1,2,3],color=[.2,.4,.6,1],animated=True)))
         self.assertEqual(generated['report']['native_observation']['triangles'],12)
         self.assertEqual(self.library.resolve(generated['reference'])['provenance']['method'],'fixture')

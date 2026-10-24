@@ -69,6 +69,20 @@ def relative(value):
     return result
 
 
+def document_fixture(document):
+    """Reserved provenance markers survive asset/scene/node/material exports."""
+    pending=[document];visited=0
+    while pending:
+        value=pending.pop();visited+=1
+        if visited>1000000:fail('LIMIT','Provenance inspection exceeds bounded JSON budget.')
+        if isinstance(value,dict):
+            if value.get('hatchAssetSourceFixture') is True:return True
+            if any(isinstance(value.get(k),dict) and value[k].get('fixture') is True for k in ('hatchSource','hatchRig')):return True
+            pending.extend(value.values())
+        elif isinstance(value,list):pending.extend(value)
+    return False
+
+
 def digest(payload):
     return hashlib.sha256(payload).hexdigest()
 
@@ -451,7 +465,7 @@ class BlenderAdapter:
                 if reason:
                     _stop(process);fail(reason,'Trusted Blender worker exceeded '+reason.lower()+' admission.')
                 process.wait()
-                if process.returncode: fail('WORKER','Blender failed; bounded log retained in import workspace.')
+                if process.returncode: fail('WORKER','Blender failed: '+log.read_bytes()[-2048:].decode('utf-8',errors='replace'))
                 if log.stat().st_size>MAX_JOB_LOG: fail('LOG_LIMIT','Worker log exceeds configured bound.')
             finally:
                 _stop(process)
@@ -655,11 +669,7 @@ class ImportPipeline:
                 source_validation=dict(reader='Blender',inspection=tool['inspection'],
                     conversion_profile='simple Principled surface only; unsupported native shader graphs fail closed',
                     limitations=['Blender/OBJ source semantics are represented by inspected glTF export; unused datablocks and unsupported application-only metadata are not runtime channels.'])
-            source_fixture=False
-            if snapshot.document:
-                extras=snapshot.document.get('asset',{}).get('extras',{})
-                if isinstance(extras,dict):
-                    source_fixture=any(isinstance(extras.get(k),dict) and extras[k].get('fixture',False) for k in ('hatchSource','hatchRig'))
+            source_fixture=document_fixture(snapshot.document) if snapshot.document else False
             if source_fixture and not fixture:fail('PROVENANCE','Fixture source cannot be relabeled as production.')
             _,independent=_check_gltf(target,limits)
             primary=read_source_bytes(target,MAX_FILE_BYTES)

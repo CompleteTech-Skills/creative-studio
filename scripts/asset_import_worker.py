@@ -29,7 +29,7 @@ def enforce_conversion_profile():
     for obj in bpy.context.scene.objects:
         if obj.constraints or any(m.type!='ARMATURE' for m in obj.modifiers):
             fail('Unsupported native constraints/modifiers require a separately verified baking adapter.')
-    for material in bpy.data.materials:
+    for material in list(bpy.data.materials):
         if not material.use_nodes:continue
         nodes=list(material.node_tree.nodes)
         if len(nodes)!=2 or {n.bl_idname for n in nodes}!={'ShaderNodeBsdfPrincipled','ShaderNodeOutputMaterial'}:
@@ -37,6 +37,19 @@ def enforce_conversion_profile():
         links=list(material.node_tree.links)
         if len(links)!=1 or links[0].from_node.bl_idname!='ShaderNodeBsdfPrincipled' or links[0].from_socket.name!='BSDF' or links[0].to_socket.name!='Surface':
             fail('Unsupported native shader links require a separately verified baking adapter.')
+        principled=next(n for n in nodes if n.bl_idname=='ShaderNodeBsdfPrincipled')
+        reference_material=bpy.data.materials.new('HatchAdmissionDefaults');reference_material.use_nodes=True
+        reference=reference_material.node_tree.nodes['Principled BSDF']
+        try:
+            for socket in principled.inputs:
+                if socket.name in ('Base Color','Metallic','Roughness','Alpha','IOR'):continue
+                expected=next((v for v in reference.inputs if v.identifier==socket.identifier),None)
+                if expected is None:fail('Unsupported native Principled socket: '+socket.identifier)
+                value=socket.default_value;baseline=expected.default_value
+                try:equal=tuple(value)==tuple(baseline)
+                except TypeError:equal=value==baseline
+                if not equal:fail('Unsupported native Principled parameter: '+socket.name)
+        finally:bpy.data.materials.remove(reference_material)
         if material.animation_data or material.node_tree.animation_data:
             fail('Animated native materials are unsupported by this conversion profile.')
 
