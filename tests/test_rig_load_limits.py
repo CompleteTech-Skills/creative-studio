@@ -11,13 +11,13 @@ from unittest.mock import patch
 import zipfile
 
 import numpy as np
-from PIL import Image
+from PIL import Image, PngImagePlugin
 
 from rig_errors import RigError, sha256
 from rig_models import (TextureImage, load_rig, rig_signature, save_geometry,
-                        _binary_bundle, _read_bundle)
+                        _binary_bundle, _read_bundle, save_weights)
 from rig_contracts import DEFAULT_LIMITS
-from rig_load_limits import LoadBudget, effective_limits
+from rig_load_limits import LoadBudget, effective_limits, image_dimensions
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -220,6 +220,77 @@ class NativeLoadLimitTests(unittest.TestCase):
             with self.assertRaises(RigError) as caught:
                 _read_bundle(path, DEFAULT_LIMITS)
             self.assertEqual(caught.exception.report['code'], 'RIG_BINARY')
+
+    def test_unsupported_zip_methods_reject_before_member_decoder(self):
+        for method in (zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA):
+            with self.subTest(method=method):
+                path = Path(self.temp.name) / f'method{method}.npz'
+                with zipfile.ZipFile(path, 'w', compression=method) as archive:
+                    archive.writestr('metadata.json', '{}')
+                with patch('zipfile.ZipFile.read', side_effect=AssertionError('unsupported decoder invoked')):
+                    with self.assertRaises(RigError) as caught:
+                        _read_bundle(path, DEFAULT_LIMITS)
+                    self.assertEqual(caught.exception.report['code'], 'RIG_BINARY')
+
+    def test_png_metadata_is_not_decoded_for_resource_admission(self):
+        rig = load_rig(self.root)
+        stream = io.BytesIO()
+        text = PngImagePlugin.PngInfo()
+        text.add_text('description', 'ordinary bounded fixture text', zip=True)
+        Image.new('RGB', (16, 24), 'red').save(stream, format='PNG', pnginfo=text)
+        encoded = stream.getvalue()
+        rig.geometry.images = [TextureImage('with-text', 'image/png', encoded)]
+        rig.manifest['geometry'] = save_geometry(self.root, rig.geometry, rig.manifest['limits'])
+        (self.root / 'rig.json').write_text(json.dumps(rig.manifest))
+        before = self.hashes()
+        with patch('PIL.Image.open', side_effect=AssertionError('image metadata decoder invoked')):
+            reopened = load_rig(self.root, limits={'memory_bytes': 35 * 1024**2})
+        self.assertEqual(reopened.geometry.images[0].data, encoded)
+        self.assertEqual(reopened.resource_usage['texture_rgba_bytes'], 16 * 24 * 4)
+        self.assertEqual(self.hashes(), before)
+
+    def test_dimension_probes_cover_real_png_jpeg_modes_without_decoders(self):
+        for mode in ('1', 'L', 'P', 'RGB', 'RGBA', 'I;16'):
+            stream = io.BytesIO()
+            Image.new(mode, (13, 19)).save(stream, format='PNG')
+            with patch('PIL.Image.open', side_effect=AssertionError('PNG decoder invoked')):
+                self.assertEqual(image_dimensions(stream.getvalue()), (13, 19))
+        for mode in ('L', 'RGB', 'CMYK'):
+            for progressive in (False, True):
+                stream = io.BytesIO()
+                Image.new(mode, (17, 23)).save(stream, format='JPEG', progressive=progressive)
+                with patch('PIL.Image.open', side_effect=AssertionError('JPEG decoder invoked')):
+                    self.assertEqual(image_dimensions(stream.getvalue()), (17, 23))
+
+    def test_image_records_sharing_data_retain_one_immutable_encoded_copy(self):
+        rig = load_rig(self.root)
+        stream = io.BytesIO()
+        Image.new('RGB', (12, 12), 'red').save(stream, format='PNG')
+        rig.geometry.images = [TextureImage('first', 'image/png', stream.getvalue())]
+        desc = save_geometry(self.root, rig.geometry, rig.manifest['limits'])
+        path = self.root / desc['data']['path']
+        meta, arrays = _read_bundle(path, DEFAULT_LIMITS)
+        meta['images'].append(dict(meta['images'][0], name='second'))
+        payload = _binary_bundle(meta, arrays)
+        path.write_bytes(payload)
+        desc['data']['sha256'] = sha256(path)
+        rig.manifest['geometry'] = desc
+        (self.root / 'rig.json').write_text(json.dumps(rig.manifest))
+        reopened = load_rig(self.root)
+        self.assertEqual([i.name for i in reopened.geometry.images], ['first', 'second'])
+        self.assertIs(reopened.geometry.images[0].data, reopened.geometry.images[1].data)
+        self.assertEqual(reopened.geometry.images[0].data, stream.getvalue())
+
+    def test_mismatched_locked_header_rejects_before_array_and_list_allocation(self):
+        rig = load_rig(self.root)
+        name = next(iter(rig.weights))
+        skin = rig.weights[name]
+        skin.locked = np.zeros(8, dtype='u4')
+        desc = save_weights(self.root, skin)
+        desc['locked_vertices'] = []
+        rig.manifest['skins'] = [desc if item['mesh'] == name else item for item in rig.manifest['skins']]
+        (self.root / 'rig.json').write_text(json.dumps(rig.manifest))
+        self.assert_before_arrays({}, 'RIG_SKIN')
 
     def test_runtime_bundle_snapshot_hash_is_checked_before_arrays(self):
         path = Path(self.temp.name) / 'valid.npz'
