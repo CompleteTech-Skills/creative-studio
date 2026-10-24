@@ -91,6 +91,11 @@ class RigidContractTests(unittest.TestCase):
         report['actual_bodies'][0]['inertia']=[0,0,0]
         with self.assertRaises(physics.BackendError) as raised:physics._check_pybullet_report(report,admitted,report['backend'])
         self.assertIn('inertia',str(raised.exception))
+        world['bodies'][0]['mass']['inertia']=[[1e-9,0,0],[0,.1,0],[0,0,.1]]
+        admitted=physics._admit_world(world,'pybullet')[0]
+        report['rigid_controls']['bodies'][0]['principal_inertia']=[1e-100,.1,.1]
+        report['actual_bodies'][0]['inertia']=[1e-100,.1,.1]
+        with self.assertRaises(physics.BackendError):physics._check_pybullet_report(report,admitted,report['backend'])
         world['bodies'][0]['mass']['inertia']=[[1e-50,0,0],[0,1e-50,0],[0,0,1e-50]]
         with self.assertRaises(physics.BackendError):physics._admit_world(world,'pybullet')
 

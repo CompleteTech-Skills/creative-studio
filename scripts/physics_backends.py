@@ -622,8 +622,8 @@ def _admit_world(value, backend):
             tensor=body['mass']['inertia'];scale=max(abs(x) for row in tensor for x in row)
             a,b,c=[x/scale for x in tensor[0]];_,d,e=[x/scale for x in tensor[1]];_,_,f=[x/scale for x in tensor[2]]
             determinant=a*d*f+2*b*c*e-a*e*e-d*c*c-f*b*b
-            require(scale*determinant/(a+d+f)**2 >= 1e-12, 'PHYSICS_INERTIA_UNSUPPORTED',
-                    'Native tensor must have a conservative minimum principal inertia of at least 1e-12 kg m².',category='capability-gap')
+            require(scale*determinant/(a+d+f)**2 >= 1e-12 and determinant/(a+d+f)**2 >= 1e-10, 'PHYSICS_INERTIA_UNSUPPORTED',
+                    'Native tensor needs minimum principal inertia at least 1e-12 kg m² and a conservative bounded condition ratio.',category='capability-gap')
             expected = _primitive_inertia(body)
             for i in range(3) if backend == 'blender' else []:
                 for j in range(3):
@@ -1369,9 +1369,15 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
             controls=report['rigid_controls']['bodies'][world['bodies'].index(body)]
             rotation=qmatrix(controls['inertial_rotation'])
             tensor=rotation @ np.diag(controls['principal_inertia']) @ rotation.T
-            require((all(x>0 for x in controls['principal_inertia']) if body['mode']=='dynamic' else all(x==0 for x in controls['principal_inertia'])) and
-                    float(np.max(np.abs(tensor-np.asarray(body['mass']['inertia'])))) <= max(abs(x) for row in body['mass']['inertia'] for x in row)*1e-5, 'PHYSICS_BAKE_FAILED',
-                    'Native principal inertia/frame does not reconstruct the requested tensor.',category='backend-crash')
+            requested=np.asarray(body['mass']['inertia'])
+            if body['mode']=='dynamic':
+                moments,axes=np.linalg.eigh(requested)
+                relative=(axes.T @ tensor @ axes) / np.sqrt(np.outer(moments,moments))
+                matches=all(x>0 for x in controls['principal_inertia']) and float(np.max(np.abs(relative-np.eye(3)))) <= 1e-5
+            else:
+                matches=all(x==0 for x in controls['principal_inertia']) and not np.any(tensor)
+            require(matches, 'PHYSICS_BAKE_FAILED',
+                    'Native principal inertia/frame does not reconstruct every requested relative inertia direction.',category='backend-crash')
             expected_inertia=controls['principal_inertia']
         else:
             expected_inertia=[body['mass']['inertia'][i][i] for i in range(3)]
