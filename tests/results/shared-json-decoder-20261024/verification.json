@@ -3,16 +3,18 @@
   "scope": "Partial shared JSON safety under #11/#58; new local defect, no issue closure",
   "runtime": "Linux Python 3.14.7, NumPy 2.5.4, jsonschema 4.26.0, Pillow 13.0.0; distinct from pinned CI",
   "results": {
-    "focused": "6 tests passed in 1.102 seconds, zero failures/errors/skips",
-    "schema_math_gate": "26 tests passed in 7.792 seconds, zero failures/errors/skips",
-    "operations_compatibility": "21 tests passed in 5.906 seconds, zero failures/errors/skips",
+    "focused": "10 tests passed in 0.992 seconds, zero failures/errors/skips",
+    "schema_math_gate": "30 tests passed in 8.174 seconds, zero failures/errors/skips",
+    "operations_compatibility": "21 tests passed in 5.645 seconds, zero failures/errors/skips",
     "baseline_control": "Exact old decoder loaded in memory; three genuine unhandled ValueError subcases reproduced. No source-file mutation. Diagnostic trailing whitespace stripped only. CLI baseline separately observed RIG_INPUT_OR_DEPENDENCY before fix; not included as an in-memory subprocess control.",
     "actual_cli": "Genuine saved GLB fixture and 5000-digit configure input returned structured RIG_JSON/nonzero. All saved files and input bytes unchanged; actual response and inventory digest retained.",
     "checks": "Schema/template generation and complete diff whitespace checks passed",
-    "compatibility": "802 existing 2D tests discovered without optional 3D imports; discovery is not execution"
+    "compatibility": "802 existing 2D tests discovered without optional 3D imports; discovery is not execution",
+    "utf8_baseline_control": "Previous ffe872d decoder loaded in memory reproduced seven multibyte/invalid raw Unicode subcase failures, zero errors; no source mutations. Diagnostic trailing whitespace stripped only.",
+    "utf8_admission": "Text and byte payloads share encoded UTF-8 byte limits, exact boundaries and multiple chunks verified. Oversized multibyte text and invalid raw Unicode reject before json.loads; escaped Unicode parsing semantics preserved."
   },
   "limitations": [
-    "No interpreter integer limit is changed outside test processes; no unbounded integer parsing added",
+    "Interpreter integer-limit changes are confined to scoped tests and CLI subprocess environment; decoder never raises or disables that resource limit.",
     "No production artwork, external rendering or human approval claimed",
     "Independent Astra review and integrated head-specific CI remain pending"
   ],
@@ -22,26 +24,35 @@
       "bytes": 5663
     },
     "cli-verification.json": {
-      "sha256": "47ea8969ab9ebc3af7df2bb2fe9520e27fa6d80b3553b06c69b79e005dbc78f8",
-      "bytes": 784
+      "sha256": "83a0f19e59f73953de1cbc6ac6e4ba27c35b1efb615d3f7c26d1ef7adc1892a6",
+      "bytes": 872
     },
     "focused.log": {
-      "sha256": "e781798de68d3cff609c9db996c3faf45c8081b0c16e0dddd023edd2d27bd3c5",
-      "bytes": 1048
+      "sha256": "becacdbc69612a06e4fa0c36fa85723ddd30940d510db73364eb07c25a8f75c1",
+      "bytes": 1763
     },
     "operations-compatibility.log": {
-      "sha256": "c574f610dc62fe3e014f776364858e463b7c3001a780534a938f371c03dd36ed",
+      "sha256": "ab79f30b50125a04e3dd6dfa7f94c5598cfcecc741518e39914e871a4e3f9625",
       "bytes": 3240
     },
     "schema-math.log": {
-      "sha256": "a0e02f5da23d7846eae360a18f7af5b1581eaaefa8cda121785257e5f74025ab",
-      "bytes": 4158
+      "sha256": "b7b65d370621517087a04f4b94a31990eb6ab176e746e88d617a587f0f9d5bb5",
+      "bytes": 4872
     },
     "scripts/rig_errors.py": {
-      "sha256": "b700ab8f786164b9b81595468723740af67f3dd7b0617c5551d5ad2d6afb1683"
+      "sha256": "66858dafef15f66a7c13114db0a3af93a94f318eefc9b9e6c6b02b9616164d75"
     },
     "tests/test_rig_contracts.py": {
-      "sha256": "6453895e218277d92cf651a9f909c8a3643f06a38a2a8f412bbb2a103517cb9e"
+      "sha256": "10f4ccdfdf3fe7d704851ba204b34f9f4950589973951a85669825efcd289a98"
+    },
+    "frozen-inputs.json": {
+      "sha256": "8d29c25d2d8bbd0a56f6361265e073c8df4bab554ceb183a293ec5ff8d63d26c",
+      "bytes": 459
+    },
+    "utf8-baseline-control.log": {
+      "sha256": "86c531321858b7bfb70d33a114e30465b6415b05d0655f5aed592b1cdcc4e33f",
+      "bytes": 7562
     }
-  }
+  },
+  "historical_review": "Astra PASS at ffe872d is historical only; fresh review required for UTF-8 followup"
 }

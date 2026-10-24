@@ -1,0 +1,99 @@
+test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap) ...
+  test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap) (limit=8) ... FAIL
+  test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap) (limit=6) ... FAIL
+test_raw_invalid_unicode_encoding_has_structured_diagnostic (test_rig_contracts.SharedJsonDecoderTests.test_raw_invalid_unicode_encoding_has_structured_diagnostic) ...
+  test_raw_invalid_unicode_encoding_has_structured_diagnostic (test_rig_contracts.SharedJsonDecoderTests.test_raw_invalid_unicode_encoding_has_structured_diagnostic) (surrogate="'\\ud800'") ... FAIL
+  test_raw_invalid_unicode_encoding_has_structured_diagnostic (test_rig_contracts.SharedJsonDecoderTests.test_raw_invalid_unicode_encoding_has_structured_diagnostic) (surrogate="'\\udfff'") ... FAIL
+test_multibyte_byte_budget_accumulates_across_encoding_chunks (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_byte_budget_accumulates_across_encoding_chunks) ... FAIL
+test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser) ...
+  test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser) (payload='\'"éééé"\'') ... FAIL
+  test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser) (payload='\'"\\ud800"\'') ... FAIL
+
+======================================================================
+FAIL: test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap) (limit=8)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 290, in test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap
+    self.code(payload, 'RIG_LIMIT_JSON')
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 205, in code
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap) (limit=6)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 290, in test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap
+    self.code(payload, 'RIG_LIMIT_JSON')
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 205, in code
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_raw_invalid_unicode_encoding_has_structured_diagnostic (test_rig_contracts.SharedJsonDecoderTests.test_raw_invalid_unicode_encoding_has_structured_diagnostic) (surrogate="'\\ud800'")
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 298, in test_raw_invalid_unicode_encoding_has_structured_diagnostic
+    self.code('"'+surrogate+'"', 'RIG_JSON')
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 205, in code
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_raw_invalid_unicode_encoding_has_structured_diagnostic (test_rig_contracts.SharedJsonDecoderTests.test_raw_invalid_unicode_encoding_has_structured_diagnostic) (surrogate="'\\udfff'")
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 298, in test_raw_invalid_unicode_encoding_has_structured_diagnostic
+    self.code('"'+surrogate+'"', 'RIG_JSON')
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 205, in code
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_multibyte_byte_budget_accumulates_across_encoding_chunks (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_byte_budget_accumulates_across_encoding_chunks)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 308, in test_multibyte_byte_budget_accumulates_across_encoding_chunks
+    self.code(valid, 'RIG_LIMIT_JSON')
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 205, in code
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser) (payload='\'"éééé"\'')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 317, in test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser
+    self.code(payload, code)
+    ~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 205, in code
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser) (payload='\'"\\ud800"\'')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 317, in test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser
+    self.code(payload, code)
+    ~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 205, in code
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.011s
+
+FAILED (failures=7)

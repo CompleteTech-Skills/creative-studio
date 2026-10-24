@@ -1,0 +1,11 @@
+{
+  "before": {
+    "scripts/rig_errors.py": "66858dafef15f66a7c13114db0a3af93a94f318eefc9b9e6c6b02b9616164d75",
+    "tests/test_rig_contracts.py": "10f4ccdfdf3fe7d704851ba204b34f9f4950589973951a85669825efcd289a98"
+  },
+  "after": {
+    "scripts/rig_errors.py": "66858dafef15f66a7c13114db0a3af93a94f318eefc9b9e6c6b02b9616164d75",
+    "tests/test_rig_contracts.py": "10f4ccdfdf3fe7d704851ba204b34f9f4950589973951a85669825efcd289a98"
+  },
+  "unchanged": true
+}

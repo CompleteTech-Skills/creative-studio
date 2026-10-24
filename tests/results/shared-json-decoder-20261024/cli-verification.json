@@ -1,5 +1,6 @@
 {
   "fixture": true,
+  "runtime_sha256": "66858dafef15f66a7c13114db0a3af93a94f318eefc9b9e6c6b02b9616164d75",
   "input_bytes": 5010,
   "input_sha256": "77d201670c16cb44da3f0bc980899b42012981483c5cfb4c37214cb7e4559bb8",
   "returncode": 1,
@@ -19,6 +20,6 @@
   },
   "stderr": "",
   "all_saved_run_files_unchanged": true,
-  "saved_inventory_sha256": "ee3338ef17acd49c2ff6aedc3050fa41e7b1bd62a04d7cc3db114ade66924f83",
+  "saved_inventory_sha256": "8f181ae91fb5f038b4db0dc44a6bad1d983f8f47fa15148f13f8cdf4a0845946",
   "file_count": 10
 }

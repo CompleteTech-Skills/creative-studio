@@ -66,6 +66,16 @@ def finite_json(value: Any, depth: int = 0) -> None:
 
 def decode_json(payload: bytes | str) -> Any:
     require(len(payload) <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'JSON exceeds the 32 MiB bound.')
+    if isinstance(payload, str):
+        # A character count is only a lower bound for UTF-8. Count bounded
+        # chunks so admission never materializes a second full encoded input.
+        encoded_size = 0
+        try:
+            for offset in range(0, len(payload), 8192):
+                encoded_size += len(payload[offset:offset+8192].encode('utf-8'))
+                require(encoded_size <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'JSON exceeds the 32 MiB bound.')
+        except UnicodeError as exc:
+            raise RigError('RIG_JSON', 'Invalid JSON: ' + str(exc)) from exc
 
     def pairs(items):
         result = {}

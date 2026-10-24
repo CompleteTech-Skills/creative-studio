@@ -279,3 +279,40 @@ class SharedJsonDecoderTests(unittest.TestCase):
             with self.assertRaises(RigError) as caught:
                 read_json(document)
             self.assertEqual(caught.exception.report['code'], 'RIG_JSON')
+
+    def test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap(self):
+        for limit, valid, oversized in ((8, '"ééé"', '"éééé"'),
+                                        (6, '"😀"', '"😀é"')):
+            with self.subTest(limit=limit), patch('rig_errors.MAX_JSON_BYTES', limit):
+                for payload in (valid, valid.encode('utf-8')):
+                    self.assertEqual(decode_json(payload), json.loads(valid))
+                for payload in (oversized, oversized.encode('utf-8')):
+                    self.code(payload, 'RIG_LIMIT_JSON')
+        # JSON escape spelling is ASCII bytes, not the decoded string's size.
+        with patch('rig_errors.MAX_JSON_BYTES', 8):
+            self.assertEqual(decode_json('"\\u00e9"'), 'é')
+
+    def test_raw_invalid_unicode_encoding_has_structured_diagnostic(self):
+        for surrogate in ('\ud800', '\udfff'):
+            with self.subTest(surrogate=repr(surrogate)):
+                self.code('"'+surrogate+'"', 'RIG_JSON')
+        # An explicitly escaped surrogate retains the decoder's prior semantics.
+        self.assertEqual(decode_json('"\\ud800"'), '\ud800')
+
+    def test_multibyte_byte_budget_accumulates_across_encoding_chunks(self):
+        valid = '"'+'é'*9000+'"'
+        with patch('rig_errors.MAX_JSON_BYTES', 18002):
+            self.assertEqual(decode_json(valid), 'é'*9000)
+            self.assertEqual(decode_json(valid.encode()), 'é'*9000)
+        with patch('rig_errors.MAX_JSON_BYTES', 18001):
+            self.code(valid, 'RIG_LIMIT_JSON')
+            self.code(valid.encode(), 'RIG_LIMIT_JSON')
+
+    def test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser(self):
+        with patch('rig_errors.MAX_JSON_BYTES', 8):
+            for payload, code in (('"éééé"', 'RIG_LIMIT_JSON'),
+                                  ('"éééé"'.encode(), 'RIG_LIMIT_JSON'),
+                                  ('"\ud800"', 'RIG_JSON')):
+                with self.subTest(payload=repr(payload)), patch('rig_errors.json.loads') as parser:
+                    self.code(payload, code)
+                    parser.assert_not_called()
