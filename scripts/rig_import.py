@@ -157,7 +157,7 @@ def _animations(document, ids, node_meshes, geometry, parents, scale):
 def _gltf_model(path, *, scale=1., limits=None) -> ImportedModel:
     document = read_gltf(path, limits)
     require(np.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'Import scale must be finite and positive.')
-    parents, world, order = scene_graph(document)
+    parents, world, order = scene_graph(document, import_scale=scale)
     skeleton, ids, normalized = _import_skeleton(document, parents, world, order, scale)
     geometry = Geometry([], deepcopy(document.json.get('materials', [])), _images(document),
                         deepcopy(document.json.get('textures', [])), deepcopy(document.json.get('samplers', [])),

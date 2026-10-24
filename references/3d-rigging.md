@@ -50,7 +50,16 @@ its largest absolute component. The dimensionless determinant must exceed
 `1e-12` in absolute value, and the complete inverse must remain finite in
 float64. This admits well-conditioned small or large unit conversions and
 nonuniform scales without accepting zero axes, almost dependent axes, or
-nonrepresentable inverses. Static reflections and shear retain their existing
+nonrepresentable inverses. Extreme scales whose raw determinant underflows or
+overflows, or whose inverse directions exceed the float64 squared-normalization
+budget, fail with `RIG_GLTF_NUMERIC_RANGE` before importing mesh data. The latter
+bound is `max(abs(inverse_linear)) <= sqrt(float64_max)/6`; a unit direction's
+squared transformed length is bounded by 27 times that maximum component squared.
+This is a representability limit, not a declaration of mathematical singularity.
+The same checks cover accumulated hierarchy transforms and the explicit import
+unit conversion, before decoding geometry or creating a rig run. Scene-graph
+callers still receive the original, unscaled source-world matrices.
+Static reflections and shear retain their existing
 import behavior; this does not relax the skeletal rest-transform rules above.
 
 The canonical definitions live in `scripts/rig_contracts.py`. Generated Draft 2020-12 schemas under `profiles/rig*.schema.json` cover rigs, templates, clips, poses, retarget profiles, corrections, reviews, jobs and export receipts. Nested definitions cover skeletons, bones, skin bindings and controllers. JSON Schema checks structure and field types; the runtime also checks reference graphs, unit quaternions, bind reconstruction, source hashes and safe local resource paths. See the [contract acceptance audit](rig-contracts-acceptance.md) for the current compatibility baseline and requirement-to-test mapping.

@@ -55,6 +55,49 @@ class RigMathTests(unittest.TestCase):
         for scale in ([0, 1, 1], [1, 0, 1], [1, 1, 0]):
             with self.subTest(scale=scale), self.assertRaises(RigError):node_matrix({'scale': scale})
 
+    def test_extreme_multimesh_import_fails_before_losing_handedness_or_normals(self):
+        # An ordinary second mesh makes the whole asset's extent valid, so a
+        # bad tiny mesh cannot hide behind the global geometry-extent guard.
+        with tempfile.TemporaryDirectory() as temporary:
+            for scale in ([-1e-108]*3, [1e-160, 1, 1], [1e108]*3):
+                with self.subTest(scale=scale):
+                    builder = GltfBuilder()
+                    builder.json['asset']['extras'] = {'hatchSource': {'fixture': True}}
+                    attributes = {'POSITION': builder.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'VEC3'),
+                                  'NORMAL': builder.accessor([[1, 0, 0]]*3, 'VEC3'),
+                                  'TANGENT': builder.accessor([[0, 1, 0, 1]]*3, 'VEC4')}
+                    builder.json['meshes'] = [dict(primitives=[dict(attributes=attributes)])]
+                    builder.json['nodes'] = [dict(mesh=0, scale=scale), dict(mesh=0)]
+                    builder.json['scenes'] = [dict(nodes=[0, 1])]
+                    for extension in ('glb', 'gltf'):
+                        path = Path(temporary)/('extreme.'+extension);builder.write(path)
+                        before = sha256(path)
+                        with self.assertRaises(RigError) as error:load_character_model(path)
+                        self.assertEqual(error.exception.report['code'], 'RIG_GLTF_NUMERIC_RANGE')
+                        self.assertEqual(sha256(path), before)
+
+    def test_composed_world_and_import_scale_receive_numeric_range_checks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            for nested in (False, True):
+                builder = GltfBuilder()
+                builder.json['asset']['extras'] = {'hatchSource': {'fixture': True}}
+                builder.json['meshes'] = [dict(primitives=[dict(attributes={
+                    'POSITION': builder.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'VEC3')})])]
+                if nested:
+                    builder.json['nodes'] = [dict(scale=[1e-6]*3, children=[i+1]) for i in range(18)]
+                    builder.json['nodes'] += [dict(mesh=0), dict(mesh=0)]
+                    roots = [0, 19];import_scale = 1.
+                else:
+                    builder.json['nodes'] = [dict(mesh=0, scale=[-1e-102, 1e-102, 1e-102]),
+                                             dict(mesh=0, scale=[1e6]*3)]
+                    roots = [0, 1];import_scale = 1e-6
+                builder.json['scenes'] = [dict(nodes=roots)]
+                path = Path(temporary)/'composed.glb';builder.write(path);before = sha256(path)
+                with self.subTest(nested=nested), self.assertRaises(RigError) as error:
+                    load_character_model(path, scale=import_scale)
+                self.assertEqual(error.exception.report['code'], 'RIG_GLTF_NUMERIC_RANGE')
+                self.assertEqual(sha256(path), before)
+
     def test_real_gltf_and_glb_scale_import_roundtrip_preserves_geometry_and_source(self):
         positions = np.array([[0, 0, 0], [2, 0, 0], [0, 3, 1]], dtype=float)
         normal = np.array([0, -1, 3.]);normal /= np.linalg.norm(normal)
