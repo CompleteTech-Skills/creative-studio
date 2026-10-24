@@ -619,6 +619,11 @@ def _admit_world(value, backend):
         if body['mode'] == 'dynamic':
             require(body['mass']['kilograms'] >= .001, 'PHYSICS_MASS_UNSUPPORTED',
                     'Blender rigid-body mass has a 0.001kg lower bound.', category='capability-gap')
+            tensor=body['mass']['inertia'];scale=max(abs(x) for row in tensor for x in row)
+            a,b,c=[x/scale for x in tensor[0]];_,d,e=[x/scale for x in tensor[1]];_,_,f=[x/scale for x in tensor[2]]
+            determinant=a*d*f+2*b*c*e-a*e*e-d*c*c-f*b*b
+            require(scale*determinant/(a+d+f)**2 >= 1e-12, 'PHYSICS_INERTIA_UNSUPPORTED',
+                    'Native tensor must have a conservative minimum principal inertia of at least 1e-12 kg m².',category='capability-gap')
             expected = _primitive_inertia(body)
             for i in range(3) if backend == 'blender' else []:
                 for j in range(3):
@@ -1364,13 +1369,14 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
             controls=report['rigid_controls']['bodies'][world['bodies'].index(body)]
             rotation=qmatrix(controls['inertial_rotation'])
             tensor=rotation @ np.diag(controls['principal_inertia']) @ rotation.T
-            require(np.allclose(tensor,body['mass']['inertia'],atol=1e-7,rtol=1e-5), 'PHYSICS_BAKE_FAILED',
+            require((all(x>0 for x in controls['principal_inertia']) if body['mode']=='dynamic' else all(x==0 for x in controls['principal_inertia'])) and
+                    float(np.max(np.abs(tensor-np.asarray(body['mass']['inertia'])))) <= max(abs(x) for row in body['mass']['inertia'] for x in row)*1e-5, 'PHYSICS_BAKE_FAILED',
                     'Native principal inertia/frame does not reconstruct the requested tensor.',category='backend-crash')
             expected_inertia=controls['principal_inertia']
         else:
             expected_inertia=[body['mass']['inertia'][i][i] for i in range(3)]
         require(type(actual.get('inertia')) is list and len(actual['inertia'])==3 and
-                all(type(a) in (int,float) and math.isfinite(a) and abs(a-b)<=max(1e-9,abs(b))*1e-5 for a,b in zip(actual['inertia'],expected_inertia)),
+                all(type(a) in (int,float) and math.isfinite(a) and abs(a-b)<=max(1e-300,abs(b))*1e-5 for a,b in zip(actual['inertia'],expected_inertia)),
                 'PHYSICS_BAKE_FAILED','DIRECT native inertia differs from the admitted primitive.',category='backend-crash')
 
 

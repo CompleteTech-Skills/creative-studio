@@ -79,6 +79,21 @@ class RigidContractTests(unittest.TestCase):
         self.assertEqual(motion['fps'],{'numerator':24,'denominator':1});self.assertEqual(clip,original)
         self.assertTrue(all(type(key['frame']) is int for key in motion['keys']))
 
+    def test_zero_native_inertia_cannot_certify_small_positive_tensor(self):
+        root=Path(__file__).resolve().parents[1]/'tests/results/physics-timing-20261024/executed/artifacts/24-1-0'
+        report=json.loads((root/'simulation-report.json').read_bytes())
+        world=json.loads((root/'world.json').read_bytes())
+        world['bodies'][0]['mass']['inertia']=[[1e-9,0,0],[0,1e-9,0],[0,0,1e-9]]
+        admitted=physics._admit_world(world,'pybullet')[0]
+        report['rigid_controls']=dict(version=1,forces=[],force_policy='native external force/torque per fixed step; discrete impulse is integrated wrench over one complete native step',bodies=[])
+        for body in admitted['bodies']:
+            report['rigid_controls']['bodies'].append(dict(id=body['id'],mode=body['mode'],inertial_position=[0,0,0],inertial_rotation=[0,0,0,1],principal_inertia=[0,0,0],initial_linear_velocity=[0,0,0],initial_angular_velocity=[0,0,0],sleep=dict(enabled=False,initially_sleeping=False,linear_threshold=None,angular_threshold=None)))
+        report['actual_bodies'][0]['inertia']=[0,0,0]
+        with self.assertRaises(physics.BackendError) as raised:physics._check_pybullet_report(report,admitted,report['backend'])
+        self.assertIn('inertia',str(raised.exception))
+        world['bodies'][0]['mass']['inertia']=[[1e-50,0,0],[0,1e-50,0],[0,0,1e-50]]
+        with self.assertRaises(physics.BackendError):physics._admit_world(world,'pybullet')
+
     def test_sleep_conflicts_and_unexposed_thresholds_fail(self):
         world,_=build_inputs();body=world['bodies'][0]
         body['sleep']=dict(enabled=False,initially_sleeping=True)
@@ -168,13 +183,16 @@ class NativeRigidTests(unittest.TestCase):
             if kind=='impulse':self.assertAlmostEqual(self.pose(states,12)['translation'][0],.5,delta=.005)
             elif kind=='angular-impulse':self.assertAlmostEqual(abs(self.pose(states,12)['rotation'][2]),math.sin(.25),delta=.005)
             else:self.assertAlmostEqual(abs(self.pose(states,12)['rotation'][2]),math.sin(.0625),delta=.01)
-        world,payloads=build_inputs(backend='pybullet');world['gravity']=[0,0,0]
-        body=world['bodies'][0];body['linear_velocity']=[1,0,0];body['angular_velocity']=[0,0,.3]
-        body['mass']['center_of_mass']=[.1,0,0];body['mass']['inertia']=[[.12,.02,0],[.02,.14,0],[0,0,.15]]
-        states,report=self.run_world('pybullet',world,payloads)
-        self.assertGreater(self.pose(states,24)['translation'][0],.9)
-        self.assertGreater(abs(self.pose(states,24)['rotation'][2]),.1)
-        self.assertEqual(report['rigid_controls']['bodies'][0]['inertial_position'],[.1,0,0])
+        for tensor in [[[.2,.02,0],[.02,.3,0],[0,0,.25]], [[.12,.02,0],[.02,.14,0],[0,0,.15]]]:
+            world,payloads=build_inputs(backend='pybullet');world['gravity']=[0,0,0]
+            body=world['bodies'][0];body['linear_velocity']=[1,0,0];body['angular_velocity']=[0,0,.3]
+            body['mass']['center_of_mass']=[.1,0,0];body['mass']['inertia']=tensor
+            states,report=self.run_world('pybullet',world,payloads)
+            self.assertLess(max(abs(a-b) for a,b in zip(self.pose(states,0)['translation'],body['transform']['translation'])),1e-6)
+            self.assertLess(abs(abs(self.pose(states,0)['rotation'][3])-1),1e-6)
+            self.assertGreater(self.pose(states,24)['translation'][0],.9)
+            self.assertGreater(abs(self.pose(states,24)['rotation'][2]),.1)
+            self.assertEqual(report['rigid_controls']['bodies'][0]['inertial_position'],[.1,0,0])
 
     def test_real_direct_offcenter_force_and_damping(self):
         world,payloads=build_inputs(backend='pybullet');world['gravity']=[0,0,0]

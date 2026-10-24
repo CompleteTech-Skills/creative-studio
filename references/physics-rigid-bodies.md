@@ -33,7 +33,10 @@ before dynamics. It is never used to stand in for a sustained force.
 
 DIRECT's principal-axis inertia frame is calculated from the validated symmetric
 physical tensor. The native diagonal and inertial frame are read back and must
-reconstruct that tensor. Centers of mass are passed to the native inertial frame;
+reconstruct that tensor with scale-relative error, strictly positive dynamic
+principal moments, and zero static/kinematic inertia. Numerically near-singular
+tensors outside the conservative native minimum-principal-moment bound fail
+admission instead of silently becoming angular-locked bodies. Centers of mass are passed to the native inertial frame;
 reported poses are converted back to the declared body origin. Damping and mass
 are native settings. `physics_rigid.density_mass` provides an explicit immutable
 conversion from density and one primitive's measured dimensions to mass and
