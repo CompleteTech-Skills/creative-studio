@@ -81,7 +81,16 @@ hash-verified. Schemas are retained under `profiles/continuity-capability-*.sche
 is a useful fail-closed CLI: it validates inputs and reports unavailable checks
 without granting native reservations. It does not implicitly authorize tools or
 register a provider. Native Python/established-service hosts register authorized
-owners. This is an API adapter, not a new HTTP server or graphical editor.
+owners. The existing authenticated loopback `RigServer` exposes equivalent
+`GET /v1/continuity/capabilities` discovery and `POST /v1/continuity/admit`
+operations. Construct it with `continuity=Admission(...)` using trusted policy
+and owner instances. The admission project root must be inside the server's
+root and cannot change after binding. No HTTP field can choose a root, module,
+command, rights or policy. Unconfigured POST admission returns structured
+`RIG_API_CONTINUITY_UNAVAILABLE`. Existing bearer authentication, exact Origin,
+worker semaphore and four-MiB request-body limits apply before the new routes;
+legacy rig routes keep their behavior. This is an additive adapter to the
+existing server, not a new server or graphical editor.
 
 Every response retains the exact used capability snapshots and safe trusted host
 policy (no credentials), plus canonical request and report hashes; original request
@@ -147,7 +156,11 @@ oversized/malformed response becomes a structured failed check without losing
 independent results. Explicit report limits can leave detailed measurements only
 in retained native evidence; failure never implies acceptance.
 
-The new three-OS CI executes this suite against pinned Python/rig dependencies.
+The eight actual loopback HTTP tests additionally cover authorized native
+admission, unavailable owners, default-closed configuration, bearer/Origin
+rejection, worker saturation, root confinement and JSON policy/plugin injection.
+
+The new three-OS CI executes these suites against pinned Python/rig dependencies.
 Existing workflows and legacy raster/atlas/catalog contracts are unchanged.
 Security is bounded local owner integration: safe portable file components and
 stable handle/hash checks detect observed changes; arbitrary hostile ancestor

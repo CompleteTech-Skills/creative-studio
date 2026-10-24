@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-rig-test.txt
-      - run: python -m unittest discover -s tests -p test_rig_continuity_capabilities.py -v
+      - run: python -m unittest discover -s tests -p "test_rig_continuity_capabilit*.py" -v
       - run: python tests/continuity_capability_probe.py --destination continuity-capability-evidence
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()

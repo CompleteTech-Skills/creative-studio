@@ -8,6 +8,7 @@ from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 import hashlib
 import io
+import platform
 from pathlib import Path
 import uuid
 
@@ -131,7 +132,10 @@ class RigOwner(OwnerAdapter):
         from rig_render import render_rig_preview
         from rig_models import rig_signature
         cap = self.capability
-        measurements = dict(rig_sha256=rig_signature(rig.manifest), source_sha256=rig.manifest['source']['sha256'],
+        import numpy as np
+        import PIL
+        from rig_errors import VERSION as native_version
+        measurements = dict(software=dict(python=platform.python_version(),numpy=np.__version__,Pillow=PIL.__version__,native_rig=native_version),rig_sha256=rig_signature(rig.manifest), source_sha256=rig.manifest['source']['sha256'],
                             fixture=rig.manifest['source']['fixture'], visual_approval=False)
         evidence = []
         if cap == 'geometry-inspection':
@@ -230,7 +234,8 @@ class ImageMastersOwner(OwnerAdapter):
                 total_pixels += pixels
                 records.append(dict(source=item, width=image.width, height=image.height,
                                     mode=image.mode, format=image.format))
-        measurements = dict(image_masters=records, decoded_pixels=total_pixels,
+        import PIL
+        measurements = dict(software=dict(python=platform.python_version(),Pillow=PIL.__version__),image_masters=records, decoded_pixels=total_pixels,
                             video_exported=False, audio_inspected=False, originals_preserved=True)
         payload = canonical_bytes(measurements)
         if len(payload) > self._resources['disk_bytes']:
