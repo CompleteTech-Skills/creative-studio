@@ -77,6 +77,9 @@ def compile_motion(body, clip, world, fail):
     fail(duration >= last and track['keys'][0]['frame'] == 0 and
          track['keys'][-1]['frame'] >= last*Fraction(clip['fps']['numerator'],clip['fps']['denominator']),
          'Kinematic native track must cover the complete requested time range.')
+    for left,right in zip(track['keys'],track['keys'][1:]):
+        duration=step if track['interpolation']=='step' else Fraction(right['frame']-left['frame'],1)*Fraction(clip['fps']['denominator'],clip['fps']['numerator'])
+        fail(math.sqrt(sum((b-a)**2 for a,b in zip(left['value'],right['value'])))/float(duration)<=50, 'Kinematic motion exceeds the 50 m/s bounded native speed profile.')
     fail(track['keys'][0]['value'] == body['transform']['translation'], 'Kinematic initial pose differs from native scene.')
     fail(all(max(map(abs,key['value'])) <= 10000 for key in track['keys']), 'Kinematic motion exceeds world bounds.')
     return dict(fps=deepcopy(clip['fps']), keys=deepcopy(track['keys']), interpolation=track['interpolation'])

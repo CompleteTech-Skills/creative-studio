@@ -572,6 +572,8 @@ def _admit_world(value, backend):
             'PHYSICS_REPRODUCIBILITY', 'Recomputation is not promised deterministic; request verified cache replay or not-guaranteed.', category='capability-gap')
     stability = solver.get('stability', {})
     supported = {'contact_penetration_tolerance', 'max_linear_velocity', 'max_angular_velocity'} if backend == 'pybullet' else set()
+    require(backend != 'pybullet' or all(stability.get(key,50) <= 50 for key in ('max_linear_velocity','max_angular_velocity')),
+            'PHYSICS_STABILITY_UNSUPPORTED','This native adapter supports at most 50 m/s and 50 rad/s; higher limits could conceal native velocity clamping.',category='capability-gap')
     require(not (set(stability)-supported), 'PHYSICS_STABILITY_UNSUPPORTED',
             'Requested stability controls are unsupported by this backend: '+str(sorted(set(stability)-supported)), category='capability-gap')
     require(world['frame_range']['start'] == 0 and 2 <= world['frame_range']['end'] <= MAX_FRAMES,
@@ -599,8 +601,8 @@ def _admit_world(value, backend):
                 'PHYSICS_BODY_UNSUPPORTED', 'Only unparented static/dynamic/kinematic rigid bodies with native names <=63 bytes are implemented.', category='capability-gap')
         require(backend == 'pybullet' or not any(body['linear_velocity'] + body['angular_velocity'] + body['mass']['center_of_mass']),
                 'PHYSICS_BODY_UNSUPPORTED', 'Blender direct initial velocity and shifted center of mass lack an admitted native API.', category='capability-gap')
-        require(max(map(abs,body['linear_velocity'] + body['angular_velocity'])) <= 1000 and max(map(abs,body['mass']['center_of_mass'])) <= 1000,
-                'PHYSICS_SETTINGS', 'Initial velocity/COM exceeds the bounded native profile.', category='invalid-input')
+        require(all(math.sqrt(sum(x*x for x in body[key])) <= 50 for key in ('linear_velocity','angular_velocity')) and max(map(abs,body['mass']['center_of_mass'])) <= 1000,
+                'PHYSICS_SETTINGS', 'Initial speed must be <=50 m/s, angular speed <=50 rad/s, and COM within native bounds.', category='invalid-input')
         require(body['mode'] != 'kinematic' or not any(body['mass']['center_of_mass']), 'PHYSICS_BODY_UNSUPPORTED',
                 'The bounded kinematic profile requires a centered zero-mass inertial frame.',category='capability-gap')
         if backend == 'pybullet' and 'sleep' in body:
@@ -1237,13 +1239,13 @@ class PyBulletBackend(BlenderBackend):
                 fields={'code','world_sha256','solver_step','solver_time','setting','limit','observed'}
                 require(type(failure) is dict and set(failure)==fields and failure['code']=='PHYSICS_NUMERICAL_INSTABILITY' and
                         failure['world_sha256']==prepared.world_sha256 and type(failure['solver_step']) is int and
-                        1<=failure['solver_step']<=timing_clock(world)['solver_steps'] and failure['setting'] in world['solver'].get('stability',{}) and
-                        failure['limit']==world['solver']['stability'][failure['setting']] and type(failure['observed']) in (int,float) and failure['observed']>failure['limit'],
+                        0<=failure['solver_step']<=timing_clock(world)['solver_steps'] and failure['setting'] in ('max_linear_velocity','max_angular_velocity') and
+                        failure['limit']==min(world['solver'].get('stability',{}).get(failure['setting'],50.),50.) and type(failure['observed']) in (int,float) and failure['observed']>failure['limit'],
                         'PHYSICS_BACKEND_CRASH','Malformed numerical failure observations.',category='backend-crash')
                 time_value=failure['solver_step']*_ratio(world['solver']['fixed_step'])/world['solver']['substeps']
                 require(failure['solver_time']==rational(time_value),'PHYSICS_BACKEND_CRASH','Failure solver clock differs.',category='backend-crash')
                 error=BackendError('PHYSICS_NUMERICAL_INSTABILITY','Observed '+failure['setting']+' exceeded limit at solver step '+str(failure['solver_step'])+' time '+str(time_value),
-                    category='numerical-instability',last_valid_frame=max(0,math.floor((time_value-_ratio(world['solver']['fixed_step'])/world['solver']['substeps'])*_ratio(world['fps']))))
+                    category='numerical-instability',last_valid_frame=None if failure['solver_step']==0 else max(0,math.floor((time_value-_ratio(world['solver']['fixed_step'])/world['solver']['substeps'])*_ratio(world['fps']))))
                 error.report.update(solver_step=failure['solver_step'],solver_time=failure['solver_time'],setting=failure['setting'],limit=failure['limit'],observed=failure['observed'])
                 raise error
             raise
@@ -1356,7 +1358,11 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
     for actual,body in zip(report['actual_bodies'],world['bodies']):
         material=materials[body['colliders'][0]['material']]
         shape=body['colliders'][0]['shape']
-        expected_margin=shape['radius'] if shape['type']=='sphere' else material['collision_margin']
+        controls=report.get('rigid_controls',{}).get('bodies',[None]*len(world['bodies']))[world['bodies'].index(body)]
+        wrapped=controls is not None and (any(controls['inertial_position']) or abs(abs(controls['inertial_rotation'][3])-1)>1e-10)
+        expected_margin=(0 if wrapped else shape['radius']) if shape['type']=='sphere' else material['collision_margin']
+        expected_semantics=('transformed primitive wrapper margin' if wrapped else 'inherent sphere radius') if shape['type']=='sphere' else 'explicit box collision margin'
+        require(actual['margin_semantics']==expected_semantics,'PHYSICS_BAKE_FAILED','Native margin semantics differ from the admitted child representation.',category='backend-crash')
         require(type(actual.get('center_of_mass')) is list and len(actual['center_of_mass'])==3 and all(type(a) in (int,float) and math.isfinite(a) and abs(a-b)<=1e-6 for a,b in zip(actual['center_of_mass'],body['mass']['center_of_mass'])),
                 'PHYSICS_BAKE_FAILED','DIRECT observed center of mass differs.',category='backend-crash')
         require(actual.get('id')==body['id'] and all(type(actual.get(key)) in (int,float) and math.isfinite(actual[key]) and
@@ -1365,9 +1371,15 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
                 'PHYSICS_BAKE_FAILED','DIRECT effective mass/friction/restitution/margin differs.',category='backend-crash')
         if 'rigid_controls' in report:
             import numpy as np
-            from rig_math import qmatrix
+            from rig_math import qmatrix, qmul
             controls=report['rigid_controls']['bodies'][world['bodies'].index(body)]
             rotation=qmatrix(controls['inertial_rotation'])
+            collision=controls['collision'];native_shape=body['colliders'][0]['shape']
+            expected_dimensions=[native_shape['radius']]*3 if native_shape['type']=='sphere' else native_shape['size']
+            require(collision['type']==native_shape['type'] and np.allclose(collision['dimensions'],expected_dimensions,rtol=1e-6,atol=0) and
+                    np.max(np.abs(rotation @ np.asarray(collision['translation'])+np.asarray(body['mass']['center_of_mass'])))<=1e-6 and
+                    np.allclose(qmatrix(qmul(controls['inertial_rotation'],collision['rotation'])),np.eye(3),rtol=0,atol=1e-6),
+                    'PHYSICS_BAKE_FAILED','Native collision child/frame differs from the unchanged declared primitive.',category='backend-crash')
             tensor=rotation @ np.diag(controls['principal_inertia']) @ rotation.T
             requested=np.asarray(body['mass']['inertia'])
             if body['mode']=='dynamic':

@@ -150,7 +150,7 @@ def direct_report(value,world):
     for body in value['actual_bodies']:
         object_fields(body,('id','mass','friction','inertia','center_of_mass','restitution','native_margin','margin_semantics'),'DIRECT body')
         need(type(body['id']) is str and all(number(body[key]) for key in ('mass','friction','restitution','native_margin')) and
-             vector(body['inertia']) and vector(body['center_of_mass']) and body['margin_semantics'] in ('inherent sphere radius','explicit box collision margin'),
+             vector(body['inertia']) and vector(body['center_of_mass']) and body['margin_semantics'] in ('inherent sphere radius','transformed primitive wrapper margin','explicit box collision margin'),
              'Invalid DIRECT physical body observations.')
 
 
@@ -243,7 +243,7 @@ def rigid_report(report,world,backend):
          'native external force/torque per fixed step; discrete impulse is integrated wrench over one complete native step'), 'Unknown physical control policy.')
     for observed,body in zip(value['bodies'],world['bodies']):
         fields=('id','mode','sleep')+(('kinematic',) if backend=='blender' else
-            ('inertial_position','inertial_rotation','principal_inertia','initial_linear_velocity','initial_angular_velocity'))
+            ('inertial_position','inertial_rotation','principal_inertia','initial_linear_velocity','initial_angular_velocity','collision'))
         object_fields(observed,fields,'Rigid body controls')
         need(observed['id']==body['id'] and observed['mode']==body['mode'],'Physical authority differs.')
         expected=dict(enabled=body.get('sleep',{}).get('enabled',False),initially_sleeping=body.get('sleep',{}).get('initially_sleeping',False),
@@ -257,6 +257,11 @@ def rigid_report(report,world,backend):
         if backend=='blender':
             need(type(observed['kinematic']) is bool and observed['kinematic']==(body['mode']=='kinematic'), 'Native kinematic authority differs.')
         else:
+            shape=observed['collision']
+            object_fields(shape,('type','dimensions','translation','rotation'),'Native collision child')
+            need(shape['type'] in ('sphere','box') and vector(shape['dimensions']) and vector(shape['translation']) and
+                 type(shape['rotation']) is list and len(shape['rotation'])==4 and all(number(x) for x in shape['rotation']) and
+                 abs(sum(x*x for x in shape['rotation'])-1)<=1e-6, 'Native primitive collision child is malformed.')
             need(vector(observed['inertial_position']) and all(abs(a-b)<=1e-6 for a,b in zip(observed['inertial_position'],body['mass']['center_of_mass'])) and
                  type(observed['inertial_rotation']) is list and len(observed['inertial_rotation'])==4 and
                  all(number(x) for x in observed['inertial_rotation']) and abs(sum(x*x for x in observed['inertial_rotation'])-1)<=1e-6 and

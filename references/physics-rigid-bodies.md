@@ -31,13 +31,27 @@ checks. Initial linear velocity is the center-of-mass velocity in canonical worl
 It uses the distinct native initial-state setter once,
 before dynamics. It is never used to stand in for a sustained force.
 
+For DIRECT, admitted initial and observed native speed bounds are 50 m/s and 50 rad/s.
+An actual pinned DIRECT characterization clamps requested 200 m/s and 200 rad/s
+to 100 after one step. The DIRECT adapter rejects excessive initial requests and fails
+closed if forces/collisions produce observed speed above its conservative bound;
+it never publishes that clamp as physically faithful motion. The shared authored kinematic track-speed cap is 50 m/s; this is distinct from
+DIRECT's observed solver-speed guard, which is not implemented for Blender.
+
 DIRECT's principal-axis inertia frame is calculated from the validated symmetric
 physical tensor. The native diagonal and inertial frame are read back and must
 reconstruct that tensor with scale-relative error, strictly positive dynamic
 principal moments, and zero static/kinematic inertia. Numerically near-singular
 tensors outside the conservative native minimum-principal-moment bound fail
 admission instead of silently becoming angular-locked bodies. Centers of mass are passed to the native inertial frame;
-reported poses are converted back to the declared body origin. Damping and mass
+reported poses are converted back to the declared body origin in double
+precision. A transformed inertial frame can make the native collision shape a
+compound wrapper: its reported margin is zero even though the sphere child
+retains its complete radius. The adapter validates the actual child dimensions
+and composes the native child/inertial frames back to the declared unchanged
+primitive before distinguishing wrapper margin from inherent sphere radius.
+Actual narrow-phase rays and shifted-inertia floor contacts characterize this
+representation; the margin check is not removed. Damping and mass
 are native settings. `physics_rigid.density_mass` provides an explicit immutable
 conversion from density and one primitive's measured dimensions to mass and
 uniform inertia; no material density silently overrides an explicit body mass.
