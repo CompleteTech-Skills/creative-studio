@@ -645,11 +645,54 @@
                   },
                   "visible": {
                     "type": "boolean"
+                  },
+                  "material_overrides": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "slot": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+                        },
+                        "material": {
+                          "allOf": [
+                            {
+                              "$ref": "#/$defs/reference"
+                            },
+                            {
+                              "properties": {
+                                "kind": {
+                                  "enum": [
+                                    "material"
+                                  ]
+                                }
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "slot",
+                        "material"
+                      ]
+                    },
+                    "minItems": 0,
+                    "maxItems": 128
                   }
                 },
                 "required": [
                   "node"
                 ]
+              },
+              "minItems": 0,
+              "maxItems": 256
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/node"
               },
               "minItems": 0,
               "maxItems": 256
@@ -790,6 +833,9 @@
               "type": "boolean"
             },
             "receive_shadow": {
+              "type": "boolean"
+            },
+            "camera_visible": {
               "type": "boolean"
             }
           },
@@ -1172,6 +1218,15 @@
               },
               "visible": {
                 "type": "boolean"
+              },
+              "editor_visible": {
+                "type": "boolean"
+              },
+              "render_visible": {
+                "type": "boolean"
+              },
+              "locked": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -1199,6 +1254,15 @@
                 "maxLength": 4096
               },
               "visible": {
+                "type": "boolean"
+              },
+              "editor_visible": {
+                "type": "boolean"
+              },
+              "render_visible": {
+                "type": "boolean"
+              },
+              "locked": {
                 "type": "boolean"
               }
             },
@@ -1412,6 +1476,41 @@
               },
               "visible": {
                 "type": "boolean"
+              },
+              "material_overrides": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "slot": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+                    },
+                    "material": {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/reference"
+                        },
+                        {
+                          "properties": {
+                            "kind": {
+                              "enum": [
+                                "material"
+                              ]
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "slot",
+                    "material"
+                  ]
+                },
+                "minItems": 0,
+                "maxItems": 128
               }
             },
             "required": [
@@ -1431,6 +1530,117 @@
         },
         "provenance": {
           "$ref": "#/$defs/provenance"
+        },
+        "parameter_bindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "parameter": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "node": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "property": {
+                "enum": [
+                  "translation",
+                  "rotation",
+                  "scale",
+                  "visible"
+                ]
+              },
+              "component": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              }
+            },
+            "required": [
+              "parameter",
+              "node",
+              "property"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "collections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "visible": {
+                "type": "boolean"
+              },
+              "editor_visible": {
+                "type": "boolean"
+              },
+              "render_visible": {
+                "type": "boolean"
+              },
+              "locked": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "visible"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "visible": {
+                "type": "boolean"
+              },
+              "editor_visible": {
+                "type": "boolean"
+              },
+              "render_visible": {
+                "type": "boolean"
+              },
+              "locked": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "visible"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 64
         }
       },
       "required": [
@@ -1602,7 +1812,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}(?![\\s\\S])"
             },
             "minItems": 0,
             "maxItems": 10000,

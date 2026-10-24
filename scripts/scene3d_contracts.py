@@ -120,10 +120,13 @@ def definitions():
                           influence={'type': 'number', 'minimum': 0, 'maximum': 1}))
     attachment = obj(dict(owner=ID, socket=ID, offset=ref('transform')))
     override = obj(dict(slot=ID, material=material_ref))
-    node_override = obj(dict(node=ID, transform=ref('transform'), visible=BOOL), ['node'])
+    node_override = obj(dict(node=ID, transform=ref('transform'), visible=BOOL,
+                             material_overrides=arr(override, maximum=128)), ['node'])
     instance_overrides = obj(dict(parameters=mapping({'type': ['number', 'string', 'boolean']}),
                                  materials=mapping(material_ref),
-                                 nodes=arr(node_override, maximum=256)))
+                                 nodes=arr(node_override, maximum=256),
+                                 children=arr(ref('node'), maximum=256)),
+                             ['parameters', 'materials', 'nodes'])
     node = obj(dict(id=ID, name=TEXT,
         type=enum('root', 'group', 'mesh_instance', 'skinned_character', 'static_prop',
                   'animated_prop', 'terrain', 'procedural_geometry', 'camera', 'light',
@@ -133,7 +136,8 @@ def definitions():
         prefab=typed_ref('scene3d-prefab'), prefab_overrides=instance_overrides, material_overrides=arr(override, maximum=128),
         animation_bindings=arr(ref('binding'), maximum=256), constraints=arr(constraint, maximum=256),
         attachment=attachment, bounds=nullable(ref('bounds')), locked=BOOL, selectable=BOOL,
-        render=obj(dict(visible=BOOL, cast_shadow=BOOL, receive_shadow=BOOL)),
+        render=obj(dict(visible=BOOL, cast_shadow=BOOL, receive_shadow=BOOL, camera_visible=BOOL),
+                   ['visible', 'cast_shadow', 'receive_shadow']),
         source=nullable(ref('file')), metadata=meta, billboard=BOOL,
         camera=obj(dict(projection=enum('perspective', 'orthographic'), near=POS, far=POS,
                         vertical_fov=POS, orthographic_height=POS)),
@@ -154,18 +158,26 @@ def definitions():
     world = obj(dict(coordinate_system={'const': COORDINATES},
                      background=vec, exposure=NUM, environment=nullable(typed_ref('texture', 'scene3d-asset')),
                      metadata=meta))
-    collection = obj(dict(id=ID, name=TEXT, visible=BOOL))
+    collection = obj(dict(id=ID, name=TEXT, visible=BOOL, editor_visible=BOOL,
+                          render_visible=BOOL, locked=BOOL), ['id', 'name', 'visible'])
     scene = base('scene', dict(name=TEXT, description=TEXT, revision=integer(),
         coordinate_system={'const': COORDINATES}, roots=ids, nodes=arr(ref('node'), 1, MAX_NODES),
         world=world, collections=arr(collection, maximum=256), layers=arr(collection, maximum=64),
         cameras=ids, lights=ids, recipes=arr(ref('file'), maximum=256),
         dependencies=arr(ref('reference')), bounds=nullable(ref('bounds')), shots=ids,
         continuity=arr(ref('file'), maximum=256), metadata=meta, provenance=ref('provenance')))
-    prefab = base('prefab', dict(name=TEXT, roots=ids, nodes=arr(ref('node'), 1, MAX_NODES),
+    prefab_fields = dict(name=TEXT, roots=ids, nodes=arr(ref('node'), 1, MAX_NODES),
         parameters=mapping({'type': ['number', 'string', 'boolean']}),
         material_slots=ids, sockets=ids,
         overrides=arr(node_override, maximum=256), dependencies=arr(ref('reference')),
-        provenance=ref('provenance')))
+        provenance=ref('provenance'))
+    prefab_required = ['schema_version', 'kind', 'id', 'version', *prefab_fields]
+    prefab_fields.update(parameter_bindings=arr(obj(dict(parameter=ID, node=ID,
+        property=enum('translation', 'rotation', 'scale', 'visible'), component=integer(0, 3)),
+        ['parameter', 'node', 'property']), maximum=256),
+        collections=arr(collection, maximum=256), layers=arr(collection, maximum=64))
+    prefab = base('prefab', prefab_fields)
+    prefab['required'] = prefab_required
     asset = base('asset', dict(name=TEXT,
         asset_type=enum('mesh', 'character', 'prop', 'terrain', 'material', 'texture', 'environment'),
         content=ref('file'), source=ref('file'), provenance=ref('provenance'),
@@ -173,7 +185,8 @@ def definitions():
         pivot=vec, meshes=arr(ref('file')), materials=arr(material_ref),
         bounds=nullable(ref('bounds')), collision=nullable(ref('file')),
         sockets=arr(obj(dict(id=ID, transform=ref('transform'))), maximum=256),
-        components=mapping(ids), skeleton=nullable(typed_ref('hatch-3d-rig')),
+        components=mapping(arr(reference['properties']['id'], maximum=MAX_NODES, unique=True)),
+        skeleton=nullable(typed_ref('hatch-3d-rig')),
         animations=arr(clip_ref), lods=arr(typed_ref('scene3d-asset'), maximum=16),
         dependencies=arr(ref('reference')), resources=obj(dict(vertices=integer(0, 1000000),
         triangles=integer(0, 2000000), bytes=integer(1, MAX_TOTAL_BYTES))),
@@ -459,6 +472,26 @@ def validate_document(value, kind=None):
                     'Prefab sockets must reference socket nodes.')
             _unique(value['overrides'], 'prefab override', lambda x: x['node'])
             require(all(o['node'] in nodes for o in value['overrides']), 'Dangling prefab override.')
+            bindings = value.get('parameter_bindings', [])
+            _unique(bindings, 'prefab parameter/property binding',
+                    lambda b: (b['node'], b['property'], b.get('component')))
+            for binding in bindings:
+                require(binding['parameter'] in value['parameters'] and binding['node'] in nodes,
+                        'Prefab parameter binding references a missing parameter or node.')
+                parameter = value['parameters'][binding['parameter']]
+                if binding['property'] == 'visible':
+                    require('component' not in binding and type(parameter) is bool,
+                            'Visibility parameter bindings need a boolean and no component.')
+                else:
+                    size = 4 if binding['property'] == 'rotation' else 3
+                    require(type(parameter) in (int, float) and 'component' in binding
+                            and binding['component'] < size,
+                            'Transform parameter bindings need numeric values and a valid explicit component.')
+            for field in ('collections', 'layers'):
+                if field in value:
+                    declared = _unique(value[field], 'prefab ' + field, lambda item: item['id'])
+                    require(all(set(n[field]) <= declared for n in value['nodes']),
+                            'Prefab membership is absent from its declared inventory.')
     elif kind in ('shot', 'animation'):
         _timing(value)
         if kind == 'shot' and 'camera' in value['camera_overrides']:
@@ -727,6 +760,13 @@ def _prefab_overrides(overrides, prefab):
     require(set(overrides['materials']) <= set(prefab['material_slots']), 'Unknown prefab instance material slot.')
     ids = {n['id'] for n in prefab['nodes']}
     require(all(o['node'] in ids for o in overrides['nodes']), 'Unknown prefab instance node override.')
+    children = overrides.get('children', [])
+    child_ids = _unique(children, 'optional prefab child ID', lambda n: n['id'])
+    require(not child_ids & ids, 'Optional prefab child collides with a source node ID.')
+    if children:
+        combined = prefab['nodes'] + children
+        roots = [n['id'] for n in combined if n['parent'] is None]
+        _graph(combined, roots)
 
 
 def _legacy_reference(payload, expected):
