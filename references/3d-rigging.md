@@ -267,6 +267,12 @@ header or `Pillow.verify()` alone is insufficient: a JPEG missing its final EOI
 marker or a PNG with invalid compressed scanlines is rejected with
 `RIG_TEXTURE_DECODE`. The imported `TextureImage` retains the exact original
 encoded bytes; validation neither repairs nor re-encodes damaged sources.
+The Model3D consumer retains its public boundary: native texture rejection is
+`MODEL3D_MODEL`, while an unavailable strict JPEG verifier is
+`MODEL3D_DEPENDENCY`. The nested native diagnostic and corrective instruction
+remain available; unrelated resource-limit codes retain their existing behavior.
+OBJ source inventories contain the exact canonical source paths, including when
+the caller uses a directory alias, and preserve every source byte digest.
 
 PNG admission additionally checks every chunk CRC (including IEND), a complete
 zlib stream/footer, and the exact filtered raster size for ordinary and Adam7
