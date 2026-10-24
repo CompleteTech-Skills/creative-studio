@@ -1,9 +1,12 @@
 from copy import deepcopy
+import os
 from pathlib import Path
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
 from rig_test_helpers import fixture
+import rig_package
 from rig_contracts import validate_contract
 from rig_corrections import apply_rig_corrections
 from rig_errors import RigError,atomic_json,job_lock,read_json,sha256,timestamp
@@ -70,6 +73,60 @@ class RigWorkflowTests(unittest.TestCase):
         with zipfile.ZipFile(Path(self.temp.name)/'bad.zip','w') as z:z.writestr('../escape','bad')
         with self.assertRaises(RigError):restore_rig(Path(self.temp.name)/'bad.zip',Path(self.temp.name)/'bad')
         self.assertFalse((Path(self.temp.name)/'escape').exists())
+    def test_restore_rejects_dangling_destination_symlink_before_extraction(self):
+        home = Path(self.temp.name)
+        archive = home / 'rig.zip'
+        package_rig(self.rig.root, archive)
+        destination = home / 'restored'
+        target = home / 'missing-target'
+        try:
+            destination.symlink_to(target, target_is_directory=True)
+        except OSError as error:
+            if os.name == 'nt' and getattr(error, 'winerror', None) == 1314:
+                self.skipTest('Windows symlink creation privilege is unavailable: ' + str(error))
+            raise
+        before = destination.lstat()
+        linked_target = destination.readlink()
+
+        with patch.object(rig_package.tempfile, 'mkdtemp', wraps=tempfile.mkdtemp) as create_stage:
+            with self.assertRaises(RigError) as error:
+                restore_rig(archive, destination)
+        self.assertEqual(error.exception.report['code'], 'RIG_RESTORE_EXISTS')
+        create_stage.assert_not_called()
+        self.assertTrue(destination.is_symlink())
+        after = destination.lstat()
+        self.assertEqual((after.st_dev, after.st_ino), (before.st_dev, before.st_ino))
+        self.assertEqual(destination.readlink(), linked_target)
+        self.assertFalse(target.exists())
+        self.assertFalse(list(home.glob('.rig-restore-*')))
+    def test_restore_preserves_empty_destination_racing_publication(self):
+        home = Path(self.temp.name)
+        archive = home / 'rig.zip'
+        package_rig(self.rig.root, archive)
+        destination = home / 'restored'
+        unrelated = home / '.rig-restore-unrelated'
+        unrelated.mkdir()
+        (unrelated / 'keep.txt').write_bytes(b'Independent staging directory')
+        original_publish = rig_package._rename_no_replace
+        staged, created = [], []
+
+        def race(stage, target):
+            staged.append(stage)
+            target.mkdir()
+            status = target.stat()
+            created.append((status.st_dev, status.st_ino))
+            return original_publish(stage, target)
+
+        with patch.object(rig_package, '_rename_no_replace', side_effect=race):
+            with self.assertRaises(FileExistsError):
+                restore_rig(archive, destination)
+        self.assertEqual(len(created), 1)
+        status = destination.stat()
+        self.assertEqual((status.st_dev, status.st_ino), created[0])
+        self.assertEqual(list(destination.iterdir()), [])
+        self.assertFalse(staged[0].exists())
+        self.assertEqual(list(home.glob('.rig-restore-*')), [unrelated])
+        self.assertEqual((unrelated / 'keep.txt').read_bytes(), b'Independent staging directory')
     def test_duplicate_archive_names_and_tamper_are_rejected(self):
         path=Path(self.temp.name)/'rig.zip';package_rig(self.rig.root,path)
         with zipfile.ZipFile(path,'a') as z:z.writestr('extra.txt','not in inventory')

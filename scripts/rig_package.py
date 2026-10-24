@@ -8,6 +8,7 @@ import shutil
 import stat
 import tempfile
 import zipfile
+from atomic_publish import _rename_no_replace
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import atomic_bytes, decode_json, portable_name, require, safe_path, sha256
 from rig_models import load_rig, rig_signature
@@ -47,7 +48,7 @@ def restore_rig(archive_path,destination,*,limits=None):
     limits=limits or DEFAULT_LIMITS;archive_path=Path(archive_path);destination=Path(destination).absolute()
     require(archive_path.is_file() and not archive_path.is_symlink(),'RIG_ARCHIVE','Archive must be a regular file.')
     require(archive_path.stat().st_size <= limits['archive_bytes'],'RIG_ARCHIVE_LIMIT','Compressed archive exceeds its byte budget.')
-    require(not destination.exists(),'RIG_RESTORE_EXISTS','Restore into a new directory.')
+    require(not destination.exists() and not destination.is_symlink(),'RIG_RESTORE_EXISTS','Restore into a new directory.')
     destination.parent.mkdir(parents=True,exist_ok=True)
     temporary=Path(tempfile.mkdtemp(prefix='.rig-restore-',dir=destination.parent))
     try:
@@ -83,7 +84,7 @@ def restore_rig(archive_path,destination,*,limits=None):
                         output.write(chunk);digest.update(chunk)
                 require(digest.hexdigest()==entry['sha256'],'RIG_ARCHIVE_HASH','Restored bytes failed their hash.',asset=name)
         rig=load_rig(temporary);require(rig_signature(rig.manifest)==inventory['rig_sha256'],'RIG_ARCHIVE_HASH','Restored rig signature differs.')
-        os.replace(temporary,destination)
+        _rename_no_replace(temporary,destination)
         return dict(path=str(destination),rig_sha256=inventory['rig_sha256'],files=len(entries),verified=True)
     finally:
         if temporary.exists():shutil.rmtree(temporary)

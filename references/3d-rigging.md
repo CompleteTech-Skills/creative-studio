@@ -101,6 +101,8 @@ python scripts/rig.py review-apply --run-dir output/character --receipt rig-corr
 python scripts/rig.py weights --run-dir output/character --method auto
 ```
 
+Before a correction writes history or a revision, it validates every declared IK chain against the corrected skeleton using the same declaration checks as validation/export. Missing or repeated bones, disconnected hierarchy, non-unit orientation and evaluated rest segments at or below `1e-8` meters are rejected. Rejection preserves the active manifest, immutable assets, correction history and caller's rig. The operation dispatcher retains a failed-job diagnostic separately; it does not promote a correction. Valid skeleton edits can still invalidate skins and animation, and need not pass animation-readiness validation before saving.
+
 The viewer downloads a correction bound to the current revision. A later edit makes that correction stale. `bone-edit --bone ID --file fields.json --author NAME --reason TEXT` creates the same bound operation from CLI fields. Use `weights-inspect --mesh ID --vertex N`; JSON weight edits can assign normalized weights, smooth, copy, explicitly mirror reviewed vertex pairs, lock or unlock vertices. Mirroring never silently invents symmetry.
 
 ## Pose, IK, face and objects
@@ -221,6 +223,8 @@ Defaults: 256 MiB encoded source, 1 GiB dependencies/archive expansion, one mill
 `configure --file limits.json` uses strict bounded overrides. `status` shows active/pending/failed/stale work. `resume` retries failed/interrupted operations within the attempt budget. An OS file lock gives one writer ownership; claims survive in the journal and lock ownership releases after a process crash. Cache identity covers the core rig, parameters, implementation files and retained artifact hashes. Changing a covered input makes prior results stale. Failed exports never count as independent acceptance.
 
 Archive inventory covers every included file, hash and size. Restoration rejects path escapes, aliases/collisions, links, encrypted/special files, excessive expansion and unexpected/missing members, verifies all bytes in a fresh temporary directory, loads the actual rig, then promotes the directory. A restored fixture is evaluated again by the demonstration gate.
+
+Restoration requires a new destination and rejects destination symlinks, including those with missing targets. If another writer creates that destination before publication, even as an empty directory or symlink, restoration fails, preserves the competing destination, and removes only its own temporary extraction directory.
 
 ## Troubleshooting
 

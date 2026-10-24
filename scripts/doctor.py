@@ -13,6 +13,10 @@ def capabilities():
     from rig_doctor import rig_capability_description
     return {'interface_version': 1,
         'rig_3d': rig_capability_description(),
+        'model3d_contracts': {'schema_version': 1, 'command': 'python scripts/model3d.py',
+            'operations': ['capabilities', 'validate'],
+            'payload_validation': 'Hash-verified snapshot and existing GLB/glTF/OBJ inspection.',
+            'generation': False, 'provider_execution': False, 'review_approval': False},
         'sources': {'imagegen': ['image', 'strip'], 'import': ['image', 'strip', 'frames']},
         'extraction': ['conservative-slots', 'source-bound-rectangles'],
         'decomposition': {'schema_version': 1, 'sources': ['png', 'jpeg', 'webp'],

@@ -1,0 +1,11 @@
+Full local run log SHA-256: fe6bae20374dd523631aa427b9bbe6d21b81d6ff134453c8d73a914138f8b57f
+Full log retained at /mnt/data/hatch-evidence/model3d-full-unittest.log.
+This is a summary, not the full log or independent review.
+
+test_retry_bound_and_inflight_resume (test_workflow.WorkflowTests.test_retry_bound_and_inflight_resume) ... ok
+
+----------------------------------------------------------------------
+Ran 893 tests in 245.662s
+
+OK (skipped=10)
+Discovered 790 2D tests without optional 3D dependencies

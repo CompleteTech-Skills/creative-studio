@@ -1,0 +1,136 @@
+test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) ...
+  test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'missing-bone', 'b2'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32}}], persist=False) ... FAIL
+  test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'missing-bone', 'b2'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32}}], persist=True) ... FAIL
+  test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'b1', 'b2'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32, 'orientation': [0, 0, 0, 2]}}], persist=False) ... FAIL
+  test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'b1', 'b2'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32, 'orientation': [0, 0, 0, 2]}}], persist=True) ... FAIL
+  test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'b2', 'b1'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32}}], persist=False) ... FAIL
+  test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'b2', 'b1'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32}}], persist=True) ... FAIL
+  test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'bone-update', 'target': 'b2', 'value': {'parent': 'b0'}}], persist=False) ... FAIL
+  test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'bone-update', 'target': 'b2', 'value': {'parent': 'b0'}}], persist=True) ... FAIL
+  test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'bone-update', 'target': 'b1', 'value': {'head': [0, 0, 0]}}], persist=False) ... FAIL
+  test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'bone-update', 'target': 'b1', 'value': {'head': [0, 0, 0]}}], persist=True) ... FAIL
+
+======================================================================
+FAIL: test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'missing-bone', 'b2'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32}}], persist=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 70, in test_invalid_controller_corrections_preserve_saved_and_caller_state
+    self.assert_rejected_without_revision(edits, code, persist=persist)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 49, in assert_rejected_without_revision
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'missing-bone', 'b2'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32}}], persist=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 70, in test_invalid_controller_corrections_preserve_saved_and_caller_state
+    self.assert_rejected_without_revision(edits, code, persist=persist)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 49, in assert_rejected_without_revision
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'b1', 'b2'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32, 'orientation': [0, 0, 0, 2]}}], persist=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 70, in test_invalid_controller_corrections_preserve_saved_and_caller_state
+    self.assert_rejected_without_revision(edits, code, persist=persist)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 49, in assert_rejected_without_revision
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'b1', 'b2'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32, 'orientation': [0, 0, 0, 2]}}], persist=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 70, in test_invalid_controller_corrections_preserve_saved_and_caller_state
+    self.assert_rejected_without_revision(edits, code, persist=persist)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 49, in assert_rejected_without_revision
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'b2', 'b1'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32}}], persist=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 70, in test_invalid_controller_corrections_preserve_saved_and_caller_state
+    self.assert_rejected_without_revision(edits, code, persist=persist)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 49, in assert_rejected_without_revision
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'ik', 'target': 'arm', 'value': {'schema_version': 1, 'id': 'arm', 'bones': ['b0', 'b2', 'b1'], 'solver': 'two-bone', 'pole': [0, 0, 1], 'tolerance': 1e-06, 'iterations': 32}}], persist=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 70, in test_invalid_controller_corrections_preserve_saved_and_caller_state
+    self.assert_rejected_without_revision(edits, code, persist=persist)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 49, in assert_rejected_without_revision
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'bone-update', 'target': 'b2', 'value': {'parent': 'b0'}}], persist=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 70, in test_invalid_controller_corrections_preserve_saved_and_caller_state
+    self.assert_rejected_without_revision(edits, code, persist=persist)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 49, in assert_rejected_without_revision
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'bone-update', 'target': 'b2', 'value': {'parent': 'b0'}}], persist=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 70, in test_invalid_controller_corrections_preserve_saved_and_caller_state
+    self.assert_rejected_without_revision(edits, code, persist=persist)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 49, in assert_rejected_without_revision
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'bone-update', 'target': 'b1', 'value': {'head': [0, 0, 0]}}], persist=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 70, in test_invalid_controller_corrections_preserve_saved_and_caller_state
+    self.assert_rejected_without_revision(edits, code, persist=persist)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 49, in assert_rejected_without_revision
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_invalid_controller_corrections_preserve_saved_and_caller_state (test_rig_correction_validation.RigCorrectionValidationTests.test_invalid_controller_corrections_preserve_saved_and_caller_state) (edits=[{'operation': 'bone-update', 'target': 'b1', 'value': {'head': [0, 0, 0]}}], persist=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 70, in test_invalid_controller_corrections_preserve_saved_and_caller_state
+    self.assert_rejected_without_revision(edits, code, persist=persist)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-ik201/tests/test_rig_correction_validation.py", line 49, in assert_rejected_without_revision
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.408s
+
+FAILED (failures=10)
