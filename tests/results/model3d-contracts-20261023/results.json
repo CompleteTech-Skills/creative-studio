@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "base_revision": "6943607c4e678a447536384566ea6230cc1a1d27",
+  "evidence_scope": "Locally executed working-tree source hashes, not a claim of remote CI or independent approval.",
+  "python": "3.13.5",
+  "source_sha256": {
+    "scripts/model3d.py": "9e22300110a4de47316f74d6f38c64de47457a5a14d30b5229e86253f43a8c6a",
+    "scripts/model3d_contracts.py": "a824d6d2d94a51fcb2cd191a8a7ab8dcc378ae55831c58b9b41a946059408c75",
+    "scripts/model3d_validation.py": "a5f25b6ab3b774703d62154599e86230d8fac19a1795180705818a0add3e476c",
+    "scripts/doctor.py": "0116b8a125beffad1592c9f0503a0553d14a4b0e5aec53a7dba7997f5974a42c",
+    "scripts/generate_schemas.py": "94cf4e72899e883c856f1f511a89e78662fdf7485643bcb485f440b2ec052390",
+    "scripts/test_rig_gate.py": "67e904a4d63de3db0495c87737d0365dbf65b52d35b5449b3fb996ce3ff3828a",
+    "scripts/verify_public_delivery.py": "5bc7884c3c23dddcfb1dd5e0254417259f3b013f4ebb7508497260907addf109",
+    "tests/test_model3d_contracts.py": "28089f3662afde9ffe5101a4046d6702330827a262041db3d3eae99fe604952e",
+    "tests/test_rig_compatibility.py": "f0bf604252c69ac3718b14f40a7eed006b7cf1ea46c2e2e69d1389700e50fce8",
+    "profiles/model3d.schema.json": "eb3b8cc9763d885ba762a21affcd97a2ebaa7579169e3f57d735a8e1dcd0eea8"
+  },
+  "commands": [
+    {
+      "command": "python -B -m unittest discover -s tests -p test_model3d_contracts.py -v",
+      "tests": 31,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 5.714,
+      "log": "contracts.log"
+    },
+    {
+      "command": "python -B -m unittest discover -s tests -v",
+      "tests": 893,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 10,
+      "seconds": 245.662,
+      "log": "full-suite-summary.txt",
+      "full_log_sha256": "fe6bae20374dd523631aa427b9bbe6d21b81d6ff134453c8d73a914138f8b57f",
+      "full_log_location": "/mnt/data/hatch-evidence/model3d-full-unittest.log"
+    },
+    {
+      "command": "python -B scripts/test_rig_gate.py schema-math",
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "legacy_2d_discovered": 790
+    },
+    {
+      "command": "python -B scripts/generate_schemas.py --check",
+      "status": "passed"
+    },
+    {
+      "command": "python -B scripts/generate_rig_templates.py --check",
+      "status": "passed"
+    },
+    {
+      "command": "python -B scripts/production_sources.py verify-delivery",
+      "status": "passed"
+    },
+    {
+      "command": "python -B scripts/model3d.py validate --file examples/model3d-contracts/robotic.json --root .",
+      "status": "passed",
+      "report": "robotic-inspection.json"
+    }
+  ],
+  "limitations": [
+    "Chromium and native Krita unavailable locally.",
+    "Existing opt-in Blender, Three.js and Khronos gates were not enabled locally; remote CI must run them independently.",
+    "Whole browser test classes skip before their cases are counted; 893 is the observed local count.",
+    "Material-parameter/render equivalence, authenticated review/licensing and provider execution are not assessed.",
+    "This is not final #10 or downstream acceptance."
+  ],
+  "review_state": "pending-independent-review",
+  "remote_ci": "pending-publication",
+  "evidence_sha256": {
+    "capabilities.json": "19d52f8ac3327115d9cb1f7dbfe8b86d1daf8ff16d9a7c510fc13fc929feda1c",
+    "contracts.log": "7e778f8299c488ad4a5cc74fc03ffe13985f5fd81ffd232c0b0bb074275307ac",
+    "full-suite-summary.txt": "71ac622307e79e91dd29bfdb71b01848cf5fc77dc652bdbacd68831cf00e6bf9",
+    "robotic-inspection.json": "0b214e9f0c838776bcf1a2f7445eacf3f2a4d1c4708aa89f7bb36d0d9185d6fe"
+  }
+}

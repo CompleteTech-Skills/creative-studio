@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "implementation_version": "1.0.0",
+  "discovery_only": true,
+  "packages": {
+    "numpy": {
+      "installed": true,
+      "version": "2.3.5"
+    },
+    "jsonschema": {
+      "installed": true,
+      "version": "4.26.0"
+    },
+    "Pillow": {
+      "installed": true,
+      "version": "12.3.0"
+    }
+  },
+  "limits": {
+    "file_bytes": 268435456,
+    "total_bytes": 1073741824,
+    "files": 4096,
+    "vertices": 1000000,
+    "triangles": 2000000,
+    "parts": 4096,
+    "dependency_depth": 16,
+    "memory_bytes": 2147483648
+  },
+  "implemented": [
+    "strict-contract-validation",
+    "hash-bound-payload-snapshot",
+    "dependency-closure-validation",
+    "existing-GLB-glTF-OBJ-inspection"
+  ],
+  "not_implemented": [
+    "model3d-generation",
+    "reconstruction",
+    "provider-execution",
+    "model3d-job-scheduler",
+    "model3d-editing",
+    "model3d-review-approval"
+  ],
+  "geometry_authority": "rig_import.load_character_model",
+  "legacy_2d_migration": false,
+  "network_calls": false
+}

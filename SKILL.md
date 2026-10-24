@@ -104,3 +104,15 @@ When authorized to delegate, one worker may own one existing generation claim or
 - [Production traceability](references/production-traceability.md): P01–P15; [current validation](references/production-validation.md) and [demonstration index](examples/production-pilot/README.md).
 
 Cleanup affects only exact run-owned files. Preview it first. Keep repair archives, original inputs, external imagegen outputs, failure history and unrelated files. Removing files cannot remove image payloads already embedded in a conversation.
+
+## Model3D contract foundation
+
+Use `python scripts/model3d.py validate --file MANIFEST --root PROJECT_ROOT` for
+independently versioned Model3D documents and their actual payload closure. Read
+[the contract guide](references/model3d-contracts.md) before authoring manifests.
+The validator reuses the existing rig import/geometry authority, checks actual
+files in a verified temporary snapshot, and never starts generation or a provider.
+`--structural-only` does not prove payload availability. Job/export state, licensing
+claims and review references are not authenticated approval. Preserve Y-up/meters/
+XYZW conventions and all existing 2D semantics. Do not call this bounded foundation
+a complete Model3D generator, asset library, editor, scheduler or renderer.

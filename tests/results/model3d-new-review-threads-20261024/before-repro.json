@@ -1,0 +1,14 @@
+{
+  "transitive_file_ceiling": {
+    "accepted": true,
+    "middle_file_ceiling": 100000,
+    "descendant_bytes": 200000,
+    "verified_bytes": 210383
+  },
+  "integral_float_bytes": {
+    "schema_runtime_accepted": true,
+    "exit_code": 1,
+    "traceback": true,
+    "stderr": "Traceback (most recent call last):\n  File \"/tmp/hatch-model202-fix/scripts/model3d.py\", line 58, in <module>\n    raise SystemExit(main())\n                     ~~~~^^\n  File \"/tmp/hatch-model202-fix/scripts/model3d.py\", line 46, in main\n    result = validate_file(args.file, args.root, structural_only=args.structural_only)\n  File \"/tmp/hatch-model202-fix/scripts/model3d_validation.py\", line 401, in validate_file\n    return validate_document(document, selected_root, structural_only=structural_only)\n  File \"/tmp/hatch-model202-fix/scripts/model3d_validation.py\", line 378, in validate_document\n    visit(document, 0)\n    ~~~~~^^^^^^^^^^^^^\n  File \"/tmp/hatch-model202-fix/scripts/model3d_validation.py\", line 291, in visit\n    snapshot.capture(record, memory_bytes=effective_memory)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/hatch-model202-fix/scripts/model3d_validation.py\", line 97, in capture\n    for chunk in iter(lambda: source.read(min(1024**2, record['bytes'] + 1)), b''):\n                 ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/hatch-model202-fix/scripts/model3d_validation.py\", line 97, in <lambda>\n    for chunk in iter(lambda: source.read(min(1024**2, record['bytes'] + 1)), b''):\n                              ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: argument should be integer or None, not 'float'\n"
+  }
+}

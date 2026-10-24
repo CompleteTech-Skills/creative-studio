@@ -1,0 +1,624 @@
+{
+  "schema_version": 1,
+  "kind": "model3d-asset",
+  "id": "robotic-contract-example",
+  "version": "1.0.0",
+  "category": "character",
+  "coordinate_system": {
+    "handedness": "right",
+    "right": "+X",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "angles": "radian",
+    "quaternion": "XYZW",
+    "matrices": "column-vectors",
+    "time": "second"
+  },
+  "sources": [
+    {
+      "schema_version": 1,
+      "kind": "model3d-source",
+      "id": "original",
+      "version": "1.0.0",
+      "file": {
+        "path": "examples/rig-3d/robotic/source/demo-robotic-input.glb",
+        "bytes": 42260,
+        "sha256": "0a1c4fe3927c93588964f3cea225c4b78abe0ce096fd3d6fae6159e4277274ad",
+        "media_type": "model/gltf-binary"
+      },
+      "role": "geometry",
+      "provenance": {
+        "origin": "procedural-fixture",
+        "fixture": true,
+        "description": "Existing Hatch Pet mechanical engineering fixture. Reused unchanged; not production artwork or neural generation.",
+        "tools": [
+          {
+            "name": "Hatch Pet rig engine",
+            "version": "1.0.0"
+          }
+        ],
+        "evidence": [],
+        "license": {
+          "identifier": null,
+          "attribution": "Existing Hatch Pet repository engineering fixture; no new license approval inferred.",
+          "redistribution": "unknown",
+          "evidence": null
+        }
+      },
+      "camera": {
+        "status": "unknown"
+      },
+      "original_filename": "demo-robotic-input.glb",
+      "dimensions_px": null,
+      "acquisition": {
+        "method": "unknown",
+        "timestamp": null
+      },
+      "evidence_class": "synthetic",
+      "mask": null,
+      "annotations": []
+    }
+  ],
+  "files": [
+    {
+      "path": "examples/rig-3d/robotic/exports/character.glb",
+      "bytes": 75956,
+      "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+      "media_type": "model/gltf-binary"
+    }
+  ],
+  "geometry": {
+    "path": "examples/rig-3d/robotic/exports/character.glb",
+    "bytes": 75956,
+    "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+    "media_type": "model/gltf-binary"
+  },
+  "measurements": {
+    "vertices": 706,
+    "triangles": 1368,
+    "bounds": {
+      "minimum": [
+        -0.2800000011920929,
+        -1.4901161138336505e-09,
+        -0.25
+      ],
+      "maximum": [
+        0.7300000190734863,
+        0.8899999842047691,
+        0.25
+      ]
+    }
+  },
+  "parts": [
+    {
+      "schema_version": 1,
+      "kind": "model3d-part",
+      "id": "assembly",
+      "name": "Imported robotic assembly; original mesh identities retained",
+      "parent": null,
+      "local_transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      },
+      "mesh_ids": [
+        "base-shell",
+        "shoulder-shell",
+        "shoulder-joint",
+        "elbow-shell",
+        "elbow-joint",
+        "gripper-shell",
+        "gripper-joint",
+        "jaw.left-shell",
+        "jaw.left-joint",
+        "jaw.right-shell",
+        "jaw.right-joint"
+      ],
+      "material_ids": [
+        "material-0",
+        "material-1",
+        "material-2",
+        "material-3"
+      ],
+      "source_ids": [
+        "original"
+      ],
+      "uncertainty_ids": [],
+      "version": "1.0.0",
+      "category": "mechanical-assembly",
+      "pivot_m": [
+        0,
+        0,
+        0
+      ],
+      "attachments": [],
+      "anatomical_side": "not-applicable",
+      "decomposition_components": [],
+      "mesh_regions": [],
+      "visible_evidence": [],
+      "inferred_geometry": [],
+      "confidence": null,
+      "confidence_method": null,
+      "rig_association": null,
+      "review_state": "pending",
+      "edit_history": []
+    }
+  ],
+  "materials": [
+    {
+      "schema_version": 1,
+      "kind": "model3d-material",
+      "id": "material-0",
+      "version": "1.0.0",
+      "name": "body",
+      "slot": 0,
+      "base_color": [
+        0.3,
+        0.4,
+        0.52,
+        1
+      ],
+      "metallic": 0.12,
+      "roughness": 0.55,
+      "alpha_mode": "OPAQUE",
+      "alpha_cutoff": 0.5,
+      "double_sided": false,
+      "textures": {},
+      "provenance": {
+        "origin": "procedural-fixture",
+        "fixture": true,
+        "description": "Existing Hatch Pet mechanical engineering fixture. Reused unchanged; not production artwork or neural generation.",
+        "tools": [
+          {
+            "name": "Hatch Pet rig engine",
+            "version": "1.0.0"
+          }
+        ],
+        "evidence": [],
+        "license": {
+          "identifier": null,
+          "attribution": "Existing Hatch Pet repository engineering fixture; no new license approval inferred.",
+          "redistribution": "unknown",
+          "evidence": null
+        }
+      },
+      "evidence_class": "synthetic",
+      "texture_dimensions": {},
+      "procedural_parameters": [],
+      "projection_evidence": []
+    },
+    {
+      "schema_version": 1,
+      "kind": "model3d-material",
+      "id": "material-1",
+      "version": "1.0.0",
+      "name": "accent",
+      "slot": 1,
+      "base_color": [
+        1.0,
+        0.59,
+        0.13,
+        1
+      ],
+      "metallic": 0.12,
+      "roughness": 0.55,
+      "alpha_mode": "OPAQUE",
+      "alpha_cutoff": 0.5,
+      "double_sided": false,
+      "textures": {},
+      "provenance": {
+        "origin": "procedural-fixture",
+        "fixture": true,
+        "description": "Existing Hatch Pet mechanical engineering fixture. Reused unchanged; not production artwork or neural generation.",
+        "tools": [
+          {
+            "name": "Hatch Pet rig engine",
+            "version": "1.0.0"
+          }
+        ],
+        "evidence": [],
+        "license": {
+          "identifier": null,
+          "attribution": "Existing Hatch Pet repository engineering fixture; no new license approval inferred.",
+          "redistribution": "unknown",
+          "evidence": null
+        }
+      },
+      "evidence_class": "synthetic",
+      "texture_dimensions": {},
+      "procedural_parameters": [],
+      "projection_evidence": []
+    },
+    {
+      "schema_version": 1,
+      "kind": "model3d-material",
+      "id": "material-2",
+      "version": "1.0.0",
+      "name": "dark",
+      "slot": 2,
+      "base_color": [
+        0.07,
+        0.1,
+        0.15,
+        1
+      ],
+      "metallic": 0.12,
+      "roughness": 0.55,
+      "alpha_mode": "OPAQUE",
+      "alpha_cutoff": 0.5,
+      "double_sided": false,
+      "textures": {},
+      "provenance": {
+        "origin": "procedural-fixture",
+        "fixture": true,
+        "description": "Existing Hatch Pet mechanical engineering fixture. Reused unchanged; not production artwork or neural generation.",
+        "tools": [
+          {
+            "name": "Hatch Pet rig engine",
+            "version": "1.0.0"
+          }
+        ],
+        "evidence": [],
+        "license": {
+          "identifier": null,
+          "attribution": "Existing Hatch Pet repository engineering fixture; no new license approval inferred.",
+          "redistribution": "unknown",
+          "evidence": null
+        }
+      },
+      "evidence_class": "synthetic",
+      "texture_dimensions": {},
+      "procedural_parameters": [],
+      "projection_evidence": []
+    },
+    {
+      "schema_version": 1,
+      "kind": "model3d-material",
+      "id": "material-3",
+      "version": "1.0.0",
+      "name": "eye-white",
+      "slot": 3,
+      "base_color": [
+        0.94,
+        0.97,
+        1.0,
+        1
+      ],
+      "metallic": 0.12,
+      "roughness": 0.55,
+      "alpha_mode": "OPAQUE",
+      "alpha_cutoff": 0.5,
+      "double_sided": false,
+      "textures": {},
+      "provenance": {
+        "origin": "procedural-fixture",
+        "fixture": true,
+        "description": "Existing Hatch Pet mechanical engineering fixture. Reused unchanged; not production artwork or neural generation.",
+        "tools": [
+          {
+            "name": "Hatch Pet rig engine",
+            "version": "1.0.0"
+          }
+        ],
+        "evidence": [],
+        "license": {
+          "identifier": null,
+          "attribution": "Existing Hatch Pet repository engineering fixture; no new license approval inferred.",
+          "redistribution": "unknown",
+          "evidence": null
+        }
+      },
+      "evidence_class": "synthetic",
+      "texture_dimensions": {},
+      "procedural_parameters": [],
+      "projection_evidence": []
+    }
+  ],
+  "dependencies": [],
+  "uncertainties": [],
+  "provenance": {
+    "origin": "procedural-fixture",
+    "fixture": true,
+    "description": "Existing Hatch Pet mechanical engineering fixture. Reused unchanged; not production artwork or neural generation.",
+    "tools": [
+      {
+        "name": "Hatch Pet rig engine",
+        "version": "1.0.0"
+      }
+    ],
+    "evidence": [],
+    "license": {
+      "identifier": null,
+      "attribution": "Existing Hatch Pet repository engineering fixture; no new license approval inferred.",
+      "redistribution": "unknown",
+      "evidence": null
+    }
+  },
+  "review": {
+    "status": "pending",
+    "evidence": []
+  },
+  "limits": {
+    "file_bytes": 268435456,
+    "total_bytes": 1073741824,
+    "files": 4096,
+    "vertices": 1000000,
+    "triangles": 2000000,
+    "parts": 4096,
+    "dependency_depth": 16,
+    "memory_bytes": 2147483648
+  },
+  "generation_revision": "1.0.0",
+  "identity": null,
+  "pivot_m": [
+    0,
+    0,
+    0
+  ],
+  "mesh_details": [
+    {
+      "mesh_id": "base-shell",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 146,
+      "triangles": 288,
+      "material_slot": 2,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    },
+    {
+      "mesh_id": "shoulder-shell",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 50,
+      "triangles": 96,
+      "material_slot": 0,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    },
+    {
+      "mesh_id": "shoulder-joint",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 62,
+      "triangles": 120,
+      "material_slot": 1,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    },
+    {
+      "mesh_id": "elbow-shell",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 50,
+      "triangles": 96,
+      "material_slot": 0,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    },
+    {
+      "mesh_id": "elbow-joint",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 62,
+      "triangles": 120,
+      "material_slot": 1,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    },
+    {
+      "mesh_id": "gripper-shell",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 50,
+      "triangles": 96,
+      "material_slot": 1,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    },
+    {
+      "mesh_id": "gripper-joint",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 62,
+      "triangles": 120,
+      "material_slot": 1,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    },
+    {
+      "mesh_id": "jaw.left-shell",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 50,
+      "triangles": 96,
+      "material_slot": 1,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    },
+    {
+      "mesh_id": "jaw.left-joint",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 62,
+      "triangles": 120,
+      "material_slot": 1,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    },
+    {
+      "mesh_id": "jaw.right-shell",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 50,
+      "triangles": 96,
+      "material_slot": 1,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    },
+    {
+      "mesh_id": "jaw.right-joint",
+      "geometry": {
+        "path": "examples/rig-3d/robotic/exports/character.glb",
+        "bytes": 75956,
+        "sha256": "38c95ce549f58bdef2f06ce4652ac2026ca99c744f9593f348d0d1696131296e",
+        "media_type": "model/gltf-binary"
+      },
+      "lod": 0,
+      "vertices": 62,
+      "triangles": 120,
+      "material_slot": 1,
+      "normals": true,
+      "tangents": false,
+      "uv_sets": [],
+      "topology": {
+        "boundary_edges": 0,
+        "nonmanifold_edges": 0,
+        "degenerate_faces": 0
+      },
+      "evidence_class": "synthetic"
+    }
+  ],
+  "provider_receipts": [],
+  "previews": [],
+  "quality_reports": [],
+  "repair_history": [],
+  "available_formats": [
+    "glb"
+  ],
+  "completeness": "partial"
+}
