@@ -49,6 +49,20 @@ class SceneServiceTests(unittest.TestCase):
         mesh['constraints'] = []
         self.assertEqual(actual, self.graph(scene).evaluate_base('mesh')['world_matrix'])
 
+    def test_review_world_matrix_batch_preserves_supported_transform_interface(self):
+        graph = self.graph()
+        before = graph.evaluate_base('mesh')['world_matrix']
+        desired = deepcopy(before)
+        desired[0][3] += 3.
+        apply_commands(graph, PrefabLibrary(), dict(schema_version=1, commands=[dict(operation='transform',
+            parameters=dict(identifier='mesh',space='world',transform=desired))]))
+        np.testing.assert_allclose(graph.evaluate_base('mesh')['world_matrix'], desired)
+        original = graph.document()
+        with self.assertRaises(RigError):
+            apply_commands(graph, PrefabLibrary(), dict(schema_version=1, commands=[dict(operation='transform',
+                parameters=dict(identifier='mesh',space='world',transform=[1,2,3]))]))
+        self.assertEqual(original, graph.document())
+
     def test_review_command_types_reject_before_any_mutation(self):
         invalid = [('transform', dict(identifier=[], transform=TRANSFORM)),
                    ('duplicate', dict(identifier='mesh', new_id=[])),

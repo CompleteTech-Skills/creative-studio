@@ -88,6 +88,8 @@ def _apply_commands(graph, library, commands):
                 valid = type(value) is int and value >= 0
             elif key in ('name', 'version', 'space', 'policy'):
                 valid = isinstance(value, str)
+            elif key == 'transform':
+                valid = isinstance(value, list) if parameters.get('space') == 'world' else isinstance(value, dict)
             elif key in ('collections', 'layers', 'tags', 'parameter_bindings'):
                 valid = isinstance(value, list)
             else:
