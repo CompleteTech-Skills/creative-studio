@@ -161,19 +161,23 @@ def samples(scene, bodies, frames):
     return result
 
 
-def preview(root,scene,bodies):
+def preview(root,scene,bodies, replay_framing=None):
     """A small, explicitly neutral diagnostic render, never art approval."""
     points=[bpy.data.objects[body['id']].evaluated_get(bpy.context.evaluated_depsgraph_get()).matrix_world.translation.copy() for body in bodies]
     center=sum(points,Vector())/len(points)
     extent=max(1.,max((point-center).length for point in points))
     # Include actual mesh extents, so a broad floor is not cropped to its origin.
     extent=max(extent,max(max(bpy.data.objects[body['id']].dimensions) for body in bodies))
+    if replay_framing is not None:
+        center, extent = replay_framing
     camera_data=bpy.data.cameras.new('physics-diagnostic-camera')
     camera=bpy.data.objects.new('physics-diagnostic-camera',camera_data)
     scene.collection.objects.link(camera)
     camera.location=center+Vector((1.,-1.4,1.1)).normalized()*extent*2
     camera.rotation_euler=(center-camera.location).to_track_quat('-Z','Y').to_euler()
     camera_data.type='ORTHO';camera_data.ortho_scale=extent*1.8
+    if replay_framing is not None:
+        camera_data.clip_end=max(1000., extent*10.)
     scene.camera=camera
     light_data=bpy.data.lights.new('physics-diagnostic-light','AREA')
     light=bpy.data.objects.new('physics-diagnostic-light',light_data)
@@ -181,6 +185,8 @@ def preview(root,scene,bodies):
     light.location=center+Vector((2.,-2.,4.)).normalized()*extent
     light.rotation_euler=(center-light.location).to_track_quat('-Z','Y').to_euler()
     light_data.energy=1000.;light_data.shape='DISK';light_data.size=extent
+    if replay_framing is not None:
+        light_data.energy=1000.*max(1., extent*extent)
     environment=bpy.data.worlds.new('physics-diagnostic-world')
     environment.use_nodes=True
     environment.node_tree.nodes['Background'].inputs['Color'].default_value=(.3,.3,.3,1)
@@ -460,7 +466,25 @@ def replay_scene(root, job):
                 obj.keyframe_insert(data_path='rotation_quaternion', frame=sample['frame']+1)
         scene.frame_set(1)
         # Setup camera, lights and neutral materials exactly once.
-        image = preview(root, scene, bodies)
+        # A rotation-invariant radius encloses each actual source mesh at every
+        # cached origin. Fit one fixed view to the complete solved trajectory.
+        radii = {body['id']: max(Vector(vertex).length for vertex in job['meshes'][body['id']]['vertices'])
+                 for body in bodies}
+        low = Vector((math.inf, math.inf, math.inf))
+        high = Vector((-math.inf, -math.inf, -math.inf))
+        for sample in states['samples']:
+            for pose in sample['bodies']:
+                origin = BASIS.to_3x3() @ Vector(pose['translation'])
+                radius = radii[pose['id']]
+                for axis in range(3):
+                    low[axis] = min(low[axis], origin[axis]-radius)
+                    high[axis] = max(high[axis], origin[axis]+radius)
+        center = (low+high)*.5
+        # Half diagonal bounds the projected radius for every camera direction;
+        # 1.3 * existing 1.8 scale leaves margin around its full diameter.
+        extent = max(1., (high-low).length*.5)*1.3
+        scene['replay_camera_scope'] = 'complete cached trajectory and actual mesh radii'
+        image = preview(root, scene, bodies, replay_framing=(center, extent))
         frames = sorted({0, len(states['samples'])//2, len(states['samples'])-1})
         image['frame'] = 0; image['scope'] = 'DIRECT solved-state replay; neutral diagnostic only'
         images.append(image)
@@ -479,6 +503,7 @@ def replay_scene(root, job):
         scene = bpy.context.scene
     if (scene.rigidbody_world is not None or scene.get('source_cache_sha256') != job['replay']['cache_manifest_sha256'] or
         scene.get('states_sha256') != job['replay']['states_sha256'] or
+        scene.get('source_backend') != canonical(job['replay']['source_backend']).decode('utf-8') or
         {obj.name for obj in scene.objects if obj.type == 'MESH'} != {body['id'] for body in bodies}):
         raise ValueError('Saved replay native identity differs.')
     for body in bodies:
@@ -506,6 +531,8 @@ def replay_scene(root, job):
                 verified_frames=len(actual), maximum_replay_error=maximum,
                 source_cache_sha256=job['replay']['cache_manifest_sha256'],
                 states_sha256=job['replay']['states_sha256'], previews=images,
+                worker_sha256=job['worker_sha256'], world_sha256=job['world_sha256'],
+                source_backend=job['replay']['source_backend'],
                 blend_sha256=hashlib.sha256((root/'scene.blend').read_bytes()).hexdigest(),
                 scope='DIRECT solved-state replay; Blender rendering only', artistic_review='not-performed')
 

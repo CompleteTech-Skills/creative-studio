@@ -19,7 +19,7 @@ The output includes `scene.blend`, three representative first/middle/last neutra
 128×128 CPU Cycles diagnostic renders (four samples), package worker and job,
 actual process logs, and `replay.json` with the full output inventory and hashes.
 One setup creates the camera, light and neutral materials; subsequent frames use
-that same setup. These are diagnostic images without artistic approval.
+that same setup, fitted to the complete cached trajectory and actual mesh radii. These are diagnostic images without artistic approval.
 
 A separate Blender process reopens only the freshly generated private `.blend`,
 checks its source identity, actual mesh vertices/topology and absence of a rigid
@@ -31,4 +31,4 @@ exclusive atomic publication primitive and preserves an existing destination.
 Run `tests/test_rig_physics_rigid_replay.py` with the rig dependency interpreter
 for admission checks. Setting `HATCH_PHYSICS_BACKEND_TEST=1`, `HATCH_BLENDER` and
 `HATCH_PYBULLET_PYTHON` enables the actual DIRECT → render → independent reopen
-lifecycle test. A skipped native test is not native execution evidence.
+lifecycle test with initial velocity, shifted COM, a dense inertia tensor, an off-center impulse and torque. Set `HATCH_RIGID_REPLAY_EVIDENCE` to retain its actual complete source cache, blend and rendered images under a new test directory. A skipped native test is not native execution evidence.

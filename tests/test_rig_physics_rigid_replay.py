@@ -1,5 +1,7 @@
 """Actual DIRECT-to-Blender replay plus fail-closed input admission."""
+from contextlib import nullcontext
 import os
+import shutil
 from pathlib import Path
 import sys
 import tempfile
@@ -7,7 +9,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 import physics_backends as p
-from physics_rigid_render import render_direct_cache
+from physics_rigid_render import render_direct_cache, _check_report, _unchanged
 from physics_backend_example import build_inputs
 
 
@@ -33,20 +35,72 @@ class ReplayAdmissionTests(unittest.TestCase):
             with self.assertRaises(p.BackendError): render_direct_cache(root/'link', root/'out')
 
 
+    def test_malformed_worker_reports_are_structured_rejections(self):
+        binding = dict(cache_manifest_sha256='a'*64, states_sha256='b'*64)
+        # These are adversarial report inputs, never solver execution receipts.
+        for report in [None, [], {}, {'ok': True}, 1, 'invalid']:
+            with self.subTest(report=report), self.assertRaises(p.BackendError):
+                _check_report(report, 'render-replay', binding, 12, worker_sha256='c'*64, world_sha256='d'*64)
+
+    def test_wrong_report_scalar_types_are_structured_rejections(self):
+        binding = dict(cache_manifest_sha256='a'*64, states_sha256='b'*64, source_backend={'id': 'pybullet'})
+        keys = {'ok', 'operation', 'backend', 'verified_frames', 'maximum_replay_error',
+                'source_cache_sha256', 'states_sha256', 'previews', 'blend_sha256', 'scope',
+                'artistic_review', 'worker_sha256', 'world_sha256', 'source_backend'}
+        report = dict.fromkeys(keys)
+        report.update(ok=True, operation='render-replay', source_cache_sha256='a'*64,
+                      states_sha256='b'*64, worker_sha256='c'*64, world_sha256='d'*64,
+                      source_backend=binding['source_backend'], verified_frames=12)
+        for value in ['0', None, True, float('nan'), float('inf'), -1]:
+            report['maximum_replay_error'] = value
+            with self.subTest(value=value), self.assertRaises(p.BackendError):
+                _check_report(report, 'render-replay', binding, 12, worker_sha256='c'*64, world_sha256='d'*64)
+
+    def test_private_binding_rejects_changed_bytes_and_links(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); (root/'worker.py').write_bytes(b'package bytes')
+            bindings = {'worker.py': p.digest(b'package bytes')}
+            _unchanged(root, bindings)
+            (root/'worker.py').write_bytes(b'replaced')
+            with self.assertRaises(p.BackendError): _unchanged(root, bindings)
+            (root/'worker.py').unlink(); (root/'worker.py').symlink_to('/etc/hosts')
+            with self.assertRaises(p.BackendError): _unchanged(root, bindings)
+
+
 @unittest.skipUnless(os.environ.get('HATCH_PHYSICS_BACKEND_TEST') == '1', 'Explicit actual solver gate required')
 class NativeReplayTests(unittest.TestCase):
     def test_direct_solved_cache_render_and_independent_reopen(self):
-        world, sources = build_inputs(); world['solver']['backend'] = 'pybullet'
-        world['frame_range']['end'] = 12
+        world, sources = build_inputs(backend='pybullet')
+        world['gravity'] = [0, 0, 0]
+        world['frame_range']['end'] = 25
+        body = world['bodies'][0]
+        body['linear_velocity'] = [.3, 0, 0]
+        body['angular_velocity'] = [0, 0, .3]
+        body['mass']['center_of_mass'] = [.1, 0, 0]
+        body['mass']['inertia'] = [[.12, .02, 0], [.02, .14, 0], [0, 0, .15]]
+        world['forces'] = [dict(id='offcenter-impulse', type='impulse', bodies=['ball'],
+            vector=[.2, 0, 0], point=[0, 3.5, 0], frame_range=dict(start=0, end=1),
+            strength=1, seed=0, categories=['rigid-body'], application='world-point'),
+            dict(id='moderate-torque', type='torque', bodies=['ball'], vector=[0, 0, .02],
+            point=[0, 0, 0], frame_range=dict(start=1, end=12), strength=1, seed=0,
+            categories=['rigid-body'], application='center')]
         adapter = p.PyBulletBackend(os.environ['HATCH_PYBULLET_PYTHON'])
         prepared = adapter.prepare(world, sources)
         try:
             solved = adapter.simulate(prepared)
-            with tempfile.TemporaryDirectory() as tmp:
+            evidence = os.environ.get('HATCH_RIGID_REPLAY_EVIDENCE')
+            if evidence:
+                base = Path(evidence); base.mkdir(parents=True, exist_ok=True)
+                retained = p._new_destination(base/self._testMethodName)
+                retained.mkdir(mode=0o700)
+                context = nullcontext(str(retained))
+            else:
+                context = tempfile.TemporaryDirectory()
+            with context as tmp:
                 root = Path(tmp); adapter.bake(solved, root/'cache')
                 before = (root/'cache'/'states.json').read_bytes()
                 report = render_direct_cache(root/'cache', root/'replay', os.environ['HATCH_BLENDER'])
-                self.assertEqual(report['reports'][1]['verified_frames'], 12)
+                self.assertEqual(report['reports'][1]['verified_frames'], 25)
                 self.assertLessEqual(report['reports'][1]['maximum_replay_error'], 1e-5)
                 self.assertEqual(len(report['reports'][0]['previews']), 3)
                 self.assertEqual(before, (root/'replay'/'source-cache'/'states.json').read_bytes())
@@ -56,10 +110,13 @@ class NativeReplayTests(unittest.TestCase):
                     self.assertEqual(payload[:8], b'\x89PNG\r\n\x1a\n')
                     self.assertEqual(p.digest(payload), image['sha256'])
                 # Retained inputs are exact solver bytes; corrupt source never starts Blender.
-                (root/'cache'/'states.json').write_bytes(before+b' ')
+                shutil.copytree(root/'cache', root/'corrupt-cache')
+                (root/'corrupt-cache'/'states.json').write_bytes(before+b' ')
+                (root/'corrupt-cache'/'INTENTIONALLY-CORRUPT.txt').write_text(
+                    'Negative admission test only. Not a verified solver cache.\n')
                 with patch.object(p.BlenderBackend, '_discover') as discover:
                     with self.assertRaises(p.BackendError):
-                        render_direct_cache(root/'cache', root/'corrupt-replay', os.environ['HATCH_BLENDER'])
+                        render_direct_cache(root/'corrupt-cache', root/'corrupt-replay', os.environ['HATCH_BLENDER'])
                     discover.assert_not_called()
         finally:
             adapter.cleanup(prepared)
