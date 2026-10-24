@@ -222,6 +222,8 @@ Defaults: 256 MiB encoded source, 1 GiB dependencies/archive expansion, one mill
 
 Archive inventory covers every included file, hash and size. Restoration rejects path escapes, aliases/collisions, links, encrypted/special files, excessive expansion and unexpected/missing members, verifies all bytes in a fresh temporary directory, loads the actual rig, then promotes the directory. A restored fixture is evaluated again by the demonstration gate.
 
+Restoration requires a new destination and rejects destination symlinks, including those with missing targets. If another writer creates that destination before publication, even as an empty directory or symlink, restoration fails, preserves the competing destination, and removes only its own temporary extraction directory.
+
 ## Troubleshooting
 
 | Error | Action |

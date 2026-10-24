@@ -15,6 +15,20 @@ FROZEN={
 class RigCompatibilityTests(unittest.TestCase):
     def test_existing_contract_bytes_are_unchanged(self):
         for name,digest in FROZEN.items():self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(),digest,name)
+    def test_archive_imports_preserve_optional_dependency_boundaries(self):
+        code="""import sys,importlib.abc
+sys.path.insert(0,'scripts')
+blocked={'PIL','numpy','jsonschema','bpy','playwright','hatch','production_workflow','production_sources'}
+class Block(importlib.abc.MetaPathFinder):
+ def find_spec(self,fullname,path=None,target=None):
+  if fullname.split('.')[0] in blocked:raise ImportError('Unrelated archive dependency: '+fullname)
+sys.meta_path.insert(0,Block())
+import atomic_publish
+blocked.difference_update(('numpy','jsonschema'))
+import rig_package
+"""
+        process=subprocess.run([sys.executable,'-c',code],cwd=ROOT,capture_output=True,text=True)
+        self.assertEqual(process.returncode,0,process.stdout+process.stderr)
     def test_existing_capabilities_work_with_3d_imports_blocked(self):
         code="""import sys,importlib.abc
 sys.path.insert(0,'scripts')

@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import zipfile
 from asset_contracts import versions
+from atomic_publish import _rename_no_replace
 
 MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 
@@ -123,9 +124,11 @@ def verify_archive(path):
 def restore_run(archive_path, destination):
     import hatch
     receipt = verify_archive(archive_path)
-    destination = Path(destination).resolve()
-    if destination.exists():
+    destination = Path(destination)
+    if destination.exists() or destination.is_symlink():
         raise ValueError('restore destination must not exist; use a new directory')
+    # Resolve parent aliases without following a destination link created after the check.
+    destination = destination.parent.resolve() / destination.name
     destination.parent.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix='.hatch-restore-', dir=destination.parent))
     try:
@@ -157,7 +160,7 @@ def restore_run(archive_path, destination):
             revalidate = True
             hatch.invalidate(data, 'restored artifacts do not satisfy current validation and review')
             hatch.save(stage, data)
-        os.replace(stage, destination)
+        _rename_no_replace(stage, destination)
     finally:
         if stage.exists():
             shutil.rmtree(stage)
