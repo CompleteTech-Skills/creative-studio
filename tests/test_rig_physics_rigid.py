@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 from pathlib import Path
 import sys
 import tempfile
@@ -142,13 +143,21 @@ class NativeRigidTests(unittest.TestCase):
                 index=Path(output)/'executions.json'
                 records=json.loads(index.read_bytes()) if index.exists() else []
                 records.append(dict(test=self._testMethodName,backend=backend,world_sha256=result.world_sha256,
-                    states_sha256=physics.digest(physics.canonical(states)),backend_identity=result.backend,
+                    states_sha256=physics.digest((prepared.root/'states.json').read_bytes()),backend_identity=result.backend,
                     usage=result.usage,solver=world['solver'],gravity=world['gravity'],mass=[b['mass'] for b in world['bodies']],
                     forces=world['forces'],first=states['samples'][0],sixth=states['samples'][min(6,len(states['samples'])-1)],last=states['samples'][-1]))
                 index.write_bytes(physics.canonical(records))
             self.counter+=1
             self.assertEqual(payloads,before)
             return states,report
+        except Exception as exc:
+            output=os.environ.get('HATCH_RIGID_EVIDENCE')
+            if output:
+                failed=Path(output)/'failed-attempts'/self._testMethodName/(backend+'-'+str(self.counter))
+                failed.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copytree(prepared.root,failed,symlinks=True)
+                (failed/'failure.json').write_bytes(physics.canonical(dict(status='FAILED; not a verified physics cache',exception=type(exc).__name__,message=str(exc),diagnostic=getattr(exc,'report',None))))
+            raise
         finally:adapter.cleanup(prepared)
 
     def setUp(self):self.counter=0
