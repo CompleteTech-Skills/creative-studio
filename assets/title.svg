@@ -38,7 +38,7 @@
 
   <!-- word -->
   <text x="208" y="138" font-family="'Fredoka','Baloo 2','Nunito','Segoe UI Rounded','Trebuchet MS',system-ui,sans-serif" font-weight="700" font-size="104" letter-spacing="-2" fill="url(#ink2)" filter="url(#soft)">hatch-pet</text>
-  <text x="212" y="184" font-family="'Nunito','Segoe UI',system-ui,sans-serif" font-size="22" letter-spacing="5" fill="#c9b8ff" fill-opacity=".9">ONE IDEA IN · A LIVING PET OUT</text>
+  <text x="212" y="184" font-family="'Nunito','Segoe UI',system-ui,sans-serif" font-size="22" letter-spacing="5" fill="#c9b8ff" fill-opacity=".9">ONE IDEA IN · A LIVING CHARACTER OUT</text>
 
   <!-- fireflies -->
   <g fill="#ffd27a">
