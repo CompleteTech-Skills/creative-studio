@@ -26,7 +26,9 @@ not a security boundary or a way to load user-specified commands.
 `Policy` is trusted host configuration. Request fields cannot grant asset rights,
 add owners, enable a network provider or increase any resource limit. Admission
 validates all exact references globally, including checks whose backend is absent.
-A conflicting hash, missing canonical reference or unsafe path is an integrity
+The complete project/request closure and retained evidence are rechecked between
+checks and before returning a usable report; changed earlier references stale
+the whole integrity gate while retaining diagnostics. A conflicting hash, missing canonical reference or unsafe path is an integrity
 failure, not an optional missing capability. No fallback can waive integrity,
 permissions, network policy, owner exclusivity or resource ceilings.
 
@@ -43,7 +45,8 @@ a `RigOwner` or `ImageMastersOwner` is an explicit real probe, not passive disco
 
 The built-in bounded rig adapter admits at most 100,000 vertices and triangles,
 uses native loading/resource limits, and produces 64×64 CPU reference images.
-Its cooperative deadline is checked after a synchronous bounded native call; it
+Actual process CPU and a conservative wall deadline both use the CPU reservation.
+The deadline is checked after a synchronous bounded native call; it
 is not hard OS preemption or a memory sandbox. Expensive native jobs need their
 owner's worker isolation/cancellation and budget reservation; JSON cannot launch
 a child process through this interface. Admission cancellation is checked before
@@ -74,7 +77,8 @@ without granting native reservations. It does not implicitly authorize tools or
 register a provider. Native Python/established-service hosts register authorized
 owners. This is an API adapter, not a new HTTP server or graphical editor.
 
-Every response binds the canonical request and report hashes; original request
+Every response retains the exact used capability snapshots and safe trusted host
+policy (no credentials), plus canonical request and report hashes; original request
 bytes and caller objects are unchanged. JSON Schema integer fields accept finite
 whole-number floats via a validated copy. Booleans, fractional/nonfinite numbers,
 unknown fields and unbounded resources are rejected. Histories and native review
@@ -84,7 +88,7 @@ lifecycle remain owned by their existing subsystems.
 
 | Request | Permitted implementation | Enforced boundary |
 |---|---|---|
-| GLB/glTF inspection | `independent-geometry-parser` | Actual native geometry/material/skin/morph observations; no visual identity claim. |
+| GLB/glTF inspection | `independent-geometry-parser` | Actual native geometry/material/skin/morph observations; original source node hierarchy remains unavailable, so this native-rig adapter reports partial geometry inspection. It is not a direct GLB/glTF parser. |
 | Blender-native inspection | `validated-data-export` | Requires native source and conversion binding; absent owner/data stays blocked. Never execute imported scripts. |
 | Scene/animation evaluator | `bounded-native-evaluator` | Built-in rig FK/deformation is partial; contacts, phase and general scene world state remain unavailable. |
 | Rig compatibility/retargeting | `exact-rig-data` | Built-in exact hierarchy/rest/bind/skin inspection is partial; no target compatibility or approved retarget profile inferred. |
@@ -101,7 +105,9 @@ lifecycle remain owned by their existing subsystems.
 Selection prefers the exact capability, then only the matrix's named bounded
 fallbacks. Fallback must be explicitly permitted by the request. Owner version,
 schema, operation, input/output formats, expiry, limits, evidence and host policy
-must all match. No global umbrella issue must be complete before an independent
+must all match. Expiry is evaluated at each operation and again after native
+reservation, rather than frozen at batch start. Unknown/unavailable backend
+versions may be null; an available snapshot requires an actual version. No global umbrella issue must be complete before an independent
 supported check can execute. Missing Blender, rig data, simulation caches, GUI or
 encoder leaves those precise fields/gates unavailable; other checks continue.
 
@@ -123,6 +129,17 @@ schema/expiry/cancellation negatives, actual image-master fallback and rejection
 of CPU when GPU is mandatory. No new art approval, external model call, encoder,
 physics solver, GUI, Blender execution or full visual identity is claimed.
 Those native owners can register bounded adapters; absence remains explicit.
+
+Categorical GUI/video/historical fallbacks retain their unsatisfied gates even
+if a native adapter overreports fields. A deterministic-rules fallback must
+identify that no model executed. A painted 2D input cannot replace the mandatory
+native 3D source reference for geometry/evaluation/rendering operations.
+
+Native responses and each merged check are validated within the per-check failure
+boundary. Each check is limited to 1 MiB and cumulative check data to 4 MiB; an
+oversized/malformed response becomes a structured failed check without losing
+independent results. Explicit report limits can leave detailed measurements only
+in retained native evidence; failure never implies acceptance.
 
 The new three-OS CI executes this suite against pinned Python/rig dependencies.
 Existing workflows and legacy raster/atlas/catalog contracts are unchanged.

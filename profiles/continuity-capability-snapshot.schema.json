@@ -202,6 +202,97 @@
         "checks"
       ]
     },
+    "host-policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "offline": {
+          "type": "boolean"
+        },
+        "asset_rights": {
+          "type": "boolean"
+        },
+        "allowed_owners": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        }
+      },
+      "required": [
+        "offline",
+        "asset_rights",
+        "allowed_owners",
+        "limits"
+      ]
+    },
+    "execution-result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pointer"
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "measurements": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verified_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "outcome": {
+          "enum": [
+            "executed",
+            "partial",
+            "needs_visual_review",
+            "failed",
+            "canceled"
+          ]
+        }
+      },
+      "required": [
+        "evidence",
+        "measurements",
+        "verified_fields",
+        "limitations",
+        "outcome"
+      ]
+    },
     "snapshot": {
       "type": "object",
       "additionalProperties": false,
@@ -213,8 +304,21 @@
           "const": "continuity-capability-snapshot"
         },
         "capability_id": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          "enum": [
+            "geometry-inspection",
+            "blender-native-inspection",
+            "scene-animation-evaluation",
+            "rig-compatibility",
+            "physics-continuation",
+            "spatial-screen-checks",
+            "visual-reference",
+            "visual-comparison",
+            "gpu-rendering",
+            "video-encoding",
+            "graphical-editor",
+            "ai-interpretation",
+            "historical-media"
+          ]
         },
         "implementation_id": {
           "type": "string",
@@ -229,8 +333,15 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
         },
         "backend_version": {
-          "type": "string",
-          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "contract_version": {
           "type": "string",
@@ -387,6 +498,9 @@
         "visual_approval": {
           "const": false
         },
+        "host_policy": {
+          "$ref": "#/$defs/host-policy"
+        },
         "report_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
@@ -401,6 +515,7 @@
         "checks",
         "integrity",
         "visual_approval",
+        "host_policy",
         "report_sha256"
       ]
     },
@@ -495,6 +610,16 @@
             }
           ]
         },
+        "snapshot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/snapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "missing_fields": {
           "type": "array",
           "items": {
@@ -569,6 +694,7 @@
         "backend",
         "backend_version",
         "snapshot_sha256",
+        "snapshot",
         "missing_fields",
         "unsatisfied_gates",
         "evidence",

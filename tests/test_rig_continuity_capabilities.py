@@ -9,9 +9,11 @@ import shutil
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
+import threading
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from continuity_capabilities import Admission, Policy, MATRIX, schemas, validate, discover
+from continuity_capabilities import Admission, Policy, MATRIX, MANDATORY_FIELDS, OwnerAdapter, schemas, validate, discover
 from continuity_capability_owners import RigOwner, ImageMastersOwner, pointer
 from continuity_contracts import VERSION, canonical_bytes, digest
 from rig_errors import RigError
@@ -63,7 +65,8 @@ class CapabilityTest(unittest.TestCase):
         before={p.relative_to(self.root/'rig').as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in (self.root/'rig').rglob('*') if p.is_file()}
         result=self.engine(owner).run(request)
-        self.assertEqual(result['outcome'],'supported_fallback')
+        self.assertEqual(result['outcome'],'partial')
+        self.assertIn('source-hierarchy',result['checks'][0]['missing_fields'])
         report=result['checks'][0]['measurements']['geometry']
         self.assertGreater(report['vertices'],0)
         self.assertGreater(report['triangles'],0)
@@ -108,7 +111,7 @@ class CapabilityTest(unittest.TestCase):
         for i,c in enumerate(request['checks']):c['id']='check-'+str(i)
         result=self.engine(owner).run(request)
         self.assertEqual(result['outcome'],'partial')
-        self.assertEqual(result['checks'][0]['outcome'],'supported_fallback')
+        self.assertEqual(result['checks'][0]['outcome'],'partial')
         self.assertTrue(all(x['outcome']=='blocked_missing_capability' for x in result['checks'][1:]))
 
     def test_missing_encoder_preserves_actual_masters_not_fake_video(self):
@@ -168,7 +171,7 @@ class CapabilityTest(unittest.TestCase):
         owner, request=self.bound('geometry-inspection');request['checks'][0]['inputs']=[]
         result=self.engine(owner).run(request)
         self.assertEqual(result['outcome'],'failed')
-        self.assertIn('SOURCE',result['checks'][0]['error'])
+        self.assertIn('canonical-reference',result['checks'][0]['unsatisfied_gates'])
 
     def test_expired_probe_is_not_current_capability(self):
         owner, request=self.bound('geometry-inspection')
@@ -217,7 +220,7 @@ class CapabilityTest(unittest.TestCase):
         result=self.engine(broken,owner).run(request)
         self.assertEqual(result['outcome'],'failed')
         self.assertEqual(len(result['checks']),2)
-        self.assertEqual(result['checks'][0]['outcome'],'supported_fallback')
+        self.assertEqual(result['checks'][0]['outcome'],'partial')
         self.assertEqual(result['checks'][1]['unsatisfied_gates'],['owner-contract'])
 
     def test_whole_process_resource_measurement_is_explicit(self):
@@ -261,6 +264,156 @@ class CapabilityTest(unittest.TestCase):
             result=self.engine(owner).run(request)
         self.assertEqual(result['outcome'],'failed')
         self.assertIn('owns this rig',result['checks'][0]['error'])
+
+
+    def policy_owner(self, capability, *, malformed=None, execute=None, expiry=None):
+        # This explicitly synthetic in-process adapter tests policy invariants,
+        # not real production backend or artistic acceptance. Real native adapter
+        # coverage is tested separately above.
+        test=self
+        if not (self.root/'rig').exists():shutil.copytree(REPO/'examples/rig-3d/robotic',self.root/'rig')
+        native=pointer(self.root,self.root/'rig/rig.json',kind='hatch-3d-rig')
+        class Fixture(OwnerAdapter):
+            def __init__(self):self.lock=threading.Lock();self.calls=0
+            def snapshot(self):
+                return dict(schema_version=VERSION,kind='continuity-capability-snapshot',
+                    capability_id=capability,implementation_id=MATRIX[capability][0][0],
+                    owner='hatch-rig',backend='policy-fixture',backend_version='1.0.0',contract_version=VERSION,
+                    input_types=['hatch-3d-rig'],output_types=['native-inspection'],operations=[capability],
+                    status='available',discovered=True,tested_operations=[capability],evidence=[test.project],
+                    limits=dict(memory_bytes=512*1024*1024,disk_bytes=64*1024*1024,cpu_seconds=60,gpu_bytes=0,concurrency=1),
+                    offline=True,asset_rights_required=True,
+                    expires_at=expiry or '2099-01-01T00:00:00Z',limitations=[])
+            @contextmanager
+            def reserve(self,check):
+                with self.lock:yield
+            def execute(self,check):
+                self.calls+=1
+                payload=(test.root/'project.json').read_bytes()
+                result=dict(outcome='executed',evidence=[test.project],
+                    measurements=dict(fixture=True,source_sha256=hashlib.sha256(payload).hexdigest(),model_invoked=False,device='cpu'),
+                    verified_fields=list(MANDATORY_FIELDS[capability])+['source-conversion-binding'],limitations=[])
+                if malformed:result.update(malformed)
+                if execute:execute(result)
+                return result
+        return Fixture(),native
+
+    def test_all_thirteen_categorical_matrix_invariants(self):
+        for cap in MATRIX:
+            with self.subTest(cap=cap):
+                owner,native=self.policy_owner(cap)
+                request=self.request(cap);request['checks'][0].update(inputs=[native],input_types=['hatch-3d-rig'],output_types=['native-inspection'])
+                result=self.engine(owner).run(request)
+                check=result['checks'][0]
+                self.assertEqual(owner.calls,1)
+                self.assertFalse(result['visual_approval'])
+                if cap in ('graphical-editor','video-encoding','historical-media'):
+                    self.assertEqual(check['outcome'],'partial')
+                    self.assertTrue(check['missing_fields'])
+                elif cap=='visual-comparison':self.assertEqual(check['outcome'],'needs_visual_review')
+                else:self.assertEqual(check['outcome'],'supported_fallback',check)
+
+    def test_wrong_native_filename_is_rejected_before_probe(self):
+        self.rig('geometry-inspection')
+        with self.assertRaisesRegex(ValueError,'rig.json'):
+            RigOwner(self.root,'rig/identity.json','evidence','geometry-inspection')
+
+    def test_project_change_is_global_integrity_failure(self):
+        owner,request=self.bound('geometry-inspection')
+        changed=False
+        def change():
+            nonlocal changed
+            if not changed:
+                (self.root/'project.json').write_bytes(b'{"changed":true}')
+                changed=True
+            return False
+        result=self.engine(owner).run(request,canceled=change)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertEqual(result['integrity'],'failed')
+        self.assertIn('integrity',result['checks'][0]['unsatisfied_gates'])
+
+    def test_malformed_owner_responses_keep_complete_structured_report(self):
+        for malformed in (dict(limitations=[None]),dict(evidence=[None]),dict(measurements=['wrong']),
+                          dict(verified_fields='wrong'),dict(limitations=['x'*4097])):
+            owner,native=self.policy_owner('geometry-inspection',malformed=malformed)
+            request=self.request('geometry-inspection','physics-continuation')
+            request['checks'][0].update(inputs=[native],input_types=['hatch-3d-rig'],output_types=['native-inspection'])
+            result=self.engine(owner).run(request)
+            self.assertEqual(result['outcome'],'failed')
+            self.assertEqual(len(result['checks']),2)
+            self.assertEqual(result['checks'][1]['outcome'],'blocked_missing_capability')
+
+    def test_oversized_native_and_combined_reports_are_bounded_failures(self):
+        # Each individual response is valid JSON; size limits apply before final
+        # report serialization, preserving all check outcomes.
+        owner,native=self.policy_owner('geometry-inspection',malformed=dict(measurements={'large':'x'*1048577}))
+        request=self.request('geometry-inspection','physics-continuation');request['checks'][0]['inputs']=[native]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed');self.assertEqual(len(result['checks']),2)
+        owner,native=self.policy_owner('geometry-inspection',malformed=dict(measurements={'large':'x'*700000}))
+        request=self.request(*(['geometry-inspection']*8))
+        for check in request['checks']:check['inputs']=[native]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed');self.assertEqual(len(result['checks']),8)
+        self.assertLess(len(canonical_bytes(result)),8*1024*1024)
+
+    def test_batch_and_reservation_expiry_are_current(self):
+        current=[datetime(2026,10,24,tzinfo=timezone.utc)]
+        def advance(result):current[0]+=timedelta(seconds=2)
+        owner,native=self.policy_owner('geometry-inspection',execute=advance,expiry='2026-10-24T00:00:01Z')
+        request=self.request('geometry-inspection','geometry-inspection')
+        for check in request['checks']:check['inputs']=[native]
+        engine=self.engine(owner);engine.clock=lambda:current[0]
+        result=engine.run(request)
+        self.assertEqual(owner.calls,1)
+        self.assertEqual(result['checks'][1]['outcome'],'blocked_missing_capability')
+
+    def test_used_snapshot_and_trusted_policy_are_retained(self):
+        owner,request=self.bound('geometry-inspection')
+        result=self.engine(owner).run(request)
+        record=result['checks'][0]
+        self.assertEqual(digest(record['snapshot']),record['snapshot_sha256'])
+        self.assertEqual(record['snapshot']['expires_at'],owner.snapshot()['expires_at'])
+        self.assertEqual(result['host_policy']['allowed_owners'],['hatch-image-masters','hatch-rig'])
+
+    def test_unavailable_snapshot_can_have_unknown_version(self):
+        owner,native=self.policy_owner('geometry-inspection')
+        snapshot=owner.snapshot();snapshot.update(status='unavailable',backend_version=None,tested_operations=[],evidence=[])
+        self.assertIsNone(validate(snapshot,'snapshot')['backend_version'])
+        snapshot['status']='available'
+        with self.assertRaises(ValueError):validate(snapshot,'snapshot')
+
+    def test_painted_input_cannot_replace_geometry_or_3d_reference(self):
+        owner,native=self.policy_owner('visual-reference')
+        request=self.request('visual-reference');request['checks'][0]['inputs']=[self.project]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('canonical-reference',result['checks'][0]['unsatisfied_gates'])
+        self.assertEqual(owner.calls,0)
+
+    def test_deterministic_fallback_cannot_claim_llm_execution(self):
+        owner,native=self.policy_owner('ai-interpretation',malformed=dict(measurements={'model_invoked':True}))
+        request=self.request('ai-interpretation')
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('no model executed',result['checks'][0]['error'])
+
+
+    def test_opaque_measurement_maps_are_not_reference_objects(self):
+        metadata=dict(id='opaque',version='not-a-version',path='../opaque-user-string',sha256='not-a-hash',kind='note')
+        owner,native=self.policy_owner('geometry-inspection',malformed=dict(measurements={'metadata':metadata}))
+        request=self.request('geometry-inspection');request['checks'][0]['inputs']=[native]
+        result=self.engine(owner).run(request)
+        self.assertEqual(result['checks'][0]['outcome'],'supported_fallback')
+        self.assertEqual(result['checks'][0]['measurements']['metadata'],metadata)
+
+    def test_nullable_snapshot_integer_fields_normalize_on_copy(self):
+        owner,request=self.bound('geometry-inspection')
+        result=self.engine(owner).run(request)
+        result['checks'][0]['snapshot']['limits']['memory_bytes']=float(result['checks'][0]['snapshot']['limits']['memory_bytes'])
+        parsed=validate(result,'result')
+        self.assertIs(type(parsed['checks'][0]['snapshot']['limits']['memory_bytes']),int)
+        self.assertIs(type(result['checks'][0]['snapshot']['limits']['memory_bytes']),float)
 
     def test_imports_do_not_import_optional_engines(self):
         # Import at module scope is stdlib + shared JSON safety only. Static

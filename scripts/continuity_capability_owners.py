@@ -45,7 +45,7 @@ class RigOwner(OwnerAdapter):
     constraints, calibrated camera mapping, retargeting or PBR rendering.
     """
     SUPPORTED = {
-        'geometry-inspection': ('independent-geometry-parser', ('geometry', 'materials', 'skins', 'morphs')),
+        'geometry-inspection': ('independent-geometry-parser', ('geometry', 'materials', 'skins', 'morphs', 'extensions-and-channels')),
         'scene-animation-evaluation': ('bounded-native-evaluator', ('rig-pose', 'deformed-vertices')),
         'rig-compatibility': ('exact-rig-data', ('hierarchy', 'rest-pose', 'bind-matrices', 'skin-weights')),
         'visual-reference': ('tested-geometry-renderer', ('reference-render',)),
@@ -59,6 +59,8 @@ class RigOwner(OwnerAdapter):
             raise ValueError('CONTINUITY_CAPABILITY_EXPIRY: use 1..3600 seconds')
         self.root = Path(root).resolve(strict=True)
         self.rig_path = portable_path(rig_path)
+        if Path(self.rig_path).name != 'rig.json':
+            raise ValueError('CONTINUITY_CAPABILITY_SOURCE: native rig manifest must be rig.json')
         self.folder = portable_path(evidence_folder)
         self.capability = capability
         self.bound = pointer(self.root, self.root / self.rig_path, kind='hatch-3d-rig')
@@ -133,6 +135,10 @@ class RigOwner(OwnerAdapter):
                             fixture=rig.manifest['source']['fixture'], visual_approval=False)
         evidence = []
         if cap == 'geometry-inspection':
+            measurements['native_extensions_used'] = list(rig.geometry.extensions_used)
+            measurements['source_hierarchy_status'] = 'unavailable-in-native-rig-adapter'
+            measurements['supported_input'] = 'hatch-3d-rig; not a direct GLB/glTF parser'
+            measurements['unsupported_channels'] = ['original-source-node-hierarchy','general-scene-constraints']
             measurements['geometry'] = analyze_geometry(rig.geometry, rig.manifest['limits'])
             measurements['materials'] = deepcopy(rig.geometry.materials)
             measurements['skins'] = {key:dict(vertices=len(value.indices), influences=value.indices.shape[1])
