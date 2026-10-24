@@ -97,7 +97,9 @@ def native_report(value,world,operation):
     fields=common|({'cache_storage','sample_count','object_count','diagnostic_render','actual_substeps_per_frame','actual_solver_iterations',
         'actual_fps','actual_gravity_canonical','effective_mass_policy','seed_policy','quality_policy','sphere_margin_policy','actual_bodies'}
         if operation=='simulate' else {'reversed_samples','maximum_replay_error','replay_tolerance'})
+    if operation=='simulate' and 'rigid_controls' in value: fields.add('rigid_controls')
     object_fields(value,fields,'Blender '+operation+' report')
+    if operation=='simulate': rigid_report(value,world,'blender')
     blender_identity(value['backend'])
     need(value['ok'] is True and value['operation']==operation and value['native_bake_completed'] is True and
          value['native_cache_is_baked'] is True and type(value['native_cache_is_outdated']) is bool,'Invalid native bake observations.')
@@ -131,7 +133,9 @@ def native_report(value,world,operation):
 def direct_report(value,world):
     object_fields(value,('ok','operation','backend','connection_mode','sample_count','object_count',
                         'actual_solver_steps','actual_bodies','cache_storage','restart','contacts_queried') +
-                        (('effective_engine','maximum_steps_per_output_interval','steps_per_output_interval') if type(value) is dict and 'effective_engine' in value else ('actual_steps_per_frame',)), 'DIRECT solver report')
+                        (('effective_engine','maximum_steps_per_output_interval','steps_per_output_interval') if type(value) is dict and 'effective_engine' in value else ('actual_steps_per_frame',)) +
+                        (('rigid_controls',) if type(value) is dict and 'rigid_controls' in value else ()), 'DIRECT solver report')
+    rigid_report(value,world,'pybullet')
     if 'effective_engine' in value:
         need(integer(value['maximum_steps_per_output_interval']) and type(value['steps_per_output_interval']) is list and
              all(integer(x) for x in value['steps_per_output_interval']),'Invalid actual output interval counts.')
@@ -202,7 +206,7 @@ def records(manifest,world,receipt,request,simulation,last_report,source_meshes,
         control=receipt['native_consumption_control']
         if control is not None:consumption_report(control,world)
         need(last_report==(control if control is not None else receipt['native_reopen']),'Last worker report contradicts the recorded operation.')
-        need(receipt['restart']=='clean-restart-only' and receipt['unsupported']==['joints','forces','initial-velocity','sensors','mask-filtering','other-categories'],
+        need(receipt['restart']=='clean-restart-only' and receipt['unsupported']==(['joints','off-center-forces','torques','impulses','initial-velocity','shifted-center-of-mass','custom-inertia','sensors','mask-filtering','other-categories'] if 'rigid_controls' in simulation else ['joints','forces','initial-velocity','sensors','mask-filtering','other-categories']),
              'Unsupported feature/recovery declarations differ.')
     else:
         module_identity(receipt['backend_module'])
@@ -215,3 +219,45 @@ def records(manifest,world,receipt,request,simulation,last_report,source_meshes,
         need((native['platform']=='linux' and header['platform'].startswith('Linux-')) or
              (native['platform']=='darwin' and header['platform'].startswith(('macOS-','Darwin-'))),
              'Recorded DIRECT platform contradicts actual module observations.')
+
+
+def rigid_report(report,world,backend):
+    requested = bool(world['forces']) or any(body['mode']=='kinematic' or 'sleep' in body or
+        any(body['linear_velocity']+body['angular_velocity']+body['mass']['center_of_mass']) for body in world['bodies'])
+    if 'rigid_controls' not in report:
+        need(not requested, 'Native report omits requested physical controls.')
+        return
+    value=report['rigid_controls']
+    object_fields(value,('version','bodies','force_policy','forces')+(('effectors',) if backend=='blender' else ()),'Rigid control observations')
+    need(value['version']==1 and value['forces']==world['forces'] and type(value['bodies']) is list and len(value['bodies'])==len(world['bodies']),
+         'Rigid control identity/count differs.')
+    need(value['force_policy']==('Blender native WIND plane effector central force only' if backend=='blender' else
+         'native external force/torque per fixed step; discrete impulse is integrated wrench over one complete native step'), 'Unknown physical control policy.')
+    for observed,body in zip(value['bodies'],world['bodies']):
+        fields=('id','mode','sleep')+(('kinematic',) if backend=='blender' else
+            ('inertial_position','inertial_rotation','principal_inertia','initial_linear_velocity','initial_angular_velocity'))
+        object_fields(observed,fields,'Rigid body controls')
+        need(observed['id']==body['id'] and observed['mode']==body['mode'],'Physical authority differs.')
+        expected=dict(enabled=body.get('sleep',{}).get('enabled',False),initially_sleeping=body.get('sleep',{}).get('initially_sleeping',False),
+            linear_threshold=body.get('sleep',{}).get('linear_threshold',.4) if backend=='blender' else None,
+            angular_threshold=body.get('sleep',{}).get('angular_threshold',.5) if backend=='blender' else None)
+        settings=observed['sleep']
+        object_fields(settings,('enabled','initially_sleeping','linear_threshold','angular_threshold'),'Sleep observations')
+        need(type(settings['enabled']) is bool and type(settings['initially_sleeping']) is bool and
+             settings['enabled']==expected['enabled'] and settings['initially_sleeping']==expected['initially_sleeping'] and
+             all((settings[k] is None if expected[k] is None else number(settings[k]) and abs(settings[k]-expected[k])<=1e-6) for k in ('linear_threshold','angular_threshold')), 'Native sleep settings differ.')
+        if backend=='blender':
+            need(type(observed['kinematic']) is bool and observed['kinematic']==(body['mode']=='kinematic'), 'Native kinematic authority differs.')
+        else:
+            need(vector(observed['inertial_position']) and all(abs(a-b)<=1e-6 for a,b in zip(observed['inertial_position'],body['mass']['center_of_mass'])) and
+                 type(observed['inertial_rotation']) is list and len(observed['inertial_rotation'])==4 and
+                 all(number(x) for x in observed['inertial_rotation']) and abs(sum(x*x for x in observed['inertial_rotation'])-1)<=1e-6 and
+                 vector(observed['principal_inertia']) and
+                 all(vector(observed['initial_'+kind+'_velocity']) and all(abs(a-b)<=1e-6 for a,b in zip(observed['initial_'+kind+'_velocity'],body[kind+'_velocity'])) for kind in ('linear','angular')),
+                 'Native initial velocity or inertial frame differs.')
+    if backend=='blender':
+        need(type(value['effectors']) is list and len(value['effectors'])==len(world['forces']),'Native force effector count differs.')
+        for observed,force in zip(value['effectors'],world['forces']):
+            object_fields(observed,('id','object','type','shape','flow','falloff_power'),'Native force effector')
+            need(observed['id']==force['id'] and type(observed['object']) is str and observed['type']=='WIND' and observed['shape']=='PLANE' and
+                 observed['flow']==0 and observed['falloff_power']==0,'Native central force mapping differs.')

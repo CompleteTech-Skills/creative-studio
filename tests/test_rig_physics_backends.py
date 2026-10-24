@@ -96,7 +96,7 @@ class PhysicsBackendAdmissionTests(unittest.TestCase):
             frame_range=dict(start=0,end=49),strength=1,seed=1,categories=['rigid-body'])
         for key,item in [('joints',joint),('forces',force)]:
             value=deepcopy(self.world);value[key]=[item]
-            error_code(self,'PHYSICS_CAPABILITY_UNAVAILABLE',lambda:self.backend.validate_scene(value))
+            error_code(self,'PHYSICS_CAPABILITY_UNAVAILABLE' if key=='joints' else 'PHYSICS_FORCE_UNSUPPORTED',lambda:self.backend.validate_scene(value))
 
     def test_box_property_storage_is_not_extra_contact_skin_support(self):
         value=deepcopy(self.world)

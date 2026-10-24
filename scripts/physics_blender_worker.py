@@ -66,7 +66,7 @@ def checked_job(path):
     world = value['world']
     if len(world['bodies']) > 32 or not 1 <= world['frame_range']['end'] <= 1024:
         raise ValueError('Worker body/frame bound exceeded.')
-    if world['frame_range']['start'] != 0 or world['components'] or world['joints'] or world['forces'] or world['events']:
+    if world['frame_range']['start'] != 0 or world['components'] or world['joints'] or world['events']:
         raise ValueError('This worker supports only zero-origin, uncoupled rigid-body jobs.')
     return path.resolve().parent, value
 
@@ -210,7 +210,7 @@ def create(root, job):
     scene.gravity = (BASIS.to_3x3() @ Vector(world['gravity']))[:]
     materials = {item['id']: item for item in world['materials']}
     for body in world['bodies']:
-        if body['category'] != 'rigid-body' or body['mode'] not in ('static', 'dynamic'):
+        if body['category'] != 'rigid-body' or body['mode'] not in ('static', 'dynamic', 'kinematic'):
             raise ValueError('Unsupported body authority or category.')
         proxy = body['colliders'][0]
         if len(body['colliders']) != 1 or proxy['shape']['type'] not in ('sphere', 'box'):
@@ -235,7 +235,8 @@ def create(root, job):
         obj.select_set(True)
         bpy.ops.rigidbody.object_add()
         rb = obj.rigid_body
-        rb.type = 'ACTIVE' if body['mode'] == 'dynamic' else 'PASSIVE'
+        rb.type = 'PASSIVE' if body['mode'] == 'static' else 'ACTIVE'
+        rb.kinematic = body['mode'] == 'kinematic'
         rb.collision_shape = 'SPHERE' if proxy['shape']['type'] == 'sphere' else 'BOX'
         rb.use_margin = True
         material = materials[proxy['material']]
@@ -244,10 +245,35 @@ def create(root, job):
         rb.linear_damping = material['linear_damping']
         rb.angular_damping = material['angular_damping']
         rb.collision_margin = material['collision_margin']
-        rb.use_deactivation = False
+        sleep = body.get('sleep',dict(enabled=False,initially_sleeping=False,linear_threshold=.4,angular_threshold=.5))
+        rb.use_deactivation = sleep['enabled']
+        rb.use_start_deactivated = sleep['initially_sleeping']
+        rb.deactivate_linear_velocity = sleep.get('linear_threshold',.4)
+        rb.deactivate_angular_velocity = sleep.get('angular_threshold',.5)
+        if body['mode'] == 'kinematic':
+            motion=source['motion']
+            for key in motion['keys']:
+                frame=1+key['frame']*world['fps']['numerator']*motion['fps']['denominator']/(world['fps']['denominator']*motion['fps']['numerator'])
+                obj.location=BASIS.to_3x3() @ Vector(key['value'])
+                obj.keyframe_insert(data_path='location',frame=frame)
+            for curve in obj.animation_data.action.fcurves:
+                for key in curve.keyframe_points:key.interpolation='LINEAR' if motion['interpolation']=='linear' else 'CONSTANT'
+            obj.location=BASIS.to_3x3() @ Vector(body['transform']['translation'])
         if body['mode'] == 'dynamic':
             rb.mass = body['mass']['kilograms']
         obj.select_set(False)
+    effectors=[]
+    for force in world['forces']:
+        vector=BASIS.to_3x3() @ Vector([x*force['strength'] for x in force['vector']])
+        bpy.ops.object.effector_add(type='WIND', location=(0,0,0))
+        effector=bpy.context.object;effector.name='physical-force-'+force['id']
+        effector.rotation_euler=vector.to_track_quat('Z','Y').to_euler() if vector.length else (0,0,0)
+        field=effector.field;field.shape='PLANE';field.flow=0;field.noise=0;field.falloff_power=0
+        for frame,strength in [(1,0),(force['frame_range']['start']+2,vector.length),(force['frame_range']['end']+2,0)]:
+            field.strength=strength;field.keyframe_insert(data_path='strength',frame=frame)
+        for curve in effector.animation_data.action.fcurves:
+            for key in curve.keyframe_points:key.interpolation='CONSTANT'
+        effectors.append(dict(id=force['id'],object=effector.name,type=field.type,shape=field.shape,flow=field.flow,falloff_power=field.falloff_power))
     physics = scene.rigidbody_world
     if physics is None:
         raise ValueError('Native rigid-body world was not created.')
@@ -285,9 +311,15 @@ def create(root, job):
         seed_policy='recorded identity only; no stochastic parameter is used by this adapter',
         quality_policy='explicit admitted substeps/iterations; quality label does not retune solver',
         sphere_margin_policy='analytic sphere radius is inherent; nonzero additional skin is rejected',
+        rigid_controls=dict(version=1,force_policy='Blender native WIND plane effector central force only',forces=world['forces'],effectors=effectors,
+            bodies=[dict(id=body['id'],mode=body['mode'],kinematic=bpy.data.objects[body['id']].rigid_body.kinematic,
+                sleep=dict(enabled=bpy.data.objects[body['id']].rigid_body.use_deactivation,
+                    initially_sleeping=bpy.data.objects[body['id']].rigid_body.use_start_deactivated,
+                    linear_threshold=bpy.data.objects[body['id']].rigid_body.deactivate_linear_velocity,
+                    angular_threshold=bpy.data.objects[body['id']].rigid_body.deactivate_angular_velocity)) for body in world['bodies']]),
         actual_bodies=[dict(id=body['id'], type=bpy.data.objects[body['id']].rigid_body.type,
             shape=bpy.data.objects[body['id']].rigid_body.collision_shape,
-            effective_mass=body['mass']['kilograms'] if body['mode']=='static' else bpy.data.objects[body['id']].rigid_body.mass,
+            effective_mass=body['mass']['kilograms'] if body['mode']!='dynamic' else bpy.data.objects[body['id']].rigid_body.mass,
             friction=bpy.data.objects[body['id']].rigid_body.friction,
             restitution=bpy.data.objects[body['id']].rigid_body.restitution,
             linear_damping=bpy.data.objects[body['id']].rigid_body.linear_damping,
