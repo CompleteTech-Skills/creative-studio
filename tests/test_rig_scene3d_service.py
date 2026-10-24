@@ -101,6 +101,29 @@ class SceneServiceTests(unittest.TestCase):
         self.assertEqual((self.root/'noncanonical-copy'/reference['path']).read_bytes(),payload)
         load_project(self.root/'noncanonical-copy')
 
+    def test_review_combined_source_and_derived_animation_budgets_are_atomic(self):
+        clip = deepcopy(self.bundle['documents']['example-animation.json'])
+        raw = canonical_bytes(clip)
+        reference = deepcopy(self.bundle['project']['animations'][0])
+        scene = deepcopy(self.scene)
+        scene['nodes'][1]['animation_bindings'] = [dict(target='mesh',clip=reference,start_frame=0,end_frame=24,speed=1.,loop=False)]
+        context = {reference['path']:raw}
+        baseline = SceneGraph(scene,animation_payloads=context)
+        derived = baseline.duplicate('mesh','copy')['derived_documents']
+        combined = len(raw)+sum(len(canonical_bytes(d)) for d in derived.values())
+        for setting, limit in [('MAX_FILES',1),('MAX_TOTAL_BYTES',combined-1)]:
+            graph = SceneGraph(scene,animation_payloads=context)
+            before = graph.document()
+            with patch('scene3d_graph.'+setting,limit),self.assertRaises(RigError):
+                graph.duplicate('mesh','copy')
+            self.assertEqual(before,graph.document())
+            self.assertEqual({},graph.derived_documents())
+            self.assertEqual(context,graph._animation_payloads)
+        with patch('scene3d_graph.MAX_FILES',2),patch('scene3d_graph.MAX_TOTAL_BYTES',combined):
+            graph = SceneGraph(scene,animation_payloads=context)
+            graph.duplicate('mesh','copy')
+            self.assertEqual(len(graph._animation_payloads),2)
+
     def test_review_duplicate_clip_dag_is_memoized(self):
         payloads, reference = {}, None
         for index in range(30):

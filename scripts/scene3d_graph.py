@@ -16,7 +16,7 @@ import numpy as np
 
 from rig_errors import RigError, decode_json, finite_json
 from rig_math import compose, decompose, matrix_quaternion, slerp
-from scene3d_contracts import MAX_DEPTH, MAX_FILES, MAX_TOTAL_BYTES, all_refs, canonical_bytes, validate_document, validator
+from scene3d_contracts import MAX_DEPTH, MAX_FILES, MAX_TOTAL_BYTES, all_refs, canonical_bytes, portable_path, validate_document, validator
 from scene3d_math import local_matrix
 
 KEEP_PARENT = object()
@@ -190,6 +190,7 @@ class SceneGraph:
                 sum(len(raw) for raw in self._animation_payloads.values()) <= MAX_TOTAL_BYTES,
                 'Invalid or excessive exact animation byte context.')
         for path, payload in self._animation_payloads.items():
+            portable_path(path)
             self._animation_documents[path] = validate_document(decode_json(payload), 'animation')
         require(animation_documents is None or set(animation_documents) == set(self._animation_documents) and
                 all(canonical_bytes(animation_documents[p]) == canonical_bytes(d) for p,d in self._animation_documents.items()),
@@ -245,17 +246,21 @@ class SceneGraph:
                     pending.append((p, bundle['documents'][p]))
         bounds = {d['id'] + '@' + d['version']: d['bounds'] for d in bundle['documents'].values()
                   if d['kind'] == 'scene3d-asset'}
-        payloads = {}
+        payloads, total = {}, 0
         if source_root is not None:
             from asset_library import read_source_bytes
             from pathlib import Path
             for path, document in bundle['documents'].items():
                 if document['kind'] == 'scene3d-animation':
+                    portable_path(path)
+                    require(len(payloads) < MAX_FILES, 'Animation context count exceeds bound.')
                     raw = read_source_bytes(Path(source_root)/path, 16*1024*1024)
                     require(hashlib.sha256(raw).hexdigest() == bundle['inventory'][path]['sha256'],
                             'Animation source changed after verified load.', 'SCENE3D_ANIMATION_CONTEXT')
                     require(canonical_bytes(validate_document(decode_json(raw),'animation')) == canonical_bytes(document),
                             'Parsed animation context differs from verified bytes.', 'SCENE3D_ANIMATION_CONTEXT')
+                    total += len(raw)
+                    require(total <= MAX_TOTAL_BYTES, 'Animation context bytes exceed bound.')
                     payloads[path] = raw
         return cls(scene, external_references=references, asset_bounds=bounds, animation_payloads=payloads)
 
@@ -336,6 +341,10 @@ class SceneGraph:
                     for p,d in additions.items()), 'Derived animation cannot replace immutable source bytes.')
         payloads = {**self._animation_payloads, **{p:canonical_bytes(d) for p,d in additions.items()}}
         documents = {**self._animation_documents, **additions}
+        require(len(payloads) <= MAX_FILES and sum(len(raw) for raw in payloads.values()) <= MAX_TOTAL_BYTES,
+                'Combined original and derived animation context exceeds its resource bound.', 'SCENE3D_GRAPH_LIMIT')
+        for path in additions:
+            portable_path(path)
         self._check_animation_bindings(candidate, documents, payloads)
         old, new = self._nodes(), {n['id']: n for n in candidate['nodes']}
         seeds = {identifier for identifier in old.keys() | new.keys()
