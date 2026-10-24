@@ -12,9 +12,38 @@ def fail(message):
     raise RuntimeError(message)
 
 
+def source_fixture():
+    def marked(value, depth=0):
+        if depth>16:return False
+        if hasattr(value,'items'):
+            return any((k=='fixture' and v is True) or (k=='hatchAssetSourceFixture' and bool(v)) or marked(v,depth+1) for k,v in value.items())
+        return False
+    owners=[bpy.context.scene,*bpy.data.objects,*bpy.data.meshes,*bpy.data.materials]
+    return any(marked(owner) for owner in owners)
+
+
+def enforce_conversion_profile():
+    # glTF cannot retain arbitrary Blender shader graphs or simulation state.
+    # Refuse those sources before export instead of publishing plain fallback
+    # materials while reporting empty loss lists.
+    for obj in bpy.context.scene.objects:
+        if obj.constraints or any(m.type!='ARMATURE' for m in obj.modifiers):
+            fail('Unsupported native constraints/modifiers require a separately verified baking adapter.')
+    for material in bpy.data.materials:
+        if not material.use_nodes:continue
+        nodes=list(material.node_tree.nodes)
+        if len(nodes)!=2 or {n.bl_idname for n in nodes}!={'ShaderNodeBsdfPrincipled','ShaderNodeOutputMaterial'}:
+            fail('Unsupported native shader graph: only a simple Principled-to-Output surface is admitted.')
+        links=list(material.node_tree.links)
+        if len(links)!=1 or links[0].from_node.bl_idname!='ShaderNodeBsdfPrincipled' or links[0].from_socket.name!='BSDF' or links[0].to_socket.name!='Surface':
+            fail('Unsupported native shader links require a separately verified baking adapter.')
+        if material.animation_data or material.node_tree.animation_data:
+            fail('Animated native materials are unsupported by this conversion profile.')
+
+
 def inspect_scene():
     meshes = [o for o in bpy.context.scene.objects if o.type == 'MESH']
-    return dict(objects=[dict(name=o.name, type=o.type, parent=o.parent.name if o.parent else None,
+    return dict(fixture=source_fixture(),objects=[dict(name=o.name, type=o.type, parent=o.parent.name if o.parent else None,
                              vertices=len(o.data.vertices) if o.type == 'MESH' else 0,
                              triangles=sum(len(p.vertices)-2 for p in o.data.polygons) if o.type == 'MESH' else 0)
                          for o in bpy.context.scene.objects],
@@ -102,6 +131,8 @@ def main(job):
         Path(job['report']).write_text(json.dumps(dict(result, blender_version=bpy.app.version_string)), encoding='utf-8')
         return
     else: fail('Unknown fixed worker mode.')
+    if mode in ('blend','obj'):enforce_conversion_profile()
+    if job.get('fixture'):bpy.context.scene['hatchAssetSourceFixture']=True
     result = inspect_scene()
     if result['vertices'] <= 0: fail('Import produced no actual geometry.')
     bpy.ops.file.pack_all()

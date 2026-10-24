@@ -104,6 +104,14 @@ class ImportTests(unittest.TestCase):
         unavailable=ImportPipeline(self.library,blender='/does/not/exist/blender')
         self.assertEqual(unavailable.capabilities(probe_blender=True)['blender']['status'],'unavailable')
 
+    @unittest.skipUnless(hasattr(os,'symlink'),'Symlinks unavailable')
+    def test_source_ancestor_symlink_is_rejected(self):
+        target=self.root/'original';target.mkdir();(target/'asset.glb').write_bytes(self.source.read_bytes())
+        link=self.root/'linked'
+        try:link.symlink_to(target,target_is_directory=True)
+        except OSError:self.skipTest('No symlink permission')
+        with self.assertRaises((RigError,OSError)):SourceSnapshot(link/'asset.glb',self.root/'linked-snapshot')
+
     def test_corrupt_glb_and_case_aliases(self):
         corrupt=self.root/'broken.glb';corrupt.write_bytes(self.source.read_bytes()[:-1])
         with self.assertRaises(RigError):SourceSnapshot(corrupt,self.root/'broken-snapshot')
@@ -137,6 +145,7 @@ class ImportTests(unittest.TestCase):
         paths={entry['path'] for entry in manifest['files']}
         self.assertIn('native/asset.blend',paths)
         packed=self.root/'packed.blend';packed.write_bytes(self.library.read_file(result['reference'],'native/asset.blend'))
+        with self.assertRaises(RigError):self.pipeline.import_asset(packed,**self.request(version='1.0.1',fixture=False,trusted_packed_blend=True))
         trusted=self.pipeline.import_asset(packed,**self.request(version='1.1.0',trusted_packed_blend=True))
         self.assertGreater(trusted['report']['native_observation']['vertices'],0)
         scripted=self.root/'scripted.blend';script=self.root/'make_scripted.py'
@@ -144,6 +153,11 @@ class ImportTests(unittest.TestCase):
         workspace=self.root/'script-fixture';workspace.mkdir()
         self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(script)],workspace)
         with self.assertRaises(RigError):self.pipeline.import_asset(scripted,**self.request(version='1.2.0',trusted_packed_blend=True))
+        procedural=self.root/'procedural.blend';shader_script=self.root/'make_shader.py'
+        shader_script.write_text('import bpy\nbpy.ops.mesh.primitive_cube_add()\nm=bpy.data.materials.new("Noise");m.use_nodes=True\nn=m.node_tree.nodes.new("ShaderNodeTexNoise")\nm.node_tree.links.new(n.outputs["Color"],m.node_tree.nodes["Principled BSDF"].inputs["Base Color"])\nbpy.context.object.data.materials.append(m)\nbpy.ops.wm.save_as_mainfile(filepath='+repr(str(procedural))+')\n')
+        shader_workspace=self.root/'shader-fixture';shader_workspace.mkdir()
+        self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(shader_script)],shader_workspace)
+        with self.assertRaises(RigError):self.pipeline.import_asset(procedural,**self.request(version='1.3.0',trusted_packed_blend=True))
         generated=self.pipeline.generate(**self.request(version='2.0.0',parameters=dict(primitive='box',dimensions=[1,2,3],color=[.2,.4,.6,1],animated=True)))
         self.assertEqual(generated['report']['native_observation']['triangles'],12)
         self.assertEqual(self.library.resolve(generated['reference'])['provenance']['method'],'fixture')

@@ -3,7 +3,11 @@
 `scripts/asset_library_import.py` implements the #138 canonical `AssetLibrary`
 contract. Import accepts a genuine GLB/glTF 2.0 resource closure, a limited OBJ
 profile (one named MTL per declaration, plain `map_Kd`), or an explicitly trusted,
-packed Blender file. Unknown formats and unsupported glTF extensions fail before
+packed Blender file. The initial Blender/OBJ conversion profile admits only a
+simple Principled-to-Output material graph and armature modifiers; procedural
+shader graphs, material animation, other modifiers and constraints fail explicitly
+until a verified baking adapter exists. Inventoried OBJ texture maps can therefore
+be refused by this narrower conversion profile. Unknown formats and unsupported glTF extensions fail before
 Blender runs. FBX, USD, Alembic, STL and PLY adapters are not implemented.
 
 The ordinary 2D gate does not import NumPy, Blender, or the Khronos validator.

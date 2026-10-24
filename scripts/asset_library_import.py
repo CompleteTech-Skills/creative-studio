@@ -194,8 +194,7 @@ class SourceSnapshot:
         self.cancelled = cancelled or (lambda: False)
         source = Path(source).absolute()
         if source.is_symlink(): fail('SYMLINK', 'Source leaf cannot be a symlink.')
-        try:self.source_root = source.parent.resolve(strict=True)
-        except OSError as exc:fail('SOURCE','Cannot locate source directory: '+str(exc))
+        self.source_root = source.parent
         self.source = self.source_root / source.name
         self.files = {}; self.roles = {}; self.embedded = []; self._aliases = {}
         self.entry = self.add(relative(source.name), 'source')
@@ -471,13 +470,13 @@ class BlenderAdapter:
                                trusted_scripts=True,untrusted_blend=False,platform='linux',executed_probe=True)
             return deepcopy(self._version)
 
-    def execute(self, mode, source, destination, *, parameters=None, trusted_blend=False):
+    def execute(self, mode, source, destination, *, parameters=None, trusted_blend=False, fixture=False):
         capability=self.capabilities(); destination=Path(destination);destination.mkdir(mode=0o700)
         if mode=='blend' and not trusted_blend:fail('QUARANTINE','Untrusted .blend requires explicit trusted-packed policy; no file was opened.')
         worker=read_source_bytes(Path(__file__).with_name('asset_import_worker.py'),MAX_REPORT)
         (destination/'worker.py').write_bytes(worker)
         outputs={k:str(destination/v) for k,v in dict(blend='asset.blend',glb='roundtrip.glb',preview='preview.png',report='report.json').items()}
-        job=dict(mode=mode,input=str(source) if source else None,parameters=parameters,**outputs)
+        job=dict(mode=mode,input=str(source) if source else None,parameters=parameters,fixture=fixture,**outputs)
         (destination/'job.json').write_bytes(canonical_bytes(job))
         execution=self._run([str(self.executable),'--background','--factory-startup','--disable-autoexec','--threads','2',
                              '--python-exit-code','1','--python',str(destination/'worker.py'),'--',str(destination/'job.json')],destination)
@@ -652,7 +651,10 @@ class ImportPipeline:
                 converted=SourceSnapshot(tool['outputs']['glb'],root/'converted',cancelled=self.cancelled)
                 target,observation,conversion=normalize_gltf(converted,root/'normalized.glb',unit_scale=unit_scale,
                                                               basis=basis,ground=ground,limits=limits)
-                source_validation=dict(reader='Blender',inspection=tool['inspection'])
+                if tool['inspection'].get('fixture') and not fixture:fail('PROVENANCE','Blender fixture source cannot be relabeled as production.')
+                source_validation=dict(reader='Blender',inspection=tool['inspection'],
+                    conversion_profile='simple Principled surface only; unsupported native shader graphs fail closed',
+                    limitations=['Blender/OBJ source semantics are represented by inspected glTF export; unused datablocks and unsupported application-only metadata are not runtime channels.'])
             source_fixture=False
             if snapshot.document:
                 extras=snapshot.document.get('asset',{}).get('extras',{})
@@ -666,7 +668,7 @@ class ImportPipeline:
             if observation.get('status')=='unsupported-native-profile' and not blender_roundtrip:
                 fail('UNSUPPORTED','This native profile requires actual independent Blender inspection.')
             if blender_roundtrip:
-                blender=self.blender.execute('gltf',target,root/'blender')
+                blender=self.blender.execute('gltf',target,root/'blender',fixture=fixture)
                 _,roundtrip_validation=_check_gltf(blender['outputs']['glb'],limits)
                 roundtrip_observation=_native_or_unavailable(blender['outputs']['glb'],limits)
                 # A derivative cannot silently lose a declared capability. The
@@ -817,7 +819,7 @@ class ImportPipeline:
         if any(not .001<=v<=1000 for v in parameters['dimensions']) or any(not 0<=v<=1 for v in parameters['color']):fail('REQUEST','Generator values outside bounded profile.')
         if parameters['primitive']=='sphere' and len(set(parameters['dimensions']))!=1:fail('UNSUPPORTED','Sphere generator requires equal dimensions; no ignored parameters.')
         with tempfile.TemporaryDirectory(prefix='hatch-library-generate-') as temp:
-            result=self.blender.execute('generate',None,Path(temp)/'generation',parameters=parameters)
+            result=self.blender.execute('generate',None,Path(temp)/'generation',parameters=parameters,fixture=fixture)
             generator=dict(provider='blender-box-sphere-v1',provider_version=VERSION,parameters=deepcopy(parameters),
                            blender_version=result['capability']['version'],worker_sha256=result['worker_sha256'],
                            actual_output_sha256=digest(read_source_bytes(result['outputs']['glb'])),
