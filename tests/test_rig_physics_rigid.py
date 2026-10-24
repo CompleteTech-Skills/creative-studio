@@ -243,13 +243,20 @@ class NativeRigidTests(unittest.TestCase):
         world,payloads=build_inputs(backend='pybullet');world['gravity']=[0,0,0]
         world['forces']=[force('impulse',[1,0,0],point=[0,3.5,0],application='world-point',end=1)]
         states,_=self.run_world('pybullet',world,payloads)
-        self.assertGreater(abs(self.pose(states,12)['rotation'][2]),.2)
+        self.assertAlmostEqual(self.pose(states,12)['rotation'][2],-math.sin(1.25),delta=.01)
+        self.assertAlmostEqual(self.pose(states,12)['translation'][0],.5,delta=.005)
         distances=[]
         for damping in [0,.8]:
             world,payloads=build_inputs(backend='pybullet');world['gravity']=[0,0,0]
             world['bodies'][0]['linear_velocity']=[1,0,0];world['materials'][0]['linear_damping']=damping
             states,_=self.run_world('pybullet',world,payloads);distances.append(self.pose(states,48)['translation'][0])
         self.assertGreater(distances[0]-distances[1],.5)
+        rotations=[]
+        for damping in [0,.8]:
+            world,payloads=build_inputs(backend='pybullet');world['gravity']=[0,0,0]
+            world['bodies'][0]['angular_velocity']=[0,0,1];world['materials'][0]['angular_damping']=damping
+            states,_=self.run_world('pybullet',world,payloads);rotations.append(abs(self.pose(states,24)['rotation'][2]))
+        self.assertGreater(rotations[0]-rotations[1],.1)
 
     def test_real_kinematic_native_clip_and_dynamic_authorities(self):
         for backend in ['blender','pybullet']:

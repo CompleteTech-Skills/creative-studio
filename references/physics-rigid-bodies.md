@@ -27,7 +27,9 @@ linear or angular impulse uses a wrench of `J / dt` or `L / dt` for **one comple
 native fixed step**; this is a finite-step integrated impulse, not an instantaneous
 analytical velocity edit. Impulse starts must align with the native solver clock.
 The velocity changes, angular response and integration error require numerical
-checks. Initial linear velocity is the center-of-mass velocity in canonical world coordinates.
+checks. The collision-free momentum oracle does not imply equivalence to an
+ideal instantaneous impulse during contact: contact resolution and damping
+operate during the same finite native step. Initial linear velocity is the center-of-mass velocity in canonical world coordinates.
 It uses the distinct native initial-state setter once,
 before dynamics. It is never used to stand in for a sustained force.
 
