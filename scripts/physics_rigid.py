@@ -20,7 +20,7 @@ def density_mass(body, density):
     """Return an explicit mass/inertia assignment; never mutate caller data."""
     if type(density) not in (int, float) or not math.isfinite(density) or not 0 < density <= 1e12:
         raise ValueError('Density must be finite and positive.')
-    if body['mode'] != 'dynamic' or len(body['colliders']) != 1:
+    if body['mode'] != 'dynamic' or len(body['colliders']) != 1 or any(body['mass']['center_of_mass']):
         raise ValueError('Density assignment needs one dynamic primitive.')
     result = deepcopy(body)
     shape = body['colliders'][0]['shape']
@@ -43,7 +43,7 @@ def sleep_settings(body):
 
 def sample_translation(motion, time):
     """Evaluate the bounded native linear/step translation track on exact time."""
-    coordinate = time * Fraction(motion['fps']['numerator'], motion['fps']['denominator'])
+    coordinate = time * Fraction(int(motion['fps']['numerator']), int(motion['fps']['denominator']))
     keys = motion['keys']
     if coordinate <= keys[0]['frame']:
         return list(keys[0]['value'])
@@ -58,6 +58,11 @@ def sample_translation(motion, time):
 
 def compile_motion(body, clip, world, fail):
     """Admit the actual Scene3D animation document, not untyped key metadata."""
+    clip=deepcopy(clip)
+    clip['fps']={key:int(value) for key,value in clip['fps'].items()}
+    clip['duration_frames']=int(clip['duration_frames'])
+    for track in clip['tracks']:
+        for key in track['keys']:key['frame']=int(key['frame'])
     fail(clip['kind'] == 'scene3d-animation' and clip['id'] == body['animation'], 'Kinematic animation identity differs.')
     fail(not clip['bindings'] and not clip['dependencies'] and len(clip['tracks']) == 1,
          'This native kinematic profile needs one independent translation track.')
@@ -68,7 +73,7 @@ def compile_motion(body, clip, world, fail):
     fail(track['target'] == body['id'] and track['property'] == 'translation' and
          track['interpolation'] in ('linear','step'), 'Kinematic track must own this exact body translation.')
     duration = Fraction(clip['duration_frames']*clip['fps']['denominator'], clip['fps']['numerator'])
-    last = Fraction((world['frame_range']['end']-1)*world['fps']['denominator'], world['fps']['numerator'])
+    last = solver_steps*step
     fail(duration >= last and track['keys'][0]['frame'] == 0 and
          track['keys'][-1]['frame'] >= last*Fraction(clip['fps']['numerator'],clip['fps']['denominator']),
          'Kinematic native track must cover the complete requested time range.')

@@ -62,6 +62,23 @@ class RigidContractTests(unittest.TestCase):
         world['fps']=dict(numerator=30000,denominator=1001);world['forces']=[force('impulse',start=1,end=2)]
         with self.assertRaises(physics.BackendError):physics.PyBulletBackend('/missing').validate_scene(world)
 
+    def test_integral_float_force_clocks_and_native_clip_preserve_inputs(self):
+        from physics_rigid import compile_motion
+        from scene3d_contracts import validate_document
+        world,payloads=build_inputs(backend='pybullet');world['forces']=[force('impulse',end=1)]
+        world['forces'][0]['frame_range']={'start':0.0,'end':1.0};world['forces'][0]['seed']=0.0
+        before=deepcopy(world)
+        physics.PyBulletBackend('/missing').validate_scene(world)
+        self.assertEqual(world,before)
+        kinematic_floor(world,payloads)
+        clip=json.loads(payloads['floor-motion.json']);clip['fps']={'numerator':24.0,'denominator':1.0}
+        clip['duration_frames']=48.0
+        for key in clip['tracks'][0]['keys']:key['frame']=float(key['frame'])
+        validate_document(clip,'animation');original=deepcopy(clip)
+        motion=compile_motion(world['bodies'][1],clip,physics._world(world),lambda okay,message:self.assertTrue(okay,message))
+        self.assertEqual(motion['fps'],{'numerator':24,'denominator':1});self.assertEqual(clip,original)
+        self.assertTrue(all(type(key['frame']) is int for key in motion['keys']))
+
     def test_sleep_conflicts_and_unexposed_thresholds_fail(self):
         world,_=build_inputs();body=world['bodies'][0]
         body['sleep']=dict(enabled=False,initially_sleeping=True)
@@ -153,7 +170,7 @@ class NativeRigidTests(unittest.TestCase):
             else:self.assertAlmostEqual(abs(self.pose(states,12)['rotation'][2]),math.sin(.0625),delta=.01)
         world,payloads=build_inputs(backend='pybullet');world['gravity']=[0,0,0]
         body=world['bodies'][0];body['linear_velocity']=[1,0,0];body['angular_velocity']=[0,0,.3]
-        body['mass']['center_of_mass']=[.1,0,0];body['mass']['inertia']=[[.2,.02,0],[.02,.3,0],[0,0,.25]]
+        body['mass']['center_of_mass']=[.1,0,0];body['mass']['inertia']=[[.12,.02,0],[.02,.14,0],[0,0,.15]]
         states,report=self.run_world('pybullet',world,payloads)
         self.assertGreater(self.pose(states,24)['translation'][0],.9)
         self.assertGreater(abs(self.pose(states,24)['rotation'][2]),.1)

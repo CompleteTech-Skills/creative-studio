@@ -27,7 +27,8 @@ linear or angular impulse uses a wrench of `J / dt` or `L / dt` for **one comple
 native fixed step**; this is a finite-step integrated impulse, not an instantaneous
 analytical velocity edit. Impulse starts must align with the native solver clock.
 The velocity changes, angular response and integration error require numerical
-checks. Initial velocity uses the distinct native initial-state setter once,
+checks. Initial linear velocity is the center-of-mass velocity in canonical world coordinates.
+It uses the distinct native initial-state setter once,
 before dynamics. It is never used to stand in for a sustained force.
 
 DIRECT's principal-axis inertia frame is calculated from the validated symmetric

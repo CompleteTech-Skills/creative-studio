@@ -137,6 +137,9 @@ def _world(value):
     for field in ('fps',):
         value[field] = {key: int(item) for key, item in value[field].items()}
     value['frame_range'] = {key: int(item) for key, item in value['frame_range'].items()}
+    for force in value['forces']:
+        force['frame_range'] = {key:int(item) for key,item in force['frame_range'].items()}
+        force['seed'] = int(force['seed'])
     value['solver']['fixed_step'] = {key: int(item) for key, item in value['solver']['fixed_step'].items()}
     for key in ('substeps', 'iterations', 'seed'):
         value['solver'][key] = int(value['solver'][key])
@@ -598,6 +601,8 @@ def _admit_world(value, backend):
                 'PHYSICS_BODY_UNSUPPORTED', 'Blender direct initial velocity and shifted center of mass lack an admitted native API.', category='capability-gap')
         require(max(map(abs,body['linear_velocity'] + body['angular_velocity'])) <= 1000 and max(map(abs,body['mass']['center_of_mass'])) <= 1000,
                 'PHYSICS_SETTINGS', 'Initial velocity/COM exceeds the bounded native profile.', category='invalid-input')
+        require(body['mode'] != 'kinematic' or not any(body['mass']['center_of_mass']), 'PHYSICS_BODY_UNSUPPORTED',
+                'The bounded kinematic profile requires a centered zero-mass inertial frame.',category='capability-gap')
         if backend == 'pybullet' and 'sleep' in body:
             require(not {'linear_threshold','angular_threshold'}.intersection(body['sleep']),
                     'PHYSICS_SLEEP_UNSUPPORTED', 'PyBullet API exposes activation states but not configurable native sleep thresholds.', category='capability-gap')
@@ -1079,7 +1084,9 @@ class BlenderBackend:
 
     def probe(self, *, smoke=False):
         require(type(smoke) is bool, 'PHYSICS_REQUEST', 'smoke must be an explicit boolean.', category='invalid-input')
-        limitations = ('Only sphere/box OBJ rigid bodies are admitted; all other declared features fail closed.',
+        limitations = ('Only sphere/box OBJ collision shapes are admitted; other shape/category profiles fail closed.',
+                      'Central global effectors, native kinematic translation and sleep controls are implemented; basic readiness smoke does not exercise them.',
+                      'Direct off-center forces, torque, impulses, initial velocity, shifted COM and custom inertia lack an admitted Blender API.',
                       'Nonzero additional contact skin is unsupported; native shape margin property is not evidence of extra separation.',
                       'CPU Bullet only; GPU rendering hardware does not establish physics acceleration.',
                       'Blender does not expose its embedded Bullet version separately.',
@@ -1271,7 +1278,8 @@ class PyBulletBackend(BlenderBackend):
         limitations=('Optional PyBullet3.2.7; not installed or imported by normal2D workflows.',
                      'DIRECT CPU only; distinct numerical behavior from Blender.',
                      'Only box/sphere rigid bodies, fixed stepping and actual contacts are implemented.',
-                     'Forces, impulses, queries, joints and solver checkpoint continuation remain unsupported.',
+                     'Bounded native force/torque/one-step integrated impulses, initial velocities and inertial frames are implemented; basic readiness smoke does not exercise these controls.',
+                     'Queries, joints and solver checkpoint continuation remain unsupported; explicit sleep thresholds are unavailable.',
                      'Cache export contains exact sampled transforms/contacts, not native solver checkpoint state.')
         try:
             identity=self._discover()
