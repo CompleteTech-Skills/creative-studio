@@ -7,7 +7,13 @@ packed Blender file. The initial Blender/OBJ conversion profile admits only a
 simple Principled-to-Output material graph (only Base Color, Metallic, Roughness,
 Alpha, and mapped glTF IOR may differ from Blender factory socket defaults) and armature modifiers; procedural
 shader graphs, material animation, other modifiers and constraints fail explicitly
-until a verified baking adapter exists. Inventoried OBJ texture maps can therefore
+until a verified baking adapter exists. Native source objects are limited to
+MESH/ARMATURE/EMPTY; collection/particle instances, physics and pose constraints
+are unsupported. Positive animation admission covers object transforms, bound
+pose transforms and shape-key values, including actual layered action bags and
+NLA action bindings; visibility and other unsupported channels fail. First
+conversion explicitly declares sampled animation and omitted source world lighting
+and authoring metadata. Exact native originals retain that source information. Inventoried OBJ texture maps can therefore
 be refused by this narrower conversion profile. Unknown formats and unsupported glTF extensions fail before
 Blender runs. FBX, USD, Alembic, STL and PLY adapters are not implemented.
 

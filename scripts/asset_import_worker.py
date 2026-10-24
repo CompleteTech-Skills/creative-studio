@@ -1,6 +1,7 @@
 """Application-owned Blender worker. Input is JSON, never user Python."""
 import json
 import math
+import re
 from pathlib import Path
 import sys
 
@@ -22,13 +23,68 @@ def source_fixture():
     return any(marked(owner) for owner in owners)
 
 
+def action_curves(action):
+    result={}
+    for curve in action.fcurves:result[curve.as_pointer()]=curve
+    for layer in action.layers:
+        for strip in layer.strips:
+            for bag in strip.channelbags:
+                for curve in bag.fcurves:result[curve.as_pointer()]=curve
+    return list(result.values())
+
+
+def animation_profile():
+    allowed=re.compile(r'^(?:location|rotation_quaternion|rotation_euler|scale|pose\.bones\["(?:[^"\\]|\\.)+"\]\.(?:location|rotation_quaternion|rotation_euler|scale)|key_blocks\["(?:[^"\\]|\\.)+"\]\.value)$')
+    paths=set();keyframes=0
+    for action in bpy.data.actions:
+        for curve in action_curves(action):
+            if not allowed.fullmatch(curve.data_path):fail('Unsupported native animation channel: '+curve.data_path)
+            if curve.modifiers or curve.sampled_points:fail('Native curve modifiers/sampled points require a verified baking adapter.')
+            paths.add(curve.data_path);keyframes+=len(curve.keyframe_points)
+            if keyframes>1000000:fail('Native keyframe budget exceeded.')
+            if any(not math.isfinite(float(p.co[0])) or abs(p.co[0])>24000 for p in curve.keyframe_points):fail('Native animation time exceeds admission.')
+    return sorted(paths)
+
+
+def owner_animation(owner,kind):
+    data=getattr(owner,'animation_data',None)
+    if data is None:return
+    if data.drivers:fail('Native animation drivers are unsupported.')
+    actions=[]
+    if data.action:actions.append(data.action)
+    for track in data.nla_tracks:
+        for strip in track.strips:
+            if strip.type!='CLIP' or not strip.action:fail('Unsupported nested/native NLA strip.')
+            actions.append(strip.action)
+    for action in actions:
+        for curve in action_curves(action):
+            path=curve.data_path
+            if kind=='shape':accepted=path.startswith('key_blocks[') and path.endswith('.value')
+            elif kind=='object':accepted=path in ('location','rotation_quaternion','rotation_euler','scale') or (getattr(owner,'type',None)=='ARMATURE' and path.startswith('pose.bones['))
+            else:accepted=False
+            if not accepted:fail('Unsupported native animation owner/path: '+kind+'/'+path)
+            try:owner.path_resolve(path)
+            except (ValueError,TypeError):fail('Native action is not bound to its admitted owner path.')
+
+
 def enforce_conversion_profile():
     # glTF cannot retain arbitrary Blender shader graphs or simulation state.
     # Refuse those sources before export instead of publishing plain fallback
     # materials while reporting empty loss lists.
+    if len(bpy.context.scene.objects)>4096 or len(bpy.data.actions)>4096:fail('Native object/action budget exceeded.')
+    animation_profile()
     for obj in bpy.context.scene.objects:
+        if obj.type not in ('MESH','ARMATURE','EMPTY'):fail('Unsupported native object type: '+obj.type)
+        if obj.instance_type!='NONE':fail('Native collection/particle instancing requires a verified realization adapter.')
+        owner_animation(obj,'object')
+        if obj.data:owner_animation(obj.data,'unsupported-data')
+        if obj.type=='MESH' and obj.data.shape_keys:owner_animation(obj.data.shape_keys,'shape')
+        if obj.rigid_body or obj.rigid_body_constraint or (obj.type=='ARMATURE' and any(b.constraints for b in obj.pose.bones)):
+            fail('Native physics/pose constraints require a separately verified baking adapter.')
         if obj.constraints or any(m.type!='ARMATURE' for m in obj.modifiers):
             fail('Unsupported native constraints/modifiers require a separately verified baking adapter.')
+    owner_animation(bpy.context.scene,'unsupported-scene')
+    for world in bpy.data.worlds:owner_animation(world,'unsupported-world')
     for material in list(bpy.data.materials):
         if material.animation_data:fail('Animated native materials are unsupported by this conversion profile.')
         if not material.use_nodes:continue
@@ -64,12 +120,15 @@ def inspect_scene():
                 mesh_objects=len(meshes), vertices=sum(len(o.data.vertices) for o in meshes),
                 armatures=sum(o.type == 'ARMATURE' for o in bpy.context.scene.objects),
                 shape_keys=sum(max(0, len(o.data.shape_keys.key_blocks)-1) if o.data.shape_keys else 0 for o in meshes),
-                materials=len(bpy.data.materials), actions=[a.name for a in bpy.data.actions])
+                materials=len(bpy.data.materials), actions=[a.name for a in bpy.data.actions],
+                animation_paths=sorted({f.data_path for a in bpy.data.actions for f in action_curves(a)}))
 
 
 def ensure_packed():
     if bpy.data.libraries or bpy.data.texts or any(o.animation_data and o.animation_data.drivers for o in bpy.data.objects):
         fail('Trusted blend profile forbids linked libraries, text blocks and expression drivers.')
+    owners=[bpy.context.scene,*bpy.data.meshes,*bpy.data.armatures,*bpy.data.shape_keys,*bpy.data.materials,*bpy.data.worlds]
+    if any(getattr(o,'animation_data',None) and o.animation_data.drivers for o in owners):fail('Native datablock drivers are unsupported.')
     for image in bpy.data.images:
         if image.type not in ('RENDER_RESULT', 'COMPOSITING') and image.source == 'FILE' and not image.packed_file:
             fail('Trusted blend profile requires packed images.')

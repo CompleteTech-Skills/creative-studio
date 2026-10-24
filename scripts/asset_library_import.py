@@ -671,8 +671,13 @@ class ImportPipeline:
                 target,observation,conversion=normalize_gltf(converted,root/'normalized.glb',unit_scale=unit_scale,
                                                               basis=basis,ground=ground,limits=limits,fixture=fixture)
                 if tool['inspection'].get('fixture') and not fixture:fail('PROVENANCE','Blender fixture source cannot be relabeled as production.')
+                converted_doc,_=_gltf_json(read_source_bytes(target),'glb')
+                if tool['inspection']['shape_keys']>observation.get('morph_targets',-1):fail('LOSS','Initial native conversion lost shape-key channels.')
+                if tool['inspection']['animation_paths'] and not converted_doc.get('animations'):fail('LOSS','Initial native conversion lost all admitted animation channels.')
                 source_validation=dict(reader='Blender',inspection=tool['inspection'],
-                    conversion_profile='simple Principled surface only; unsupported native shader graphs fail closed',
+                    conversion_profile='MESH/ARMATURE/EMPTY, positive TRS/pose/shape-value channel admission, simple Principled surface',
+                    declared_losses=['Blender animation curves are sampled into glTF channels; native controls/interpolation/NLA editing metadata are not runtime channels.',
+                        'Source world lighting and unused application datablocks are not represented in the runtime asset. Originals remain exact.'],
                     limitations=['Blender/OBJ source semantics are represented by inspected glTF export; unused datablocks and unsupported application-only metadata are not runtime channels.'])
             source_fixture=document_fixture(snapshot.document) if snapshot.document else False
             if source_fixture and not fixture:fail('PROVENANCE','Fixture source cannot be relabeled as production.')
@@ -696,7 +701,7 @@ class ImportPipeline:
                 source_names=[a.get('name') for a in normalized_doc.get('animations',[])]
                 converted_names=[a.get('name') for a in raw_roundtrip.get('animations',[])]
                 if source_names!=converted_names:derivative_losses.append('Blender derivative animation names/order differ; normalized GLB preserves originals.')
-                if normalized_doc.get('animations'):derivative_losses.append('Blender derivative animation is frame-sampled; original interpolation remains in runtime/asset.glb.')
+                if normalized_doc.get('animations'):derivative_losses.append('Blender derivative animation is frame-sampled; primary retains input glTF interpolation. Native Blender source interpolation remains in exact originals; see source_validation.declared_losses.')
                 omitted=set(normalized_doc.get('extensionsUsed',[]))-set(raw_roundtrip.get('extensionsUsed',[]))
                 if omitted:derivative_losses.append('Blender derivative omits optional extensions: '+','.join(sorted(omitted)))
                 source_targets=sum(len(p.get('targets',[])) for m in normalized_doc.get('meshes',[]) for p in m.get('primitives',[]))

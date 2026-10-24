@@ -179,6 +179,14 @@ class ImportTests(unittest.TestCase):
         animated_workspace=self.root/'animated-material-fixture';animated_workspace.mkdir()
         self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(animated_script)],animated_workspace)
         with self.assertRaises(RigError):self.pipeline.import_asset(animated,**self.request(version='1.5.0',trusted_packed_blend=True))
+        for kind,body in (
+            ('metaball','bpy.ops.object.metaball_add();bpy.context.object.name="RequiredMetaball"'),
+            ('visibility','o=bpy.context.object;o.hide_render=False;o.keyframe_insert(data_path="hide_render",frame=1);o.hide_render=True;o.keyframe_insert(data_path="hide_render",frame=24)')):
+            rejected=self.root/(kind+'.blend');creation=self.root/('make_'+kind+'.py')
+            creation.write_text('import bpy\nbpy.ops.object.select_all(action="SELECT");bpy.ops.object.delete(use_global=False)\nbpy.ops.mesh.primitive_cube_add()\n'+body+'\nbpy.ops.wm.save_as_mainfile(filepath='+repr(str(rejected))+')\n')
+            workspace=self.root/(kind+'-fixture');workspace.mkdir()
+            self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup','--disable-autoexec','--python',str(creation)],workspace)
+            with self.assertRaises(RigError):self.pipeline.import_asset(rejected,**self.request(version='1.6.0',trusted_packed_blend=True))
         generated=self.pipeline.generate(**self.request(version='2.0.0',parameters=dict(primitive='box',dimensions=[1,2,3],color=[.2,.4,.6,1],animated=True)))
         self.assertEqual(generated['report']['native_observation']['triangles'],12)
         self.assertEqual(self.library.resolve(generated['reference'])['provenance']['method'],'fixture')
