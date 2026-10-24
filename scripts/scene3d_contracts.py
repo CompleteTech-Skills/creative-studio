@@ -480,13 +480,74 @@ def _timing(value):
         _binding_interval(binding, duration)
 
 
+def _integer_value(value, schema, path):
+    """Admit JSON's numeric integer values without lossy float roundtrips."""
+    require(type(value) in (int, float), path + ': expected an integer-valued JSON number.')
+    if type(value) is float:
+        require(math.isfinite(value) and value.is_integer(),
+                path + ': expected a finite integer-valued JSON number.')
+    # Compare native integers directly, including arbitrarily large Python ints.
+    # Never convert an integer to float, or a huge out-of-budget float to int.
+    for key, comparison in (('minimum', lambda a, b: a >= b),
+                            ('maximum', lambda a, b: a <= b),
+                            ('exclusiveMinimum', lambda a, b: a > b),
+                            ('exclusiveMaximum', lambda a, b: a < b)):
+        if key in schema:
+            require(comparison(value, schema[key]), path + ': integer is outside the declared bounds.')
+    if 'const' in schema:
+        require(value == schema['const'], path + ': integer does not match the declared constant.')
+    if 'enum' in schema:
+        require(value in schema['enum'], path + ': integer is not a declared value.')
+    return int(value)
+
+
+def _schema_shape(value, schema):
+    if '$ref' in schema:
+        schema = definitions()[schema['$ref'].rsplit('/', 1)[-1]]
+    types = schema.get('type')
+    if types is None:
+        return True
+    types = types if isinstance(types, list) else [types]
+    checks = {'object': isinstance(value, dict), 'array': isinstance(value, list),
+              'string': isinstance(value, str), 'boolean': type(value) is bool,
+              'null': value is None, 'number': type(value) in (int, float),
+              'integer': type(value) is int or (type(value) is float and math.isfinite(value) and value.is_integer())}
+    return any(checks.get(name, False) for name in types)
+
+
+def _normalize_integers(value, schema, path='$'):
+    """Normalize declared local integer positions in an already copied tree."""
+    if '$ref' in schema:
+        schema = definitions()[schema['$ref'].rsplit('/', 1)[-1]]
+    if schema.get('type') == 'integer':
+        return _integer_value(value, schema, path)
+    for branch in schema.get('allOf', []):
+        value = _normalize_integers(value, branch, path)
+    for branch in schema.get('anyOf', []):
+        if _schema_shape(value, branch):
+            value = _normalize_integers(value, branch, path)
+    if isinstance(value, dict):
+        properties = schema.get('properties', {})
+        additional = schema.get('additionalProperties')
+        for key, child in list(value.items()):
+            child_schema = properties.get(key, additional)
+            if isinstance(child_schema, dict):
+                value[key] = _normalize_integers(child, child_schema, path + '.' + key)
+    elif isinstance(value, list) and isinstance(schema.get('items'), dict):
+        for index, child in enumerate(value):
+            value[index] = _normalize_integers(child, schema['items'], path + '[' + str(index) + ']')
+    return value
+
+
 def validate_document(value, kind=None):
-    """Validate a document without opening its dependencies; never mutates input."""
+    """Return a validated, integer-normalized copy without mutating source data."""
     finite_json(value)
     if kind is None:
         require(isinstance(value, dict) and value.get('kind') in MANIFEST_KINDS, 'Unknown scene3d document kind.')
         kind = value['kind'][8:]
-    error = next(validator(kind).iter_errors(value), None)
+    checker = validator(kind)
+    value = _normalize_integers(deepcopy(value), ref(kind))
+    error = next(checker.iter_errors(value), None)
     require(error is None, '' if error is None else '.'.join(map(str, error.absolute_path)) + ': ' + error.message)
     _unicode_scalars(value)
     for item in all_refs(value, kind):
@@ -572,7 +633,7 @@ def validate_document(value, kind=None):
 
 
 def canonical_bytes(value):
-    validate_document(value)
+    value = validate_document(value)
     # Bound encoded output while walking tokens instead of materializing a
     # potentially oversized whole JSON string before checking its byte length.
     encoder = json.JSONEncoder(sort_keys=True, separators=(',', ':'),
@@ -591,10 +652,10 @@ def document_hash(value):
 
 
 def frame_time(frame, rate):
-    require(type(frame) is int and frame >= 0, 'Frame must be a nonnegative integer.')
-    require(isinstance(rate, dict) and type(rate.get('numerator')) is int and
-            type(rate.get('denominator')) is int and 0 < rate['numerator'] <= 240000 and
-            0 < rate['denominator'] <= 10000, 'Invalid rational frame rate.')
+    frame = _integer_value(frame, {'type': 'integer', 'minimum': 0}, 'frame')
+    require(isinstance(rate, dict), 'Invalid rational frame rate.')
+    rate = {name: _integer_value(rate.get(name), schema, 'fps.' + name)
+            for name, schema in definitions()['rate']['properties'].items()}
     require(math.gcd(rate['numerator'], rate['denominator']) == 1 and
             Fraction(rate['numerator'], rate['denominator']) <= 240, 'Invalid reduced frame rate.')
     return Fraction(frame * rate['denominator'], rate['numerator'])

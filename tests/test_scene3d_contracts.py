@@ -243,7 +243,7 @@ class SceneContractTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError, 'nonempty'):
             validate_document(doc)
 
-    def test_exact_time_cannot_raise_unstructured_errors_on_integral_floats(self):
+    def test_integer_valued_json_floats_normalize_only_a_validated_copy(self):
         for field in ('fps', 'duration', 'key'):
             doc = fixture('example-animation')
             if field == 'fps':
@@ -252,8 +252,59 @@ class SceneContractTests(unittest.TestCase):
                 doc['duration_frames'] = 24.0
             else:
                 doc['tracks'][0]['keys'][0]['frame'] = 0.0
-            with self.subTest(field=field), self.assertRaisesRegex(RigError, 'JSON integer'):
+            original = deepcopy(doc)
+            normalized = validate_document(doc)
+            self.assertEqual(doc, original)
+            with self.subTest(field=field):
+                self.assertIs(type(normalized['fps']['numerator']), int)
+                self.assertIs(type(normalized['duration_frames']), int)
+                self.assertIs(type(normalized['tracks'][0]['keys'][0]['frame']), int)
+        project = fixture('project')
+        project['schema_version'] = 1.0
+        project['budgets']['max_files'] = 64.0
+        project['metadata'] = dict(schema_version=1.0, duration_frames=24.0, max_files=64.0)
+        original = deepcopy(project)
+        normalized = validate_document(project)
+        self.assertIs(type(normalized['schema_version']), int)
+        self.assertIs(type(normalized['budgets']['max_files']), int)
+        self.assertTrue(all(type(value) is float for value in normalized['metadata'].values()))
+        self.assertEqual(project, original)
+        normalized['metadata']['max_files'] = 99.0
+        self.assertEqual(project, original)
+        self.assertEqual(frame_time(720.0, dict(numerator=24.0, denominator=1.0)), Fraction(30))
+
+    def test_integer_normalization_rejects_nonintegers_and_bounds_before_conversion(self):
+        limits_before = sys.get_int_max_str_digits()
+        cases = [('boolean', True), ('fraction', 24.5), ('positive-infinity', float('inf')),
+                 ('negative-infinity', -float('inf')), ('nan', float('nan')),
+                 ('out-of-bounds-float', 1e308), ('huge-integer', 10**10000),
+                 ('negative-huge-integer', -(10**10000))]
+        for label, value in cases:
+            doc = fixture('example-animation')
+            doc['fps']['numerator'] = value
+            with self.subTest(label=label), self.assertRaises(RigError) as caught:
                 validate_document(doc)
+            self.assertLess(len(str(caught.exception)), 512)
+        for value in (True, 1.5, 2.0):
+            doc = fixture('project')
+            doc['schema_version'] = value
+            with self.subTest(schema_version=value), self.assertRaises(RigError):
+                validate_document(doc)
+        self.assertEqual(sys.get_int_max_str_digits(), limits_before)
+
+    def test_canonical_integer_copy_matches_schema_without_rewriting_input(self):
+        original = fixture('project')
+        doc = deepcopy(original)
+        doc['schema_version'] = 1.0
+        doc['budgets']['max_files'] = 64.0
+        before = json.dumps(doc, sort_keys=True)
+        standard = Draft202012Validator(schemas()['scene3d-project.schema.json'])
+        self.assertFalse(list(standard.iter_errors(doc)))
+        self.assertEqual(canonical_bytes(doc), canonical_bytes(original))
+        self.assertEqual(document_hash(doc), document_hash(original))
+        self.assertEqual(json.dumps(doc, sort_keys=True), before)
+        self.assertIs(type(doc['schema_version']), float)
+        self.assertIs(type(doc['budgets']['max_files']), float)
 
     def test_timestamps_and_evidence_free_review_status_rejected(self):
         for value in ('yesterday', '2026-10-23', '2026-10-22T00:00:00Z'):
@@ -554,7 +605,9 @@ class SceneClosureTests(unittest.TestCase):
         project = fixture('project')
         project['linked_2d_project'] = pointer
         project['dependency_lock'].append(pointer)
-        (self.root / 'project.json').write_bytes(canonical_bytes(project))
+        project['schema_version'] = 1.0
+        project['budgets']['max_files'] = 64.0
+        (self.root / 'project.json').write_bytes(json.dumps(project).encode())
         self.assertEqual(load_project(self.root)['project']['linked_2d_project'], pointer)
         self.assertEqual((legacy_root / 'project.json').read_bytes(), payload)
         self.assertEqual(load_legacy(legacy_root)['project']['kind'], 'project')
@@ -829,6 +882,69 @@ class SceneClosureTests(unittest.TestCase):
             pass
         with self.assertRaisesRegex(RigError, 'Unicode scalar'):
             load_project(self.root, name)
+
+    def test_real_cli_loads_integral_float_fields_without_changing_source_hashes(self):
+        from scene3d_contracts import all_refs
+        def floating_numbers(value):
+            if type(value) is int:
+                return float(value)
+            if isinstance(value, list):
+                return [floating_numbers(child) for child in value]
+            if isinstance(value, dict):
+                return {key: floating_numbers(child) for key, child in value.items()}
+            return value
+        documents = {p.name: floating_numbers(json.loads(p.read_text())) for p in self.root.glob('*.json')}
+        documents['project.json']['metadata'] = dict(schema_version=1.0, duration_frames=24.0, max_files=64.0)
+        digests = {}
+        def write_raw(name):
+            if name in digests:
+                return digests[name]
+            if name in documents:
+                doc = documents[name]
+                for pointer in all_refs(doc):
+                    pointer['sha256'] = write_raw(pointer['path'])
+                # Deliberately retain 1.0/24.0 in the actual input JSON. Using
+                # canonical_bytes here would normalize before the CLI sees it.
+                payload = (json.dumps(doc, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8')
+                (self.root / name).write_bytes(payload)
+            else:
+                payload = (self.root / name).read_bytes()
+            digests[name] = hashlib.sha256(payload).hexdigest()
+            return digests[name]
+        write_raw('project.json')
+        before = {p.name: p.read_bytes() for p in self.root.iterdir()}
+        self.assertIn(b'"schema_version":1.0', before['project.json'])
+        bundle = load_project(self.root)
+        self.assertIs(type(bundle['project']['schema_version']), int)
+        self.assertIs(type(bundle['project']['budgets']['max_files']), int)
+        self.assertTrue(all(type(v) is float for v in bundle['project']['metadata'].values()))
+        self.assertIs(type(bundle['documents']['example-animation.json']['duration_frames']), int)
+        self.assertIs(type(bundle['documents']['example-animation.json']['fps']['numerator']), int)
+        self.assertIs(type(bundle['documents']['example-animation.json']['tracks'][0]['keys'][0]['frame']), int)
+        self.assertIs(type(bundle['documents']['example-animation.json']['tracks'][0]['keys'][0]['value'][0]), float)
+        self.assertIs(type(bundle['documents']['triangle.json']['resources']['bytes']), int)
+        result = subprocess.run([sys.executable, str(ROOT / 'scripts/scene3d_contracts.py'), str(self.root)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        inventory = json.loads(result.stdout)['inventory']
+        self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.iterdir()})
+        self.assertTrue(all(inventory[name]['sha256'] == hashlib.sha256(payload).hexdigest()
+                            for name, payload in before.items()))
+
+    def test_real_cli_rejects_invalid_integer_fields_without_mutating_files(self):
+        for label, value in [('boolean', True), ('fraction', 24.5), ('nonfinite', float('inf')),
+                             ('out-of-range', 240001.0)]:
+            project = fixture('project')
+            project['budgets']['max_files'] = value
+            (self.root / 'project.json').write_bytes(json.dumps(project).encode())
+            before = {p.name: p.read_bytes() for p in self.root.iterdir()}
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/scene3d_contracts.py'), str(self.root)],
+                                    capture_output=True, text=True)
+            with self.subTest(label=label):
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(json.loads(result.stderr)['ok'])
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.iterdir()})
 
     def test_optional_3d_imports_remain_unnecessary_for_loading(self):
         code = '''import sys,importlib.abc

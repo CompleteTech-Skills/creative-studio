@@ -44,7 +44,7 @@ the stricter lowercase scene alphabet. Neither form accepts terminal newlines. U
 versions, fields and kinds fail. IDs use the existing lowercase portable ID
 policy; versions use exact `major.minor.patch` with no leading zeros.
 
-`validate_document(value, kind=None)` checks structure plus semantic paths,
+`validate_document(value, kind=None)` returns a validated copy and checks structure plus semantic paths,
 quaternions, bounds, reference inventories, graph/constraint/attachment cycles,
 unique identities, timestamp ordering, fixture declarations and exact timing.
 Schema-only validation is explicitly insufficient for these relational rules.
@@ -160,8 +160,14 @@ pixel origin/scale; perspective projection requires an explicitly authored camer
 No overlay rasterization or camera bridge is claimed here.
 
 Frame rates are positive reduced `{numerator, denominator}` rationals, limited to
-240 fps. Frame keys and interval boundaries require JSON integer components;
-floating timestamps are not an alternate clock. Display intervals are half-open
+240 fps. Schema-declared integer fields accept finite numerically integral JSON floats
+such as `1.0` and `24.0`, matching JSON Schema. Admission bounds-checks those
+values before converting only the declared local fields in a validated copy.
+Booleans, fractions, nonfinite values and out-of-range values fail. Metadata and
+foreign 2D owner documents are not normalized. Original source bytes and raw-file
+hashes remain unchanged; canonical serialization uses the normalized copy. Frame
+keys and interval boundaries therefore use exact integers internally, while
+fractional floating timestamps are not an alternate clock. Display intervals are half-open
 `[0, duration_frames)`; a terminal key at `duration_frames` is allowed for boundary
 state. Thus frame 720 at 24 fps is exactly 30 seconds. Clip/constraint/render
 intervals must be nonempty and fit their authoritative duration. Track value
@@ -210,7 +216,7 @@ contract/file-loading tests also run in the existing 2D gate with NumPy blocked.
 The example refuses an existing destination. Its direct file creation is for a
 new, caller-owned fixture directory only; it is not a package publisher.
 
-The implementation's focused execution passed **72 tests**, including real
+The implementation's focused execution passed **76 tests**, including real
 fresh-process reopening and actual geometry-byte/hash tampering. Source delivery
 inventory and generated schema/template checks passed. Exact source revision,
 full legacy regression results, CI and independent Astra review are recorded in

@@ -68,7 +68,7 @@ def evaluate_transforms(scene):
     evaluators; unsupported dynamic declarations fail rather than being ignored.
     World orientation/scale are None for shear, while the matrix stays exact.
     """
-    validate_document(scene, 'scene')
+    scene = validate_document(scene, 'scene')
     require(all(not n['constraints'] and not n['animation_bindings'] and
                 'attachment' not in n and 'prefab' not in n for n in scene['nodes']),
             'Static transform evaluation requires expanded nodes without dynamic constraints/bindings.')
