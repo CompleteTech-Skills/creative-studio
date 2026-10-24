@@ -197,10 +197,15 @@ The [style validation record](references/style-validation.md) documents the styl
 
 ## 🚀 Hatch your own
 
+This repository is **Creative Studio**. The installed skill remains **`hatch-pet`**
+for compatibility with existing invocations, profiles and local installations.
+The repository name does not imply that the planned Director, general 3D scene
+editor or physics production programs are complete.
+
 Install the skill into Codex:
 
 ```bash
-git clone https://github.com/CompleteDotTech/hatch-pet "${CODEX_HOME:-$HOME/.codex}/skills/hatch-pet"
+git clone https://github.com/CompleteTech-Skills/creative-studio "${CODEX_HOME:-$HOME/.codex}/skills/hatch-pet"
 ```
 
 Then just ask:
@@ -383,7 +388,10 @@ More detail lives in [`SKILL.md`](SKILL.md), [`references/animation-rows.md`](re
 
 Run `python -m unittest discover -s tests -v` for the complete local regression suite, including model-free reconstruction checks against retained non-fixture pilot sources. These tests do not call imagegen or confer artwork approval. `python tests/fixture_workflow.py --output-dir C:/work/hatch-fixture-demo --profile examples/web-status.json` creates a clearly labeled legacy demonstration without calling imagegen or installing a pet.
 
-The complete development suite uses `requirements-test.txt` and a local Playwright Chromium binary. Install them if missing with `python -m pip install -r requirements-test.txt` and `python -m playwright install chromium`. The standalone `scripts/doctor.py` reports local capabilities without requiring browser tools.
+For the existing 2D suite, use a separate environment with `requirements-delivery.txt` and a local Playwright Chromium binary, then run `python scripts/test_rig_gate.py compatibility`. For complete discovery including the optional 3D tests, install `requirements-test.txt` and `requirements-rig-test.txt` in another environment and run `python -m unittest discover -s tests -v`. These environments have different pinned dependency versions; do not combine the delivery and rig requirement files. Install Chromium with `python -m playwright install chromium`. Blender, the Khronos validator and opt-in browser checks have separate setup and release gates in [the 3D guide](references/3d-rigging.md); an optional-tool skip is not an interoperability pass. The standalone `scripts/doctor.py` reports local capabilities without requiring browser tools.
+
+See [contributor and triage guidance](CONTRIBUTING.md) for evidence terminology,
+label governance and the separation between local tests, CI and production review.
 
 ### Director engineering baseline
 
