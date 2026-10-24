@@ -99,3 +99,88 @@ Compound shapes, additional collision profiles, arbitrary animation bindings,
 constraints, cross-category simulation and native checkpoint continuation remain
 outside this slice. Saved samples and Blender bakes retain their prior replay
 limits. Engineering diagnostic renders are not human or production-art approval.
+
+## Execute and inspect the engineering examples
+
+Use the pinned host/optional-worker installation documented in
+[physics-backends.md](physics-backends.md). Set `HATCH_BLENDER` to the actual
+supported Blender4.5.3 binary and `HATCH_PYBULLET_PYTHON` to the isolated
+CPython3.11 interpreter containing `requirements-physics-pybullet.txt`. The host
+uses Python3.12 with `requirements-rig-test.txt`. No backend is imported or
+installed by ordinary2D workflows. Native execution is currently POSIX only.
+
+These commands run the real cases and retain original sources, settings,
+version/usage observations, cache hashes and actual generated `.blend`/PNG files:
+
+```bash
+mkdir -p output/rigid-cases output/replay-cases
+HATCH_PHYSICS_BACKEND_TEST=1 HATCH_RIGID_EVIDENCE=output/rigid-cases \
+  python3.12 -m unittest discover -s tests -p test_rig_physics_rigid.py -v
+HATCH_PHYSICS_BACKEND_TEST=1 HATCH_RIGID_REPLAY_EVIDENCE=output/replay-cases \
+  python3.12 -m unittest discover -s tests -p test_rig_physics_rigid_replay.py -v
+```
+
+Choose fresh output directories for repeated runs. Without the explicit native
+gate, the native cases are **skipped**, establishing no solver capability. Expected
+negative cases retain failed-attempt evidence labeled as failed, not reusable
+successful caches. The test methods include bounce/rest, a mass-ratio10 stack,
+physical force/damping/impulse controls, and source-bound replay of supplemental
+DIRECT COM/inertia/velocity/off-center impulse/torque states in Blender.
+
+The simultaneous four-body Falling Objects source is available independently of
+the test runner. The original `physics_backends.py demo` remains the earlier
+two-body readiness fixture; it is not relabeled as this new demonstration:
+
+```bash
+mkdir -p output
+PYTHONPATH=scripts python3.12 - <<'PY'
+import os
+from physics_backends import BlenderBackend
+from physics_rigid_example import build_falling_inputs
+backend = BlenderBackend(os.environ['HATCH_BLENDER'])
+world, sources = build_falling_inputs()  # floor, sphere, cube and heavier cube
+prepared = backend.prepare(world, sources)
+try:
+    solved = backend.simulate(prepared)
+    print(backend.bake(solved, 'output/falling-cache'))
+    print(backend.export_animation('output/falling-cache', 'output/falling-transforms'))
+finally:
+    backend.cleanup(prepared)
+PY
+python3.12 scripts/physics_backends.py inspect output/falling-cache --frame 24
+```
+
+`build_stack_inputs()` supplies the separate stable-contact fixture. For a real
+DIRECT cache, `physics_rigid_render.render_direct_cache(cache, new_destination,
+executable=...)` creates a source-bound editable Blender replay, first/middle/last
+neutral diagnostic renders, independent reverse-order reopen verification and
+complete hashed inventory. Blender renders those already solved states; it does
+not re-simulate DIRECT controls or couple two physics worlds. Only cached integer
+poses are verified. This is separate from future production render integration.
+
+## #170 acceptance traceability
+
+The following executable methods are in `tests/test_rig_physics_rigid.py`; the
+replay cases are in `tests/test_rig_physics_rigid_replay.py`. Their actual retained
+execution records, rather than merely discovery of these methods, establish the
+observed outcomes at the recorded source revision.
+
+| Required behavior | Executable verification | Inspectable evidence |
+| --- | --- | --- |
+| Actual static/dynamic Blender bodies; gravity/mass independence | `test_real_blender_and_direct_freefall_zero_g_and_mass` | original native meshes, configured world, solved heights and saved Blender cache |
+| Sphere/cube/heavy-object scene | `test_real_simultaneous_falling_objects_scene` | four actual bodies with masses1/0/1/10, three fall trajectories, rendered cache |
+| Kinematic authority distinct from dynamics | `test_real_kinematic_native_clip_and_dynamic_authorities` | hash-bound native Scene3D translation clip plus separate solver-driven falling body |
+| COM/custom inertia and initial velocities | `test_real_direct_impulse_torque_initial_velocity_and_custom_inertia` | native principal-frame readback, both tensor cases, original-origin poses and raw cache |
+| Central physical forces; correct SI units | `test_real_native_central_force_is_mass_dependent` | zero-gravity/no-contact two-mass controls at24 and30000/1001fps on both backends |
+| Off-center and angular response | `test_real_direct_offcenter_force_and_damping` and torque/impulse case | quantitative position/quaternion oracle, native external wrench calls and angular/linear damping controls |
+| Finite-duration integrated impulse | `test_real_finite_pulse_timestep_convergence` | three actual timesteps and continuous rectangular-pulse error convergence; not instantaneous-contact equivalence |
+| Bounce and resting | `test_real_native_bounce_and_rest` | real post-impact rise and final stable height window with nonzero restitution |
+| Stable stacking | `test_real_native_stack_tail_is_stable` | both native backends, mass-ratio10 two-cube stack,24-frame height/drift window |
+| Sleeping and force-driven waking | `test_real_sleep_and_force_wake` | unchanged initially sleeping pose, then actual falling after native force activation |
+| Preserve transformed collision geometry | `test_real_transformed_child_collision_and_native_speed_failure` | actual child radius/frame observations, wrapper margin, floor contact and fail-closed excessive-speed run |
+| Actual Blender view of supplemental DIRECT states | replay lifecycle case | exact original source/cache bytes, editable Blender file, three actual images, all-frame native reopen and integer-float byte-count boundary |
+| Strict invalid-input, resource and provenance boundaries | pure rigid/replay tests plus prior backend lifecycle suite | malformed clock/tensor/frame/report/image/path rejection and unchanged source inputs |
+
+These are engineering fixtures. Automated numerical/structural validation,
+assistant visual inspection, independent model review and human production-art
+approval are distinct. No human or production-art approval is supplied here.
