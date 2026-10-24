@@ -1,0 +1,25 @@
+{
+  "fixture": true,
+  "runtime_sha256": "66858dafef15f66a7c13114db0a3af93a94f318eefc9b9e6c6b02b9616164d75",
+  "input_bytes": 5010,
+  "input_sha256": "77d201670c16cb44da3f0bc980899b42012981483c5cfb4c37214cb7e4559bb8",
+  "returncode": 1,
+  "stdout": {
+    "ok": false,
+    "error": {
+      "code": "RIG_JSON",
+      "stage": "rig",
+      "message": "Invalid JSON: Exceeds the limit (4300 digits) for integer string conversion: value has 5000 digits; use sys.set_int_max_str_digits() to increase the limit",
+      "asset": null,
+      "expected": null,
+      "observed": null,
+      "retryable": false,
+      "correction": "Correct the indicated input and retry.",
+      "preserved": null
+    }
+  },
+  "stderr": "",
+  "all_saved_run_files_unchanged": true,
+  "saved_inventory_sha256": "8f181ae91fb5f038b4db0dc44a6bad1d983f8f47fa15148f13f8cdf4a0845946",
+  "file_count": 10
+}

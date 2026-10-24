@@ -1,0 +1,58 @@
+{
+  "base_sha": "a08569cbdb593651807c887f4c9edd5e7b243973",
+  "scope": "Partial shared JSON safety under #11/#58; new local defect, no issue closure",
+  "runtime": "Linux Python 3.14.7, NumPy 2.5.4, jsonschema 4.26.0, Pillow 13.0.0; distinct from pinned CI",
+  "results": {
+    "focused": "10 tests passed in 0.992 seconds, zero failures/errors/skips",
+    "schema_math_gate": "30 tests passed in 8.174 seconds, zero failures/errors/skips",
+    "operations_compatibility": "21 tests passed in 5.645 seconds, zero failures/errors/skips",
+    "baseline_control": "Exact old decoder loaded in memory; three genuine unhandled ValueError subcases reproduced. No source-file mutation. Diagnostic trailing whitespace stripped only. CLI baseline separately observed RIG_INPUT_OR_DEPENDENCY before fix; not included as an in-memory subprocess control.",
+    "actual_cli": "Genuine saved GLB fixture and 5000-digit configure input returned structured RIG_JSON/nonzero. All saved files and input bytes unchanged; actual response and inventory digest retained.",
+    "checks": "Schema/template generation and complete diff whitespace checks passed",
+    "compatibility": "802 existing 2D tests discovered without optional 3D imports; discovery is not execution",
+    "utf8_baseline_control": "Previous ffe872d decoder loaded in memory reproduced seven multibyte/invalid raw Unicode subcase failures, zero errors; no source mutations. Diagnostic trailing whitespace stripped only.",
+    "utf8_admission": "Text and byte payloads share encoded UTF-8 byte limits, exact boundaries and multiple chunks verified. Oversized multibyte text and invalid raw Unicode reject before json.loads; escaped Unicode parsing semantics preserved."
+  },
+  "limitations": [
+    "Interpreter integer-limit changes are confined to scoped tests and CLI subprocess environment; decoder never raises or disables that resource limit.",
+    "No production artwork, external rendering or human approval claimed",
+    "Independent Astra review and integrated head-specific CI remain pending"
+  ],
+  "files": {
+    "baseline-control.log": {
+      "sha256": "6c621414d9cbefd2275f1e5e63687594a870ad307b2af1019206ba634e220b7b",
+      "bytes": 5663
+    },
+    "cli-verification.json": {
+      "sha256": "83a0f19e59f73953de1cbc6ac6e4ba27c35b1efb615d3f7c26d1ef7adc1892a6",
+      "bytes": 872
+    },
+    "focused.log": {
+      "sha256": "becacdbc69612a06e4fa0c36fa85723ddd30940d510db73364eb07c25a8f75c1",
+      "bytes": 1763
+    },
+    "operations-compatibility.log": {
+      "sha256": "ab79f30b50125a04e3dd6dfa7f94c5598cfcecc741518e39914e871a4e3f9625",
+      "bytes": 3240
+    },
+    "schema-math.log": {
+      "sha256": "b7b65d370621517087a04f4b94a31990eb6ab176e746e88d617a587f0f9d5bb5",
+      "bytes": 4872
+    },
+    "scripts/rig_errors.py": {
+      "sha256": "66858dafef15f66a7c13114db0a3af93a94f318eefc9b9e6c6b02b9616164d75"
+    },
+    "tests/test_rig_contracts.py": {
+      "sha256": "10f4ccdfdf3fe7d704851ba204b34f9f4950589973951a85669825efcd289a98"
+    },
+    "frozen-inputs.json": {
+      "sha256": "8d29c25d2d8bbd0a56f6361265e073c8df4bab554ceb183a293ec5ff8d63d26c",
+      "bytes": 459
+    },
+    "utf8-baseline-control.log": {
+      "sha256": "86c531321858b7bfb70d33a114e30465b6415b05d0655f5aed592b1cdcc4e33f",
+      "bytes": 7562
+    }
+  },
+  "historical_review": "Astra PASS at ffe872d is historical only; fresh review required for UTF-8 followup"
+}

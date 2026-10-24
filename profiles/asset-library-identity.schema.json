@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AssetIdentity v1",
+  "$defs": {
+    "AssetIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "library": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "kind": {
+          "enum": [
+            "character",
+            "rig",
+            "animation",
+            "prop",
+            "material",
+            "texture",
+            "environment",
+            "light",
+            "camera",
+            "prefab",
+            "reference",
+            "legacy-pet",
+            "legacy-cast",
+            "legacy-clip"
+          ]
+        },
+        "subtype": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "created_at": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 64,
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$(?![\\s\\S])"
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "id",
+        "namespace",
+        "library",
+        "slug",
+        "name",
+        "kind",
+        "subtype",
+        "created_at",
+        "attribution",
+        "owner"
+      ]
+    }
+  },
+  "$ref": "#/$defs/AssetIdentity"
+}

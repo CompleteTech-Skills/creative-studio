@@ -1,0 +1,84 @@
+test_actual_5000_digit_integer_reports_structured_decode_error (test_rig_contracts.SharedJsonDecoderTests.test_actual_5000_digit_integer_reports_structured_decode_error) ...
+  test_actual_5000_digit_integer_reports_structured_decode_error (test_rig_contracts.SharedJsonDecoderTests.test_actual_5000_digit_integer_reports_structured_decode_error) (prefix='') ... ERROR
+  test_actual_5000_digit_integer_reports_structured_decode_error (test_rig_contracts.SharedJsonDecoderTests.test_actual_5000_digit_integer_reports_structured_decode_error) (prefix='-') ... ERROR
+test_integer_conversion_limit_boundary_stays_supported (test_rig_contracts.SharedJsonDecoderTests.test_integer_conversion_limit_boundary_stays_supported) ... ERROR
+
+======================================================================
+ERROR: test_actual_5000_digit_integer_reports_structured_decode_error (test_rig_contracts.SharedJsonDecoderTests.test_actual_5000_digit_integer_reports_structured_decode_error) (prefix='')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 215, in test_actual_5000_digit_integer_reports_structured_decode_error
+    self.code('{"limit":'+prefix+'9'*5000+'}', 'RIG_JSON')
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 206, in code
+    decode_json(payload)
+    ~~~~~~~~~~~^^^^^^^^^
+  File "/tmp/hatch-json-original-errors.py", line 78, in decode_json
+    value = json.loads(payload, object_pairs_hook=pairs,
+                       parse_constant=lambda _: (_ for _ in ()).throw(
+                           RigError('RIG_NONFINITE', 'JSON numbers must be finite.')))
+  File "/usr/lib/python3.14/json/__init__.py", line 365, in loads
+    return cls(**kw).decode(s)
+           ~~~~~~~~~~~~~~~~^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 361, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ~~~~~~~~~~~~~~^^^^^^^^
+ValueError: Exceeds the limit (4300 digits) for integer string conversion: value has 5000 digits; use sys.set_int_max_str_digits() to increase the limit
+
+======================================================================
+ERROR: test_actual_5000_digit_integer_reports_structured_decode_error (test_rig_contracts.SharedJsonDecoderTests.test_actual_5000_digit_integer_reports_structured_decode_error) (prefix='-')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 215, in test_actual_5000_digit_integer_reports_structured_decode_error
+    self.code('{"limit":'+prefix+'9'*5000+'}', 'RIG_JSON')
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 206, in code
+    decode_json(payload)
+    ~~~~~~~~~~~^^^^^^^^^
+  File "/tmp/hatch-json-original-errors.py", line 78, in decode_json
+    value = json.loads(payload, object_pairs_hook=pairs,
+                       parse_constant=lambda _: (_ for _ in ()).throw(
+                           RigError('RIG_NONFINITE', 'JSON numbers must be finite.')))
+  File "/usr/lib/python3.14/json/__init__.py", line 365, in loads
+    return cls(**kw).decode(s)
+           ~~~~~~~~~~~~~~~~^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 361, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ~~~~~~~~~~~~~~^^^^^^^^
+ValueError: Exceeds the limit (4300 digits) for integer string conversion: value has 5000 digits; use sys.set_int_max_str_digits() to increase the limit
+
+======================================================================
+ERROR: test_integer_conversion_limit_boundary_stays_supported (test_rig_contracts.SharedJsonDecoderTests.test_integer_conversion_limit_boundary_stays_supported)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 224, in test_integer_conversion_limit_boundary_stays_supported
+    self.code('9'*641, 'RIG_JSON')
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-json-safety/tests/test_rig_contracts.py", line 206, in code
+    decode_json(payload)
+    ~~~~~~~~~~~^^^^^^^^^
+  File "/tmp/hatch-json-original-errors.py", line 78, in decode_json
+    value = json.loads(payload, object_pairs_hook=pairs,
+                       parse_constant=lambda _: (_ for _ in ()).throw(
+                           RigError('RIG_NONFINITE', 'JSON numbers must be finite.')))
+  File "/usr/lib/python3.14/json/__init__.py", line 365, in loads
+    return cls(**kw).decode(s)
+           ~~~~~~~~~~~~~~~~^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 361, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ~~~~~~~~~~~~~~^^^^^^^^
+ValueError: Exceeds the limit (640 digits) for integer string conversion: value has 641 digits; use sys.set_int_max_str_digits() to increase the limit
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.006s
+
+FAILED (errors=3)

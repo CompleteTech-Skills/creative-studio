@@ -66,6 +66,16 @@ def finite_json(value: Any, depth: int = 0) -> None:
 
 def decode_json(payload: bytes | str) -> Any:
     require(len(payload) <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'JSON exceeds the 32 MiB bound.')
+    if isinstance(payload, str):
+        # A character count is only a lower bound for UTF-8. Count bounded
+        # chunks so admission never materializes a second full encoded input.
+        encoded_size = 0
+        try:
+            for offset in range(0, len(payload), 8192):
+                encoded_size += len(payload[offset:offset+8192].encode('utf-8'))
+                require(encoded_size <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'JSON exceeds the 32 MiB bound.')
+        except UnicodeError as exc:
+            raise RigError('RIG_JSON', 'Invalid JSON: ' + str(exc)) from exc
 
     def pairs(items):
         result = {}
@@ -78,10 +88,15 @@ def decode_json(payload: bytes | str) -> Any:
         value = json.loads(payload, object_pairs_hook=pairs,
                            parse_constant=lambda _: (_ for _ in ()).throw(
                                RigError('RIG_NONFINITE', 'JSON numbers must be finite.')))
-        finite_json(value)
-        return value
-    except (json.JSONDecodeError, UnicodeError, RecursionError) as exc:
+    except RigError:
+        # Duplicate-key/nonfinite hooks already carry their specific diagnosis.
+        raise
+    except (ValueError, RecursionError) as exc:
+        # JSONDecodeError, UnicodeError and integer-conversion limits all reach
+        # this decoder boundary as ValueError; preserve the shared report shape.
         raise RigError('RIG_JSON', 'Invalid JSON: ' + str(exc)) from exc
+    finite_json(value)
+    return value
 
 
 def read_json(path: str | Path) -> Any:

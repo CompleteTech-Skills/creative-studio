@@ -1,0 +1,15 @@
+test_actual_5000_digit_integer_reports_structured_decode_error (test_rig_contracts.SharedJsonDecoderTests.test_actual_5000_digit_integer_reports_structured_decode_error) ... ok
+test_actual_cli_rejects_huge_integer_without_persisting_state (test_rig_contracts.SharedJsonDecoderTests.test_actual_cli_rejects_huge_integer_without_persisting_state) ... ok
+test_integer_conversion_limit_boundary_stays_supported (test_rig_contracts.SharedJsonDecoderTests.test_integer_conversion_limit_boundary_stays_supported) ... ok
+test_json_byte_bound_and_unicode (test_rig_contracts.SharedJsonDecoderTests.test_json_byte_bound_and_unicode) ... ok
+test_multibyte_byte_budget_accumulates_across_encoding_chunks (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_byte_budget_accumulates_across_encoding_chunks) ... ok
+test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser) ... ok
+test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap (test_rig_contracts.SharedJsonDecoderTests.test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap) ... ok
+test_raw_invalid_unicode_encoding_has_structured_diagnostic (test_rig_contracts.SharedJsonDecoderTests.test_raw_invalid_unicode_encoding_has_structured_diagnostic) ... ok
+test_specific_duplicate_nonfinite_and_depth_codes_survive (test_rig_contracts.SharedJsonDecoderTests.test_specific_duplicate_nonfinite_and_depth_codes_survive) ... ok
+test_unrelated_runtime_errors_are_not_reclassified (test_rig_contracts.SharedJsonDecoderTests.test_unrelated_runtime_errors_are_not_reclassified) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.992s
+
+OK

@@ -1,6 +1,10 @@
 """Contract boundaries exercised with real meshes and retained adapter evidence."""
 from copy import deepcopy
 import json
+import os
+import subprocess
+import sys
+from unittest.mock import patch
 from pathlib import Path
 import tempfile
 import unittest
@@ -10,7 +14,7 @@ from pygltflib import GLTF2
 
 from rig_test_helpers import fixture
 from rig_contracts import schemas, validate_contract
-from rig_errors import RigError, sha256
+from rig_errors import RigError, MAX_JSON_BYTES, decode_json, read_json, sha256
 from rig_gltf import export_gltf
 from rig_ik import solve_ik, validate_chain
 from rig_jobs import save_rig
@@ -194,3 +198,121 @@ class RigContractTests(unittest.TestCase):
         invalid['reopened'] = False
         with self.assertRaises(RigError):
             validate_contract(invalid, 'RigExportReceipt')
+
+
+class SharedJsonDecoderTests(unittest.TestCase):
+    def code(self, payload, expected):
+        with self.assertRaises(RigError) as caught:
+            decode_json(payload)
+        self.assertEqual(caught.exception.report['code'], expected)
+
+    def test_actual_5000_digit_integer_reports_structured_decode_error(self):
+        previous = sys.get_int_max_str_digits()
+        try:
+            sys.set_int_max_str_digits(4300)
+            for prefix in ('', '-'):
+                with self.subTest(prefix=prefix):
+                    self.code('{"limit":'+prefix+'9'*5000+'}', 'RIG_JSON')
+        finally:
+            sys.set_int_max_str_digits(previous)
+
+    def test_integer_conversion_limit_boundary_stays_supported(self):
+        previous = sys.get_int_max_str_digits()
+        try:
+            sys.set_int_max_str_digits(640)
+            self.assertEqual(decode_json('9'*640), 10**640-1)
+            self.code('9'*641, 'RIG_JSON')
+        finally:
+            sys.set_int_max_str_digits(previous)
+
+    def test_specific_duplicate_nonfinite_and_depth_codes_survive(self):
+        for payload, expected in ((b'{"x":1,"x":2}', 'RIG_JSON_DUPLICATE'),
+                ('{"x":NaN}', 'RIG_NONFINITE'), ('{"x":Infinity}', 'RIG_NONFINITE'),
+                ('{"x":-Infinity}', 'RIG_NONFINITE'), ('{"x":1e999}', 'RIG_NONFINITE'),
+                ('['*65+'0'+']'*65, 'RIG_JSON_DEPTH')):
+            with self.subTest(payload=payload):
+                self.code(payload, expected)
+        self.assertEqual(decode_json('['*64+'0'+']'*64),
+                         json.loads('['*64+'0'+']'*64))
+
+    def test_json_byte_bound_and_unicode(self):
+        self.assertEqual(decode_json(b'true'+b' '*(MAX_JSON_BYTES-4)), True)
+        self.code(b' '*(MAX_JSON_BYTES+1), 'RIG_LIMIT_JSON')
+        self.assertEqual(decode_json('{"name":"雪"}'.encode()), {'name': '雪'})
+        self.code(b'{"name":"\xff"}', 'RIG_JSON')
+        self.code('{"x":', 'RIG_JSON')
+        with self.assertRaises(RigError) as caught:
+            decode_json('['*2000+'0'+']'*2000)
+        # CPython versions differ in the parser's own nesting threshold.
+        self.assertIn(caught.exception.report['code'], ('RIG_JSON', 'RIG_JSON_DEPTH'))
+
+    def test_unrelated_runtime_errors_are_not_reclassified(self):
+        with patch('rig_errors.json.loads', side_effect=RuntimeError('sentinel')):
+            with self.assertRaisesRegex(RuntimeError, 'sentinel'):
+                decode_json('{}')
+        # Validation is outside the decoder exception boundary.
+        with patch('rig_errors.finite_json', side_effect=ValueError('validation sentinel')):
+            with self.assertRaisesRegex(ValueError, 'validation sentinel'):
+                decode_json('{}')
+
+    def test_actual_cli_rejects_huge_integer_without_persisting_state(self):
+        with tempfile.TemporaryDirectory() as temp:
+            rig = fixture(temp)
+            before = {p.relative_to(rig.root).as_posix(): sha256(p)
+                      for p in rig.root.rglob('*') if p.is_file()}
+            document = Path(temp)/'limits.json'
+            document.write_text('{"bones":'+'9'*5000+'}')
+            original = sha256(document)
+            env = dict(os.environ, PYTHONINTMAXSTRDIGITS='4300', PYTHONDONTWRITEBYTECODE='1')
+            result = subprocess.run([sys.executable, '-B', str(ROOT/'scripts/rig.py'),
+                'configure', '--run-dir', str(rig.root), '--file', str(document)],
+                capture_output=True, text=True, env=env, timeout=30)
+            self.assertEqual(result.returncode, 1)
+            report = json.loads(result.stdout)
+            self.assertIs(report['ok'], False)
+            self.assertEqual(report['error']['code'], 'RIG_JSON')
+            self.assertNotIn('Traceback', result.stderr)
+            after = {p.relative_to(rig.root).as_posix(): sha256(p)
+                     for p in rig.root.rglob('*') if p.is_file()}
+            self.assertEqual(before, after)
+            self.assertEqual(original, sha256(document))
+            with self.assertRaises(RigError) as caught:
+                read_json(document)
+            self.assertEqual(caught.exception.report['code'], 'RIG_JSON')
+
+    def test_multibyte_string_and_byte_payloads_share_the_utf8_byte_cap(self):
+        for limit, valid, oversized in ((8, '"ééé"', '"éééé"'),
+                                        (6, '"😀"', '"😀é"')):
+            with self.subTest(limit=limit), patch('rig_errors.MAX_JSON_BYTES', limit):
+                for payload in (valid, valid.encode('utf-8')):
+                    self.assertEqual(decode_json(payload), json.loads(valid))
+                for payload in (oversized, oversized.encode('utf-8')):
+                    self.code(payload, 'RIG_LIMIT_JSON')
+        # JSON escape spelling is ASCII bytes, not the decoded string's size.
+        with patch('rig_errors.MAX_JSON_BYTES', 8):
+            self.assertEqual(decode_json('"\\u00e9"'), 'é')
+
+    def test_raw_invalid_unicode_encoding_has_structured_diagnostic(self):
+        for surrogate in ('\ud800', '\udfff'):
+            with self.subTest(surrogate=repr(surrogate)):
+                self.code('"'+surrogate+'"', 'RIG_JSON')
+        # An explicitly escaped surrogate retains the decoder's prior semantics.
+        self.assertEqual(decode_json('"\\ud800"'), '\ud800')
+
+    def test_multibyte_byte_budget_accumulates_across_encoding_chunks(self):
+        valid = '"'+'é'*9000+'"'
+        with patch('rig_errors.MAX_JSON_BYTES', 18002):
+            self.assertEqual(decode_json(valid), 'é'*9000)
+            self.assertEqual(decode_json(valid.encode()), 'é'*9000)
+        with patch('rig_errors.MAX_JSON_BYTES', 18001):
+            self.code(valid, 'RIG_LIMIT_JSON')
+            self.code(valid.encode(), 'RIG_LIMIT_JSON')
+
+    def test_multibyte_oversize_and_invalid_raw_unicode_reject_before_parser(self):
+        with patch('rig_errors.MAX_JSON_BYTES', 8):
+            for payload, code in (('"éééé"', 'RIG_LIMIT_JSON'),
+                                  ('"éééé"'.encode(), 'RIG_LIMIT_JSON'),
+                                  ('"\ud800"', 'RIG_JSON')):
+                with self.subTest(payload=repr(payload)), patch('rig_errors.json.loads') as parser:
+                    self.code(payload, code)
+                    parser.assert_not_called()
