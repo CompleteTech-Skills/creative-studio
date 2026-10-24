@@ -243,7 +243,9 @@ class NativeRigidTests(unittest.TestCase):
         world,payloads=build_inputs(backend='pybullet');world['gravity']=[0,0,0]
         world['forces']=[force('impulse',[1,0,0],point=[0,3.5,0],application='world-point',end=1)]
         states,_=self.run_world('pybullet',world,payloads)
-        self.assertAlmostEqual(self.pose(states,12)['rotation'][2],-math.sin(1.25),delta=.01)
+        expected=[0,0,-math.sin(1.25),math.cos(1.25)]
+        actual=self.pose(states,12)['rotation']
+        self.assertLess(min(max(abs(a-b) for a,b in zip(actual,expected)),max(abs(a+b) for a,b in zip(actual,expected))),.01)
         self.assertAlmostEqual(self.pose(states,12)['translation'][0],.5,delta=.005)
         distances=[]
         for damping in [0,.8]:
