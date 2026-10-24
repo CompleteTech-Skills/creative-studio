@@ -96,7 +96,7 @@ def main():
             import numpy as np
             moments,axes=np.linalg.eigh(np.asarray(body['mass']['inertia'],dtype=float))
             if np.linalg.det(axes)<0:axes[:,0]*=-1
-            # PyBullet native API converts the proper principal-frame matrix.
+            # Convert the proper principal-axis matrix to native XYZW rotation.
             trace=float(np.trace(axes))
             if trace>0:
                 factor=math.sqrt(trace+1)*2
@@ -136,17 +136,21 @@ def main():
         effective=[]
         for body in world['bodies']:
             observed=p.getDynamicsInfo(identifiers[body['id']],-1,physicsClientId=client)
+            native_shape=p.getCollisionShapeData(identifiers[body['id']],-1,physicsClientId=client)
+            if len(native_shape)!=1 or native_shape[0][2] not in (p.GEOM_SPHERE,p.GEOM_BOX):raise ValueError('Native primitive collision child disappeared.')
             effective.append(dict(id=body['id'],mass=observed[0],friction=observed[1],
                 inertia=list(observed[2]),center_of_mass=list(observed[3]),restitution=observed[5],
-                native_margin=observed[11],margin_semantics='inherent sphere radius' if body['colliders'][0]['shape']['type']=='sphere' else 'explicit box collision margin'))
+                native_margin=observed[11],margin_semantics=('transformed primitive wrapper margin' if any(observed[3]) or abs(abs(observed[4][3])-1)>1e-10 else 'inherent sphere radius') if body['colliders'][0]['shape']['type']=='sphere' else 'explicit box collision margin'))
         control_observations=[]
         for body in world['bodies']:
             value=identifiers[body['id']]
             observed=p.getDynamicsInfo(value,-1,physicsClientId=client)
             linear,angular=p.getBaseVelocity(value,physicsClientId=client)
+            native_shape=p.getCollisionShapeData(value,-1,physicsClientId=client)[0]
             control_observations.append(dict(id=body['id'],mode=body['mode'],inertial_position=list(observed[3]),
                 inertial_rotation=list(observed[4]),principal_inertia=list(observed[2]),
                 initial_linear_velocity=list(linear),initial_angular_velocity=list(angular),
+                collision=dict(type='sphere' if native_shape[2]==p.GEOM_SPHERE else 'box',dimensions=list(native_shape[3]),translation=list(native_shape[5]),rotation=list(native_shape[6])),
                 sleep=dict(enabled=body.get('sleep',{}).get('enabled',False),initially_sleeping=body.get('sleep',{}).get('initially_sleeping',False),linear_threshold=None,angular_threshold=None)))
         def body_pose(body_index):
             position,rotation=p.getBasePositionAndOrientation(body_index,physicsClientId=client)
@@ -209,10 +213,11 @@ def main():
                 translation,rotation=body_pose(body_index)
                 linear,angular=p.getBaseVelocity(body_index,physicsClientId=client)
                 for key,velocity in [('max_linear_velocity',linear),('max_angular_velocity',angular)]:
-                    if key in stability and math.sqrt(sum(v*v for v in velocity))>stability[key]:
+                    limit=min(stability.get(key,50.),50.)
+                    if math.sqrt(sum(v*v for v in velocity))>limit:
                         failure=dict(code='PHYSICS_NUMERICAL_INSTABILITY',world_sha256=job['world_sha256'],
                             solver_step=index,solver_time=dict(numerator=(index*step).numerator,denominator=(index*step).denominator),
-                            setting=key,limit=stability[key],observed=math.sqrt(sum(v*v for v in velocity)))
+                            setting=key,limit=limit,observed=math.sqrt(sum(v*v for v in velocity)))
                         temporary=root/'worker-failure.json.tmp'
                         temporary.write_bytes(canonical(failure));temporary.replace(root/'worker-failure.json')
                         raise ValueError('Numerical stability velocity limit exceeded: '+key)

@@ -88,7 +88,7 @@ class RigidContractTests(unittest.TestCase):
         admitted=physics._admit_world(world,'pybullet')[0]
         report['rigid_controls']=dict(version=1,forces=[],force_policy='native external force/torque per fixed step; discrete impulse is integrated wrench over one complete native step',bodies=[])
         for body in admitted['bodies']:
-            report['rigid_controls']['bodies'].append(dict(id=body['id'],mode=body['mode'],inertial_position=[0,0,0],inertial_rotation=[0,0,0,1],principal_inertia=[0,0,0],initial_linear_velocity=[0,0,0],initial_angular_velocity=[0,0,0],sleep=dict(enabled=False,initially_sleeping=False,linear_threshold=None,angular_threshold=None)))
+            report['rigid_controls']['bodies'].append(dict(id=body['id'],mode=body['mode'],inertial_position=[0,0,0],inertial_rotation=[0,0,0,1],principal_inertia=[0,0,0],initial_linear_velocity=[0,0,0],initial_angular_velocity=[0,0,0],collision=dict(type=body['colliders'][0]['shape']['type'],dimensions=[body['colliders'][0]['shape']['radius']]*3 if body['colliders'][0]['shape']['type']=='sphere' else body['colliders'][0]['shape']['size'],translation=[0,0,0],rotation=[0,0,0,1]),sleep=dict(enabled=False,initially_sleeping=False,linear_threshold=None,angular_threshold=None)))
         report['actual_bodies'][0]['inertia']=[0,0,0]
         with self.assertRaises(physics.BackendError) as raised:physics._check_pybullet_report(report,admitted,report['backend'])
         self.assertIn('inertia',str(raised.exception))
@@ -98,6 +98,12 @@ class RigidContractTests(unittest.TestCase):
         report['actual_bodies'][0]['inertia']=[1e-100,.1,.1]
         with self.assertRaises(physics.BackendError):physics._check_pybullet_report(report,admitted,report['backend'])
         world['bodies'][0]['mass']['inertia']=[[1e-50,0,0],[0,1e-50,0],[0,0,1e-50]]
+        with self.assertRaises(physics.BackendError):physics._admit_world(world,'pybullet')
+
+    def test_native_velocity_ceiling_is_rejected_instead_of_silently_clamped(self):
+        world,_=build_inputs(backend='pybullet');world['bodies'][0]['linear_velocity']=[200,0,0]
+        with self.assertRaises(physics.BackendError):physics._admit_world(world,'pybullet')
+        world['bodies'][0]['linear_velocity']=[0,0,0];world['solver']['stability']=dict(max_angular_velocity=200)
         with self.assertRaises(physics.BackendError):physics._admit_world(world,'pybullet')
 
     def test_sleep_conflicts_and_unexposed_thresholds_fail(self):
@@ -164,6 +170,17 @@ class NativeRigidTests(unittest.TestCase):
     @staticmethod
     def pose(states,frame,body='ball'):
         return next(item for item in states['samples'][frame]['bodies'] if item['id']==body)
+
+    def test_real_simultaneous_falling_objects_scene(self):
+        from physics_rigid_example import build_falling_inputs
+        world,payloads=build_falling_inputs()
+        states,report=self.run_world('blender',world,payloads)
+        self.assertEqual(report['object_count'],4)
+        self.assertEqual([body['mass']['kilograms'] for body in world['bodies']],[1,0,1,10])
+        for identifier,height in [('ball',3),('cube',4),('heavy',5)]:
+            for frame in range(1,7):
+                self.assertLess(abs(self.pose(states,frame,identifier)['translation'][1]-(height-9.81*(frame/24)**2/2)),.03)
+            self.assertAlmostEqual(self.pose(states,72,identifier)['translation'][1],.5,delta=.03)
 
     def test_real_blender_and_direct_freefall_zero_g_and_mass(self):
         for backend in ['blender','pybullet']:
@@ -249,3 +266,32 @@ class NativeRigidTests(unittest.TestCase):
             world['materials'][0]['linear_damping']=damping
             states,_=self.run_world('blender',world,payloads);values.append(self.pose(states,24)['translation'][0])
         self.assertGreater(values[0]-values[1],.1)
+
+    def test_real_transformed_child_collision_and_native_speed_failure(self):
+        world,payloads=build_inputs(backend='pybullet')
+        world['bodies'][0]['mass']['center_of_mass']=[.1,0,0]
+        world['bodies'][0]['mass']['inertia']=[[.12,.02,0],[.02,.14,0],[0,0,.15]]
+        states,report=self.run_world('pybullet',world,payloads)
+        self.assertAlmostEqual(self.pose(states,48)['translation'][1],.5,delta=.01)
+        self.assertEqual(report['actual_bodies'][0]['margin_semantics'],'transformed primitive wrapper margin')
+        self.assertEqual(report['actual_bodies'][0]['native_margin'],0)
+        self.assertEqual(report['rigid_controls']['bodies'][0]['collision']['dimensions'],[.5,.5,.5])
+        world,payloads=build_inputs(backend='pybullet');world['gravity']=[0,0,0]
+        world['forces']=[force('impulse',[200,0,0],end=1)]
+        with self.assertRaises(physics.BackendError) as raised:self.run_world('pybullet',world,payloads)
+        self.assertEqual(raised.exception.report['code'],'PHYSICS_NUMERICAL_INSTABILITY')
+        self.assertEqual(raised.exception.report['limit'],50)
+
+    def test_real_finite_pulse_timestep_convergence(self):
+        errors=[]
+        for denominator in [120,240,480]:
+            world,payloads=build_inputs(backend='pybullet');world['gravity']=[0,0,0]
+            world['solver']['fixed_step']=dict(numerator=1,denominator=denominator)
+            world['forces']=[force('impulse',[1,0,0],start=6,end=7)]
+            states,_=self.run_world('pybullet',world,payloads)
+            self.assertAlmostEqual(self.pose(states,6)['translation'][0],0,delta=1e-10)
+            # At t=.5, a unit impulse's ideal trajectory travels .25m.
+            # This finite-step pulse must converge to it without a velocity edit.
+            errors.append(abs(self.pose(states,12)['translation'][0]-.25))
+        self.assertLess(errors[1],errors[0]+1e-12);self.assertLess(errors[2],errors[1]+1e-12)
+        self.assertLess(errors[-1],1/480+1e-9)
