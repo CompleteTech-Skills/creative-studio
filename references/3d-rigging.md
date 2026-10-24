@@ -45,6 +45,14 @@ Shared JSON ingestion bounds document size in encoded bytes and nesting, rejects
 
 Transforms must be finite and nonsingular. Rest transforms that contain shear or a reflection are rejected for the skeletal core; apply those transforms in an editor first. Static reflected geometry is baked with corrected winding. Original files are copied byte for byte and hash checked. `identity.json` locks the source identity, origin, fixture classification and import scale. An imported procedural fixture stays a fixture when exported and reimported.
 
+glTF node admission tests linear-axis independence after dividing each column by
+its largest absolute component. The dimensionless determinant must exceed
+`1e-12` in absolute value, and the complete inverse must remain finite in
+float64. This admits well-conditioned small or large unit conversions and
+nonuniform scales without accepting zero axes, almost dependent axes, or
+nonrepresentable inverses. Static reflections and shear retain their existing
+import behavior; this does not relax the skeletal rest-transform rules above.
+
 The canonical definitions live in `scripts/rig_contracts.py`. Generated Draft 2020-12 schemas under `profiles/rig*.schema.json` cover rigs, templates, clips, poses, retarget profiles, corrections, reviews, jobs and export receipts. Nested definitions cover skeletons, bones, skin bindings and controllers. JSON Schema checks structure and field types; the runtime also checks reference graphs, unit quaternions, bind reconstruction, source hashes and safe local resource paths. See the [contract acceptance audit](rig-contracts-acceptance.md) for the current compatibility baseline and requirement-to-test mapping.
 
 ## Import, analyze, fit and bind
