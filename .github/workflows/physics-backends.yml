@@ -56,6 +56,11 @@ jobs:
         run: |
           mkdir physics-evidence
           python -B -m unittest discover -s tests -p test_rig_physics_backends.py -v 2>&1 | tee physics-evidence/tests.log
+      - name: Actual exact-clock numerical and stability acceptance
+        env:
+          HATCH_TIMING_EVIDENCE: ${{ github.workspace }}/physics-evidence/timing/numerical.json
+        run: |
+          python -B -m unittest discover -s tests -p test_physics_timing.py -v 2>&1 | tee physics-evidence/timing-tests.log
       - name: Actual category/shape/headless probes
         run: |
           python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json
@@ -73,4 +78,5 @@ jobs:
           name: trusted-physics-${{ github.sha }}
           if-no-files-found: error
           retention-days: 30
+          include-hidden-files: true
           path: physics-evidence/
