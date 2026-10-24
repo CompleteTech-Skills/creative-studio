@@ -473,6 +473,42 @@ class CapabilityTest(unittest.TestCase):
         self.assertEqual(result['integrity'],'failed')
         self.assertEqual(result['outcome'],'failed')
 
+
+    def test_exhausted_probe_or_reservation_never_starts_native_execution(self):
+        import continuity_capabilities as module
+        for stage in ('probe','reserve'):
+            owner,native=self.policy_owner('geometry-inspection')
+            request=self.request('geometry-inspection');request['checks'][0]['inputs']=[native]
+            request['checks'][0]['resources']['cpu_seconds']=1
+            fake_cpu=[0.]
+            if stage=='probe':
+                (self.root/'new-probe.json').write_bytes(b'{"fixture":true}')
+                proof=pointer(self.root,self.root/'new-probe.json')
+                original_snapshot=owner.snapshot
+                def snapshot():
+                    value=original_snapshot();value['evidence']=[proof];return value
+                owner.snapshot=snapshot
+                original_verify=module.verify_references
+                def verify(*args,**kwargs):
+                    result=original_verify(*args,**kwargs)
+                    if any(x['path']=='new-probe.json' for x in result['files']):fake_cpu[0]=2.
+                    return result
+                context=patch.object(module,'verify_references',verify)
+            else:
+                original_reserve=owner.reserve
+                @contextmanager
+                def reserve(check):
+                    with original_reserve(check):
+                        fake_cpu[0]=2.
+                        yield
+                owner.reserve=reserve
+                context=patch.object(module,'_message',module._message)
+            with context,patch.object(module.time,'process_time',side_effect=lambda:fake_cpu[0]):
+                result=self.engine(owner).run(request)
+            self.assertEqual(owner.calls,0,stage)
+            self.assertEqual(result['outcome'],'failed')
+            self.assertIn('resource-admission',result['checks'][0]['unsatisfied_gates'])
+
     def test_imports_do_not_import_optional_engines(self):
         # Import at module scope is stdlib + shared JSON safety only. Static
         # AST validates this boundary without spawning while native slot held.

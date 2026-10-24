@@ -331,7 +331,7 @@ class Admission:
                 else:
                     try:
                         references.verify([request['project_revision'],*check['inputs']])
-                        item = self._check(check, clock, canceled,references)
+                        item = self._check(check, clock, canceled,references,meter)
                     except Exception as exc:
                         item = _failure(check, 'CONTINUITY_CAPABILITY_OWNER: ' + _message(exc))
                         item.update(outcome='failed', unsatisfied_gates=['owner-contract'])
@@ -399,12 +399,20 @@ class Admission:
             output['report_sha256']=digest({k:v for k,v in output.items() if k!='report_sha256'})
         return output
 
-    def _check(self, check, clock, canceled,references):
+    def _check(self, check, clock, canceled,references,meter):
         item = _failure(check)
+        def exhausted():
+            if (time.monotonic()-meter['wall_start']>meter['reserved_cpu_seconds']
+                    or time.process_time()-meter['cpu_start']>meter['reserved_cpu_seconds']):
+                item.update(outcome='failed',error='CONTINUITY_CAPABILITY_LIMIT: complete admission budget exhausted',
+                    unsatisfied_gates=['resource-admission'])
+                return True
+            return False
         candidates = []
         rejected = []
         owner_errors = []
         for adapter in self.owners:
+            if exhausted():return item
             try:
                 snapshot = validate(adapter.snapshot(), 'snapshot')
             except Exception as exc:
@@ -416,6 +424,7 @@ class Admission:
         order = (check['capability'], *MATRIX[check['capability']][0])
         candidates.sort(key=lambda pair: (order.index(pair[1]['implementation_id']), pair[1]['owner']))
         for adapter, snap in candidates:
+            if exhausted():return item
             fallback = snap['implementation_id'] != check['capability']
             label = snap['owner'] + '/' + snap['backend'] + '@' + (snap['backend_version'] or 'unknown')
             reason = None
@@ -450,9 +459,11 @@ class Admission:
                 return item  # A fallback never waives a hard gate.
             try:
                 references.verify(snap['evidence'])
+                if exhausted():return item
                 start = time.monotonic()
                 cpu_start = time.process_time()
                 with adapter.reserve(deepcopy(check)):
+                    if exhausted():return item
                     if datetime.strptime(snap['expires_at'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc) <= clock():
                         item.update(outcome='blocked_missing_capability', error='CONTINUITY_CAPABILITY_EXPIRED: probe expired before execution',
                             unsatisfied_gates=['capability-expiry'])
