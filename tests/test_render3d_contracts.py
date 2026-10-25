@@ -173,6 +173,35 @@ class NativeSnapshot(unittest.TestCase):
             target=moved/report['files'][0]['path'];target.write_bytes(b'changed')
             with self.assertRaises(Render3DError):verify_snapshot(moved,NativeRigAdapter())
 
+    def test_present_native_controls_skins_and_clips_require_owner_semantics(self):
+        from rig_demo import create_demo
+        from rig_models import load_rig
+        from rig_jobs import save_rig
+        import shutil
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);baseline=root/'base'
+            create_demo(baseline,'robotic')
+            for kind in ('ik','cycle','skin','clip'):
+                source=root/kind;shutil.copytree(baseline,source)
+                rig=load_rig(source)
+                if kind=='ik':rig.manifest['controllers']['ik'][0]['bones'][-1]='missing-bone'
+                elif kind=='cycle':
+                    bone=rig.manifest['skeleton']['bones'][1];bone['parent']=bone['id']
+                elif kind=='skin':next(iter(rig.weights.values())).joints[0]='missing-bone'
+                else:next(iter(rig.clips.values()))['tracks'][0]['target']='missing-bone'
+                save_rig(rig,bump=False)
+                # Storage is still hash-consistent; semantic validation must reject.
+                load_rig(source)
+                with self.subTest(kind=kind),self.assertRaises(Render3DError):
+                    create_snapshot(source,root/(kind+'-snapshot'),NativeRigAdapter())
+                self.assertFalse((root/(kind+'-snapshot')).exists())
+            static=root/'static';shutil.copytree(baseline,static)
+            rig=load_rig(static);rig.manifest['skeleton']=None
+            rig.manifest['controllers']=dict(ik=[],constraints=[])
+            rig.weights={};rig.clips={};save_rig(rig,bump=False)
+            result=create_snapshot(static,root/'static-snapshot',NativeRigAdapter())
+            self.assertEqual(result,verify_snapshot(root/'static-snapshot',NativeRigAdapter()))
+
     def test_cli_has_no_render_or_success_alias(self):
         completed=subprocess.run([sys.executable,str(ROOT/'scripts/render3d.py'),'--help'],capture_output=True,text=True)
         self.assertEqual(completed.returncode,0)

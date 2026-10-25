@@ -71,7 +71,29 @@ class NativeRigAdapter:
         require(all(size <= MAX_FILE_BYTES for size in sizes) and sum(sizes) <= MAX_TOTAL_BYTES,
                 'storage-exhaustion', 'Native rig source closure exceeds byte budget.')
         # Enforce snapshot admission before loading binary geometry/skin payloads.
-        load_rig(root)
+        rig = load_rig(root)
+        # Loading authenticates storage; the existing semantic validators own
+        # executable skeleton/controller/skin/clip correctness. Missing optional
+        # rigging is allowed for static imports, but present declarations must
+        # not freeze malformed data as validated source.
+        from rig_skeleton import validate_skeleton
+        from rig_ik import validate_controllers
+        from rig_skinning import validate_skin
+        from rig_animation import validate_animation
+        skeleton = rig.manifest['skeleton']
+        if skeleton is None:
+            require(not rig.weights and not rig.clips
+                    and not any(rig.manifest['controllers'].values()),
+                    'invalid-input', 'Skin, animation and controllers require a skeleton.')
+        else:
+            validate_skeleton(skeleton, rig.manifest['limits'])
+            validate_controllers(skeleton, rig.manifest['controllers'])
+            meshes = rig.geometry.by_id()
+            for name, skin in rig.weights.items():
+                require(name in meshes, 'invalid-input', 'Skin targets a missing mesh.')
+                validate_skin(skin, meshes[name], skeleton, rig.manifest['limits'])
+            for clip in rig.clips.values():
+                validate_animation(rig, clip)
         return SourceDescription(manifest['id'], manifest['version'], 'rig.json',
                                  tuple(sorted(distinct.items())), manifest['source']['fixture'], 'native-rig-preview')
 
