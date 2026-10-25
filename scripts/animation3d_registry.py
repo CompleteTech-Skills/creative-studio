@@ -33,6 +33,8 @@ class TargetRegistry:
     def from_rig(cls, root, actor_id):
         load_rig=_load_rig()
         root=Path(root).resolve(); rig=load_rig(root)
+        from rig_skeleton import validate_skeleton
+        validate_skeleton(rig.skeleton,rig.manifest['limits'])
         source=dict(id=rig.manifest['id'],version=rig.manifest['version'],path='rig.json',sha256=sha256(root/'rig.json'),kind='rig')
         entries=[]
         for bone in rig.skeleton['bones']:
@@ -53,6 +55,8 @@ class TargetRegistry:
         require(path.name=='rig.json','ANIMATION_OWNER','Rig source must be a native rig.json.',stage='animation3d')
         require(path.stat().st_size<=32*1024**2 and sha256(path)==source['sha256'],'ANIMATION_HASH','Rig source hash changed.',stage='animation3d')
         rig=load_rig(path.parent)
+        from rig_skeleton import validate_skeleton
+        validate_skeleton(rig.skeleton,rig.manifest['limits'])
         require(sha256(path)==source['sha256'] and rig.manifest['id']==source['id'] and rig.manifest['version']==source['version'],
             'ANIMATION_IDENTITY','Loaded rig identity/version differs from registry.',stage='animation3d')
         if target['kind']=='bone':

@@ -2,6 +2,7 @@ from copy import deepcopy
 import json
 import io
 import subprocess
+import tempfile
 from contextlib import redirect_stdout
 from pathlib import Path
 import sys
@@ -135,6 +136,23 @@ else:raise AssertionError('missing dependency accepted')
 """
         result=subprocess.run([sys.executable,'-c',script],env={**__import__('os').environ,'PYTHONPATH':str(Path(__file__).resolve().parents[1]/'scripts')},capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    def test_registry_rejects_hash_valid_but_semantically_cyclic_native_rig(self):
+        from rig_test_helpers import fixture
+        from rig_errors import atomic_json,sha256
+        from animation3d_registry import TargetRegistry
+        with tempfile.TemporaryDirectory() as directory:
+            rig=fixture(directory,animated=False)
+            registry=TargetRegistry.from_rig(rig.root,'actor')
+            manifest=rig.root/'rig.json'
+            value=json.loads(manifest.read_text())
+            value['skeleton']['bones'][0]['parent']=value['skeleton']['bones'][0]['id']
+            atomic_json(manifest,value)
+            document=deepcopy(registry.document)
+            for entry in document['entries']:entry['source']['sha256']=sha256(manifest)
+            with self.assertRaises(RigError):TargetRegistry.from_rig(rig.root,'actor')
+            rebuilt=TargetRegistry(rig.root,document)
+            with self.assertRaises(RigError):rebuilt.resolve(document['entries'][0]['target'])
 
     def test_renderer_audio_and_path_are_explicit(self):
         for key,content in [('include_audio',True),('output_directory','../outside'),('end_frame_exclusive',0)]:
