@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Animation3D render v1",
+  "$ref": "#/$defs/render",
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "animation_render_3d"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "project": {
+          "$ref": "#/$defs/asset"
+        },
+        "sequence_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "start_frame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "end_frame_exclusive": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        },
+        "fps": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "output_format": {
+          "enum": [
+            "png_sequence",
+            "exr_sequence",
+            "mp4",
+            "webm"
+          ]
+        },
+        "renderer": {
+          "enum": [
+            "blender",
+            "supported_plugin"
+          ]
+        },
+        "quality": {
+          "enum": [
+            "preview",
+            "standard",
+            "final"
+          ]
+        },
+        "transparent_background": {
+          "type": "boolean"
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "output_directory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "include_audio": {
+          "const": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "project",
+        "sequence_id",
+        "start_frame",
+        "end_frame_exclusive",
+        "width",
+        "height",
+        "fps",
+        "output_format",
+        "renderer",
+        "quality",
+        "transparent_background",
+        "seed",
+        "output_directory",
+        "include_audio"
+      ]
+    }
+  }
+}

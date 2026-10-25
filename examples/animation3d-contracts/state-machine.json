@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "animation_state_machine_3d",
+  "id": "machine",
+  "version": "1.0.0",
+  "parameters": [],
+  "states": [
+    {
+      "id": "idle",
+      "name": "Idle",
+      "clip": {
+        "id": "source",
+        "version": "1.0.0",
+        "path": "source.json",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "kind": "rig"
+      },
+      "playback_speed": 1
+    }
+  ],
+  "transitions": [],
+  "initial_state": "idle",
+  "transition_limit_per_frame": 4,
+  "provenance": {
+    "origin": "synthetic-contract-fixture",
+    "kind": "fixture",
+    "fixture": true,
+    "sources": []
+  }
+}

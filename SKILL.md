@@ -17,6 +17,10 @@ For a cast performing in scenes, use `scripts/production.py` and the separate pr
 - **Develop/test:** use labeled synthetic fixtures. A fixture receipt tests the gate; it is not production artwork acceptance. Never relabel fixtures as user artwork or model output.
 - **Rig a genuine 3D model:** read [3D rigging](references/3d-rigging.md) and use the separate `python scripts/hatch.py rig ...` workflow. Import GLB/glTF, OBJ or a packed Blender project; preserve original bytes, texture/material data and compatible existing skins. Canonical coordinates are right-handed, +Y up, +Z forward, meters, XYZW quaternions and seconds. Bounds/PCA fitting is an uncertain suggestion until corrected or reviewed; source-bound authored landmarks take precedence. Generate actual normalized vertex weights, inspect real deformation and contacts, then export executable GLB channels and a reopened editable Blender file. Optional 3D dependencies never belong in a 2D-only installation. A 2D component or painted depth cue is not a mesh.
 
+## Animation3D foundation
+
+Validate separately versioned animation documents with `python scripts/animation3d.py validate --file FILE`; inspect supported operations with `python scripts/animation3d.py capabilities`. The [foundation guide](references/3d-animation-contracts.md) covers exact rational time, strict contracts and native rig channel sampling. Full timeline, scene evaluation and cinematic rendering remain downstream work.
+
 ## Rig, animate and verify 3D characters
 
 Use `rig doctor`, `templates list`, `import`, `analyze`, `auto`, `weights`, `validate` and `test-motion` in that order for a new unrigged mesh. Preserve an imported compatible skeleton unless replacement is explicit. Use four influences for the local Three.js viewer. Keep native controls, contacts, sockets and correction history in the run; GLB carries evaluated skin/morph channels and cannot preserve every authoring constraint.

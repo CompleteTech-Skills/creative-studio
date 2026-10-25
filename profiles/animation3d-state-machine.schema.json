@@ -1,0 +1,442 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Animation3D state-machine v1",
+  "$ref": "#/$defs/state-machine",
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "kind": {
+          "enum": [
+            "generated",
+            "imported",
+            "authored",
+            "derived",
+            "fixture"
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "permissions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "tool_versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxProperties": 128
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "maxProperties": 128
+        },
+        "created_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "parent_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "origin",
+        "kind",
+        "fixture",
+        "sources"
+      ]
+    },
+    "state-machine": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "animation_state_machine_3d"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "type": {
+                    "const": "bool"
+                  },
+                  "default": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "default"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "type": {
+                    "const": "float"
+                  },
+                  "default": {
+                    "type": "number",
+                    "minimum": -1000000000.0,
+                    "maximum": 1000000000.0
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "default"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "type": {
+                    "const": "int"
+                  },
+                  "default": {
+                    "type": "integer",
+                    "minimum": -1000000000.0,
+                    "maximum": 1000000000.0
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "default"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "type": {
+                    "const": "trigger"
+                  },
+                  "default": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "name",
+                  "type",
+                  "default"
+                ]
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "states": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "clip": {
+                "$ref": "#/$defs/asset"
+              },
+              "blend_tree": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "playback_speed": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000000.0
+              },
+              "loop_override": {
+                "enum": [
+                  "inherit",
+                  "loop",
+                  "once"
+                ]
+              },
+              "enter_events": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                },
+                "minItems": 0,
+                "maxItems": 4096
+              },
+              "exit_events": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                },
+                "minItems": 0,
+                "maxItems": 4096
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "playback_speed"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "from_state": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  {
+                    "const": "*"
+                  }
+                ]
+              },
+              "to_state": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "conditions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "parameter": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "operator": {
+                      "enum": [
+                        "eq",
+                        "neq",
+                        "lt",
+                        "lte",
+                        "gt",
+                        "gte",
+                        "triggered"
+                      ]
+                    },
+                    "value": {
+                      "type": [
+                        "boolean",
+                        "number"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "parameter",
+                    "operator"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 128
+              },
+              "condition_mode": {
+                "enum": [
+                  "all",
+                  "any"
+                ]
+              },
+              "priority": {
+                "type": "integer",
+                "minimum": -10000,
+                "maximum": 10000
+              },
+              "duration_frames": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000000
+              },
+              "blend_curve": {
+                "enum": [
+                  "linear",
+                  "smoothstep",
+                  "ease_in_out"
+                ]
+              },
+              "exit_time_normalized": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "exit_marker": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "interruption_policy": {
+                "enum": [
+                  "source",
+                  "destination",
+                  "higher_priority",
+                  "none"
+                ]
+              },
+              "synchronize_phase": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "from_state",
+              "to_state",
+              "conditions",
+              "condition_mode",
+              "priority",
+              "duration_frames",
+              "blend_curve",
+              "interruption_policy"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "initial_state": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "transition_limit_per_frame": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "parameters",
+        "states",
+        "transitions",
+        "initial_state",
+        "transition_limit_per_frame",
+        "provenance"
+      ]
+    }
+  }
+}

@@ -1,0 +1,1106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Animation3D clip v1",
+  "$ref": "#/$defs/clip",
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "clip": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "animation_clip_3d"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "fps": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "duration_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "rig_binding": {
+          "$ref": "#/$defs/asset"
+        },
+        "skeleton_signature": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "loop_mode": {
+          "enum": [
+            "once",
+            "loop",
+            "ping_pong",
+            "hold"
+          ]
+        },
+        "completion_mode": {
+          "enum": [
+            "hold",
+            "reset",
+            "exit",
+            "transition"
+          ]
+        },
+        "default_speed": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/track"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "frame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000000
+              },
+              "type": {
+                "enum": [
+                  "marker",
+                  "animation_event",
+                  "contact_start",
+                  "contact_end",
+                  "attach",
+                  "release",
+                  "handoff",
+                  "state_transition"
+                ]
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean",
+                    "null"
+                  ],
+                  "maxLength": 4096
+                },
+                "maxProperties": 128
+              },
+              "scope": {
+                "enum": [
+                  "clip",
+                  "actor",
+                  "scene"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "frame",
+              "type"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "contacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "target_node": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "target_bone": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "target_anchor": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "kind": {
+                "enum": [
+                  "foot",
+                  "hand",
+                  "grasp",
+                  "support",
+                  "custom"
+                ]
+              },
+              "start_frame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 10000000
+              },
+              "end_frame": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000000
+              },
+              "coordinate_space": {
+                "enum": [
+                  "world",
+                  "actor",
+                  "object"
+                ]
+              },
+              "target_object": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "position_tolerance_m": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000000.0
+              },
+              "orientation_tolerance_rad": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000000.0
+              },
+              "solver_weight": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "start_frame",
+              "end_frame",
+              "coordinate_space",
+              "position_tolerance_m",
+              "solver_weight"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "root_motion": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "source_node": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "source_bone": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "translation_axes": {
+              "type": "array",
+              "items": {
+                "type": "boolean"
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "extract_rotation": {
+              "type": "boolean"
+            },
+            "mode": {
+              "enum": [
+                "apply_to_actor",
+                "in_place",
+                "extract_only"
+              ]
+            },
+            "cycle_displacement": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            }
+          },
+          "required": [
+            "enabled",
+            "translation_axes",
+            "extract_rotation",
+            "mode"
+          ]
+        },
+        "entry_pose": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "exit_pose": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "interruption_policy": {
+          "enum": [
+            "any_frame",
+            "markers_only",
+            "on_completion",
+            "never"
+          ]
+        },
+        "interruption_markers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "procedural_modifiers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "name",
+        "fps",
+        "duration_frames",
+        "tags",
+        "categories",
+        "loop_mode",
+        "completion_mode",
+        "default_speed",
+        "tracks",
+        "events",
+        "contacts",
+        "root_motion",
+        "interruption_policy",
+        "provenance",
+        "dependencies"
+      ]
+    },
+    "key": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "time": {
+          "$ref": "#/$defs/time"
+        },
+        "value": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          ]
+        },
+        "interpolation": {
+          "enum": [
+            "step",
+            "linear",
+            "ease",
+            "bezier",
+            "hermite",
+            "catmull-rom",
+            "tcb",
+            "quaternion-slerp",
+            "quaternion-squad"
+          ]
+        },
+        "ease_in": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "ease_out": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "in_tangent": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          ]
+        },
+        "out_tangent": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          ]
+        },
+        "in_handle": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "time_delta_frames": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "value_delta": {
+              "oneOf": [
+                {
+                  "type": "number",
+                  "minimum": -1000000000.0,
+                  "maximum": 1000000000.0
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": -1000000000.0,
+                    "maximum": 1000000000.0
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": -1000000000.0,
+                    "maximum": 1000000000.0
+                  },
+                  "minItems": 4,
+                  "maxItems": 4
+                }
+              ]
+            },
+            "weighted": {
+              "type": "boolean"
+            },
+            "weight": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            }
+          },
+          "required": [
+            "time_delta_frames",
+            "value_delta"
+          ]
+        },
+        "out_handle": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "time_delta_frames": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "value_delta": {
+              "oneOf": [
+                {
+                  "type": "number",
+                  "minimum": -1000000000.0,
+                  "maximum": 1000000000.0
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": -1000000000.0,
+                    "maximum": 1000000000.0
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": -1000000000.0,
+                    "maximum": 1000000000.0
+                  },
+                  "minItems": 4,
+                  "maxItems": 4
+                }
+              ]
+            },
+            "weighted": {
+              "type": "boolean"
+            },
+            "weight": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            }
+          },
+          "required": [
+            "time_delta_frames",
+            "value_delta"
+          ]
+        },
+        "tension": {
+          "type": "number",
+          "minimum": -1000000000.0,
+          "maximum": 1000000000.0
+        },
+        "continuity": {
+          "type": "number",
+          "minimum": -1000000000.0,
+          "maximum": 1000000000.0
+        },
+        "bias": {
+          "type": "number",
+          "minimum": -1000000000.0,
+          "maximum": 1000000000.0
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "maxProperties": 128
+        }
+      },
+      "required": [
+        "time",
+        "value"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "kind": {
+          "enum": [
+            "generated",
+            "imported",
+            "authored",
+            "derived",
+            "fixture"
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "permissions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "tool_versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxProperties": 128
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "maxProperties": 128
+        },
+        "created_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "parent_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "origin",
+        "kind",
+        "fixture",
+        "sources"
+      ]
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "node"
+            },
+            "property": {
+              "enum": [
+                "translation",
+                "rotation",
+                "scale",
+                "visibility"
+              ]
+            },
+            "node_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "node_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "bone"
+            },
+            "property": {
+              "enum": [
+                "translation",
+                "rotation",
+                "scale"
+              ]
+            },
+            "actor_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "bone_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "actor_id",
+            "bone_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "morph"
+            },
+            "property": {
+              "enum": [
+                "weight"
+              ]
+            },
+            "actor_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "mesh_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "morph_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "actor_id",
+            "mesh_id",
+            "morph_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "camera"
+            },
+            "property": {
+              "enum": [
+                "translation",
+                "rotation",
+                "focal_length",
+                "field_of_view",
+                "orthographic_size",
+                "focus_distance",
+                "aperture",
+                "exposure"
+              ]
+            },
+            "camera_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "camera_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "light"
+            },
+            "property": {
+              "enum": [
+                "translation",
+                "rotation",
+                "color",
+                "intensity",
+                "range",
+                "cone_angle"
+              ]
+            },
+            "light_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "light_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "material"
+            },
+            "property": {
+              "enum": [
+                "base_color",
+                "emissive_color",
+                "opacity",
+                "emissive_intensity",
+                "roughness",
+                "metallic"
+              ]
+            },
+            "material_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "material_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "environment"
+            },
+            "property": {
+              "enum": [
+                "sky_rotation",
+                "ambient_intensity",
+                "fog_density",
+                "wind_strength",
+                "sun_elevation",
+                "time_of_day"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "property"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "constraint"
+            },
+            "property": {
+              "enum": [
+                "weight",
+                "enabled",
+                "target_position"
+              ]
+            },
+            "constraint_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "constraint_id"
+          ]
+        }
+      ]
+    },
+    "time": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "frame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "subframe_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999999
+        }
+      },
+      "required": [
+        "frame"
+      ]
+    },
+    "track": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "value_type": {
+          "enum": [
+            "float",
+            "boolean",
+            "vec3",
+            "vec4",
+            "quaternion"
+          ]
+        },
+        "coordinate_space": {
+          "enum": [
+            "local",
+            "world",
+            "parent"
+          ]
+        },
+        "default_value": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/key"
+          },
+          "minItems": 0,
+          "maxItems": 250000
+        },
+        "extrapolation_before": {
+          "enum": [
+            "hold",
+            "linear",
+            "cycle"
+          ]
+        },
+        "extrapolation_after": {
+          "enum": [
+            "hold",
+            "linear",
+            "cycle"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "target",
+        "value_type",
+        "default_value",
+        "keys",
+        "extrapolation_before",
+        "extrapolation_after",
+        "enabled"
+      ]
+    }
+  }
+}

@@ -1,0 +1,342 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Animation3D project v1",
+  "$ref": "#/$defs/project",
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "animation_project_3d"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "fps": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "coordinate_system": {
+          "const": {
+            "handedness": "right",
+            "up_axis": "Y",
+            "unit": "meters"
+          }
+        },
+        "scene_assets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "character_assets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "rig_assets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "clips": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "state_machines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "retarget_profiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "sequences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "character_state_bindings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/asset"
+          },
+          "maxProperties": 4096
+        },
+        "default_render_profile": {
+          "$ref": "#/$defs/asset"
+        },
+        "budgets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_frames": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            },
+            "max_tracks": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            },
+            "max_keyframes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            },
+            "max_actors": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            },
+            "max_bones_per_rig": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            },
+            "max_vertices": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            },
+            "max_morph_targets": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            },
+            "max_scene_nodes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            },
+            "max_memory_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1099511627776
+            },
+            "max_work_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1099511627776
+            },
+            "max_render_pixels": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1099511627776
+            },
+            "max_parallel_jobs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000000
+            }
+          },
+          "required": [
+            "max_frames",
+            "max_tracks",
+            "max_keyframes",
+            "max_actors",
+            "max_bones_per_rig",
+            "max_vertices",
+            "max_morph_targets",
+            "max_scene_nodes",
+            "max_memory_bytes",
+            "max_work_bytes",
+            "max_render_pixels",
+            "max_parallel_jobs"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "name",
+        "fixture",
+        "fps",
+        "coordinate_system",
+        "scene_assets",
+        "character_assets",
+        "rig_assets",
+        "clips",
+        "state_machines",
+        "retarget_profiles",
+        "sequences",
+        "budgets",
+        "provenance"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "kind": {
+          "enum": [
+            "generated",
+            "imported",
+            "authored",
+            "derived",
+            "fixture"
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/asset"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "permissions": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "tool_versions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxProperties": 128
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "maxProperties": 128
+        },
+        "created_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "parent_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "origin",
+        "kind",
+        "fixture",
+        "sources"
+      ]
+    }
+  }
+}
