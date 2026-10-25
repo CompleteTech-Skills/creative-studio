@@ -119,6 +119,23 @@ for call in (lambda:TargetRegistry.from_rig('.', 'actor'),lambda:sample_track({}
         result=subprocess.run([sys.executable,'-c',script],env={**__import__('os').environ,'PYTHONPATH':str(Path(__file__).resolve().parents[1]/'scripts')},capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
+    def test_missing_schema_dependency_is_actionable(self):
+        script="""
+import sys, importlib.abc
+class BlockSchema(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'jsonschema' or fullname.startswith('jsonschema.'):
+            raise ImportError('deliberately unavailable')
+sys.meta_path.insert(0,BlockSchema())
+from animation3d_contracts import validate_contract
+from rig_errors import RigError
+try:validate_contract(dict(schema_version=1,kind='animation_project_3d'))
+except RigError as error:assert error.report['code']=='ANIMATION_DEPENDENCY'
+else:raise AssertionError('missing dependency accepted')
+"""
+        result=subprocess.run([sys.executable,'-c',script],env={**__import__('os').environ,'PYTHONPATH':str(Path(__file__).resolve().parents[1]/'scripts')},capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
     def test_renderer_audio_and_path_are_explicit(self):
         for key,content in [('include_audio',True),('output_directory','../outside'),('end_frame_exclusive',0)]:
             value=samples()['render'];value[key]=content

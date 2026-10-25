@@ -437,7 +437,11 @@ def _semantic(value):
 def validate_contract(value):
     finite_json(value)
     require(isinstance(value,dict) and value.get('kind') in KINDS.values(),'ANIMATION_KIND','Unknown animation document kind.',stage='animation3d')
-    from jsonschema import Draft202012Validator
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError as exc:
+        raise RigError('ANIMATION_DEPENDENCY',
+            'Install requirements-rig.txt to validate animation contracts.',stage='animation3d') from exc
     name=next(name for name,kind in KINDS.items() if kind==value['kind'])
     error=next(Draft202012Validator(schemas()['animation3d-'+name+'.schema.json']).iter_errors(value),None)
     if error:
