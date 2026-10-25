@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from numbers import Integral, Real
 import numpy as np
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import require
@@ -174,6 +175,8 @@ def evaluate_deformation(rig: RigAsset, pose: dict | None = None, *, normals=Fal
 
 
 def edit_weights(skin: SkinWeights, assignments: dict[int, dict[str, float]], *, max_influences=4, lock=True) -> SkinWeights:
+    require(isinstance(max_influences, Integral) and not isinstance(max_influences, (bool, np.bool_)) and 1 <= max_influences <= skin.indices.shape[1],
+            'RIG_WEIGHT_EDIT', 'Influence limit must be an integer within the stored skin width.')
     result = deepcopy(skin)
     lookup = {name: i for i, name in enumerate(skin.joints)}
     for vertex, row in assignments.items():
@@ -198,13 +201,16 @@ def edit_weights(skin: SkinWeights, assignments: dict[int, dict[str, float]], *,
 def copy_weights(skin: SkinWeights, pairs: dict[int, int], *, lock=True) -> SkinWeights:
     assignments = {}
     for target, source in pairs.items():
-        require(0 <= source < len(skin.weights), 'RIG_VERTEX_REFERENCE', 'Source vertex is missing.')
+        require(isinstance(source, Integral) and not isinstance(source, (bool, np.bool_)) and 0 <= source < len(skin.weights), 'RIG_VERTEX_REFERENCE', 'Source vertex is missing.')
         assignments[target] = {skin.joints[int(j)]: float(w) for j, w in zip(skin.indices[source], skin.weights[source]) if w > 0}
     return edit_weights(skin, assignments, max_influences=skin.weights.shape[1], lock=lock)
 
 
 def smooth_weights(mesh: Mesh, skin: SkinWeights, *, iterations=4, strength=.3) -> SkinWeights:
-    require(0 <= iterations <= 64 and 0 <= strength <= 1, 'RIG_WEIGHT_SMOOTH', 'Smoothing parameters exceed their bounds.')
+    require(isinstance(iterations, Integral) and not isinstance(iterations, (bool, np.bool_)) and 0 <= iterations <= 64
+            and isinstance(strength, Real) and not isinstance(strength, (bool, np.bool_))
+            and 0 <= strength <= 1, 'RIG_WEIGHT_SMOOTH', 'Smoothing parameters exceed their bounds.')
+    strength = float(strength)
     require(len(mesh.positions)*len(skin.joints)*8*3 < DEFAULT_LIMITS['memory_bytes']//2,
             'RIG_LIMIT_MEMORY', 'Dense manual smoothing exceeds the bounded working set.')
     dense = np.zeros((len(mesh.positions), len(skin.joints)))
