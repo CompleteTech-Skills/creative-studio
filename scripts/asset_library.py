@@ -110,7 +110,9 @@ def read_source_bytes(path, limit=MAX_FILE_BYTES):
     """Read exact bounded source bytes or return a structured library diagnostic."""
     try:
         return _read_source_bytes(path, limit)
-    except (OSError, TypeError) as exc:
+    except RigError:
+        raise
+    except (OSError, TypeError, ValueError) as exc:
         raise RigError('LIBRARY_SOURCE', 'Cannot safely read the source file: ' + str(exc),
                        asset=str(path)) from exc
 

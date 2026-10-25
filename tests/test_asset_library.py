@@ -238,6 +238,32 @@ class AssetLibraryTests(unittest.TestCase):
             with self.assertRaises(RigError):
                 read_source_bytes(fifo)
 
+    def test_malformed_source_paths_have_structured_diagnostics_without_mutation(self):
+        database_before = self.library.database.read_bytes()
+        sources_before = {name: source.read_bytes() for name, source in self.sources.items()}
+        for malformed in ('bad\0path', Path('bad\0path')):
+            operations = (
+                lambda: read_source_bytes(malformed),
+                lambda: file_record(malformed, 'mesh/triangle.obj'),
+                lambda: self.library.register(self.manifest, {**self.sources, self.files[0]['path']: malformed}),
+            )
+            for operation in operations:
+                with self.subTest(path=repr(malformed)), self.assertRaises(RigError) as caught:
+                    operation()
+                self.assertEqual(caught.exception.report['code'], 'LIBRARY_SOURCE')
+                self.assertIsInstance(caught.exception.__cause__, (OSError, ValueError))
+                self.assertEqual(self.library.database.read_bytes(), database_before)
+                self.assertEqual({name: source.read_bytes() for name, source in self.sources.items()}, sources_before)
+
+    def test_source_reader_preserves_specific_structured_diagnostics(self):
+        empty = self.root / 'empty-source'
+        empty.write_bytes(b'')
+        for path, limit, code in ((self.mesh, 0, 'LIBRARY_LIMIT'),
+                                  (empty, 1, 'LIBRARY_PAYLOAD')):
+            with self.subTest(code=code), self.assertRaises(RigError) as caught:
+                read_source_bytes(path, limit)
+            self.assertEqual(caught.exception.report['code'], code)
+
     def test_replaced_private_root_is_rejected_before_storage_access(self):
         original = self.library.database.read_bytes()
         old_root = self.root / 'retained-library'
