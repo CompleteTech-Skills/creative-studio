@@ -1,0 +1,77 @@
+{
+  "scope": "Render3D #91 partial foundation; no rendered-pixel or full Scene3D acceptance",
+  "base": "bb5a6810afd06cf57185ffdfe2234e0fdc6e6240",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "commands": [
+    {
+      "command": "python -m unittest discover -s tests -p 'test_render3d*.py' -v",
+      "tests": 34,
+      "result": "pass"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_production_contracts.py -v",
+      "tests": 31,
+      "result": "pass"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_production_render.py -v",
+      "tests": 20,
+      "result": "pass"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_rig_compatibility.py -v",
+      "tests": 5,
+      "result": "pass",
+      "discovered_2d_tests": 831
+    },
+    {
+      "command": "python scripts/generate_schemas.py --check",
+      "result": "pass"
+    },
+    {
+      "command": "python scripts/test_rig_gate.py schema-math",
+      "result": "blocked",
+      "reason": "default environment lacks pygltflib; failure retained"
+    },
+    {
+      "command": "/workspace/creative-mod1/test-venv/bin/python scripts/test_rig_gate.py schema-math",
+      "result": "pass",
+      "tests": 65,
+      "environment": "Python3.12.14, numpy2.3.5,jsonschema4.26.0,Pillow12.3.0,playwright1.62.0,pygltflib1.16.5; not an exact requirements-rig-test pin match"
+    }
+  ],
+  "native_snapshot": {
+    "fixture": true,
+    "artwork_approval": false,
+    "vertices": 706,
+    "triangles": 1368,
+    "files": 15,
+    "bytes": 91107,
+    "snapshot_sha256": "aed1e927d3d79327c7f4d3e40131e91fc572aeef7a76cb6b1b84850e6086a073",
+    "cli_repeat_document_match": true
+  },
+  "source_sha256": {
+    "scripts/render3d.py": "8222fd86280f6e0cf245578e54c73efa9b4af09182cbd00fe7bf6c1e98061a7e",
+    "scripts/render3d_contracts.py": "d94d6ad302e0ca2e3042f14d0e29e2b0f232e15092df201f3ad35ab9d7ff2a46",
+    "scripts/render3d_snapshot.py": "2d3a5fe819dad18da946c20868a500466ace255fd5d2d1e0dd41c8034ddd1a45",
+    "scripts/generate_schemas.py": "f4958d5d854018e41ae536752f0cd42eecd95d885d55bc456fa6d844a30076b1",
+    "scripts/test_rig_gate.py": "da61c596f76cc1d273dff18468afaa1a01f10f0ec1fb398756917c34ff5f9056",
+    "scripts/verify_public_delivery.py": "fc3668c51399a798267ba5dcb369c523dce3de02307ec07800925b057164e76c",
+    "tests/test_rig_compatibility.py": "ee0a18c6c43bdd70f21e2e6fe6173060164c7457133743779bd4dfbf7b5b0407",
+    "tests/test_render3d_contracts.py": "411ea50be1c3f7ec9978dd8871443b26ecc6f0fbdbacce522edc0cb5e32e3878",
+    "tests/test_render3d_independent.py": "c29174154cbe22d7a85d375ece4752d3851b8b82fb6c405c9aa2426bc531d634"
+  },
+  "logs": {
+    "production-render.log": "23fd9f91776e9f4892130773037c856b9447b60e5f1f57987b24d15a2aba7db9",
+    "schema-math.log": "c276eee89c88b18997ea4dc5c2a5b8fe6c144b76445b400c5176d095611f2d50",
+    "schema-math-pinned.log": "fe5276e481ba9e23f42eb44e91675170a1982d3744f314c8f8d6de5293b78120",
+    "render3d-final.log": "f0006b912070dc980107c136fb15a6f6c029fc184cfe11a9f1d473acf386c4a0",
+    "production-contracts.log": "477074a54e16855b61fe252fb4a69a59a4e28fdc7ea8d93d1f35bedb32be95ce"
+  },
+  "blocked_acceptance": [
+    "Full Scene3D source adapter requires unmerged owner #59",
+    "No Blender rendering, PNG/EXR verifier, GPU execution, scheduler, cache-recovery or movie acceptance is claimed",
+    "Hosted CI not awaited or described as passing"
+  ]
+}

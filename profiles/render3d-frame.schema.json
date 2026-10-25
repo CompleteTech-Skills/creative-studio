@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "FrameSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "render3d-frame"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "local_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "presentation_time": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "source_time": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "camera": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "snapshot_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "settings_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "output": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "enum": [
+                "png",
+                "exr"
+              ]
+            },
+            "bit_depth": {
+              "enum": [
+                8,
+                16,
+                32
+              ]
+            },
+            "passes": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "combined",
+                  "depth",
+                  "normal",
+                  "albedo"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true
+            },
+            "alpha": {
+              "enum": [
+                "opaque",
+                "straight"
+              ]
+            },
+            "color_space": {
+              "enum": [
+                "srgb",
+                "linear"
+              ]
+            }
+          },
+          "required": [
+            "format",
+            "bit_depth",
+            "passes",
+            "alpha",
+            "color_space"
+          ]
+        },
+        "destination": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "cache_key": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "index",
+        "local_index",
+        "presentation_time",
+        "source_time",
+        "camera",
+        "snapshot_sha256",
+        "settings_sha256",
+        "dependencies",
+        "output",
+        "destination",
+        "cache_key"
+      ]
+    }
+  },
+  "$ref": "#/$defs/FrameSpec",
+  "title": "Render3D FrameSpec v1"
+}
