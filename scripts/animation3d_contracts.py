@@ -297,10 +297,17 @@ def _check_layer(node):
         'ANIMATION_MASK','Bone mask repeats or contradicts a bone.',stage='animation3d')
 
 
-def _walk(value):
+def _walk(value, *, container=False):
     if isinstance(value,dict):
-        yield value
-        for child in value.values(): yield from _walk(child)
+        if not container: yield value
+        for key,child in value.items():
+            # These schema-declared scalar maps are opaque annotations, not
+            # embedded clocks, constraints or executable animation records.
+            if key in {'metadata','payload','tool_versions','per_bone_weights','initial_state_parameters'}:
+                continue
+            if key=='parameters' and isinstance(child,dict): continue
+            # These maps hold named typed records; inspect their values only.
+            yield from _walk(child,container=key in {'character_state_bindings','actor_overrides'})
     elif isinstance(value,list):
         for child in value: yield from _walk(child)
 

@@ -91,6 +91,13 @@ class AnimationContractTests(unittest.TestCase):
         local=am.compose(rotation=am.euler_xyz([0,0,math.pi/4]))
         with self.assertRaises(RigError):am.local_to_world(local,parent)
 
+    def test_metadata_is_not_treated_as_embedded_animation_records(self):
+        value=samples()['clip']
+        for payload in (dict(source='s',target='t',weight=1,type='custom',enabled=True),dict(numerator=0,denominator=0)):
+            value['provenance']['parameters']=payload
+            value['tracks'][0]['keys'][0]['metadata']=payload
+            validate_contract(value)
+
     def test_renderer_audio_and_path_are_explicit(self):
         for key,content in [('include_audio',True),('output_directory','../outside'),('end_frame_exclusive',0)]:
             value=samples()['render'];value[key]=content
