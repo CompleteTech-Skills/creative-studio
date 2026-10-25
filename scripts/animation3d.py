@@ -3,9 +3,9 @@
 import argparse
 import json
 from pathlib import Path
-from animation3d_contracts import validate_contract
+from animation3d_contracts import KINDS, validate_contract
 from animation3d_registry import TargetRegistry, sample_track
-from rig_errors import RigError, read_json
+from rig_errors import RigError, read_json, require
 
 
 def main(argv=None):
@@ -29,6 +29,8 @@ def main(argv=None):
                 result=dict(valid=True,kind=document['kind'],source_ready=False,
                     evidence_scope='document shape and local relationships only')
             else:
+                require(document['kind']==KINDS['track'],'ANIMATION_KIND',
+                    'Sampling requires a standalone animation track document.',stage='animation3d')
                 registry=TargetRegistry(args.root,read_json(args.registry))
                 value=sample_track(document['value'],dict(frame=args.frame,subframe_ticks=args.subframe_ticks),registry)
                 result=dict(value=value,evidence_scope='one registered native rig channel; not a scene or render')

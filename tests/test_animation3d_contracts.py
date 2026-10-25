@@ -1,5 +1,7 @@
 from copy import deepcopy
 import json
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
@@ -67,6 +69,16 @@ class AnimationContractTests(unittest.TestCase):
         with self.assertRaises(RigError):validate_contract(value)
         value=samples()['sequence'];value['shots'][0]['transition_to_next']=dict(type='dissolve',duration_frames=2)
         with self.assertRaises(RigError):validate_contract(value)
+
+    def test_sample_cli_rejects_wrong_document_kind_with_typed_json(self):
+        from animation3d import main
+        root=Path(__file__).resolve().parents[1]
+        output=io.StringIO()
+        with redirect_stdout(output):
+            code=main(['sample','--file',str(root/'examples/animation3d-contracts/clip.json'),
+                '--registry','missing.json','--root',str(root),'--frame','1'])
+        self.assertEqual(code,2)
+        self.assertEqual(json.loads(output.getvalue())['error']['code'],'ANIMATION_KIND')
 
     def test_renderer_audio_and_path_are_explicit(self):
         for key,content in [('include_audio',True),('output_directory','../outside'),('end_frame_exclusive',0)]:
