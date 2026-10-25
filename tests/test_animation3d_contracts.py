@@ -80,6 +80,17 @@ class AnimationContractTests(unittest.TestCase):
         self.assertEqual(code,2)
         self.assertEqual(json.loads(output.getvalue())['error']['code'],'ANIMATION_KIND')
 
+    def test_extended_math_rejects_overflow_and_composed_shear(self):
+        import math
+        import animation3d_math as am
+        for operation in (lambda:am.arc_length([[-1e308,0,0],[1e308,0,0]]),
+                          lambda:am.vector_add([1e308,0,0],[1e308,0,0]),
+                          lambda:am.quaternion_log([1e308,0,0,1])):
+            with self.assertRaises(RigError):operation()
+        parent=am.compose(scale=[2,1,1])
+        local=am.compose(rotation=am.euler_xyz([0,0,math.pi/4]))
+        with self.assertRaises(RigError):am.local_to_world(local,parent)
+
     def test_renderer_audio_and_path_are_explicit(self):
         for key,content in [('include_audio',True),('output_directory','../outside'),('end_frame_exclusive',0)]:
             value=samples()['render'];value[key]=content
