@@ -90,6 +90,39 @@ class Contracts(unittest.TestCase):
         for index in (4,8,True,5.5):
             with self.assertRaises(Render3DError):frame_times(value,index)
 
+    def test_integral_json_floats_are_typed_rejections(self):
+        for field in ('numerator', 'denominator'):
+            value=request();value['fps'][field]=float(value['fps'][field])
+            with self.assertRaises(Render3DError):validate(value)
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'request.json';value=request();value['fps']['numerator']=30000.0
+            path.write_text(json.dumps(value))
+            completed=subprocess.run([sys.executable,str(ROOT/'scripts/render3d.py'),'validate',str(path)],capture_output=True,text=True)
+            self.assertEqual(completed.returncode,2)
+            self.assertEqual(json.loads(completed.stdout)['code'],'RENDER3D_INVALID_INPUT')
+            self.assertNotIn('Traceback',completed.stderr)
+
+    def test_large_coordinate_values_are_typed_rejections(self):
+        from render3d_contracts import canonical_to_blender
+        for value in (10**309,-10**400):
+            matrix=[[1,0,0,value],[0,1,0,0],[0,0,1,0],[0,0,0,1]]
+            with self.assertRaises(Render3DError):canonical_to_blender(matrix)
+
+    def test_derived_time_can_represent_all_bounded_input_factors(self):
+        from render3d_contracts import rational
+        value=request();value['source_start']=dict(numerator=1,denominator=1000000007)
+        presentation,source=frame_times(value,6)
+        validate(rational(source),'Time')
+        self.assertEqual(source,Fraction(1001000022007,15000000105000))
+        value['source_start']=dict(numerator=2**31-1,denominator=2**31-2)
+        value['fps']=dict(numerator=2**31-1,denominator=2**31-2)
+        value['playback_rate']=dict(numerator=2**31-3,denominator=2**31-4)
+        value['frame_range']=dict(start=0,end=2**31-1)
+        value['settings']['resources']['max_frames']=100000
+        value['frame_range']['start']=value['frame_range']['end']-100000
+        _,source=frame_times(value,value['frame_range']['end']-1)
+        validate(rational(source),'Time')
+
     def test_result_cannot_report_success_without_verifier_and_images(self):
         result=dict(schema_version=1,kind='render3d-result',job='job',request_sha256='0'*64,
             snapshot_sha256='1'*64,backend=backend(),status='complete',requested_frames=[0],

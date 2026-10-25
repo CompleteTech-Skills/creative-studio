@@ -53,7 +53,11 @@ def definitions():
     seconds = dict(type='number', minimum=0, maximum=1e12)
     nullable = lambda value: {'anyOf': [value, {'type': 'null'}]}
     rate = obj(dict(numerator=positive, denominator=positive))
-    time = obj(dict(numerator=count, denominator=positive))
+    input_time = obj(dict(numerator=count, denominator=positive))
+    # Output time is derived from bounded input rationals. Three denominator
+    # factors and four numerator factors fit below 2**127 without truncation.
+    time = obj(dict(numerator=dict(type='integer', minimum=0, maximum=2**127-1),
+                    denominator=dict(type='integer', minimum=1, maximum=2**127-1)))
     file = obj(dict(path=path, sha256=digest, bytes=dict(type='integer', minimum=0, maximum=MAX_FILE_BYTES)))
     identity = obj(dict(id=identifier, version=version))
     bounds = obj(dict(start=count, end=positive))
@@ -95,7 +99,7 @@ def definitions():
                      snapshot_sha256=digest))
     request = doc('request', dict(id=identifier, project=identity, scene=identity, shot=identity,
                    mode={'const': '3d'}, snapshot=file, fps=rate, frame_range=bounds,
-                   source_start=time, playback_rate=rate, camera=identifier, settings=settings,
+                   source_start=input_time, playback_rate=rate, camera=identifier, settings=settings,
                    priority=dict(type='integer', minimum=0, maximum=100),
                    max_attempts=dict(type='integer', minimum=1, maximum=16),
                    cache_policy={'enum': ['verify-reuse', 'refresh']},
@@ -124,7 +128,7 @@ def definitions():
         execution={'enum': ['passed', 'failed', 'not-run']},
         evidence=arr(file, 0, 128), engines=arr({'enum': ['cycles', 'eevee']}, 0, 2),
         features=arr(identifier, 0, 128), diagnostics=arr(diagnostic, 0, 128)))
-    return dict(FileRef=file, Identity=identity, Rate=rate, Time=time, FrameRange=bounds,
+    return dict(FileRef=file, Identity=identity, Rate=rate, Time=time, InputTime=input_time, FrameRange=bounds,
                 RenderSettings=settings, BackendIdentity=backend, Diagnostic=diagnostic,
                 VerifierIdentity=verifier_identity, Verification=verification, RenderSnapshot=snapshot, RenderRequest=request,
                 FrameSpec=frame, RenderJob=job, RenderResult=result, BackendCapabilities=capabilities)
@@ -156,10 +160,13 @@ def schemas():
 @lru_cache(maxsize=16)
 def _validator(kind):
     try:
-        from jsonschema import Draft202012Validator
+        from jsonschema import Draft202012Validator, validators
     except ImportError as exc:
         raise Render3DError('unsupported-feature', 'Install jsonschema>=4 to validate Render3D contracts.') from exc
-    return Draft202012Validator({'$defs': definitions(), '$ref': '#/$defs/' + kind})
+    strict_integer = Draft202012Validator.TYPE_CHECKER.redefine(
+        'integer', lambda checker, instance: type(instance) is int)
+    validator = validators.extend(Draft202012Validator, type_checker=strict_integer)
+    return validator({'$defs': definitions(), '$ref': '#/$defs/' + kind})
 
 
 def _walk(value):
@@ -357,7 +364,7 @@ def canonical_to_blender(matrix):
     from rig_math import BLENDER_FROM_CANONICAL
     try:
         matrix = np.asarray(matrix, dtype=float)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise Render3DError('invalid-input', 'Expected a numeric 4x4 matrix.') from exc
     require(matrix.shape == (4, 4) and np.isfinite(matrix).all()
             and np.allclose(matrix[3], [0, 0, 0, 1]), 'invalid-input', 'Expected a finite affine 4x4 matrix.')
