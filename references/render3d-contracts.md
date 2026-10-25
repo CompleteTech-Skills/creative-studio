@@ -63,10 +63,10 @@ The dedicated tests use labeled synthetic contract data and an actual generated 
 Rollback removes only the new Render3D modules/schemas, their test registration and documentation. Existing source formats, outputs, cache ownership and review receipts do not require migration. Keep #91 and #16 open until their remaining mandatory gates actually pass.
 
 The local [validation receipt](../tests/results/render3d-foundation-20261025.json)
-records 38 foundation tests, 31 production-contract tests, 20 production-render
+records 39 foundation tests, 31 production-contract tests, 20 production-render
 regressions and five compatibility tests passing. The compatibility probe
 collects 831 legacy tests without optional 3D imports; collection is not an
-831-test execution claim. The native schema/math gate passes 69 tests in the
+831-test execution claim. The native schema/math gate passes 70 tests in the
 recorded test environment. Its initial default-environment run failed because
 `pygltflib` was missing; the dependency-equipped rerun does not assert an exact
 match to every optional requirements pin. The standalone CLI captured and
@@ -78,5 +78,5 @@ after the initial 34-test candidate. Separate corrective commits preserve that
 history: typed integral-float/overflow rejection, representable derived rational
 times, and the existing owner's validation of each declared skeleton, controller,
 skin and clip. Optional unrigged static imports remain supported; neither missing
-animation nor missing skins is fabricated. The final foundation suite has 38
+animation nor missing skins is fabricated. The final foundation suite has 39
 tests, including regressions for every reviewed failure.

@@ -160,7 +160,7 @@ No source revision or output cache is overwritten or pruned.
         return document
     except Render3DError:
         raise
-    except (OSError, RigError, ValueError) as exc:
+    except (OSError, RigError, ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
         raise Render3DError('invalid-input', str(exc)) from exc
 
 
@@ -184,5 +184,7 @@ def verify_snapshot(root, adapter: SceneAdapter):
                 and description.fixture == document['fixture'] and description.scope == document['scope'],
                 'stale-asset', 'Snapshot differs from owner-validated source.')
         return document
-    except (OSError, RigError) as exc:
+    except Render3DError:
+        raise
+    except (OSError, RigError, ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
         raise Render3DError('stale-asset', str(exc)) from exc

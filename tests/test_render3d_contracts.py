@@ -202,6 +202,42 @@ class NativeSnapshot(unittest.TestCase):
             result=create_snapshot(static,root/'static-snapshot',NativeRigAdapter())
             self.assertEqual(result,verify_snapshot(root/'static-snapshot',NativeRigAdapter()))
 
+    def test_ragged_native_animation_reverification_has_typed_failure(self):
+        from rig_demo import create_demo
+        from rig_models import load_rig
+        from rig_jobs import save_rig
+        from rig_errors import atomic_json, sha256
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);source=root/'source';frozen=root/'frozen'
+            create_demo(source,'robotic')
+            document=create_snapshot(source,frozen,NativeRigAdapter())
+            rig=load_rig(frozen)
+            clip=next(iter(rig.clips.values()))
+            clip['tracks'][0]['values'][0].pop()
+            save_rig(rig,bump=False)
+            # Rebind storage metadata to isolate semantic owner validation.
+            for item in document['files']:
+                path=frozen/item['path']
+                if path.exists():
+                    item.update(sha256=sha256(path),bytes=path.stat().st_size)
+            for descriptor in rig.manifest['animations']:
+                if descriptor['path'] not in {i['path'] for i in document['files']}:
+                    document['files'].append(file(descriptor['path'],(frozen/descriptor['path']).read_bytes()))
+            # The owner now references new immutable animation paths; drop old
+            # unreferenced paths so the closure itself remains honest.
+            old_animation_paths={i['path'] for i in document['files'] if i['path'].startswith('animations/')}
+            new_animation_paths={i['path'] for i in rig.manifest['animations']}
+            document['files']=[i for i in document['files'] if i['path'] not in old_animation_paths-new_animation_paths]
+            document['files'].sort(key=lambda i:i['path'])
+            document['total_bytes']=sum(i['bytes'] for i in document['files'])
+            document['snapshot_sha256']=snapshot_hash(document)
+            atomic_json(frozen/'snapshot.json',document)
+            with self.assertRaises(Render3DError):verify_snapshot(frozen,NativeRigAdapter())
+            completed=subprocess.run([sys.executable,str(ROOT/'scripts/render3d.py'),'verify-snapshot',str(frozen)],capture_output=True,text=True)
+            self.assertEqual(completed.returncode,2)
+            self.assertEqual(json.loads(completed.stdout)['code'],'RENDER3D_STALE_ASSET')
+            self.assertNotIn('Traceback',completed.stderr)
+
     def test_cli_has_no_render_or_success_alias(self):
         completed=subprocess.run([sys.executable,str(ROOT/'scripts/render3d.py'),'--help'],capture_output=True,text=True)
         self.assertEqual(completed.returncode,0)
