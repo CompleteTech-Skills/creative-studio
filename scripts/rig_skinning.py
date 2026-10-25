@@ -209,7 +209,8 @@ def copy_weights(skin: SkinWeights, pairs: dict[int, int], *, lock=True) -> Skin
 def smooth_weights(mesh: Mesh, skin: SkinWeights, *, iterations=4, strength=.3) -> SkinWeights:
     require(isinstance(iterations, Integral) and not isinstance(iterations, (bool, np.bool_)) and 0 <= iterations <= 64
             and isinstance(strength, Real) and not isinstance(strength, (bool, np.bool_))
-            and np.isfinite(strength) and 0 <= strength <= 1, 'RIG_WEIGHT_SMOOTH', 'Smoothing parameters exceed their bounds.')
+            and 0 <= strength <= 1, 'RIG_WEIGHT_SMOOTH', 'Smoothing parameters exceed their bounds.')
+    strength = float(strength)
     require(len(mesh.positions)*len(skin.joints)*8*3 < DEFAULT_LIMITS['memory_bytes']//2,
             'RIG_LIMIT_MEMORY', 'Dense manual smoothing exceeds the bounded working set.')
     dense = np.zeros((len(mesh.positions), len(skin.joints)))

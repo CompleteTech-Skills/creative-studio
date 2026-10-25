@@ -1,5 +1,6 @@
 """Manual weight operations reject malformed controls without changing the source."""
 from copy import deepcopy
+from fractions import Fraction
 import math
 import unittest
 
@@ -45,7 +46,7 @@ class RigWeightInputBoundaryTests(unittest.TestCase):
                     'RIG_WEIGHT_SMOOTH')
 
     def test_smoothing_requires_finite_numeric_strength(self):
-        for strength in (True, False, np.bool_(True), np.bool_(False), '0.3', None, -.1, 1.1, float('nan'), float('inf')):
+        for strength in (True, False, np.bool_(True), np.bool_(False), '0.3', None, -.1, 1.1, 10**100, -(10**100), float('nan'), float('inf')):
             with self.subTest(strength=strength):
                 self.reject_without_mutation(
                     lambda rig, skin: smooth_weights(rig.geometry.meshes[0], skin, strength=strength),
@@ -108,6 +109,8 @@ class RigWeightInputBoundaryTests(unittest.TestCase):
              lambda: copy_weights(skin, {0: 2})),
             (lambda: smooth_weights(mesh, skin, iterations=np.int64(2)),
              lambda: smooth_weights(mesh, skin, iterations=2)),
+            (lambda: smooth_weights(mesh, skin, strength=Fraction(1, 4)),
+             lambda: smooth_weights(mesh, skin, strength=.25)),
             (lambda: smooth_weights(mesh, skin, strength=np.float32(.3)),
              lambda: smooth_weights(mesh, skin, strength=float(np.float32(.3))))):
             with self.subTest(operation=actual):
