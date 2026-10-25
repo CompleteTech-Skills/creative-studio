@@ -29,6 +29,10 @@ def _validate_landmarks(landmarks, bone_ids):
             require(isinstance(value, list) and len(value) == 3 and
                     all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value),
                     'RIG_LANDMARK', 'Landmark '+field+' must contain three numeric coordinates.', asset=name)
+            # Match the Bone coordinate domain before NumPy conversion, which
+            # can itself overflow for arbitrarily large JSON integers.
+            require(all(-1e9 <= v <= 1e9 for v in value), 'RIG_LANDMARK',
+                    'Landmark coordinates must be finite and within the bone coordinate bounds.', asset=name)
 
 
 def load_rig_template(name: str | Path, *, directory: Path | None = None, _active=()) -> dict:

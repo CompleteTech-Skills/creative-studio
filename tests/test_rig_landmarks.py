@@ -54,6 +54,7 @@ class LandmarkAdmissionTests(unittest.TestCase):
                    {'confidence': True}, {'confidence': -0.1}, {'confidence': 1.1},
                    {'confidence': float('inf')}, {'reference': ''}, {'reference': []},
                    {'head': [float('nan'), 0, 0]}, {'tail': [float('inf'), 0, 0]},
+                   {'head': [10**309, 0, 0]}, {'tail': [-(10**400), 0, 0]},
                    {'tail': good['head']}]
         for patch in patches:
             with self.subTest(patch=patch), self.assertRaises(RigError):
