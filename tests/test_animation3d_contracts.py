@@ -1,6 +1,7 @@
 from copy import deepcopy
 import json
 import io
+import subprocess
 from contextlib import redirect_stdout
 from pathlib import Path
 import sys
@@ -97,6 +98,26 @@ class AnimationContractTests(unittest.TestCase):
             value['provenance']['parameters']=payload
             value['tracks'][0]['keys'][0]['metadata']=payload
             validate_contract(value)
+
+    def test_missing_optional_numeric_dependency_is_actionable(self):
+        script="""
+import sys, importlib.abc
+class BlockNumpy(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'numpy' or fullname.startswith('numpy.'):
+            raise ImportError('deliberately unavailable')
+sys.meta_path.insert(0,BlockNumpy())
+from animation3d_registry import TargetRegistry, sample_track
+from rig_errors import RigError
+for call in (lambda:TargetRegistry.from_rig('.', 'actor'),lambda:sample_track({}, {}, None)):
+    try:call()
+    except RigError as error:
+        assert error.report['code']=='ANIMATION_DEPENDENCY'
+        assert 'requirements-rig.txt' in str(error)
+    else:raise AssertionError('missing dependency accepted')
+"""
+        result=subprocess.run([sys.executable,'-c',script],env={**__import__('os').environ,'PYTHONPATH':str(Path(__file__).resolve().parents[1]/'scripts')},capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_renderer_audio_and_path_are_explicit(self):
         for key,content in [('include_audio',True),('output_directory','../outside'),('end_frame_exclusive',0)]:

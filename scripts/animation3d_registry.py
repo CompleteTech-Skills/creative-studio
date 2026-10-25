@@ -8,7 +8,17 @@ from pathlib import Path
 
 from animation3d_contracts import KINDS, target_key, validate_contract
 from animation3d_time import frame_position
-from rig_errors import require, safe_path, sha256
+from rig_errors import RigError, require, safe_path, sha256
+
+
+def _load_rig():
+    try:
+        from rig_models import load_rig
+    except ImportError as exc:
+        raise RigError('ANIMATION_DEPENDENCY',
+            'Install requirements-rig.txt in the optional 3D environment before resolving native targets.',
+            stage='animation3d') from exc
+    return load_rig
 
 
 class TargetRegistry:
@@ -21,7 +31,7 @@ class TargetRegistry:
 
     @classmethod
     def from_rig(cls, root, actor_id):
-        from rig_models import load_rig
+        load_rig=_load_rig()
         root=Path(root).resolve(); rig=load_rig(root)
         source=dict(id=rig.manifest['id'],version=rig.manifest['version'],path='rig.json',sha256=sha256(root/'rig.json'),kind='rig')
         entries=[]
@@ -34,11 +44,11 @@ class TargetRegistry:
         return cls(root,dict(schema_version=1,kind=KINDS['registry'],id=actor_id+'-targets',version='1.0.0',entries=entries))
 
     def resolve(self, target):
-        from rig_models import load_rig
         entry=self._entries.get(target_key(target))
         require(entry is not None,'ANIMATION_TARGET','Target is not registered.',stage='animation3d')
         require(entry['owner']=='rig' and entry['source']['kind']=='rig','ANIMATION_OWNER',
             'This owner needs its explicit validated adapter.',stage='animation3d')
+        load_rig=_load_rig()
         source=entry['source']; path=safe_path(self.root,source['path'],exists=True)
         require(path.name=='rig.json','ANIMATION_OWNER','Rig source must be a native rig.json.',stage='animation3d')
         require(path.stat().st_size<=32*1024**2 and sha256(path)==source['sha256'],'ANIMATION_HASH','Rig source hash changed.',stage='animation3d')
@@ -72,8 +82,13 @@ def sample_track(track, time, registry):
     Returned values are not a complete pose/scene, solved contact, or rendered
     frame. Caller must delegate those operations to their native owners.
     """
-    import numpy as np
-    from rig_animation import evaluate_track
+    try:
+        import numpy as np
+        from rig_animation import evaluate_track
+    except ImportError as exc:
+        raise RigError('ANIMATION_DEPENDENCY',
+            'Install requirements-rig.txt in the optional 3D environment before sampling native targets.',
+            stage='animation3d') from exc
     registry.validate_track(track)
     entry=registry.resolve(track['target'])
     position=frame_position(time)

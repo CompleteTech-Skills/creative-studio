@@ -224,6 +224,30 @@ class AnimationIndependentContractTests(unittest.TestCase):
         with self.assertRaises(RigError):
             validate_contract(wrapped('constraint', constraint))
 
+    def test_state_conditions_and_wildcard_priorities_are_unambiguous(self):
+        asset = {'id': 'clip', 'version': '1.0.0', 'path': 'clip.json', 'sha256': '0'*64, 'kind': 'clip'}
+        template = {'id': 't', 'from_state': 'idle', 'to_state': 'idle', 'condition_mode': 'all',
+                    'priority': 0, 'duration_frames': 1, 'blend_curve': 'linear', 'interruption_policy': 'none'}
+        document = {'schema_version': 1, 'kind': 'animation_state_machine_3d', 'id': 'graph', 'version': '1.0.0',
+                    'parameters': [{'name': 'speed', 'type': 'float', 'default': 0}],
+                    'states': [{'id': 'idle', 'name': 'Idle', 'clip': asset, 'playback_speed': 1}],
+                    'transitions': [], 'initial_state': 'idle', 'transition_limit_per_frame': 128,
+                    'provenance': {'origin': 'independent fixture', 'kind': 'fixture', 'fixture': True, 'sources': []}}
+        for conditions in [
+            [{'parameter': 'speed', 'operator': 'gt', 'value': 10}, {'parameter': 'speed', 'operator': 'lt', 'value': 5}],
+            [{'parameter': 'speed', 'operator': 'eq', 'value': 3}, {'parameter': 'speed', 'operator': 'neq', 'value': 3}],
+        ]:
+            document['transitions'] = [dict(template, conditions=conditions)]
+            with self.subTest(conditions=conditions), self.assertRaises(RigError):
+                validate_contract(document)
+        condition = [{'parameter': 'speed', 'operator': 'gt', 'value': 0}]
+        document['transitions'] = [dict(template, conditions=condition),
+                                   dict(template, id='wildcard', from_state='*', conditions=condition)]
+        with self.assertRaises(RigError):
+            validate_contract(document)
+        document['transitions'][1]['priority'] = 1
+        validate_contract(document)
+
     def test_deep_acyclic_state_graph_stays_inside_declared_resource_bound(self):
         # Order links along the validator's first set traversal to expose recursive DFS depth.
         identifiers = [f'n{i}' for i in range(1500)]
