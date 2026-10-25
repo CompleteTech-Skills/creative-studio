@@ -8,9 +8,27 @@ from rig_contracts import validate_contract
 from rig_errors import read_json, require
 from rig_geometry import analyze_geometry
 from rig_models import Geometry
-from rig_skeleton import skeleton_from_heads
+from rig_skeleton import skeleton_from_heads, validate_skeleton
 
 ROOT = Path(__file__).resolve().parents[1]/'rig-templates'
+
+
+def _validate_landmarks(landmarks, bone_ids):
+    """Reject malformed authored input before fitting or deriving review status."""
+    require(isinstance(landmarks, dict), 'RIG_LANDMARK', 'Landmarks must be an object keyed by bone ID.')
+    require(set(landmarks) <= bone_ids, 'RIG_LANDMARK_REFERENCE', 'Landmarks reference an undeclared bone.')
+    for name, landmark in landmarks.items():
+        require(isinstance(landmark, dict) and
+                {'head', 'tail', 'approved'} <= set(landmark) <=
+                {'head', 'tail', 'source', 'confidence', 'reference', 'approved'},
+                'RIG_LANDMARK', 'Each landmark needs head, tail and approval with no unsupported fields.', asset=name)
+        require(landmark['approved'] is True, 'RIG_LANDMARK_REVIEW',
+                'Supplied landmarks must explicitly identify approved annotations.', asset=name)
+        for field in ('head', 'tail'):
+            value = landmark[field]
+            require(isinstance(value, list) and len(value) == 3 and
+                    all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value),
+                    'RIG_LANDMARK', 'Landmark '+field+' must contain three numeric coordinates.', asset=name)
 
 
 def load_rig_template(name: str | Path, *, directory: Path | None = None, _active=()) -> dict:
@@ -68,8 +86,8 @@ def generate_skeleton(geometry: Geometry, template: dict | str, *, landmarks=Non
     factor = np.maximum(factor, max(float(dimensions.max()), 1e-3)*.01)
     offset = lower-source_bounds[0]*factor
     specs, uncertainties, evidence = [], [], {}
-    landmarks = landmarks or {}
-    require(set(landmarks) <= {b['id'] for b in template['bones']}, 'RIG_LANDMARK_REFERENCE', 'Landmarks reference an undeclared bone.')
+    landmarks = {} if landmarks is None else landmarks
+    _validate_landmarks(landmarks, {b['id'] for b in template['bones']})
     for bone in template['bones']:
         spec = deepcopy(bone)
         head = np.asarray(bone['head'])*factor+offset
@@ -77,9 +95,6 @@ def generate_skeleton(geometry: Geometry, template: dict | str, *, landmarks=Non
         origin = dict(source='geometry-fit', reference='Measured mesh bounds; anatomical placement is uncertain', confidence=.4)
         if bone['id'] in landmarks:
             landmark = landmarks[bone['id']]
-            require(set(landmark) <= {'head', 'tail', 'source', 'confidence', 'reference', 'approved'},
-                    'RIG_LANDMARK', 'Unsupported landmark field.')
-            require(landmark.get('approved') is True, 'RIG_LANDMARK_REVIEW', 'Supplied landmarks must explicitly identify approved annotations.')
             head = np.asarray(landmark['head'], dtype=float);tail = np.asarray(landmark['tail'], dtype=float)
             origin = dict(source=landmark.get('source', 'human-landmark'),
                           reference=landmark.get('reference', 'Supplied landmark correction'), confidence=landmark.get('confidence', 1.))
@@ -98,12 +113,16 @@ def generate_skeleton(geometry: Geometry, template: dict | str, *, landmarks=Non
                 origin = dict(source='semantic-part', reference='Centerline of imported semantic region '+bone['id'], confidence=.7)
         spec.update(head=head.tolist(), tail=tail.tolist())
         evidence[bone['id']] = origin;specs.append(spec)
-        if origin['source'] in ('geometry-fit', 'semantic-part', 'import-metadata') or origin['confidence'] < .9:
-            uncertainties.append(dict(element=bone['id'], code='RIG_ANATOMY_UNCERTAIN',
-                message='Inspect joint position, direction and anatomical role before production approval.',
-                evidence=origin, resolution='pending'))
     skeleton = skeleton_from_heads(specs, identifier=character_id+'-skeleton')
     for bone in skeleton['bones']:bone['evidence'] = evidence[bone['id']]
+    # skeleton_from_heads validates default evidence. Validate again with the
+    # actual annotations before computing status or returning the fitted rig.
+    validate_skeleton(skeleton)
+    for name, origin in evidence.items():
+        if origin['source'] in ('geometry-fit', 'semantic-part', 'import-metadata') or origin['confidence'] < .9:
+            uncertainties.append(dict(element=name, code='RIG_ANATOMY_UNCERTAIN',
+                message='Inspect joint position, direction and anatomical role before production approval.',
+                evidence=origin, resolution='pending'))
     controllers = dict(ik=deepcopy(template['ik']), constraints=deepcopy(template['constraints']))
     for chain in controllers['ik']:
         chain['pole'] = (np.asarray(chain['pole'])*factor+offset).tolist()
