@@ -1,4 +1,4 @@
 -r requirements-rig.txt
-Pillow==12.3.0
+Pillow==13.0.0
 playwright==1.55.0
 pygltflib==1.16.5
