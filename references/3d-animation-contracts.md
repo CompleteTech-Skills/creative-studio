@@ -33,7 +33,7 @@ registry = TargetRegistry.from_rig('output/rig', 'actor')
 value = sample_track(track, {'frame': 12, 'subframe_ticks': 0}, registry)
 ```
 
-`track` is a nested track record matching a real registered target. `sample_track` delegates interpolation to `rig_animation.evaluate_track`; it returns one value, not a composed scene or solved pose. Its output may be assigned through the existing rig pose API, then `evaluate_fk`/`deform_rig` operate on real vertices. The independent tests do this and measure expected displacement. This adapter does not introduce a second skinning, skeletal, camera or render evaluator.
+`track` is a nested track record matching a real registered target. `sample_track` delegates interpolation to `rig_animation.evaluate_track`; it returns one value, not a composed scene or solved pose. Its output may be assigned through the existing rig pose API, then `evaluate_fk`/`rig_skinning.evaluate_deformation` operate on real vertices. The independent tests do this and measure expected displacement. This adapter does not introduce a second skinning, skeletal, camera or render evaluator.
 
 For a persisted standalone track and registry:
 
