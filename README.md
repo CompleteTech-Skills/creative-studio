@@ -396,3 +396,11 @@ The [Director baseline audit](references/director-baseline.md) records the exact
 
 <sub>Imported from <a href="https://github.com/openai/skills">openai/skills</a> · see <a href="LICENSE.txt">LICENSE.txt</a> · art painted by Codex <code>$imagegen</code> · Pip hatched by <code>hatch-pet</code> itself</sub>
 </div>
+
+## Render3D contracts and source snapshots
+
+The additive [Render3D foundation](references/render3d-contracts.md) validates typed
+render requests and freezes actual native rig source closures for later preview
+consumption. It preserves existing 2D rendering and does not yet implement the
+full Scene3D adapter or the planned production renderer. See the guide for exact
+commands, ownership boundaries and remaining acceptance gates.

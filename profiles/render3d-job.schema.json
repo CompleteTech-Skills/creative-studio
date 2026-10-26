@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "RenderJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "render3d-job"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "request_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "snapshot_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "backend": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                },
+                "adapter_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "application_version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "executable_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                },
+                "worker_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                },
+                "platform": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "engine": {
+                  "enum": [
+                    "cycles",
+                    "eevee"
+                  ]
+                },
+                "device": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                }
+              },
+              "required": [
+                "id",
+                "adapter_version",
+                "application_version",
+                "executable_sha256",
+                "worker_sha256",
+                "platform",
+                "engine",
+                "device"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "destination_owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "submitted_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "updated_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "worker": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heartbeat_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requested": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "queued": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "active": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "completed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "requested",
+            "queued",
+            "active",
+            "completed",
+            "failed"
+          ]
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "running",
+            "complete",
+            "partial",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "cancellation_requested": {
+          "type": "boolean"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 268435456
+                }
+              },
+              "required": [
+                "path",
+                "sha256",
+                "bytes"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "category": {
+                  "enum": [
+                    "invalid-input",
+                    "missing-asset",
+                    "stale-asset",
+                    "unsupported-feature",
+                    "unsupported-backend",
+                    "unsupported-device",
+                    "device-initialization",
+                    "gpu-out-of-memory",
+                    "system-memory",
+                    "storage-exhaustion",
+                    "timeout",
+                    "worker-crash",
+                    "cancelled",
+                    "corrupt-output",
+                    "incomplete-output",
+                    "stale-cache",
+                    "verification-failed",
+                    "external-tool",
+                    "ownership"
+                  ]
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                },
+                "path": {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                "remediation": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048
+                }
+              },
+              "required": [
+                "code",
+                "category",
+                "message",
+                "path",
+                "remediation"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "request_sha256",
+        "snapshot_sha256",
+        "backend",
+        "destination_owner",
+        "submitted_at",
+        "updated_at",
+        "worker",
+        "heartbeat_at",
+        "attempt",
+        "counts",
+        "state",
+        "cancellation_requested",
+        "manifest",
+        "error"
+      ]
+    }
+  },
+  "$ref": "#/$defs/RenderJob",
+  "title": "Render3D RenderJob v1"
+}

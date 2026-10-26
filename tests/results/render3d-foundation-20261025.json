@@ -1,0 +1,112 @@
+{
+  "scope": "Render3D #91 partial foundation; no rendered-pixel or full Scene3D acceptance",
+  "base": "bb5a6810afd06cf57185ffdfe2234e0fdc6e6240",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "commands": [
+    {
+      "command": "python -m unittest discover -s tests -p 'test_render3d*.py' -v",
+      "tests": 39,
+      "result": "pass"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_production_contracts.py -v",
+      "tests": 31,
+      "result": "pass"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_production_render.py -v",
+      "tests": 20,
+      "result": "pass"
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_rig_compatibility.py -v",
+      "tests": 5,
+      "result": "pass",
+      "discovered_2d_tests": 831
+    },
+    {
+      "command": "python scripts/generate_schemas.py --check",
+      "result": "pass"
+    },
+    {
+      "command": "python scripts/test_rig_gate.py schema-math",
+      "result": "blocked",
+      "reason": "default environment lacks pygltflib; failure retained"
+    },
+    {
+      "command": "/workspace/creative-mod1/test-venv/bin/python scripts/test_rig_gate.py schema-math",
+      "result": "pass",
+      "tests": 70,
+      "environment": "Python3.12.14, numpy2.3.5,jsonschema4.26.0,Pillow12.3.0,playwright1.62.0,pygltflib1.16.5; not an exact requirements-rig-test pin match"
+    }
+  ],
+  "native_snapshot": {
+    "fixture": true,
+    "artwork_approval": false,
+    "vertices": 706,
+    "triangles": 1368,
+    "files": 15,
+    "bytes": 91107,
+    "snapshot_sha256": "aed1e927d3d79327c7f4d3e40131e91fc572aeef7a76cb6b1b84850e6086a073",
+    "cli_repeat_document_match": true
+  },
+  "source_sha256": {
+    "scripts/render3d.py": "8222fd86280f6e0cf245578e54c73efa9b4af09182cbd00fe7bf6c1e98061a7e",
+    "scripts/render3d_contracts.py": "268fa84139ca1be47ead5e977c153f3ceb1926671a4cd665f03d09ef136b3935",
+    "scripts/render3d_snapshot.py": "868253e1c1e0878d65c4ef8c9697305c51ef8f66747e982504906ad828522578",
+    "scripts/generate_schemas.py": "f4958d5d854018e41ae536752f0cd42eecd95d885d55bc456fa6d844a30076b1",
+    "scripts/test_rig_gate.py": "da61c596f76cc1d273dff18468afaa1a01f10f0ec1fb398756917c34ff5f9056",
+    "scripts/verify_public_delivery.py": "fc3668c51399a798267ba5dcb369c523dce3de02307ec07800925b057164e76c",
+    "tests/test_rig_compatibility.py": "ee0a18c6c43bdd70f21e2e6fe6173060164c7457133743779bd4dfbf7b5b0407",
+    "tests/test_render3d_contracts.py": "35f6d3cbf5e61756b495c906ee0f94def3fdbfac6514208ad3ea035891eb8205",
+    "tests/test_render3d_independent.py": "c29174154cbe22d7a85d375ece4752d3851b8b82fb6c405c9aa2426bc531d634"
+  },
+  "logs": {
+    "production-render.log": "23fd9f91776e9f4892130773037c856b9447b60e5f1f57987b24d15a2aba7db9",
+    "schema-math.log": "c276eee89c88b18997ea4dc5c2a5b8fe6c144b76445b400c5176d095611f2d50",
+    "schema-math-boundary.log": "94017afea407796e130adcb78a2e9bba1cb47758249cb1afe76178f17ced54c8",
+    "schema-math-pinned.log": "fe5276e481ba9e23f42eb44e91675170a1982d3744f314c8f8d6de5293b78120",
+    "render3d-boundary.log": "d7366241923e4dee68a9c4d0e2dc3cd73612f3efd44543f2b1391608c03f7169",
+    "render3d-semantics.log": "fc95b4e1b2085f071d6cf2b60c876a474e4eeb21c8887cdf73da5310663e5172",
+    "render3d-final.log": "f0006b912070dc980107c136fb15a6f6c029fc184cfe11a9f1d473acf386c4a0",
+    "production-contracts.log": "477074a54e16855b61fe252fb4a69a59a4e28fdc7ea8d93d1f35bedb32be95ce",
+    "render3d-revised.log": "166a2a1981b688bc6be4ae16df32142d4c420b8936fdad808db1d293133f1455",
+    "schema-math-revised.log": "b60ed5bc66c0f853f5bd5941e4d9c3b703cb765b291c6b434b71170c34cff039",
+    "schema-math-semantics.log": "455fa4b74d754531e03caa42fa2c2afd69d1f6941af20aa55084e149cedf4a55"
+  },
+  "blocked_acceptance": [
+    "Full Scene3D source adapter requires unmerged owner #59",
+    "No Blender rendering, PNG/EXR verifier, GPU execution, scheduler, cache-recovery or movie acceptance is claimed",
+    "Hosted CI not awaited or described as passing"
+  ],
+  "review_corrections": [
+    "Reject native non-int values for integer fields with typed diagnostics; no integral-float coercion",
+    "Represent derived exact frame times with bounded 127-bit integer numerators/denominators while retaining 31-bit admitted input rationals",
+    "Convert oversized matrix integer overflow to typed invalid-input diagnostics",
+    "Run existing owner skeleton/controller/skin/animation semantic validators for present declarations, preserving optional unrigged static imports",
+    "Translate malformed native owner data exceptions consistently on snapshot creation and verification; preserve typed diagnostics"
+  ],
+  "validation_history": [
+    {
+      "head": "f24b78a7410e8ccdbfbfbfe74a4f37099f4b8bbf",
+      "foundation_tests": 34,
+      "native_gate_tests": 65
+    },
+    {
+      "head": "cc85e25c04006d1b0d3e16fd94430140d39a07bb",
+      "foundation_tests": 37,
+      "native_gate_tests": 68
+    },
+    {
+      "head": "4a6f805db77f684099badd764c92e42112201fb6",
+      "foundation_tests": 38,
+      "native_gate_tests": 69
+    },
+    {
+      "head": "subsequent-owner-exception-correction",
+      "foundation_tests": 39,
+      "native_gate_tests": 70
+    }
+  ]
+}

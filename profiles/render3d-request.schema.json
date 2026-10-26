@@ -1,0 +1,415 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "RenderRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "render3d-request"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "project": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "id",
+            "version"
+          ]
+        },
+        "scene": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "id",
+            "version"
+          ]
+        },
+        "shot": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "id",
+            "version"
+          ]
+        },
+        "mode": {
+          "const": "3d"
+        },
+        "snapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 268435456
+            }
+          },
+          "required": [
+            "path",
+            "sha256",
+            "bytes"
+          ]
+        },
+        "fps": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "frame_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ]
+        },
+        "source_start": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "playback_rate": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "camera": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "settings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "engine": {
+              "enum": [
+                "cycles",
+                "eevee"
+              ]
+            },
+            "device_policy": {
+              "enum": [
+                "cpu",
+                "gpu-required",
+                "gpu-preferred"
+              ]
+            },
+            "device": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "allow_cpu_fallback": {
+              "type": "boolean"
+            },
+            "resolution": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 16384
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "denoise": {
+              "type": "boolean"
+            },
+            "output": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "format": {
+                  "enum": [
+                    "png",
+                    "exr"
+                  ]
+                },
+                "bit_depth": {
+                  "enum": [
+                    8,
+                    16,
+                    32
+                  ]
+                },
+                "passes": {
+                  "type": "array",
+                  "items": {
+                    "enum": [
+                      "combined",
+                      "depth",
+                      "normal",
+                      "albedo"
+                    ]
+                  },
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "uniqueItems": true
+                },
+                "alpha": {
+                  "enum": [
+                    "opaque",
+                    "straight"
+                  ]
+                },
+                "color_space": {
+                  "enum": [
+                    "srgb",
+                    "linear"
+                  ]
+                }
+              },
+              "required": [
+                "format",
+                "bit_depth",
+                "passes",
+                "alpha",
+                "color_space"
+              ]
+            },
+            "exposure": {
+              "type": "number",
+              "minimum": -32,
+              "maximum": 32
+            },
+            "view_transform": {
+              "enum": [
+                "standard",
+                "agx"
+              ]
+            },
+            "resources": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "memory_bytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1099511627776
+                },
+                "storage_bytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1099511627776
+                },
+                "timeout_seconds": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 86400
+                },
+                "workers": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 64
+                },
+                "max_frames": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100000
+                }
+              },
+              "required": [
+                "memory_bytes",
+                "storage_bytes",
+                "timeout_seconds",
+                "workers",
+                "max_frames"
+              ]
+            }
+          },
+          "required": [
+            "engine",
+            "device_policy",
+            "device",
+            "allow_cpu_fallback",
+            "resolution",
+            "samples",
+            "seed",
+            "denoise",
+            "output",
+            "exposure",
+            "view_transform",
+            "resources"
+          ]
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "cache_policy": {
+          "enum": [
+            "verify-reuse",
+            "refresh"
+          ]
+        },
+        "destination": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "owner_token": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "path",
+            "owner_token"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "project",
+        "scene",
+        "shot",
+        "mode",
+        "snapshot",
+        "fps",
+        "frame_range",
+        "source_start",
+        "playback_rate",
+        "camera",
+        "settings",
+        "priority",
+        "max_attempts",
+        "cache_policy",
+        "destination"
+      ]
+    }
+  },
+  "$ref": "#/$defs/RenderRequest",
+  "title": "Render3D RenderRequest v1"
+}
