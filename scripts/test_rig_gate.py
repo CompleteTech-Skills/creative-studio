@@ -7,7 +7,7 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
 GROUPS={
- 'schema-math':['test_rig_math.py','test_rig_contracts.py','test_rig_compatibility.py'],
+ 'schema-math':['test_rig_math.py','test_rig_contracts.py','test_rig_compatibility.py','test_rig_editor3d_contracts.py'],
  'skinning':['test_rig_skinning.py'],
  'animation-ik':['test_rig_controls.py','test_rig_animation.py','test_rig_specializations.py','test_rig_morph_authoring.py'],
  'interoperability':['test_rig_interop.py','test_rig_import_transforms.py'],

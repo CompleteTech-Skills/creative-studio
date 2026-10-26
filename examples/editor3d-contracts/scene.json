@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "editor3d-scene",
+  "id": "scene",
+  "project_id": "project",
+  "native": {
+    "owner": "scene3d",
+    "id": "native-scene",
+    "version": "1.0.0",
+    "native_kind": "scene3d-scene",
+    "file": {
+      "path": "unavailable/scene.json",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 1,
+      "media_type": "application/json"
+    }
+  },
+  "nodes": [
+    {
+      "id": "node",
+      "sha256": "9e247c1d7d9fc7c2bed09eb2453c5ef41e467ee4575abdd17c0b37eeb45eaffa"
+    }
+  ],
+  "collections": [
+    "default"
+  ],
+  "default_camera": null,
+  "animations": [],
+  "timeline": {
+    "start": 0,
+    "end": 720
+  },
+  "editor_metadata": {
+    "label": "Engineering contract fixture",
+    "notes": "No native scene or renderer execution is claimed."
+  }
+}

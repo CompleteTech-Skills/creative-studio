@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "kind": "editor3d-project",
+  "id": "project",
+  "name": "Editor contract fixture",
+  "revision": 0,
+  "created_at": "2026-10-25T00:00:00Z",
+  "updated_at": "2026-10-25T00:00:00Z",
+  "application": {
+    "name": "hatch-editor3d",
+    "version": "1.0.0"
+  },
+  "coordinates": {
+    "handedness": "right",
+    "right": "+X",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "angles": "radian",
+    "quaternion": "XYZW",
+    "matrices": "column-vectors",
+    "time": "second"
+  },
+  "color_management": null,
+  "frame_rate": {
+    "numerator": 24,
+    "denominator": 1
+  },
+  "scenes": [
+    {
+      "id": "scene",
+      "sha256": "3bfcbb1027004a7f7b93f489b7504d5b4f10a53ebd8e721fa36a9c543cc6b21f"
+    }
+  ],
+  "shots": [],
+  "shared_assets": [
+    {
+      "id": "asset",
+      "sha256": "01b2ce2dbc1149a770b1cfb383f8545638c839e4ce9190f025aa6fc1f53d3740"
+    }
+  ],
+  "characters": [],
+  "animation_clips": [],
+  "render_presets": [],
+  "editor_metadata": {
+    "label": "Engineering contract fixture",
+    "notes": "No native scene or renderer execution is claimed."
+  },
+  "provenance": {
+    "origin": "procedural-fixture",
+    "fixture": true,
+    "description": "Self-authored editor binding fixture; missing scene owner is intentional.",
+    "source_refs": []
+  },
+  "dependency_manifest": [
+    {
+      "owner": "model3d",
+      "id": "robotic-contract-example",
+      "version": "1.0.0",
+      "native_kind": "model3d-asset",
+      "file": {
+        "path": "examples/model3d-contracts/robotic.json",
+        "sha256": "ce666b1b75c7b183007886e5674cae8960c8e102761e3caacc5759d0fc955a38",
+        "bytes": 16462,
+        "media_type": "application/json"
+      }
+    },
+    {
+      "owner": "scene3d",
+      "id": "native-scene",
+      "version": "1.0.0",
+      "native_kind": "scene3d-scene",
+      "file": {
+        "path": "unavailable/scene.json",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "bytes": 1,
+        "media_type": "application/json"
+      }
+    }
+  ],
+  "source_projects": [],
+  "validation_status": "unvalidated",
+  "review_status": "unreviewed"
+}

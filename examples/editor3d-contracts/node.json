@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "kind": "editor3d-node",
+  "id": "node",
+  "scene_id": "scene",
+  "native": {
+    "owner": "scene3d",
+    "id": "native-scene",
+    "version": "1.0.0",
+    "native_kind": "scene3d-scene",
+    "file": {
+      "path": "unavailable/scene.json",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 1,
+      "media_type": "application/json"
+    }
+  },
+  "native_node_id": "native-node",
+  "node_type": "mesh",
+  "parent": null,
+  "sibling_order": 0,
+  "selectable": true,
+  "locked": false,
+  "collections": [
+    "default"
+  ],
+  "asset_id": "asset",
+  "rig_id": null,
+  "editor_metadata": {
+    "label": "Engineering contract fixture",
+    "notes": "No native scene or renderer execution is claimed."
+  }
+}
