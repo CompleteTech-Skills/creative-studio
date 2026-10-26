@@ -1,0 +1,80 @@
+{
+  "cut100.jpg": {
+    "False": {
+      "result": "accepted",
+      "shape": [
+        32,
+        32,
+        3
+      ]
+    },
+    "True": {
+      "result": "rejected",
+      "type": "ValueError",
+      "message": "Corrupt JPEG data: premature end of data segment"
+    }
+  },
+  "cut2.jpg": {
+    "False": {
+      "result": "accepted",
+      "shape": [
+        32,
+        32,
+        3
+      ]
+    },
+    "True": {
+      "result": "accepted",
+      "shape": [
+        32,
+        32,
+        3
+      ]
+    }
+  },
+  "cut20.jpg": {
+    "False": {
+      "result": "accepted",
+      "shape": [
+        32,
+        32,
+        3
+      ]
+    },
+    "True": {
+      "result": "rejected",
+      "type": "ValueError",
+      "message": "Corrupt JPEG data: premature end of data segment"
+    }
+  },
+  "cut300.jpg": {
+    "False": {
+      "result": "accepted",
+      "shape": [
+        32,
+        32,
+        3
+      ]
+    },
+    "True": {
+      "result": "rejected",
+      "type": "ValueError",
+      "message": "Corrupt JPEG data: premature end of data segment"
+    }
+  },
+  "cut5.jpg": {
+    "False": {
+      "result": "accepted",
+      "shape": [
+        32,
+        32,
+        3
+      ]
+    },
+    "True": {
+      "result": "rejected",
+      "type": "ValueError",
+      "message": "Corrupt JPEG data: premature end of data segment"
+    }
+  }
+}

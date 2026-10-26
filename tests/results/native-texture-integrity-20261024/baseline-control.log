@@ -1,0 +1,56 @@
+test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) ... 
+  test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) (path='synthetic-0.glb') ... FAIL
+  test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) (path='synthetic-1.gltf') ... FAIL
+  test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) (path='synthetic-3.gltf') ... FAIL
+  test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) (path='mesh.obj') ... FAIL
+  test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) (path='mesh.obj') ... FAIL
+
+======================================================================
+FAIL: test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) (path='synthetic-0.glb')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/baseline-control.py", line 34, in test_baseline_accepts_real_damaged_pixel_sources
+    with self.assertRaises(rig_import.RigError): rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) (path='synthetic-1.gltf')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/baseline-control.py", line 34, in test_baseline_accepts_real_damaged_pixel_sources
+    with self.assertRaises(rig_import.RigError): rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) (path='synthetic-3.gltf')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/baseline-control.py", line 34, in test_baseline_accepts_real_damaged_pixel_sources
+    with self.assertRaises(rig_import.RigError): rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) (path='mesh.obj')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/baseline-control.py", line 34, in test_baseline_accepts_real_damaged_pixel_sources
+    with self.assertRaises(rig_import.RigError): rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_baseline_accepts_real_damaged_pixel_sources (__main__.Control.test_baseline_accepts_real_damaged_pixel_sources) (path='mesh.obj')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/baseline-control.py", line 34, in test_baseline_accepts_real_damaged_pixel_sources
+    with self.assertRaises(rig_import.RigError): rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.053s
+
+FAILED (failures=5)

@@ -1,0 +1,66 @@
+test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) ... 
+  test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426082', path='synthetic-0.glb') ... FAIL
+  test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426082', path='mesh.obj') ... FAIL
+  test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426082', path='synthetic-2.glb') ... FAIL
+  test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426082', path='mesh.obj') ... FAIL
+  test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426083', path='synthetic-4.glb') ... FAIL
+  test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426083', path='mesh.obj') ... FAIL
+
+======================================================================
+FAIL: test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426082', path='synthetic-0.glb')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/png-baseline-control.py", line 21, in test_incomplete_pngs_are_rejected
+    with self.assertRaises(rig_import.RigError):rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426082', path='mesh.obj')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/png-baseline-control.py", line 21, in test_incomplete_pngs_are_rejected
+    with self.assertRaises(rig_import.RigError):rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426082', path='synthetic-2.glb')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/png-baseline-control.py", line 21, in test_incomplete_pngs_are_rejected
+    with self.assertRaises(rig_import.RigError):rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426082', path='mesh.obj')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/png-baseline-control.py", line 21, in test_incomplete_pngs_are_rejected
+    with self.assertRaises(rig_import.RigError):rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426083', path='synthetic-4.glb')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/png-baseline-control.py", line 21, in test_incomplete_pngs_are_rejected
+    with self.assertRaises(rig_import.RigError):rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_incomplete_pngs_are_rejected (__main__.Control.test_incomplete_pngs_are_rejected) (header='49454e44ae426083', path='mesh.obj')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-texture-integrity/tests/results/native-texture-integrity-20261024/png-baseline-control.py", line 21, in test_incomplete_pngs_are_rejected
+    with self.assertRaises(rig_import.RigError):rig_import.load_character_model(path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: RigError not raised
+
+----------------------------------------------------------------------
+Ran 1 test in 0.048s
+
+FAILED (failures=6)

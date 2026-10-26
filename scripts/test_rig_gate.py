@@ -10,7 +10,7 @@ GROUPS={
  'schema-math':['test_rig_math.py','test_rig_contracts.py','test_rig_compatibility.py'],
  'skinning':['test_rig_skinning.py'],
  'animation-ik':['test_rig_controls.py','test_rig_animation.py','test_rig_specializations.py','test_rig_morph_authoring.py'],
- 'interoperability':['test_rig_interop.py','test_rig_import_transforms.py'],
+ 'interoperability':['test_rig_interop.py','test_rig_import_transforms.py','test_rig_material_validation.py','test_rig_texture_integrity.py','test_rig_jpeg.py'],
  'operations-archive':['test_rig_correction_validation.py','test_rig_workflow.py','test_rig_http.py','test_rig_render.py']}
 
 

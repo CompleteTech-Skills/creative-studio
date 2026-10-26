@@ -265,6 +265,69 @@ class Model3DContracts(unittest.TestCase):
             self.assertEqual(error['error']['code'], code)
             self.assertNotIn('Traceback', result.stderr)
 
+    def test_native_texture_errors_preserve_model_boundary_and_original_bytes(self):
+        doc = asset_fixture(self.root, 'texture-boundary', suffix='.gltf')
+        path = self.root / 'texture-boundary.gltf'
+        original = json.loads(path.read_text())
+        jpeg = (ROOT / 'tests/fixtures/strict-jpeg-valid.jpg').read_bytes()
+        for data, unavailable, native, expected in (
+                (jpeg[:-100] + b'\xff\xd9', False, 'RIG_TEXTURE_DECODE', 'MODEL3D_MODEL'),
+                (jpeg, True, 'RIG_TEXTURE_VERIFIER_UNAVAILABLE', 'MODEL3D_DEPENDENCY')):
+            content = deepcopy(original)
+            content['images'] = [dict(uri='data:image/jpeg;base64,' + base64.b64encode(data).decode())]
+            path.write_text(json.dumps(content), encoding='utf-8')
+            current = self._replace_geometry(deepcopy(doc), path)
+            document_path = self.root / 'texture-boundary.json'
+            write_document(self.root, document_path.name, current)
+            before = {p: hashlib.sha256(p.read_bytes()).hexdigest()
+                      for p in self.root.rglob('*') if p.is_file()}
+            script = ('import sys;sys.path.insert(0,' + repr(str(ROOT / 'scripts')) + ');'
+                      + ('sys.modules["simplejpeg"]=None;' if unavailable else '')
+                      + 'import model3d;raise SystemExit(model3d.main())')
+            result = subprocess.run([sys.executable, '-B', '-c', script, 'validate',
+                                     '--file', str(document_path)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            error = json.loads(result.stderr)['error']
+            self.assertEqual(error['code'], expected)
+            self.assertEqual(error['observed']['code'], native)
+            self.assertNotIn('Traceback', result.stderr)
+            self.assertEqual({p: hashlib.sha256(p.read_bytes()).hexdigest()
+                              for p in self.root.rglob('*') if p.is_file()}, before)
+
+    def test_secondary_lod_texture_errors_use_same_model_boundary(self):
+        primary = asset_fixture(self.root, 'primary-texture')
+        secondary = asset_fixture(self.root, 'secondary-texture', suffix='.gltf')
+        path = self.root / 'secondary-texture.gltf'
+        original = json.loads(path.read_text())
+        jpeg = (ROOT / 'tests/fixtures/strict-jpeg-valid.jpg').read_bytes()
+        for data, unavailable, native, expected in (
+                (jpeg[:-100] + b'\xff\xd9', False, 'RIG_TEXTURE_DECODE', 'MODEL3D_MODEL'),
+                (jpeg, True, 'RIG_TEXTURE_VERIFIER_UNAVAILABLE', 'MODEL3D_DEPENDENCY')):
+            content = deepcopy(original)
+            content['images'] = [dict(uri='data:image/jpeg;base64,' + base64.b64encode(data).decode())]
+            path.write_text(json.dumps(content), encoding='utf-8')
+            record = payload(self.root, path.name, 'model/gltf+json')
+            doc = deepcopy(primary)
+            doc['files'] += [record if f == secondary['geometry'] else f for f in secondary['files']]
+            doc['mesh_details'] += [dict(detail, geometry=record, lod=1) for detail in secondary['mesh_details']]
+            document_path = self.root / 'secondary-texture.json'
+            write_document(self.root, document_path.name, doc)
+            before = {p: hashlib.sha256(p.read_bytes()).hexdigest()
+                      for p in self.root.rglob('*') if p.is_file()}
+            script = ('import sys;sys.path.insert(0,' + repr(str(ROOT / 'scripts')) + ');'
+                      + ('sys.modules["simplejpeg"]=None;' if unavailable else '')
+                      + 'import model3d;raise SystemExit(model3d.main())')
+            result = subprocess.run([sys.executable, '-B', '-c', script, 'validate',
+                                     '--file', str(document_path)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            error = json.loads(result.stderr)['error']
+            self.assertEqual(error['code'], expected)
+            self.assertEqual(error['observed']['code'], native)
+            self.assertEqual(error['asset'], path.name)
+            self.assertNotIn('Traceback', result.stderr)
+            self.assertEqual({p: hashlib.sha256(p.read_bytes()).hexdigest()
+                              for p in self.root.rglob('*') if p.is_file()}, before)
+
     def test_eight_influence_skin_is_inspected_without_loss(self):
         import numpy as np
         from rig_gltf import GltfBuilder, _export_geometry

@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "repository": "CompleteTech-Skills/hatch-pet",
+  "base": "a08569cbdb593651807c887f4c9edd5e7b243973",
+  "source_inputs": {
+    "scripts/rig_models.py": "1c0fe8ee7b990088097504cfffde63dd30b2ac3156c4aa98c1d9a4ba91ac3af5",
+    "scripts/test_rig_gate.py": "46e4cffa9d0372ccb9326c221b019d542439b53add2fbe33ac485ef585b9d8ba",
+    "tests/test_rig_material_validation.py": "8b27f47d87e80892f2cf844f5947d68b3add70c377b7468cfdb17aaab5474a05"
+  },
+  "source_snapshot_timing": "Exact selected source hashes captured before the final frozen regression run and verified unchanged after completion.",
+  "protected_inputs": {
+    "profiles/codex-v1.json": "f4e0279f8634ea53ef544ecb49b9a71ec2565c61ec5b8e63163ecc5ead478a6b",
+    "profiles/profile.schema.json": "afba01bc16c4f6c297d1b95b62803c7a5b989e0fa9b967c33e5d50471091163c",
+    "profiles/production-project.schema.json": "cd33410c713660e33c6805df19aa94512de5f0cb64f71f6b3db74ce05d2c4c21",
+    "profiles/production-scene.schema.json": "1d01d66903b3d730f4670951daf2f30239e05d27b1f50d68be080173585974ad",
+    "profiles/rig.schema.json": "aa57fc1b61a540d4b667ed2c64d764aab1fee33c8bf2af02103900a87db7a078",
+    "requirements-rig-test.txt": "58fe31f26d8a9192632890f76b27fd4335f9a9a8607e31215b2a6fe862791f2f"
+  },
+  "fixture": true,
+  "review_or_production_approval": false,
+  "environment": {
+    "test_interpreter": "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+    "test_python": "3.12.15",
+    "blender": "4.5.3 LTS",
+    "khronos_validator": "2.0.0-dev.3.10",
+    "receipt_python": "3.14.7"
+  },
+  "runs": [
+    {
+      "command": "HATCH_RIG_INTEROP_TEST=1 HATCH_RIG_BLENDER_TEST=1 HATCH_RIG_BROWSER_TEST=1 PYTHONPATH=scripts:tests /home/complete/.cache/hatch-fleet/rig-py312/bin/python -B -m unittest test_rig_material_validation test_rig_interop test_rig_contracts test_rig_skinning test_rig_compatibility -v",
+      "environment_paths": "Pinned HATCH_BLENDER, HATCH_GLTF_VALIDATOR_ROOT and PLAYWRIGHT_BROWSERS_PATH from /home/complete/.cache/hatch-fleet/environment.sh",
+      "exit_code": 0,
+      "tests": 41,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 25.04
+    },
+    {
+      "command": "Python real fixture export followed by rig_interop.validate_gltf on GLB and glTF",
+      "exit_code": 0,
+      "formats": 2,
+      "errors_per_format": 0,
+      "warnings_per_format": 0
+    },
+    {
+      "command": "In-memory original validate_geometry from git a08569c against actual GLB/glTF invalid binding inputs, followed by corrected validator",
+      "exit_code": 0,
+      "baseline_admissions_reproduced": 8,
+      "corrected_rejections": 8,
+      "source_bytes_unchanged": true
+    },
+    {
+      "command": "python scripts/generate_schemas.py --check; python scripts/generate_rig_templates.py --check; git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "evidence": {
+    "tests/results/native-material-safety-regression.log": {
+      "sha256": "ce198214a8fb1b6aa566e706b6cf4bb557c0b52642fd78036df4a4b4a540fa0c",
+      "bytes": 6725
+    },
+    "tests/results/native-material-safety-khronos.json": {
+      "sha256": "1910363ea0252398a2cf05a3ef7ccb17eed595a88790e4a8610df3c83279ea78",
+      "bytes": 3075
+    },
+    "tests/results/native-material-safety-baseline-control.json": {
+      "sha256": "d4ebe35b7fe9f05cf2b1952c47eca75e0231a9209d673a4eae9557e08733000c",
+      "bytes": 2051
+    }
+  },
+  "limitations": [
+    "No complete glTF validator or renderer-equivalent PBR assertion.",
+    "Existing core native reference policy requires actual non-bool integers, including after JSON parsing.",
+    "Extension-specific numeric domains beyond finite JSON are not comprehensively validated.",
+    "All geometry is explicitly synthetic engineering fixture data; no artwork approval inferred.",
+    "No issue52,44,139 completion or GitHub CI/merge claimed."
+  ]
+}
