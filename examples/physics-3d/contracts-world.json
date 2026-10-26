@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "kind": "hatch-3d-physics-world",
+  "id": "contract-fixture",
+  "version": "1.0.0",
+  "coordinate_system": {
+    "handedness": "right",
+    "right": "+X",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "angles": "radian",
+    "quaternion": "XYZW",
+    "matrices": "column-vectors",
+    "time": "second"
+  },
+  "physical_units": {
+    "mass": "kilogram",
+    "force": "newton",
+    "torque": "newton-meter",
+    "velocity": "meter/second",
+    "angular_velocity": "radian/second",
+    "density": "kilogram/meter^3"
+  },
+  "scene": {
+    "id": "scene",
+    "version": "1.0.0",
+    "path": "assets/scene.json",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "kind": "scene"
+  },
+  "fps": {
+    "numerator": 24,
+    "denominator": 1
+  },
+  "frame_range": {
+    "start": 0,
+    "end": 24
+  },
+  "gravity": [
+    0.0,
+    -9.81,
+    0.0
+  ],
+  "solver": {
+    "backend": "blender",
+    "adapter_version": "1.0.0",
+    "fixed_step": {
+      "numerator": 1,
+      "denominator": 240
+    },
+    "substeps": 1,
+    "iterations": 20,
+    "seed": 1,
+    "quality": "preview",
+    "required_categories": [
+      "rigid-body"
+    ],
+    "reproducibility": "not-guaranteed"
+  },
+  "budgets": {
+    "bodies": 100,
+    "dynamic_bodies": 100,
+    "colliders": 100,
+    "constraints": 10000,
+    "triangles": 100000,
+    "vertices": 100000,
+    "cloth_vertices": 100000,
+    "soft_body_vertices": 100000,
+    "hair_strands": 100000,
+    "particles": 100000,
+    "fluid_secondary_particles": 100000,
+    "volume_cells": 1000000,
+    "gas_cells": 1000000,
+    "liquid_cells": 1000000,
+    "output_frames": 10000,
+    "steps": 10000,
+    "duration_seconds": 120,
+    "memory_bytes": 1073741824,
+    "vram_bytes": 0,
+    "cache_bytes": 1073741824,
+    "bake_file_bytes": 1073741824,
+    "temporary_bytes": 1073741824,
+    "cpu_workers": 1,
+    "concurrent_jobs": 1,
+    "restart_attempts": 2,
+    "timeout_seconds": 120
+  },
+  "assets": [],
+  "materials": [
+    {
+      "id": "rubber",
+      "density": 1100,
+      "static_friction": 0.8,
+      "dynamic_friction": 0.6,
+      "restitution": 0.5,
+      "linear_damping": 0.04,
+      "angular_damping": 0.1,
+      "collision_margin": 0.001,
+      "pbr_material": null,
+      "combination": "bullet-product"
+    }
+  ],
+  "bodies": [
+    {
+      "id": "ball",
+      "category": "rigid-body",
+      "mode": "dynamic",
+      "authority": "physics",
+      "parent": null,
+      "asset": null,
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0,
+          1
+        ]
+      },
+      "mass": {
+        "kilograms": 1,
+        "center_of_mass": [
+          0,
+          0,
+          0
+        ],
+        "inertia": [
+          [
+            0.1,
+            0,
+            0
+          ],
+          [
+            0,
+            0.1,
+            0
+          ],
+          [
+            0,
+            0,
+            0.1
+          ]
+        ]
+      },
+      "linear_velocity": [
+        0,
+        0,
+        0
+      ],
+      "angular_velocity": [
+        0,
+        0,
+        0
+      ],
+      "colliders": [
+        {
+          "id": "ball-collider",
+          "transform": {
+            "translation": [
+              0,
+              0,
+              0
+            ],
+            "rotation": [
+              0,
+              0,
+              0,
+              1
+            ]
+          },
+          "shape": {
+            "type": "sphere",
+            "radius": 0.5
+          },
+          "material": "rubber",
+          "group": 1,
+          "mask": 4294967295,
+          "sensor": false
+        }
+      ],
+      "animation": null
+    }
+  ],
+  "components": [],
+  "joints": [],
+  "forces": [],
+  "events": []
+}

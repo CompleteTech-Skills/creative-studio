@@ -1,0 +1,119 @@
+{
+  "kind": "actual-crlf-checkout-preservation",
+  "source_commit": "4b7deeea1473c08a6382018fd1fefb3a11c5cc55",
+  "source_tree": "d82339ab09435505c974809c3309ed3a615f831a",
+  "shared_attributes_commit": "91d14b8339eb16a6285969d9bc772b11bdfec3ec",
+  "core_autocrlf": true,
+  "core_eol": "crlf",
+  "tracked_files_checked": 1645,
+  "protected_files_verified": 1524,
+  "physics_evidence_files_verified": 17,
+  "matched_physics_receipt_digests": [
+    {
+      "record": "validation.json",
+      "path": "tests/results/physics-contracts-20261024/contracts-final.log",
+      "sha256": "cf47d623ccd684357297db0b5fcab8c72c8b351605e96930ca3da8e8f08c6d46"
+    },
+    {
+      "record": "validation.json",
+      "path": "tests/results/physics-contracts-20261024/legacy-final.log",
+      "sha256": "b9c18c940763ee4714666635abedcd82e86972cb4ac01218729ac4083b132c5c"
+    },
+    {
+      "record": "validation.json",
+      "path": "tests/results/physics-contracts-20261024/physics-schemas-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "validation.json",
+      "path": "tests/results/physics-contracts-20261024/legacy-schemas-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "validation.json",
+      "path": "tests/results/physics-contracts-20261024/rig-templates-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "validation.json",
+      "path": "tests/results/physics-contracts-20261024/source-delivery-final.log",
+      "sha256": "7d59ca4103d32ae90d1ba145e50d0827d9b061616ea1b560bbe3aaba76747ec8"
+    },
+    {
+      "record": "validation.json",
+      "path": "tests/results/physics-contracts-20261024/compatibility-68b9b87.log",
+      "sha256": "df70ea60d5fc6cd6ef2e9319f53516d16adf515c65c0f09a8b25050bd41a1d93"
+    },
+    {
+      "record": "decoder-integration/verification.json",
+      "path": "tests/results/physics-contracts-20261024/decoder-integration/contracts.log",
+      "sha256": "66d868d02ad7723fdcac74f8b6d9599962d5d9a56402048a28f0fda9d7eeec91"
+    },
+    {
+      "record": "decoder-integration/verification.json",
+      "path": "tests/results/physics-contracts-20261024/decoder-integration/legacy.log",
+      "sha256": "a9bfe70bd87ef0165acabd9b7a6997b33b94c609a6427d3df501b48a3416b14f"
+    },
+    {
+      "record": "decoder-integration/verification.json",
+      "path": "tests/results/physics-contracts-20261024/decoder-integration/physics-schemas.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "decoder-integration/verification.json",
+      "path": "tests/results/physics-contracts-20261024/decoder-integration/legacy-schemas.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "decoder-integration/verification.json",
+      "path": "tests/results/physics-contracts-20261024/decoder-integration/rig-templates.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "record": "decoder-integration/verification.json",
+      "path": "tests/results/physics-contracts-20261024/decoder-integration/source-delivery.log",
+      "sha256": "7d59ca4103d32ae90d1ba145e50d0827d9b061616ea1b560bbe3aaba76747ec8"
+    },
+    {
+      "record": "decoder-integration/verification.json",
+      "path": "tests/results/physics-contracts-20261024/decoder-integration/api-probes.json",
+      "sha256": "e12412326a997c223f37618d6252c412003781700f78b55573057744f0ec9d2c"
+    },
+    {
+      "record": "decoder-integration/verification.json",
+      "path": "tests/results/physics-contracts-20261024/decoder-integration/api-probes.py",
+      "sha256": "aa97ec8ef7e9b07373de509624348d75ba7386a8aabf23a42663c55d415d27e1"
+    }
+  ],
+  "matched_current_artifact_source_digests": [
+    {
+      "path": "scripts/physics_contracts.py",
+      "sha256": "f1dae20e3fd423732a3952d9c218a2ba1a3c424853dfd637b4d24b14b1dff222",
+      "record": "decoder-integration/verification.json"
+    },
+    {
+      "path": "scripts/rig_errors.py",
+      "sha256": "66858dafef15f66a7c13114db0a3af93a94f318eefc9b9e6c6b02b9616164d75",
+      "record": "decoder-integration/verification.json"
+    },
+    {
+      "path": "tests/test_physics_contracts.py",
+      "sha256": "cf238955582cfb3102f528128f9613db6261fa9a12d5ad6e8fe6c604b11cb263",
+      "record": "decoder-integration/verification.json"
+    }
+  ],
+  "regression_file": {
+    "path": "tests/results/physics-contracts-20261024/decoder-integration/contracts.log",
+    "sha256": "66d868d02ad7723fdcac74f8b6d9599962d5d9a56402048a28f0fda9d7eeec91",
+    "byte_identical": true
+  },
+  "source_worktree_modified": false,
+  "head_modified": false,
+  "solver_execution": null,
+  "protected_inventory_sha256": "c2d46c12f8ad29937cf4adbf6ce397711c06bedc7ff2e34130e04f5d902c99a1",
+  "full_inventory_artifact_sha256": "d2c0fafa506720a8ce3fcac4346a530fd12ccb2461115a7ba5dae350d11b3647",
+  "full_inventory_retained_at": "/tmp/hatch-fleet/physics167/provenance-integration/crlf-verification.json",
+  "reproduction_script": "crlf-probe.py",
+  "reproduction_script_sha256": "9426a6697e31879440016f26116c021c086c9890f073ccb2870f60ee6691600f",
+  "unprotected_text_files_intentionally_converted": 99
+}

@@ -1,0 +1,63 @@
+{
+  "base_sha": "a08569cbdb593651807c887f4c9edd5e7b243973",
+  "scope": "Partial #52 parent11 section7 attribute preservation only; no issue closure",
+  "runtime": "Linux Python3.14.7 NumPy2.5.4 jsonschema4.26 Pillow13.0.0; distinct from pinned CI",
+  "commands": {
+    "regression": "PYTHONPATH=scripts:tests /tmp/hatch-restore-venv/bin/python -B -m unittest test_rig_import_transforms test_rig_interop test_rig_contracts test_rig_math test_rig_skinning test_rig_compatibility -v",
+    "cli": [
+      "python -B scripts/rig.py import --model FIXTURE/fixture.gltf --run-dir FIXTURE/run --id tangent-fixture",
+      "python -B scripts/rig.py inspect --run-dir FIXTURE/run"
+    ],
+    "checks": [
+      "python -B scripts/generate_schemas.py --check",
+      "python -B scripts/generate_rig_templates.py --check",
+      "git diff --check"
+    ]
+  },
+  "results": {
+    "regression": "45 tests run in 6.872 seconds; 40 passed, 5 explicit optional integration skips; zero failures/errors",
+    "baseline_control": "Exact original rig_import.py loaded in memory;17 expected failing subcases,zero errors;diagnostic trailing whitespace stripped only",
+    "cli": "Genuine reflected nonuniform glTF synthetic fixture explicitly labeled hatchSource.fixture=true imported successfully. rig.py inspect returned expected RIG_NO_SKELETON because this fixture is unrigged; cli-inspect.json retains that diagnostic, not a successful skeleton inspection. Programmatic load_rig decoded geometry normal/tangent checks, copied original source hash and retained fixture classification passed.",
+    "compatibility": "795 existing 2D tests discovered without 3D dependencies; not full execution",
+    "checks": "all passed"
+  },
+  "limitations": [
+    "No visual shading equivalence,independent rendering,Blender/browser/Khronos execution,or production approval claimed",
+    "Valid authored basis assumed;no inferred UV tangents or artistic repair",
+    "Main issue52 remains open for broader templates/landmark/correction/diff requirements"
+  ],
+  "files": {
+    "baseline-control.log": {
+      "sha256": "a4ee2f28fb3324476a131da6c8220496c9ce5e0bbe4d66359f1813cd5ecc679f",
+      "bytes": 37568
+    },
+    "cli-import.json": {
+      "sha256": "c11a2450b2a24ae44a8ab700aabcde8a2b28e27956a1689c67dcfcf86dddbfcd",
+      "bytes": 292
+    },
+    "cli-inspect.json": {
+      "sha256": "ee5a68d16e5be108045d389b8a3dfb0140000c5eb4efae09caa845e5bff0f5d5",
+      "bytes": 327
+    },
+    "cli-verification.json": {
+      "sha256": "2c42fafde9c34ab86b79069ec4bd5967be4b0691112c8318e51cb1a4aa5ac5df",
+      "bytes": 574
+    },
+    "regression.log": {
+      "sha256": "e16927aa7ec23538c71bbf947d3a64ec8dca24eb4d5a341351e8581d18853b9e",
+      "bytes": 7516
+    },
+    "scripts/rig_import.py": {
+      "sha256": "ce59d7afd2dcaa0c02ba15bcce906e58ceed59f00b9cd7bf9da148d0cdc8140c",
+      "bytes": 20327
+    },
+    "scripts/test_rig_gate.py": {
+      "sha256": "d36a07cf3d2dca93faeec17f5906864f5efb0271918bef1270e16f3ec503d1db",
+      "bytes": 1305
+    },
+    "tests/test_rig_import_transforms.py": {
+      "sha256": "d4398a03825e854865f808b106d885667bd637d3689444e0a6a0feb9a36ae650",
+      "bytes": 8585
+    }
+  }
+}

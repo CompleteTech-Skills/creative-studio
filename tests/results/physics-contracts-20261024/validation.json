@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "kind": "physics-configuration-validation",
+  "issue": 167,
+  "source_commit": "e39f9b486e2617a736ee135f9c8c4110b3b7d460",
+  "source_tree": "caa96001e806c5937d314603bd6031ae26f2f968",
+  "created_at": "2026-10-24T03:13:08.606372+00:00",
+  "checkout_before_sha256": "cc7e88d108046b3b4b065a069757745acdbb47977d5f64e481b435290d4a4cbf",
+  "checkout_after_sha256": "cc7e88d108046b3b4b065a069757745acdbb47977d5f64e481b435290d4a4cbf",
+  "checkout_unchanged": true,
+  "environment": {
+    "python": "Python 3.12.15",
+    "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+    "packages": [
+      {
+        "name": "attrs",
+        "version": "26.1.0"
+      },
+      {
+        "name": "greenlet",
+        "version": "3.5.6"
+      },
+      {
+        "name": "jsonschema",
+        "version": "4.26.0"
+      },
+      {
+        "name": "jsonschema-specifications",
+        "version": "2025.9.1"
+      },
+      {
+        "name": "pillow",
+        "version": "13.0.0"
+      },
+      {
+        "name": "pip",
+        "version": "26.2.2"
+      },
+      {
+        "name": "playwright",
+        "version": "1.64.0"
+      },
+      {
+        "name": "pyee",
+        "version": "14.0.0"
+      },
+      {
+        "name": "referencing",
+        "version": "0.37.0"
+      },
+      {
+        "name": "rpds-py",
+        "version": "2026.9.1"
+      },
+      {
+        "name": "typing_extensions",
+        "version": "4.16.0"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_physics_contracts.py",
+        "-v"
+      ],
+      "started_at": "2026-10-24T03:13:03.212324+00:00",
+      "elapsed_seconds": 1.468701,
+      "exit_code": 0,
+      "log": "contracts-final.log",
+      "log_sha256": "cf47d623ccd684357297db0b5fcab8c72c8b351605e96930ca3da8e8f08c6d46"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_rig_compatibility.py",
+        "-v"
+      ],
+      "started_at": "2026-10-24T03:13:04.681367+00:00",
+      "elapsed_seconds": 1.394029,
+      "exit_code": 0,
+      "log": "legacy-final.log",
+      "log_sha256": "b9c18c940763ee4714666635abedcd82e86972cb4ac01218729ac4083b132c5c"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/physics_contracts.py",
+        "--check"
+      ],
+      "started_at": "2026-10-24T03:13:06.075635+00:00",
+      "elapsed_seconds": 0.166319,
+      "exit_code": 0,
+      "log": "physics-schemas-final.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/generate_schemas.py",
+        "--check"
+      ],
+      "started_at": "2026-10-24T03:13:06.242200+00:00",
+      "elapsed_seconds": 0.248651,
+      "exit_code": 0,
+      "log": "legacy-schemas-final.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/generate_rig_templates.py",
+        "--check"
+      ],
+      "started_at": "2026-10-24T03:13:06.491109+00:00",
+      "elapsed_seconds": 0.321583,
+      "exit_code": 0,
+      "log": "rig-templates-final.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/production_sources.py",
+        "verify-delivery"
+      ],
+      "started_at": "2026-10-24T03:13:06.812940+00:00",
+      "elapsed_seconds": 0.964767,
+      "exit_code": 0,
+      "log": "source-delivery-final.log",
+      "log_sha256": "7d59ca4103d32ae90d1ba145e50d0827d9b061616ea1b560bbe3aaba76747ec8"
+    }
+  ],
+  "focused_tests": {
+    "run": 22,
+    "passed": 22,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "legacy_compatibility_tests": {
+    "run": 4,
+    "passed": 4,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "discovered_2d_cases": 817
+  },
+  "broad_baseline": {
+    "source_commit": "68b9b87b8ad3a0635027be8ce5db3dfbd6e20a9b",
+    "source_tree": "ee88ef16acc3b375cf1e0d4ad75c4f88e581bdab",
+    "command": [
+      "/tmp/hatch-physics167-env/bin/python",
+      "scripts/test_rig_gate.py",
+      "compatibility"
+    ],
+    "environment": {
+      "python": "3.14.7",
+      "Pillow": "13.0.0",
+      "jsonschema": "4.26.0",
+      "playwright": "1.64.0",
+      "HATCH_DECOMPOSITION_BROWSER_TEST": "1",
+      "HATCH_BROWSER_EXECUTABLE": "/usr/bin/chromium",
+      "actual_chromium": "152.0.7977.82"
+    },
+    "tests_run": 811,
+    "passed": 810,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 1,
+    "skip_reason": "Native Krita unavailable",
+    "elapsed_seconds": 839.99,
+    "log": "compatibility-68b9b87.log",
+    "log_sha256": "df70ea60d5fc6cd6ef2e9319f53516d16adf515c65c0f09a8b25050bd41a1d93",
+    "attribution": "Frozen original candidate before independent-review corrections; this is NOT a full-suite result for the corrected source_commit."
+  },
+  "requested_fixture_settings": {
+    "backend": "blender",
+    "fixed_step": {
+      "numerator": 1,
+      "denominator": 240
+    },
+    "substeps": 1,
+    "fps": {
+      "numerator": 24,
+      "denominator": 1
+    }
+  },
+  "actual_solver_execution": null,
+  "effective_solver_step": null,
+  "simulation_resource_measurements": null,
+  "simulation_cache_status": "unimplemented/unverified",
+  "review_state": "independent Astra review pending for corrected head; no model or human approval is manufactured",
+  "final_head_ci": "pending publication and exact-head CI",
+  "limitations": [
+    "Configuration/manifests only; no solver is imported or executed.",
+    "No backend capability, numerical simulation, cache replay, checkpoint recovery or production-art approval is established.",
+    "External reference byte verification belongs to actual resource admission; fixture uses structural placeholder hashes."
+  ]
+}

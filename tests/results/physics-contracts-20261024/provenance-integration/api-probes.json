@@ -1,0 +1,79 @@
+{
+  "probes": [
+    {
+      "case": "positive-root",
+      "code": "PHYSICS_JSON",
+      "input_unchanged": true
+    },
+    {
+      "case": "positive-array",
+      "code": "PHYSICS_JSON",
+      "input_unchanged": true
+    },
+    {
+      "case": "positive-nested",
+      "code": "PHYSICS_JSON",
+      "input_unchanged": true
+    },
+    {
+      "case": "negative-root",
+      "code": "PHYSICS_JSON",
+      "input_unchanged": true
+    },
+    {
+      "case": "negative-array",
+      "code": "PHYSICS_JSON",
+      "input_unchanged": true
+    },
+    {
+      "case": "negative-nested",
+      "code": "PHYSICS_JSON",
+      "input_unchanged": true
+    },
+    {
+      "case": "unicode-exact-byte-limit",
+      "bytes": 2578,
+      "characters": 2572,
+      "accepted": true,
+      "input_unchanged": true
+    },
+    {
+      "case": "unicode-over-limit-text",
+      "code": "RIG_LIMIT_JSON"
+    },
+    {
+      "case": "unicode-over-limit-bytes",
+      "code": "RIG_LIMIT_JSON"
+    },
+    {
+      "case": "unicode-over-limit-domain-file",
+      "code": "PHYSICS_JSON",
+      "input_unchanged": true
+    },
+    {
+      "case": "malformed-file",
+      "payload_hex": "22ff22",
+      "code": "PHYSICS_JSON",
+      "input_unchanged": true
+    },
+    {
+      "case": "malformed-file",
+      "payload_hex": "7b2278223a312c2278223a327d",
+      "code": "PHYSICS_JSON",
+      "input_unchanged": true
+    },
+    {
+      "case": "malformed-file",
+      "payload_hex": "7b2278223a4e614e7d",
+      "code": "PHYSICS_JSON",
+      "input_unchanged": true
+    },
+    {
+      "case": "programming-error-not-concealed",
+      "type": "ValueError"
+    }
+  ],
+  "interpreter_digit_limit_before": 4300,
+  "interpreter_digit_limit_after": 4300,
+  "actual_solver_execution": null
+}

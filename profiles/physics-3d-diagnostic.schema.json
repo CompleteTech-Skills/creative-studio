@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/physics-3d-diagnostic-v1",
+  "title": "PhysicsDiagnostic v1",
+  "description": "Structural bounds; runtime additionally validates graph, geometry, time and aggregate budgets. No solver capability is implied.",
+  "$defs": {
+    "PhysicsDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "category": {
+          "enum": [
+            "invalid-input",
+            "capability-gap",
+            "setup-error",
+            "numerical-instability",
+            "timeout",
+            "resource-exhaustion",
+            "cache-corruption",
+            "backend-crash"
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "path",
+        "category",
+        "retryable"
+      ]
+    }
+  },
+  "$ref": "#/$defs/PhysicsDiagnostic"
+}

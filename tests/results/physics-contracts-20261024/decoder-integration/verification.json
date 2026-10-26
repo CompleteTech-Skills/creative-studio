@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "kind": "physics-shared-decoder-integration-validation",
+  "issue": 167,
+  "depends_on_pr": 205,
+  "source_commit": "387a41367c44e46aecc64abc4255f0886bdfacef",
+  "source_tree": "5267d34d38477628069864382d1d768060de871b",
+  "shared_decoder_commit": "cf15e97027ab48d028de6dfd8dc8f2440f2cf2d8",
+  "created_at": "2026-10-24T03:41:19.095983+00:00",
+  "checkout_before_sha256": "f80e76d0b10ddd02c097f68b93c1f99e53869edce12ea629503cd42b9883c8e4",
+  "checkout_after_sha256": "f80e76d0b10ddd02c097f68b93c1f99e53869edce12ea629503cd42b9883c8e4",
+  "checkout_unchanged": true,
+  "environment": {
+    "python": "Python 3.12.15",
+    "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+    "packages": [
+      {
+        "name": "attrs",
+        "version": "26.1.0"
+      },
+      {
+        "name": "greenlet",
+        "version": "3.5.6"
+      },
+      {
+        "name": "jsonschema",
+        "version": "4.26.0"
+      },
+      {
+        "name": "jsonschema-specifications",
+        "version": "2025.9.1"
+      },
+      {
+        "name": "pillow",
+        "version": "13.0.0"
+      },
+      {
+        "name": "pip",
+        "version": "26.2.2"
+      },
+      {
+        "name": "playwright",
+        "version": "1.64.0"
+      },
+      {
+        "name": "pyee",
+        "version": "14.0.0"
+      },
+      {
+        "name": "referencing",
+        "version": "0.37.0"
+      },
+      {
+        "name": "rpds-py",
+        "version": "2026.9.1"
+      },
+      {
+        "name": "typing_extensions",
+        "version": "4.16.0"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_physics_contracts.py",
+        "-v"
+      ],
+      "started_at": "2026-10-24T03:41:14.472888+00:00",
+      "elapsed_seconds": 1.32995,
+      "exit_code": 0,
+      "log": "contracts.log",
+      "log_sha256": "66d868d02ad7723fdcac74f8b6d9599962d5d9a56402048a28f0fda9d7eeec91"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_rig_compatibility.py",
+        "-v"
+      ],
+      "started_at": "2026-10-24T03:41:15.803073+00:00",
+      "elapsed_seconds": 1.053176,
+      "exit_code": 0,
+      "log": "legacy.log",
+      "log_sha256": "a9bfe70bd87ef0165acabd9b7a6997b33b94c609a6427d3df501b48a3416b14f"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/physics_contracts.py",
+        "--check"
+      ],
+      "started_at": "2026-10-24T03:41:16.856632+00:00",
+      "elapsed_seconds": 0.147691,
+      "exit_code": 0,
+      "log": "physics-schemas.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/generate_schemas.py",
+        "--check"
+      ],
+      "started_at": "2026-10-24T03:41:17.004541+00:00",
+      "elapsed_seconds": 0.218368,
+      "exit_code": 0,
+      "log": "legacy-schemas.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/generate_rig_templates.py",
+        "--check"
+      ],
+      "started_at": "2026-10-24T03:41:17.223113+00:00",
+      "elapsed_seconds": 0.272304,
+      "exit_code": 0,
+      "log": "rig-templates.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/production_sources.py",
+        "verify-delivery"
+      ],
+      "started_at": "2026-10-24T03:41:17.495699+00:00",
+      "elapsed_seconds": 0.895514,
+      "exit_code": 0,
+      "log": "source-delivery.log",
+      "log_sha256": "7d59ca4103d32ae90d1ba145e50d0827d9b061616ea1b560bbe3aaba76747ec8"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "/tmp/hatch-fleet/physics167/decoder-integration/api-probes.py"
+      ],
+      "started_at": "2026-10-24T03:41:18.391468+00:00",
+      "elapsed_seconds": 0.357488,
+      "exit_code": 0,
+      "log": "api-probes.json",
+      "log_sha256": "e12412326a997c223f37618d6252c412003781700f78b55573057744f0ec9d2c"
+    }
+  ],
+  "focused_tests": {
+    "run": 22,
+    "passed": 22,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "legacy_compatibility_tests": {
+    "run": 4,
+    "passed": 4,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "discovered_2d_cases": 824
+  },
+  "api_probes": {
+    "probes": [
+      {
+        "case": "positive-root",
+        "code": "PHYSICS_JSON",
+        "input_unchanged": true
+      },
+      {
+        "case": "positive-array",
+        "code": "PHYSICS_JSON",
+        "input_unchanged": true
+      },
+      {
+        "case": "positive-nested",
+        "code": "PHYSICS_JSON",
+        "input_unchanged": true
+      },
+      {
+        "case": "negative-root",
+        "code": "PHYSICS_JSON",
+        "input_unchanged": true
+      },
+      {
+        "case": "negative-array",
+        "code": "PHYSICS_JSON",
+        "input_unchanged": true
+      },
+      {
+        "case": "negative-nested",
+        "code": "PHYSICS_JSON",
+        "input_unchanged": true
+      },
+      {
+        "case": "unicode-exact-byte-limit",
+        "bytes": 2578,
+        "characters": 2572,
+        "accepted": true,
+        "input_unchanged": true
+      },
+      {
+        "case": "unicode-over-limit-text",
+        "code": "RIG_LIMIT_JSON"
+      },
+      {
+        "case": "unicode-over-limit-bytes",
+        "code": "RIG_LIMIT_JSON"
+      },
+      {
+        "case": "unicode-over-limit-domain-file",
+        "code": "PHYSICS_JSON",
+        "input_unchanged": true
+      },
+      {
+        "case": "malformed-file",
+        "payload_hex": "22ff22",
+        "code": "PHYSICS_JSON",
+        "input_unchanged": true
+      },
+      {
+        "case": "malformed-file",
+        "payload_hex": "7b2278223a312c2278223a327d",
+        "code": "PHYSICS_JSON",
+        "input_unchanged": true
+      },
+      {
+        "case": "malformed-file",
+        "payload_hex": "7b2278223a4e614e7d",
+        "code": "PHYSICS_JSON",
+        "input_unchanged": true
+      },
+      {
+        "case": "programming-error-not-concealed",
+        "type": "ValueError"
+      }
+    ],
+    "interpreter_digit_limit_before": 4300,
+    "interpreter_digit_limit_after": 4300,
+    "actual_solver_execution": null
+  },
+  "source_hashes": {
+    "scripts/physics_contracts.py": "f1dae20e3fd423732a3952d9c218a2ba1a3c424853dfd637b4d24b14b1dff222",
+    "scripts/rig_errors.py": "66858dafef15f66a7c13114db0a3af93a94f318eefc9b9e6c6b02b9616164d75",
+    "tests/test_physics_contracts.py": "cf238955582cfb3102f528128f9613db6261fa9a12d5ad6e8fe6c604b11cb263"
+  },
+  "broad_baseline": "Earlier811-case run remains attributed only to68b9b87; see../validation.json. No decoder-integrated full-suite result is claimed.",
+  "actual_solver_execution": null,
+  "final_head_ci": "pending publication and exact-head CI",
+  "independent_review": "fresh exact-head Astra review required after integration",
+  "retained_api_probe_script": "api-probes.py",
+  "api_probe_script_sha256": "aa97ec8ef7e9b07373de509624348d75ba7386a8aabf23a42663c55d415d27e1",
+  "api_probe_count": 14
+}

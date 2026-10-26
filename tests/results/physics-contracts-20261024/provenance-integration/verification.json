@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "kind": "physics-provenance-preservation-validation",
+  "issue": 167,
+  "pr": 208,
+  "depends_on_pr": 205,
+  "source_commit": "4b7deeea1473c08a6382018fd1fefb3a11c5cc55",
+  "source_tree": "d82339ab09435505c974809c3309ed3a615f831a",
+  "shared_preservation_commit": "91d14b8339eb16a6285969d9bc772b11bdfec3ec",
+  "created_at": "2026-10-24T04:27:29.853799+00:00",
+  "checkout_before_sha256": "31cf19057e8da1baa5a44087718ca83d325775ae46e4dad2eab315564d5cc7e7",
+  "checkout_after_sha256": "31cf19057e8da1baa5a44087718ca83d325775ae46e4dad2eab315564d5cc7e7",
+  "checkout_unchanged": true,
+  "environment": {
+    "python": "Python 3.12.15",
+    "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44"
+  },
+  "commands": [
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_physics_contracts.py",
+        "-v"
+      ],
+      "started_at": "2026-10-24T04:27:26.145007+00:00",
+      "elapsed_seconds": 1.346126,
+      "exit_code": 0,
+      "log": "contracts.log",
+      "log_sha256": "af5e37e9d667999be82d02fb43af813279c2d8cd03d63102be6be20c0b3a9883"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_rig_compatibility.py",
+        "-v"
+      ],
+      "started_at": "2026-10-24T04:27:27.491573+00:00",
+      "elapsed_seconds": 1.076347,
+      "exit_code": 0,
+      "log": "compatibility.log",
+      "log_sha256": "dfef0adcd2fa0f796d9651a351ebbbbd6dad64466cdd48d6fce64b870e754214"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/physics_contracts.py",
+        "--check"
+      ],
+      "started_at": "2026-10-24T04:27:28.568210+00:00",
+      "elapsed_seconds": 0.149691,
+      "exit_code": 0,
+      "log": "physics-schemas.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/generate_schemas.py",
+        "--check"
+      ],
+      "started_at": "2026-10-24T04:27:28.718127+00:00",
+      "elapsed_seconds": 0.215688,
+      "exit_code": 0,
+      "log": "legacy-schemas.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "scripts/generate_rig_templates.py",
+        "--check"
+      ],
+      "started_at": "2026-10-24T04:27:28.934049+00:00",
+      "elapsed_seconds": 0.269683,
+      "exit_code": 0,
+      "log": "rig-templates.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "/tmp/hatch-physics167-py312/bin/python",
+        "tests/results/physics-contracts-20261024/decoder-integration/api-probes.py"
+      ],
+      "started_at": "2026-10-24T04:27:29.203943+00:00",
+      "elapsed_seconds": 0.336763,
+      "exit_code": 0,
+      "log": "api-probes.json",
+      "log_sha256": "e12412326a997c223f37618d6252c412003781700f78b55573057744f0ec9d2c"
+    }
+  ],
+  "focused_tests": {
+    "run": 22,
+    "passed": 22,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "compatibility_tests": {
+    "run": 4,
+    "passed": 4,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "discovered_2d_cases": 824
+  },
+  "api_probe_count": 14,
+  "crlf_summary": "crlf-summary.json",
+  "crlf_summary_sha256": "d4d9716b02715532ba18a59c6b913dfee320ae3340b3fb45e074045744c8895c",
+  "runtime_source_unchanged_from": "7cff19f4d3d7c3c4c83f1a309f3a9300b6f9d941",
+  "previous_ci_history": {
+    "head": "7cff19f4d3d7c3c4c83f1a309f3a9300b6f9d941",
+    "push_run": 40060031037,
+    "pr_delivery_run": 40060249929,
+    "pr_rig_run": 40060250104,
+    "attribution": "These are earlier-head runs; no current result is inferred."
+  },
+  "broad_baseline": "Original811-run remains attributed only to68b9b87; no full legacy rerun is claimed.",
+  "actual_native_windows_execution": false,
+  "actual_solver_execution": null,
+  "fresh_exact_head_review": "pending",
+  "new_head_ci": "not published; pending separate push lease"
+}

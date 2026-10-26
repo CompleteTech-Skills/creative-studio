@@ -1,0 +1,14 @@
+{
+  "ok": false,
+  "error": {
+    "code": "RIG_NO_SKELETON",
+    "stage": "rig",
+    "message": "Generate or import a skeleton before this operation.",
+    "asset": null,
+    "expected": null,
+    "observed": null,
+    "retryable": false,
+    "correction": "Correct the indicated input and retry.",
+    "preserved": null
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "acquisitions": [
+    {
+      "attempts": 1,
+      "character": "milo",
+      "job": "base",
+      "path": "art/originals/milo-turnaround-v3.png",
+      "sha256": "cb88dd18e162ee7e8d7a40da6b510e7ae4431595458b548fb4414db18eb225da"
+    },
+    {
+      "attempts": 1,
+      "character": "milo",
+      "job": "parts",
+      "path": "art/originals/milo-parts-v3.png",
+      "sha256": "84e0abc18797bbeb5224dacc281873cfd7b39ed64d7ef0ac2161947772c63588"
+    },
+    {
+      "attempts": 1,
+      "character": "luma",
+      "job": "base",
+      "path": "art/originals/luma-turnaround-v3.png",
+      "sha256": "270eb609c8cc566a61f3081d09c6e2f47390592d7650e9547872a64cb9f1cced"
+    },
+    {
+      "attempts": 1,
+      "character": "luma",
+      "job": "parts",
+      "path": "art/originals/luma-parts-v3.png",
+      "sha256": "bdfb919fd64776e45014f9654f41cf83d56bd5f34a2d1979b1bb09fd80be32f6"
+    }
+  ],
+  "bundles": {
+    "artwork": {
+      "bundle_sha256": "7ed8daad15ba0be16aee297e77e1ee9ca9561a866c9668800c27850aafd41fe6",
+      "file_count": 36,
+      "total_bytes": 14921593,
+      "unique_part_bytes": 11856017,
+      "unique_part_count": 207
+    },
+    "audio": {
+      "bundle_sha256": "62a25bf2764210d0616e374cf04c0202fa311e18682f4208f7ea0e27b7ecb6e9",
+      "file_count": 16,
+      "total_bytes": 1715251,
+      "unique_part_bytes": 1715251,
+      "unique_part_count": 39
+    },
+    "evidence": {
+      "bundle_sha256": "008567c7346b7bd76156e8050a2e51bbfb3ce18cbcb185897c1affab924aea40",
+      "file_count": 10,
+      "total_bytes": 3560571,
+      "unique_part_bytes": 3560571,
+      "unique_part_count": 60
+    },
+    "reconstruction": {
+      "bundle_sha256": "59757fc164dd4538d6bc8593b55010ec01b194ec0c6f1e5781c9249528d5ccf1",
+      "file_count": 66,
+      "total_bytes": 2506254,
+      "unique_part_bytes": 2506254,
+      "unique_part_count": 92
+    },
+    "reviews": {
+      "bundle_sha256": "454bfdb6daad191cdcf1c20ea8dfe487dae0bb7a3576d2258cbe6c8b4f99c5dc",
+      "file_count": 1,
+      "total_bytes": 4167150,
+      "unique_part_bytes": 4167150,
+      "unique_part_count": 64
+    }
+  },
+  "fixture": false,
+  "history": {
+    "chain_verified": true,
+    "evidence_verified": true,
+    "human_review": false,
+    "last_review_sha256": "a02a3f5242e6c48a69053961d822f21e38aa7a32ec3d64a81679faa257198934",
+    "records": 20,
+    "reviewer_kinds": [
+      "assistant"
+    ],
+    "sha256": "cce42c52460d4525f18eb00f7525f8df8d99ebda9e31b3d875dccba6d93220d4",
+    "supporting_evidence_files": 13
+  },
+  "new_approval_recorded": false,
+  "original_audio_recordings": 5,
+  "project_id": "milo-luma-pilot",
+  "provider_called": false,
+  "public_files_verified": 7,
+  "schema_version": 1,
+  "scope": "Original byte integrity, provenance and historical evidence; current render acceptance remains separately scoped.",
+  "tts_called": false,
+  "verified": true,
+  "version": "3.0.0",
+  "visual_review_performed": false
+}

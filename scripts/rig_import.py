@@ -14,7 +14,7 @@ from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, require, sha256, slug, timestamp
 from rig_geometry import analyze_geometry, vertex_normals
 from rig_gltf import GltfDocument, _index, node_matrix, read_gltf, scene_graph
-from rig_math import decompose, transform_normals, transform_points
+from rig_math import decompose, transform_points
 from rig_models import Geometry, Mesh, SkinWeights, TextureImage, validate_geometry
 from rig_skeleton import validate_skeleton
 
@@ -331,14 +331,25 @@ def _gltf_model(path, *, scale=1., limits=None) -> ImportedModel:
                 skin = SkinWeights(name, [ids[node_id]], np.zeros((len(positions), 4), dtype=np.uint16),
                     np.tile([1., 0, 0, 0], (len(positions), 1)), np.array([np.linalg.inv(normalized[node_id])]), method='rigid')
             decoded_attributes = {}
+            direction_lengths = {}
             for semantic, accessor in attributes.items():
                 if semantic == 'POSITION' or semantic.startswith(('JOINTS_', 'WEIGHTS_')):continue
                 require(semantic in ('NORMAL', 'TANGENT', 'TEXCOORD_0', 'TEXCOORD_1', 'COLOR_0'),
                         'RIG_ATTRIBUTE', 'Unsupported attribute must be explicitly adapted: '+semantic)
                 values = document.accessor(accessor).astype(float)
-                if semantic == 'NORMAL':values = transform_normals(matrix, values)
-                elif semantic == 'TANGENT':
-                    values[:, :3] = transform_normals(matrix, values[:, :3]);values[:, 3] *= np.sign(np.linalg.det(matrix[:3, :3]))
+                if semantic in ('NORMAL', 'TANGENT'):
+                    width = 3 if semantic == 'NORMAL' else 4
+                    require(values.shape == (len(positions), width), 'RIG_ATTRIBUTE',
+                            'Direction attributes must have the declared vertex-aligned shape.')
+                    # Normals are covectors; tangent XYZ is a surface direction.
+                    linear = np.linalg.inv(matrix[:3, :3]) if semantic == 'NORMAL' else matrix[:3, :3].T
+                    transformed = values[:, :3] @ linear
+                    lengths = np.linalg.norm(transformed, axis=1, keepdims=True)
+                    require(np.isfinite(lengths).all() and np.all(lengths > 0), 'RIG_ATTRIBUTE',
+                            'Direction attributes must have nonzero finite length.')
+                    direction_lengths[semantic] = lengths
+                    values[:, :3] = transformed/lengths
+                    if semantic == 'TANGENT':values[:, 3] *= np.sign(np.linalg.det(matrix[:3, :3]))
                 elif semantic == 'COLOR_0' and values.shape[1] == 3:values = np.c_[values, np.ones(len(values))]
                 decoded_attributes[semantic] = values
             morphs = {};target_names = source_mesh.get('extras', {}).get('targetNames', [])
@@ -350,7 +361,15 @@ def _gltf_model(path, *, scale=1., limits=None) -> ImportedModel:
                     values = document.accessor(accessor).astype(float)
                     require(semantic in ('POSITION', 'NORMAL', 'TANGENT') and values.shape == positions.shape,
                             'RIG_MORPH_TOPOLOGY', 'Morph topology differs from source geometry.')
-                    fields[semantic] = values @ (matrix[:3, :3].T if semantic == 'POSITION' else np.linalg.inv(matrix[:3, :3]))
+                    linear = np.linalg.inv(matrix[:3, :3]) if semantic == 'NORMAL' else matrix[:3, :3].T
+                    transformed = values @ linear
+                    if semantic != 'POSITION':
+                        require(semantic in direction_lengths, 'RIG_MORPH_ATTRIBUTE',
+                                'Direction morphs require the corresponding base attribute.')
+                        # Divide deltas by the SAME base length: normalization of
+                        # base + weighted deltas then commutes with this baking.
+                        transformed = transformed/direction_lengths[semantic]
+                    fields[semantic] = transformed
                 fields.setdefault('POSITION', np.zeros_like(positions));morphs[morph_name] = fields
             defaults = node.get('weights', source_mesh.get('weights', [0.]*len(morphs)))
             require(len(defaults) == len(morphs), 'RIG_MORPH_TOPOLOGY', 'Default morph weight count is invalid.')

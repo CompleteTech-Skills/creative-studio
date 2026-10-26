@@ -1,0 +1,66 @@
+[
+  {
+    "format": "glb",
+    "case": "dangling-base-color",
+    "baseline_admitted": true,
+    "corrected_error": "RIG_TEXTURE_REFERENCE",
+    "source_unchanged": true,
+    "source_sha256": "20964ce79a811ca39c1f106befd437f4e8ea0af72755223645d810b6cdd93217"
+  },
+  {
+    "format": "glb",
+    "case": "absent-uv1",
+    "baseline_admitted": true,
+    "corrected_error": "RIG_TEXTURE_UV",
+    "source_unchanged": true,
+    "source_sha256": "17fc2d4f62233e4be8c05b8c47cfe2c89edd8fab150d3efd50bab898dc60496a"
+  },
+  {
+    "format": "glb",
+    "case": "dangling-sampler",
+    "baseline_admitted": true,
+    "corrected_error": "RIG_TEXTURE_REFERENCE",
+    "source_unchanged": true,
+    "source_sha256": "4099a7999ee08fa6e90629675ed4d8e36edf8ac658e037cb7796b0895fa77044"
+  },
+  {
+    "format": "glb",
+    "case": "out-of-range-color",
+    "baseline_admitted": true,
+    "corrected_error": "RIG_COLOR_RANGE",
+    "source_unchanged": true,
+    "source_sha256": "d64a23ff2d8ab51093c655fa0d62db985f99bd158212c0bfbb66a1cb08c1f772"
+  },
+  {
+    "format": "gltf",
+    "case": "dangling-base-color",
+    "baseline_admitted": true,
+    "corrected_error": "RIG_TEXTURE_REFERENCE",
+    "source_unchanged": true,
+    "source_sha256": "6fc7667f368ae8d8accf27cde7e3a96f7d5fbc1140362ed15a041b43b924d9d1"
+  },
+  {
+    "format": "gltf",
+    "case": "absent-uv1",
+    "baseline_admitted": true,
+    "corrected_error": "RIG_TEXTURE_UV",
+    "source_unchanged": true,
+    "source_sha256": "1c3bf23340045968d028c4613e5d322706a19d5308a3b13d80ddeb84d4f4693b"
+  },
+  {
+    "format": "gltf",
+    "case": "dangling-sampler",
+    "baseline_admitted": true,
+    "corrected_error": "RIG_TEXTURE_REFERENCE",
+    "source_unchanged": true,
+    "source_sha256": "928087c89d87de57476e2d706b308ddab5cba4089f2b0c2278a52083f4204571"
+  },
+  {
+    "format": "gltf",
+    "case": "out-of-range-color",
+    "baseline_admitted": true,
+    "corrected_error": "RIG_COLOR_RANGE",
+    "source_unchanged": true,
+    "source_sha256": "444a6897b5760d14c68083fc8a9d90b3820cdf8f6f1fa9326747c8ee0d604cd8"
+  }
+]

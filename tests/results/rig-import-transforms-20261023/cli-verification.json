@@ -1,0 +1,23 @@
+{
+  "source_sha256": "5413defeefc646457398433bd6de6146754244a16fd9a18eef0d929c7ff25877",
+  "saved_manifest_sha256": "57b1bd1f05110f94864380cbd7f2902ade5be969071ab7cc226e0a554bec66ea",
+  "geometry_sha256": "91be12d377af8a455b57c327761975b48d6c8907bdc541b2243cc5288deedb11",
+  "tangent": [
+    -0.894427190999916,
+    0.447213595499958,
+    0.0,
+    -1.0
+  ],
+  "normal": [
+    -0.447213595499958,
+    -0.894427190999916,
+    0.0
+  ],
+  "morphs": [
+    "bend",
+    "twist"
+  ],
+  "source_bytes_preserved": true,
+  "fixture": true,
+  "path": "/tmp/hatch-52-cli-zkh73_89/run"
+}

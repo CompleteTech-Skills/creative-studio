@@ -1,0 +1,508 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/physics-3d-job-v1",
+  "title": "PhysicsJob v1",
+  "description": "Structural bounds; runtime additionally validates graph, geometry, time and aggregate budgets. No solver capability is implied.",
+  "$defs": {
+    "PhysicsJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "hatch-3d-physics-job"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "world": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .](?:/(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .])*(?![\\s\\S])"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+            },
+            "kind": {
+              "enum": [
+                "geometry",
+                "rig",
+                "animation",
+                "scene",
+                "material",
+                "texture",
+                "physics-world",
+                "physics-cache"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "path",
+            "sha256",
+            "kind"
+          ]
+        },
+        "world_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "enum": [
+                "blender",
+                "pybullet"
+              ]
+            },
+            "adapter_version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            },
+            "solver_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "solver_version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "application_version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "platform": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "precision": {
+              "enum": [
+                "float32",
+                "float64",
+                "mixed"
+              ]
+            },
+            "device": {
+              "enum": [
+                "cpu",
+                "gpu"
+              ]
+            },
+            "executable_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "id",
+            "adapter_version",
+            "solver_name",
+            "solver_version",
+            "application_version",
+            "platform",
+            "precision",
+            "device",
+            "executable_sha256"
+          ]
+        },
+        "output_directory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .](?:/(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .])*(?![\\s\\S])"
+        },
+        "input_files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .](?:/(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .])*(?![\\s\\S])"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1125899906842624
+              }
+            },
+            "required": [
+              "path",
+              "sha256",
+              "bytes"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 10000
+        },
+        "frame_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ]
+        },
+        "fps": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "fixed_step": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "substeps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "budgets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bodies": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "dynamic_bodies": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "colliders": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "constraints": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "triangles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "vertices": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "cloth_vertices": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "soft_body_vertices": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "hair_strands": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "particles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "fluid_secondary_particles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "volume_cells": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "gas_cells": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "liquid_cells": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "output_frames": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "steps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "duration_seconds": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000000.0
+            },
+            "memory_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1125899906842624
+            },
+            "vram_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1125899906842624
+            },
+            "cache_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1125899906842624
+            },
+            "bake_file_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1125899906842624
+            },
+            "temporary_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1125899906842624
+            },
+            "cpu_workers": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "concurrent_jobs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "restart_attempts": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 99
+            },
+            "timeout_seconds": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000000.0
+            }
+          },
+          "required": [
+            "bodies",
+            "dynamic_bodies",
+            "colliders",
+            "constraints",
+            "triangles",
+            "vertices",
+            "cloth_vertices",
+            "soft_body_vertices",
+            "hair_strands",
+            "particles",
+            "fluid_secondary_particles",
+            "volume_cells",
+            "gas_cells",
+            "liquid_cells",
+            "output_frames",
+            "steps",
+            "duration_seconds",
+            "memory_bytes",
+            "vram_bytes",
+            "cache_bytes",
+            "bake_file_bytes",
+            "temporary_bytes",
+            "cpu_workers",
+            "concurrent_jobs",
+            "restart_attempts",
+            "timeout_seconds"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "recovery": {
+          "enum": [
+            "clean-restart",
+            "verified-checkpoint"
+          ]
+        },
+        "checkpoint": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "pattern": "^(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .](?:/(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .])*(?![\\s\\S])"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                },
+                "bytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1125899906842624
+                }
+              },
+              "required": [
+                "path",
+                "sha256",
+                "bytes"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "elapsed_seconds": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000000.0
+            },
+            "peak_memory_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1125899906842624
+            },
+            "output_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1125899906842624
+            },
+            "solver_steps": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "elapsed_seconds",
+            "peak_memory_bytes",
+            "output_bytes",
+            "solver_steps"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "world",
+        "world_sha256",
+        "backend",
+        "output_directory",
+        "input_files",
+        "frame_range",
+        "fps",
+        "fixed_step",
+        "substeps",
+        "budgets",
+        "status",
+        "attempt",
+        "recovery",
+        "checkpoint",
+        "usage"
+      ]
+    }
+  },
+  "$ref": "#/$defs/PhysicsJob"
+}
