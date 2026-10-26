@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "editor3d-asset",
+  "id": "asset",
+  "native": {
+    "owner": "model3d",
+    "id": "robotic-contract-example",
+    "version": "1.0.0",
+    "native_kind": "model3d-asset",
+    "file": {
+      "path": "examples/model3d-contracts/robotic.json",
+      "sha256": "ce666b1b75c7b183007886e5674cae8960c8e102761e3caacc5759d0fc955a38",
+      "bytes": 16462,
+      "media_type": "application/json"
+    }
+  },
+  "asset_type": "model3d",
+  "original_filename": "robotic.json",
+  "original_format": "model3d",
+  "normalized_format": "model3d",
+  "provenance": {
+    "origin": "procedural-fixture",
+    "fixture": true,
+    "description": "Self-authored editor binding fixture; missing scene owner is intentional.",
+    "source_refs": []
+  },
+  "license": {
+    "identifier": null,
+    "attribution": null,
+    "permission": "unknown",
+    "evidence": null
+  },
+  "dependencies": [],
+  "thumbnails": [],
+  "validation_status": "unvalidated",
+  "previous": null
+}
