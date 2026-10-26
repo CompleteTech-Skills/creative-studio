@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "kind": "animation_scene_3d",
+  "id": "scene",
+  "version": "1.0.0",
+  "scene_asset": {
+    "id": "source",
+    "version": "1.0.0",
+    "path": "source.json",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "kind": "rig"
+  },
+  "actors": [],
+  "object_tracks": [],
+  "environment_tracks": [],
+  "camera_tracks": [],
+  "lighting_tracks": [],
+  "interactions": [],
+  "markers": []
+}

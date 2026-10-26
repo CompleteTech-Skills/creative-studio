@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "kind": "animation_project_3d",
+  "id": "project",
+  "version": "1.0.0",
+  "name": "Fixture",
+  "fixture": true,
+  "fps": {
+    "numerator": 24,
+    "denominator": 1
+  },
+  "coordinate_system": {
+    "handedness": "right",
+    "up_axis": "Y",
+    "unit": "meters"
+  },
+  "scene_assets": [],
+  "character_assets": [],
+  "rig_assets": [],
+  "clips": [],
+  "state_machines": [],
+  "retarget_profiles": [],
+  "sequences": [],
+  "budgets": {
+    "max_frames": 100,
+    "max_tracks": 100,
+    "max_keyframes": 100,
+    "max_actors": 100,
+    "max_bones_per_rig": 100,
+    "max_vertices": 100,
+    "max_morph_targets": 100,
+    "max_scene_nodes": 100,
+    "max_memory_bytes": 100,
+    "max_work_bytes": 100,
+    "max_render_pixels": 100,
+    "max_parallel_jobs": 100
+  },
+  "provenance": {
+    "origin": "synthetic-contract-fixture",
+    "kind": "fixture",
+    "fixture": true,
+    "sources": []
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "animation_constraint_3d",
+  "value": {
+    "id": "aim",
+    "type": "position",
+    "source": {
+      "kind": "bone",
+      "actor_id": "actor",
+      "bone_id": "root",
+      "property": "translation"
+    },
+    "target_position": [
+      1,
+      0,
+      0
+    ],
+    "weight": 1,
+    "enabled": true
+  }
+}

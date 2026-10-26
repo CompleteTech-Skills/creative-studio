@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "kind": "animation_render_3d",
+  "id": "job",
+  "project": {
+    "id": "source",
+    "version": "1.0.0",
+    "path": "source.json",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "kind": "rig"
+  },
+  "sequence_id": "sequence",
+  "start_frame": 0,
+  "end_frame_exclusive": 24,
+  "width": 64,
+  "height": 64,
+  "fps": {
+    "numerator": 24,
+    "denominator": 1
+  },
+  "output_format": "png_sequence",
+  "renderer": "blender",
+  "quality": "preview",
+  "transparent_background": false,
+  "seed": 0,
+  "output_directory": "output",
+  "include_audio": false
+}

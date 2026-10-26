@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Animation3D registry v1",
+  "$ref": "#/$defs/registry",
+  "$defs": {
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "animation_registry_3d"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "target": {
+                "$ref": "#/$defs/target"
+              },
+              "owner": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "source": {
+                "$ref": "#/$defs/asset"
+              },
+              "minimum": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "maximum": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              }
+            },
+            "required": [
+              "target",
+              "owner",
+              "source"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 10000
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "entries"
+      ]
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "node"
+            },
+            "property": {
+              "enum": [
+                "translation",
+                "rotation",
+                "scale",
+                "visibility"
+              ]
+            },
+            "node_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "node_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "bone"
+            },
+            "property": {
+              "enum": [
+                "translation",
+                "rotation",
+                "scale"
+              ]
+            },
+            "actor_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "bone_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "actor_id",
+            "bone_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "morph"
+            },
+            "property": {
+              "enum": [
+                "weight"
+              ]
+            },
+            "actor_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "mesh_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "morph_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "actor_id",
+            "mesh_id",
+            "morph_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "camera"
+            },
+            "property": {
+              "enum": [
+                "translation",
+                "rotation",
+                "focal_length",
+                "field_of_view",
+                "orthographic_size",
+                "focus_distance",
+                "aperture",
+                "exposure"
+              ]
+            },
+            "camera_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "camera_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "light"
+            },
+            "property": {
+              "enum": [
+                "translation",
+                "rotation",
+                "color",
+                "intensity",
+                "range",
+                "cone_angle"
+              ]
+            },
+            "light_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "light_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "material"
+            },
+            "property": {
+              "enum": [
+                "base_color",
+                "emissive_color",
+                "opacity",
+                "emissive_intensity",
+                "roughness",
+                "metallic"
+              ]
+            },
+            "material_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "material_id"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "environment"
+            },
+            "property": {
+              "enum": [
+                "sky_rotation",
+                "ambient_intensity",
+                "fog_density",
+                "wind_strength",
+                "sun_elevation",
+                "time_of_day"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "property"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "constraint"
+            },
+            "property": {
+              "enum": [
+                "weight",
+                "enabled",
+                "target_position"
+              ]
+            },
+            "constraint_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "kind",
+            "property",
+            "constraint_id"
+          ]
+        }
+      ]
+    }
+  }
+}

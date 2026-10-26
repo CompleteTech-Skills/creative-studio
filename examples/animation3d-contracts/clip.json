@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "kind": "animation_clip_3d",
+  "id": "clip",
+  "version": "1.0.0",
+  "name": "Clip",
+  "fps": {
+    "numerator": 24,
+    "denominator": 1
+  },
+  "duration_frames": 24,
+  "tags": [],
+  "categories": [],
+  "loop_mode": "once",
+  "completion_mode": "hold",
+  "default_speed": 1,
+  "tracks": [
+    {
+      "id": "move",
+      "target": {
+        "kind": "bone",
+        "actor_id": "actor",
+        "bone_id": "root",
+        "property": "translation"
+      },
+      "value_type": "vec3",
+      "default_value": [
+        0,
+        0,
+        0
+      ],
+      "keys": [
+        {
+          "time": {
+            "frame": 0
+          },
+          "value": [
+            0,
+            0,
+            0
+          ],
+          "interpolation": "linear"
+        },
+        {
+          "time": {
+            "frame": 24
+          },
+          "value": [
+            1,
+            0,
+            0
+          ],
+          "interpolation": "linear"
+        }
+      ],
+      "extrapolation_before": "hold",
+      "extrapolation_after": "hold",
+      "enabled": true
+    }
+  ],
+  "events": [],
+  "contacts": [],
+  "root_motion": {
+    "enabled": false,
+    "translation_axes": [
+      true,
+      true,
+      true
+    ],
+    "extract_rotation": false,
+    "mode": "in_place"
+  },
+  "interruption_policy": "any_frame",
+  "provenance": {
+    "origin": "synthetic-contract-fixture",
+    "kind": "fixture",
+    "fixture": true,
+    "sources": []
+  },
+  "dependencies": []
+}
