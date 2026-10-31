@@ -123,7 +123,8 @@ jobs:
           path: /tmp/rig-blender-gate/**/validation/*.json
   browser:
     name: Three.js browser playback and vertex comparison
-    runs-on: ubuntu-latest
+    # Playwright 1.55.0 supports Ubuntu 24.04, not the ubuntu-latest 26.04 image.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
