@@ -1,0 +1,15 @@
+{
+  "worktree": {
+    "setup": [
+      "python -m venv .venv",
+      ".venv/Scripts/python.exe -m pip install -r requirements-delivery.txt -r requirements-rig-test.txt",
+      "npm ci --ignore-scripts --prefix tools/rig"
+    ],
+    "teardown": "echo \"Setup starts no persistent services; Paseo handles worktree removal.\""
+  },
+  "scripts": {
+    "diff-check": {
+      "command": "git diff --check"
+    }
+  }
+}
