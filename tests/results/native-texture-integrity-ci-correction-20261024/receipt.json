@@ -1,0 +1,25 @@
+{
+  "source_commit": "c0af7d70504fa2768812f252828120a4d7cbb521",
+  "integrated_main": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+  "superseded_hosted_head": "10f6c0bb4f303a42e32c06e9fc8cb7d4a3791bbb",
+  "tests": 133,
+  "skips": 0,
+  "failures": 0,
+  "seconds": 39.382,
+  "optional_consumers": [
+    "Blender4.5.3",
+    "Khronos validator",
+    "Playwright Chromium"
+  ],
+  "input_hashes_unchanged": true,
+  "command": "PYTHONPATH=scripts:tests HATCH_RIG_INTEROP_TEST=1 HATCH_RIG_BLENDER_TEST=1 HATCH_RIG_BROWSER_TEST=1 /tmp/hatch-strict-jpeg-env/bin/python -B -m unittest test_model3d_contracts test_rig_texture_integrity test_rig_jpeg test_rig_interop test_rig_contracts test_rig_skinning test_rig_compatibility test_rig_correction_validation -v",
+  "hosted_failures_preserved": [
+    "120790966243",
+    "120790966348",
+    "120790966455",
+    "120790966704",
+    "120790966404"
+  ],
+  "review": "Fresh whole-head independent Astra review pending; prior10f review does not cover this head",
+  "publication": "No correction GitHub writes authorized or performed"
+}

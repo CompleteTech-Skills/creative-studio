@@ -1,0 +1,10 @@
+test_cli_failure_is_nonzero_and_structured (test_rig_compatibility.RigCompatibilityTests.test_cli_failure_is_nonzero_and_structured) ... ok
+test_existing_capabilities_work_with_3d_imports_blocked (test_rig_compatibility.RigCompatibilityTests.test_existing_capabilities_work_with_3d_imports_blocked) ... ok
+test_existing_contract_bytes_are_unchanged (test_rig_compatibility.RigCompatibilityTests.test_existing_contract_bytes_are_unchanged) ... ok
+test_public_delivery_discovers_all_2d_tests_without_3d_dependencies (test_rig_compatibility.RigCompatibilityTests.test_public_delivery_discovers_all_2d_tests_without_3d_dependencies) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 1.247s
+
+OK
+Discovered 817 2D tests without optional 3D dependencies

@@ -1,0 +1,2486 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/scene3d-scene-v1",
+  "title": "Scene3D scene v1",
+  "description": "Structural schema. Runtime checks paths, quaternions, graphs, timing and actual dependency hashes.",
+  "$defs": {
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?:(?! )(?!(?:[cC][oO][nN](?:[iI][nN][$]|[oO][uU][tT][$])?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][0-9\u00b9\u00b2\u00b3]|[lL][pP][tT][0-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f<>\"|?*]*[^/\\\\:\\x00-\\x1f<>\"|?* .]/)*(?! )(?!(?:[cC][oO][nN](?:[iI][nN][$]|[oO][uU][tT][$])?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][0-9\u00b9\u00b2\u00b3]|[lL][pP][tT][0-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f<>\"|?*]*[^/\\\\:\\x00-\\x1f<>\"|?* .](?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?:(?! )(?!(?:[cC][oO][nN](?:[iI][nN][$]|[oO][uU][tT][$])?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][0-9\u00b9\u00b2\u00b3]|[lL][pP][tT][0-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f<>\"|?*]*[^/\\\\:\\x00-\\x1f<>\"|?* .]/)*(?! )(?!(?:[cC][oO][nN](?:[iI][nN][$]|[oO][uU][tT][$])?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][0-9\u00b9\u00b2\u00b3]|[lL][pP][tT][0-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f<>\"|?*]*[^/\\\\:\\x00-\\x1f<>\"|?* .](?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "enum": [
+            "scene3d-scene",
+            "scene3d-shot",
+            "scene3d-asset",
+            "scene3d-prefab",
+            "scene3d-animation",
+            "scene3d-render",
+            "hatch-3d-rig",
+            "hatch-3d-animation",
+            "project",
+            "mesh",
+            "material",
+            "texture",
+            "catalog",
+            "evidence",
+            "collision"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "translation": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000.0,
+            "maximum": 1000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "rotation": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "scale": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 1e-08,
+            "maximum": 1000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "pivot": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000.0,
+            "maximum": 1000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "translation",
+        "rotation",
+        "scale"
+      ]
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minimum": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000.0,
+            "maximum": 1000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "maximum": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000.0,
+            "maximum": 1000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "minimum",
+        "maximum"
+      ]
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 240000
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ]
+    },
+    "render_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "enum": [
+            "blender-cycles",
+            "blender-eevee",
+            "unavailable"
+          ]
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8192
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8192
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "transparent": {
+          "type": "boolean"
+        },
+        "color_space": {
+          "enum": [
+            "linear-srgb",
+            "srgb"
+          ]
+        },
+        "output": {
+          "enum": [
+            "png",
+            "exr"
+          ]
+        },
+        "device": {
+          "enum": [
+            "cpu",
+            "gpu",
+            "auto"
+          ]
+        }
+      },
+      "required": [
+        "backend",
+        "width",
+        "height",
+        "samples",
+        "transparent",
+        "color_space",
+        "output",
+        "device"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "enum": [
+            "import",
+            "procedural-fixture",
+            "authored",
+            "derived"
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "origin",
+        "fixture",
+        "tool",
+        "inputs",
+        "attribution",
+        "license"
+      ]
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "unreviewed",
+            "reviewed",
+            "approved",
+            "rejected"
+          ]
+        },
+        "receipts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "status",
+        "receipts"
+      ]
+    },
+    "track": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "property": {
+          "enum": [
+            "translation",
+            "rotation",
+            "scale",
+            "visible",
+            "material",
+            "light_intensity",
+            "world_exposure"
+          ]
+        },
+        "interpolation": {
+          "enum": [
+            "step",
+            "linear",
+            "slerp"
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "frame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": -1000000000.0,
+                    "maximum": 1000000000.0
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000.0,
+                      "maximum": 1000000000.0
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    },
+                    "minItems": 4,
+                    "maxItems": 4
+                  },
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  }
+                ]
+              }
+            },
+            "required": [
+              "frame",
+              "value"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 10000
+        }
+      },
+      "required": [
+        "target",
+        "property",
+        "interpolation",
+        "keys"
+      ]
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "clip": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "scene3d-animation",
+                    "hatch-3d-animation"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "start_frame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "end_frame": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "speed": {
+          "type": "number",
+          "exclusiveMinimum": 1e-08,
+          "maximum": 1000000.0
+        },
+        "loop": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "target",
+        "clip",
+        "start_frame",
+        "end_frame",
+        "speed",
+        "loop"
+      ]
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_nodes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "max_files": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "max_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "max_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "max_nodes",
+        "max_files",
+        "max_bytes",
+        "max_frames"
+      ]
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "type": {
+          "enum": [
+            "root",
+            "group",
+            "mesh_instance",
+            "skinned_character",
+            "static_prop",
+            "animated_prop",
+            "terrain",
+            "procedural_geometry",
+            "camera",
+            "light",
+            "environment_volume",
+            "socket",
+            "constraint_target",
+            "locator",
+            "prefab_instance",
+            "billboard_2d"
+          ]
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transform": {
+          "$ref": "#/$defs/transform"
+        },
+        "visible": {
+          "type": "boolean"
+        },
+        "collections": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "asset": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "scene3d-asset"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "prefab": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "scene3d-prefab"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "prefab_overrides": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "parameters": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "type": [
+                  "number",
+                  "string",
+                  "boolean"
+                ],
+                "maxLength": 4096
+              },
+              "maxProperties": 256
+            },
+            "materials": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/reference"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "material"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              "maxProperties": 256
+            },
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "node": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+                  },
+                  "transform": {
+                    "$ref": "#/$defs/transform"
+                  },
+                  "visible": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "node"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 256
+            }
+          },
+          "required": [
+            "parameters",
+            "materials",
+            "nodes"
+          ]
+        },
+        "material_overrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "slot": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "material": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/reference"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "material"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "slot",
+              "material"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "animation_bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/binding"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "type": {
+                "enum": [
+                  "look-at",
+                  "copy-transform",
+                  "socket"
+                ]
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "influence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "target",
+              "influence"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "attachment": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "owner": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+            },
+            "socket": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+            },
+            "offset": {
+              "$ref": "#/$defs/transform"
+            }
+          },
+          "required": [
+            "owner",
+            "socket",
+            "offset"
+          ]
+        },
+        "bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/bounds"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "selectable": {
+          "type": "boolean"
+        },
+        "render": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "visible": {
+              "type": "boolean"
+            },
+            "cast_shadow": {
+              "type": "boolean"
+            },
+            "receive_shadow": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "visible",
+            "cast_shadow",
+            "receive_shadow"
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/file"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "maxProperties": 64
+        },
+        "billboard": {
+          "type": "boolean"
+        },
+        "camera": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "projection": {
+              "enum": [
+                "perspective",
+                "orthographic"
+              ]
+            },
+            "near": {
+              "type": "number",
+              "exclusiveMinimum": 1e-08,
+              "maximum": 1000000.0
+            },
+            "far": {
+              "type": "number",
+              "exclusiveMinimum": 1e-08,
+              "maximum": 1000000.0
+            },
+            "vertical_fov": {
+              "type": "number",
+              "exclusiveMinimum": 1e-08,
+              "maximum": 1000000.0
+            },
+            "orthographic_height": {
+              "type": "number",
+              "exclusiveMinimum": 1e-08,
+              "maximum": 1000000.0
+            }
+          },
+          "required": [
+            "projection",
+            "near",
+            "far",
+            "vertical_fov",
+            "orthographic_height"
+          ]
+        },
+        "light": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "enum": [
+                "point",
+                "spot",
+                "directional",
+                "area"
+              ]
+            },
+            "color": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "intensity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000.0
+            }
+          },
+          "required": [
+            "type",
+            "color",
+            "intensity"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type",
+        "parent",
+        "transform",
+        "visible",
+        "collections",
+        "layers",
+        "material_overrides",
+        "animation_bindings",
+        "constraints",
+        "bounds",
+        "locked",
+        "selectable",
+        "render",
+        "source",
+        "metadata"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "mesh_instance",
+                  "skinned_character",
+                  "static_prop",
+                  "animated_prop",
+                  "terrain",
+                  "billboard_2d"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "asset"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "prefab_instance"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "prefab"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "camera"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "camera"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "light"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "light"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "billboard_2d"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "billboard"
+            ]
+          }
+        }
+      ]
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "scene3d-scene"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000000000
+        },
+        "coordinate_system": {
+          "const": {
+            "handedness": "right",
+            "right": "+X",
+            "up": "+Y",
+            "forward": "+Z",
+            "unit": "meter",
+            "angles": "radian",
+            "quaternion": "XYZW",
+            "matrices": "column-vectors",
+            "time": "second"
+          }
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          },
+          "minItems": 1,
+          "maxItems": 10000
+        },
+        "world": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "coordinate_system": {
+              "const": {
+                "handedness": "right",
+                "right": "+X",
+                "up": "+Y",
+                "forward": "+Z",
+                "unit": "meter",
+                "angles": "radian",
+                "quaternion": "XYZW",
+                "matrices": "column-vectors",
+                "time": "second"
+              }
+            },
+            "background": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": -1000000000.0,
+                "maximum": 1000000000.0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "exposure": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "environment": {
+              "anyOf": [
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "enum": [
+                            "texture",
+                            "scene3d-asset"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "metadata": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ],
+                "maxLength": 4096
+              },
+              "maxProperties": 64
+            }
+          },
+          "required": [
+            "coordinate_system",
+            "background",
+            "exposure",
+            "environment",
+            "metadata"
+          ]
+        },
+        "collections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "visible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "visible"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "visible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "visible"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "cameras": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "lights": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "recipes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/bounds"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shots": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "continuity": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "metadata": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "maxProperties": 64
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "name",
+        "description",
+        "revision",
+        "coordinate_system",
+        "roots",
+        "nodes",
+        "world",
+        "collections",
+        "layers",
+        "cameras",
+        "lights",
+        "recipes",
+        "dependencies",
+        "bounds",
+        "shots",
+        "continuity",
+        "metadata",
+        "provenance"
+      ]
+    },
+    "prefab": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "scene3d-prefab"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/node"
+          },
+          "minItems": 1,
+          "maxItems": 10000
+        },
+        "parameters": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": [
+              "number",
+              "string",
+              "boolean"
+            ],
+            "maxLength": 4096
+          },
+          "maxProperties": 256
+        },
+        "material_slots": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "sockets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 10000,
+          "uniqueItems": true
+        },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "node": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "transform": {
+                "$ref": "#/$defs/transform"
+              },
+              "visible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "node"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "name",
+        "roots",
+        "nodes",
+        "parameters",
+        "material_slots",
+        "sockets",
+        "overrides",
+        "dependencies",
+        "provenance"
+      ]
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "scene3d-asset"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "asset_type": {
+          "enum": [
+            "mesh",
+            "character",
+            "prop",
+            "terrain",
+            "material",
+            "texture",
+            "environment"
+          ]
+        },
+        "content": {
+          "$ref": "#/$defs/file"
+        },
+        "source": {
+          "$ref": "#/$defs/file"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "coordinate_system": {
+          "const": {
+            "handedness": "right",
+            "right": "+X",
+            "up": "+Y",
+            "forward": "+Z",
+            "unit": "meter",
+            "angles": "radian",
+            "quaternion": "XYZW",
+            "matrices": "column-vectors",
+            "time": "second"
+          }
+        },
+        "original_coordinate_system": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "pivot": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000.0,
+            "maximum": 1000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "meshes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "materials": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "material"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/bounds"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "collision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/file"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sockets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "transform": {
+                "$ref": "#/$defs/transform"
+              }
+            },
+            "required": [
+              "id",
+              "transform"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "components": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+            },
+            "minItems": 0,
+            "maxItems": 10000,
+            "uniqueItems": true
+          },
+          "maxProperties": 256
+        },
+        "skeleton": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "hatch-3d-rig"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "animations": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "scene3d-animation",
+                      "hatch-3d-animation"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "lods": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "scene3d-asset"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 16
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vertices": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "triangles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2000000
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1073741824
+            }
+          },
+          "required": [
+            "vertices",
+            "triangles",
+            "bytes"
+          ]
+        },
+        "validation": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "review": {
+          "$ref": "#/$defs/review"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "name",
+        "asset_type",
+        "content",
+        "source",
+        "provenance",
+        "coordinate_system",
+        "original_coordinate_system",
+        "pivot",
+        "meshes",
+        "materials",
+        "bounds",
+        "collision",
+        "sockets",
+        "components",
+        "skeleton",
+        "animations",
+        "lods",
+        "dependencies",
+        "resources",
+        "validation",
+        "review"
+      ]
+    },
+    "animation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "scene3d-animation"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "duration_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "fps": {
+          "$ref": "#/$defs/rate"
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/track"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/binding"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "duration_frames",
+        "fps",
+        "tracks",
+        "bindings",
+        "dependencies",
+        "provenance"
+      ]
+    },
+    "shot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "scene3d-shot"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "scene": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "scene3d-scene"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "duration_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "fps": {
+          "$ref": "#/$defs/rate"
+        },
+        "camera": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "camera_overrides": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transform": {
+              "$ref": "#/$defs/transform"
+            },
+            "camera": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "projection": {
+                  "enum": [
+                    "perspective",
+                    "orthographic"
+                  ]
+                },
+                "near": {
+                  "type": "number",
+                  "exclusiveMinimum": 1e-08,
+                  "maximum": 1000000.0
+                },
+                "far": {
+                  "type": "number",
+                  "exclusiveMinimum": 1e-08,
+                  "maximum": 1000000.0
+                },
+                "vertical_fov": {
+                  "type": "number",
+                  "exclusiveMinimum": 1e-08,
+                  "maximum": 1000000.0
+                },
+                "orthographic_height": {
+                  "type": "number",
+                  "exclusiveMinimum": 1e-08,
+                  "maximum": 1000000.0
+                }
+              },
+              "required": [
+                "projection",
+                "near",
+                "far",
+                "vertical_fov",
+                "orthographic_height"
+              ]
+            }
+          },
+          "required": []
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/track"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/binding"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "material_overrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "target": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "slot": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "material": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/reference"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "enum": [
+                          "material"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "required": [
+              "target",
+              "slot",
+              "material"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "temporal_constraints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "start_frame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "end_frame": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "constraint": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+                  },
+                  "type": {
+                    "enum": [
+                      "look-at",
+                      "copy-transform",
+                      "socket"
+                    ]
+                  },
+                  "target": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+                  },
+                  "influence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "required": [
+                  "id",
+                  "type",
+                  "target",
+                  "influence"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "target",
+              "start_frame",
+              "end_frame",
+              "constraint"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "render": {
+          "$ref": "#/$defs/render_settings"
+        },
+        "continuity": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "metadata": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "maxProperties": 64
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "name",
+        "scene",
+        "duration_frames",
+        "fps",
+        "camera",
+        "camera_overrides",
+        "tracks",
+        "bindings",
+        "material_overrides",
+        "temporal_constraints",
+        "render",
+        "continuity",
+        "dependencies",
+        "metadata"
+      ]
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "scene3d-render"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "shot": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "scene3d-shot"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "start_frame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "end_frame": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "settings": {
+          "$ref": "#/$defs/render_settings"
+        },
+        "output_directory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?:(?! )(?!(?:[cC][oO][nN](?:[iI][nN][$]|[oO][uU][tT][$])?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][0-9\u00b9\u00b2\u00b3]|[lL][pP][tT][0-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f<>\"|?*]*[^/\\\\:\\x00-\\x1f<>\"|?* .]/)*(?! )(?!(?:[cC][oO][nN](?:[iI][nN][$]|[oO][uU][tT][$])?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][0-9\u00b9\u00b2\u00b3]|[lL][pP][tT][0-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f<>\"|?*]*[^/\\\\:\\x00-\\x1f<>\"|?* .](?![\\s\\S])"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "shot",
+        "start_frame",
+        "end_frame",
+        "settings",
+        "output_directory",
+        "dependencies",
+        "provenance"
+      ]
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "scene3d-project"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "status": {
+          "enum": [
+            "fixture",
+            "development",
+            "production"
+          ]
+        },
+        "coordinate_system": {
+          "const": {
+            "handedness": "right",
+            "right": "+X",
+            "up": "+Y",
+            "forward": "+Z",
+            "unit": "meter",
+            "angles": "radian",
+            "quaternion": "XYZW",
+            "matrices": "column-vectors",
+            "time": "second"
+          }
+        },
+        "asset_catalog": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "catalog"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assets": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "scene3d-asset"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "characters": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "scene3d-asset"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "scenes": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "scene3d-scene"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "shots": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "scene3d-shot"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "prefabs": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "scene3d-prefab"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "animations": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "scene3d-animation"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "render_defaults": {
+          "$ref": "#/$defs/render_settings"
+        },
+        "budgets": {
+          "$ref": "#/$defs/budget"
+        },
+        "created_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "modified_at": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "linked_2d_project": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "project"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dependency_lock": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "validation": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "metadata": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "maxProperties": 64
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "name",
+        "status",
+        "coordinate_system",
+        "asset_catalog",
+        "assets",
+        "characters",
+        "scenes",
+        "shots",
+        "prefabs",
+        "animations",
+        "render_defaults",
+        "budgets",
+        "created_at",
+        "modified_at",
+        "linked_2d_project",
+        "dependency_lock",
+        "validation",
+        "provenance",
+        "metadata"
+      ]
+    }
+  },
+  "$ref": "#/$defs/scene"
+}
