@@ -1,0 +1,120 @@
+{
+  "status": "passed-local",
+  "repository": "CompleteTech-Skills/hatch-pet",
+  "base_sha": "bae65356567a10915658a6371c14ee9a4553db36",
+  "scope": "Partial native texture integrity requirements in issues52/44/139; no parent completion claim",
+  "environment": {
+    "python": "3.12.15",
+    "packages": {
+      "numpy": "2.3.5",
+      "Pillow": "12.3.0",
+      "jsonschema": "4.25.1",
+      "playwright": "1.55.0",
+      "pygltflib": "1.16.5"
+    }
+  },
+  "executed": {
+    "command": "PYTHONPATH=scripts:tests HATCH_RIG_INTEROP_TEST=1 HATCH_RIG_BLENDER_TEST=1 HATCH_RIG_BROWSER_TEST=1 hatch_rig_python -B -m unittest -v test_rig_texture_integrity test_rig_interop test_rig_contracts test_rig_skinning test_rig_compatibility",
+    "tests": 43,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "seconds": 23.059,
+    "new_test_methods": 11,
+    "schema_check": "passed",
+    "rig_template_check": "passed",
+    "diff_whitespace_check": "passed"
+  },
+  "baseline_control": {
+    "expected_failing_subcases": 5,
+    "errors": 0,
+    "scope": "Exact old _images and OBJ importer functions loaded from base in memory; genuine damaged JPEG/PNG GLB/glTF/OBJ inputs",
+    "source_edits": false
+  },
+  "inputs": {
+    "scripts/rig_import.py": {
+      "bytes": 20516,
+      "sha256": "0b711455933dc6d410313473421da26cf60f807178d03412bab8b69d5c0b9cd6"
+    },
+    "scripts/rig_obj.py": {
+      "bytes": 10351,
+      "sha256": "5fb0a80012a5351c9bd5fad7e632a0c24e0bc9f7c5b22576ac34f168a28daced"
+    },
+    "scripts/test_rig_gate.py": {
+      "bytes": 1305,
+      "sha256": "f72cd4924e00b697c057d8c7ee6847850e88959067a2fb38942640897e59191a"
+    },
+    "tests/test_rig_texture_integrity.py": {
+      "bytes": 11599,
+      "sha256": "6788c87e8751b00ce33ab36538e370f8144b0dae5cb1eb640c879de4a681f628"
+    },
+    "references/3d-rigging.md": {
+      "bytes": 29041,
+      "sha256": "69dc7be1613f6cf0f8ae76cc0dba4e7de67c830f9ffeaf822f94bf985ce2d26f"
+    }
+  },
+  "unchanged_protected": {
+    "profiles/codex-v1.json": {
+      "bytes": 13287,
+      "sha256": "f4e0279f8634ea53ef544ecb49b9a71ec2565c61ec5b8e63163ecc5ead478a6b"
+    },
+    "profiles/production-project.schema.json": {
+      "bytes": 57164,
+      "sha256": "cd33410c713660e33c6805df19aa94512de5f0cb64f71f6b3db74ce05d2c4c21"
+    },
+    "profiles/production-scene.schema.json": {
+      "bytes": 57160,
+      "sha256": "1d01d66903b3d730f4670951daf2f30239e05d27b1f50d68be080173585974ad"
+    },
+    "profiles/rig.schema.json": {
+      "bytes": 125546,
+      "sha256": "aa57fc1b61a540d4b667ed2c64d764aab1fee33c8bf2af02103900a87db7a078"
+    },
+    "scripts/rig_math.py": {
+      "bytes": 6570,
+      "sha256": "2bb7c84179af828c9f84f41e9510e59e4e88c68367b91c7e6e41279a77ee0f2c"
+    },
+    "scripts/rig_models.py": {
+      "bytes": 18162,
+      "sha256": "fadd03340ebee772391dd28a488c0fab011450e940c26816ade49d0c5f98d81d"
+    },
+    "scripts/rig_gltf.py": {
+      "bytes": 22902,
+      "sha256": "3d5117c5f6c69df785abefab1fe19fe0b867c821a0e3764da5777f0b841fab92"
+    },
+    "scripts/production_render.py": {
+      "bytes": 67584,
+      "sha256": "981b6fbafdcd0fcf009dca02b0f695bfb3742b58bd9e9a11068f0e0dd085c9be"
+    },
+    "requirements-delivery.txt": {
+      "bytes": 123,
+      "sha256": "e040ae6d71bf707f56ac2050473252d1efa4a6f7aef43cfbf0d2e3a1b17a126b"
+    },
+    "requirements-rig-test.txt": {
+      "bytes": 76,
+      "sha256": "58fe31f26d8a9192632890f76b27fd4335f9a9a8607e31215b2a6fe862791f2f"
+    }
+  },
+  "artifacts": {
+    "tests/results/native-texture-integrity-20261024/regression.log": {
+      "bytes": 7073,
+      "sha256": "8ec9d2b7cd02b003cb7e5cf721c1b3e89e572865e2021a9a7fa6b1c689fd6178"
+    },
+    "tests/results/native-texture-integrity-20261024/baseline-control.log": {
+      "bytes": 4302,
+      "sha256": "15bdf0125d6f347526f8213f9350030d26893351558bb6e941486c921f9f61ed"
+    },
+    "tests/results/native-texture-integrity-20261024/baseline-control.py": {
+      "bytes": 2019,
+      "sha256": "896d74023ec3c473570a2b6cb44aefbcb523356ce604bf6b153011b4059808f0"
+    }
+  },
+  "limitations": [
+    "Synthetic engineering fixtures; no visual/human production approval.",
+    "Pillow strict host policy required; LOAD_TRUNCATED_IMAGES=True fails closed and is not modified.",
+    "Only existing static PNG/JPEG texture profile supported.",
+    "Native source filesystem admission and other source-format requirements remain owned by existing importer; this is not a new race-free filesystem sandbox.",
+    "No actual native macOS/Windows execution in this local report; future exact-head hosted CI required.",
+    "Review and publication remain pending; worker does not self-approve or merge."
+  ]
+}
