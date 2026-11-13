@@ -36,7 +36,7 @@ def build_collision_inputs(*, frames=97):
     angle=-.25
     add('ramp',dict(type='box',size=[5,.2,3]),[-6,1,0],static=True,rotation=[0,0,math.sin(angle/2),math.cos(angle/2)])
     add('slider',dict(type='box',size=[.7,.7,.7]),[-7,2.2,0],velocity=[1,0,0])
-    add('roller',dict(type='cylinder',radius=.4,height=.8,axis='Z'),[-1,3,2],velocity=[2,0,0])
+    add('roller',dict(type='cylinder',radius=.4,height=.8,axis='Z'),[-1,3,2],velocity=[2,0,0])['colliders'][0]['group']=2
     add('left-ball',dict(type='sphere',radius=.5),[-2,.55,-4],velocity=[3,0,0])
     add('right-ball',dict(type='sphere',radius=.5),[2,.55,-4],velocity=[-3,0,0])
     add('excluded',dict(type='sphere',radius=.4),[5,3,0])

@@ -25,9 +25,9 @@ def raycast_cache(cache, frame, queries, *, interpreter=None, preview=False):
     from physics_collision_native import collision_leaves
     for body in world['bodies']:
         collider=body['colliders'][0]
-        if any(leaf['shape']['type']=='convex-hull' for leaf in collision_leaves(collider)):
+        if any(leaf['shape']['type'] in ('convex-hull','cylinder') for leaf in collision_leaves(collider)):
             physics.require(not any(ray['mask'] & collider['group'] for ray in queries),
-                'PHYSICS_QUERY_UNSUPPORTED','Native zero-margin convex-hull ray queries are unsupported; explicitly exclude their collision group.',category='capability-gap')
+                'PHYSICS_QUERY_UNSUPPORTED','Native zero-margin convex-hull/cylinder ray queries are unsupported; explicitly exclude their collision group.',category='capability-gap')
 
     # _read_cache re-admits and verifies the exact immutable world/source/state
     # closure. The following worker receives only that captured value, never an

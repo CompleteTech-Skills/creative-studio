@@ -96,4 +96,7 @@ keeps its original box. Query receipts explicitly name
 and owned worker hash. Native slab-oracle tests cover486 forward/reverse/inside face/near-edge/near-corner
 rays over .001–1000m boxes and rotated/offset poses with a1e-8m position tolerance.
 This is a ray-query representation, not evidence of new solver geometry or
-continuation. Zero-margin convex-hull queries remain explicitly unsupported.
+continuation. Zero-margin convex-hull and cylinder queries remain explicitly unsupported;
+the playground assigns these to group2 and explicitly queries group1. Raw native
+characterization confirms sphere and capsule radius mappings survive zero extra
+margin; cylinder cap rays falsely miss and are not advertised.
