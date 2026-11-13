@@ -216,6 +216,11 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(result['status'],'failed')
         self.assertIsNone(result['usage']['input_tokens']['value'])
 
+    def test_invalid_configuration_types_are_controlled(self):
+        config=dp.ProviderConfig('fixture','fixture-model','https://example.org/v1/responses',allowed_hosts=None)
+        result=self.run_request(config)
+        self.assertEqual(result['status'],'blocked_capability')
+
     def test_all_role_templates_have_valid_schema_and_distinct_hashes(self):
         values=[dp.template(role) for role in dp.ROLES]
         self.assertEqual(len({s['sha256'] for s in values}),9)
