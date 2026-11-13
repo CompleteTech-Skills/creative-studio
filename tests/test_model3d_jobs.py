@@ -237,6 +237,15 @@ j.run_job(sys.argv[1],handler,handler_version='v1')
             with self.assertRaises(RigError) as caught:jobs.restore_job(hostile64,self.root/'bad64')
         self.assertEqual(caught.exception.report['code'],'MODEL3D_ARCHIVE_LIMIT')
         self.assertFalse((self.root/'bad64').exists())
+        # A maximal comment moves the true locator before the EOCD tail window.
+        long_comment=bytearray(hostile64.read_bytes());end=long_comment.rfind(b'PK\x05\x06')
+        long_comment[end+20:end+22]=(65535).to_bytes(2,'little')
+        long_comment += b'a'*65535
+        hostile_long=self.root/'zip64-long-comment.zip';hostile_long.write_bytes(long_comment)
+        with patch('model3d_jobs.zipfile.ZipFile',side_effect=AssertionError('allocated before preflight')):
+            with self.assertRaises(RigError) as caught:jobs.restore_job(hostile_long,self.root/'bad-long')
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_ARCHIVE_LIMIT')
+        self.assertFalse((self.root/'bad-long').exists())
 
 
 if __name__=='__main__':unittest.main()

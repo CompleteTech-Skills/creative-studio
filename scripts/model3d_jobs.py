@@ -388,13 +388,19 @@ def archive_job(root, destination):
 def _zip_preflight(stream, size):
     """Bound the central directory before zipfile allocates its entry objects."""
     require(22 <= size <= 4*1024**3, 'MODEL3D_ARCHIVE_LIMIT', 'Invalid encoded archive size.')
-    stream.seek(max(0, size-65557)); tail = stream.read(min(size, 65557))
+    tail_start = max(0, size-65557)
+    stream.seek(tail_start); tail = stream.read(min(size, 65557))
     end = tail.rfind(b'PK\x05\x06')
     require(end >= 0 and len(tail)-end >= 22, 'MODEL3D_ARCHIVE_INVALID', 'Missing ZIP end directory.')
     # zipfile reads an adjacent ZIP64 locator in preference to classic EOCD
     # fields. Reject that unsupported authority before constructing ZipFile;
     # otherwise its larger real central directory bypasses our allocation cap.
-    require(end < 20 or tail[end-20:end-16] != b'PK\x06\x07',
+    # Maximal ZIP comments can place the locator just before the tail window.
+    absolute_end = tail_start+end
+    locator = b''
+    if absolute_end >= 20:
+        stream.seek(absolute_end-20); locator = stream.read(20)
+    require(locator[:4] != b'PK\x06\x07',
             'MODEL3D_ARCHIVE_LIMIT', 'ZIP64 end directories are not supported.')
     _, disk, directory_disk, local_count, count, directory_bytes, offset, comment = struct.unpack_from('<4s4H2LH', tail, end)
     require(end+22+comment == len(tail) and disk == directory_disk == 0
