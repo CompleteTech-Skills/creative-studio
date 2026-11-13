@@ -92,8 +92,12 @@ def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
             from rig_skeleton import evaluate_fk
             for sample in report['samples']:
                 require(sample['matched'] or not rig.clips,'RIG_BLENDER_ANIMATION','Blender could not activate a named NLA clip.',asset=sample['clip'])
-                require(set(sample['meshes']) == set(indices) and set(sample['bones']) == {b['id'] for b in rig.skeleton['bones']} and set(sample['sockets']) == set(socket_rest),
-                        'RIG_BLENDER_SAMPLES','Independent Blender mesh, bone or socket inventory is incomplete.')
+                expected_inventory=dict(meshes=set(indices),bones={b['id'] for b in rig.skeleton['bones']},sockets=set(socket_rest))
+                differences={kind:dict(missing=sorted(expected-set(sample[kind])),extra=sorted(set(sample[kind])-expected))
+                             for kind,expected in expected_inventory.items()}
+                complete=not any(item['missing'] or item['extra'] for item in differences.values())
+                require(complete,'RIG_BLENDER_SAMPLES',
+                        'Independent Blender mesh, bone or socket inventory is incomplete: '+str(differences),observed=differences)
                 pose=evaluate_animation(rig,rig.clips[sample['clip']],sample['time'])['pose'] if rig.clips else neutral_pose(rig.skeleton);native=evaluate_deformation(rig,pose);world=evaluate_fk(rig.skeleton,pose)
                 for name,points in sample['meshes'].items():
                     require(np.shape(points)==(len(indices[name]),3),'RIG_BLENDER_SAMPLES','Independent Blender vertex sample count differs.')
