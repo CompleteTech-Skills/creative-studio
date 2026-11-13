@@ -145,10 +145,13 @@ class EditorServer(HTTPServer):
         self.repository = repository
         # The standard editor launch enables the installed native timeline UI.
         # Register its fixed handlers at the same boundary as explicit extensions.
-        self.routes = {}
+        self.routes = {'render/capabilities': lambda server,body: dict(
+            available=False,rendering='unavailable',executed=False,
+            diagnostic='Rendering is unavailable for this session. Open a session with a configured native renderer.')}
         if Path(__file__).with_name('editor3d_timeline.py').is_file():
             from editor3d_timeline import routes as timeline_routes
             self.routes.update(timeline_routes())
+
         self.routes.update(routes or {})
         self.upload_directory = tempfile.TemporaryDirectory(prefix="hatch-editor-uploads-")
         self.uploads = {}
