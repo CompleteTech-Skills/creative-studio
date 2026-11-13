@@ -296,6 +296,23 @@ class Project:
                     (published.st_dev, published.st_ino) == (verified_stage.st_dev, verified_stage.st_ino),
                     'LOOKDEV_PROJECT_PUBLICATION_CHANGED',
                     'Published directory differs from verified staging; destination is unverified and preserved.')
+            # Directory identity does not authenticate its children. Re-read
+            # the delivered bytes after publication under the bound descriptor.
+            # A publication-time writer must never turn stale pre-rename hashes
+            # into a successful export receipt.
+            delivered = {}
+            for name, payload in self.sources.items():
+                captured = _read_at(stage_fd, name, len(payload))
+                delivered[name] = dict(bytes=len(captured), sha256=hashlib.sha256(captured).hexdigest())
+            require(delivered == self.inventory, 'LOOKDEV_PROJECT_PUBLICATION_CHANGED',
+                    'Delivered source inventory changed; unverified destination is preserved.')
+            expected_manifest = canonical_bytes(manifest)
+            require(_read_at(stage_fd, 'export-manifest.json', len(expected_manifest)) == expected_manifest,
+                    'LOOKDEV_PROJECT_PUBLICATION_CHANGED',
+                    'Delivered export manifest changed; unverified destination is preserved.')
+            final_identity = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
+            require((final_identity.st_dev, final_identity.st_ino) == (verified_stage.st_dev, verified_stage.st_ino),
+                    'LOOKDEV_PROJECT_PUBLICATION_CHANGED', 'Destination changed during delivered verification.')
             return manifest
         finally:
             # Failed staging remains anchored under the owned output parent for

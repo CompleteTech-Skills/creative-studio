@@ -184,6 +184,25 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(error.exception.report['code'],'LOOKDEV_PROJECT_PUBLICATION_CHANGED')
         self.assertEqual((destination/'injected').read_bytes(),b'unverified')
 
+    def test_publication_time_staged_file_mutation_never_reports_success(self):
+        import lookdev
+        original=lookdev.rename_no_replace_at
+        for index,name in enumerate(('ceramic-1.0.0.json','export-manifest.json')):
+            with self.subTest(name=name):
+                destination=self.parent/('mutated-delivery-'+str(index))
+                def mutate(parent_fd,stage_name,target_fd,target_name):
+                    stage_fd=os.open(stage_name,os.O_RDONLY|os.O_DIRECTORY,dir_fd=parent_fd)
+                    try:
+                        fd=os.open(name,os.O_WRONLY|os.O_TRUNC,dir_fd=stage_fd)
+                        with os.fdopen(fd,'wb') as stream:stream.write(b'{}')
+                    finally:os.close(stage_fd)
+                    return original(parent_fd,stage_name,target_fd,target_name)
+                with patch.object(lookdev,'rename_no_replace_at',side_effect=mutate):
+                    with self.assertRaises(RigError) as error:
+                        Project(self.root).export_native(destination)
+                self.assertEqual(error.exception.report['code'],'LOOKDEV_PROJECT_PUBLICATION_CHANGED')
+                self.assertEqual((destination/name).read_bytes(),b'{}')
+
 
 class PortableClosureTests(unittest.TestCase):
     def test_exact_owner_reader_closure(self):
