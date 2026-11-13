@@ -107,7 +107,9 @@ def _apply_commands(graph, library, commands):
         results.append(result)
     for path, payload in library.payloads().items():
         if path not in original_payloads:
-            derived[path] = decode_json(payload)
+            # References bind exact bytes, including valid noncanonical JSON.
+            # Snapshot promotion already supports byte-valued documents.
+            derived[path] = payload
     return dict(results=results, derived_documents=derived)
 
 
