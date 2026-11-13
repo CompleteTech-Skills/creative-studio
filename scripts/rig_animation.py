@@ -107,7 +107,7 @@ def evaluate_animation(rig: RigAsset, clip: dict | str, time: float, *, loop=Fal
         for contact in clip['contacts']:
             active = contact['start'] <= local_time < contact['end'] or (local_time == duration and contact['end'] == duration)
             if not active:continue
-            target = np.array(contact['target'])+cycles*root_cycle
+            target = np.array(contact['target'])+(cycles*root_cycle if clip['root_motion'] == 'embedded' else 0)
             result = solve_ik(rig.skeleton, pose, chains[contact['chain']], target,
                               constraints=ordered, orientation=contact.get('orientation'))
             pose = result.pose

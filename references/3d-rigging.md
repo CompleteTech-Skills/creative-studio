@@ -365,3 +365,5 @@ float64 position-buffer sizes. Missing-animation/capability results add no work.
 These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
+
+Contact targets repeat at their authored world locations for in-place clips. Embedded root-motion loops translate each repeated contact target by the same complete-cycle root displacement as the pose; non-looping evaluation never adds a cycle offset. This keeps planted IK contacts consistent with the selected root-motion mode.
