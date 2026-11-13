@@ -348,3 +348,41 @@ map independently authored controls when mesh IDs differ. Unqualified names are
 accepted only when they select one target; ambiguous matches and multiple source
 controls writing the same target fail with `RIG_RETARGET_MORPH`. Missing optional
 unmapped target morphs remain omitted rather than broadcasting to unrelated faces.
+
+
+### Authored retarget DOFs and twist distribution
+
+`build_retarget_profile(..., supported_dofs=..., twist_distribution=...)` accepts
+optional explicit target-joint controls. Older profiles omit both fields and retain
+the existing calibrated mapping. These controls never infer twist bones from names.
+
+A `supported_dofs` entry is keyed by target bone ID and contains three-element
+Boolean `translation` and `scale` masks plus `rotation`: `free`, `locked`, or
+`twist`. A `twist` entry also requires a nonzero `axis` in that bone's rest-local
+coordinates. Translation masks operate in parent coordinates; unsupported
+translation/scale components retain the target rest value. Locked rotation
+retains the rest orientation; twist rotation retains only the rest-relative
+quaternion twist about the authored axis. Existing controllers evaluate once
+after mapping. A controller that reintroduces an unsupported channel raises
+`RIG_RETARGET_DOF_CONFLICT`. Contact re-solving on a restricted chain is rejected
+with `RIG_RETARGET_DOF_CONTACT`; arbitrary restricted-DOF contact solving is not
+implemented. The animation report retains both authored control fields.
+
+A `twist_distribution` entry is keyed by a mapped target driver bone ID and
+contains its rest-local `axis` and a parent-ordered `recipients` array of
+`{"bone": "forearm-twist", "weight": 0.5}` objects. Recipients must be existing,
+unmapped, uniquely owned direct descendants whose heads lie on the driver's
+rest twist axis. Their positive weights sum to at most one; the driver retains
+the remaining twist. The calibrated driver rotation decomposes into swing and
+shortest signed twist. Swing stays on the driver; each recipient receives its
+authored share of twist, converted into its own rest-local axis. Mapped
+descendants still receive calibrated world orientations. Distributions cannot
+overlap rotational DOF restrictions. Stateless pose calls use ordinary quaternion shortest rotations. Animation
+retargeting unwraps each sampled driver twist continuously across the ±pi boundary.
+A looping clip whose distributed local rotations do not close raises
+`RIG_RETARGET_TWIST_LOOP`; multi-turn distributed loop accumulation is unsupported.
+
+These are engineering controls for explicitly compatible anatomy. Numerical
+fixtures verify intermediate weighted vertex rotations, preserved mapped endpoint
+orientation, rest calibration, per-channel masks, and rejection of unsupported
+references/topology/conflicts. They do not establish artistic deformation approval.

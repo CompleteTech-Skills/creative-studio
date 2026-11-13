@@ -168,12 +168,21 @@ def definitions() -> dict:
                     'structurally-valid', 'motion-tested', 'needs-correction', 'review-approved', 'animation-ready',
                     'exported', 'roundtrip-verified', 'failed', 'blocked']},
                    rig_sha256=digest, steps=mapping(step, 64), limits=limits, history=arr({'type': 'object'}, 0, 10000)))
+    supported_dof = obj(dict(translation=arr(boolean, 3, 3), scale=arr(boolean, 3, 3),
+                             rotation={'enum': ['free', 'locked', 'twist']}, axis=vec),
+                         ['translation', 'scale', 'rotation'])
+    twist_distribution = obj(dict(axis=vec, recipients=arr(obj(dict(bone=identifier,
+                                  weight=dict(type='number', exclusiveMinimum=0, maximum=1))), 1, 255)))
     retarget = obj(dict(schema_version={'const': 1}, kind={'const': 'hatch-3d-retarget-profile'},
                        id=identifier, source_rig=identifier, target_rig=identifier,
                        source_skeleton_version=version, target_skeleton_version=version,
                        mapping=mapping(identifier, 256), root_scale=positive,
                        orientation_offsets=mapping(quat, 256), omissions=arr(text, 0, 256),
-                       morph_mapping=mapping(identifier, 128)))
+                       morph_mapping=mapping(identifier, 128), supported_dofs=mapping(supported_dof, 256),
+                       twist_distribution=mapping(twist_distribution, 256)),
+                   ['schema_version', 'kind', 'id', 'source_rig', 'target_rig',
+                    'source_skeleton_version', 'target_skeleton_version', 'mapping', 'root_scale',
+                    'orientation_offsets', 'omissions', 'morph_mapping'])
     # Export receipts describe the files actually written by each adapter. They
     # are not validation reports and do not confer independent verification.
     count = dict(type='integer', minimum=1, maximum=2_000_000_000)

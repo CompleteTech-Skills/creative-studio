@@ -2253,6 +2253,102 @@
             "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
           },
           "maxProperties": 128
+        },
+        "supported_dofs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "translation": {
+                "type": "array",
+                "items": {
+                  "type": "boolean"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "scale": {
+                "type": "array",
+                "items": {
+                  "type": "boolean"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "rotation": {
+                "enum": [
+                  "free",
+                  "locked",
+                  "twist"
+                ]
+              },
+              "axis": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000.0,
+                  "maximum": 1000000000.0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            },
+            "required": [
+              "translation",
+              "scale",
+              "rotation"
+            ]
+          },
+          "maxProperties": 256
+        },
+        "twist_distribution": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "axis": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000.0,
+                  "maximum": 1000000000.0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "recipients": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "bone": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+                    },
+                    "weight": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "bone",
+                    "weight"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 255
+              }
+            },
+            "required": [
+              "axis",
+              "recipients"
+            ]
+          },
+          "maxProperties": 256
         }
       },
       "required": [
