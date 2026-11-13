@@ -31,8 +31,9 @@ def mutate(root,operation,parameters=None):
             if rig.manifest['skeleton'] and not parameters.get('replace',False):
                 return dict(preserved_existing_rig=True,bones=len(rig.skeleton['bones']))
             landmarks=parameters.get('landmarks')
-            if landmarks:
-                require(set(landmarks)=={'source_sha256','landmarks'} and landmarks['source_sha256']==rig.manifest['source']['sha256'],
+            if 'landmarks' in parameters:
+                require(isinstance(landmarks,dict) and set(landmarks)=={'source_sha256','landmarks'} and landmarks['source_sha256']==rig.manifest['source']['sha256']
+                        and isinstance(landmarks['landmarks'],dict),
                         'RIG_LANDMARK_SOURCE','Landmarks must be bound to the exact source model hash.')
                 landmarks=landmarks['landmarks']
             fitted=generate_skeleton(rig.geometry,parameters.get('template','humanoid'),landmarks=landmarks,character_id=rig.manifest['id'])
