@@ -7,6 +7,8 @@ import shutil
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
+import asset_library_packages as packages
 
 from asset_library import AssetLibrary
 from asset_library_contracts import canonical_bytes, seal
@@ -80,6 +82,11 @@ class PackageTests(unittest.TestCase):
         license_blob.write_bytes(original)
         (self.package / 'unlisted').write_bytes(b'not inventoried')
         with self.assertRaisesRegex(RigError, 'extra'):
+            verify_package(self.package)
+
+    def test_extra_empty_directories_are_rejected(self):
+        (self.package / 'unlisted-directory').mkdir()
+        with self.assertRaisesRegex(RigError, 'empty directory'):
             verify_package(self.package)
 
     def test_lock_asset_identity_and_required_blob_cannot_be_omitted_by_resealed_index(self):
@@ -157,6 +164,32 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(AssetLibrary(restored['library']).resolve(self.character), self.library.resolve(self.character))
         (bundle / 'unexpected').write_text('reject extra transport members')
         with self.assertRaisesRegex(RigError, 'extra'): verify_transport(bundle)
+
+    def test_transport_rechecks_inner_package_before_publication(self):
+        original = packages.create_source_bundle
+        blob = self.package / 'blobs' / self.fixture.files[0]['sha256']
+        def changed_source(*args, **kwargs):
+            blob.write_bytes(b'X' * len(blob.read_bytes()))
+            return original(*args, **kwargs)
+        destination = self.root / 'raced-transport'
+        with patch.object(packages, 'create_source_bundle', changed_source):
+            with self.assertRaises(RigError): create_transport(self.package, destination)
+        self.assertFalse(destination.exists())
+
+    def test_archive_rechecks_package_identity_before_publication(self):
+        original = packages._read; count = 0
+        def changed_index(root, relative, limit=packages.MAX_FILE_BYTES):
+            nonlocal count
+            if Path(root) == self.package and relative == INDEX:
+                count += 1
+                if count == 2:
+                    index = self.read_index(); index['package_id'] = 'changed-after-verification'
+                    self.reseal(index)
+            return original(root, relative, limit)
+        destination = self.root / 'raced-archive.zip'
+        with patch.object(packages, '_read', changed_index):
+            with self.assertRaisesRegex(RigError, 'changed'): create_archive(self.package, destination)
+        self.assertFalse(destination.exists())
 
     def test_archive_roundtrip_and_exact_shared_archive_guard(self):
         archive = self.root / 'package.zip'; create_archive(self.package, archive)
