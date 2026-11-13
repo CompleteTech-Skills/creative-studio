@@ -25,6 +25,16 @@ BUDGET=sequence.media._obj({'wall_seconds':sequence.media._int(1,3600),
     'max_memory_bytes':sequence.media._int(1024**2,2*1024**3),'max_runs':sequence.media._int(1,8)})
 
 
+def _source(value):
+    try:return sequence._check_source(value)
+    except OverflowError as exc:raise ValueError('sequence source number exceeds supported bounds') from exc
+
+
+def _budget(value):
+    try:sequence.media._structural(value,BUDGET,'sequence job budget')
+    except OverflowError as exc:raise ValueError('sequence job budget exceeds supported numeric bounds') from exc
+
+
 def _implementation():
     decoder=importlib.import_module(sequence._decoder().__module__)
     identities={name:hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest()
@@ -47,8 +57,7 @@ def _plan(fd):
     if (not isinstance(plan,dict) or set(plan)!=fields or type(plan['schema_version']) is not int or
             plan['schema_version']!=1 or plan['kind']!='silent-sequence-job'):
         raise ValueError('invalid sequence job plan')
-    sequence._check_source(plan['source'])
-    sequence.media._structural(plan['budget'],BUDGET,'sequence job budget')
+    _source(plan['source']);_budget(plan['budget'])
     if plan['id']!=sequence.media._digest({k:v for k,v in plan.items() if k!='id'}):
         raise ValueError('sequence job identity changed')
     if plan['source']['origin']!='imported':raise ValueError('native jobs require canonical render closure integration')
@@ -92,8 +101,8 @@ def _locked(root):
 def create(source,source_root,job_root,destination,*,provenance,budget=None):
     if not sequence.publication_supported():raise ValueError('secure sequence staging unavailable on this platform')
     sequence._capability_factory()
-    source=sequence._check_source(copy.deepcopy(source));budget=copy.deepcopy(budget or DEFAULT_BUDGET)
-    sequence.media._structural(budget,BUDGET,'sequence job budget')
+    source=_source(copy.deepcopy(source));budget=copy.deepcopy(budget or DEFAULT_BUDGET)
+    _budget(budget)
     if source['origin']!='imported':raise ValueError('native jobs require canonical render closure integration')
     if not isinstance(provenance,dict) or not provenance:raise ValueError('explicit source provenance required')
     if len(source['frames'])/sequence.media.fps_fraction(source['fps'])>3600:

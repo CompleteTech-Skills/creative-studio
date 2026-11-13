@@ -30,4 +30,13 @@ class SequenceJobContracts(unittest.TestCase):
             with self.subTest(key=key,value=value),mock.patch.object(adapter.jobs,'_json',return_value={**valid,key:value}):
                 with self.assertRaises(ValueError):adapter._state(0,{'id':'a'*64})
 
+    def test_missing_canonical_decoder_is_explicitly_unavailable(self):
+        with mock.patch.object(adapter.sequence,'_decoder',side_effect=ValueError('canonical decoder unavailable')):
+            with self.assertRaisesRegex(ValueError,'canonical decoder unavailable'):adapter._implementation()
+
+    def test_extreme_resource_numbers_fail_with_typed_admission(self):
+        for key in adapter.DEFAULT_BUDGET:
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError):adapter._budget({**adapter.DEFAULT_BUDGET,key:10**400})
+
 if __name__=='__main__':unittest.main()
