@@ -56,7 +56,7 @@ use the canonical budget keys (`max_cpu_seconds`, `max_memory_bytes`,
 capability's policy. An expired snapshot, mutated payload, missing operation,
 unexecuted GPU/codec/importer, or excessive estimate raises a typed `RigError`.
 Network planning additionally requires `allow-configured`, a reservation and
-known pricing or an explicit unknown-price allowance. This local probe never
+known pricing from every exact hash-verified executed receipt, a matching budget currency and amount, or an explicit unknown-price allowance. Explicit price arguments must agree with retained receipt pricing; discovery descriptors alone confer no execution admission. This local probe never
 produces an execution-verified planning capability; an actual planning owner
 must establish that independently.
 

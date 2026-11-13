@@ -125,3 +125,38 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(cap._date('2026-11-13t01:02:03z'),cap._date('2026-11-13T01:02:03Z'))
         for value in ('invalid','2026-11-13T01:02:03',None):
             with self.subTest(value=value),self.assertRaises(RigError):cap._date(value)
+
+
+class ProviderPricingContractTests(unittest.TestCase):
+    """Exact-file engineering fixtures validate admission; no provider is executed."""
+    def test_receipt_bound_known_unknown_and_invalid_provider_prices(self):
+        from rig_errors import sha256
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve()
+            limits={**deepcopy(cap.LIMITS),'max_provider_calls':10,'currency':'USD','max_amount':10}
+            def snapshot(price=.25,currency='USD',availability='known'):
+                record=dict(operation='planning.provider',execution_verified=True,status='available',
+                            policy_limits=limits,version='contract-fixture',payloads=[],
+                            fixture=True,price_availability=availability,price_per_call=price,currency=currency)
+                path=root/'engineering-receipt.json';path.write_text(json.dumps(record))
+                ref=cap._reference(path,root)
+                value=dict(capabilities=[dict(operation='planning.provider',version='contract-fixture',
+                           status='available',limits=limits,probe_evidence=[ref],execution_verified=True)],
+                           expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())
+                value['digest']=object_hash(value)
+                return value
+            def admit(value,**extra):
+                return cap.assert_admission(value,['planning.provider'],evidence_root=root,
+                      resources={'max_provider_calls':2},network_policy='allow-configured',
+                      budget_reservation_id='fixture-reservation',budget_currency='USD',
+                      budget_amount=.5,**extra)
+            admit(snapshot())
+            admit(snapshot(0))
+            with self.assertRaises(RigError):admit(snapshot(),price_per_call=.1)
+            with self.assertRaises(RigError):admit(snapshot(1))
+            with self.assertRaises(RigError):admit(snapshot(currency='EUR'))
+            for price in (-1,float('nan'),float('inf'),True):
+                with self.subTest(price=price),self.assertRaises((RigError,ValueError)):
+                    admit(snapshot(price))
+            with self.assertRaises(RigError):admit(snapshot(None,None,'unknown'))
+            admit(snapshot(None,None,'unknown'),allow_unknown_price=True)
