@@ -1,0 +1,185 @@
+"""Real-file editor/native closure regression tests."""
+from copy import deepcopy
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from editor3d_closure import verify_editor_bundle
+from editor3d_contracts import contract_hash
+from rig_errors import RigError
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def example(name):
+    return json.loads((ROOT / 'examples/editor3d-contracts' / (name + '.json')).read_text())
+
+
+def reference(root, relative, owner):
+    payload = (root / relative).read_bytes()
+    value = json.loads(payload)
+    return dict(owner=owner, id=value['id'], version=value.get('version', '1.0.0'),
+        native_kind=value.get('kind', 'Rig'), file=dict(path=relative,
+        sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload), media_type='application/json'))
+
+
+def bundle(root):
+    source = reference(root, 'native/project.json', 'scene3d')
+    native = reference(root, 'native/example-scene.json', 'scene3d')
+    project, scene = example('project'), example('scene')
+    scene['native'] = native
+    scene['animations'] = []
+    scene['default_camera'] = 'camera'
+    nodes = []
+    for name, parent, kind, order in [('root', None, 'group', 0), ('mesh', 'root', 'mesh', 0), ('camera', 'root', 'camera', 1)]:
+        node = example('node');node.update(id=name, native=deepcopy(native), native_node_id=name,
+            node_type=kind, parent=parent, sibling_order=order, asset_id=None)
+        nodes.append(node)
+    scene['nodes'] = [dict(id=n['id'], sha256=contract_hash(n)) for n in nodes]
+    project.update(scenes=[dict(id=scene['id'], sha256=contract_hash(scene))], shared_assets=[],
+                   animation_clips=[], source_projects=[source], dependency_manifest=[source,native])
+    return project, [scene], nodes, [], []
+
+
+class EditorNativeClosureTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        shutil.copytree(ROOT / 'examples/scene3d-contracts', self.root / 'native')
+        self.bundle = bundle(self.root)
+
+    def tearDown(self):
+        self.temporary.cleanup()
+
+    def test_real_native_scene_payload_and_binding_closure(self):
+        result = verify_editor_bundle(*self.bundle, self.root)
+        self.assertEqual(result['status'], 'verified-native-closure')
+        self.assertTrue(result['native_resources_verified'])
+        self.assertFalse(result['rendered_output_verified'])
+        self.assertEqual(result['review_status'], 'unreviewed')
+        self.assertIn('native/triangle.obj', result['files'])
+        self.assertGreater(result['bytes'], 0)
+        self.assertEqual(result['native_reports']['scene3d:native/project.json']['status'], 'hash-and-contract-verified')
+
+    def test_missing_or_corrupt_real_geometry_fails(self):
+        target = self.root / 'native/triangle.obj'
+        target.write_bytes(b'bad geometry bytes')
+        with self.assertRaises(RigError):
+            verify_editor_bundle(*self.bundle, self.root)
+        target.unlink()
+        with self.assertRaises(RigError):
+            verify_editor_bundle(*self.bundle, self.root)
+
+    def test_node_identity_and_native_parent_must_agree(self):
+        for field, value in [('native_node_id', 'missing'), ('parent', None)]:
+            bad = deepcopy(self.bundle);bad[2][1][field] = value
+            bad[1][0]['nodes'] = [dict(id=n['id'], sha256=contract_hash(n)) for n in bad[2]]
+            bad[0]['scenes'] = [dict(id=bad[1][0]['id'], sha256=contract_hash(bad[1][0]))]
+            with self.subTest(field=field), self.assertRaises(RigError):
+                verify_editor_bundle(*bad, self.root)
+
+    def test_native_source_project_is_required(self):
+        bad = deepcopy(self.bundle);bad[0]['source_projects'] = []
+        with self.assertRaises(RigError):
+            verify_editor_bundle(*bad, self.root)
+
+    def test_symlink_payload_is_rejected(self):
+        source = self.root / 'native/triangle.obj'; original=source.read_bytes();source.unlink()
+        external=self.root/'elsewhere.obj';external.write_bytes(original)
+        try:source.symlink_to(external)
+        except OSError as exc:self.skipTest(str(exc))
+        with self.assertRaises(RigError):verify_editor_bundle(*self.bundle,self.root)
+
+    def test_source_mutation_after_native_validation_is_rejected(self):
+        import scene3d_contracts
+        actual = scene3d_contracts.load_project
+        def mutate(*args, **kwargs):
+            result = actual(*args, **kwargs)
+            target=self.root/'native/triangle.obj';target.write_bytes(target.read_bytes()+b'\n')
+            return result
+        with patch.object(scene3d_contracts,'load_project',side_effect=mutate):
+            with self.assertRaises(RigError):verify_editor_bundle(*self.bundle,self.root)
+
+    def test_real_camera_registry_closure(self):
+        shutil.copytree(ROOT/'examples/camera3d',self.root/'camera')
+        source=reference(self.root,'camera/registry.json','camera3d')
+        camera=reference(self.root,'camera/main-camera.json','camera3d')
+        project=deepcopy(self.bundle[0]);project['source_projects'].append(source)
+        project['dependency_manifest'].extend([source,camera])
+        result=verify_editor_bundle(project,*self.bundle[1:],self.root)
+        self.assertIn('camera/optics.json',result['files'])
+        self.assertIn('camera3d:camera/registry.json',result['native_reports'])
+
+    def test_real_material_texture_closure(self):
+        shutil.copytree(ROOT/'examples/lookdev-contracts',self.root/'lookdev')
+        material=reference(self.root,'lookdev/ceramic.json','lookdev')
+        project=deepcopy(self.bundle[0]);project['dependency_manifest'].append(material)
+        result=verify_editor_bundle(project,*self.bundle[1:],self.root)
+        self.assertIn('lookdev:lookdev/ceramic.json',result['native_reports'])
+
+    def test_dependency_manifest_cannot_omit_native_bindings(self):
+        bad = deepcopy(self.bundle);bad[0]['dependency_manifest'] = []
+        with self.assertRaises(RigError) as raised:
+            verify_editor_bundle(*bad,self.root)
+        self.assertEqual(raised.exception.report['code'],'EDITOR3D_LOCK')
+
+    def test_node_kind_cannot_misrepresent_native_geometry(self):
+        bad = deepcopy(self.bundle);bad[2][1]['node_type']='camera'
+        bad[1][0]['nodes']=[dict(id=n['id'],sha256=contract_hash(n)) for n in bad[2]]
+        bad[0]['scenes']=[dict(id=bad[1][0]['id'],sha256=contract_hash(bad[1][0]))]
+        with self.assertRaises(RigError):verify_editor_bundle(*bad,self.root)
+
+    def test_real_model_decoding_is_delegated_and_missing_export_fails(self):
+        from model3d_contracts import file_references
+        relative='examples/model3d-contracts/robotic.json'
+        native=json.loads((ROOT/relative).read_bytes())
+        paths={relative,*[item['path'] for item in file_references(native)]}
+        for path in paths:
+            target=self.root/path;target.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copyfile(ROOT/path,target)
+        model=reference(self.root,relative,'model3d')
+        project=deepcopy(self.bundle[0]);project['dependency_manifest'].append(model)
+        report=verify_editor_bundle(project,*self.bundle[1:],self.root)
+        model_report=report['native_reports']['model3d:'+relative]
+        self.assertTrue(model_report['geometry_inspected'])
+        self.assertTrue(model_report['payloads_verified'])
+        self.assertIn('model3d',report['geometry_inspected_owners'])
+        (self.root/'examples/rig-3d/robotic/exports/character.glb').unlink()
+        with self.assertRaises(RigError):verify_editor_bundle(project,*self.bundle[1:],self.root)
+
+    def test_real_texture_bytes_are_required(self):
+        shutil.copytree(ROOT/'examples/lookdev-contracts',self.root/'lookdev')
+        texture=reference(self.root,'lookdev/albedo.json','lookdev')
+        project=deepcopy(self.bundle[0]);project['dependency_manifest'].append(texture)
+        report=verify_editor_bundle(project,*self.bundle[1:],self.root)
+        self.assertIn('lookdev/textures/albedo.png',report['files'])
+        (self.root/'lookdev/textures/albedo.png').write_bytes(b'corrupt')
+        with self.assertRaises(RigError):verify_editor_bundle(project,*self.bundle[1:],self.root)
+
+    def test_native_rig_payloads_are_reopened_and_numerically_validated(self):
+        shutil.copytree(ROOT/'examples/rig-3d/robotic',self.root/'rig')
+        native=reference(self.root,'rig/rig.json','rig');native['native_kind']='Rig'
+        project=deepcopy(self.bundle[0]);project['dependency_manifest'].append(native)
+        report=verify_editor_bundle(project,*self.bundle[1:],self.root)
+        self.assertTrue(report['native_reports']['rig:rig/rig.json']['ok'])
+        self.assertIn('rig',report['geometry_inspected_owners'])
+        self.assertIn('rig/identity.json',report['files'])
+        (self.root/'rig/identity.json').write_bytes(b'{}')
+        with self.assertRaises(RigError):verify_editor_bundle(project,*self.bundle[1:],self.root)
+
+    def test_existing_production_project_reopens_with_original_sources(self):
+        from production_fixture import build_fixture_project
+        build_fixture_project(self.root/'production')
+        source=reference(self.root,'production/project.json','production2d')
+        project=deepcopy(self.bundle[0]);project['source_projects'].append(source)
+        project['dependency_manifest'].append(source)
+        report=verify_editor_bundle(project,*self.bundle[1:],self.root)
+        self.assertGreater(report['native_reports']['production2d:production/project.json']['resources']['assets'],0)
+
+
+if __name__ == '__main__':
+    unittest.main()
