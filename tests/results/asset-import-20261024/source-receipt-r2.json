@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "scope": "review correction candidate; not approval",
+  "previous_reviewed_head": "695936e",
+  "source_sha256": {
+    "scripts/asset_library_import.py": "3b8f8c09ff967f35812db6c466e4d64f35a8a9ef423a8a883103259dafc3024a",
+    "scripts/asset_import_worker.py": "59f0fd2e15495270cd042520198211aafea7401410cada230c8f9ba1841a1c37",
+    "scripts/test_rig_gate.py": "2ddf8a8cbabc7989046c8094a1327a935c21087be900d9916d634e44c888cc5d",
+    "tests/test_rig_asset_import.py": "9e2f3b486291f8b06684b8defb0c0f551370ebf9817a9c1dd2c8ba386d702227",
+    ".github/workflows/rig-3d.yml": "04889f8b49d0d51271f55fe5c932cf569f1e6d7804af1464b6905860f0caf252",
+    "references/asset-library/import.md": "b7a4dcbb1dca1a56c69ce895321ccdd924f238fb776c27943200de2ed2190451"
+  },
+  "corrections": [
+    "P1 failclosed native shader/modifier/constraint profile; actual proceduralshader regression",
+    "P2 uncanonicalized source ancestors retained for descriptorreader; real symlink regression",
+    "preservefixture classification across saved Blender source"
+  ],
+  "observed": "13tests PASS32.172s actualBlender/Khronos; import-tests-r2.txt",
+  "remaining": [
+    "fresh independentreview",
+    "combinedsafe texturedecoder",
+    "exactheadCI",
+    "predecessormerges",
+    "rootlease"
+  ]
+}
