@@ -16,7 +16,7 @@ import zipfile
 
 from asset_library import read_source_bytes
 from atomic_publish import _rename_no_replace, pinned_directory, private_stage, private_stage_supported
-from rig_errors import timestamp, decode_json, directory_capability, open_payload
+from rig_errors import RigError, timestamp, decode_json, directory_capability, open_payload
 from scene3d_contracts import (all_refs, canonical_bytes, load_project,
                                portable_path, validate_document)
 from scene3d_graph import require
@@ -90,7 +90,6 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                         files[path] = payload
                         require(sum(map(len, files.values())) <= max_bytes, 'Legacy closure exceeds snapshot byte budget.')
         except (ValueError, OSError, zipfile.BadZipFile) as exc:
-            from rig_errors import RigError
             if isinstance(exc, RigError):
                 raise
             raise RigError('SCENE3D_LEGACY_SOURCE', 'Native legacy archival validation failed: '+str(exc),
@@ -240,7 +239,6 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             try:
                 load_legacy_project(stage/legacy_prefix)
             except ValueError as exc:
-                from rig_errors import RigError
                 raise RigError('SCENE3D_LEGACY_SOURCE', 'Restored native legacy closure is invalid: '+str(exc)) from exc
         require(set(verified['inventory']) <= set(files), 'Verification opened an uninventoried payload.')
         # Validation callbacks have finished. Independently bind every published
@@ -277,6 +275,15 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         require((current.st_dev, current.st_ino) == identity,
                 'Snapshot publication entry changed after validation.', 'SCENE3D_SOURCE_CHANGED')
         if pinned:
+            # A held destination descriptor protects writes, but the returned
+            # pathname must still identify that selected directory as well.
+            try:
+                parent_now = destination.parent.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise RigError('SCENE3D_DESTINATION', 'Snapshot destination parent disappeared during validation.') from exc
+            parent_held = os.fstat(parent_fd)
+            require((parent_now.st_dev, parent_now.st_ino) == (parent_held.st_dev, parent_held.st_ino),
+                    'Snapshot destination parent changed during validation.', 'SCENE3D_DESTINATION')
             _rename_no_replace('project', destination.name, source_dir_fd=private_fd,
                                destination_dir_fd=parent_fd)
         else:

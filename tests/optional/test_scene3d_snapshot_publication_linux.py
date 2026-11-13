@@ -52,6 +52,28 @@ class SnapshotPublicationTests(unittest.TestCase):
         self.assertEqual(foreign[0].read_bytes(),b'foreign')
         self.assertTrue((self.root/'retained-project/project.json').is_file())
 
+    def test_selected_destination_parent_replacement_is_rejected_before_publication(self):
+        parent=self.root/'selected-parent';parent.mkdir();self.destination=parent/'published'
+        foreign=[]
+        def attack(path):
+            parent.rename(self.root/'retained-parent');parent.mkdir()
+            marker=parent/'UNVERIFIED.txt';marker.write_bytes(b'foreign');foreign.append(marker)
+        with self.during_verification(attack),self.assertRaises(RigError) as caught:
+            scene3d_snapshot.snapshot_project(self.source,self.destination)
+        self.assertEqual(caught.exception.report['code'],'SCENE3D_DESTINATION')
+        self.assertFalse(self.destination.exists())
+        self.assertFalse((self.root/'retained-parent/published').exists())
+        self.assertEqual(foreign[0].read_bytes(),b'foreign')
+
+    def test_selected_destination_parent_disappearance_is_typed_and_does_not_publish(self):
+        parent=self.root/'selected-parent';parent.mkdir();self.destination=parent/'published'
+        def attack(path): parent.rename(self.root/'retained-parent')
+        with self.during_verification(attack),self.assertRaises(RigError) as caught:
+            scene3d_snapshot.snapshot_project(self.source,self.destination)
+        self.assertEqual(caught.exception.report['code'],'SCENE3D_DESTINATION')
+        self.assertFalse(self.destination.exists())
+        self.assertFalse((self.root/'retained-parent/published').exists())
+
     def test_changed_verified_bytes_are_rejected_before_publication(self):
         def attack(path): (path/'triangle.obj').write_bytes(b'UNVERIFIED REPLACEMENT')
         with self.during_verification(attack),self.assertRaises(RigError):
