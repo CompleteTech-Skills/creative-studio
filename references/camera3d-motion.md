@@ -11,6 +11,9 @@ Camera-local -Z is forward. Dolly/truck follow camera orientation; pedestal and
 pan use world +Y. Distances are meters and angles radians. Dolly zoom preserves
 optical-axis subject scale by changing focal length in proportion to subject
 depth; it rejects orthographic cameras and crossing/behind-camera targets.
+Elliptical orbit computes phase from radius-normalized starting coordinates.
+An on-ellipse start is preserved; explicitly changed radii project an off-ellipse
+start onto the newly authored ellipse.
 
 `camera3d_paths.CameraPath` validates and freezes existing `camera3d-path`
 documents. Linear, Bezier and Catmull-Rom paths have bounded sampled arc-length
@@ -31,7 +34,11 @@ the owner adapter rejects them until the camera/render contract supplies them.
 FOV needs an explicit effective horizontal sensor width. Competing focal-length
 and FOV tracks, duplicate channels, foreign targets and invalid evaluated optics
 are rejected. Exposure is returned separately as `controls.exposure_stops` for
-the renderer. Callers must use a matching base transform and optics from their
+the renderer. Transform outputs and base TRS use native camera-parent-local
+space. World-space translation/quaternion tracks require an explicit rigid
+`parent_world` (identity for an unparented camera) and convert through its inverse.
+Explicit `parent` track space is rejected pending separate semantics; omitted
+or `local` space uses native parent-relative TRS. Callers must use a matching base transform and optics from their
 resolved camera graph; tracks replace only authored channels. Preset/resource
 resolution and reusable binding overrides remain owned by Camera3D sequencing.
 

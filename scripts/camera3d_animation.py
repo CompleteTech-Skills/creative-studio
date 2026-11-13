@@ -9,7 +9,13 @@ import math
 
 
 def sample_camera_tracks(camera_id, base_transform, optics, tracks, time, registry,
-                         *, duration_frames, horizontal_gate_mm=None):
+                         *, duration_frames, horizontal_gate_mm=None, parent_world=None):
+    """Evaluate camera-parent-local TRS; world tracks need an explicit rigid parent.
+
+    Omitted/local coordinate_space is the native parent-relative TRS space.
+    Explicit parent-space tracks are rejected until their separate semantics are
+    defined. Optical scalar channels do not have a spatial coordinate space.
+    """
     from animation3d_registry import sample_track
     from animation3d_time import frame_position
     from animation3d_contracts import KINDS, validate_contract, validate_track
@@ -35,11 +41,29 @@ def sample_camera_tracks(camera_id, base_transform, optics, tracks, time, regist
         prop=target['property']
         if prop in channels:raise ValueError('camera3d duplicate animated camera property')
         channels.add(prop)
+        if prop in ('translation','rotation'):
+            space=track.get('coordinate_space','local')
+            if space=='parent':
+                raise ValueError('camera3d explicit parent track space is unsupported; author native local TRS')
+            if space=='world':
+                if parent_world is None:
+                    raise ValueError('camera3d world track needs explicit resolved parent_world (identity if unparented)')
+                from camera3d_math import _matrix
+                _matrix(parent_world,rigid=True)
     if {'focal_length','field_of_view'}<=channels:
         raise ValueError('camera3d focal length and field of view cannot compete')
     for track in tracks:
         prop=track['target']['property'];value=sample_track(track,time,registry)
         if prop in ('translation','rotation'):
+            if track.get('coordinate_space','local')=='world':
+                import numpy as np
+                from camera3d_math import _matrix
+                from rig_math import matrix_quaternion, qmatrix
+                parent=_matrix(parent_world,rigid=True)
+                if prop=='translation':
+                    value=(parent[:3,:3].T@(np.asarray(value)-parent[:3,3])).tolist()
+                else:
+                    value=matrix_quaternion(parent[:3,:3].T@qmatrix(value)).tolist()
             transform[prop]=value
         elif prop in ('focal_length','field_of_view'):
             if out['projection']['type']!='perspective':
