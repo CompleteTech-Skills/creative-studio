@@ -124,6 +124,12 @@ jobs:
           HATCH_CAMERA3D_BLENDER_TEST: '1'
           HATCH_CAMERA_TEST_SITE: /tmp/camera-blender-site
           HATCH_CAMERA_EVIDENCE: /tmp/camera-optics-gate
+      - name: Verify actual camera preset and storyboard previews
+        run: python -m unittest discover -s tests -p test_rig_camera3d_sequence.py -v
+        env:
+          HATCH_CAMERA3D_PREVIEW_TEST: '1'
+          HATCH_CAMERA_TEST_SITE: /tmp/camera-blender-site
+          HATCH_CAMERA_PREVIEW_EVIDENCE: /tmp/camera-preview-gate
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
@@ -131,6 +137,7 @@ jobs:
           path: |
             /tmp/rig-blender-gate/**/validation/*.json
             /tmp/camera-optics-gate/*
+            /tmp/camera-preview-gate/*
   browser:
     name: Three.js browser playback and vertex comparison
     # Playwright 1.55.0 supports Ubuntu 24.04; ubuntu-latest now selects 26.04.

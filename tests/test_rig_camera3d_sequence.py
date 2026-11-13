@@ -4,6 +4,8 @@ from fractions import Fraction
 import hashlib
 import json
 import math
+import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -154,6 +156,32 @@ class Pixels(unittest.TestCase):
             try:link.symlink_to(source)
             except (OSError,NotImplementedError):return
             with self.assertRaises(ValueError):read_rendered_png(link)
+
+
+class ActualCameraPreviews(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('HATCH_CAMERA3D_PREVIEW_TEST') == '1',
+                         'explicit actual Blender preset and storyboard preview gate')
+    def test_actual_authored_cameras_render_their_projected_subject_bounds(self):
+        from rig_blender import find_blender
+        with tempfile.TemporaryDirectory() as temp:
+            destination=Path(os.environ.get('HATCH_CAMERA_PREVIEW_EVIDENCE', str(Path(temp)/'evidence')))
+            env=dict(os.environ)
+            env['HATCH_CAMERA_TEST_SITE']=os.environ.get('HATCH_CAMERA_TEST_SITE') or str(Path(__import__('jsonschema').__file__).parent.parent)
+            command=[find_blender(),'--background','--factory-startup','--disable-autoexec',
+                     '--python-exit-code','1','--python',str(ROOT/'scripts/verify_camera3d_previews.py'),
+                     '--','--destination',str(destination)]
+            result=subprocess.run(command,capture_output=True,text=True,timeout=240,env=env)
+            self.assertEqual(result.returncode,0,(result.stdout+result.stderr)[-12000:])
+            report=json.loads((destination/'acceptance.json').read_text())
+            self.assertTrue(report['ok'])
+            self.assertEqual(len(report['previews']),26)
+            for preview in report['previews']:
+                path=destination/preview['path']
+                self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),preview['sha256'])
+                with Image.open(path) as image:
+                    image.load();self.assertEqual(image.size,(192,128))
+                self.assertGreater(preview['alpha_pixels'],3)
+                self.assertLessEqual(max(abs(a-b) for a,b in zip(preview['actual_bounds'],preview['predicted_bounds'])),3)
 
 
 class CatalogAndPresets(unittest.TestCase):

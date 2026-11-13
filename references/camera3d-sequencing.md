@@ -151,3 +151,28 @@ Blender in the retained rig demonstrations. This command does not claim a new
 Blender invocation, continuous camera motion, a silent encoded film, or
 production-art approval. The complete camera mission still requires native
 renderer/editor integration and the five-shot demonstration in #80–#82.
+
+
+## Actual corresponding-camera previews
+
+`verify_camera3d_previews.py` uses the Camera3D optical owner's actual Cycles
+adapter to render all ten camera presets, twelve shot plans and four explicit
+storyboard angle/composition plans. An original procedural cube has declared
+canonical world bounds. Each view compares its rendered alpha silhouette bounds
+with the canonical projection of those same bounds, within three pixels at
+192×128, and records the complete plan, output hash and actual pixel count.
+`previews.blend` preserves the actual cameras and geometry for inspection.
+The static shot previews exercise authored placement and optics; their movement
+metadata is retained without claiming that the movement was animated.
+
+```bash
+HATCH_CAMERA3D_PREVIEW_TEST=1 HATCH_BLENDER=/path/to/blender \
+HATCH_CAMERA_TEST_SITE=/path/to/blender-python-jsonschema \
+HATCH_CAMERA_PREVIEW_EVIDENCE=NEW_DIRECTORY \
+python -m unittest discover -s tests -p test_rig_camera3d_sequence.py -v
+```
+
+The hosted Blender job executes this explicit native gate and retains its PNGs,
+plans and measurements. These engineering previews establish corresponding
+camera output and framing, not production visual approval, motion-preset film
+acceptance, multi-camera editor review, or the five-shot demonstration.
