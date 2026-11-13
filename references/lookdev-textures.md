@@ -26,6 +26,13 @@ PNG row filters preserve low bits; Pillow's implicit 8-bit conversion is not use
 `verify_texture_document(document, payload)` first validates the existing
 Texture3D contract, then checks exact hash/bytes and decoded dimensions, channels,
 bit depth, role and encoding. A manifest cannot certify unavailable content.
+`load_library_texture(library, asset_reference, document_path)` resolves the exact
+shared AssetLibrary version, loads its inventoried Texture3D document and source
+through the public resolver, and returns the validated document and decoded
+original. Wrong version hashes, missing payloads, changed metadata and unsafe
+logical paths fail through the respective owner. Registration, byte deduplication,
+backup, recovery and canonical GC protection stay with AssetLibrary; HDR/EXR may
+be inventoried as exact binary blobs and are decoded only by this module.
 `create_blender_image(decoded, name=...)` installs actual validated pixels into a
 packed float-buffer Blender image, flips top-down rows to Blender's lower-left
 origin, and labels the already-linear values Non-Color to prevent a second color

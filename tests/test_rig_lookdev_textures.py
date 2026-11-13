@@ -18,6 +18,46 @@ def png(array):
 
 
 class TextureTests(unittest.TestCase):
+    def test_shared_library_resolves_exact_texture_contract_and_original(self):
+        import json
+        from copy import deepcopy
+        from asset_library import AssetLibrary
+        from asset_library_contracts import seal
+        from lookdev_contracts import canonical_bytes
+        root=Path(__file__).resolve().parents[1]
+        document=json.loads((root/'examples/lookdev-contracts/albedo.json').read_text())
+        payload=(root/'examples/lookdev-contracts/textures/albedo.png').read_bytes()
+        contract=canonical_bytes(document)
+        def record(path,data,fmt,mime):
+            return dict(path=path,bytes=len(data),sha256=hashlib.sha256(data).hexdigest(),
+                        format=fmt,mime_type=mime,role='texture',required=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            folder=Path(temporary)
+            library=AssetLibrary(folder/'library',create=True)
+            (folder/'texture.json').write_bytes(contract)
+            (folder/'original.png').write_bytes(payload)
+            manifest=json.loads((root/'examples/asset-library-foundation/manifest.json').read_text())
+            manifest['identity'].update(id='albedo',kind='texture',name='Albedo',slug='albedo',subtype='surface')
+            manifest['files']=[record('texture.json',contract,'json','application/json'),
+                               record(document['file']['path'],payload,'png','image/png')]
+            manifest['compatibility']['formats']=['json','png']
+            manifest['compatibility']['texture_channels']=['base-color']
+            manifest['metadata']['category']='texture'
+            manifest['provenance']['sources']=deepcopy(manifest['files'])
+            license_record=manifest['provenance']['license_evidence'][0]
+            manifest['files'].append(license_record)
+            manifest['publication']['inventory']=[item['path'] for item in manifest['files']]
+            reference=library.register(seal(manifest),{'texture.json':folder/'texture.json',
+                document['file']['path']:folder/'original.png',
+                license_record['path']:root/'examples/asset-library-foundation/source/license.txt'})
+            actual,pixels=t.load_library_texture(library,reference,'texture.json')
+            self.assertEqual(actual,document)
+            self.assertEqual(pixels.source_sha256,hashlib.sha256(payload).hexdigest())
+            self.assertEqual(library.read_file(reference,document['file']['path']),payload)
+            wrong=deepcopy(reference);wrong['sha256']='0'*64
+            with self.assertRaises(RigError):t.load_library_texture(library,wrong,'texture.json')
+            with self.assertRaises(RigError):t.load_library_texture(library,reference,'../texture.json')
+
     def test_srgb_is_decoded_once_and_alpha_is_linear(self):
         data=png(np.array([[[128,128,128,64]]],dtype=np.uint8))
         image=t.decode_texture(data,role='base-color',encoding='srgb')

@@ -380,6 +380,29 @@ def verify_texture_document(document, payload, *, limits=Limits()):
     return decoded
 
 
+def load_library_texture(library, reference, document_path, *, limits=Limits()):
+    """Read a Texture3D document and exact pixels through the shared asset owner.
+
+    The public AssetResolver methods verify the immutable version reference and
+    inventoried payloads. No local cache/index or filesystem path bypass exists.
+    Return the verified contract beside its decoded original pixels so callers
+    retain licensing, source history, role and interpretation, not only an image.
+    """
+    from rig_errors import decode_json
+    from lookdev_contracts import MAX_RESOURCE_BYTES
+    portable_path(document_path)
+    library.resolve(reference)
+    contract = library.read_file(reference, document_path)
+    require(isinstance(contract, bytes) and 0 < len(contract) <= MAX_RESOURCE_BYTES,
+            'TEXTURE_LIMIT', 'Library texture contract exceeds the resource byte budget.')
+    document = decode_json(contract)
+    from lookdev_contracts import validate_resource
+    validate_resource(document)
+    require(document['kind'] == 'texture3d', 'TEXTURE_KIND', 'Expected a Texture3D resource.')
+    payload = library.read_file(reference, document['file']['path'])
+    return document, verify_texture_document(document, payload, limits=limits)
+
+
 def encode_png(pixels, *, encoding="data", limits=Limits()):
     from PIL import Image
     np = _np()
