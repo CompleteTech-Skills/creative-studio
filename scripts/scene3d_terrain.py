@@ -12,6 +12,7 @@ class Heightfield:
         self.resolution=count(resolution,'resolution',2,257)
         require(type(seed) is int and 0<=seed<2**32,'Seed must be an unsigned 32-bit integer.')
         require(type(elevation) in (int,float) and math.isfinite(elevation) and 0<=elevation<=10000,'Invalid elevation.')
+        self.elevation_limit=float(elevation)
         n=self.resolution
         if heights is None:
             rng=random.Random(seed)
@@ -61,6 +62,49 @@ class Heightfield:
         else: h=d+(c-d)*(1-tx)+(b-d)*(1-tz);gx=d-c;gz=d-b
         normal=np.array([-gx/(self.width/(n-1)),1,-gz/(self.depth/(n-1))]);normal/=np.linalg.norm(normal)
         return dict(height=float(h),normal=normal.tolist(),slope=math.degrees(math.acos(float(normal[1]))))
+
+    def edit(self,updates):
+        """Atomically edit bounded grid elevations while retaining slope/elevation limits."""
+        require(isinstance(updates,(list,tuple)) and len(updates)<=65536,'Elevation edit budget exceeded.')
+        candidate=self.heights.copy();seen=set()
+        for update in updates:
+            require(isinstance(update,dict) and set(update)=={'x','z','height'},'Elevation update needs x/z/height.')
+            x,z,height=update['x'],update['z'],update['height']
+            require(type(x) is int and type(z) is int and 0<=x<self.resolution and 0<=z<self.resolution,
+                    'Elevation grid coordinate is outside the terrain.')
+            require(type(height) in (int,float) and math.isfinite(height) and abs(height)<=self.elevation_limit,
+                    'Edited elevation exceeds its configured bound.')
+            require((x,z) not in seen,'An atomic elevation edit cannot repeat a grid coordinate.')
+            candidate[z,x]=height;seen.add((x,z))
+        previous=self.heights;self.heights=candidate
+        try:self.mesh()
+        except Exception:
+            self.heights=previous
+            raise
+        return self
+
+    def mask(self,values,*,target=0):
+        """Blend elevations toward a bounded scalar target by an explicit [0,1] grid."""
+        values=numeric_array(values,'terrain mask')
+        require(values.shape==self.heights.shape and (values>=0).all() and (values<=1).all(),
+                'Terrain mask must match the heightfield and contain weights in [0,1].')
+        require(type(target) in (int,float) and math.isfinite(target) and abs(target)<=self.elevation_limit,
+                'Masked target elevation exceeds its configured bound.')
+        previous=self.heights;self.heights=self.heights*(1-values)+target*values
+        try:self.mesh()
+        except Exception:
+            self.heights=previous
+            raise
+        return self
+
+    def lod_mesh(self,stride=2):
+        """Sample exact existing vertices at a divisor stride; no invented cave geometry."""
+        count(stride,'LOD stride',2,256)
+        require((self.resolution-1)%stride==0,'LOD stride must divide the grid interval count.')
+        heights=self.heights[::stride,::stride]
+        coarse=Heightfield(width=self.width,depth=self.depth,resolution=len(heights),
+                           heights=heights,elevation=self.elevation_limit)
+        return coarse.mesh()
 
     def smooth(self, iterations=1):
         count(iterations,'iterations',1,100)

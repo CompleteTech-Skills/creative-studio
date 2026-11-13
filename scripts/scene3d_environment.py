@@ -53,10 +53,12 @@ def plan(recipe):
                 'Primitive requires a text kind and dimensions object.')
         add('mesh',primitive(p['kind'],**p['dimensions']))
     elif kind=='terrain':
-        allowed={'width','depth','resolution','elevation','max_slope','heights','smooth','paths','scatter_count','spacing','scatter_slope','exclusions'}
+        allowed={'width','depth','resolution','elevation','max_slope','heights','smooth','paths','scatter_count','spacing','scatter_slope','exclusions','mask','mask_target','elevation_edits','lod_strides'}
         require(not set(p)-allowed,'Unknown terrain parameter.')
         terrain=Heightfield(seed=recipe['seed'],**{k:v for k,v in p.items() if k in {'width','depth','resolution','elevation','max_slope','heights'}})
         if p.get('smooth',0):terrain.smooth(p['smooth'])
+        if 'elevation_edits' in p:terrain.edit(p['elevation_edits'])
+        if 'mask' in p:terrain.mask(p['mask'],target=p.get('mask_target',0))
         paths=p.get('paths',[])
         require(isinstance(paths,list) and len(paths)<=8,'Terrain supports at most eight paths.')
         require(all(isinstance(path,dict) and isinstance(path.get('points'),list) for path in paths)
@@ -65,6 +67,9 @@ def plan(recipe):
             require(isinstance(path,dict) and set(path)=={'points','width','elevation'},'Invalid terrain path.')
             terrain.path(**path)
         add('ground',terrain.mesh())
+        strides=p.get('lod_strides',[])
+        require(isinstance(strides,list) and len(strides)<=4 and all(type(v) is int for v in strides) and len(set(strides))==len(strides),'Terrain supports up to four distinct integer LOD strides.')
+        objects[-1]['lods']=[terrain.lod_mesh(stride) for stride in strides]
         total=count(p.get('scatter_count',0),'scatter count',0,10000)
         positions=[] if total==0 else scatter(terrain,total,spacing=p.get('spacing',1.3),seed=recipe['seed'],clearance=.65,
                         max_slope=p.get('scatter_slope',30),exclusions=p.get('exclusions',()))
@@ -98,8 +103,27 @@ def plan(recipe):
             add(f'partition-{i}',wall(d,h,t,openings),[(i-.5)*w,0,0],q)
     else:
         require(False,'Unsupported generator; heightfields do not model caves or overhangs.','SCENE3D_GENERATOR')
-    require(sum(len(o['mesh'].triangles) for o in objects)<=200000,'Aggregate triangle budget exceeded.')
+    require(sum(len(mesh.triangles) for o in objects for mesh in [o['mesh'],*o.get('lods',[])])<=200000,'Aggregate triangle budget exceeded.')
     return objects
+
+
+def _mesh_resource(mesh,bundle,documents,payloads,*,lods=()):
+    """One shared publisher for base and LOD meshes, with identity-bound LOD closure."""
+    mesh.validate();raw=mesh.obj();sha=hashlib.sha256(raw).hexdigest();path='generated/mesh-'+sha+'.obj'
+    payloads[path]=raw;file=dict(path=path,sha256=sha)
+    identity=sha if not lods else hashlib.sha256((sha+json.dumps(lods,sort_keys=True,separators=(',',':'))).encode()).hexdigest()
+    identifier='mesh-'+identity[:32]
+    asset=dict(schema_version=1,kind='scene3d-asset',id=identifier,version='1.0.0',name=identifier,
+        asset_type='mesh',content=file,source=file,provenance=dict(origin='authored',fixture=False,tool='scene3d-generator-v1',
+        inputs=[],attribution='Procedural scene geometry',license='CC0-1.0'),coordinate_system=COORDINATES,
+        original_coordinate_system='right-handed Y-up meters',pivot=[0,0,0],meshes=[file],materials=[],bounds=mesh.bounds,
+        collision=None,sockets=[],components={},skeleton=None,animations=[],lods=list(lods),dependencies=list(lods),
+        resources=dict(vertices=len(mesh.vertices),triangles=len(mesh.triangles),bytes=len(raw)),validation=[],review=dict(status='unreviewed',receipts=[]))
+    validate_document(asset,'asset');asset_path='generated/'+identifier+'.json'
+    reference=dict(path=asset_path,sha256=digest(asset),id=identifier,version='1.0.0',kind='scene3d-asset')
+    if asset_path not in bundle['documents']:documents[asset_path]=asset
+    else:require(bundle['documents'][asset_path]==asset,'Generated asset identity collision.')
+    return reference
 
 
 def _prepare_recipe(bundle,scene,recipe,*,policy='preserve',offset=None,parent=None):
@@ -125,20 +149,9 @@ def _prepare_recipe(bundle,scene,recipe,*,policy='preserve',offset=None,parent=N
         identifier=item['id']
         if identifier in modified or identifier in deleted:continue
         require(identifier not in retained,'Generated node ID collides with authored node.','SCENE3D_GENERATOR_CONFLICT')
-        mesh=item['mesh'];raw=mesh.obj();sha=hashlib.sha256(raw).hexdigest();path='generated/mesh-'+sha+'.obj'
-        payloads[path]=raw;file=dict(path=path,sha256=sha)
-        asset=dict(schema_version=1,kind='scene3d-asset',id='mesh-'+sha[:32],version='1.0.0',name=identifier,
-            asset_type='mesh',content=file,source=file,provenance=dict(origin='authored',fixture=False,tool='scene3d-generator-v1',
-            inputs=[],attribution='Procedural scene geometry',license='CC0-1.0'),coordinate_system=COORDINATES,
-            original_coordinate_system='right-handed Y-up meters',pivot=[0,0,0],meshes=[file],materials=[],bounds=mesh.bounds,
-            collision=None,sockets=[],components={},skeleton=None,animations=[],lods=[],dependencies=[],
-            resources=dict(vertices=len(mesh.vertices),triangles=len(mesh.triangles),bytes=len(raw)),validation=[],review=dict(status='unreviewed',receipts=[]))
-        validate_document(asset,'asset');asset_path='generated/'+asset['id']+'.json';asset_sha=digest(asset)
-        # Geometry may repeat with different labels; asset identity binds the mesh, not node label.
-        asset['name']=asset['id'];asset_sha=digest(asset)
-        reference=dict(path=asset_path,sha256=asset_sha,id=asset['id'],version='1.0.0',kind='scene3d-asset')
-        if asset_path not in bundle['documents']:documents[asset_path]=asset
-        else:require(bundle['documents'][asset_path]==asset,'Generated asset identity collision.')
+        mesh=item['mesh']
+        lods=[_mesh_resource(lod,bundle,documents,payloads) for lod in item.get('lods',[])]
+        reference=_mesh_resource(mesh,bundle,documents,payloads,lods=lods)
         refs.append(reference)
         n=node(identifier,'mesh_instance',parent);n['asset']=reference
         n['transform']['translation']=[a+b for a,b in zip(item['position'],offset)]
@@ -159,7 +172,7 @@ def _prepare_recipe(bundle,scene,recipe,*,policy='preserve',offset=None,parent=N
     scene['dependencies']=list(existing.values());_inventories(scene)
     return dict(scene=scene,documents=documents,payloads=payloads,conflicts=conflicts,
                 generated=len(objects)-len(set(o['id'] for o in objects)&(modified|deleted)),
-                triangles=sum(len(o['mesh'].triangles) for o in objects))
+                triangles=sum(len(mesh.triangles) for o in objects for mesh in [o['mesh'],*o.get('lods',[])]))
 
 
 def apply_recipes(source,destination,scene_path,recipes,*,policy='preserve',offsets=None,parents=None):

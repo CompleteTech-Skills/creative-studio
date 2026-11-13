@@ -32,10 +32,19 @@ science-fiction adds editable structural beams. These basic variations do not
 claim the complete themed asset/material catalogs requested by issue #61.
 
 `terrain` accepts width/depth, resolution, elevation, optional exact heights,
-maximum slope in degrees, smoothing iterations, paths (points/width/elevation),
+maximum slope in degrees, smoothing iterations, explicit elevation edits,
+mask/target grids, LOD strides, paths (points/width/elevation),
 and bounded seeded tree scatter. Heights use the actual emitted triangular
 surface for queries. A supplied slope limit is clamped against both triangles
 of every cell, and checked again before publication after path/height edits.
+Elevation edits use exact grid coordinates and explicit bounds. Mask weights in
+[0,1] blend the actual elevations toward a bounded target. Both operations reject
+invalid slopes atomically and preserve the original heightfield on failure.
+Optional LOD strides must divide the grid interval count; each LOD samples exact
+existing vertices, persists as a separate mesh asset, and stays in the hash-bound
+asset dependency closure. Maximum four LOD levels and the aggregate triangle
+budget include all coarse meshes.
+
 Tree placement checks complete crown footprint clearance at the boundary and
 exclusions and uses a grid index for minimum-distance tests. Spacing defaults
 to 1.3 meters and cannot be less than the crown diameter. Impossible counts
@@ -68,5 +77,6 @@ must hold the native validation flock for its entire execution. Saved receipts
 report actual runtime versions and exact hashes.
 
 Remaining issue #61 acceptance: full architectural/themed catalogs, material
-assignment through the lookdev owner, masks/blending/LOD policies, polygon holes and richer layout policies still need implementation
+assignment and terrain material blending through the lookdev owner, runtime
+LOD selection policies, polygon holes and richer layout policies still need implementation
 and review. Neither these APIs nor the example claim whole-issue completion.

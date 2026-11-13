@@ -86,6 +86,33 @@ class TerrainTests(unittest.TestCase):
         terrain.heights[2,2]=4
         with self.assertRaises(RigError):terrain.mesh()
 
+    def test_elevation_edits_masks_and_lod_preserve_limits(self):
+        terrain=Heightfield(width=4,depth=4,resolution=5,elevation=2,heights=np.zeros((5,5)))
+        terrain.edit([dict(x=2,z=2,height=2)])
+        self.assertEqual(terrain.sample(0,0)['height'],2)
+        coarse=terrain.lod_mesh(2)
+        self.assertEqual(len(coarse.triangles),8)
+        self.assertEqual(coarse.vertices[4],[0,2,0])
+        mask=np.zeros((5,5));mask[2,2]=.5
+        terrain.mask(mask,target=0)
+        self.assertEqual(terrain.sample(0,0)['height'],1)
+        previous=terrain.heights.copy()
+        for updates in ([dict(x=2,z=2,height=3)], [dict(x=2,z=2,height=1)]*2):
+            with self.assertRaises(RigError):terrain.edit(updates)
+            np.testing.assert_array_equal(terrain.heights,previous)
+        with self.assertRaises(RigError):terrain.mask(np.ones((5,5))*2)
+        np.testing.assert_array_equal(terrain.heights,previous)
+        with self.assertRaises(RigError):terrain.lod_mesh(3)
+
+    def test_slope_violating_mask_and_edit_are_atomic(self):
+        terrain=Heightfield(width=4,depth=4,resolution=5,elevation=2,heights=np.zeros((5,5)),max_slope=5)
+        previous=terrain.heights.copy()
+        with self.assertRaises(RigError):terrain.edit([dict(x=2,z=2,height=1)])
+        np.testing.assert_array_equal(terrain.heights,previous)
+        mask=np.zeros((5,5));mask[2,2]=1
+        with self.assertRaises(RigError):terrain.mask(mask,target=1)
+        np.testing.assert_array_equal(terrain.heights,previous)
+
     def test_flatten_path_and_spatial_scatter(self):
         a=Heightfield(seed=8).path([[-10,0],[10,0]],width=2,elevation=0)
         self.assertEqual(a.sample(0,0)['height'],0)
@@ -123,6 +150,19 @@ class EnvironmentTests(unittest.TestCase):
         with self.assertRaises(RigError):plan(recipe(width=1,door_width=2))
         with self.assertRaises(RigError):plan(dict(recipe(),budget=2))
         with self.assertRaises(RigError):plan(recipe('caves'))
+
+    def test_actual_terrain_lod_dependency_closure_survives_reopen(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)/'terrain'
+            create_environment(root,recipe('terrain',resolution=9,elevation=2,lod_strides=[2,4]))
+            b=load_project(root);scene=b['documents'][b['project']['scenes'][-1]['path']]
+            ground=next(n for n in scene['nodes'] if n['id']=='test-ground')
+            asset=b['documents'][ground['asset']['path']]
+            self.assertEqual(len(asset['lods']),2)
+            self.assertEqual(asset['resources']['triangles'],128)
+            lods=[b['documents'][r['path']] for r in asset['lods']]
+            self.assertEqual([a['resources']['triangles'] for a in lods],[32,8])
+            for lod in lods:self.assertTrue((root/lod['content']['path']).is_file())
 
     def test_multi_recipe_snapshot_is_atomic_and_records_local_placement(self):
         with tempfile.TemporaryDirectory() as temp:
