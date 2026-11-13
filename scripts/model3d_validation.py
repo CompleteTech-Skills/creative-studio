@@ -159,14 +159,28 @@ def _inspect_asset(document, snapshot, memory_bytes=None, file_bytes=None):
                           dependency_bytes=limits['total_bytes'], vertices=limits['vertices'],
                           triangles=limits['triangles'], memory_bytes=min(limits['memory_bytes'], memory_bytes if memory_bytes is not None else limits['memory_bytes']),
                           influences=8)  # Inspect/preserve supported skins; this is not a viewer profile.
-    try:
-        model = load_character_model(snapshot.destination / record['path'], limits=backend_limits)
-    except RigError:
-        raise
-    except (ValueError, TypeError, KeyError, IndexError, AttributeError, OverflowError,
-            struct.error, Image.DecompressionBombError, UnidentifiedImageError, OSError) as exc:
-        raise RigError('MODEL3D_MODEL', 'Malformed model rejected at the existing importer boundary.',
-                       stage='model3d', asset=record['path']) from exc
+    def inspect_native(name):
+        try:
+            return load_character_model(snapshot.destination / name, limits=backend_limits)
+        except RigError as exc:
+            # Keep the Model3D boundary stable when the native texture authority
+            # replaces Pillow exceptions with actionable structured diagnostics.
+            # Other native limits retain their established public codes.
+            if exc.report['code'] in {'RIG_TEXTURE_DECODE', 'RIG_TEXTURE_FORMAT',
+                                      'RIG_LIMIT_TEXTURE', 'RIG_TEXTURE_POLICY',
+                                      'RIG_TEXTURE_VERIFIER_UNAVAILABLE'}:
+                unavailable = exc.report['code'] == 'RIG_TEXTURE_VERIFIER_UNAVAILABLE'
+                raise RigError('MODEL3D_DEPENDENCY' if unavailable else 'MODEL3D_MODEL',
+                               'Required native texture verifier is unavailable.' if unavailable
+                               else 'Texture rejected at the native model importer boundary.',
+                               stage='model3d', asset=name, observed=exc.report,
+                               correction=exc.report['correction']) from exc
+            raise
+        except (ValueError, TypeError, KeyError, IndexError, AttributeError, OverflowError,
+                struct.error, Image.DecompressionBombError, UnidentifiedImageError, OSError) as exc:
+            raise RigError('MODEL3D_MODEL', 'Malformed model rejected at the existing importer boundary.',
+                           stage='model3d', asset=name) from exc
+    model = inspect_native(record['path'])
     actual_dependencies = {p.relative_to(snapshot.destination).as_posix() for p in model.source_files}
     inventory = {r['path'] for r in document['files']}
     require(actual_dependencies <= inventory, 'MODEL3D_INVENTORY',
@@ -198,13 +212,7 @@ def _inspect_asset(document, snapshot, memory_bytes=None, file_bytes=None):
             require(geometry_record['media_type'] in expected and
                     Path(name).suffix.lower() == expected[geometry_record['media_type']],
                     'MODEL3D_FORMAT', 'LOD media type and geometry extension disagree.')
-            try:
-                imported = load_character_model(snapshot.destination / name, limits=backend_limits)
-            except RigError:
-                raise
-            except (ValueError, TypeError, KeyError, IndexError, AttributeError, OverflowError,
-                    struct.error, Image.DecompressionBombError, UnidentifiedImageError, OSError) as exc:
-                raise RigError('MODEL3D_MODEL', 'Malformed LOD rejected at the importer boundary.', asset=name) from exc
+            imported = inspect_native(name)
             dependencies = {p.relative_to(snapshot.destination).as_posix() for p in imported.source_files}
             require(dependencies <= inventory, 'MODEL3D_INVENTORY', 'LOD resources are absent from the file inventory.')
         require(not imported.report.get('fixture') or document['provenance']['fixture'],

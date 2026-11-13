@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AssetPublication v1",
+  "$defs": {
+    "AssetPublication": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "visibility": {
+          "enum": [
+            "private",
+            "project-local"
+          ]
+        },
+        "distribution": {
+          "enum": [
+            "not-evaluated",
+            "restricted"
+          ]
+        },
+        "license_evaluation": {
+          "enum": [
+            "not-evaluated",
+            "evidence-retained"
+          ]
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm]1|[Cc][Oo][Mm]2|[Cc][Oo][Mm]3|[Cc][Oo][Mm]4|[Cc][Oo][Mm]5|[Cc][Oo][Mm]6|[Cc][Oo][Mm]7|[Cc][Oo][Mm]8|[Cc][Oo][Mm]9|[Ll][Pp][Tt]1|[Ll][Pp][Tt]2|[Ll][Pp][Tt]3|[Ll][Pp][Tt]4|[Ll][Pp][Tt]5|[Ll][Pp][Tt]6|[Ll][Pp][Tt]7|[Ll][Pp][Tt]8|[Ll][Pp][Tt]9)(?:\\.|/|$))[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?(?:/(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm]1|[Cc][Oo][Mm]2|[Cc][Oo][Mm]3|[Cc][Oo][Mm]4|[Cc][Oo][Mm]5|[Cc][Oo][Mm]6|[Cc][Oo][Mm]7|[Cc][Oo][Mm]8|[Cc][Oo][Mm]9|[Ll][Pp][Tt]1|[Ll][Pp][Tt]2|[Ll][Pp][Tt]3|[Ll][Pp][Tt]4|[Ll][Pp][Tt]5|[Ll][Pp][Tt]6|[Ll][Pp][Tt]7|[Ll][Pp][Tt]8|[Ll][Pp][Tt]9)(?:\\.|/|$))[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?)*$(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "verification": {
+          "enum": [
+            "payload-verified"
+          ]
+        },
+        "integration": {
+          "enum": [
+            "not-exercised",
+            "native-reference"
+          ]
+        }
+      },
+      "required": [
+        "visibility",
+        "distribution",
+        "license_evaluation",
+        "inventory",
+        "verification",
+        "integration"
+      ]
+    }
+  },
+  "$ref": "#/$defs/AssetPublication"
+}

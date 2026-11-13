@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "reference": {
+    "id": "triangle",
+    "version": "1.0.0",
+    "sha256": "197f615d708528669ae66912fa07709116822ceeb0ad2f5d79725d04bb0db5d0"
+  },
+  "files": {
+    "mesh/triangle.obj": "830e41de3e98d4841fcc666158ba5f55c2e542968e0dbb0c82a360909b992431",
+    "source/license.txt": "a984165690a05e694a9affcdaaa457ed48efad956069f5ae23cb151262c64380"
+  },
+  "payload_verified": true,
+  "geometry_validated": false,
+  "production_approved": false,
+  "source": "procedural-engineering-fixture"
+}

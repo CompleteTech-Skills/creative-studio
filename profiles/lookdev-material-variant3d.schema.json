@@ -1,0 +1,656 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/lookdev-material-variant3d-v1",
+  "title": "Hatch look development material-variant3d v1",
+  "description": "Contract validity alone proves no executed shader or renderer capability.",
+  "$defs": {
+    "material-variant3d": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResourceRef"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "origin": {
+              "enum": [
+                "import",
+                "authored",
+                "derived",
+                "procedural-fixture"
+              ]
+            },
+            "tool": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "created_at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\dZ$(?![\\s\\S])"
+            },
+            "source_hashes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+              },
+              "minItems": 0,
+              "maxItems": 1024
+            },
+            "attribution": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "license": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "identifier": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              },
+              "required": [
+                "identifier",
+                "source"
+              ]
+            }
+          },
+          "required": [
+            "origin",
+            "tool",
+            "created_at",
+            "source_hashes",
+            "attribution",
+            "license"
+          ]
+        },
+        "validation_status": {
+          "enum": [
+            "unvalidated",
+            "structurally-valid",
+            "rejected"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "kind": {
+          "const": "material-variant3d"
+        },
+        "base_material": {
+          "$ref": "#/$defs/ResourceRef"
+        },
+        "overrides": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "base_color": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "base_color_space": {
+              "const": "linear-srgb"
+            },
+            "metallic": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "roughness": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "specular": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "strength": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "color": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              },
+              "required": [
+                "strength",
+                "color"
+              ]
+            },
+            "ior": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 4
+            },
+            "normal": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "texture": {
+                  "$ref": "#/$defs/ResourceRef"
+                },
+                "strength": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000.0
+                },
+                "orientation": {
+                  "const": "opengl-positive-y"
+                }
+              },
+              "required": [
+                "texture",
+                "strength",
+                "orientation"
+              ]
+            },
+            "height": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "texture": {
+                  "$ref": "#/$defs/ResourceRef"
+                },
+                "scale_meters": {
+                  "type": "number",
+                  "minimum": -1000000000.0,
+                  "maximum": 1000000000.0
+                },
+                "midlevel": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "texture",
+                "scale_meters",
+                "midlevel"
+              ]
+            },
+            "displacement": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "texture": {
+                  "$ref": "#/$defs/ResourceRef"
+                },
+                "scale_meters": {
+                  "type": "number",
+                  "minimum": -1000000000.0,
+                  "maximum": 1000000000.0
+                },
+                "midlevel": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "max_subdivision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8
+                }
+              },
+              "required": [
+                "enabled",
+                "texture",
+                "scale_meters",
+                "midlevel",
+                "max_subdivision"
+              ]
+            },
+            "opacity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "alpha_mode": {
+              "enum": [
+                "OPAQUE",
+                "MASK",
+                "BLEND"
+              ]
+            },
+            "alpha_cutoff": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "transmission": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "volume": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "thickness_meters": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000.0
+                },
+                "attenuation_distance_meters": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1000000000.0
+                },
+                "attenuation_color": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              },
+              "required": [
+                "thickness_meters",
+                "attenuation_distance_meters",
+                "attenuation_color"
+              ]
+            },
+            "subsurface": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "weight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "radius_meters": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000000.0
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "color": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "method": {
+                  "enum": [
+                    "random-walk",
+                    "burley"
+                  ]
+                }
+              },
+              "required": [
+                "weight",
+                "radius_meters",
+                "color",
+                "method"
+              ]
+            },
+            "emission": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "color": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "strength_watts_per_square_meter": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000.0
+                }
+              },
+              "required": [
+                "color",
+                "strength_watts_per_square_meter"
+              ]
+            },
+            "occlusion": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "texture": {
+                  "$ref": "#/$defs/ResourceRef"
+                },
+                "strength": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "texture",
+                "strength"
+              ]
+            },
+            "clearcoat": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "weight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "roughness": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "normal": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "texture": {
+                      "$ref": "#/$defs/ResourceRef"
+                    },
+                    "strength": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000000.0
+                    },
+                    "orientation": {
+                      "const": "opengl-positive-y"
+                    }
+                  },
+                  "required": [
+                    "texture",
+                    "strength",
+                    "orientation"
+                  ]
+                }
+              },
+              "required": [
+                "weight",
+                "roughness"
+              ]
+            },
+            "sheen": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "weight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "color": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "roughness": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "weight",
+                "color",
+                "roughness"
+              ]
+            },
+            "anisotropy": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "strength": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "direction": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": -1000000000.0,
+                    "maximum": 1000000000.0
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "rotation_radians": {
+                  "type": "number",
+                  "minimum": -1000000000.0,
+                  "maximum": 1000000000.0
+                }
+              },
+              "required": [
+                "strength",
+                "direction",
+                "rotation_radians"
+              ]
+            },
+            "iridescence": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "weight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "ior": {
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 4
+                },
+                "thickness_min_nanometers": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000.0
+                },
+                "thickness_max_nanometers": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000.0
+                }
+              },
+              "required": [
+                "weight",
+                "ior",
+                "thickness_min_nanometers",
+                "thickness_max_nanometers"
+              ]
+            },
+            "double_sided": {
+              "type": "boolean"
+            },
+            "normal_orientation": {
+              "const": "opengl-positive-y"
+            }
+          },
+          "required": []
+        },
+        "graph": {
+          "$ref": "#/$defs/ResourceRef"
+        },
+        "render_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "strict": {
+              "type": "boolean"
+            },
+            "allow_approximations": {
+              "type": "boolean"
+            },
+            "required_features": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$(?![\\s\\S])"
+              },
+              "minItems": 0,
+              "maxItems": 64,
+              "uniqueItems": true
+            },
+            "fallback": {
+              "enum": [
+                "reject",
+                "explicit-approximation",
+                "bake"
+              ]
+            }
+          },
+          "required": [
+            "strict",
+            "allow_approximations",
+            "required_features",
+            "fallback"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "version",
+        "dependencies",
+        "provenance",
+        "validation_status",
+        "capabilities",
+        "kind",
+        "base_material",
+        "overrides",
+        "render_policy"
+      ]
+    },
+    "ResourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^(?!.*(?:^|/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Nn][Ii][Nn]\\$|[Cc][Oo][Nn][Oo][Uu][Tt]\\$|[Cc][Oo][Mm][1-9\u00b9\u00b2\u00b3]|[Ll][Pp][Tt][1-9\u00b9\u00b2\u00b3])(?:\\.|/|$))(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*[ .](?:/|$))[^/\\\\<>:\"|?*\\u0000-\\u001f\\u007f\\ud800-\\udfff]+(?:/[^/\\\\<>:\"|?*\\u0000-\\u001f\\u007f\\ud800-\\udfff]+)*$(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "kind": {
+          "enum": [
+            "material3d",
+            "material-instance3d",
+            "material-variant3d",
+            "texture3d",
+            "material-graph3d",
+            "light3d",
+            "lighting-rig3d",
+            "look3d",
+            "render-quality3d"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    }
+  },
+  "$ref": "#/$defs/material-variant3d"
+}

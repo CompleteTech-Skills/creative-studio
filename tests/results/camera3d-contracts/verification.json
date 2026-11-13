@@ -1,0 +1,159 @@
+{
+  "issue": 75,
+  "scope": "Additive camera contract foundation, not parent camera system completion",
+  "baseline_commit": "a08569cbdb593651807c887f4c9edd5e7b243973",
+  "tested_source_snapshot": "source-snapshot.json",
+  "source_hashes_unchanged_during_tests": true,
+  "command_results": [
+    {
+      "command": "/tmp/hatch-restore-venv/bin/python scripts/test_rig_gate.py schema-math",
+      "tests": 53,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 12.974,
+      "exit": 0
+    },
+    {
+      "command": "PYTHONPATH=scripts:tests /tmp/hatch-restore-venv/bin/python -m unittest test_production_contracts test_production_render -v",
+      "tests": 51,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 8.68,
+      "exit": 0
+    },
+    {
+      "command": "HATCH_BROWSER_EXECUTABLE=/usr/bin/chromium PYTHONPATH=scripts:tests /tmp/pr199-venv/bin/python -m unittest test_production_preview -v",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 10.46,
+      "browser": "Chromium 152.0.7977.82",
+      "exit": 0
+    },
+    {
+      "command": "/tmp/hatch-restore-venv/bin/python scripts/generate_schemas.py --check",
+      "exit": 0
+    },
+    {
+      "command": "/tmp/hatch-restore-venv/bin/python scripts/camera3d_contracts.py --check",
+      "exit": 0
+    },
+    {
+      "command": "/tmp/hatch-restore-venv/bin/python scripts/camera3d_contracts.py --validate examples/camera3d/registry.json",
+      "exit": 0,
+      "native_camera_documents": 3
+    },
+    {
+      "command": "Actual camera --validate CLI with genuine positive and negative 5000-digit JSON integers",
+      "cases": 2,
+      "expected_exit": 2,
+      "stderr": "",
+      "artifact": "integrated-decoder-cli.json"
+    }
+  ],
+  "optional_dependency_boundary": {
+    "legacy_tests_discovered": 809,
+    "discovery_not_full_execution": true,
+    "camera_tests_excluded_by_existing_rig_family_boundary": true
+  },
+  "prior_environment_failures": [
+    {
+      "command": "Initial legacy suite with /tmp/hatch-restore-venv/bin/python",
+      "result": "55 run, 1 class skip because Playwright unavailable; actual 4 Chromium tests rerun successfully in /tmp/pr199-venv"
+    },
+    {
+      "command": "Host python3 scripts/generate_schemas.py --check",
+      "result": "Missing Pillow in host interpreter; passed using declared-dependency environment"
+    }
+  ],
+  "limitations": [
+    "No camera renderer, browser camera editor, path/constraint solver, DOF execution or parent #14 demonstration claimed",
+    "Reference registry external resource semantics remain native-owner responsibility",
+    "Native camera math uses lazy optional NumPy; local Python 3.14.7 differs from CI Python 3.12",
+    "No human or production-art approval created",
+    "Independent Astra review and exact-head CI pending"
+  ],
+  "artifacts": {
+    "schema-math.log": {
+      "sha256": "147fbc65c61059dc20d3566e1df1440885961c225a45257c10cfac4b9d2a1a79",
+      "bytes": 9227
+    },
+    "legacy-contract-render.log": {
+      "sha256": "9a60d955c610ac13f3a7ee9edc49cc52d847330a3ed550b9dc3f32581c8e812f",
+      "bytes": 9692
+    },
+    "actual-browser.log": {
+      "sha256": "bf25cc2e90ba4e18f88eaf7045552def4d1dc5fe4291fdc93020e7fc42a1ac0a",
+      "bytes": 884
+    },
+    "registry-example.json": {
+      "sha256": "cabda334465c8bbe4766598d987d2b622ecb274743ad629efa6c924b751a80a6",
+      "bytes": 276
+    },
+    "integrated-decoder-cli.json": {
+      "sha256": "30de4e847174c73617c8851f3a30b04dafd639e51c5afd4c2a9732ee10bb4b1f",
+      "bytes": 784
+    },
+    "source-snapshot.json": {
+      "sha256": "b5c29e1f8c5c6220b5bbafe3087448ceacf2f84fbe8eb6e7077857228923ba18",
+      "bytes": 11157
+    },
+    "protected-inputs.json": {
+      "sha256": "db00f4392cf4384ec666b4cb59f14fbd06b773e18aa689b37a7223864ec03663",
+      "bytes": 1445
+    }
+  },
+  "historical_execution": {
+    "commit": "e202ca4bb60372523d33590f7ba1e31e867f7f55",
+    "directory": "historical-e202ca4",
+    "all_recorded_source_hashes_verified_against_commit": true
+  },
+  "review_finding_resolutions": [
+    {
+      "finding": "Integral JSON float arithmetic/CLI exception and raster dimension inconsistency",
+      "fix": "Accept schema-valid integral numeric values using arithmetic-only integer conversion",
+      "regression": "test_json_schema_integral_float_numbers_remain_admitted_without_tracebacks; test_integral_json_float_raster_sizes_match_schema_acceptance"
+    },
+    {
+      "finding": "Wrong native animation timeline kind admitted",
+      "fix": "Explicit authoritative native animation kind set",
+      "regression": "test_real_owned_reference_links_enforce_native_timeline_type_scene_and_timing"
+    },
+    {
+      "finding": "Native camera-owned reference relationship gaps",
+      "fix": "Exact timing equality, bound scene/target/rig membership checks including path target",
+      "regression": "test_real_owned_reference_links_enforce_native_timeline_type_scene_and_timing"
+    },
+    {
+      "finding": "Valid native bone/socket IDs rejected",
+      "fix": "Preserve native identifier policy for attachments",
+      "regression": "test_real_owned_reference_links_enforce_native_timeline_type_scene_and_timing"
+    },
+    {
+      "finding": "Selected camera mounted on multiple rig nodes with no node selector",
+      "fix": "Selected camera must occur exactly once in bound rig",
+      "regression": "test_real_owned_reference_links_enforce_native_timeline_type_scene_and_timing"
+    },
+    {
+      "finding": "Standalone validation could block on nonregular FIFO input",
+      "fix": "Bounded binary regular-file descriptor admission, nonblocking and nofollow where available",
+      "regression": "test_regular_file_admission_rejects_actual_fifo_without_blocking"
+    }
+  ],
+  "current_execution_note": "Frozen integration of verified main b16a226, preserving camera implementation; previous camera source/receipts authenticated against28d049e",
+  "previous_candidate_commit": "28d049ec7a2722b27c7b122d3525dbd654ad996b",
+  "previous_candidate_source_hashes_verified_against_commit": true,
+  "shared_dependency": {
+    "commit": "cf15e97027ab48d028de6dfd8dc8f2440f2cf2d8",
+    "merged_on_main": "b16a2268e8cb5a3a29042058a95a7b2495903716",
+    "integration": "normal merge of verified main",
+    "must_merge_before_camera": false,
+    "scope": "Final shared JSON diagnostics, bounded UTF-8 byte admission, and verified repository provenance attributes"
+  },
+  "integrated_main_commit": "b16a2268e8cb5a3a29042058a95a7b2495903716",
+  "source_snapshot_entries": 110,
+  "protected_input_entries": 14
+}

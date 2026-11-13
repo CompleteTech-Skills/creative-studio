@@ -1,0 +1,381 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hatch camera3d evaluated v1",
+  "$defs": {
+    "evaluated": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-evaluated"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "camera": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-camera"
+                }
+              }
+            }
+          ]
+        },
+        "scene": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "scene3d-scene"
+                }
+              }
+            }
+          ]
+        },
+        "shot": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-shot"
+                }
+              }
+            }
+          ]
+        },
+        "time": {
+          "$ref": "#/$defs/time"
+        },
+        "fps": {
+          "$ref": "#/$defs/rate"
+        },
+        "terminal": {
+          "type": "boolean"
+        },
+        "duration_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "world_matrix": {
+          "$ref": "#/$defs/matrix"
+        },
+        "view_matrix": {
+          "$ref": "#/$defs/matrix"
+        },
+        "projection_matrix": {
+          "$ref": "#/$defs/matrix"
+        },
+        "projection": {
+          "$ref": "#/$defs/projection"
+        },
+        "depth_of_field": {
+          "$ref": "#/$defs/dof"
+        },
+        "render": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-render"
+                }
+              }
+            }
+          ]
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 1024
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "camera",
+        "scene",
+        "shot",
+        "time",
+        "fps",
+        "terminal",
+        "duration_frames",
+        "world_matrix",
+        "view_matrix",
+        "projection_matrix",
+        "projection",
+        "depth_of_field",
+        "render",
+        "dependencies"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/) )(?!.*[\\\\:\\x00-\\x1f*?\"<>|])(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|(?![\\s\\S])))(?!.*[. ](?:/|(?![\\s\\S])))(?!(?:[^/]+/)*(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[cC][oO][mM][1-9\u00b9\u00b2\u00b3]|[lL][pP][tT][1-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/]+(?:/[^/]+)*(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "dof": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "focus_distance_m": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        },
+        "f_stop": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        },
+        "aperture_blades": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "aperture_rotation_rad": {
+          "type": "number",
+          "minimum": -1000000000.0,
+          "maximum": 1000000000.0
+        },
+        "anamorphic_ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        }
+      },
+      "required": [
+        "enabled",
+        "focus_distance_m",
+        "f_stop",
+        "aperture_blades",
+        "aperture_rotation_rad",
+        "anamorphic_ratio"
+      ]
+    },
+    "projection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "perspective"
+            },
+            "focal_length_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "sensor_width_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "sensor_height_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "sensor_fit": {
+              "enum": [
+                "horizontal",
+                "vertical",
+                "auto"
+              ]
+            },
+            "shift_x": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "shift_y": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "near_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "far_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            }
+          },
+          "required": [
+            "type",
+            "focal_length_mm",
+            "sensor_width_mm",
+            "sensor_height_mm",
+            "sensor_fit",
+            "shift_x",
+            "shift_y",
+            "near_clip_m",
+            "far_clip_m"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "orthographic"
+            },
+            "orthographic_height_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "shift_x": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "shift_y": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "near_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "far_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            }
+          },
+          "required": [
+            "type",
+            "orthographic_height_m",
+            "shift_x",
+            "shift_y",
+            "near_clip_m",
+            "far_clip_m"
+          ]
+        }
+      ]
+    },
+    "matrix": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "minimum": -1000000000.0,
+          "maximum": 1000000000.0
+        },
+        "minItems": 4,
+        "maxItems": 4
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ]
+    },
+    "time": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "frame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "subframe_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999999
+        }
+      },
+      "required": [
+        "frame",
+        "subframe_ticks"
+      ]
+    }
+  },
+  "$ref": "#/$defs/evaluated"
+}
