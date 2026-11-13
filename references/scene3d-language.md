@@ -90,6 +90,50 @@ per-statement canonical errors as unresolved diagnostics. The graph is single
 owner. A server must keep its existing multiwriter transaction and local security
 protections around these calls rather than inventing a second graph authority.
 
+## Named native commands and temporal evaluation
+
+The CLI exposes these existing native services with category-specific `--help`:
+
+| Category | Operational commands |
+| --- | --- |
+| `scene`, `asset`, `shot` | `list`, `inspect`, `validate` |
+| `object` | `inspect`, `validate`, `add`, `remove`, `duplicate`, `transform`, `reparent`, `visibility`, `configure`, `rename`, `memberships` |
+| `prefab` | `list`, `inspect`, `validate`, `create`, `instantiate`, `update`, `override`, `reset`, `detach` |
+| `camera` | `list`, `inspect`, `validate`, `create`, `configure` |
+| `lighting`, `environment` | `configure` |
+
+An inspection identifier is an exact stable ID or document path. If multiple
+immutable document versions share an ID, choose the exact path. Every inspection
+first validates the full hash-bound project closure. Native edits receive a JSON
+**parameter object**, rather than a whole batch, and use the same mandatory
+`--project`, `--scene`, `--expected-revision`, `--expected-sha256`, `--destination`
+and optional `--dry-run` arguments as `edit`. For example:
+
+```json
+{"identifier":"camera","properties":{"camera":{"projection":"orthographic","near":0.1,"far":100,"vertical_fov":0.8,"orthographic_height":8}}}
+```
+
+```sh
+python scripts/scene3d.py camera configure --project input-project \
+  --scene courtyard.json --file parameters.json --expected-revision 0 \
+  --expected-sha256 EXACT_SCENE_SHA256 --destination edited-project
+```
+
+Camera/light adapters additionally require the correct native target type before
+executing any transaction. `camera create` requires a complete canonical camera
+node under a `node` parameter. `object add` likewise delegates a canonical node to
+`create`. `prefab update` performs the native explicit-version upgrade with
+conflict resolutions; it does not overwrite an immutable prefab. See
+`scene3d_edit.py` operation contracts for each exact parameter shape.
+
+`evaluate --project input-project --scene courtyard.json --shot shot.json --frame
+5/2` delegates to `scene3d_evaluate.evaluate_scene` using an exact rational frame.
+The returned rational frame/time, evaluated nodes and visibility sample actual
+scene animation without changing authored bytes. `--sample-geometry` additionally
+requests the temporal owner's bounded native deformation sampling. Frames outside
+the shot's half-open interval and invalid rational values fail explicitly. Base
+inspection and this timeline evaluation remain distinct operations.
+
 ## Acceptance scope and traceability
 
 This is an implemented subset of issue #64 and parent #12 sections 21–23.

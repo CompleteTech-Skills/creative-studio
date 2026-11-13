@@ -30,13 +30,21 @@ def _parser():
         if name == "edit":
             command.add_argument("--expected-revision", required=True, type=int)
             command.add_argument("--expected-sha256", required=True)
+    from scene3d_cli_commands import add_parsers
+    add_parsers(sub)
+    evaluate = sub.add_parser("evaluate", help="Sample actual scene animation at an exact frame")
+    evaluate.add_argument("--project", required=True, type=Path)
+    evaluate.add_argument("--scene", required=True)
+    evaluate.add_argument("--shot", required=True)
+    evaluate.add_argument("--frame", required=True, help="Exact integer or rational frame, for example 5/2")
+    evaluate.add_argument("--sample-geometry", action="store_true")
     return parser
 
 
 def capabilities():
     return {"schema_version": 1, "kind": "scene3d-cli-capabilities", "language_backend": "offline-grammar-v1",
             "supported": ["validated-closure-inspection", "immutable-snapshot", "language-plan",
-                          "atomic-typed-batch", "exact-target-transform", "visibility-lock", "subtree-duplicate", "reparent", "safe-delete"],
+                          "exact-rational-scene-evaluation", "named-native-command-adapters", "atomic-typed-batch", "exact-target-transform", "visibility-lock", "subtree-duplicate", "reparent", "safe-delete"],
             "language_statements": ["move TARGET 2 meters east", "position TARGET at 1, 0, 3",
                                     "scale TARGET by 2", "rotate TARGET 30 degrees around y", "hide TARGET",
                                     "show TARGET", "lock TARGET", "unlock TARGET", "duplicate TARGET as new-id",
@@ -55,6 +63,18 @@ def execute(args):
             import importlib.util
             result["dependencies"] = {name: importlib.util.find_spec(name) is not None for name in ("numpy", "PIL", "pygltflib")}
         return result
+    if args.command in ("scene", "asset", "object", "prefab", "camera", "shot", "lighting", "environment"):
+        from scene3d_cli_commands import execute as execute_native
+        return execute_native(args)
+    if args.command == "evaluate":
+        from fractions import Fraction
+        from rig_errors import RigError
+        from scene3d_evaluate import evaluate_scene
+        try:
+            frame = Fraction(args.frame)
+        except (ValueError, ZeroDivisionError) as exc:
+            raise RigError("SCENE3D_FRAME", "Frame must be an exact integer or rational.", stage="scene3d-cli") from exc
+        return evaluate_scene(args.project, args.scene, args.shot, frame, sample_geometry=args.sample_geometry)
     from scene3d_contracts import load_project
     from scene3d_graph import SceneGraph
     from scene3d_prefabs import PrefabLibrary
