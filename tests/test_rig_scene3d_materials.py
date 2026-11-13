@@ -120,3 +120,16 @@ class SceneMaterialProjectionTests(unittest.TestCase):
             self.assertIs(type(primitive['normalized_primitive']),int)
         self.assertEqual(asset,before)
         self.assertIs(type(asset['material_bindings'][0]['primitives'][0]['normalized_mesh']),float)
+
+    def test_actual_robotic_fixture_preserves_native_mesh_ids_with_dots(self):
+        from rig_demo import create_demo
+        rig,_=create_demo(self.root/'robot-source','robotic',identifier='mapping-robot')
+        imported=import_gltf(rig.root/'exports/character.glb',self.library,asset_id='robot-native',
+            attribution='Procedural engineering fixture',license_file=self.root/'license.txt',fixture=True)
+        projected=project_material_slots(imported.asset)
+        self.assertIn('jaw.left-shell',{p['mesh'] for p in projected})
+        normalized=_json(self.library.read_file(imported.library_reference,imported.asset['content']['path']),'.glb')
+        self.assertEqual({p['mesh'] for p in projected},
+                         {mesh['extras']['hatchMeshId'] for mesh in normalized['meshes']})
+        for p in projected:
+            self.assertEqual(normalized['meshes'][p['normalized_mesh']]['extras']['hatchMeshId'],p['mesh'])

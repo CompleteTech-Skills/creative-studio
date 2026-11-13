@@ -193,7 +193,7 @@ def definitions():
         validation=arr(ref('file')), review=ref('review')))
     # Optional canonical mapping preserves compatibility with authored assets that
     # predate native primitive projection. Original and normalized indexes differ.
-    material_primitive = obj(dict(mesh=ID, encoding=enum('normalized-glb', 'obj'),
+    material_primitive = obj(dict(mesh=reference['properties']['id'], encoding=enum('normalized-glb', 'obj'),
         source_mesh=nullable(integer(0, 1000000)), source_primitive=integer(0, 1000000),
         source_material_index=nullable(integer(0, 65535)),
         normalized_mesh=nullable(integer(0, 1000000)), normalized_primitive=nullable({'type': 'integer', 'const': 0})))
