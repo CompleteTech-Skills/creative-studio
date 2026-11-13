@@ -1,0 +1,100 @@
+Blender 4.5.3 LTS (hash 67807e1800cc built 2025-09-09 01:38:15)
+bake: frame 1 :: 49
+bake: frame 2 :: 49
+bake: frame 3 :: 49
+bake: frame 4 :: 49
+bake: frame 5 :: 49
+bake: frame 6 :: 49
+bake: frame 7 :: 49
+bake: frame 8 :: 49
+bake: frame 9 :: 49
+bake: frame 10 :: 49
+bake: frame 11 :: 49
+bake: frame 12 :: 49
+bake: frame 13 :: 49
+bake: frame 14 :: 49
+bake: frame 15 :: 49
+bake: frame 16 :: 49
+bake: frame 17 :: 49
+bake: frame 18 :: 49
+bake: frame 19 :: 49
+bake: frame 20 :: 49
+bake: frame 21 :: 49
+bake: frame 22 :: 49
+bake: frame 23 :: 49
+bake: frame 24 :: 49
+bake: frame 25 :: 49
+bake: frame 26 :: 49
+bake: frame 27 :: 49
+bake: frame 28 :: 49
+bake: frame 29 :: 49
+bake: frame 30 :: 49
+bake: frame 31 :: 49
+bake: frame 32 :: 49
+bake: frame 33 :: 49
+bake: frame 34 :: 49
+bake: frame 35 :: 49
+bake: frame 36 :: 49
+bake: frame 37 :: 49
+bake: frame 38 :: 49
+bake: frame 39 :: 49
+bake: frame 40 :: 49
+bake: frame 41 :: 49
+bake: frame 42 :: 49
+bake: frame 43 :: 49
+bake: frame 44 :: 49
+bake: frame 45 :: 49
+bake: frame 46 :: 49
+bake: frame 47 :: 49
+bake: frame 48 :: 49
+bake: frame 49 :: 49
+Fra:49 Mem:8.39M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Synchronizing object | physics-diagnostic-light
+Fra:49 Mem:8.39M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Synchronizing object | floor
+Fra:49 Mem:8.39M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Synchronizing object | ball
+Fra:49 Mem:8.39M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Initializing
+Fra:49 Mem:8.21M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Waiting for render to start
+Fra:49 Mem:8.21M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Scene
+Fra:49 Mem:8.21M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Shaders
+Fra:49 Mem:8.21M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Loading render kernels (may take a few minutes the first time)
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Procedurals
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Background
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Camera
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Meshes Flags
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Objects
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Objects | Copying Transformations to device
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Particle Systems
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Particle Systems | Copying Particles to device
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Meshes
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Objects | Applying Static Transformations
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Mesh | Computing attributes
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Mesh | Copying Attributes to device
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Scene BVH | Building
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Scene BVH | Building BVH
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.00M, Peak:0.00M | Scene, ViewLayer | Updating Scene BVH | Building BVH 0%
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.01M, Peak:0.01M | Scene, ViewLayer | Updating Scene BVH | Copying BVH to device
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.01M, Peak:0.01M | Scene, ViewLayer | Updating Mesh | Computing normals
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.01M, Peak:0.01M | Scene, ViewLayer | Updating Mesh | Copying Mesh to device
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.01M, Peak:0.01M | Scene, ViewLayer | Updating Objects Flags
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.01M, Peak:0.01M | Scene, ViewLayer | Updating Primitive Offsets
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.01M, Peak:0.01M | Scene, ViewLayer | Updating Images
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.01M, Peak:0.01M | Scene, ViewLayer | Updating Camera Volume
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.01M, Peak:0.01M | Scene, ViewLayer | Updating Lookup Tables
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.09M, Peak:0.09M | Scene, ViewLayer | Updating Lights
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.09M, Peak:0.09M | Scene, ViewLayer | Updating Lights | Computing tree
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.09M, Peak:0.09M | Scene, ViewLayer | Updating Integrator
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.09M, Peak:0.09M | Scene, ViewLayer | Updating Film
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.01M, Peak:0.09M | Scene, ViewLayer | Updating Lookup Tables
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.09M, Peak:0.09M | Scene, ViewLayer | Updating Baking
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.09M, Peak:0.09M | Scene, ViewLayer | Updating Device | Writing constant memory
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.09M, Peak:0.09M | Scene, ViewLayer | Loading denoising kernels (may take a few minutes the first time)
+Fra:49 Mem:8.30M (Peak 8.39M) | Time:00:00.00 | Mem:0.09M, Peak:0.09M | Scene, ViewLayer | Sample 0/4
+Fra:49 Mem:9.50M (Peak 9.50M) | Time:00:00.01 | Remaining:00:00.03 | Mem:1.28M, Peak:1.28M | Scene, ViewLayer | Sample 1/4
+Fra:49 Mem:10.01M (Peak 10.51M) | Time:00:01.15 | Mem:1.28M, Peak:1.28M | Scene, ViewLayer | Sample 4/4
+Fra:49 Mem:10.01M (Peak 10.51M) | Time:00:01.15 | Mem:1.28M, Peak:1.28M | Scene, ViewLayer | Finished
+Saved: '/tmp/hatch-physics-prepared-28buwpmn/preview.png'
+Time: 00:01.33 (Saving: 00:00.18)
+
+Info: Saved as "scene.blend"
+Info: Saved as "scene.blend"
+
+Blender quit
