@@ -266,6 +266,8 @@ class EditorHandler(BaseHTTPRequestHandler):
                 for filename, symbol, container in (('asset-browser.js','mountAssetBrowser','asset-browser'),
                         ('inspectors.js','mountInspectors','native-inspectors'),
                         ('timeline.js','mountTimeline','timeline'),('render-panel.js','mountRenderPanel','render-panel')):
+                    if filename == 'inspectors.js' and not {'inspectors/describe', 'inspectors/material'} <= set(self.server.routes):
+                        continue
                     if (ROOT / 'assets/editor3d' / filename).is_file():
                         extensions.append(f"const {{{symbol}}} = await import('/editor/{filename}'); window.hatchEditor.registerExtension({symbol}, document.getElementById('{container}'));")
                 if extensions:
