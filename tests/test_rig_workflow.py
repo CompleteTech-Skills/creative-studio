@@ -211,6 +211,29 @@ class RigWorkflowTests(unittest.TestCase):
                 restore_rig(archive, Path(self.temp.name) / 'too-large')
         self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_INVENTORY')
 
+    def test_repeated_demo_verification_preserves_retained_archives(self):
+        import verify_rig_demos
+        root = Path(self.temp.name) / 'demo-verification'
+        root.mkdir()
+        for name in ('humanoid-retarget', 'quadruped-retarget'):
+            fixture(root, name=name)
+        packages = root / 'packages'
+        packages.mkdir()
+        retained = packages / 'humanoid-retarget.zip'
+        retained.write_bytes(b'previous retained archive')
+        with patch.object(verify_rig_demos, 'ARCHETYPES', ()):
+            first = verify_rig_demos.verify(root, archives=True)
+            second = verify_rig_demos.verify(root, archives=True)
+        self.assertEqual(retained.read_bytes(), b'previous retained archive')
+        first_paths = [item['archive']['path'] for item in first['fixtures']]
+        second_paths = [item['archive']['path'] for item in second['fixtures']]
+        self.assertTrue(set(first_paths).isdisjoint(second_paths))
+        for report in (first, second):
+            for item in report['fixtures']:
+                path = root / item['archive']['path']
+                self.assertEqual(sha256(path), item['archive']['sha256'])
+                self.assertTrue(item['archive']['restored_and_evaluated'])
+
     def test_restore_rejects_dangling_destination_symlink_before_extraction(self):
         home = Path(self.temp.name)
         archive = home / 'rig.zip'
