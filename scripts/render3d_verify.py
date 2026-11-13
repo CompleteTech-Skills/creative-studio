@@ -16,7 +16,7 @@ import struct
 import tempfile
 import zlib
 
-from render3d_contracts import Render3DError, require, validate, VERSION, frame_times, rational
+from render3d_contracts import Render3DError, require, validate, VERSION, frame_times, rational, definitions, _validator
 from rig_errors import RigError, object_hash, safe_path
 
 
@@ -52,6 +52,7 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
     # Strict structure and bounded inflate before the independent PNG decoder.
     require(stream.read(8) == b'\x89PNG\r\n\x1a\n', 'corrupt-output', 'Not a PNG file.')
     header, ended, count, inflated, inflater = None, False, 0, 0, zlib.decompressobj()
+    idat_started,idat_finished=False,False
     while not ended:
         prefix = stream.read(8)
         require(len(prefix) == 8, 'corrupt-output', 'Truncated PNG chunk.')
@@ -76,13 +77,18 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
         elif kind == b'IHDR':
             raise Render3DError('corrupt-output','Duplicate PNG header.')
         require(kind not in (b'acTL',b'fcTL',b'fdAT'),'corrupt-output','Animated PNG is not a single render frame.')
+        require(kind != b'tRNS','unsupported-feature','PNG color-key transparency is not supported; use explicit RGBA.')
         require(kind in (b'IHDR',b'IDAT',b'IEND') or kind[0]&32,
                 'unsupported-feature','Unsupported critical PNG chunk.')
         if kind == b'IDAT':
+            require(not idat_finished,'corrupt-output','PNG IDAT chunks must be consecutive.')
+            idat_started=True
             require(not inflater.eof, 'corrupt-output', 'Trailing compressed PNG stream.')
             expanded=inflater.decompress(payload,header[3]-inflated+1);inflated+=len(expanded)
             require(inflated <= header[3] and not inflater.unconsumed_tail and not inflater.unused_data,
                     'corrupt-output', 'PNG decompressed data exceeds declared dimensions.')
+        elif idat_started:
+            idat_finished=True
         if kind == b'IEND':
             require(length == 0 and inflater.eof and inflated == header[3], 'corrupt-output', 'PNG pixel stream is incomplete.')
             ended=True
@@ -107,6 +113,58 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
     return result
 
 
+def _exr_structure(stream,resolution,memory_bytes):
+    """Admit flat scanline EXR and account for every serialized chunk byte."""
+    stream.seek(0,2);size=stream.tell();stream.seek(0)
+    prefix=stream.read(8)
+    require(len(prefix)==8,'corrupt-output','Truncated EXR prefix.')
+    magic,version=struct.unpack('<II',prefix)
+    require(magic==20000630,'corrupt-output','Not an OpenEXR file.')
+    require(version&255==2 and version&~0x4ff==0,
+            'unsupported-feature','Only single-part flat scanline EXR version 2 is supported.')
+    def terminated():
+        value=bytearray()
+        while True:
+            byte=stream.read(1)
+            require(byte,'corrupt-output','Truncated EXR header.')
+            if byte==b'\0':return bytes(value)
+            value.extend(byte)
+            require(len(value)<=255,'corrupt-output','EXR header name exceeds bounds.')
+    attributes={}
+    while True:
+        name=terminated()
+        if not name:break
+        type_name=terminated();raw=stream.read(4)
+        require(len(raw)==4,'corrupt-output','Truncated EXR attribute size.')
+        length=struct.unpack('<I',raw)[0]
+        require(length<=min(memory_bytes,16*1024**2) and stream.tell()+length<=size,
+                'corrupt-output','EXR attribute exceeds bounds.')
+        require(name not in attributes,'corrupt-output','Duplicate EXR attribute.')
+        attributes[name]=(type_name,stream.read(length))
+        require(stream.tell()<=min(memory_bytes,16*1024**2),'system-memory','EXR header exceeds budget.')
+    require(attributes.get(b'compression',(None,None))[0]==b'compression',
+            'corrupt-output','Missing EXR compression attribute.')
+    raw=attributes[b'compression'][1]
+    require(len(raw)==1,'corrupt-output','Malformed EXR compression attribute.')
+    block_rows={0:1,1:1,2:1,3:16,4:32,5:16,6:32,7:32,8:32,9:256}
+    require(raw[0] in block_rows,'unsupported-feature','EXR compression is outside the verified scanline subset.')
+    rows=block_rows[raw[0]];chunks=(resolution[1]+rows-1)//rows
+    table=stream.read(chunks*8)
+    require(len(table)==chunks*8,'corrupt-output','Truncated EXR chunk table.')
+    boundary=stream.tell();offsets=sorted(struct.unpack('<'+'Q'*chunks,table));seen=set()
+    for offset in offsets:
+        require(offset==boundary,'corrupt-output','EXR chunk table contains gaps, aliases or unreferenced bytes.')
+        stream.seek(offset);raw=stream.read(8)
+        require(len(raw)==8,'corrupt-output','Truncated EXR chunk.')
+        line,length=struct.unpack('<iI',raw)
+        require(0<=line<resolution[1] and line%rows==0 and line not in seen,
+                'corrupt-output','Invalid EXR scanline chunk.')
+        seen.add(line);boundary=offset+8+length
+        require(boundary<=size,'corrupt-output','Truncated EXR pixel payload.')
+    require(boundary==size,'corrupt-output','Unexpected bytes after EXR chunks.')
+    stream.seek(0)
+
+
 def _exr(stream, resolution, bit_depth, memory_bytes, pixels=False):
     try:
         import OpenEXR, Imath
@@ -115,11 +173,17 @@ def _exr(stream, resolution, bit_depth, memory_bytes, pixels=False):
         raise Render3DError('unsupported-feature', 'EXR verification requires optional OpenEXR and numpy packages.') from exc
     # InputFile reads only the header until channel() is requested. A private
     # captured stream prevents a hash/decode race with worker-owned filenames.
+    _exr_structure(stream,resolution,memory_bytes)
     reader=OpenEXR.InputFile(stream)
     try:
         header=reader.header();window=header['dataWindow']
         width,height=window.max.x-window.min.x+1,window.max.y-window.min.y+1
         require([width,height] == list(resolution),'corrupt-output','EXR dimensions differ from request.')
+        display=header['displayWindow']
+        require(window.min.x==window.min.y==display.min.x==display.min.y==0
+                and window.max.x==display.max.x==resolution[0]-1
+                and window.max.y==display.max.y==resolution[1]-1,
+                'corrupt-output','EXR data/display windows must match the complete requested frame.')
         channels=header['channels']
         require(0 < len(channels) <= 64,'corrupt-output','EXR channel count is outside supported bounds.')
         require(width*height*4*len(channels) <= memory_bytes,'system-memory','EXR decoded channels exceed memory budget.')
@@ -145,7 +209,19 @@ def _exr(stream, resolution, bit_depth, memory_bytes, pixels=False):
 
 def verify_image(path, *, output, resolution, pass_name='combined', max_bytes=1024**3, memory_bytes=1024**3, _pixels=False):
     """Decode one actual output. Pixel ranges do not establish scene correctness."""
-    require(output['format'] in ('png','exr') and pass_name in output['passes'], 'invalid-input','Unsupported output/pass selection.')
+    from rig_errors import finite_json
+    try:
+        finite_json(output)
+        error=next(iter(_validator('RenderSettings').evolve(schema=definitions()['RenderSettings']['properties']['output']).iter_errors(output)),None)
+        require(error is None,'invalid-input',error.message if error else '')
+        require(type(resolution) in (list,tuple) and len(resolution)==2
+                and all(type(n) is int and 1<=n<=16384 for n in resolution),
+                'invalid-input','Image resolution must contain two bounded positive integers.')
+        require(all(type(n) is int and 1<=n<=2**40 for n in (max_bytes,memory_bytes)),
+                'invalid-input','Image verification budgets must be bounded positive integers.')
+        require(pass_name in output['passes'],'invalid-input','Unsupported output/pass selection.')
+    except RigError as exc:
+        raise Render3DError('invalid-input',str(exc)) from exc
     try:
         with _captured(path,max_bytes) as (stream,identity):
             report=(_png if output['format']=='png' else _exr)(stream,resolution,output['bit_depth'],memory_bytes,_pixels)
