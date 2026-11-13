@@ -26,7 +26,7 @@ output=nodes.new('ShaderNodeOutputMaterial');emission=nodes.new('ShaderNodeEmiss
 material.node_tree.links.new(sampler.outputs['Color'],emission.inputs['Color'])
 material.node_tree.links.new(emission.outputs[0],output.inputs['Surface'])
 bpy.ops.object.camera_add(location=(0,0,3));scene.camera=bpy.context.object;scene.camera.data.type='ORTHO';scene.camera.data.ortho_scale=2
-cache=DerivedTextureCache(80);reports=[]
+cache=DerivedTextureCache(80);reports=[];render_hashes={}
 for color in ('red','blue'):
     pixels=np.zeros((4,4,4),np.float32);pixels[:,:,0 if color=='red' else 2]=1;pixels[:,:,3]=1
     source_hash=hashlib.sha256(pixels.tobytes()).hexdigest()
@@ -38,6 +38,7 @@ for color in ('red','blue'):
     sampler.image=image;cache.clear()
     # Clearing CPU cache cannot invalidate native shader image bytes.
     scene.render.filepath=str(out/(color+'.png'));bpy.ops.render.render(write_still=True)
+    render_hashes[color+'.png']=hashlib.sha256((out/(color+'.png')).read_bytes()).hexdigest()
     reports.append(receipt)
 bpy.ops.wm.save_as_mainfile(filepath=str(out/'consumer.blend'))
 bpy.ops.wm.open_mainfile(filepath=str(out/'consumer.blend'))
@@ -50,4 +51,4 @@ for receipt in reports:
         assert json.loads(recovered['texture_derivation'])==receipt
         rgba=np.array(recovered.pixels[:],np.float32).reshape(2,2,4)[::-1].copy()
         assert hashlib.sha256(rgba.tobytes()).hexdigest()==receipt['selected_float32_rgba_sha256']
-(out/'report.json').write_text(json.dumps({'blender':bpy.app.version_string,'receipts':reports,'reopen':'exact-blue-image-and-derivation'},indent=2))
+(out/'report.json').write_text(json.dumps({'blender':bpy.app.version_string,'receipts':reports,'render_sha256':render_hashes,'reopen':'exact-blue-image-and-derivation'},indent=2))

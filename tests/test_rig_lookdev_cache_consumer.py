@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -42,3 +43,5 @@ class ActualCacheConsumerTests(unittest.TestCase):
         self.assertGreater(blue[2],250);self.assertLess(blue[0],5)
         report=json.loads((output/'report.json').read_text())
         self.assertEqual(report['reopen'],'exact-blue-image-and-derivation')
+        for name,digest in report['render_sha256'].items():
+            self.assertEqual(hashlib.sha256((output/name).read_bytes()).hexdigest(),digest)
