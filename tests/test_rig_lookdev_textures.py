@@ -27,6 +27,42 @@ class TextureTests(unittest.TestCase):
         np.testing.assert_allclose(again.pixels,image.pixels)
         self.assertEqual(image.source_sha256,hashlib.sha256(data).hexdigest())
 
+    def test_independently_written_exr_half_float_and_compressions(self):
+        import json
+        root=Path(__file__).parent/'fixtures'/'lookdev-textures'
+        provenance=json.loads((root/'provenance.json').read_text())
+        for record in provenance['records']:
+            data=(root/record['file']).read_bytes()
+            self.assertEqual(hashlib.sha256(data).hexdigest(),record['sha256'])
+            image=t.decode_texture(data,role='environment',encoding='linear-srgb')
+            dtype=np.float16 if record['file'].startswith('float16') else np.float32
+            expected=np.linspace(0,4,17*19*4,dtype=dtype).reshape(17,19,4);expected[:,:,3]=1
+            np.testing.assert_array_equal(image.pixels,expected.astype(np.float32))
+            self.assertEqual(image.bit_depth,16 if dtype is np.float16 else 32)
+            for malformed in (data[:-1],data+b'extra',data[:4]+b'\x02\x10\x00\x00'+data[8:]):
+                with self.assertRaises(RigError):t.decode_texture(malformed,role='environment',encoding='linear-srgb')
+
+    def test_high_bit_color_is_not_silently_quantized(self):
+        import zlib,struct
+        def chunk(kind,payload):return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff)
+        for color_type,channels in [(2,3),(6,4)]:
+            header=struct.pack('>IIBBBBB',1,1,16,color_type,0,0,0)
+            raw=b'\x00'+b'\x12\x34'*channels
+            data=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',header)+chunk(b'IDAT',zlib.compress(raw))+chunk(b'IEND',b'')
+            with self.assertRaisesRegex(RigError,'precision-preserving'):
+                t.decode_texture(data,role='base-color',encoding='srgb')
+
+    def test_unsigned_height_arithmetic_is_not_wrapped(self):
+        values=np.array([[1,0],[1,0]],np.uint8)
+        actual=t.normal_from_height(values,wrap='clamp')
+        expected=t.normal_from_height(values.astype(np.float32),wrap='clamp')
+        np.testing.assert_allclose(actual,expected,atol=1e-6)
+        self.assertGreater(actual[0,0,0],.5)
+
+    def test_unbounded_or_unphysical_height_rejected(self):
+        for value in (1e38,float('inf'),float('nan'),-1):
+            with self.assertRaises(RigError):t.normal_from_height(np.full((2,2),value,np.float32))
+
     def test_data_stays_linear(self):
         image=t.decode_texture(png(np.full((2,3,3),128,np.uint8)),role='roughness',encoding='data')
         self.assertAlmostEqual(float(image.pixels[0,0,0]),128/255,places=6)
