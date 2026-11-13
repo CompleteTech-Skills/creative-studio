@@ -208,6 +208,22 @@ class ImageVerification(unittest.TestCase):
             (snapshot/'triangle.obj').write_bytes(b'changed')
             with self.assertRaises(Render3DError):verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
 
+    def test_result_snapshot_disappearing_between_owner_reads_is_typed(self):
+        import shutil
+        from unittest.mock import patch
+        import render3d_snapshot
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            original=render3d_snapshot.verify_snapshot
+            def disappearing(*args,**kwargs):
+                verified=original(*args,**kwargs)
+                shutil.rmtree(snapshot)
+                return verified
+            with patch.object(render3d_snapshot,'verify_snapshot',side_effect=disappearing):
+                with self.assertRaises(Render3DError) as error:
+                    verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(error.exception.report['category'],'stale-asset')
+
     def test_unexpected_directory_and_nonregular_inventory_reject(self):
         import os
         with tempfile.TemporaryDirectory() as temporary:
