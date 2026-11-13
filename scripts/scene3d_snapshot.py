@@ -42,13 +42,14 @@ def _new_destination(destination):
 
 def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                      scene_version=None, project_version=None, derived_documents=None,
-                     extra_payloads=None, shot_documents=None, max_bytes=1024**3):
+                     extra_payloads=None, shot_documents=None, max_bytes=1024**3, dry_run=False):
     """Copy and revalidate actual source bytes, then exclusively publish a closure.
 
     New scene versions coexist with original scene/shot versions. The return value
     selects the new scene explicitly; no hidden mutable ``latest`` binding exists.
     Additional derived documents must already reference complete input payloads.
     """
+    require(type(dry_run) is bool, 'Dry-run mode must be boolean.')
     require(type(max_bytes) is int and 0 < max_bytes <= 1024**3, 'Invalid snapshot byte budget.')
     require(shot_documents is None or isinstance(shot_documents, list) and len(shot_documents) <= 1024,
             'Additional shot documents must be a bounded list.')
@@ -209,6 +210,9 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     total = sum(map(len, files.values()))
     require(total <= min(max_bytes, project['budgets']['max_bytes']) and len(files) <= project['budgets']['max_files'],
             'Snapshot exceeds project file/byte budgets.', 'SCENE3D_SNAPSHOT_LIMIT')
+    if dry_run:
+        return {'status': 'planned', 'dry_run': True, 'files': len(files), 'bytes': total,
+                'active_scene': active_scene}
     # All writes are inside an attempt-owned private directory. The destination
     # leaf is never reserved or replaced and is rechecked by kernel publication.
     with tempfile.TemporaryDirectory(prefix='.scene3d-snapshot-', dir=destination.parent) as private:
