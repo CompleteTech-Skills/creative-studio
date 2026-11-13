@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import numpy as np
 from rig_errors import RigError
-from scene3d_geometry import primitive, wall, extrude, curve, polygon
+from scene3d_geometry import Mesh, primitive, wall, extrude, curve, polygon
 from scene3d_terrain import Heightfield, scatter
 from scene3d_environment import plan, create_environment, apply_recipe, apply_recipes, fingerprint
 from scene3d_contracts import load_project
@@ -39,6 +39,18 @@ class GeometryTests(unittest.TestCase):
             volume=np.einsum('ij,ij->i',v[f[:,0]],np.cross(v[f[:,1]],v[f[:,2]])).sum()/6
             self.assertAlmostEqual(volume,10)
         with self.assertRaises(RigError):polygon([[0,0],[2,2],[0,2],[2,0]])
+
+    def test_integer_json_vertices_emit_finite_unit_normals(self):
+        mesh=Mesh([[0,0,0],[1,0,0],[0,1,0]],[[0,1,2]])
+        mesh.validate();payload=mesh.obj()
+        self.assertIn(b'f 1/1/1 2/2/1 3/3/1',payload)
+        normals=[line for line in payload.decode().splitlines() if line.startswith('vn ')]
+        self.assertEqual(len(normals),1)
+        self.assertAlmostEqual(np.linalg.norm([float(v) for v in normals[0].split()[1:]]),1)
+        self.assertEqual(mesh.vertices,[[0,0,0],[1,0,0],[0,1,0]])
+        numeric_strings=Mesh([['0','0','0'],['1','0','0'],['0','1','0']],[[0,1,2]])
+        self.assertEqual(numeric_strings.bounds,dict(minimum=[0.,0.,0.],maximum=[1.,1.,0.]))
+        self.assertEqual(numeric_strings.obj(),payload)
 
     def test_custom_coordinate_overflow_is_rejected_before_normals(self):
         for coordinate in (1e100,1e155):

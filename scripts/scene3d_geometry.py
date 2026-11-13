@@ -50,7 +50,7 @@ class Mesh:
     @property
     def bounds(self):
         self.validate()
-        v = np.asarray(self.vertices)
+        v = numeric_array(self.vertices,'vertices')
         return dict(minimum=v.min(axis=0).tolist(), maximum=v.max(axis=0).tolist())
 
     def obj(self):
@@ -58,7 +58,7 @@ class Mesh:
         self.validate()
         lines = ['# Scene3D procedural geometry v1; right handed Y up meters']
         lines += ['v '+' '.join(format(float(x), '.17g') for x in p) for p in self.vertices]
-        v = np.asarray(self.vertices)
+        v = numeric_array(self.vertices,'vertices')
         for a,b,c in self.triangles:
             normal = np.cross(v[b]-v[a], v[c]-v[a]); length=float(np.linalg.norm(normal))
             require(math.isfinite(length) and length>1e-12,'Cannot emit a nonfinite or degenerate normal.')
