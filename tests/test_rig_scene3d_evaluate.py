@@ -108,6 +108,11 @@ class SceneEvaluationTests(unittest.TestCase):
         self.assertTrue(out['native_geometry_sampled'])
         self.assertTrue(out['nodes']['first']['native_animation_evaluated'])
         self.assertEqual(out['nodes']['first']['native_clip']['reference'],clips['bend'])
+        # An arbitrary file with the same ID cannot select a different rig clip.
+        original_reference = deepcopy(clips['bend'])
+        clips['bend']['version'] = '2.0.0'
+        with self.assertRaises(RigError):self.evaluate(12,source_root=self.root,sample_geometry=True)
+        clips['bend'].update(original_reference)
         # Exact current native payload, not a stale source descriptor, is sampled.
         path=self.root/clips['bend']['path'];path.write_bytes(path.read_bytes()+b' ')
         with self.assertRaises(RigError):self.evaluate(12,source_root=self.root,sample_geometry=True)
@@ -166,6 +171,27 @@ class SceneEvaluationTests(unittest.TestCase):
         self.assertNotEqual(active,baseline)
         self.assertEqual(self.evaluate(5)['nodes']['mesh']['world_matrix'],baseline)
         self.assertEqual(self.scene['nodes'][1]['constraints'],[])
+
+    def test_material_owner_resolves_exact_instance_pin_without_mutation(self):
+        from lookdev_contracts import Registry, canonical_bytes
+        from test_lookdev_contracts import material, common, policy
+        from scene3d_evaluate import resolve_materials
+        base=material()
+        registry=Registry([('ceramic.json',canonical_bytes(base))])
+        base_ref=registry.reference('ceramic','1.0.0')
+        instance=common('material-instance3d','red-ceramic')
+        instance.update(base_material=base_ref,dependencies=[base_ref],
+            overrides={'base_color':[1,0,0,1]},render_policy=policy())
+        registry=Registry([('ceramic.json',canonical_bytes(base)),('red.json',canonical_bytes(instance))])
+        ref=registry.reference('red-ceramic','1.0.0');ref['kind']='material'
+        out=self.evaluate()
+        out['nodes']['mesh']['material_overrides']=[dict(slot='default',material=ref)]
+        before=deepcopy(out)
+        resolved=resolve_materials(out,registry)
+        self.assertEqual(resolved['mesh']['default']['surface']['base_color'],[1,0,0,1])
+        self.assertEqual(out,before)
+        out['nodes']['mesh']['material_overrides'][0]['material']['sha256']='0'*64
+        with self.assertRaises(RigError):resolve_materials(out,registry)
 
 
 if __name__=='__main__':unittest.main()

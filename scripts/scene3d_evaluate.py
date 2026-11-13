@@ -269,6 +269,12 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
             require(rig.manifest['id'] == rig_ref['id'] and rig.manifest['version'] == rig_ref['version'],
                     'Native rig identity/version differs from the binding.')
             require(reference['id'] in rig.clips, 'Native clip is absent from the rig.')
+            descriptor = next(item for item in rig.manifest['animations']
+                              if item['id'] == reference['id'])
+            require(reference['version'] == descriptor['version'] and
+                    reference['sha256'] == descriptor['sha256'] and
+                    Path(root)/portable_path(reference['path']) == rig_path.parent/descriptor['path'],
+                    'Native clip pin differs from the actual rig animation.')
             clip = rig.clips[reference['id']]
             pose = evaluate_animation(rig, clip, float(time), loop=binding['loop'])['pose']
             deformed = evaluate_deformation(rig, pose)
