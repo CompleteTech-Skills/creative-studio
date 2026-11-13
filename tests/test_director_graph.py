@@ -43,7 +43,7 @@ class DirectorGraphTests(unittest.TestCase):
                          edges=[dict(source='a', target='b', artifact=self.input),
                                 dict(source='b', target='c', artifact=self.input)])
         self.resolution = dict(requirements=[])
-        self.request['input']['budget'] = limits
+        self.request['input']['budget'] = deepcopy(limits)
         self.refresh()
 
     def write(self, name, data, *, kind='test-json'):
@@ -219,6 +219,18 @@ class DirectorGraphTests(unittest.TestCase):
         self.assertEqual(shared['nodes'][0]['cache_key'], after['nodes'][0]['cache_key'])
         self.assertNotEqual(shared['nodes'][1]['cache_key'], after['nodes'][1]['cache_key'])
 
+    def test_expired_deadline_fails_before_reading_inputs(self):
+        self.request['context']['deadline'] = (self.now - timedelta(seconds=1)).isoformat()
+        with patch.object(dg, '_verify_refs', side_effect=AssertionError('read input')):
+            with self.assertRaisesRegex(ValueError, 'deadline has expired'):
+                self.compile()
+
+    def test_deadline_expiring_during_compilation_fails(self):
+        self.request['context']['deadline'] = (self.now + timedelta(seconds=1)).isoformat()
+        with patch.object(dg.time, 'monotonic', side_effect=[0, 2]):
+            with self.assertRaisesRegex(ValueError, 'deadline expired during compilation'):
+                self.compile()
+
     def test_resource_classes_cannot_hide_estimated_work(self):
         for resource in ('none', 'provider', 'gpu', 'render'):
             plan = deepcopy(self.plan)
@@ -238,6 +250,7 @@ class DirectorGraphTests(unittest.TestCase):
                         native_owner='PlanningProvider', output_schema='planning-artifact',
                         resource_class='provider', required_capabilities=['planning.provider'])
         self.request['context']['policy']['network'] = 'allow-configured'
+        self.request['context']['policy']['policy_ref'] = self.write('network-policy', {'allow': 'configured-provider'}, kind='policy')
         self.request['input']['budget']['max_provider_calls'] = 2
         self.refresh()
         with self.assertRaisesRegex(ValueError, 'provider invocations exceed budget'):

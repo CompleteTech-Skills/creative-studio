@@ -7,9 +7,10 @@ any consumer runs. Compilation alone confers no production milestone.
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import heapq
 import json
+import time
 from pathlib import Path
 
 import director_contracts as dc
@@ -208,8 +209,11 @@ def compile_graph(request, root, *, now=None):
     controllers must reverify the resulting pinned inputs when starting work.
     """
     dc.validate_method_request('GraphCompiler.compile', request)
+    started = time.monotonic()
     now = now or datetime.now(timezone.utc)
+    deadline = datetime.fromisoformat(request['context']['deadline'].replace('z', '+00:00').replace('Z', '+00:00'))
     _require(now.tzinfo is not None, 'TIME', 'Compiler clock must have timezone information.')
+    _require(now < deadline, 'DEADLINE', 'Compiler operation deadline has expired.')
     payloads = _verify_refs(root, _all_refs(request))
     data = request['input']
     plan = decode_json(payloads[data['plan']['path']])
@@ -292,6 +296,8 @@ def compile_graph(request, root, *, now=None):
                   operation_id=request['context']['request_id'], input_digest=object_hash(request),
                   value=graph, artifacts=[], diagnostics=[], usage=_usage(), provenance_receipts=[])
     dc.validate_method_result('GraphCompiler.compile', result, request)
+    _require(now + timedelta(seconds=time.monotonic() - started) < deadline,
+             'DEADLINE', 'Compiler operation deadline expired during compilation.')
     return result
 
 
