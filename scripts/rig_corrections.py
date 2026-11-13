@@ -71,8 +71,9 @@ def apply_rig_corrections(rig, correction, *, persist=True):
             require(target in result.weights and isinstance(value,dict) and set(value) <= {'assignments','copy','smooth','mirror','lock'},
                     'RIG_WEIGHT_EDIT', 'Weight correction needs a bound mesh and supported actions.')
             mesh=result.geometry.by_id()[target];skin=result.weights[target]
-            if 'assignments' in value:skin=edit_weights(skin,{int(k):v for k,v in value['assignments'].items()},max_influences=result.manifest['limits']['influences'],lock=value.get('lock',True))
-            if 'copy' in value:skin=copy_weights(skin,{int(k):int(v) for k,v in value['copy'].items()},lock=value.get('lock',True))
+            influence_limit=min(result.manifest['limits']['influences'],skin.indices.shape[1])
+            if 'assignments' in value:skin=edit_weights(skin,{int(k):v for k,v in value['assignments'].items()},max_influences=influence_limit,lock=value.get('lock',True))
+            if 'copy' in value:skin=copy_weights(skin,{int(k):v for k,v in value['copy'].items()},lock=value.get('lock',True))
             if 'smooth' in value:
                 require(isinstance(value['smooth'],dict) and set(value['smooth']) <= {'iterations','strength'}, 'RIG_WEIGHT_EDIT', 'Unsupported smoothing option.')
                 skin=smooth_weights(mesh,skin,**value['smooth'])
@@ -88,7 +89,7 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                         source_id=skin.joints[index_];mapped=bones[source_id].get('mirror') or source_id
                         weights[mapped]=weights.get(mapped,0.)+float(weight)
                     assignments[int(dst)]=weights
-                skin=edit_weights(skin,assignments,max_influences=result.manifest['limits']['influences'],lock=value.get('lock',True))
+                skin=edit_weights(skin,assignments,max_influences=influence_limit,lock=value.get('lock',True))
             validate_skin(skin,mesh,result.skeleton,result.manifest['limits']);result.weights[target]=skin
         elif operation in ('constraint','ik','attachment'):
             kind={'constraint':'JointConstraint','ik':'IKChain','attachment':'AttachmentPoint'}[operation]
