@@ -7,12 +7,12 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts'))
 from asset_contracts import sha
 from character_decomposition import create_decomposition, load_decomposition
 import decomposition_analysis as analysis
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 
 @unittest.skipUnless(os.environ.get('HATCH_ANALYSIS_BACKEND_TEST') == '1',
                      'optional OpenCV backend; enable HATCH_ANALYSIS_BACKEND_TEST=1')

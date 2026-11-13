@@ -121,9 +121,14 @@ proposal publication. Failed, cancelled or interrupted work requires explicit
 Retry records a journal after preserving the complete prior attempt and before
 removing live files. Status/resume completes an interrupted retry from that
 verified history, including crashes before or after the final state write.
-Live and archived job records are read through bounded nonblocking file
-descriptors with no-follow and regular-file checks; pipes, devices and symbolic
-links cannot block recovery or supply record bytes.
+Live and archived job records are read through bounded regular-file descriptors.
+POSIX opens retain no-follow and nonblocking flags to reject pipes without
+waiting. Windows opens use `CreateFileW` with `FILE_FLAG_OPEN_REPARSE_POINT`,
+reject non-disk handles and reparse/directory attributes before transferring the
+handle to a binary CRT descriptor. The descriptor owns and closes that handle.
+See Microsoft's [CreateFileW reference](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+[GetFileInformationByHandle reference](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandle),
+and [CRT handle ownership reference](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/open-osfhandle).
 Retry means authorizing a new attempt when the earlier outcome is known or
 uncertain. It is never implicit in resume. An interrupted job with a valid completed worker
 response must recover it before retrying. Explicit retry of a failed or cancelled
@@ -159,6 +164,13 @@ installation:
 
 ```bash
 python -m unittest discover -s tests -p 'test_decomposition_analysis.py' -v
-HATCH_ANALYSIS_BACKEND_TEST=1 python -m unittest discover -s tests \
+HATCH_ANALYSIS_BACKEND_TEST=1 python -m unittest discover -s tests/optional \
   -p 'test_decomposition_analysis_backend.py' -v
 ```
+
+Optional backend and Windows-only native-handle suites live under `tests/optional/`
+(without a package initializer), outside the required 2D discovery root. The
+analysis workflow invokes the real backend suite on each OS and explicitly invokes
+`test_decomposition_windows_records.py` on Windows. Required core tests exercise
+nonregular retry records with POSIX FIFOs or Windows directories without platform
+skips; the delivery gate keeps its existing strict skip policy.

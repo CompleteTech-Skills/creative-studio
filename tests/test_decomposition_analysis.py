@@ -273,8 +273,7 @@ class AnalysisTests(unittest.TestCase):
                 self.assertEqual(self.ingest(job)['attempts'],2)
                 self.assertEqual(self.original,(self.root/'decomposition.json').read_bytes())
 
-    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'requires POSIX FIFO support')
-    def test_retry_rejects_fifo_in_each_existing_history_record_without_blocking(self):
+    def test_retry_rejects_nonregular_history_records_without_blocking(self):
         for name in ('state.json','worker.log','cancel','response.json','worker-response.json'):
             with self.subTest(name=name):
                 job=self.prepare(prompt=name)
@@ -286,16 +285,18 @@ class AnalysisTests(unittest.TestCase):
                 (folder/'worker-response.json').write_bytes(b'{}')
                 (folder/'cancel').write_bytes(b'cancel\n')
                 history=folder/'attempt-1';history.mkdir()
-                os.mkfifo(history/name)
+                if hasattr(os,'mkfifo'):
+                    os.mkfifo(history/name)
+                else:
+                    (history/name).mkdir()
                 result=subprocess.run([sys.executable,analysis.__file__,'retry','--root',str(self.root),
                     '--job',job['job']],capture_output=True,text=True,timeout=3)
                 self.assertEqual(result.returncode,2,result.stdout)
-                self.assertIn('regular file',result.stderr)
+                self.assertRegex(result.stderr,'regular file|opened safely')
                 self.assertTrue((folder/'response.json').is_file())
                 self.assertEqual(self.original,(self.root/'decomposition.json').read_bytes())
 
-    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'requires POSIX FIFO support')
-    def test_retry_recovery_rejects_fifo_history_state_without_blocking(self):
+    def test_retry_recovery_rejects_nonregular_history_state_without_blocking(self):
         job=self.prepare()
         folder=self.root/'analysis-jobs'/job['job']
         state=json.loads((folder/'state.json').read_text());state.update(status='failed',attempts=1)
@@ -310,13 +311,43 @@ class AnalysisTests(unittest.TestCase):
         with mock.patch.object(analysis,'_recover_retry',side_effect=interrupt):
             with self.assertRaisesRegex(RuntimeError,'crash'):
                 analysis.retry(self.root,job['job'])
-        retained=folder/'attempt-1/state.json';retained.unlink();os.mkfifo(retained)
+        retained=folder/'attempt-1/state.json';retained.unlink()
+        if hasattr(os,'mkfifo'):
+            os.mkfifo(retained)
+        else:
+            retained.mkdir()
         result=subprocess.run([sys.executable,analysis.__file__,'status','--root',str(self.root),
             '--job',job['job']],capture_output=True,text=True,timeout=3)
         self.assertEqual(result.returncode,2)
-        self.assertIn('regular file',result.stderr)
+        self.assertRegex(result.stderr,'regular file|opened safely')
         self.assertEqual(json.loads((folder/'state.json').read_text()),state)
         self.assertTrue((folder/'retry.json').is_file())
+
+    def test_missing_posix_flags_dispatches_to_windows_safe_descriptor(self):
+        record=self.home/'portable.json';record.write_bytes(b'{"kind":"fixture"}')
+        real_open=os.open
+        with mock.patch.object(analysis,'_WINDOWS_RECORD_IO',True), mock.patch.object(
+                analysis,'_windows_record_descriptor',side_effect=lambda path: real_open(path,os.O_RDONLY)) as windows:
+            # This tests dispatch, not actual Windows kernel behavior. Native
+            # handle validation runs in the Windows CI matrix separately.
+            with mock.patch.dict(os.__dict__):
+                os.__dict__.pop('O_NOFOLLOW',None);os.__dict__.pop('O_NONBLOCK',None)
+                self.assertEqual(analysis._record_json(record),{'kind':'fixture'})
+                job=self.prepare()
+                self.assertEqual(analysis.status(self.root,job['job'])['status'],'awaiting-external')
+                self.assertEqual(self.ingest(job)['status'],'proposed')
+        self.assertTrue(windows.called)
+
+    def test_platform_reader_never_opens_without_available_safety(self):
+        if sys.platform=='win32':
+            self.assertTrue(analysis._WINDOWS_RECORD_IO)
+            self.assertEqual(analysis._record_bytes(self.source),self.source.read_bytes())
+            return
+        with mock.patch.dict(os.__dict__):
+            os.__dict__.pop('O_NOFOLLOW',None)
+            with mock.patch.object(analysis.os,'open',side_effect=AssertionError('must not open')):
+                with self.assertRaisesRegex(ValueError,'platform support'):
+                    analysis._record_bytes(self.source)
 
     def test_runtime_timeout_kills_real_subprocess_and_keeps_manual_route(self):
         model={'provider':'synthetic-fixture','name':'none','version':'test','files':[], 'identity_evidence':'No detector used by timeout test'}
