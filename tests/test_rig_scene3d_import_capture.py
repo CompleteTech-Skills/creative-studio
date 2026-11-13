@@ -128,7 +128,7 @@ class CapturedImportTests(unittest.TestCase):
         report_ref=next(item for item in self.imported.asset['dependencies'] if item['path'].endswith('/import-report.json'))
         asset_path=root/self.imported.asset_reference['path'];report_path=root/report_ref['path']
         asset=json.loads(asset_path.read_bytes());report=json.loads(report_path.read_bytes())
-        asset['provenance']['fixture']=False;report['fixture']=False
+        asset['provenance']['fixture']=False;asset['provenance']['origin']='import';report['fixture']=False
         def encoded(value):return (json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False)+'\n').encode()
         asset_path.write_bytes(encoded(asset));report_path.write_bytes(encoded(report))
         def reseal(value,hashes):
