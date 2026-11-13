@@ -136,7 +136,7 @@ def main():
             if sleep['initially_sleeping']:
                 p.changeDynamics(value,-1,activationState=p.ACTIVATION_STATE_SLEEP,physicsClientId=client)
         if explicit_proxies:
-            p.setPhysicsEngineParameter(collisionFilterMode=1,physicsClientId=client)
+            p.setPhysicsEngineParameter(collisionFilterMode=0,physicsClientId=client)
             for body in world['bodies']:
                 collider=body['colliders'][0]
                 p.setCollisionFilterGroupMask(identifiers[body['id']],-1,collision_signed_mask(collider['group']),collision_signed_mask(collider['mask']),physicsClientId=client)
