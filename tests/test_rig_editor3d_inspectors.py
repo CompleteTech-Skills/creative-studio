@@ -149,9 +149,12 @@ class InspectorBrowserTests(unittest.TestCase):
                         page.wait_for_function("() => window.hatchEditor.snapshot.scene.nodes.find(n=>n.id==='camera').camera.near === 0.2")
                         camera=next(n for n in repository.snapshot()['scene']['nodes'] if n['id']=='camera')
                         self.assertEqual(camera['camera']['near'],.2)
+                        panel.get_by_role('button',name='Save world',exact=True).wait_for(state='visible')
+                        page.wait_for_function("() => [...document.querySelectorAll('#native-inspectors button')].every(b=>!b.disabled)")
                         panel.get_by_label('Exposure (stops)',exact=True).fill('1.5')
                         panel.get_by_role('button',name='Save world',exact=True).click()
                         page.wait_for_function("() => window.hatchEditor.snapshot.scene.world.exposure === 1.5")
+                        page.wait_for_function("() => [...document.querySelectorAll('#native-inspectors button')].every(b=>!b.disabled)")
                         previous=repository.snapshot()['sha256']
                         panel.get_by_label('Near plane (m)',exact=True).fill('600')
                         panel.get_by_role('button',name='Save camera optics',exact=True).click()

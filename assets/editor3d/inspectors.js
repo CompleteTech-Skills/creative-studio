@@ -55,10 +55,11 @@ export function mountInspectors({container, getSnapshot, getSelection, api, relo
       await reload();
       status.textContent = "Native properties saved and reloaded.";
     } catch (error) { status.textContent = error.message || String(error); }
-    finally { busy = false; if (!disposed && button.isConnected) button.disabled = false; }
+    finally { busy = false; if (!disposed) render(); }
   }
   function button(parent, title, makeCommands) {
     const control = element("button", title, {type: "button"});
+    control.disabled = busy;
     control.addEventListener("click", () => {
       try { apply(makeCommands(), control); }
       catch (error) { status.textContent = error.message || String(error); }
