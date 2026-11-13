@@ -102,6 +102,11 @@ def _material_source(snapshot, node_id, slot):
     for item in node['material_overrides']:
         if item['slot'] == slot:
             return item['material']
+    fallback = next((item['material'] for item in node['material_overrides'] if item['slot'] == 'default'), None)
+    if fallback is not None:
+        _, _, projection = material_slot_projection(snapshot, node_id)
+        if slot in {entry['slot'] for entry in projection}:
+            return fallback
     asset = next((item for item in snapshot.get('documents', {}).values()
                   if item.get('kind') == 'scene3d-asset' and item['id'] == (node.get('asset') or {}).get('id')
                   and item['version'] == (node.get('asset') or {}).get('version')), None)
@@ -208,7 +213,12 @@ def apply_material_edit(repository, request):
     references = list(_references(candidate['surface'])) + list(_references(candidate['texture_slots']))
     candidate['dependencies'] = list({canonical_bytes(item): item for item in references}.values())
     major, minor, patch = map(int, candidate['version'].split('.'))
-    candidate['version'] = f'{major}.{minor}.{patch+1}'
+    from scene3d_contracts import all_refs
+    reserved = {item.get('version') for item in all_refs(snapshot['project']) if item.get('id') == candidate['id']}
+    patch += 1
+    while f'{major}.{minor}.{patch}' in reserved:
+        patch += 1
+    candidate['version'] = f'{major}.{minor}.{patch}'
     candidate['provenance'] = dict(candidate['provenance'], origin='derived',
         tool='editor3d-native-material-inspector-v1', created_at=timestamp(),
         source_hashes=list(dict.fromkeys([*candidate['provenance']['source_hashes'], reference['sha256']])))

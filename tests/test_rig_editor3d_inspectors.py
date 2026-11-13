@@ -74,6 +74,33 @@ class InspectorTests(unittest.TestCase):
         redone=repository.redo(undone['revision'],'redo-red',expected_sha256=undone['sha256'])
         self.assertEqual(projected_editor_materials(repository,redone)['mesh'][0]['effective']['surface']['base_color'],[1,0,0,1])
 
+    def test_shared_native_material_instances_receive_distinct_immutable_edit_versions(self):
+        from editor3d_inspectors import assign_authored_material,apply_material_edit,describe_materials
+        repository=mapped_repository(self.base/'shared')
+        before=repository.snapshot()
+        red=assign_authored_material(repository,dict(node_id='mesh',slot='surface',surface={'base_color':[1,0,0,1]},expected_revision=before['revision'],expected_sha256=before['sha256'],transaction_id='shared-red'))
+        duplicate=repository.apply(red['revision'],dict(schema_version=1,commands=[dict(operation='duplicate',parameters=dict(identifier='mesh',new_id='mesh2'))]),'duplicate-red',expected_sha256=red['sha256'])
+        first=apply_material_edit(repository,dict(node_id='mesh',slot='surface',surface={'roughness':.4},expected_revision=duplicate['revision'],expected_sha256=duplicate['sha256'],transaction_id='first-edit'))
+        second=apply_material_edit(repository,dict(node_id='mesh2',slot='surface',surface={'roughness':.7},expected_revision=first['revision'],expected_sha256=first['sha256'],transaction_id='second-edit'))
+        first_material=describe_materials(repository,second,'mesh')[0]
+        second_material=describe_materials(repository,second,'mesh2')[0]
+        self.assertEqual(first_material['effective']['surface']['roughness'],.4)
+        self.assertEqual(second_material['effective']['surface']['roughness'],.7)
+        self.assertEqual(first_material['reference']['version'],'1.0.1')
+        self.assertEqual(second_material['reference']['version'],'1.0.2')
+
+    def test_editing_default_material_publishes_only_a_targeted_slot_override(self):
+        from editor3d_inspectors import assign_authored_material,apply_material_edit,projected_editor_materials
+        repository=mapped_repository(self.base/'default')
+        before=repository.snapshot()
+        red=assign_authored_material(repository,dict(node_id='mesh',slot='surface',surface={'base_color':[1,0,0,1],'roughness':.3},expected_revision=before['revision'],expected_sha256=before['sha256'],transaction_id='default-red'))
+        reference=next(n for n in red['scene']['nodes'] if n['id']=='mesh')['material_overrides'][0]['material']
+        default=repository.apply(red['revision'],dict(schema_version=1,commands=[dict(operation='configure-node',parameters=dict(identifier='mesh',properties={'material_overrides':[dict(slot='default',material=reference)]}))]),'make-default',expected_sha256=red['sha256'])
+        edited=apply_material_edit(repository,dict(node_id='mesh',slot='surface',surface={'roughness':.6},expected_revision=default['revision'],expected_sha256=default['sha256'],transaction_id='edit-default-target'))
+        overrides=next(n for n in edited['scene']['nodes'] if n['id']=='mesh')['material_overrides']
+        self.assertEqual(next(o['material'] for o in overrides if o['slot']=='default'),reference)
+        self.assertEqual(projected_editor_materials(repository,edited)['mesh'][0]['effective']['surface']['roughness'],.6)
+
     def test_camera_and_light_changes_use_native_validator_and_graph(self):
         before = deepcopy(self.snapshot)
         commands = compile_inspector_commands(self.snapshot,'camera',{'camera':{'near':0.2,'far':500,'vertical_fov':1.1}})
@@ -218,6 +245,39 @@ class InspectorTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual browser acceptance explicitly.')
 class InspectorBrowserTests(unittest.TestCase):
+    def test_default_material_is_displayed_and_edits_only_selected_slot(self):
+        import threading
+        from editor3d_inspectors import assign_authored_material
+        from editor3d_viewer import EditorServer
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with tempfile.TemporaryDirectory() as directory:
+            repository=mapped_repository(Path(directory));before=repository.snapshot()
+            red=assign_authored_material(repository,dict(node_id='mesh',slot='surface',surface={'base_color':[1,0,0,1],'roughness':.3},expected_revision=before['revision'],expected_sha256=before['sha256'],transaction_id='browser-default-red'))
+            reference=next(n for n in red['scene']['nodes'] if n['id']=='mesh')['material_overrides'][0]['material']
+            repository.apply(red['revision'],dict(schema_version=1,commands=[dict(operation='configure-node',parameters=dict(identifier='mesh',properties={'material_overrides':[dict(slot='default',material=reference)]}))]),'browser-make-default',expected_sha256=red['sha256'])
+            server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser=launch_chromium(runtime)
+                    try:
+                        page=browser.new_page(viewport={'width':1400,'height':1000})
+                        page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
+                        page.evaluate("window.hatchEditor.select('mesh')")
+                        field=page.locator('#native-inspectors fieldset').filter(has=page.get_by_text('surface',exact=True))
+                        field.get_by_role('button',name='Save native material',exact=True).wait_for()
+                        self.assertEqual(field.get_by_label('R',exact=True).input_value(),'1')
+                        self.assertEqual(field.get_by_label('Roughness',exact=True).input_value(),'0.3')
+                        field.get_by_label('Roughness',exact=True).fill('0.8')
+                        field.get_by_role('button',name='Save native material',exact=True).click()
+                        page.wait_for_function("() => window.hatchEditor.snapshot.viewport_materials.mesh[0].effective.surface.roughness===0.8")
+                        overrides=next(n for n in repository.snapshot()['scene']['nodes'] if n['id']=='mesh')['material_overrides']
+                        self.assertEqual(next(o['material'] for o in overrides if o['slot']=='default'),reference)
+                        self.assertEqual(len(overrides),2)
+                        self.assertEqual(page.evaluate('() => window.hatchEditor.errors'),[])
+                    finally:browser.close()
+            finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
     def test_native_glb_two_material_slots_change_only_targeted_primitive(self):
         import threading
         from asset_library import AssetLibrary

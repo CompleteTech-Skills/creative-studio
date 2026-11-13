@@ -102,7 +102,8 @@ export function mountInspectors({container, getSnapshot, getSelection, api, relo
       }
       const projection=descriptor.material_projection;
       for (const slot of [...new Set(projection.map(item=>item.slot))]) {
-        const native=descriptor.materials.find(item=>item.slot===slot);
+        const reference=projection.find(item=>item.slot===slot)?.override;
+        const native=reference && descriptor.materials.find(item=>["id","version","path","sha256"].every(key=>item.reference[key]===reference[key]));
         const initial=native?.effective?.surface || {base_color:[.8,.8,.8,1],metallic:0,roughness:.5};
         const field=element("fieldset");field.disabled=busy || node.locked;
         field.append(element("legend",slot));
