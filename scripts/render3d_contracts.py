@@ -114,8 +114,9 @@ def definitions():
                attempt=dict(type='integer', minimum=0, maximum=16), counts=counts,
                state={'enum': ['queued', 'running', 'complete', 'partial', 'failed', 'cancelled', 'interrupted']},
                cancellation_requested={'type': 'boolean'}, manifest=nullable(file), error=nullable(diagnostic)))
-    usage = obj(dict(elapsed_seconds=nullable(seconds), peak_memory_bytes=nullable(count),
-                     output_bytes=nullable(count), measurement={'enum': ['measured', 'estimated', 'unavailable']}))
+    usage_bytes = dict(type='integer', minimum=0, maximum=2**40)
+    usage = obj(dict(elapsed_seconds=nullable(seconds), peak_memory_bytes=nullable(usage_bytes),
+                     output_bytes=nullable(usage_bytes), measurement={'enum': ['measured', 'estimated', 'unavailable']}))
     result = doc('result', dict(job=identifier, request_sha256=digest, snapshot_sha256=digest,
                   backend=backend, status={'enum': ['complete', 'partial', 'failed', 'cancelled']},
                   requested_frames=arr(count, 1, 100000), successful=arr(count, 0, 100000),
@@ -281,8 +282,9 @@ def _settings(value):
         require(output['bit_depth'] in (8, 16) and output['color_space'] == 'srgb'
                 and output['passes'] == ['combined'], 'unsupported-feature', 'PNG supports sRGB combined output at 8/16 bits.')
     else:
-        require(output['bit_depth'] in (16, 32) and output['color_space'] == 'linear',
-                'unsupported-feature', 'EXR supports linear output at 16/32 bits.')
+        require(output['bit_depth'] in (16, 32) and output['color_space'] == 'linear'
+                and 'combined' in output['passes'],
+                'unsupported-feature', 'EXR supports linear output at 16/32 bits including the combined pass.')
     require(output['color_space'] != 'linear' or value['view_transform'] == 'standard',
             'unsupported-feature', 'Scene-linear masters cannot bake a display view transform.')
 

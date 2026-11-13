@@ -13,6 +13,7 @@ import shutil
 import stat
 import tempfile
 import unicodedata
+import zipfile
 from typing import Protocol
 
 from atomic_publish import _rename_no_replace
@@ -160,7 +161,7 @@ No source revision or output cache is overwritten or pruned.
         return document
     except Render3DError:
         raise
-    except (OSError, RigError, ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
+    except (OSError, RigError, ValueError, TypeError, KeyError, IndexError, OverflowError, zipfile.BadZipFile) as exc:
         raise Render3DError('invalid-input', str(exc)) from exc
 
 
@@ -186,5 +187,5 @@ def verify_snapshot(root, adapter: SceneAdapter):
         return document
     except Render3DError:
         raise
-    except (OSError, RigError, ValueError, TypeError, KeyError, IndexError, OverflowError) as exc:
+    except (OSError, RigError, ValueError, TypeError, KeyError, IndexError, OverflowError, zipfile.BadZipFile) as exc:
         raise Render3DError('stale-asset', str(exc)) from exc

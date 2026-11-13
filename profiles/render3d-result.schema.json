@@ -294,7 +294,7 @@
                 {
                   "type": "integer",
                   "minimum": 0,
-                  "maximum": 2147483647
+                  "maximum": 1099511627776
                 },
                 {
                   "type": "null"
@@ -306,7 +306,7 @@
                 {
                   "type": "integer",
                   "minimum": 0,
-                  "maximum": 2147483647
+                  "maximum": 1099511627776
                 },
                 {
                   "type": "null"

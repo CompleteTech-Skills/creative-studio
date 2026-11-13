@@ -144,6 +144,36 @@ class Contracts(unittest.TestCase):
         job['state']='queued';job['counts']['active']=1
         with self.assertRaises(Render3DError):validate(job)
 
+    def test_usage_bytes_cover_the_supported_resource_budget(self):
+        from jsonschema import Draft202012Validator
+        schema=schemas()['render3d-result.schema.json']
+        value=dict(schema_version=1,kind='render3d-result',job='job',request_sha256='0'*64,
+            snapshot_sha256='1'*64,backend=backend(),status='partial',requested_frames=[0],
+            successful=[],failed=[],skipped=[0],reused=[],images=[],diagnostics=[],
+            usage=dict(elapsed_seconds=1,peak_memory_bytes=2**31,output_bytes=2**40,measurement='measured'),
+            logs=[],manifest=None,verification=dict(status='not-run',verifier=None,evidence=None))
+        validate(value)
+        Draft202012Validator(schema).validate(value)
+        for field in ('peak_memory_bytes','output_bytes'):
+            for measurement in (0,2**31-1,2**31,2**40,None):
+                candidate=deepcopy(value);candidate['usage'][field]=measurement
+                validate(candidate)
+                Draft202012Validator(schema).validate(candidate)
+            for measurement in (-1,2**40+1,True,1.5):
+                candidate=deepcopy(value);candidate['usage'][field]=measurement
+                with self.subTest(field=field,measurement=measurement),self.assertRaises(Render3DError):
+                    validate(candidate)
+
+    def test_exr_requests_require_the_combined_completion_pass(self):
+        value=request()
+        value['settings']['output'].update(format='exr',bit_depth=16,color_space='linear')
+        for passes in (['depth'],['normal'],['albedo'],['depth','normal','albedo']):
+            value['settings']['output']['passes']=passes
+            with self.subTest(passes=passes),self.assertRaises(Render3DError):validate(value)
+        for passes in (['combined'],['combined','depth'],['normal','combined','albedo']):
+            value['settings']['output']['passes']=passes
+            validate(value)
+
     def test_discovery_is_not_execution(self):
         capability=dict(schema_version=1,kind='render3d-capabilities',adapter=dict(id='blender',version='1.0.0'),
             backend=None,discovery='available',initialization='not-run',execution='not-run',evidence=[],
@@ -153,6 +183,40 @@ class Contracts(unittest.TestCase):
 
 
 class NativeSnapshot(unittest.TestCase):
+    def test_malformed_hash_consistent_native_archives_have_typed_cli_errors(self):
+        from rig_test_helpers import fixture
+        from rig_errors import atomic_json,sha256
+        for kind in ('geometry','skin'):
+            with self.subTest(kind=kind),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);rig=fixture(root,animated=False)
+                frozen=root/'frozen'
+                document=create_snapshot(rig.root,frozen,NativeRigAdapter())
+                for source in (rig.root,frozen):
+                    manifest=json.loads((source/'rig.json').read_text())
+                    descriptor=manifest['geometry']['data'] if kind=='geometry' else manifest['skins'][0]['data']
+                    archive=source/descriptor['path'];archive.write_bytes(b'not an NPZ archive')
+                    descriptor['sha256']=sha256(archive)
+                    atomic_json(source/'rig.json',manifest)
+                destination=root/'rejected'
+                with self.assertRaises(Render3DError) as raised:
+                    create_snapshot(rig.root,destination,NativeRigAdapter())
+                self.assertEqual(raised.exception.report['code'],'RENDER3D_INVALID_INPUT')
+                self.assertFalse(destination.exists())
+                for item in document['files']:
+                    path=frozen/item['path'];item.update(sha256=sha256(path),bytes=path.stat().st_size)
+                document['total_bytes']=sum(item['bytes'] for item in document['files'])
+                document['snapshot_sha256']=snapshot_hash(document)
+                atomic_json(frozen/'snapshot.json',document)
+                with self.assertRaises(Render3DError) as raised:
+                    verify_snapshot(frozen,NativeRigAdapter())
+                self.assertEqual(raised.exception.report['code'],'RENDER3D_STALE_ASSET')
+                for arguments,code in ((['snapshot-rig','--source',str(rig.root),'--destination',str(destination)],'RENDER3D_INVALID_INPUT'),
+                                       (['verify-snapshot',str(frozen)],'RENDER3D_STALE_ASSET')):
+                    completed=subprocess.run([sys.executable,str(ROOT/'scripts/render3d.py'),*arguments],capture_output=True,text=True)
+                    self.assertEqual(completed.returncode,2,completed.stderr)
+                    self.assertEqual(json.loads(completed.stdout)['code'],code)
+                    self.assertNotIn('Traceback',completed.stderr)
+
     def test_real_rig_snapshot_survives_relocation_and_original_change(self):
         from rig_demo import create_demo
         from rig_models import load_rig

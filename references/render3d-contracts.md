@@ -23,6 +23,10 @@ The source-delivery report currently records recovered original production sourc
 
 Requests bind project/scene/shot versions, exact snapshot file bytes, half-open frames, rational output rate and source timing, camera ID, engine/device policy, samples/seed, passes/color/alpha, resource bounds, retry/priority/cache policy and destination ownership. Jobs hold the request/snapshot digests, backend identity, counts, lifecycle/worker/heartbeat, cancellation and failure data. Results partition requested frames into successful/failed/skipped/reused sets, bind image/pass inventories and separate verification evidence. `complete` requires every requested combined frame, a manifest and a passed verifier record; this is a structural prerequisite, not proof of file contents.
 
+EXR requests must include `combined`; depth, normal and albedo may accompany it.
+Result memory/output byte measurements support zero through 1 TiB, matching
+the supported resource budgets, while unavailable measurements remain null.
+
 `RenderBackend` declares capability, probe, validation, prepare, render, cancel and version operations. `ArtifactVerifier` remains independent of the worker and must decode actual files and check snapshot/settings/backend correspondence. The stable error taxonomy distinguishes invalid input, missing/stale assets, unsupported features/backends/devices, device initialization, GPU/system memory, storage, timeout, crash, cancellation, corrupt/incomplete output, stale cache, verification, external-tool and ownership failures. No implementation returns success for a missing renderer.
 
 ## Executable snapshot behavior
