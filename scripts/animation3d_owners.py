@@ -63,3 +63,27 @@ def _resolve_property(entry, admitted):
         outer, inner = fields[prop]
         return deepcopy(light[outer][inner])
     require(False, 'ANIMATION_OWNER', 'Unknown property owner: '+owner)
+
+
+def property_domain(entry, admitted):
+    """Canonical field range narrowed by the admitted native object's invariants."""
+    from animation3d_contracts import _native_property_schema
+    target, source = entry['target'], entry['source']
+    domain, prop = target['kind'], target['property']
+    schema = deepcopy(_native_property_schema(domain, prop))
+    kind, native = admitted
+    if domain == 'material' and prop in ('base_color','opacity'):
+        surface = native.effective_material(native.reference(source['id'],source['version']))['surface']
+        if surface['alpha_mode'] == 'OPAQUE':
+            extra = {'const': 1} if prop == 'opacity' else {'prefixItems': [{},{},{},{'const':1}]}
+            schema = {'allOf': [schema, extra]}
+    if domain == 'light' and prop == 'cone_angle':
+        light = native.get(native.reference(source['id'],source['version']))
+        schema = {'allOf': [schema, {'minimum': light['spot_inner_radians']}]}
+    return schema
+
+
+def resolve_property_domain(root, entry):
+    admitted = verify_native(root, entry['source'])
+    _resolve_property(entry, admitted)
+    return property_domain(entry, admitted)

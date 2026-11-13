@@ -23,6 +23,7 @@ class TargetRegistry:
         require(document['kind']==KINDS['registry'],'ANIMATION_REGISTRY','Expected target registry.')
         self.root=Path(root).resolve()
         self.document=deepcopy(document)
+        self._resolved_domains={}
         self._entries={target_key(e['target']):deepcopy(e) for e in document['entries']}
 
     @classmethod
@@ -50,8 +51,8 @@ class TargetRegistry:
         entry=self._entries.get(target_key(target))
         require(entry is not None,'ANIMATION_TARGET','Target is not registered.',stage='animation3d')
         if entry['owner'] != 'rig':
-            from animation3d_owners import resolve_property
-            resolve_property(self.root, entry)
+            from animation3d_owners import resolve_property_domain
+            self._resolved_domains[target_key(target)]=resolve_property_domain(self.root, entry)
             return deepcopy(entry)
         require(entry['source']['kind']=='rig','ANIMATION_OWNER',
             'Rig entry needs a native rig source.',stage='animation3d')
@@ -73,6 +74,13 @@ class TargetRegistry:
         validate_contract(dict(schema_version=1,kind=KINDS['track'],value=track))
         validate_track(track,duration_frames)
         entry=self.resolve(track['target'])
+        domain=self._resolved_domains.get(target_key(track['target']))
+        if domain is not None:
+            entry['_native_domain']=deepcopy(domain)
+            from jsonschema import Draft202012Validator
+            validator=Draft202012Validator(domain)
+            require(all(validator.is_valid(value) for value in [track['default_value']]+[key['value'] for key in track['keys']]),
+                    'ANIMATION_RANGE','Track values violate the admitted native property domain.',stage='animation3d')
         if 'minimum' in entry:
             for value in [track['default_value']]+[key['value'] for key in track['keys']]:
                 require(isinstance(value,(int,float)) and entry['minimum']<=value<=entry['maximum'],
@@ -122,6 +130,10 @@ def sample_track(track, time, registry):
     result=evaluate_track(native,offset)
     require(np.isfinite(result).all(),'ANIMATION_NUMERICAL','Interpolation produced nonfinite output.',stage='animation3d')
     value=result.tolist() if isinstance(a['value'],list) else float(result[0])
+    if '_native_domain' in entry:
+        from jsonschema import Draft202012Validator
+        require(Draft202012Validator(entry['_native_domain']).is_valid(value),'ANIMATION_RANGE',
+                'Interpolated value violates the admitted native property domain.',stage='animation3d')
     # Overshoot may violate scale/morph domain even when endpoints are valid.
     from animation3d_contracts import _check_value
     _check_value(value,track['target']['kind'],track['target']['property'])

@@ -236,6 +236,16 @@ def load_project(root, name='animation-project.json'):
 
 def _validate_bindings(project, documents, native, snapshot_root):
     budgets = project['budgets']
+    # Every typed frame coordinate participates in the same project admission
+    # bound, including auxiliary tracks, interactions and nested controls.
+    for document_value in documents.values():
+        for node in _walk(document_value):
+            for name, value in node.items():
+                if type(value) is int and (name == 'frame' or name.endswith(('_frame', '_frames')) or name == 'end_frame_exclusive'):
+                    require(value <= budgets['max_frames'], 'ANIMATION_LIMIT', 'Nested timeline coordinate exceeds project frame budget.')
+            if 'start_frame' in node and 'duration_frames' in node:
+                require(node['start_frame'] + node['duration_frames'] <= budgets['max_frames'],
+                        'ANIMATION_LIMIT', 'Nested timeline interval exceeds project frame budget.')
     tracks = [n for d in documents.values() for n in _walk(d) if 'keys' in n and 'target' in n]
     actors = [n for d in documents.values() for n in _walk(d) if 'animation_layers' in n]
     require(len(tracks) <= budgets['max_tracks'] and sum(len(t['keys']) for t in tracks) <= budgets['max_keyframes'] and
@@ -286,6 +296,11 @@ def _validate_bindings(project, documents, native, snapshot_root):
     def target(value, rig=None, scene=None, actor_id=None):
         domain, prop = value['kind'], value['property']
         if domain in ('bone', 'morph'):
+            if scene is not None:
+                actor = next((a for a in scene['actors'] if a['actor_id'] == value['actor_id']), None)
+                require(actor is not None, 'ANIMATION_TARGET', 'Skeletal target actor is absent from scene.')
+                if actor_id is None:
+                    rig = rig_for(actor.get('rig'))
             require(rig is not None, 'ANIMATION_TARGET', 'Skeletal target requires a verified rig binding.')
             if actor_id is not None:
                 require(value['actor_id'] == actor_id, 'ANIMATION_TARGET', 'Track targets another actor.')
@@ -317,6 +332,16 @@ def _validate_bindings(project, documents, native, snapshot_root):
                                         source=source), (kind, admitted)))
         require(len(candidates) == 1, 'ANIMATION_OWNER', 'Target needs exactly one explicit supported native owner.')
         _resolve_property(*candidates[0])
+        from animation3d_owners import property_domain
+        return property_domain(*candidates[0])
+
+    def track_target(track, rig=None, scene=None, actor_id=None):
+        domain = target(track['target'], rig, scene, actor_id)
+        if domain is not None:
+            from jsonschema import Draft202012Validator
+            validator = Draft202012Validator(domain)
+            require(all(validator.is_valid(value) for value in [track['default_value']] + [key['value'] for key in track['keys']]),
+                    'ANIMATION_RANGE', 'Track values violate the admitted native property domain.')
 
     def clip_targets(clip, bound=None, scene=None, actor_id=None):
         require(not any(clip.get(field) for field in ('constraints','procedural_modifiers','entry_pose','exit_pose')),
@@ -326,7 +351,7 @@ def _validate_bindings(project, documents, native, snapshot_root):
             require(own.manifest['id'] == bound.manifest['id'] and own.manifest['version'] == bound.manifest['version'],
                     'ANIMATION_TARGET', 'Clip rig differs from actor rig; retargeted output must bind its actual rig.')
         rig = own if own is not None else bound
-        for track in clip['tracks']: target(track['target'], rig, scene, actor_id)
+        for track in clip['tracks']: track_target(track, rig, scene, actor_id)
         root = clip['root_motion']
         if root['enabled']:
             if 'source_bone' in root:
@@ -348,6 +373,8 @@ def _validate_bindings(project, documents, native, snapshot_root):
 
     placed_clips = set()
     def placement(value, scene, actor=None, layer=None, duration=None):
+        require('weight_track' not in value, 'ANIMATION_OWNER',
+                'Animated placement weights need a canonical weight-controller owner.')
         clip = document(value['clip'], 'clip')
         require(value['source_in_frame'] < clip['duration_frames'] and
                 value.get('source_out_frame', clip['duration_frames']) <= clip['duration_frames'],
@@ -373,9 +400,25 @@ def _validate_bindings(project, documents, native, snapshot_root):
             from animation3d_time import rate
             require(rate(d['fps']) == rate(project['fps']), 'ANIMATION_RATE', 'Project documents use inconsistent frame rates.')
         if d['kind'] == KINDS['scene']:
-            native_scene(d)
+            scene_owner = native_scene(d)
+            # Reuse the declared native hierarchy as dependency edges; a bone
+            # cannot depend on a descendant that already depends on that bone.
+            dependencies = []
+            for actor in d['actors']:
+                if 'rig' not in actor: continue
+                for item in rig_for(actor['rig']).skeleton['bones']:
+                    if item['parent']:
+                        dependencies.append((dict(kind='bone', actor_id=actor['actor_id'], bone_id=item['id']),
+                                             dict(kind='bone', actor_id=actor['actor_id'], bone_id=item['parent'])))
+            for native_document in scene_owner['documents'].values():
+                if native_document['kind'] != 'scene3d-scene': continue
+                for node in native_document['nodes']:
+                    if node['parent']:
+                        dependencies.append((dict(kind='node', node_id=node['id']), dict(kind='node', node_id=node['parent'])))
+            from animation3d_contracts import _check_constraint_cycles
+            _check_constraint_cycles([c for a in d['actors'] for c in a['constraints']], dependencies)
             for field in ('object_tracks','environment_tracks','camera_tracks','lighting_tracks'):
-                for track in d[field]: target(track['target'], scene=d)
+                for track in d[field]: track_target(track, scene=d)
             actor_ids = {a['actor_id'] for a in d['actors']}
             for interaction in d['interactions']:
                 require({p['actor_id'] for p in interaction['participants']} <= actor_ids,
@@ -397,11 +440,21 @@ def _validate_bindings(project, documents, native, snapshot_root):
                 rig = rig_for(actor['rig']) if 'rig' in actor else None
                 for constraint in actor['constraints']:
                     target(constraint['source'], rig, d, actor['actor_id'])
-                    if 'target' in constraint: target(constraint['target'], rig, d)
+                    if 'target' in constraint: target(constraint['target'], scene=d)
+                    if 'target_object_id' in constraint:
+                        target(dict(kind='node', node_id=constraint['target_object_id'], property='translation'), scene=d)
+                    chain = constraint.get('chain_bones', [])
+                    if chain:
+                        require(rig is not None, 'ANIMATION_TARGET', 'Constraint chain needs a rig.')
+                        parents = {item['id']: item['parent'] for item in rig.skeleton['bones']}
+                        require(all(parents.get(child) == parent for parent, child in zip(chain, chain[1:])),
+                                'ANIMATION_CONSTRAINT', 'Constraint chain must follow actual native parent adjacency.')
                     for identifier in constraint.get('chain_bones', []):
                         require(rig is not None, 'ANIMATION_TARGET', 'Constraint chain needs a rig.')
                         bone(rig, identifier)
                 for layer in actor['animation_layers']:
+                    require('weight_track' not in layer, 'ANIMATION_OWNER',
+                            'Animated layer weights need a canonical weight-controller owner.')
                     require('reference_pose' not in layer, 'ANIMATION_OWNER', 'Named layer poses need an explicit native adapter.')
                     mask = layer.get('bone_mask', {})
                     for identifier in mask.get('included_bones', []) + mask.get('excluded_bones', []) + list(mask.get('per_bone_weights', {})):
@@ -427,7 +480,7 @@ def _validate_bindings(project, documents, native, snapshot_root):
                 for identifier, values in shot.get('actor_overrides', {}).items():
                     actor = next((a for a in scene['actors'] if a['actor_id']==identifier), None)
                     require(actor is not None, 'ANIMATION_REFERENCE', 'Override actor is absent from scene.')
-                    for track in values: target(track['target'], rig_for(actor.get('rig')), scene, identifier)
+                    for track in values: track_target(track, rig_for(actor.get('rig')), scene, identifier)
         if d['kind'] == KINDS['retarget']:
             for field, key in (('source_rig','source_bone'),('target_rig','target_bone')):
                 rig = rig_for(d[field])

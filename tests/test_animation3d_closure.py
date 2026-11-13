@@ -6,6 +6,8 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 
 from animation3d_assets import load_project
 from animation3d_test_helpers import samples, LAYER
