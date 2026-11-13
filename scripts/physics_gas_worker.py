@@ -72,6 +72,7 @@ def main():
         matrix = Matrix.Translation(Vector(t['translation'])) @ Quaternion((q[3],q[0],q[1],q[2])).to_matrix().to_4x4()
         obj.matrix_world = BASIS @ matrix
         objects[body['id']] = obj
+    observed_sources = {}
     for identifier in component['emitters']:
         obj = objects[identifier]
         mod = obj.modifiers.new('Mantaflow emitter', 'FLUID')
@@ -83,6 +84,7 @@ def main():
         flow.density = component['density']/settings['reference_density']
         flow.temperature = (component['temperature']-settings['ambient_temperature'])/settings['temperature_scale']
         flow.fuel_amount = settings['fuel']
+        observed_sources[identifier] = dict(density=flow.density,temperature=flow.temperature,fuel=flow.fuel_amount)
         flow.use_inflow = True
         flow.keyframe_insert(data_path='use_inflow', frame=1)
         flow.keyframe_insert(data_path='use_inflow', frame=settings['emission_end_frame'])
@@ -95,6 +97,7 @@ def main():
         mod.fluid_type = 'EFFECTOR'
         bpy.context.view_layer.update()
         mod.effector_settings.surface_distance = settings['collision_distance']
+        observed_sources[identifier] = dict(collision_distance=mod.effector_settings.surface_distance)
     size = component['size']
     location = BASIS.to_3x3() @ Vector(component['transform']['translation'])
     bpy.ops.mesh.primitive_cube_add(size=2, location=location)
@@ -186,7 +189,7 @@ def main():
         fixed_step_policy='adaptive CFL native substeps; rigid-body fixed_step is not claimed',
         effective_fps=dict(numerator=scene.render.fps,denominator=scene.render.fps_base),
         cfl=ds.cfl_condition,minimum_substeps=ds.timesteps_min,maximum_substeps=ds.timesteps_max,
-        render_frames=settings['render_frames'],world_sha256=job['world_sha256'],settings_sha256=job['settings_sha256'],observed=observed)
+        observed_sources=observed_sources,render_frames=settings['render_frames'],world_sha256=job['world_sha256'],settings_sha256=job['settings_sha256'],observed=observed)
     (root/'gas-report.json').write_bytes(canonical(report))
 
 

@@ -8,16 +8,20 @@ constructs a fresh Blender scene; uploaded Blender projects and Python are not
 accepted as simulation inputs.
 
 The bounded profile is one cubic gas domain, static sphere/box source meshes,
-static obstacles and constant wind/turbulence. It supports smoke or combustion,
+static obstacles and constant wind. Turbulence is not yet admitted. It supports smoke or combustion,
 source density and temperature, fuel, dissipation, vorticity, buoyancy, collision
 distance, and native adaptive CFL/substep controls. Rigid-body iterations and
 fixed stepping do not describe Mantaflow: the world must declare one output
 interval, while GasSettings separately declare the actual adaptive solver policy.
+The current output clock admits integer frame rates from 1 to 240 fps and checks
+the native readback exactly. Fractional output frame rates remain unsupported.
 Animated emitters, arbitrary source shapes, moving obstacles, multiple domains,
 two-way coupling and continuation after interruption remain unsupported.
 
 Density is converted to the Blender source's dimensionless density using the
-declared `reference_density` in kg/m³. Source temperature in kelvin is converted
+declared `reference_density` in kg/m³; the admitted ratio is greater than zero
+and at most one to match the native source range. Source and obstacle settings
+are read back from Blender and compared with the request. Source temperature in kelvin is converted
 relative to `ambient_temperature`, divided by `temperature_scale` in kelvin.
 These are explicit appearance/solver mappings, not a claim of physically
 calibrated combustion chemistry. Native buoyancy and combustion controls retain
