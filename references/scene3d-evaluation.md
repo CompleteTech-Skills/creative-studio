@@ -74,3 +74,10 @@ parent path bindings precede their children. Parent transforms and node pivots
 are accounted for. Rotation remains authored; aim constraints can orient cameras.
 Zero-length paths, missing targets, duplicate targets, unsupported spaces and
 orientation modes fail explicitly. All path points share a 250000-point budget.
+
+`frame_camera(evaluation, render, target_ids, **options)` delegates framing to
+Camera3D `frame_subject` using the exact evaluated world bounds and node positions.
+It returns camera/framing output without changing authored documents. Evaluated
+`state.channels` retains local input translation/quaternion/scale (and optional
+pivot), after channel/path evaluation and before ordinary graph constraints; curve
+editors can consume these values without decomposing matrices or resampling tracks.

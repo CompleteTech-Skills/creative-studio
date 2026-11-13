@@ -37,6 +37,7 @@ class SceneEvaluationTests(unittest.TestCase):
         self.assertEqual(self.bundle,before)
         self.assertEqual(self.evaluate(1)['nodes']['mesh']['world_matrix'][0][3],3.)
         self.assertEqual(self.evaluate(0)['nodes']['mesh']['world_matrix'][0][3],2.)
+        self.assertEqual(out['nodes']['mesh']['channels']['translation'],[3.5,0,0])
 
     def test_half_open_interval_and_exact_input_types(self):
         for value in [-1,24,24.0,True,Fraction(49,2)]:
@@ -230,6 +231,14 @@ class SceneEvaluationTests(unittest.TestCase):
         np.testing.assert_allclose(mapped['world_matrix'],rotated['nodes']['camera']['world_matrix'])
         out['nodes']['camera']['world_matrix'][0][0]=2
         with self.assertRaises(ValueError):camera_matrices(out,dict(width=640,height=480))
+
+    def test_bounds_framing_delegates_to_camera_owner_without_mutation(self):
+        from scene3d_evaluate import frame_camera
+        out=self.evaluate(12);before=deepcopy(out)
+        framed=frame_camera(out,dict(width=640,height=480),['mesh'])
+        self.assertTrue(framed['framing']['satisfied'])
+        self.assertEqual(out,before)
+        with self.assertRaises(RigError):frame_camera(out,dict(width=640,height=480),['missing'])
 
     def test_scenes_share_asset_identity_but_not_instance_animation(self):
         other=deepcopy(self.scene);other['id']='other-scene'
