@@ -59,6 +59,11 @@ def validate_settings(value, frames):
 
 def admit(world, settings):
     world=core._world(world)
+    core.require(world['solver']['adapter_version']==core.ADAPTER_VERSION,
+        'PHYSICS_BACKEND','Liquid worlds must select this exact adapter version.',category='invalid-input')
+    core.require(world['solver']['reproducibility'] in ('not-guaranteed','verified-cache-replay'),
+        'PHYSICS_REPRODUCIBILITY','Liquid recomputation is not promised deterministic; request verified cache replay or not-guaranteed.',
+        category='capability-gap')
     frames=world['frame_range']['end']
     core.require(world['frame_range']['start']==0 and 2<=frames<=64 and world['solver']['backend']=='blender' and
         set(world['solver']['required_categories'])=={'rigid-body','liquid'},

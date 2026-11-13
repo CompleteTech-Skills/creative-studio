@@ -11,6 +11,26 @@ from physics_liquid_settings import admit,validate_settings,schemas
 
 
 class LiquidSettingsTests(unittest.TestCase):
+    def test_exact_adapter_and_supported_reproducibility_preserve_source_identity(self):
+        for reproducibility in ('not-guaranteed','verified-cache-replay'):
+            with self.subTest(reproducibility=reproducibility):
+                world,_,settings=build_liquid_inputs()
+                world['solver']['reproducibility']=reproducibility
+                original=core.canonical(world)
+                checked,_=admit(world,settings)
+                self.assertEqual(core.canonical(checked),original)
+                self.assertEqual(core.canonical(world),original)
+        for key,value,code in [('adapter_version','999.0.0','PHYSICS_BACKEND'),
+            ('reproducibility','pinned-numerical','PHYSICS_REPRODUCIBILITY'),
+            ('reproducibility','approximate','PHYSICS_REPRODUCIBILITY')]:
+            with self.subTest(key=key,value=value):
+                world,_,settings=build_liquid_inputs()
+                world['solver'][key]=value
+                original=core.canonical(world)
+                with self.assertRaises(core.BackendError) as raised:admit(world,settings)
+                self.assertEqual(raised.exception.report['code'],code)
+                self.assertEqual(core.canonical(world),original)
+
     def test_native_clock_representability_is_checked_before_execution(self):
         for numerator,denominator,accepted in [(24,1,True),(30000,1001,True),(240,1,True),
             (1000000,1,False),(1000000,33333,False),(1,2,False)]:

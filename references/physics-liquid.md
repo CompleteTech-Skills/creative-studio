@@ -7,6 +7,9 @@ and compares all output frames with the original evaluated geometry and an
 independent gzip BOBJ mesh decoder. `verify CACHE_DIRECTORY` checks the full
 artifact inventory, source identities and those retained comparisons without
 running Blender. Hashes establish integrity, not authenticated provenance.
+Worlds must select the installed adapter version and either `not-guaranteed`
+or `verified-cache-replay` reproducibility. Recomputing the simulation does not
+establish pinned numerical reproducibility or a declared approximation bound.
 
 This separate adapter admits one unrotated cubic water domain with 8–64 cells
 per side, 2–64 zero-origin output frames, actual sphere/box source meshes,
