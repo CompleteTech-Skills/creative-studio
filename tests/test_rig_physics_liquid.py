@@ -2,6 +2,8 @@
 from pathlib import Path
 import os
 import sys
+import struct
+import zlib
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -37,6 +39,12 @@ class NativeLiquidTests(unittest.TestCase):
             mutations={'inputs/inlet.obj':b'v 99 99 99\n',
                 'worker.py':b'# changed worker\n',
                 'replay-report.json':core.canonical(dict(mode='reopen',blend_sha256='0'*64,frames=list(range(48))))}
+            report_data=core.parse((root/'liquid-report.json').read_bytes())
+            report_data['observed']['resolution']+=1
+            mutations['liquid-report.json']=core.canonical(report_data)
+            png=(root/'frame-0000.png').read_bytes()
+            ihdr=struct.pack('>II',50000,50000)+png[24:29]
+            mutations['frame-0000.png']=png[:16]+ihdr+struct.pack('>I',zlib.crc32(b'IHDR'+ihdr))+png[33:]
             for relative,replacement in mutations.items():
                 path=root/relative;original_bytes=path.read_bytes()
                 try:
