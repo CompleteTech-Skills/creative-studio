@@ -62,7 +62,7 @@ request binding and independent PNG/EXR verification. The optional editable
 Run the pure compiler/protocol tests:
 
 ```sh
-PYTHONPATH=scripts:tests python -m unittest test_cinematics3d_blender -v
+PYTHONPATH=scripts:tests python -m unittest test_rig_cinematics3d_blender -v
 ```
 
 Run actual procedural geometry, PNG/EXR decoding, retained-config reopening and
