@@ -38,7 +38,7 @@ def _bpy():
 def _features(engine):
     require(engine in ('CYCLES', 'BLENDER_EEVEE_NEXT'), 'LOOKDEV_BLENDER_ENGINE',
             'Choose Cycles or EEVEE.')
-    return BASE_FEATURES if engine == 'CYCLES' else BASE_FEATURES - {'subsurface', 'transmission', 'iridescence'}
+    return BASE_FEATURES if engine == 'CYCLES' else BASE_FEATURES - {'subsurface', 'transmission', 'iridescence', 'anisotropy', 'sheen'}
 
 
 def probe():
