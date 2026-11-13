@@ -11,7 +11,6 @@ import re
 import numpy as np
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import require
-from rig_geometry import vertex_normals
 from rig_models import Geometry, Mesh, validate_geometry
 from rig_obj import triangulate_polygon
 
@@ -134,12 +133,14 @@ def editable_mesh(positions, faces, *, name='mesh', mesh_id=None, normal_mode='s
         owners.extend([fi]*len(local_triangles))
     positions_array = np.asarray(render if normal_mode == 'flat' else source, dtype=np.float64)
     indices_array = np.asarray(indices, dtype=np.int64)
-    if normal_mode == 'smooth':
-        # Scale-independent direction calculation avoids the legacy absolute threshold.
-        centered = positions_array-positions_array[0]
-        normals = vertex_normals(centered/max(np.max(np.abs(centered)), np.finfo(float).tiny), indices_array)
     mesh = Mesh(identifier, _readonly(positions_array, float), _readonly(indices_array, np.int64),
-                attributes={'NORMAL': _readonly(normals, float)}, name=name)
+                attributes={}, name=name)
+    if normal_mode == 'smooth':
+        # Reuse the topology owner's per-vertex area scaling. One whole-mesh
+        # scale lets a larger disconnected surface erase a smaller one's normal.
+        from model3d_topology import _normals
+        normals = _normals(mesh)
+    mesh.attributes['NORMAL'] = _readonly(normals, float)
     result = EditableMesh(mesh, _readonly(source, float), tuple(loops), _readonly(owners, np.int64), normal_mode)
     validate_geometry(result.geometry(), limits)
     return result
