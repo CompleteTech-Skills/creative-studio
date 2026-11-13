@@ -36,10 +36,10 @@ class EditorLanguageRouteTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join(5)
 
-    def post(self, path, value, *, authenticated=True):
+    def post(self, path, value, *, authenticated=True, token=None):
         headers = {'Content-Type': 'application/json', 'Origin': self.base}
         if authenticated:
-            headers['Authorization'] = 'Bearer ' + self.server.token
+            headers['Authorization'] = 'Bearer ' + (self.server.token if token is None else token)
         request = Request(self.base + '/api/' + path, json.dumps(value).encode(), headers=headers)
         try:
             with urlopen(request, timeout=20) as response:
@@ -80,7 +80,10 @@ class EditorLanguageRouteTests(unittest.TestCase):
         self.assertEqual(self.repository.snapshot()['revision'], 1)
 
     def test_authentication_and_exact_body_allowlist_precede_publication(self):
-        self.assertEqual(self.post('language/plan', self.request(), authenticated=False)[0], 401)
+        # The existing transport rejects an absent required header as malformed
+        # (400), and a supplied invalid credential as unauthorized (401).
+        self.assertEqual(self.post('language/plan', self.request(), authenticated=False)[0], 400)
+        self.assertEqual(self.post('language/plan', self.request(), token='invalid')[0], 401)
         invalid = self.request()
         invalid['callable'] = 'os.system'
         code, result = self.post('language/plan', invalid)
