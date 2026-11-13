@@ -112,10 +112,24 @@ def validate_project(value):
             _transform(instance['transform']);_overrides(instance['material_overrides']);_state(instance['animation_state'])
     require(isinstance(value['history'],list) and len(value['history'])<=256,'HISTORY','Bounded project history required.')
     for event in value['history']:
-        require(isinstance(event,dict) and set(event)=={'operation','scene','instance','role','before','after','sha256'},'HISTORY','Invalid replacement receipt.')
-        require(event['operation'] in ('replace','undo'),'HISTORY','Unknown consumer edit.')
-        identifier(event['scene']);identifier(event['instance']);require(event['role'] in ROLES,'HISTORY','Unknown binding role.')
-        binding(event['before']);binding(event['after'])
+        require(isinstance(event,dict),'HISTORY','Invalid consumer receipt.')
+        event_keys={'operation','scene','instance','role','before','after','sha256'}
+        if event.get('operation') in ('unbind','undo-unbind'):event_keys.add('revision')
+        require(set(event)==event_keys,'HISTORY','Invalid consumer receipt fields.')
+        require(event['operation'] in ('replace','undo','unbind','undo-unbind'),'HISTORY','Unknown consumer edit.')
+        identifier(event['scene']);identifier(event['instance'])
+        require(event['role'] in ROLES or event['role']=='instance' and event['operation'] in ('unbind','undo-unbind'),'HISTORY','Unknown binding role.')
+        if event['operation'] in ('replace','undo'):
+            binding(event['before']);binding(event['after'])
+        else:
+            require(type(event['revision']) is int and 1<=event['revision']<=value['revision'],'HISTORY','Invalid removal revision.')
+            removed,empty=(event['before'],event['after']) if event['operation']=='unbind' else (event['after'],event['before'])
+            require(empty is None,'HISTORY','Unbind history requires an absent side.')
+            if event['role']=='instance':
+                snapshot=dict(schema_version=1,kind='asset-reuse-project',id='history',revision=0,
+                              scenes={'history':dict(instances={event['instance']:removed},receipts=[])},history=[])
+                validate_project(snapshot)
+            else:binding(removed)
         require(object_hash({k:v for k,v in event.items() if k!='sha256'})==event['sha256'],'HISTORY','Replacement receipt changed.')
     finite_json(value)
     require(len(json.dumps(value).encode())<=MAX_BYTES,'LIMIT','Consumer document exceeds four MiB.')
@@ -124,6 +138,14 @@ def validate_project(value):
 
 def new_project(identifier_value):
     return validate_project(dict(schema_version=1,kind='asset-reuse-project',id=identifier(identifier_value),revision=0,scenes={},history=[]))
+
+
+def _history_bindings(event):
+    for side in ('before','after'):
+        value=event[side]
+        if value is None:continue
+        if event['role']=='instance':yield from value['bindings'].values()
+        else:yield value
 
 
 class SceneLibraryAdapter:
@@ -197,7 +219,12 @@ class SceneLibraryAdapter:
                 scopes[scene_id+'/receipt/'+str(i)]=self.graph.lock([item['location']],include_optional=False)
         for index,event in enumerate(project['history']):
             for side in ('before','after'):
-                scopes['history-'+str(index)+'-'+side]=self.graph.lock([event[side]['location']],include_optional=False)
+                value=event[side]
+                if value is None:continue
+                items=list(value['bindings'].values()) if event['role']=='instance' else [value]
+                for position,item in enumerate(items):
+                    suffix=side+'-'+str(position) if event['role']=='instance' else side
+                    scopes['history-'+str(index)+'-'+suffix]=self.graph.lock([item['location']],include_optional=False)
         return scopes
 
     def verify(self,project):
@@ -207,7 +234,7 @@ class SceneLibraryAdapter:
                 for item in instance['bindings'].values():self._payload(item)
             for item in scene['receipts']:self._payload(item)
         for event in project['history']:
-            self._payload(event['before']);self._payload(event['after'])
+            for item in _history_bindings(event):self._payload(item)
         return dict(project=project,sha256=object_hash(project),locks=locks,status='exact-bindings-verified',visual_review='not-reviewed')
 
     def compatibility(self,project,scene_id,instance_id):
@@ -255,6 +282,51 @@ class SceneLibraryAdapter:
         require(instance['bindings'].get(receipt['role'])==receipt['after'],'STALE','Binding changed after replacement; preserving the newer binding.')
         instance['bindings'][receipt['role']]=deepcopy(receipt['before']);self._evaluate(instance)
         event=dict(operation='undo',scene=receipt['scene'],instance=receipt['instance'],role=receipt['role'],before=receipt['after'],after=receipt['before'])
+        event['sha256']=object_hash(event);result['history'].append(event);result['revision']+=1
+        return self.verify(result)['project']
+
+    def unbind(self,project,scene_id,instance_id,*,expected_revision,role=None,expected_binding=None):
+        """Remove an optional role or whole instance from one explicit revision."""
+        result=validate_project(project)
+        require(type(expected_revision) is int and expected_revision==result['revision'],'STALE','Project revision changed.')
+        try:instance=result['scenes'][scene_id]['instances'][instance_id]
+        except KeyError as exc:raise RigError('LIBRARY_REUSE_INSTANCE','Selected instance is absent.') from exc
+        if role is None:
+            require(expected_binding is None,'BINDING','Whole-instance removal uses the exact project revision.')
+            removed=deepcopy(instance);del result['scenes'][scene_id]['instances'][instance_id];event_role='instance'
+        else:
+            require(role in ('rig','animation','material'),'BINDING','Remove a primary asset by explicitly removing its whole instance.')
+            require(role not in ('rig','animation') or instance['animation_state'] is None,'BINDING','Clear the selected animation state explicitly before unbinding its rig or animation source.')
+            require(role in instance['bindings'],'BINDING','Selected role is absent.')
+            removed=instance['bindings'][role]
+            require(expected_binding is None or binding(expected_binding)==removed,'STALE','Selected exact binding changed.')
+            del instance['bindings'][role];self._evaluate(instance);event_role=role
+        event=dict(operation='unbind',scene=scene_id,instance=instance_id,role=event_role,before=removed,after=None,revision=result['revision']+1)
+        event['sha256']=object_hash(event);result['history'].append(event);result['revision']+=1
+        verified=self.verify(result)
+        return dict(project=verified['project'],receipt=deepcopy(event),locks=verified['locks'],
+                    invalidated=[dict(scene=scene_id,instance=instance_id)],immutable_assets_changed=False)
+
+    def undo_unbind(self,project,receipt,*,expected_revision):
+        result=validate_project(project)
+        require(type(expected_revision) is int and expected_revision==result['revision'],'STALE','Project revision changed.')
+        require(receipt in result['history'] and receipt['operation']=='unbind','UNDO','Use a retained unbind receipt.')
+        position=result['history'].index(receipt)
+        for later in result['history'][position+1:]:
+            same_target=later['scene']==receipt['scene'] and later['instance']==receipt['instance']
+            overlaps=receipt['role']=='instance' or later['role']=='instance' or later['role']==receipt['role']
+            require(not(same_target and overlaps),'STALE','Binding history changed after this removal; preserving newer intent.')
+        try:instances=result['scenes'][receipt['scene']]['instances']
+        except KeyError as exc:raise RigError('LIBRARY_REUSE_UNDO','Selected scene was removed.') from exc
+        if receipt['role']=='instance':
+            require(receipt['instance'] not in instances,'STALE','Instance slot is occupied; preserving newer content.')
+            instance=deepcopy(receipt['before']);self._evaluate(instance);instances[receipt['instance']]=instance
+        else:
+            require(receipt['instance'] in instances,'STALE','Selected instance was removed.')
+            instance=instances[receipt['instance']]
+            require(receipt['role'] not in instance['bindings'],'STALE','Binding slot is occupied; preserving newer content.')
+            instance['bindings'][receipt['role']]=deepcopy(receipt['before']);self._evaluate(instance)
+        event=dict(operation='undo-unbind',scene=receipt['scene'],instance=receipt['instance'],role=receipt['role'],before=None,after=deepcopy(receipt['before']),revision=result['revision']+1)
         event['sha256']=object_hash(event);result['history'].append(event);result['revision']+=1
         return self.verify(result)['project']
 
@@ -452,6 +524,27 @@ class ProjectStore:
                 with revision.open('xb') as stream:stream.write(payload)
             atomic_bytes(path,payload)
         return dict(path=str(path),sha256=object_hash(project),revision=project['revision'])
+
+    def unbind(self,adapter,scene_id,instance_id,*,expected_sha256,expected_revision,role=None,expected_binding=None):
+        project=self.load()
+        require(object_hash(project)==expected_sha256,'STALE','Saved project changed; reload before unbinding.')
+        result=adapter.unbind(project,scene_id,instance_id,expected_revision=expected_revision,
+                              role=role,expected_binding=expected_binding)
+        result['saved']=self.save(result['project'],expected_sha256=expected_sha256)
+        return result
+
+    def undo_unbind(self,adapter,receipt,*,expected_sha256,expected_revision):
+        project=self.load()
+        require(object_hash(project)==expected_sha256,'STALE','Saved project changed; reload before undo.')
+        restored=adapter.undo_unbind(project,receipt,expected_revision=expected_revision)
+        return dict(project=restored,saved=self.save(restored,expected_sha256=expected_sha256))
+
+    def set_animation(self,adapter,scene_id,instance_id,state,*,expected_sha256,expected_revision):
+        project=self.load()
+        require(object_hash(project)==expected_sha256 and type(expected_revision) is int and project['revision']==expected_revision,
+                'STALE','Saved project changed; reload before changing animation.')
+        updated=adapter.set_animation(project,scene_id,instance_id,state)
+        return dict(project=updated,saved=self.save(updated,expected_sha256=expected_sha256))
 
 
 def main(argv=None):
