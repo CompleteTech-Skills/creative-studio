@@ -220,7 +220,7 @@ class AssetOperations:
         p=adapter.admit()
         resources={'import':('cpu','blender','io','hash'),'preview':('preview','blender'),
             'thumbnail':('preview','blender'),'turntable':('preview','blender'),
-            'export':('cpu','io'),'index':('index','io'),'bundle.create':('archive','io'),
+            'export':('cpu','blender','io'),'index':('index','io'),'bundle.create':('archive','io'),
             'bundle.restore':('archive','io')}[operation]
         return module('jobs').JobManager(self.jobs_root,limits=self.job_limits,create=True).submit(operation.replace('.','-'),p,resources=resources,key=object_hash(dict(operation=operation,parameters=p)))
 

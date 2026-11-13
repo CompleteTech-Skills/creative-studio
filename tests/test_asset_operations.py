@@ -145,6 +145,10 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
         self.assertIn('blender',queued['resources'])
         self.assertEqual(queued['status'],'queued')
         self.assertEqual(self.library.list_references(),[])
+        ref=self.fixture.register()
+        exported=self.owner.submit('export',dict(reference=ref,destination=str(self.root/'export'),format='blend'))
+        self.assertIn('blender',exported['resources'])
+        self.assertFalse((self.root/'export').exists())
 
     def test_unknown_operation_and_optional_capability_do_not_fake_success(self):
         for operation in ('remote-upload','generate','semantic-search'):
