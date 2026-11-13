@@ -136,7 +136,7 @@ class TemporalEngine:
             return dict(reference, path=(project_directory / reference['path']).as_posix())
         known_scenes = {digest(rooted(r)) for r in project_doc['scenes']}
         known_shots = {digest(rooted(r)) for r in project_doc['shots']}
-        scenes, seeds = {}, {}
+        scenes, scene_references, seeds = {}, {}, {}
         for entry in self.plan['scenes']:
             reference = entry['scene']
             if digest(reference) not in known_scenes:
@@ -160,6 +160,7 @@ class TemporalEngine:
                     transform={k: transform[k] for k in ('translation', 'rotation', 'scale')},
                     visible=result['visible'])
             scenes[scene['id']] = scene
+            scene_references[scene['id']] = reference
             seeds[scene['id']] = entities
         self.shots = {}
         last_end = -1
@@ -172,7 +173,7 @@ class TemporalEngine:
             if shot['id'] in self.shots:
                 fail('DUPLICATE', 'shot mapping repeated')
             scene_id = entry['scene_id']
-            if scene_id not in scenes or shot['scene']['id'] != scene_id:
+            if scene_id not in scenes or rooted(shot['scene']) != scene_references[scene_id]:
                 fail('MAPPING', 'shot scene mapping unresolved')
             if shot['tracks'] or shot['bindings'] or shot['temporal_constraints']:
                 fail('ADAPTER_REQUIRED', 'dynamic shot needs an admitted native evaluator')

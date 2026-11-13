@@ -53,6 +53,47 @@ class CapabilityTest(unittest.TestCase):
         request['checks'][0].update(inputs=[owner.bound], input_types=['hatch-3d-rig'], output_types=['native-inspection'])
         return owner, request
 
+    def test_native_load_reservation_precedes_materialization_and_accounts_for_retained_rig(self):
+        import io
+        from PIL import Image
+        from rig_models import load_rig, save_geometry, TextureImage
+        shutil.copytree(REPO/'examples/rig-3d/robotic', self.root/'rig')
+        rig = load_rig(self.root/'rig')
+        stream = io.BytesIO()
+        Image.new('RGB', (1024,1024), 'red').save(stream, format='PNG')
+        # Tiny compressed payloads have a real conservative decoded-image cost.
+        # Native preflight reads dimensions without decoding the images.
+        rig.geometry.images = [TextureImage(str(i), 'image/png', stream.getvalue()) for i in range(5)]
+        rig.manifest['geometry'] = save_geometry(self.root/'rig', rig.geometry, rig.manifest['limits'])
+        (self.root/'rig'/'rig.json').write_text(json.dumps(rig.manifest))
+        before = {p.relative_to(self.root/'rig').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in (self.root/'rig').rglob('*') if p.is_file()}
+        with patch('continuity_capabilities._peak_memory_bytes', return_value=16*1024*1024):
+            owner = RigOwner(self.root, 'rig/rig.json', 'evidence', 'geometry-inspection')
+            check = self.request('geometry-inspection')['checks'][0]
+            check['inputs'] = [owner.bound]
+            check['resources']['memory_bytes'] = 64*1024*1024
+            with patch('rig_models.load_geometry', side_effect=AssertionError('materialization before admission')):
+                with self.assertRaises(RigError) as rejected:
+                    with owner.reserve(check):
+                        self.fail('oversized native input admitted')
+            self.assertEqual(rejected.exception.report['code'], 'RIG_LIMIT_MEMORY')
+            check['resources']['memory_bytes'] = 192*1024*1024
+            with self.assertRaises(RigError) as retained_rejected:
+                with owner.reserve(check):
+                    # The first native estimate fits, but retaining it leaves
+                    # too little room for a second identical validation load.
+                    self.assertLess(owner._rig.resource_usage['estimated_memory_bytes'], 144*1024*1024)
+                    self.assertGreater(owner._rig.resource_usage['estimated_memory_bytes'], 72*1024*1024)
+            self.assertEqual(retained_rejected.exception.report['code'], 'RIG_LIMIT_MEMORY')
+            self.assertIsNone(owner._rig)
+            check['resources']['memory_bytes'] = 256*1024*1024
+            with owner.reserve(check):
+                self.assertGreater(owner._rig.geometry.vertex_count, 0)
+        after = {p.relative_to(self.root/'rig').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                 for p in (self.root/'rig').rglob('*') if p.is_file()}
+        self.assertEqual(before, after)
+
     def test_discovery_is_not_execution_or_approval(self):
         result = discover()
         self.assertEqual(len(result['capabilities']), 13)
@@ -259,7 +300,9 @@ class CapabilityTest(unittest.TestCase):
         execute.assert_not_called()
 
     def test_peak_memory_overshoot_and_unavailable_measurement_fail_closed(self):
-        for peaks in ((1,1,512*1024*1024),(None,)):
+        # Keep the late post-execution overshoot after the owner's additional
+        # baseline/load/revalidation measurements; unavailable preflight stays closed.
+        for peaks in ((1,1,1,1,1,512*1024*1024),(None,)):
             owner, request=self.bound('geometry-inspection')
             with patch('continuity_capabilities._peak_memory_bytes',side_effect=peaks):
                 result=self.engine(owner).run(request)

@@ -92,27 +92,40 @@ class RigOwner(OwnerAdapter):
     def reserve(self, check):
         from rig_errors import job_lock
         from rig_models import load_rig
+        from continuity_capabilities import _peak_memory_bytes
+        # The caller reserves the whole process. Leave a bounded workspace for
+        # evaluation/evidence and pass the remaining cap into native preflight,
+        # which accounts for textures, morphs, skins and directory allocations.
+        reservation = min(512*1024*1024, check['resources']['memory_bytes']) if check is not None else 512*1024*1024
+        baseline = _peak_memory_bytes()
+        if baseline is None:
+            raise ValueError('CONTINUITY_CAPABILITY_LIMIT: process memory measurement unavailable')
+        workspace = 32*1024*1024
+        def native_limits(retained=0):
+            peak = _peak_memory_bytes()
+            if peak is None:
+                raise ValueError('CONTINUITY_CAPABILITY_LIMIT: process memory measurement unavailable')
+            available = reservation - max(peak, baseline + retained) - workspace
+            if available <= 0:
+                raise ValueError('CONTINUITY_CAPABILITY_LIMIT: no native load memory remains in reservation')
+            return dict(memory_bytes=available, vertices=100000, triangles=100000)
         with job_lock((self.root/self.rig_path).parent):
             verify_references(self.root, dict(source=self.bound))
-            rig = load_rig((self.root/self.rig_path).parent)
-            # Native limits remain authoritative. No token or lease is forged;
-            # the native owner's actual exclusive OS lock is held throughout.
-            if rig.geometry.vertex_count > 100000 or rig.geometry.triangle_count > 100000:
-                raise ValueError('CONTINUITY_CAPABILITY_LIMIT: bounded adapter maximum is 100000 vertices/triangles')
             if check is not None and self.bound not in check['inputs']:
                 raise ValueError('CONTINUITY_CAPABILITY_SOURCE: request does not bind probed rig bytes')
-            if check is not None:
-                estimated_memory = 32*1024*1024 + rig.geometry.vertex_count*256 + rig.geometry.triangle_count*64
-                if check['resources']['memory_bytes'] < estimated_memory:
-                    raise ValueError('CONTINUITY_CAPABILITY_LIMIT: native estimated working memory exceeds reservation')
-                self._disk_remaining = check['resources']['disk_bytes']
-            else:
-                self._disk_remaining = 64*1024*1024
+            rig = load_rig((self.root/self.rig_path).parent, limits=native_limits())
+            # Native limits remain authoritative. No token or lease is forged;
+            # the native owner's actual exclusive OS lock is held throughout.
+            self._disk_remaining = check['resources']['disk_bytes'] if check is not None else 64*1024*1024
             self._rig = rig
             try:
                 yield
                 verify_references(self.root, dict(source=self.bound))
-                load_rig((self.root/self.rig_path).parent)
+                # The first rig and returned measurements remain live during
+                # source revalidation. Charge its conservative load estimate in
+                # addition to the baseline before materializing a second rig.
+                retained = rig.resource_usage['estimated_memory_bytes']
+                load_rig((self.root/self.rig_path).parent, limits=native_limits(retained))
             finally:
                 self._rig = None
 

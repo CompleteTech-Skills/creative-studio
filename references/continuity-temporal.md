@@ -12,7 +12,9 @@ visual approval or a complete continuity P1 acceptance claim.
 
 `continuity-temporal-timeline` binds a native `scene3d-project` reference, scenes,
 explicit canonical scene-to-world transforms, persistent entity/node mappings,
-and native shots. References include exact version, path and SHA-256. The native
+and native shots. References include exact version, path and SHA-256. Each
+selected shot must bind the exact selected scene reference, including version,
+rooted path and hash; matching a reused scene ID alone is insufficient. The native
 closure loader checks all transitive files; the native static hierarchy evaluator
 computes actual parent/world transforms in right-handed Y-up meters. It does not
 infer geometry from identity metadata or reinterpret v1 pixels.
