@@ -32,7 +32,7 @@ class DirectorGraphTests(unittest.TestCase):
         limits.update(max_cpu_seconds=100, max_gpu_seconds=100)
         self.evidence = self.write('probe', {'operation': 'native-cpu', 'status': 'available',
                                            'execution_verified': True, 'fixture': True,
-                                           'policy_limits': limits, 'version': 'test'}, kind='evidence')
+                                           'policy_limits': limits, 'version': 'test', 'payloads': []}, kind='evidence')
         self.snapshot = dict(capabilities=[dict(operation='native-cpu', version='test', status='available',
                             limits=limits, probe_evidence=[self.evidence], execution_verified=True)],
                              expires_at=(self.now + timedelta(hours=1)).isoformat())
