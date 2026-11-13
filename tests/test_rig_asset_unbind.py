@@ -42,7 +42,7 @@ class CanonicalUnbind(unittest.TestCase):
         barrier=threading.Barrier(2)
         def remove(_):
             own=ScopedResolver([('local',AssetLibrary(self.library.root))],project_library='local')
-            barrier.wait()
+            barrier.wait(timeout=30)
             try:own.unbind('project','slot',expected_revision=1);return 'saved'
             except RigError:return 'conflict'
         with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(remove,range(2)))
@@ -105,7 +105,7 @@ class SceneUnbind(unittest.TestCase):
         store=ProjectStore(self.root/'store');saved=store.save(project,expected_sha256=None)
         barrier=threading.Barrier(2)
         def remove(scene):
-            own=ProjectStore(store.root);barrier.wait()
+            own=ProjectStore(store.root);barrier.wait(timeout=30)
             try:return own.unbind(self.adapter,scene,'robot',expected_revision=project['revision'],expected_sha256=saved['sha256'])
             except RigError:return None
         with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(remove,['scene-a','scene-b']))
