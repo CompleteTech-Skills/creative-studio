@@ -1,9 +1,11 @@
 # Director MVP actual execution evidence
 
 Executed implementation: `6cc52fef434c4d80a24c36d9887ca6136a42997c`.
-Current main was then integrated without changing any of the twelve executed
-Director, scene, renderer, verifier or silent-video source files listed in
-`receipt.json`. No completed render was repeated.
+The original `receipt.json` is preserved as a historical recording. Its
+`integrated_candidate`, `integrated_main` and fields named `current_runtime_*`
+describe earlier integration/correction stages; they do not describe the current
+PR head. See `post-execution-source-disclosure.json` for the later exact runtime
+hash comparison and host guard changes. No completed render was repeated.
 
 The retained local artifact directory is recorded in the receipt. It contains
 120 actual opaque 640×360 PNG masters, two source-bound Blender Cycles CPU
@@ -39,8 +41,10 @@ Three focused unit controls and two whole-orchestration controls on private copi
 of the actual artifacts reject a valid replacement PNG with rewritten result
 metadata and reject absent discovery-shot checkpoint coverage. No native render
 was repeated; all original artifacts remain immutable. The receipt separately
-records the original executed fingerprints and the corrected current runtime
-fingerprint, so it does not claim that all current source files are unchanged.
+records the original executed fingerprints and then-current corrected runtime
+fingerprint. The additive source disclosure identifies subsequent changes to the
+renderer host guards as well. The completed artifact bytes do not establish
+execution of those later source revisions.
 
 The canonical scene-evidence relocation from `8daaf85` shortens three historical
 artifact paths while preserving their payload hashes and an old/new path manifest.
