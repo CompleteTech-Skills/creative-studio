@@ -43,7 +43,8 @@ def demonstrate(destination):
                 loaded = load_character_model(root / ('model.' + fmt)).geometry
                 require(loaded.triangle_count == geometry.triangle_count, 'MODEL3D_DEMO',
                         'Decoded triangle count differs.')
-                require(np.allclose(loaded.meshes[0].positions, geometry.meshes[0].positions,
+                require(np.allclose(loaded.meshes[0].positions[loaded.meshes[0].triangles],
+                                    geometry.meshes[0].positions[geometry.meshes[0].triangles],
                                     rtol=1e-6, atol=1e-7), 'MODEL3D_DEMO', 'Decoded coordinates differ.')
                 require(loaded.meshes[0].name == kind, 'MODEL3D_DEMO', 'Semantic name changed.')
                 records.append(dict(primitive=kind, format=fmt, manifest=manifest,
