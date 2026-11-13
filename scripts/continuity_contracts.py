@@ -426,13 +426,19 @@ def load_document(path, kind=None):
 def references(value):
     """All typed exact pointers, deduplicated; contradictory path bindings fail."""
     found = {}
-    for item in _walk(value):
-        if set(item) == {'id', 'version', 'path', 'sha256', 'kind'}:
-            key = unicodedata.normalize('NFC', item['path']).casefold()
-            previous = found.get(key)
-            if previous is not None and previous != item:
-                raise ValueError('CONTINUITY_REFERENCE: conflicting immutable path reference')
-            found[key] = item
+    kind = str(value.get('kind', '')).removeprefix('continuity-') if isinstance(value, dict) else ''
+    if not kind and isinstance(value, dict) and 'project_id' in value and 'instances' in value:
+        kind = 'bindings'
+    if kind in (*KINDS, 'bindings'):
+        items = (item for declared, _, item in _typed_objects(value, ref(kind)) if declared == 'ref')
+    else:
+        items = (item for item in _walk(value) if set(item) == {'id', 'version', 'path', 'sha256', 'kind'})
+    for item in items:
+        key = unicodedata.normalize('NFC', item['path']).casefold()
+        previous = found.get(key)
+        if previous is not None and previous != item:
+            raise ValueError('CONTINUITY_REFERENCE: conflicting immutable path reference')
+        found[key] = item
     return [found[key] for key in sorted(found)]
 
 

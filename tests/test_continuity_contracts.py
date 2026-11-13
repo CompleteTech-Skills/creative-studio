@@ -2,6 +2,7 @@
 from copy import deepcopy
 from contextlib import contextmanager
 import hashlib
+import errno
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,15 @@ from continuity_test_helpers import pointer, sample, write_assets, review_for
 
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
+
+
+def symlink_or_skip(test, link, target, *, directory=False):
+    try:
+        link.symlink_to(target, target_is_directory=directory)
+    except OSError as exc:
+        if getattr(exc, 'winerror', None) == 1314 or exc.errno in (errno.ENOSYS, errno.ENOTSUP):
+            test.skipTest('Native symlink verification unavailable: platform lacks symlink privilege/support')
+        raise
 
 
 class ContractTests(unittest.TestCase):
@@ -98,9 +108,14 @@ class ContractTests(unittest.TestCase):
             with self.assertRaises(OSError): verify_references(root,doc)
             write_assets(root)
             with self.assertRaisesRegex(ValueError,'LIMIT'): verify_references(root,doc,maximum_bytes=1)
-            if hasattr(os,'symlink'):
-                (root/'mesh.obj').unlink();(root/'mesh.obj').symlink_to(root/'reference.ppm')
-                with self.assertRaisesRegex(ValueError,'symlink'): verify_references(root,doc)
+
+    def test_native_dependency_symlink_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp); write_assets(root)
+            (root/'mesh.obj').unlink()
+            symlink_or_skip(self, root/'mesh.obj', root/'reference.ppm')
+            with self.assertRaisesRegex(ValueError, 'symlink'):
+                verify_references(root, sample('revision'))
 
     # This filesystem API does not exist on Windows; no solver/portable capability
     # is inferred from this POSIX-only negative case.
@@ -153,6 +168,10 @@ class ContractTests(unittest.TestCase):
         link['entity_mapping'] = {'created_at': 'actor-2', 'path': 'actor-3',
                                   'origin': 'procedural-fixture', 'expires_at': 'actor-4'}
         self.assertEqual(validate_document(link)['entity_mapping'], link['entity_mapping'])
+        link['entity_mapping'] = {'id': 'actor-1', 'version': 'actor-2', 'path': 'actor-3',
+                                  'sha256': 'actor-4', 'kind': 'actor-5'}
+        validate_document(link)
+        self.assertEqual(len(references(link)), 1)
         bad = sample('revision'); bad['bounds'] = {'minimum': [2, 0, 0], 'maximum': [1, 1, 1]}
         with self.assertRaisesRegex(ValueError, 'inverted bounds'):
             validate_document(bad)
@@ -695,14 +714,14 @@ with tempfile.TemporaryDirectory() as temp:
 
     def test_registry_path_symlinks_reject_and_parent_aliases_normalize(self):
         if not hasattr(os,'symlink'):self.skipTest('platform lacks symlinks')
-        link=self.root/'linked.sqlite';link.symlink_to(self.root/'uncreated'/'unrelated.sqlite')
+        link=self.root/'linked.sqlite';symlink_or_skip(self, link, self.root/'uncreated'/'unrelated.sqlite')
         with self.assertRaises(ValueError):IdentityRegistry(link,asset_root=self.assets)
         self.assertTrue(link.is_symlink());self.assertFalse((self.root/'uncreated').exists())
-        sidecar=self.root/'bad.sqlite-journal';sidecar.symlink_to(self.root/'uncreated'/'journal')
+        sidecar=self.root/'bad.sqlite-journal';symlink_or_skip(self, sidecar, self.root/'uncreated'/'journal')
         with self.assertRaisesRegex(ValueError,'sidecar'):
             IdentityRegistry(self.root/'bad.sqlite',asset_root=self.assets)
         self.assertTrue(sidecar.is_symlink());self.assertFalse((self.root/'uncreated').exists())
-        alias=self.root/'alias';alias.symlink_to(self.root,target_is_directory=True)
+        alias=self.root/'alias';symlink_or_skip(self, alias, self.root, directory=True)
         with IdentityRegistry(alias/'second.sqlite',asset_root=self.assets) as registry:
             registry.create_identity(self.identity)
             self.assertEqual(registry.identity('robot')['document'],self.identity)

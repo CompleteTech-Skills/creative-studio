@@ -191,3 +191,17 @@ playback/catalog files to LF. Scoped decoder rules remain in place. A real
 while all 114 continuity receipt-bound sources and nested evidence retain exact
 Git bytes. The retained final-provenance report distinguishes this Git conversion
 check on Linux from still-required native Windows/macOS CI.
+
+### Current review corrections
+
+Semantic validation follows declared contract types, so user-chosen proportion
+and entity-map keys cannot accidentally invoke bounds, timestamp or reference
+checks. Repeated instance pins share verified revision data only within one
+operation; each later read verifies native bytes again. Selecting a healthy
+revision can recover an identity whose prior selected receipt is missing, while
+still enforcing the expected selection and validating stored identity/index data.
+
+Native symlink rejection tests run where the OS permits creating symlinks. An
+explicit missing-privilege/unsupported-platform skip records unavailable native
+coverage; ordinary path, hashing and lifecycle checks still run independently.
+Linux results do not establish native Windows coverage.
