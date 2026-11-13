@@ -450,9 +450,17 @@ function checkCommitContext(envelope, previewEdit) {
       (previewEdit && !canEditPreview()))
     throw Error("The selected timeline or evaluated preview changed while preparing the edit. Reapply at the intended frame.");
 }
+function setBusy(value) {
+  busy = value;
+  inspect();
+  attach();
+  $("undo").disabled = busy || !currentSnapshot?.undo_available;
+  $("redo").disabled = busy || !currentSnapshot?.redo_available;
+
+}
 async function commit(commands) {
   if (busy || !commands.length) return;
-  busy = true;
+  setBusy(true);
   gizmo?.detach();
   $("status").textContent = "Saving command…";
   try {
@@ -489,8 +497,7 @@ async function commit(commands) {
     diagnostic(error);
     await reload(false);
   } finally {
-    busy = false;
-    attach();
+    setBusy(false);
   }
 }
 function select(id, add = false, toggle = false) {
@@ -670,8 +677,8 @@ async function install(snapshot) {
   lastEvaluation = null;
   previewActive = false;
   currentSnapshot = snapshot;
-  $("undo").disabled = !snapshot.undo_available;
-  $("redo").disabled = !snapshot.redo_available;
+  $("undo").disabled = busy || !snapshot.undo_available;
+  $("redo").disabled = busy || !snapshot.redo_available;
   const epoch = ++loadEpoch,
     assets = snapshot.viewport_assets || {};
   doc = snapshot.scene;
@@ -1402,7 +1409,7 @@ $("time").oninput = () => {
 };
 async function historyCommand(name) {
   if (busy) return;
-  busy = true;
+  setBusy(true);
   try {
     await install(
       await api(name, {
@@ -1415,8 +1422,7 @@ async function historyCommand(name) {
   } catch (e) {
     diagnostic(e);
   } finally {
-    busy = false;
-    attach();
+    setBusy(false);
   }
 }
 $("undo").onclick = () => historyCommand("undo");
