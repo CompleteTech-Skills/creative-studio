@@ -42,7 +42,21 @@ def surface(obj,value,slot):
 def sphere(name,location,scale,value,slot):
     bpy.ops.mesh.primitive_uv_sphere_add(segments=32,ring_count=16,radius=1,location=location)
     obj=bpy.context.object;obj.name=name;obj.scale=scale
-    for face in obj.data.polygons:face.use_smooth=True
+    # Freeze explicit face diagonals: automatic quad tessellation can choose a
+    # different diagonal across otherwise identical rebuilds of a UV sphere.
+    # That changes actual Cycles triangles and defeats exact random-seek replay.
+    original=obj.data
+    vertices=[tuple(vertex.co) for vertex in original.vertices]
+    triangles=[]
+    for polygon in original.polygons:
+        indices=list(polygon.vertices)
+        triangles.extend((indices[0],indices[index],indices[index+1])
+                         for index in range(1,len(indices)-1))
+    mesh=bpy.data.meshes.new(name+'-explicit-triangles')
+    mesh.from_pydata(vertices,[],triangles);mesh.update()
+    obj.data=mesh;bpy.data.meshes.remove(original)
+    assert all(len(face.vertices)==3 for face in mesh.polygons)
+    for face in mesh.polygons:face.use_smooth=True
     return obj,surface(obj,value,slot)
 
 
