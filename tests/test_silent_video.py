@@ -275,6 +275,13 @@ class SilentMedia(SilentContracts):
                 self.independent_decode(output)
         with self.assertRaises(ValueError):
             video.verify_export(output, video.make_request(source, 'vp9-webm'))
+        source_60 = video.build_source(self.root, self.paths, {'numerator': 60, 'denominator': 1})
+        wrong = self.root / 'wrong-av1-60.webm'
+        video.encode(video.make_request(source_60, 'av1-webm'), self.root, wrong)
+        # At six frames, 60 and 60000/1001 can share the same millisecond PTS.
+        # The track's real nanosecond duration must still distinguish them.
+        with self.assertRaisesRegex(ValueError, 'rational frame rate'):
+            video.verify_export(wrong, request)
 
     def test_zero_valued_aac_track_is_not_silent_delivery(self):
         silent = self.root / 'video.mp4'

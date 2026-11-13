@@ -87,6 +87,11 @@ def schemas():
         'timebase_tolerance': fraction, 'profile': {'enum': list(PROFILES)},
         'source_pixel_comparison': {'type': 'array', 'maxItems': 3, 'items': _obj({'index': _int(0, MAX_FRAMES-1), 'rgb_psnr_db': {'type': 'number', 'minimum': 18, 'maximum': 100}, 'minimum_psnr_db': {'const': 18.0}})},
         'probe': raw, 'timeline': raw, 'decode': raw, 'visual_review': {'const': 'not-performed'}})
+    # Optional additions preserve validation of historical receipts.
+    result['artifact']['properties']['reported_fps'] = FPS
+    result['artifact']['properties']['rate_quantization'] = _obj({
+        'kind': {'enum': ['exact', 'matroska-nanosecond-rational']},
+        'default_duration_ns': _int(0, 10**9), 'nominal_period_error': fraction})
     result['job'] = _obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-video-job'},
         'request_sha256': SHA, 'source_manifest_sha256': SHA,
         'status': {'enum': ['queued', 'running', 'verifying', 'complete', 'failed', 'cancelled']},
@@ -369,6 +374,96 @@ def _fraction(value, label):
         raise ValueError('invalid '+label+' in probe') from exc
 
 
+def _webm_default_duration(path):
+    """Read the sole video TrackEntry's integer-nanosecond DefaultDuration.
+
+    Parse bounded EBML metadata, never scan compressed packet bytes for magic
+    signatures. Unknown sizes are accepted only for the top-level Segment.
+    """
+    with Path(path).open('rb') as stream:
+        length, visited = os.fstat(stream.fileno()).st_size, 0
+
+        def vint(identifier=False):
+            first = stream.read(1)
+            if not first or first[0] == 0:
+                raise ValueError('invalid WebM element header')
+            size, mask = 1, 128
+            while not first[0] & mask:
+                size, mask = size + 1, mask >> 1
+            if size > (4 if identifier else 8):
+                raise ValueError('oversized WebM element header')
+            rest = stream.read(size - 1)
+            if len(rest) != size - 1:
+                raise ValueError('truncated WebM element header')
+            value = int.from_bytes(first + rest, 'big')
+            if identifier:
+                return value, False
+            value &= (1 << (7 * size)) - 1
+            return value, value == (1 << (7 * size)) - 1
+
+        def elements(start, end, segment=False):
+            nonlocal visited
+            position = start
+            while position < end:
+                visited += 1
+                if visited > 4096:
+                    raise ValueError('WebM metadata element budget exceeded')
+                stream.seek(position)
+                identity, _ = vint(True)
+                size, unknown = vint()
+                begin = stream.tell()
+                finish = end if unknown else begin + size
+                if finish > end or finish > length or (unknown and not (segment and identity == 0x18538067)):
+                    raise ValueError('invalid WebM element extent')
+                yield identity, begin, finish
+                position = finish
+
+        segments = (item for item in elements(0, length, True) if item[0] == 0x18538067)
+        segment = next(segments, None)
+        if segment is None:
+            raise ValueError('WebM Segment unavailable')
+        tracks = None
+        for item in elements(segment[1], segment[2]):
+            if item[0] == 0x1654AE6B:
+                tracks = item
+                break
+            if item[0] == 0x1F43B675:
+                raise ValueError('WebM track metadata must precede packet clusters')
+        if tracks is None:
+            raise ValueError('WebM Tracks unavailable')
+        entries = [item for item in elements(tracks[1], tracks[2]) if item[0] == 0xAE]
+        if len(entries) != 1:
+            raise ValueError('WebM must declare exactly one track')
+        values = {}
+        for identity, begin, finish in elements(entries[0][1], entries[0][2]):
+            if identity in (0x83, 0x23E383):
+                if identity in values or not 1 <= finish - begin <= 8:
+                    raise ValueError('invalid WebM duration/track declaration')
+                stream.seek(begin)
+                values[identity] = int.from_bytes(stream.read(finish - begin), 'big')
+        if values.get(0x83) != 1 or not 1 <= values.get(0x23E383, 0) <= 10**9:
+            raise ValueError('WebM video DefaultDuration unavailable')
+        return values[0x23E383]
+
+
+def _verify_nominal_rate(path, reported, expected, container):
+    error = abs(1 / reported - 1 / expected)
+    if reported == expected:
+        return {'kind': 'exact', 'default_duration_ns': 0,
+                'nominal_period_error': {'numerator': 0, 'denominator': 1}}
+    if container != 'webm':
+        raise ValueError('encoded rational frame rate mismatch')
+    duration_ns = _webm_default_duration(path)
+    period = Fraction(duration_ns, 10**9)
+    # Matroska stores integer nanoseconds. FFmpeg reduces its inverse using
+    # av_reduce(..., 30000); at >=1 FPS this bounds the period denominator.
+    if (abs(period - 1 / expected) > Fraction(1, 10**9) or
+            1 / reported != period.limit_denominator(30000)):
+        raise ValueError('encoded rational frame rate mismatch')
+    return {'kind': 'matroska-nanosecond-rational', 'default_duration_ns': duration_ns,
+            'nominal_period_error': {'numerator': error.numerator, 'denominator': error.denominator}}
+
+
 def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None, diagnostics=None):
     """Probe ALL streams, enumerate presentation timestamps and strictly decode."""
     validate_request(request)
@@ -412,8 +507,8 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         if profile['container'] not in formats:
             raise ValueError('encoded container mismatch')
         fps = fps_fraction(source['fps'])
-        if _fraction(video['avg_frame_rate'], 'frame rate') != fps:
-            raise ValueError('encoded rational frame rate mismatch')
+        reported_fps = _fraction(video['avg_frame_rate'], 'frame rate')
+        rate_quantization = _verify_nominal_rate(path, reported_fps, fps, profile['container'])
         tick = _fraction(video['time_base'], 'time base')
         duration = Fraction(data['format']['duration'])
         if abs(duration - Fraction(expected_count, 1)/fps) > 2*tick:
@@ -468,6 +563,8 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
             'source_manifest_sha256': _digest(source), 'request_sha256': _digest(request),
             'video_stream_count': 1, 'audio_stream_count': 0, 'other_stream_count': 0,
             'frame_count': expected_count, 'fps': source['fps'],
+            'reported_fps': {'numerator': reported_fps.numerator, 'denominator': reported_fps.denominator},
+            'rate_quantization': rate_quantization,
             'duration': {'numerator': duration.numerator, 'denominator': duration.denominator},
             'timebase_tolerance': {'numerator': (2*tick).numerator, 'denominator': (2*tick).denominator},
             'profile': request['profile'], 'source_pixel_comparison': pixel_checks, 'probe': inspected, 'timeline': timeline, 'decode': decoded,
@@ -528,6 +625,9 @@ def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=
                 'video_stream_count', 'audio_stream_count', 'other_stream_count', 'frame_count',
                 'fps', 'duration', 'timebase_tolerance', 'profile'):
         if receipt[key] != actual[key]:
+            raise ValueError('corrupt/stale silent receipt: '+key)
+    for key in ('reported_fps', 'rate_quantization'):
+        if key in receipt and receipt[key] != actual[key]:
             raise ValueError('corrupt/stale silent receipt: '+key)
     old_probe, new_probe = json.loads(receipt['probe']['stdout']), json.loads(actual['probe']['stdout'])
     for data in (old_probe, new_probe):

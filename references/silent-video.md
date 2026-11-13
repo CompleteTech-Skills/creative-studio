@@ -200,3 +200,16 @@ stream enumeration, full strict decode, rational timestamps and actual pixel
 checks apply to AV1 just as they do to the established profiles. This baseline
 does not claim HDR, 10-bit, transparent WebM, configurable bitrate or two-pass
 support; those require explicit validated profile work.
+
+AV1/WebM can report a nominal rate such as19001/317 for requested60000/1001,
+even when the full presentation timeline is correct. Matroska stores
+[`DefaultDuration` as integer nanoseconds](https://www.matroska.org/technical/elements.html),
+and [FFmpeg's demuxer reduces its inverse with a30000 rational bound](https://ffmpeg.org/doxygen/8.0/matroskadec_8c_source.html).
+When a WebM nominal rate differs, verification parses the actual EBML track
+metadata, requires its duration to differ from the requested period by at most
+one nanosecond, and requires the reported rate to equal that metadata's bounded
+rational reduction. It records both the requested and reported rate plus the
+quantization proof. All frame-count, timestamp, duration, stream and pixel checks
+remain mandatory. MP4 still requires exact rational nominal rate equality.
+A real60fps file is rejected for60000/1001 even when a short clip's millisecond
+frame timestamps happen to coincide; generic frame-rate tolerance is not used.

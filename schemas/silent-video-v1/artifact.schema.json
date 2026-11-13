@@ -237,6 +237,68 @@
     },
     "visual_review": {
       "const": "not-performed"
+    },
+    "reported_fps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 240000
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ]
+    },
+    "rate_quantization": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "exact",
+            "matroska-nanosecond-rational"
+          ]
+        },
+        "default_duration_ns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000000
+        },
+        "nominal_period_error": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000000000000
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "default_duration_ns",
+        "nominal_period_error"
+      ]
     }
   },
   "required": [
