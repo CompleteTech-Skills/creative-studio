@@ -19,7 +19,7 @@ from rig_gltf import GltfBuilder, _export_geometry
 from rig_math import transform_points
 from rig_models import Geometry, Mesh, load_rig
 from scene3d_contracts import load_project, portable_path
-from scene3d_evaluate import evaluate_scene
+from scene3d_evaluate import evaluate_scene, camera_matrices
 from scene3d_lifecycle import dependency_receipt
 from scene3d_prefabs import PrefabLibrary
 
@@ -141,9 +141,10 @@ def export_scene_frame(source_root, scene, shot, frame, destination, *, max_vert
             rig=load_rig(native_root)
             sampled={name:transform_points(world,v['positions']).tolist()
                      for name,v in evaluate_deformation(rig).items()}
+        from rig_skinning import evaluate_morph_positions
         for mesh_id, mesh in chosen.items():
             world_positions=(np.asarray(sampled[mesh_id],dtype=float) if sampled is not None else
-                             transform_points(world,mesh.positions))
+                             transform_points(world,evaluate_morph_positions(mesh)))
             _require(world_positions.shape == mesh.positions.shape and np.isfinite(world_positions).all(),
                      'Evaluated topology differs from exact native source.')
             vertex_count+=len(world_positions)
@@ -171,9 +172,14 @@ def export_scene_frame(source_root, scene, shot, frame, destination, *, max_vert
         children=children_by_parent[identifier]
         if children:value['children']=children
         if 'camera' in state:
+            settings=bundle['documents'][evaluation['shot']['path']]['render']
+            try:camera_matrices(dict(evaluation,camera=identifier),settings)
+            except ValueError as exc:
+                raise RigError('SCENE3D_EXPORT_CAMERA',str(exc),stage='scene3d-export') from exc
             camera=state['camera']
             if camera['projection']=='perspective':
-                definition=dict(type='perspective',perspective=dict(yfov=camera['vertical_fov'],znear=camera['near'],zfar=camera['far']))
+                definition=dict(type='perspective',perspective=dict(yfov=camera['vertical_fov'],znear=camera['near'],zfar=camera['far'],
+                                                                   aspectRatio=settings['width']/settings['height']))
             else:
                 shot_doc=bundle['documents'][evaluation['shot']['path']];settings=shot_doc['render']
                 half=camera['orthographic_height']/2
@@ -195,10 +201,17 @@ def export_scene_frame(source_root, scene, shot, frame, destination, *, max_vert
         reopened=load_character_model(output_file).geometry
         actual=reopened.by_id()
         _require(set(actual)==set(expected),'Isolated reimport changed exported mesh identities.')
+        source_meshes=output.by_id()
         errors=[]
         for identifier,points in expected.items():
             _require(actual[identifier].positions.shape==points.shape,'Isolated reimport changed topology.')
+            _require(np.array_equal(actual[identifier].triangles,source_meshes[identifier].triangles),
+                     'Isolated reimport changed triangle topology.')
             errors.append(float(np.max(np.abs(actual[identifier].positions-points))))
+        _require(reopened.materials == output.materials and
+                 [hashlib.sha256(i.data).hexdigest() for i in reopened.images] ==
+                 [hashlib.sha256(i.data).hexdigest() for i in output.images],
+                 'Isolated reimport changed materials or embedded image bytes.')
         error=max(errors)
         _require(error <= 1e-4,'Isolated reimport changed world-space vertices beyond tolerance.')
         _require(load_project(source_root)['inventory']==bundle['inventory'],'Source project changed during export.')
@@ -208,6 +221,7 @@ def export_scene_frame(source_root, scene, shot, frame, destination, *, max_vert
                     vertices=output.vertex_count,triangles=output.triangle_count,meshes=len(output.meshes),
                     dependency_receipt=inputs,losses=losses,khronos=validation,
                     native_reimport=dict(independent=False,decoder='hatch-native',meshes=len(actual),
+                                         triangle_topology_equal=True,material_and_image_bytes_equal=True,
                                          max_world_vertex_error_m=error,tolerance_m=1e-4,ok=True))
         atomic_json(stage/'report.json',report)
         _rename_no_replace(stage,destination)

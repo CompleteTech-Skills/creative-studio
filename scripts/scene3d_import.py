@@ -596,7 +596,8 @@ def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=
     elif rig.manifest.get('skeleton') and rig.weights:
         evaluated = evaluate_deformation(rig)
     else:
-        evaluated = {m.id: dict(positions=m.positions) for m in rig.geometry.meshes}
+        from rig_skinning import evaluate_morph_positions
+        evaluated = {m.id: dict(positions=evaluate_morph_positions(m)) for m in rig.geometry.meshes}
     source_world = {h['source_node']: np.asarray(h['world_matrix']) for h in imported.hierarchy}
     by_id = rig.geometry.by_id()
     result = {}
