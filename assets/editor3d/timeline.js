@@ -1,5 +1,5 @@
 /* Exact saved-revision timeline. All persistent edits receive backend acknowledgement. */
-export function mountTimeline({container,api,getSnapshot,getSelection,preview,clearPreview,reload,onSelect,registerCommitInterceptor}) {
+export function mountTimeline({container,api,getSnapshot,getSelection,preview,clearPreview,reload,onSelect,registerCommitInterceptor,registerPreviewEditAuthorizer,refreshPreviewEditState}) {
   let snapshot=null,shotPath='',request=0,disposed=false,playing=false,clock=0,firstFrame=0,raf=0;
   const root=document.createElement('section');root.setAttribute('aria-label','Animation timeline');
   const status=document.createElement('p');status.setAttribute('role','status');
@@ -12,6 +12,15 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   for(const mode of ['linear','step','slerp']){const o=document.createElement('option');o.value=mode;o.textContent=mode;interpolation.append(o);}
   const autokey=document.createElement('input');autokey.type='checkbox';autokey.setAttribute('aria-label','Autokey transforms at selected frame');autokey.disabled=typeof registerCommitInterceptor!=='function';
   const autoLabel=document.createElement('label');autoLabel.append(autokey,document.createTextNode(' Autokey transforms'));
+  const unregisterPreview=registerPreviewEditAuthorizer?.(({snapshot:current,evaluation})=>{
+    const at=Number(frame.value);
+    return autokey.checked&&Number.isSafeInteger(at)&&current.project.shots.some(ref=>ref.path===shotPath)&&
+      current.documents[shotPath].scene.path===current.scene_path&&evaluation?.shot?.path===shotPath&&
+      evaluation.revision===current.revision&&evaluation.snapshot_sha256===current.sha256&&
+      evaluation.scene?.path===current.scene_path&&evaluation.frame?.numerator===at*evaluation.frame?.denominator;
+  });
+  autokey.addEventListener('change',()=>refreshPreviewEditState?.());
+  frame.addEventListener('input',()=>{stop();++request;refreshPreviewEditState?.();});
   const unregister=registerCommitInterceptor?.(({commands,expected_revision,expected_sha256,transaction_id,snapshot:current})=>{
     if(!autokey.checked||!commands.some(c=>c.operation==='transform'))return null;
     if(commands.some(c=>c.operation!=='transform'))throw Error('Autokey requires a transform-only transaction.');
@@ -43,7 +52,7 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
     if(!snapshot||!shotPath)return;const serial=++request;const s=getSnapshot();
     if(s.documents[shotPath]?.scene.path!==s.scene_path)throw Error('Switch to the shot scene before preview.');
     const result=await api('timeline/evaluate',{revision:s.revision,sha256:s.sha256,shot:shotPath,frame:at});
-    if(disposed||serial!==request)return;if(result.scene.path!==getSnapshot().scene_path)throw Error('Preview scene changed; reload before scrubbing.');preview(result);message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
+    if(disposed||serial!==request)return;if(result.scene.path!==getSnapshot().scene_path)throw Error('Preview scene changed; reload before scrubbing.');preview(result);refreshPreviewEditState?.();message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
   }
   function stop(){playing=false;cancelAnimationFrame(raf);play.textContent='Play';}
   async function tick(now){if(!playing||disposed)return;const doc=snapshot.documents[shotPath],fps=doc.fps.numerator/doc.fps.denominator;
@@ -82,5 +91,5 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   }
   property.addEventListener('change',()=>{++request;curve.replaceChildren();curveLegend.textContent='Choose Evaluate channel curve to sample this channel.';});
   shot.addEventListener('change',()=>{stop();++request;clearPreview();shotPath=shot.value;renderShot();});
-  return {refresh(next){stop();++request;const previous=snapshot?.documents[shotPath];snapshot=next;clip.replaceChildren();for(const ref of next.project.animations){const option=document.createElement('option');option.value=ref.path;option.textContent=ref.id+' '+ref.version;clip.append(option);}shot.replaceChildren();for(const ref of next.project.shots){const o=document.createElement('option');o.value=ref.path;o.textContent=next.documents[ref.path].name;shot.append(o);}if(!next.documents[shotPath]||!next.project.shots.some(r=>r.path===shotPath))shotPath=next.project.shots.find(ref=>ref.id===previous?.id&&next.documents[ref.path].scene.id===previous?.scene.id)?.path||next.project.shots[0]?.path||'';shot.value=shotPath;renderShot();},dispose(){disposed=true;stop();++request;unregister?.();root.remove();}};
+  return {refresh(next){stop();++request;const previous=snapshot?.documents[shotPath];snapshot=next;clip.replaceChildren();for(const ref of next.project.animations){const option=document.createElement('option');option.value=ref.path;option.textContent=ref.id+' '+ref.version;clip.append(option);}shot.replaceChildren();for(const ref of next.project.shots){const o=document.createElement('option');o.value=ref.path;o.textContent=next.documents[ref.path].name;shot.append(o);}if(!next.documents[shotPath]||!next.project.shots.some(r=>r.path===shotPath))shotPath=next.project.shots.find(ref=>ref.id===previous?.id&&next.documents[ref.path].scene.id===previous?.scene.id)?.path||next.project.shots[0]?.path||'';shot.value=shotPath;renderShot();if(autokey.checked&&shotPath)queueMicrotask(()=>scrub().catch(e=>message(e.message)));},dispose(){disposed=true;stop();++request;unregisterPreview?.();unregister?.();root.remove();}};
 }
