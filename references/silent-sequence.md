@@ -4,7 +4,7 @@
 or `frames/000000.exr` inventories. It copies original encoded bytes: no resample,
 color transform, flattening, compression change, precision conversion or renderer
 is introduced. PNG supports actual RGB/RGBA 8/16-bit sRGB; EXR supports actual
-half/float RGB/RGBA scene-linear masters. An 8-bit display PNG cannot be requested
+half/float RGB/RGBA scene-linear masters using lossless NONE/RLE/ZIPS/ZIP/PIZ compression. Lossy PXR24/B44/DWA storage is rejected. An 8-bit display PNG cannot be requested
 as an EXR/HDR export. Canonical image decoding rejects incorrect precision,
 channels, dimensions, nonfinite EXR pixels and incompatible alpha declarations.
 

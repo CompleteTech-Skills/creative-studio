@@ -105,25 +105,36 @@ class SequenceImages(unittest.TestCase):
 
     def test_corrupt_missing_extra_duplicate_stale_and_mismatched_frames_rejected(self):
         source=self.source()
-        for mutate in [lambda x:x['frames'].__setitem__(1,copy.deepcopy(x['frames'][0])),
+        for index,mutate in enumerate([lambda x:x['frames'].__setitem__(1,copy.deepcopy(x['frames'][0])),
             lambda x:x['frames'][0].update(source_path='../escape'),
             lambda x:x.update(resolution=[5,2]),lambda x:x['frames'][0].update(sha256='0'*64),
-            lambda x:x['output'].update(format='exr',bit_depth=8)]:
+            lambda x:x['output'].update(format='exr',bit_depth=8)]):
             value=copy.deepcopy(source);mutate(value)
-            with self.assertRaises(Exception):sequence.export_sequence(value,self.root,self.root/'bad',provenance=self.identity)
+            with self.assertRaises(ValueError):sequence.export_sequence(value,self.root,self.root/f'bad-{index}',provenance=self.identity)
         destination=self.root/'verified';sequence.export_sequence(source,self.root,destination,provenance=self.identity)
         (destination/'frames/000001.png').write_bytes(b'corrupt')
         with self.assertRaises(ValueError):sequence.verify_sequence(destination)
         (destination/'frames/000001.png').unlink()
         with self.assertRaises(ValueError):sequence.verify_sequence(destination)
+        (destination/'frames/000001.png').write_bytes((self.root/'input-1.png').read_bytes())
         (destination/'frames/extra.png').write_bytes(b'extra')
         with self.assertRaises(ValueError):sequence.verify_sequence(destination)
+
+    def test_lossy_exr_container_is_not_labeled_lossless_master(self):
+        source=self.source('exr',32,count=1)
+        path=self.root/'input-0.exr'
+        values=np.ones((2,4),dtype=np.float32)
+        OpenEXR.File({'compression':OpenEXR.DWAA_COMPRESSION,'type':OpenEXR.scanlineimage},
+            {name:values for name in 'RGBA'}).write(str(path))
+        source['frames'][0].update(bytes=path.stat().st_size,sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+        with self.assertRaisesRegex(ValueError,'lossy'):
+            sequence.export_sequence(source,self.root,self.root/'lossy',provenance=self.identity)
 
     def test_wrong_bit_depth_and_nonopaque_claim_fail(self):
         source=self.source('png',16)
         for key,value in [('bit_depth',8),('alpha','opaque')]:
             changed=copy.deepcopy(source);changed['output'][key]=value
-            with self.assertRaises(Exception):sequence.export_sequence(changed,self.root,self.root/key,provenance=self.identity)
+            with self.assertRaises(ValueError):sequence.export_sequence(changed,self.root,self.root/key,provenance=self.identity)
 
     def test_manifest_and_provenance_tampering_fail_hash_bound_verification(self):
         source=self.source();destination=self.root/'receipt'

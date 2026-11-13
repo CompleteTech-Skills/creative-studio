@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -145,8 +146,23 @@ def _decoder():
 def _decode(path,source):
     report=_decoder()(path,output=source['output'],resolution=source['resolution'],
         max_bytes=MAX_FRAME_BYTES,memory_bytes=MAX_MEMORY_BYTES)
-    return {key:report[key] for key in ('sha256','bytes','format','resolution','bit_depth','channels',
+    result={key:report[key] for key in ('sha256','bytes','format','resolution','bit_depth','channels',
                                         'requested_color_space','requested_alpha','decoder','decoder_version')}
+    result['compression']='deflate'
+    if source['output']['format']=='exr':
+        # Canonical validation already checked the complete EXR structure and
+        # pixels. Inspect this exact captured header only to enforce lossless
+        # storage policy; B44/DWA/PXR24 are not advertised as lossless masters.
+        import OpenEXR
+        data=_read(Path(path).parent,Path(path).name,MAX_FRAME_BYTES)
+        if _hash(data)!=report['sha256']:raise ValueError('EXR changed during compression inspection')
+        reader=OpenEXR.InputFile(io.BytesIO(data))
+        try:compression=reader.header()['compression'].v
+        finally:reader.close()
+        names={0:'none',1:'rle',2:'zips',3:'zip',4:'piz'}
+        if compression not in names:raise ValueError('lossy or unsupported EXR compression cannot be a lossless sequence master')
+        result['compression']=names[compression]
+    return result
 
 
 def _verify_frame(root,frame,source):
@@ -380,6 +396,7 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
                     _write(stage,'plan.json',_json_bytes(plan));os.mkdir('frames',dir_fd=stage_fd)
                 if not set(os.listdir(stage))<={'lock','plan.json','frames','sequence.json'}:
                     raise ValueError('unrecognized sequence staging entry')
+                os.fsync(stage_fd)
                 _inventory(stage,source,staging=True)
                 for f in source['frames']:
                     if cancel is not None and cancel():raise ValueError('sequence export cancelled; verified staging retained')
@@ -402,6 +419,7 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
                 _inventory(stage,source)
                 if cancel is not None and cancel():raise ValueError('sequence export cancelled before publication')
                 _rename_no_replace(stage_name,destination.name,source_dir_fd=parent_fd,destination_dir_fd=parent_fd)
+                os.fsync(parent_fd)
                 return report
             finally:os.close(lock_fd)
         finally:os.close(stage_fd)
