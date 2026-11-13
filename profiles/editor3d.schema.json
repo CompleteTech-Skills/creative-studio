@@ -1661,423 +1661,22 @@
       ]
     },
     "asset": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "schema_version": {
-          "const": 1
-        },
-        "kind": {
-          "const": "editor3d-asset"
-        },
-        "id": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
-        },
-        "native": {
+      "allOf": [
+        {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "owner": {
-              "enum": [
-                "rig",
-                "model3d",
-                "scene3d",
-                "production2d",
-                "camera3d",
-                "lookdev",
-                "animation3d"
-              ]
+            "schema_version": {
+              "const": 1
+            },
+            "kind": {
+              "const": "editor3d-asset"
             },
             "id": {
               "type": "string",
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
             },
-            "version": {
-              "type": "string",
-              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
-            },
-            "native_kind": {
-              "type": "string",
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
-            },
-            "file": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "path": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 1024,
-                  "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
-                },
-                "sha256": {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
-                },
-                "bytes": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 268435456
-                },
-                "media_type": {
-                  "enum": [
-                    "model/gltf-binary",
-                    "model/gltf+json",
-                    "model/obj",
-                    "application/octet-stream",
-                    "application/json",
-                    "image/png",
-                    "image/jpeg",
-                    "image/webp",
-                    "text/plain",
-                    "application/zip"
-                  ]
-                }
-              },
-              "required": [
-                "path",
-                "sha256",
-                "bytes",
-                "media_type"
-              ]
-            }
-          },
-          "required": [
-            "owner",
-            "id",
-            "version",
-            "native_kind",
-            "file"
-          ]
-        },
-        "asset_type": {
-          "enum": [
-            "model3d",
-            "rig",
-            "image2d",
-            "reference2d",
-            "material",
-            "texture",
-            "camera",
-            "animation"
-          ]
-        },
-        "original_filename": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 255
-        },
-        "original_format": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
-        },
-        "normalized_format": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
-        },
-        "provenance": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "origin": {
-              "enum": [
-                "authored",
-                "imported",
-                "procedural-fixture"
-              ]
-            },
-            "fixture": {
-              "type": "boolean"
-            },
-            "description": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4096
-            },
-            "source_refs": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "path": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 1024,
-                    "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
-                  },
-                  "sha256": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
-                  },
-                  "bytes": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 268435456
-                  },
-                  "media_type": {
-                    "enum": [
-                      "model/gltf-binary",
-                      "model/gltf+json",
-                      "model/obj",
-                      "application/octet-stream",
-                      "application/json",
-                      "image/png",
-                      "image/jpeg",
-                      "image/webp",
-                      "text/plain",
-                      "application/zip"
-                    ]
-                  }
-                },
-                "required": [
-                  "path",
-                  "sha256",
-                  "bytes",
-                  "media_type"
-                ]
-              },
-              "minItems": 0,
-              "maxItems": 128
-            }
-          },
-          "required": [
-            "origin",
-            "fixture",
-            "description",
-            "source_refs"
-          ]
-        },
-        "license": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "identifier": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4096
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "attribution": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4096
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "permission": {
-              "enum": [
-                "unknown",
-                "restricted",
-                "permitted"
-              ]
-            },
-            "evidence": {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "path": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 1024,
-                      "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
-                    },
-                    "bytes": {
-                      "type": "integer",
-                      "minimum": 1,
-                      "maximum": 268435456
-                    },
-                    "media_type": {
-                      "enum": [
-                        "model/gltf-binary",
-                        "model/gltf+json",
-                        "model/obj",
-                        "application/octet-stream",
-                        "application/json",
-                        "image/png",
-                        "image/jpeg",
-                        "image/webp",
-                        "text/plain",
-                        "application/zip"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "path",
-                    "sha256",
-                    "bytes",
-                    "media_type"
-                  ]
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            }
-          },
-          "required": [
-            "identifier",
-            "attribution",
-            "permission",
-            "evidence"
-          ]
-        },
-        "dependencies": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "owner": {
-                "enum": [
-                  "rig",
-                  "model3d",
-                  "scene3d",
-                  "production2d",
-                  "camera3d",
-                  "lookdev",
-                  "animation3d"
-                ]
-              },
-              "id": {
-                "type": "string",
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
-              },
-              "version": {
-                "type": "string",
-                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
-              },
-              "native_kind": {
-                "type": "string",
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
-              },
-              "file": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "path": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 1024,
-                    "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
-                  },
-                  "sha256": {
-                    "type": "string",
-                    "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
-                  },
-                  "bytes": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 268435456
-                  },
-                  "media_type": {
-                    "enum": [
-                      "model/gltf-binary",
-                      "model/gltf+json",
-                      "model/obj",
-                      "application/octet-stream",
-                      "application/json",
-                      "image/png",
-                      "image/jpeg",
-                      "image/webp",
-                      "text/plain",
-                      "application/zip"
-                    ]
-                  }
-                },
-                "required": [
-                  "path",
-                  "sha256",
-                  "bytes",
-                  "media_type"
-                ]
-              }
-            },
-            "required": [
-              "owner",
-              "id",
-              "version",
-              "native_kind",
-              "file"
-            ]
-          },
-          "minItems": 0,
-          "maxItems": 4096
-        },
-        "thumbnails": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "path": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1024,
-                "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
-              },
-              "sha256": {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
-              },
-              "bytes": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 268435456
-              },
-              "media_type": {
-                "enum": [
-                  "model/gltf-binary",
-                  "model/gltf+json",
-                  "model/obj",
-                  "application/octet-stream",
-                  "application/json",
-                  "image/png",
-                  "image/jpeg",
-                  "image/webp",
-                  "text/plain",
-                  "application/zip"
-                ]
-              }
-            },
-            "required": [
-              "path",
-              "sha256",
-              "bytes",
-              "media_type"
-            ]
-          },
-          "minItems": 0,
-          "maxItems": 32
-        },
-        "validation_status": {
-          "enum": [
-            "unvalidated",
-            "valid",
-            "invalid"
-          ]
-        },
-        "previous": {
-          "anyOf": [
-            {
+            "native": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
@@ -2154,27 +1753,1407 @@
                 "file"
               ]
             },
+            "asset_type": {
+              "enum": [
+                "model3d",
+                "rig",
+                "image2d",
+                "reference2d",
+                "material",
+                "texture",
+                "camera",
+                "animation"
+              ]
+            },
+            "original_filename": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "original_format": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "normalized_format": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "provenance": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "origin": {
+                  "enum": [
+                    "authored",
+                    "imported",
+                    "procedural-fixture"
+                  ]
+                },
+                "fixture": {
+                  "type": "boolean"
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "source_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024,
+                        "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                      },
+                      "bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 268435456
+                      },
+                      "media_type": {
+                        "enum": [
+                          "model/gltf-binary",
+                          "model/gltf+json",
+                          "model/obj",
+                          "application/octet-stream",
+                          "application/json",
+                          "image/png",
+                          "image/jpeg",
+                          "image/webp",
+                          "text/plain",
+                          "application/zip"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "sha256",
+                      "bytes",
+                      "media_type"
+                    ]
+                  },
+                  "minItems": 0,
+                  "maxItems": 128
+                }
+              },
+              "required": [
+                "origin",
+                "fixture",
+                "description",
+                "source_refs"
+              ]
+            },
+            "license": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "identifier": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "attribution": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "permission": {
+                  "enum": [
+                    "unknown",
+                    "restricted",
+                    "permitted"
+                  ]
+                },
+                "evidence": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024,
+                          "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                        },
+                        "bytes": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 268435456
+                        },
+                        "media_type": {
+                          "enum": [
+                            "model/gltf-binary",
+                            "model/gltf+json",
+                            "model/obj",
+                            "application/octet-stream",
+                            "application/json",
+                            "image/png",
+                            "image/jpeg",
+                            "image/webp",
+                            "text/plain",
+                            "application/zip"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "sha256",
+                        "bytes",
+                        "media_type"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "identifier",
+                "attribution",
+                "permission",
+                "evidence"
+              ]
+            },
+            "dependencies": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "owner": {
+                    "enum": [
+                      "rig",
+                      "model3d",
+                      "scene3d",
+                      "production2d",
+                      "camera3d",
+                      "lookdev",
+                      "animation3d"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "version": {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                  },
+                  "native_kind": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "file": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024,
+                        "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                      },
+                      "bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 268435456
+                      },
+                      "media_type": {
+                        "enum": [
+                          "model/gltf-binary",
+                          "model/gltf+json",
+                          "model/obj",
+                          "application/octet-stream",
+                          "application/json",
+                          "image/png",
+                          "image/jpeg",
+                          "image/webp",
+                          "text/plain",
+                          "application/zip"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "sha256",
+                      "bytes",
+                      "media_type"
+                    ]
+                  }
+                },
+                "required": [
+                  "owner",
+                  "id",
+                  "version",
+                  "native_kind",
+                  "file"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 4096
+            },
+            "thumbnails": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024,
+                    "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                  },
+                  "bytes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 268435456
+                  },
+                  "media_type": {
+                    "enum": [
+                      "model/gltf-binary",
+                      "model/gltf+json",
+                      "model/obj",
+                      "application/octet-stream",
+                      "application/json",
+                      "image/png",
+                      "image/jpeg",
+                      "image/webp",
+                      "text/plain",
+                      "application/zip"
+                    ]
+                  }
+                },
+                "required": [
+                  "path",
+                  "sha256",
+                  "bytes",
+                  "media_type"
+                ]
+              },
+              "minItems": 0,
+              "maxItems": 32
+            },
+            "validation_status": {
+              "enum": [
+                "unvalidated",
+                "valid",
+                "invalid"
+              ]
+            },
+            "previous": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "owner": {
+                      "enum": [
+                        "rig",
+                        "model3d",
+                        "scene3d",
+                        "production2d",
+                        "camera3d",
+                        "lookdev",
+                        "animation3d"
+                      ]
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "native_kind": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "file": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024,
+                          "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                        },
+                        "bytes": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 268435456
+                        },
+                        "media_type": {
+                          "enum": [
+                            "model/gltf-binary",
+                            "model/gltf+json",
+                            "model/obj",
+                            "application/octet-stream",
+                            "application/json",
+                            "image/png",
+                            "image/jpeg",
+                            "image/webp",
+                            "text/plain",
+                            "application/zip"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "sha256",
+                        "bytes",
+                        "media_type"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "owner",
+                    "id",
+                    "version",
+                    "native_kind",
+                    "file"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "schema_version",
+            "kind",
+            "id",
+            "native",
+            "asset_type",
+            "original_filename",
+            "original_format",
+            "normalized_format",
+            "provenance",
+            "license",
+            "dependencies",
+            "thumbnails",
+            "validation_status",
+            "previous"
+          ]
+        },
+        {
+          "anyOf": [
             {
-              "type": "null"
+              "type": "object",
+              "properties": {
+                "asset_type": {
+                  "const": "model3d"
+                },
+                "native": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "model3d"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "model3d-asset"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "scene3d"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "scene3d-asset"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "asset_type",
+                "native"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "asset_type": {
+                  "const": "rig"
+                },
+                "native": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "rig"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "Rig"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "asset_type",
+                "native"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "asset_type": {
+                  "const": "image2d"
+                },
+                "native": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "production2d"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "cast"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "asset_type",
+                "native"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "asset_type": {
+                  "const": "reference2d"
+                },
+                "native": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "production2d"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "cast"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "asset_type",
+                "native"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "asset_type": {
+                  "const": "material"
+                },
+                "native": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "lookdev"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "material3d",
+                            "material-instance3d",
+                            "material-variant3d",
+                            "material-graph3d"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "asset_type",
+                "native"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "asset_type": {
+                  "const": "texture"
+                },
+                "native": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "lookdev"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "texture3d"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "asset_type",
+                "native"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "asset_type": {
+                  "const": "camera"
+                },
+                "native": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "camera3d"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "camera3d-camera"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "asset_type",
+                "native"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "asset_type": {
+                  "const": "animation"
+                },
+                "native": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "rig"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "AnimationClip"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "scene3d"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "scene3d-animation"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "production2d"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "clip"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "owner": {
+                          "const": "camera3d"
+                        },
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                        },
+                        "version": {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                        },
+                        "native_kind": {
+                          "enum": [
+                            "camera3d-animation"
+                          ]
+                        },
+                        "file": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 1024,
+                              "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                            },
+                            "sha256": {
+                              "type": "string",
+                              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                            },
+                            "bytes": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 268435456
+                            },
+                            "media_type": {
+                              "enum": [
+                                "model/gltf-binary",
+                                "model/gltf+json",
+                                "model/obj",
+                                "application/octet-stream",
+                                "application/json",
+                                "image/png",
+                                "image/jpeg",
+                                "image/webp",
+                                "text/plain",
+                                "application/zip"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "sha256",
+                            "bytes",
+                            "media_type"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "owner",
+                        "id",
+                        "version",
+                        "native_kind",
+                        "file"
+                      ]
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "asset_type",
+                "native"
+              ]
             }
           ]
         }
-      },
-      "required": [
-        "schema_version",
-        "kind",
-        "id",
-        "native",
-        "asset_type",
-        "original_filename",
-        "original_format",
-        "normalized_format",
-        "provenance",
-        "license",
-        "dependencies",
-        "thumbnails",
-        "validation_status",
-        "previous"
       ]
     },
     "animation": {
