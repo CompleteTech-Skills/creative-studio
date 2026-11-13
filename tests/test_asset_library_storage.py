@@ -195,6 +195,21 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
         untouched = AssetLibrary(self.library.root)
         self.assertEqual(untouched.upgrade_storage()['versions'], 2)
 
+    def test_preupgrade_readers_cannot_hide_damaged_canonical_payloads(self):
+        reference, handles = self.legacy_handles()
+        stale_readers = [AssetLibrary(self.library.root) for _ in range(4)]
+        handles[0].upgrade_storage()
+        digest = self.fixture.files[0]['sha256']
+        (handles[0].storage.root / 'blobs' / digest).write_bytes(b'damaged')
+        for stale, name in zip(stale_readers, ('resolve', 'inspect', 'read_file', 'read_own_file')):
+            # Each handle was opened before the ordinary migration.
+            with self.subTest(api=name), self.assertRaises(RigError):
+                method = getattr(stale, name)
+                if name.startswith('read_'):
+                    method(reference, 'mesh/triangle.obj')
+                else:
+                    method(reference)
+
     def test_writer_waiting_for_migration_refreshes_mode_after_lock(self):
         from asset_library_storage import Storage
         reference, (migrator, old_writer, old_annotations) = self.legacy_handles()
