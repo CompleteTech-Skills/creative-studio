@@ -34,7 +34,8 @@ def rig_capabilities(rig):
     for expression in rig.manifest['facial']['expressions'].values():
         for name,amount in expression['morphs'].items():
             qualifier,morph=(name.split('::',1) if '::' in name else (None,name))
-            if amount and any((qualifier is None or mesh.id==qualifier) and morph in mesh.morphs
+            if any((qualifier is None or mesh.id==qualifier) and morph in mesh.morphs
+                    and (amount or mesh.morph_defaults.get(morph,0.))
                     and any(np.any(values) for values in mesh.morphs[morph].values())
                     for mesh in rig.geometry.meshes):
                 expressive=True
