@@ -184,6 +184,20 @@ class ImageVerification(unittest.TestCase):
             bad=deepcopy(result);bad['status']='invented'
             with self.assertRaises(Render3DError):verify_result(request,bad,root,snapshot_root=snapshot,expected_backend=backend)
 
+    def test_result_source_budget_rejects_before_owner_and_preserves_default(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            document=json.loads((snapshot/'snapshot.json').read_bytes())
+            report=verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend,
+                                 max_total_bytes=document['total_bytes'])
+            self.assertEqual(report['decoded_frames'],2)
+            with patch.object(Scene3DAdapter,'describe',side_effect=AssertionError('Cap must reject before owner decoding')) as owner:
+                with self.assertRaises(Render3DError) as error:
+                    verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend,max_total_bytes=1)
+            self.assertEqual(error.exception.report['category'],'storage-exhaustion')
+            owner.assert_not_called()
+
     def test_result_rejects_missing_corrupt_extra_and_wrong_identity(self):
         with tempfile.TemporaryDirectory() as temporary:
             request,result,root,snapshot,backend=self.scene_result(Path(temporary))

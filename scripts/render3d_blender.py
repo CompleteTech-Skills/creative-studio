@@ -74,7 +74,7 @@ def _rss(pid):
 
 def _supervise(command, *, cwd, timeout, memory_bytes, storage_bytes, cancelled=None):
     """Drain bounded logs while supervising time, memory, storage and cancellation."""
-    env=dict(os.environ,OMP_NUM_THREADS='2',OPENBLAS_NUM_THREADS='2',MKL_NUM_THREADS='2')
+    env=dict(os.environ,OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',MKL_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1')
     start=time.monotonic(); log=bytearray(); lock=threading.Lock(); peak=0
     process=subprocess.Popen(command,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
                              start_new_session=os.name=='posix')
@@ -156,12 +156,16 @@ def _prepare_asset(root, asset, workspace, index, *, native=False, storage_bytes
         source=safe_path(root,asset['content']['path'],exists=True)
         require(source.suffix.lower() in ('.obj','.glb','.gltf'),'unsupported-feature','Render inputs must be owner-decoded OBJ/glTF/GLB or native rigs.')
         rig=create_run(source,workspace/f'import-{index}',identifier=f'render-{index}',fixture=asset['provenance']['fixture'])
-    if storage_bytes is not None:_check_storage(workspace.parent,storage_bytes)
-    if rig.manifest['skeleton'] is not None:
-        export_gltf(rig,destination)
-    else:
-        require(not rig.clips and not rig.weights,'unsupported-feature','Unrigged animated geometry is not supported by this adapter.')
-        export_geometry(rig.geometry,destination)
+    remaining=None if storage_bytes is None else storage_bytes-_check_storage(workspace.parent,storage_bytes)
+    try:
+        if rig.manifest['skeleton'] is not None:
+            export_gltf(rig,destination,max_bytes=remaining)
+        else:
+            require(not rig.clips and not rig.weights,'unsupported-feature','Unrigged animated geometry is not supported by this adapter.')
+            export_geometry(rig.geometry,destination,max_bytes=remaining)
+    except RigError as exc:
+        if exc.report['code']=='RIG_EXPORT_STORAGE':raise Render3DError('storage-exhaustion',str(exc)) from exc
+        raise
     if storage_bytes is not None:_check_storage(workspace.parent,storage_bytes)
     return dict(path=destination.name,sha256=sha256(destination),vertices=rig.geometry.vertex_count,
                 triangles=rig.geometry.triangle_count,rigged=rig.manifest['skeleton'] is not None,
@@ -366,7 +370,7 @@ class BlenderBackend:
                 logs=[artifact('blender.log')],manifest=artifact('manifest.json'),verification=dict(status='not-run',verifier=None,evidence=None))
             from render3d_verify import verify_result
             _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes'])
-            verification=verify_result(request,result,stage,snapshot_root=frozen,expected_backend=backend)
+            verification=verify_result(request,result,stage,snapshot_root=frozen,expected_backend=backend,max_total_bytes=source_budget)
             atomic_json(stage/'verification.json',verification)
             result['verification']=dict(status='passed',verifier=verification['verifier'],evidence=artifact('verification.json'))
             # Include verification evidence and the self-describing result JSON

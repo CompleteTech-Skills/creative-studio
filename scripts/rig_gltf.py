@@ -226,18 +226,24 @@ class GltfBuilder:
         self.json['accessors'].append(value)
         return len(self.json['accessors'])-1
 
-    def write(self, destination: str | Path) -> None:
+    def write(self, destination: str | Path, *, max_bytes=None) -> None:
         destination = Path(destination)
+        require(max_bytes is None or (type(max_bytes) is int and max_bytes >= 0),
+                'RIG_EXPORT_STORAGE', 'Export byte budget must be a nonnegative integer.')
         self.json['buffers'] = [dict(byteLength=len(self.binary))]
         if destination.suffix.lower() == '.gltf':
             # One embedded, local buffer keeps the two-file promotion problem out
             # of the atomic core while remaining ordinary standards-compliant glTF.
             self.json['buffers'][0]['uri'] = 'data:application/octet-stream;base64,'+base64.b64encode(self.binary).decode('ascii')
-            atomic_bytes(destination, (json.dumps(self.json, separators=(',', ':'), allow_nan=False)+'\n').encode())
+            encoded=(json.dumps(self.json, separators=(',', ':'), allow_nan=False)+'\n').encode()
+            require(max_bytes is None or len(encoded)<=max_bytes,'RIG_EXPORT_STORAGE','Encoded glTF exceeds remaining storage budget.')
+            atomic_bytes(destination, encoded)
         else:
             require(destination.suffix.lower() == '.glb', 'RIG_EXPORT_FORMAT', 'Expected .glb or .gltf destination.')
             payload = json.dumps(self.json, separators=(',', ':'), allow_nan=False).encode('utf-8')
             payload += b' '*(-len(payload) % 4)
+            encoded_size=12+8+len(payload)+8+len(self.binary)+(-len(self.binary)%4)
+            require(max_bytes is None or encoded_size<=max_bytes,'RIG_EXPORT_STORAGE','Encoded GLB exceeds remaining storage budget.')
             binary = bytes(self.binary)+b'\x00'*(-len(self.binary) % 4)
             chunks = struct.pack('<II', len(payload), 0x4E4F534A)+payload+struct.pack('<II', len(binary), 0x004E4942)+binary
             atomic_bytes(destination, struct.pack('<4sII', b'glTF', 2, 12+len(chunks))+chunks)
@@ -288,18 +294,18 @@ def _export_geometry(builder: GltfBuilder, geometry, *, weights=None, bone_nodes
     return mesh_nodes
 
 
-def export_geometry(geometry, destination: str | Path, *, provenance=None) -> dict:
+def export_geometry(geometry, destination: str | Path, *, provenance=None, max_bytes=None) -> dict:
     """Export actual unrigged input geometry for reproducible import demonstrations."""
     from rig_errors import sha256
     builder = GltfBuilder()
     nodes = _export_geometry(builder, geometry)
     builder.json['scenes'] = [dict(nodes=list(nodes.values()))]
     if provenance:builder.json['asset']['extras'] = dict(hatchSource=provenance)
-    builder.write(destination)
+    builder.write(destination,max_bytes=max_bytes)
     return dict(path=str(destination), sha256=sha256(destination), vertices=geometry.vertex_count, skinned=False)
 
 
-def export_gltf(rig, destination: str | Path, *, bake=True) -> dict:
+def export_gltf(rig, destination: str | Path, *, bake=True, max_bytes=None) -> dict:
     """Export evaluated channels; Blender/IK constraints are not claimed to survive."""
     from rig_animation import bake_clip, validate_animation
     from rig_errors import sha256
@@ -346,7 +352,7 @@ def export_gltf(rig, destination: str | Path, *, bake=True) -> dict:
         sha256=rig_signature(rig.manifest), fixture=rig.manifest['source']['fixture'],
         source_sha256=rig.manifest['source']['sha256'], review_status=rig.manifest['review']['status'],
         authoring_controls='Native/Blender only; exported joint and morph channels are evaluated motion.'))
-    builder.write(destination)
+    builder.write(destination,max_bytes=max_bytes)
     receipt = dict(schema_version=1, format=Path(destination).suffix[1:].lower(), path=str(destination), sha256=sha256(destination),
                 rig_sha256=rig_signature(rig.manifest), vertices=rig.geometry.vertex_count,
                 skins=len(rig.weights), joints=len(bones), animations=list(rig.clips), keyframes=key_count,
