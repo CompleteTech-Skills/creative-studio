@@ -6,6 +6,16 @@ from scene3d_geometry import Mesh, positive, count, numeric_array
 from scene3d_graph import require
 
 
+def _finite_number(value):
+    """Reject nonnumeric and nonrepresentable JSON numbers without coercion leaks."""
+    if type(value) not in (int,float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 class Heightfield:
     def __init__(self, width=20, depth=20, resolution=33, seed=0, elevation=2, heights=None, max_slope=None):
         self.width=positive(width,'width'); self.depth=positive(depth,'depth')
@@ -144,8 +154,8 @@ def scatter(terrain, total, spacing=1, seed=0, max_slope=30, exclusions=(), retr
     require(type(seed) is int and 0<=seed<2**32 and type(max_slope) in (int,float) and 0<=max_slope<=90,'Invalid placement seed/slope.')
     require(isinstance(exclusions,(list,tuple)) and len(exclusions)<=128,'At most 128 exclusion rectangles are supported.')
     for rect in exclusions:
-        require(isinstance(rect,(list,tuple)) and len(rect)==4 and all(type(x) in (int,float) and math.isfinite(x) for x in rect) and rect[0]<=rect[2] and rect[1]<=rect[3],'Invalid exclusion rectangle.')
-    require(type(clearance) in (int,float) and math.isfinite(clearance) and 0<=clearance<min(terrain.width,terrain.depth)/2,
+        require(isinstance(rect,(list,tuple)) and len(rect)==4 and all(_finite_number(x) for x in rect) and rect[0]<=rect[2] and rect[1]<=rect[3],'Invalid exclusion rectangle.')
+    require(type(clearance) in (int,float) and 0<=clearance<min(terrain.width,terrain.depth)/2 and math.isfinite(clearance),
             'Invalid placement clearance.')
     require(spacing>=2*clearance,'Spacing must accommodate the complete prop footprint.')
     rng=random.Random(seed);grid={};points=[]

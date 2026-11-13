@@ -73,7 +73,9 @@ class GeometryTests(unittest.TestCase):
                    lambda:terrain.sample(value,0),
                    lambda:terrain.edit([dict(x=0,z=0,height=value)]),
                    lambda:terrain.mask([[0,0],[0,1]],target=value),
-                   lambda:terrain.path([[-1,0],[1,0]],1,elevation=value)]
+                   lambda:terrain.path([[-1,0],[1,0]],1,elevation=value),
+                   lambda:scatter(terrain,1,exclusions=[[-abs(value),-abs(value),abs(value),abs(value)]]),
+                   lambda:scatter(terrain,1,clearance=value)]
             for operation in cases:
                 with self.subTest(value_sign=value>0,operation=cases.index(operation)):
                     with self.assertRaises(RigError):operation()
