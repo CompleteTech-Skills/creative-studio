@@ -184,7 +184,7 @@ def heightfield(heights, *, spacing, base_thickness, evidence=None):
     except (TypeError,ValueError,OverflowError):require(False,'RECON_HEIGHT','Heightfield values must be regular numeric samples.')
     require(values.ndim==2 and 2<=values.shape[0]<=256 and 2<=values.shape[1]<=256
             and values.dtype.kind in 'fiu','RECON_HEIGHT','Heightfield grid must be2..256per dimension and numeric.')
-    require(np.isfinite(values).all() and np.max(np.abs(values))<=1e6,'RECON_HEIGHT','Height samples must be finite metric values.')
+    require(np.isfinite(values).all() and np.all(values>=-1e6) and np.all(values<=1e6),'RECON_HEIGHT','Height samples must be finite metric values.')
     spacing=_array(spacing,(2,),'spacing');require(np.all(spacing>0),'RECON_HEIGHT','Grid spacing must be positive.')
     base=_number(base_thickness,positive=True);require(np.min(values)>-base,'RECON_HEIGHT','Front surface must stay strictly above the finite base.')
     h,w=values.shape;_budget(2*h*w,4*(h-1)*(w-1)+4*(h+w-2))
