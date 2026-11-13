@@ -178,6 +178,16 @@ def snap_bounds(graph,index,identifier,target,*,axis,side='after',gap=0,expected
     require(side in ('before','after'), 'Bounds snap side must be before or after.', 'SCENE3D_SPATIAL')
     gap = _positive(gap,'bounds gap',zero=True)
     require(identifier!=target, 'Cannot snap bounds to self.', 'SCENE3D_SPATIAL')
+    from scene3d_graph import _dependencies
+    nodes = graph._nodes()
+    require(target in nodes, 'Unknown bounds target.', 'SCENE3D_SPATIAL')
+    visited, pending = set(), [target]
+    while pending:
+        dependency = pending.pop()
+        require(dependency != identifier, 'Bounds target moves with the owner.', 'SCENE3D_SPATIAL')
+        if dependency not in visited:
+            visited.add(dependency)
+            pending.extend(_dependencies(nodes[dependency]))
     low,high = _box(index.bounds(identifier)); target_low,target_high = _box(index.bounds(target))
     delta = target_high[axis]+gap-low[axis] if side=='after' else target_low[axis]-gap-high[axis]
     matrix = np.asarray(graph.transform(identifier,space='world'),dtype=float)

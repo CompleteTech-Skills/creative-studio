@@ -221,6 +221,24 @@ class SpatialTests(unittest.TestCase):
         with self.assertRaises(RigError): follow_path(graph,'camera',[[0,0,0],[1,0,0]],.5,expected_revision=-1)
         self.assertEqual(before,graph.document())
 
+    def test_bounds_snap_rejects_dependent_target_atomically(self):
+        graph = self.graph()
+        child = deepcopy(graph.document()['nodes'][1])
+        child.update(id='child',name='child',parent='mesh')
+        child['transform']['translation'] = [3,0,0]
+        graph.create(child)
+        index = self.index(graph)
+        before = graph.document()
+        with self.assertRaisesRegex(RigError,'moves with'):
+            snap_bounds(graph,index,'mesh','child',axis=0,gap=.5)
+        self.assertEqual(graph.document(),before)
+        # Dependency through constraints must be rejected too, not just parenting.
+        set_constraint(graph,'child',dict(id='copy',type='copy-transform',target='camera',influence=1))
+        before = graph.document()
+        with self.assertRaisesRegex(RigError,'moves with'):
+            snap_bounds(graph,index,'camera','child',axis=0)
+        self.assertEqual(graph.document(),before)
+
     def test_surface_snap_and_arc_length_path(self):
         graph = self.graph()
         index = self.index(graph)
