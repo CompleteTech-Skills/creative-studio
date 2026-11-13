@@ -130,7 +130,11 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         files[path] = payload
     combined_derived = graph.derived_documents() if graph is not None else {}
     for path, document in (derived_documents or {}).items():
-        require(path not in combined_derived or combined_derived[path] == document, 'Conflicting derived document.')
+        if path in combined_derived:
+            prior = combined_derived[path]
+            prior_payload = prior if isinstance(prior, bytes) else canonical_bytes(prior)
+            payload = document if isinstance(document, bytes) else canonical_bytes(document)
+            require(prior_payload == payload, 'Conflicting derived document.')
         combined_derived[path] = document
     for path, document in combined_derived.items():
         add_document(document, path)

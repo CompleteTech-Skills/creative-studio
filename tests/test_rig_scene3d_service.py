@@ -614,6 +614,127 @@ class SceneServiceTests(unittest.TestCase):
         self.assertTrue(library.upgrade(graph, 'instance', r1, resolutions={'node:prefab-mesh:transform': 'source'})['applied'])
         self.assertEqual(library.resolve(r2)['nodes'][1]['transform']['translation'], [5, 0, 0])
 
+    def test_prefab_from_animated_duplicate_retains_exact_transitive_clip_closure(self):
+        scene = deepcopy(self.scene)
+        reference = self.bundle['project']['animations'][0]
+        scene['nodes'][1]['animation_bindings'] = [dict(target='mesh', clip=reference,
+            start_frame=0, end_frame=24, speed=1., loop=False)]
+        raw = canonical_bytes(self.bundle['documents'][reference['path']])
+        graph = SceneGraph(scene, animation_payloads={reference['path']: raw})
+        library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+        duplicate = graph.duplicate('mesh', 'animated-copy')
+        exact_payloads = graph.animation_payloads()
+        created = library.create(graph, 'animated-copy', 'copied-prefab', '1.0.0')
+        for path in duplicate['derived_documents']:
+            self.assertEqual(library.payloads()[path], exact_payloads[path])
+        library.instantiate(graph, created['reference'], 'copied-instance')
+        expanded = library.expand(graph.document())
+        self.assertTrue(expanded['derived_documents'])
+        targets = {n['id'] for n in expanded['scene']['nodes']}
+        for clip in expanded['derived_documents'].values():
+            self.assertTrue({track['target'] for track in clip['tracks']} <= targets)
+        self.assertEqual(graph.animation_payloads(), exact_payloads)
+
+    def test_prefab_batch_snapshot_preserves_noncanonical_source_and_mapped_clip_bytes(self):
+        for duplicate in (False, True):
+            with self.subTest(duplicate=duplicate):
+                clip = deepcopy(self.bundle['documents']['example-animation.json'])
+                clip['id'] = 'owned-noncanonical-clip'
+                raw = (json.dumps(clip, indent=3)+'\n').encode()
+                path = 'animations/owned-noncanonical-clip/1.0.0.json'
+                reference = dict(id=clip['id'], version=clip['version'], kind=clip['kind'],
+                    path=path, sha256=hashlib.sha256(raw).hexdigest())
+                scene = deepcopy(self.scene)
+                scene['nodes'][1]['animation_bindings'] = [dict(target='mesh', clip=reference,
+                    start_frame=0, end_frame=24, speed=1., loop=False)]
+                graph = SceneGraph(scene, animation_payloads={path:raw})
+                graph.replace_document(graph.document(), expected_revision=graph.revision)
+                library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+                commands = []
+                if duplicate:
+                    commands.append(dict(operation='duplicate', parameters=dict(identifier='mesh', new_id='copy')))
+                commands.append(dict(operation='prefab-create', parameters=dict(root_id='copy' if duplicate else 'mesh',
+                    identifier='noncanonical-prefab', version='1.0.0')))
+                batch = apply_commands(graph, library, dict(schema_version=1, commands=commands))
+                self.assertEqual(batch['derived_documents'][path], raw)
+                destination = self.root/('noncanonical-batch-'+str(duplicate))
+                snapshot_project(self.root/'source', destination, graph, scene_path='example-scene.json',
+                    derived_documents=batch['derived_documents'])
+                reopened = load_project(destination)
+                self.assertEqual((destination/path).read_bytes(), raw)
+                self.assertEqual(reopened['inventory'][path]['sha256'], reference['sha256'])
+                for derived_path, document in graph.derived_documents().items():
+                    self.assertEqual((destination/derived_path).read_bytes(), canonical_bytes(document))
+                if duplicate:
+                    # Semantic JSON equality cannot replace a pinned byte identity.
+                    altered = dict(batch['derived_documents'])
+                    derived_path = next(iter(graph.derived_documents()))
+                    altered[derived_path] += b'\n'
+                    rejected = self.root/'changed-derived-must-not-publish'
+                    with self.assertRaises(RigError):
+                        snapshot_project(self.root/'source', rejected, graph, scene_path='example-scene.json',
+                            derived_documents=altered)
+                    self.assertFalse(rejected.exists())
+
+    def test_prefab_clip_admission_failure_preserves_catalog_and_graph(self):
+        scene = deepcopy(self.scene)
+        reference = self.bundle['project']['animations'][0]
+        scene['nodes'][1]['animation_bindings'] = [dict(target='mesh', clip=reference,
+            start_frame=0, end_frame=24, speed=1., loop=False)]
+        graph = SceneGraph(scene, animation_payloads={reference['path']:
+            canonical_bytes(self.bundle['documents'][reference['path']])})
+        graph.duplicate('mesh', 'atomic-copy')
+        library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+        before, sources = graph.document(), library.payloads()
+        with patch.object(graph, 'animation_payloads', return_value={}):
+            with self.assertRaises(RigError):
+                library.create(graph, 'atomic-copy', 'atomic-prefab', '1.0.0')
+        self.assertEqual(library.payloads(), sources)
+        with patch('scene3d_prefabs.MAX_FILES', len(sources)+1), self.assertRaises(RigError):
+            library.create(graph, 'atomic-copy', 'atomic-prefab', '1.0.0')
+        self.assertEqual(library.payloads(), sources)
+        self.assertEqual(graph.document(), before)
+        # No failed attempt reserved the immutable identity or its clip bytes.
+        created = library.create(graph, 'atomic-copy', 'atomic-prefab', '1.0.0')
+        library.instantiate(graph, created['reference'], 'atomic-instance')
+
+    def test_prefab_animation_expansion_accounts_combined_bytes_and_inflight_files(self):
+        library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+        clip = deepcopy(self.bundle['documents']['example-animation.json'])
+        clip['id'] = 'budget-child'
+        clip['tracks'][0]['target'] = 'prefab-mesh'
+        child = library.register(clip)
+        parent = deepcopy(clip)
+        parent['id'] = 'budget-parent'
+        parent['bindings'] = [dict(target='prefab-mesh', clip=child, start_frame=0,
+                                   end_frame=24, speed=1., loop=False)]
+        parent['dependencies'] = [child]
+        reference = library.register(parent)
+        prefab = deepcopy(self.bundle['documents']['example-prefab.json'])
+        prefab['id'] = 'budget-prefab'
+        prefab['nodes'][1]['animation_bindings'] = [dict(target='prefab-mesh', clip=reference,
+            start_frame=0, end_frame=24, speed=1., loop=False)]
+        prefab['dependencies'].append(reference)
+        prefab_reference = library.register(prefab)
+        graph = self.graph()
+        for index in range(3):
+            library.instantiate(graph, prefab_reference, 'budget-instance-'+str(index))
+        scene, sources = graph.document(), library.payloads()
+        baseline = library.expand(scene)
+        derived = baseline['derived_documents']
+        self.assertEqual(len(derived), 6)
+        exact_count = len(sources) + len(derived)
+        exact_bytes = sum(map(len, sources.values())) + sum(len(canonical_bytes(d)) for d in derived.values())
+        for name, bound in [('MAX_TOTAL_BYTES', exact_bytes-1), ('MAX_FILES', exact_count-1),
+                            ('MAX_FILES', len(sources)+1)]:
+            with self.subTest(name=name, bound=bound), patch('scene3d_prefabs.'+name, bound):
+                with self.assertRaises(RigError):
+                    library.expand(scene)
+            self.assertEqual(graph.document(), scene)
+            self.assertEqual(library.payloads(), sources)
+        with patch('scene3d_prefabs.MAX_FILES', exact_count), patch('scene3d_prefabs.MAX_TOTAL_BYTES', exact_bytes):
+            self.assertEqual(library.expand(scene), baseline)
+
     def test_nested_prefabs_detach_and_derived_animation_preserve_source_bytes(self):
         library = PrefabLibrary.from_files(self.root/'source', self.bundle)
         original = deepcopy(self.bundle['documents']['example-prefab.json'])
@@ -929,6 +1050,56 @@ class RealSceneImportTests(unittest.TestCase):
     def do_import(self, path, asset_id='imported', **kwargs):
         return import_gltf(path, self.library, asset_id=asset_id, attribution='Test author',
                            license_file=self.license, **kwargs)
+
+    def test_native_evaluation_uses_private_verified_closure_after_source_replacement(self):
+        imported = self.do_import(self.source('gltf'))
+        materialize(self.library, imported.library_reference, self.root/'admitted-package')
+        native = self.root/'admitted-package/imports/imported/1.0.0/native'
+        graph = SceneGraph.from_bundle(build_example(self.root/'admitted-project'), 'example-scene.json')
+        add_import(graph, imported, 'model')
+        expected = evaluate_imported_vertices(graph, imported, native)
+        from rig_models import load_rig
+        def replace_source_then_load(private_root):
+            self.assertNotEqual(Path(private_root), native)
+            (native/'rig.json').write_bytes(b'changed after admission')
+            return load_rig(private_root)
+        with patch('rig_models.load_rig', side_effect=replace_source_then_load):
+            self.assertEqual(evaluate_imported_vertices(graph, imported, native), expected)
+        with self.assertRaises(RigError):
+            evaluate_imported_vertices(graph, imported, native)
+
+    @unittest.skipUnless(os.name == 'posix' and hasattr(os, 'mkfifo'), 'Real POSIX FIFO admission regression.')
+    def test_native_evaluation_rejects_fifo_manifest_and_dependency_without_hanging(self):
+        import multiprocessing
+        imported = self.do_import(self.source('gltf'))
+        materialize(self.library, imported.library_reference, self.root/'fifo-package')
+        native = self.root/'fifo-package/imports/imported/1.0.0/native'
+        graph = SceneGraph.from_bundle(build_example(self.root/'fifo-project'), 'example-scene.json')
+        add_import(graph, imported, 'model')
+        context = multiprocessing.get_context('fork')
+        for name in ('rig.json', 'identity.json'):
+            with self.subTest(name=name):
+                target = native/name
+                original = target.read_bytes()
+                target.unlink()
+                os.mkfifo(target)
+                def evaluate_fifo():
+                    try:
+                        evaluate_imported_vertices(graph, imported, native)
+                    except RigError:
+                        return
+                    raise AssertionError('FIFO was accepted as a registered native file.')
+                child = context.Process(target=evaluate_fifo)
+                child.start()
+                child.join(3)
+                hung = child.is_alive()
+                if hung:
+                    child.terminate()
+                    child.join(3)
+                target.unlink()
+                target.write_bytes(original)
+                self.assertFalse(hung, 'Native evaluation blocked on a FIFO.')
+                self.assertEqual(child.exitcode, 0)
 
     def test_real_hierarchical_external_gltf_registration_and_component_edits(self):
         path = self.source('gltf')

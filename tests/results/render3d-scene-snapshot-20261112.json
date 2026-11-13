@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "kind": "render3d-scene-snapshot-validation",
+  "base_commit": "787960e7467119304aa70ff12aa0dc7c1deaa2d8",
+  "scope": "Scene3D owner-validated source closure and request bindings; no rendered pixel or decoded geometry claim",
+  "commands": [
+    {
+      "command": "python -m unittest discover -s tests -p test_render3d*.py -v",
+      "result": "53 tests passed",
+      "log_sha256": "71cef4566b17e09fe204f152da9c1a3d057078f63160a760a97f80f004e97a54"
+    },
+    {
+      "command": "python scripts/generate_schemas.py --check",
+      "result": "passed"
+    },
+    {
+      "command": "python scripts/scene3d_example.py SOURCE; python scripts/render3d.py snapshot-scene --source SOURCE --destination SNAPSHOT; python scripts/render3d.py verify-snapshot SNAPSHOT --adapter scene3d",
+      "result": "capture and verification documents byte-identical"
+    }
+  ],
+  "fixture": true,
+  "snapshot_sha256": "b57330700ec5e272c2da19f40e4f42ca471a8d82d4255a0994c8b7058f044d0e",
+  "files": [
+    {
+      "path": "example-animation.json",
+      "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+      "bytes": 503
+    },
+    {
+      "path": "example-prefab.json",
+      "sha256": "e452d881f4a170d480bc294871c8dfa2178642d22796d55cb03340cb5af1111b",
+      "bytes": 1532
+    },
+    {
+      "path": "example-render.json",
+      "sha256": "59aeda2f2ae64e5f1992515a6bc32cd36f375f78c02f13189fdba3c67b8d3283",
+      "bytes": 663
+    },
+    {
+      "path": "example-scene.json",
+      "sha256": "df11cf88234842c81cb0eb82c89678c88a163a7489da6d27e482031e09a46570",
+      "bytes": 2556
+    },
+    {
+      "path": "example-shot.json",
+      "sha256": "d10873c61f63117a6dfd4ba58b43a118ef28962b597e2347d1bb0683e26fdbab",
+      "bytes": 819
+    },
+    {
+      "path": "project.json",
+      "sha256": "21356214aafd3a75a039bb836454803578980cc44f47b6fd9eafeb69befb662a",
+      "bytes": 2829
+    },
+    {
+      "path": "triangle.json",
+      "sha256": "57d4221ae10d9a583ddff40804a73e19ceb01c3ac242f8e4a095a94a266fd897",
+      "bytes": 1162
+    },
+    {
+      "path": "triangle.obj",
+      "sha256": "f35f79225a9f04bd331d1095628cb1167409357db03405a45be22c8e0478848a",
+      "bytes": 85
+    }
+  ],
+  "limitations": [
+    "Scene3D owner checks document semantics and content hashes, not decoding every geometry format.",
+    "No Blender/render backend, image output, GPU execution or production-art approval is established."
+  ],
+  "acceptance": {
+    "closure": "delegated to authoritative Scene3D load_project before copying and on staged copies",
+    "selection": "exact project/scene/shot versions, shot-to-scene relation, camera, and last sampled time within half-open shot duration",
+    "negative": "missing payload, stale identity, camera mismatch, out-of-range time, existing destination, and corrupt frozen content reject",
+    "relocation": "snapshot verifies and plans after relocation and source removal"
+  },
+  "review_corrections": {
+    "reviewed_head": "41603f1193c205d049f9e4ddf17e494b3a3ec144",
+    "findings": [
+      "P1: distinct shots sharing source/camera/time produced identical cache identities",
+      "P2: snapshot deletion during selection validation escaped as FileNotFoundError"
+    ],
+    "changes": [
+      "FrameSpec now requires project/scene/shot identities and hashes them",
+      "Request-binding filesystem failures become typed stale-asset errors"
+    ],
+    "tests": [
+      {
+        "log": "render-scene-review-fixes.log",
+        "sha256": "7aec4568e9908764a9557f1df78e6879bc9535c15d9e0b123b9b9c1602d32040",
+        "passed": 55
+      },
+      {
+        "log": "render-scene-review-gate.log",
+        "sha256": "f72bbe629a97c93a740c69d5c0ddaae19af6cb80247a040022e0ebd865e9c512",
+        "passed": 117
+      }
+    ]
+  }
+}
