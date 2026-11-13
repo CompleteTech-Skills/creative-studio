@@ -237,3 +237,32 @@ can be null while an encoder cannot yet report muxed time; it is encoder
 progress, not authoritative presentation timing. Independent final timestamps
 remain authoritative. Statistics parsing uses position-preserving reads of a
 bounded private log, so progress observation does not alter child output.
+
+## Explicit frame resolution and FPS conversion
+
+`silent_transform.profile(width, height, fps, fit=..., fps_policy=...)` supports
+bounded even custom dimensions, including1280×720,1920×1080,3840×2160, square,
+portrait and other declared pixel aspect ratios. Samples remain square; output
+DAR is width/height. `preserve` requires unchanged dimensions. `letterbox` fits
+without cropping on an explicit RGB background; `fill` crops the centered source
+rectangle; `stretch` explicitly permits distortion. Lanczos raster resampling
+uses the encoded PNG values and does not claim a scene-linear color conversion.
+Extreme aspect ratios crop in source coordinates, avoiding huge intermediates.
+
+FPS changes require `fps_policy='nearest'`. Output count is the exact source
+duration times target FPS, rounded to the nearest integer with ties upward.
+Each output timestamp selects the nearest source timestamp, with upward ties
+and endpoint clamping. The complete source/output index map is retained; any
+unavoidable duration quantization is an exact signed fraction in the report.
+`preserve` requires equal rational source/target FPS. No frame conversion occurs
+implicitly and no temporal interpolation is claimed.
+
+`silent_transform.transform(source, root, profile, new_directory)` verifies all
+original inputs, writes a bounded sequence and hash-bound `transform.json`, then
+publishes the complete private payload atomically. Originals stay untouched.
+`verify(root, source_root=original_root)` rechecks inventories, mappings and every
+actual transformed pixel against the declared operation. The strict
+[profile](../schemas/silent-frame-profile-v1.schema.json) and
+[transform](../schemas/silent-frame-transform-v1.schema.json) schemas describe
+this separate conversion artifact. PNG8 opacity/color rules remain unchanged;
+transparent or HDR input needs its own explicit verified preparation step.

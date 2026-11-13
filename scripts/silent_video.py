@@ -61,7 +61,7 @@ FPS = _obj({'numerator': _int(1, 240000), 'denominator': _int(1, 10000)})
 FILE = _obj({'index': _int(0, MAX_FRAMES-1), 'path': {'type': 'string', 'minLength': 1, 'maxLength': 1024},
              'sha256': SHA, 'bytes': _int(1, MAX_FRAME_BYTES)})
 SOURCE = _obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-frame-source'},
-               'origin': {'enum': ['synthetic', 'production2d', 'blender3d', 'assembled']},
+               'origin': {'enum': ['synthetic', 'production2d', 'blender3d', 'assembled', 'transformed']},
                'format': {'const': 'png'}, 'precision': {'const': 8},
                'alpha': {'const': 'opaque'}, 'color': {'const': 'untagged-sdr'},
                'width': _int(2, 4096), 'height': _int(2, 4096), 'fps': FPS,

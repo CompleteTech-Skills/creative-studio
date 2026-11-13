@@ -15,7 +15,8 @@
         "synthetic",
         "production2d",
         "blender3d",
-        "assembled"
+        "assembled",
+        "transformed"
       ]
     },
     "format": {
