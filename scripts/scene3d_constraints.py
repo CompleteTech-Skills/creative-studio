@@ -95,14 +95,13 @@ def set_constraint(graph, identifier, constraint, *, expected_revision=None):
 
 def sample_path(points, fraction):
     """Arc-length linear path in explicit world coordinates (no extrapolation)."""
+    from scene3d_path import path_lengths
     require(isinstance(points,(list,tuple)) and 2 <= len(points) <= 10000,
             'Path requires 2..10000 points.','SCENE3D_SPATIAL')
     require(isinstance(fraction,(int,float)) and not isinstance(fraction,bool) and
             math.isfinite(fraction) and 0<=fraction<=1, 'Path fraction is outside [0,1].','SCENE3D_SPATIAL')
     points = np.array([_vec(p) for p in points])
-    lengths = np.linalg.norm(np.diff(points,axis=0),axis=1)
-    total = float(lengths.sum())
-    require(math.isfinite(total) and total>1e-10,'Path has no measurable length.','SCENE3D_SPATIAL')
+    lengths,total = path_lengths(points.tolist())
     distance = fraction*total
     for a,b,length in zip(points,points[1:],lengths):
         if length>1e-10 and distance<=length:

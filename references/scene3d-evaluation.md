@@ -162,3 +162,8 @@ mapping. It performs no source reads, rig decoding or deformation evaluation.
 `evaluate_imported_vertices` retains its independent admission/sampling API and
 then delegates to this same mapper. Temporal caches use the pure boundary so
 imported instances cannot bypass input/deformation budgets through a second loader.
+
+Path admission is optional-free: `scene3d_path.path_lengths` provides the shared
+standard-library metric for contract checks and spatial sampling. Loading and
+validating persisted paths therefore requires no NumPy, Blender or glTF decoder;
+only numerical evaluation imports the spatial owner.

@@ -634,8 +634,8 @@ def validate_document(value, kind=None):
             require(type(path['start_frame']) is int and type(path['end_frame']) is int and
                     path['start_frame'] < path['end_frame'] <= value['duration_frames'],
                     'Invalid exact path binding interval.')
-            from scene3d_constraints import sample_path
-            sample_path(path['points'], 0.)
+            from scene3d_path import path_lengths
+            path_lengths(path['points'])
         for c in value.get('temporal_constraints', []):
             require(type(c['start_frame']) is int and type(c['end_frame']) is int,
                     'Exact temporal boundaries require JSON integers.')
