@@ -157,3 +157,28 @@ component instances against the existing viewport budget. Unknown or unsupported
 component mappings produce a diagnostic and no geometry; they never fall back
 to the full normalized GLB. This is an authored bind-pose projection; canonical
 selected-frame pose integration remains a separate adapter.
+
+
+### Canonical viewport graph state
+
+The saved viewport receives `SceneGraph.evaluate_base()` output tied to the exact
+saved revision and hash. The browser's shared `applyNativeState` path applies the
+native world matrices through the actual parent hierarchy and uses the native
+effective editor visibility, selectability, locking and shadow flags. Collection
+or layer visibility changes never overwrite the node's authored `visible` field.
+The same application path is available to native sampled-frame adapters.
+
+Authored transform channels remain distinct from evaluated matrices. Numeric
+fields and copied channels describe the authored values. Nodes controlled by
+constraints, socket attachments or a nonzero pivot are transform-read-only in
+this viewport; mixed selections containing such nodes cannot use numeric edits,
+gizmos or arrow nudges. The central command boundary also rejects those edits.
+Ordinary transform gestures retain live matrices and commit through the native
+repository, then reload the canonical evaluated result.
+
+Unexpanded prefab instances have no raw-TRS fallback. Their saved scene remains
+intact, while the viewport returns an explicit native expand-prefab diagnostic
+and no ready/render-success state. A saved revision can be acknowledged while
+its viewport capability is explicitly unavailable; this does not claim rendering
+or animation evaluation. Canonical prefab expansion remains its native owner's
+separate integration.

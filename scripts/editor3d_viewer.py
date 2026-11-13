@@ -110,6 +110,12 @@ def preview_snapshot(repository, snapshot):
         from editor3d_components import project_components
         components, component_vertices = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices,
             max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES)
+        from editor3d_state import project_editor_state
+        try:
+            result['viewport_state'] = project_editor_state(snapshot, root)
+        except RigError as error:
+            result['viewport_state'] = dict(schema_version=1, available=False, revision=snapshot['revision'],
+                sha256=snapshot['sha256'], error=error.report)
     result['viewport_nodes'] = components
     result['viewport_assets'] = assets
     result['preview'] = dict(backend='three-0.180.0', offline_render=False,
