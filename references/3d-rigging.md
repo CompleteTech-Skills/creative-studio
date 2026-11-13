@@ -348,3 +348,12 @@ map independently authored controls when mesh IDs differ. Unqualified names are
 accepted only when they select one target; ambiguous matches and multiple source
 controls writing the same target fail with `RIG_RETARGET_MORPH`. Missing optional
 unmapped target morphs remain omitted rather than broadcasting to unrelated faces.
+
+Appendage control parameters include `wing_twist` in `[-1, 1]` (up to 0.7 radians
+around each wing bone's local length axis) and `wing_side` (`both`, `left` or
+`right`). Existing joint constraints still apply. They are available through
+`rig_facial.appendage_controls` and the `appendages` object in a pose-operation
+request. An unsupported requested side fails rather than inventing a wing. A
+one-sided pose does not automatically mirror to the other side. Finger spread and
+tail phase follow parent-to-child hierarchy, so reordering the serialized bone
+array does not change those authored motions.
