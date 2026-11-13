@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hatch camera3d shot v1",
+  "$defs": {
+    "shot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-shot"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "shot": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "render_mode": {
+                  "const": "3d"
+                },
+                "scene": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "scene3d-scene"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "binding": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "camera3d-binding"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "duration_frames": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000000
+                },
+                "fps": {
+                  "$ref": "#/$defs/rate"
+                },
+                "transition": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "camera3d-transition"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "start_frame": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000000
+                }
+              },
+              "required": [
+                "render_mode",
+                "scene",
+                "binding",
+                "duration_frames",
+                "fps",
+                "transition",
+                "start_frame"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "render_mode": {
+                  "const": "2d"
+                },
+                "legacy_shot": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "hatch-production-shot"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "duration_frames": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000000
+                },
+                "fps": {
+                  "$ref": "#/$defs/rate"
+                },
+                "transition": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "camera3d-transition"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "start_frame": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000000
+                }
+              },
+              "required": [
+                "render_mode",
+                "legacy_shot",
+                "duration_frames",
+                "fps",
+                "transition",
+                "start_frame"
+              ]
+            }
+          ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "shot",
+        "metadata"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "provenance"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "enum": [
+            "authored",
+            "import",
+            "derived",
+            "procedural-fixture"
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "origin",
+        "fixture",
+        "attribution",
+        "license",
+        "inputs"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/) )(?!.*[\\\\:\\x00-\\x1f*?\"<>|])(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|(?![\\s\\S])))(?!.*[. ](?:/|(?![\\s\\S])))(?!(?:[^/]+/)*(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[cC][oO][mM][1-9\u00b9\u00b2\u00b3]|[lL][pP][tT][1-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/]+(?:/[^/]+)*(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ]
+    }
+  },
+  "$ref": "#/$defs/shot"
+}

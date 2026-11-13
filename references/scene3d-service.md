@@ -155,7 +155,7 @@ An edit batch is versioned nonexecutable JSON:
 ```
 
 Operations include `create`, `delete`, `reparent`, `duplicate`, `reorder`,
-`transform`, `node-flags`, `memberships`, `collection`, `tags`, `prefab-create`,
+`transform`, `rename`, `configure-node`, `configure-world`, `node-flags`, `memberships`, `collection`, `tags`, `prefab-create`,
 `prefab-instance`, `prefab-override`, `prefab-reset`, `prefab-upgrade` and
 `prefab-detach`. Unknown fields/commands fail. A failed CLI batch returns structured
 status 2, preserves original bytes, and publishes no destination. Exact prefab
@@ -195,3 +195,5 @@ The independent validator checks both original source declarations and normalize
 Animated editing retains exact source bytes through `source_root` or an explicit bounded `animation_payloads` mapping. Parsed animation dictionaries alone cannot authenticate references, including noncanonical JSON. Shared clip DAG derivation uses a per-copy memo and explicit operation/file/byte budgets. Every candidate edit rechecks remaining binding subtrees through the contract validator; removed bindings release their targets while genuine external shot references remain protected. Source-resolution of an optional-child upgrade conflict removes that entire optional subtree.
 
 Prefab admission and reopening share the dependency-free `effective_prefab` and `validate_prefab_instances` contract helpers. They validate private effective copies, including nested optional instances, parameter types, unit quaternions, positive scales, authored material slots and scoped identities. The loader retains exact original files and returns their validated source definitions. Source default bindings must themselves be valid; invalid defaults fail immutable registration before changing the catalog. Logical copies, including memo hits, consume expanded node/work budgets, and composed transform ancestry retains the 128-level limit. A consuming scene inherits fixture classification from effective optional children.
+
+Display-name changes use `rename` and retain stable node identity. `configure-node` replaces only explicitly supplied name, camera, light, material-overrides or metadata fields through the same complete document validation; `configure-world` accepts only background, exposure, environment and metadata. Both support expected revisions, and a malformed later command rolls back earlier commands in the batch. These operations are shared by the CLI and editor adapters.

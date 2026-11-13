@@ -406,6 +406,36 @@ class SceneGraph:
         return (deepcopy(self._nodes()[identifier]['transform']) if space == 'local'
                 else self.evaluate_base(identifier)['world_matrix'])
 
+    def rename(self, identifier, name, *, expected_revision=None):
+        """Change a display label while retaining the stable node identity."""
+        return self.configure_node(identifier, {'name': name}, expected_revision=expected_revision)
+
+    def configure_node(self, identifier, properties, *, expected_revision=None):
+        """Replace explicit authored properties through the canonical validator.
+
+        Identity, parenting, transforms and visibility have dedicated operations;
+        this operation cannot smuggle replacements for those authorities.
+        """
+        self._editable(identifier)
+        require(isinstance(properties, dict) and properties and
+                set(properties) <= {'name', 'camera', 'light', 'material_overrides', 'metadata'},
+                'Unsupported node property update.', 'SCENE3D_COMMAND')
+        finite_json(properties)
+        candidate = self.document()
+        target = next(n for n in candidate['nodes'] if n['id'] == identifier)
+        target.update(deepcopy(properties))
+        return self._commit(candidate, expected_revision=expected_revision)
+
+    def configure_world(self, properties, *, expected_revision=None):
+        """Replace bounded world properties without changing coordinates."""
+        require(isinstance(properties, dict) and properties and
+                set(properties) <= {'background', 'exposure', 'environment', 'metadata'},
+                'Unsupported world property update.', 'SCENE3D_COMMAND')
+        finite_json(properties)
+        candidate = self.document()
+        candidate['world'].update(deepcopy(properties))
+        return self._commit(candidate, expected_revision=expected_revision)
+
     def set_tags(self, identifier, tags):
         require(isinstance(tags, list) and all(isinstance(t, str) and 0 < len(t) <= 60 for t in tags),
                 'Tags must be a bounded string list.')

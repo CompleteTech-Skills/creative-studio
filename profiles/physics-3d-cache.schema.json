@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/physics-3d-cache-v1",
+  "title": "PhysicsCache v1",
+  "description": "Structural bounds; runtime additionally validates graph, geometry, time and aggregate budgets. No solver capability is implied.",
+  "$defs": {
+    "PhysicsCache": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "hatch-3d-physics-cache"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "world_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "physics_input_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "enum": [
+                "blender",
+                "pybullet"
+              ]
+            },
+            "adapter_version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            },
+            "solver_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "solver_version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "application_version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "platform": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "precision": {
+              "enum": [
+                "float32",
+                "float64",
+                "mixed"
+              ]
+            },
+            "device": {
+              "enum": [
+                "cpu",
+                "gpu"
+              ]
+            },
+            "executable_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "id",
+            "adapter_version",
+            "solver_name",
+            "solver_version",
+            "application_version",
+            "platform",
+            "precision",
+            "device",
+            "executable_sha256"
+          ]
+        },
+        "frame_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ]
+        },
+        "fps": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "fixed_step": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "substeps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "sample_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .](?:/(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .])*(?![\\s\\S])"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1125899906842624
+              }
+            },
+            "required": [
+              "path",
+              "sha256",
+              "bytes"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 10000
+        },
+        "upstream_hashes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 10000
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "reproducibility": {
+          "enum": [
+            "verified-cache-replay",
+            "pinned-numerical",
+            "approximate",
+            "not-guaranteed"
+          ]
+        },
+        "numerical_tolerance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000000.0
+        },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "elapsed_seconds": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000000.0
+            },
+            "peak_memory_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1125899906842624
+            },
+            "output_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1125899906842624
+            },
+            "solver_steps": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "elapsed_seconds",
+            "peak_memory_bytes",
+            "output_bytes",
+            "solver_steps"
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "review_status": {
+          "enum": [
+            "unreviewed",
+            "rejected",
+            "approved"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "world_sha256",
+        "physics_input_sha256",
+        "backend",
+        "frame_range",
+        "fps",
+        "fixed_step",
+        "substeps",
+        "sample_count",
+        "files",
+        "upstream_hashes",
+        "seed",
+        "reproducibility",
+        "numerical_tolerance",
+        "usage",
+        "fixture",
+        "review_status"
+      ]
+    }
+  },
+  "$ref": "#/$defs/PhysicsCache"
+}

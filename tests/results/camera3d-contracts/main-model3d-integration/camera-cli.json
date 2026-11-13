@@ -1,0 +1,24 @@
+[
+  {
+    "input_sha256": "29c2190bcb31dce059b269e46bd9846ad56c5f09c9606b6224ee27168a38df44",
+    "input_bytes": 5010,
+    "negative": false,
+    "exit": 2,
+    "stdout": {
+      "ok": false,
+      "error": "Invalid JSON: Exceeds the limit (4300 digits) for integer string conversion: value has 5000 digits; use sys.set_int_max_str_digits() to increase the limit"
+    },
+    "stderr": ""
+  },
+  {
+    "input_sha256": "42e550a113b313d78a91e0d9c69b5c4fbdb5a0d862ff22dc5edf064df1624b8e",
+    "input_bytes": 5011,
+    "negative": true,
+    "exit": 2,
+    "stdout": {
+      "ok": false,
+      "error": "Invalid JSON: Exceeds the limit (4300 digits) for integer string conversion: value has 5000 digits; use sys.set_int_max_str_digits() to increase the limit"
+    },
+    "stderr": ""
+  }
+]
