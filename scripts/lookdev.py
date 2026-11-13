@@ -13,9 +13,8 @@ import json
 import os
 from pathlib import Path
 import stat
-import secrets
 
-from atomic_publish import rename_no_replace_at
+from atomic_publish import rename_no_replace_at, private_stage, private_stage_supported
 from lookdev_contracts import Registry, canonical_bytes, content_hash, portable_path, validate_resource
 from rig_errors import RigError, decode_json, require
 
@@ -270,55 +269,57 @@ class Project:
                 'LOOKDEV_PROJECT_EXISTS', 'Export destination must be new.')
         require(not destination.resolve().is_relative_to(self.root.resolve()),
                 'LOOKDEV_PROJECT_DESTINATION', 'Export outside the source project.')
+        require(private_stage_supported(), 'LOOKDEV_PROJECT_EXPORT_PLATFORM',
+                'Pinned native export requires the tested Linux descriptor staging adapter.')
         parent_fd = _directory_fd(destination.parent)
-        stage_fd = None
-        stage_name = '.lookdev-export-' + secrets.token_hex(16)
         try:
-            os.mkdir(stage_name, mode=0o700, dir_fd=parent_fd)
-            stage_fd = os.open(stage_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
-            for name, payload in self.sources.items():
-                _write_at(stage_fd, name, payload)
-            # Independent disk reads bind the delivered bytes rather than the
-            # success of write() or existence of file names.
-            inventory = {}
-            for name, payload in self.sources.items():
-                captured = _read_at(stage_fd, name, len(payload))
-                inventory[name] = dict(bytes=len(captured), sha256=hashlib.sha256(captured).hexdigest())
-            require(inventory == self.inventory, 'LOOKDEV_PROJECT_EXPORT', 'Export failed exact-byte verification.')
-            manifest = dict(schema_version=1, kind='lookdev-native-export', project_sha256=self.sha256,
-                            inventory=deepcopy(self.inventory), loss_report=dict(format='native', lost=[], approximated=[]),
-                            rendered=False, aesthetic_review='not-run')
-            _write_at(stage_fd, 'export-manifest.json', canonical_bytes(manifest))
-            verified_stage = os.fstat(stage_fd)
-            rename_no_replace_at(parent_fd, stage_name, parent_fd, destination.name)
-            published = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
-            require(stat.S_ISDIR(published.st_mode) and
-                    (published.st_dev, published.st_ino) == (verified_stage.st_dev, verified_stage.st_ino),
-                    'LOOKDEV_PROJECT_PUBLICATION_CHANGED',
-                    'Published directory differs from verified staging; destination is unverified and preserved.')
-            # Directory identity does not authenticate its children. Re-read
-            # the delivered bytes after publication under the bound descriptor.
-            # A publication-time writer must never turn stale pre-rename hashes
-            # into a successful export receipt.
-            delivered = {}
-            for name, payload in self.sources.items():
-                captured = _read_at(stage_fd, name, len(payload))
-                delivered[name] = dict(bytes=len(captured), sha256=hashlib.sha256(captured).hexdigest())
-            require(delivered == self.inventory, 'LOOKDEV_PROJECT_PUBLICATION_CHANGED',
-                    'Delivered source inventory changed; unverified destination is preserved.')
-            expected_manifest = canonical_bytes(manifest)
-            require(_read_at(stage_fd, 'export-manifest.json', len(expected_manifest)) == expected_manifest,
-                    'LOOKDEV_PROJECT_PUBLICATION_CHANGED',
-                    'Delivered export manifest changed; unverified destination is preserved.')
-            final_identity = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
-            require((final_identity.st_dev, final_identity.st_ino) == (verified_stage.st_dev, verified_stage.st_ino),
-                    'LOOKDEV_PROJECT_PUBLICATION_CHANGED', 'Destination changed during delivered verification.')
-            return manifest
+            # The public wrapper can be renamed or replaced without changing
+            # the private descriptor that owns the inner payload publication.
+            with private_stage(parent_fd, prefix='.lookdev-export-', cleanup_on_error=False) as (_, wrapper_fd):
+                os.mkdir('payload', mode=0o700, dir_fd=wrapper_fd)
+                stage_fd = os.open('payload', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=wrapper_fd)
+                try:
+                    for name, payload in self.sources.items():
+                        _write_at(stage_fd, name, payload)
+                    # Independent disk reads bind the delivered bytes rather than the
+                    # success of write() or existence of file names.
+                    inventory = {}
+                    for name, payload in self.sources.items():
+                        captured = _read_at(stage_fd, name, len(payload))
+                        inventory[name] = dict(bytes=len(captured), sha256=hashlib.sha256(captured).hexdigest())
+                    require(inventory == self.inventory, 'LOOKDEV_PROJECT_EXPORT', 'Export failed exact-byte verification.')
+                    manifest = dict(schema_version=1, kind='lookdev-native-export', project_sha256=self.sha256,
+                                    inventory=deepcopy(self.inventory), loss_report=dict(format='native', lost=[], approximated=[]),
+                                    rendered=False, aesthetic_review='not-run')
+                    _write_at(stage_fd, 'export-manifest.json', canonical_bytes(manifest))
+                    verified_stage = os.fstat(stage_fd)
+                    rename_no_replace_at(wrapper_fd, 'payload', parent_fd, destination.name)
+                    published = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
+                    require(stat.S_ISDIR(published.st_mode) and
+                            (published.st_dev, published.st_ino) == (verified_stage.st_dev, verified_stage.st_ino),
+                            'LOOKDEV_PROJECT_PUBLICATION_CHANGED',
+                            'Published directory differs from verified staging; destination is unverified and preserved.')
+                    # Directory identity does not authenticate its children. Re-read
+                    # the delivered bytes after publication under the bound descriptor.
+                    # A publication-time writer must never turn stale pre-rename hashes
+                    # into a successful export receipt.
+                    delivered = {}
+                    for name, payload in self.sources.items():
+                        captured = _read_at(stage_fd, name, len(payload))
+                        delivered[name] = dict(bytes=len(captured), sha256=hashlib.sha256(captured).hexdigest())
+                    require(delivered == self.inventory, 'LOOKDEV_PROJECT_PUBLICATION_CHANGED',
+                            'Delivered source inventory changed; unverified destination is preserved.')
+                    expected_manifest = canonical_bytes(manifest)
+                    require(_read_at(stage_fd, 'export-manifest.json', len(expected_manifest)) == expected_manifest,
+                            'LOOKDEV_PROJECT_PUBLICATION_CHANGED',
+                            'Delivered export manifest changed; unverified destination is preserved.')
+                    final_identity = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
+                    require((final_identity.st_dev, final_identity.st_ino) == (verified_stage.st_dev, verified_stage.st_ino),
+                            'LOOKDEV_PROJECT_PUBLICATION_CHANGED', 'Destination changed during delivered verification.')
+                    return manifest
+                finally:
+                    os.close(stage_fd)
         finally:
-            # Failed staging remains anchored under the owned output parent for
-            # diagnosis; no unverified directory is published as the destination.
-            if stage_fd is not None:
-                os.close(stage_fd)
             os.close(parent_fd)
 
 

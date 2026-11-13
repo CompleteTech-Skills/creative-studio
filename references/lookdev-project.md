@@ -41,17 +41,27 @@ and atomically publishes without replacing an existing destination. Source edits
 after capture cannot alter the export. `export-manifest.json` records exact hashes
 and a native-format loss report. Both index and export manifest names are reserved.
 Export parent must already exist and destination must be outside the source
-project. Failed staging is preserved for diagnosis. This package preserves all
+project. Native filesystem export currently requires the tested Linux descriptor staging
+adapter; other hosts fail explicitly before creating output. Portable closure
+readers remain available on other platforms. The private mode-0700 wrapper is
+opened before all writes; a verified inner payload is renamed from that bound
+descriptor, so replacing the public wrapper cannot publish an unverified
+replacement or redirect cleanup. Empty owned wrappers remain for maintenance;
+failed private contents are preserved for diagnosis. This package preserves all
 native definitions, including unsupported features; it does not certify backend
 compatibility. GLB, Blender output, texture conversion and rendered approval
 require their actual corresponding adapters and tests.
 
 ## Verification and remaining integration
 
-`tests/test_lookdev_project.py` executes the real CLI, imports actual PNG bytes,
+`tests/test_lookdev_project.py` verifies portable closure capture on every OS.
+`tests/test_rig_lookdev_project.py` executes the real POSIX CLI, imports actual PNG bytes,
 checks source mutation after capture and reopening an exported project, and
 rejects malformed closures, ambiguous versions, path aliases, symlinks and FIFOs.
-It runs beside the complete existing LookDev contract tests.
+The dedicated source-closure workflow explicitly executes the native suite on
+Linux and macOS and the portable suite on Linux, macOS and Windows, beside the
+complete existing LookDev contract tests. The native module uses the established
+optional 3D prefix so ordinary 2D delivery does not discover platform skips.
 
 This is a verified portion of #89. The issue remains open: actual viewport
 material/light controls, shared renderer budgets/cache/resume integration, GLB
