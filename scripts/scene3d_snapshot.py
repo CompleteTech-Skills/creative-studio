@@ -99,7 +99,7 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     project = deepcopy(bundle['project'])
     active_scene = None
     additions = []
-    def add_document(document, path=None):
+    def add_document(document, path=None, *, catalog=True):
         if isinstance(document, bytes):
             require(0 < len(document) <= 16*1024*1024, 'Manifest bytes exceed the document bound.')
             payload = document
@@ -116,10 +116,10 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         r = _file_reference(document, payload, path)
         additions.append(r)
         field = {'scene3d-asset': 'assets', 'scene3d-prefab': 'prefabs',
-                 'scene3d-animation': 'animations'}.get(document['kind'])
-        if field is not None:
+                 'scene3d-animation': 'animations', 'scene3d-shot': 'shots'}.get(document['kind'])
+        if catalog and field is not None:
             project[field].append(deepcopy(r))
-        if document['kind'] == 'scene3d-asset' and document['asset_type'] == 'character':
+        if catalog and document['kind'] == 'scene3d-asset' and document['asset_type'] == 'character':
             project['characters'].append(deepcopy(r))
         return r
     for path, payload in (extra_payloads or {}).items():
@@ -173,7 +173,10 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         project['scenes'].append(active_scene)
         # Existing shots remain valid against the retained old scene; new exact
         # shot versions bind the edited scene without overwriting their originals.
-        for reference in list(project['shots']):
+        for reference in bundle['project']['shots']:
+            # An explicit shot edit is promoted once below, against this new scene.
+            if reference['path'] in (document_replacements or {}):
+                continue
             old_shot = bundle['documents'][reference['path']]
             if old_shot['scene']['path'] != scene_path:
                 continue
@@ -199,6 +202,8 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                 (original['kind'], original['id'], original['version']),
                 'Replacement must retain its original identity/version until publication.')
         requested[old_path] = deepcopy(replacement)
+        if graph is not None and original['kind']=='scene3d-shot' and original['scene']['path']==scene_path:
+            requested[old_path]['scene']=deepcopy(active_scene)
     # A changed document requires a new version of every consuming native
     # document, even when only its exact child reference changes.
     changed = True
@@ -232,7 +237,9 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             document['provenance']['inputs'].append(dict(path=path,
                 sha256=hashlib.sha256(files[path]).hexdigest()))
         validate_document(document)
-        promoted[path] = add_document(document)
+        # Existing catalog references are rewritten below; adding another entry
+        # here would duplicate a shot/animation/asset after reference promotion.
+        promoted[path] = add_document(document, catalog=False)
         pending.remove(path)
         return promoted[path]
     for path in requested:
@@ -241,6 +248,13 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         if retained not in project['provenance']['inputs']:
             project['provenance']['inputs'].append(retained)
     replace_references(project)
+    if graph is not None:
+        # Graph publication intentionally retains both source and derived scenes.
+        # Keep source shot associations as well as the coalesced edited shots.
+        for reference in bundle['project']['shots']:
+            if reference['path'] in replacements and bundle['documents'][reference['path']]['scene']['path']==scene_path:
+                if reference not in project['shots']:
+                    project['shots'].append(deepcopy(reference))
     if scene_path in promoted:
         active_scene = deepcopy(promoted[scene_path])
     if project_selection is not None:
