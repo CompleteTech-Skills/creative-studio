@@ -1,0 +1,64 @@
+"""Hash-bound Blender OCIO configuration; scene-linear shading is unchanged.
+
+White balance is a view transform, never a rewrite of source lights/materials.
+The pinned Blender backend performs its own OCIO transform exactly once.
+"""
+from copy import deepcopy
+import math
+from lookdev_contracts import content_hash
+from rig_errors import require, finite_json, RigError
+
+
+def configuration(*, view='AgX', exposure=0., temperature_kelvin=6500., tint=10., output='srgb-png'):
+    result={'schema_version':1,'working_space':'linear-srgb','view':view,'exposure_stops':exposure,
+            'temperature_kelvin':temperature_kelvin,'tint':tint,'output':output}
+    result['sha256']=content_hash(result)
+    return validate_configuration(result)
+
+
+def validate_configuration(value):
+    require(isinstance(value,dict) and set(value)=={'schema_version','working_space','view','exposure_stops',
+            'temperature_kelvin','tint','output','sha256'},'LOOKDEV_COLOR','Invalid color configuration fields.')
+    finite_json(value)
+    require(type(value['schema_version']) is int and value['schema_version']==1 and value['working_space']=='linear-srgb',
+            'LOOKDEV_COLOR','Unsupported color configuration.')
+    require(value['view'] in ('Standard','AgX','Filmic'),'LOOKDEV_COLOR','Unsupported OCIO view; query backend availability.')
+    for key,low,high in [('exposure_stops',-20,20),('temperature_kelvin',1800,100000),('tint',-500,500)]:
+        number=value[key]
+        require(type(number) in (int,float) and math.isfinite(number) and low<=number<=high,
+                'LOOKDEV_COLOR','Invalid '+key)
+    require(value['output'] in ('srgb-png','scene-linear-exr'),'LOOKDEV_COLOR','Unsupported output encoding.')
+    require(value['sha256']==content_hash({k:v for k,v in value.items() if k!='sha256'}),
+            'LOOKDEV_COLOR_HASH','Color configuration changed.')
+    return deepcopy(value)
+
+
+def apply_configuration(scene, value):
+    """Configure actual Blender OCIO and file encoding, rejecting unknown views.
+
+    EXR remains scene-linear: display exposure/white balance/view metadata is
+    retained in the scene but is not baked into the HDR payload by Blender.
+    No compositor nodes are introduced, avoiding a second transform.
+    """
+    value=validate_configuration(value)
+    settings=scene.view_settings
+    try:
+        settings.view_transform=value['view']
+        scene.display_settings.display_device='sRGB'
+        settings.look='None'
+    except (TypeError,ValueError) as exc:
+        raise RigError('LOOKDEV_COLOR_BACKEND','Requested OCIO view/look unavailable.') from exc
+    require(hasattr(settings,'use_white_balance') and hasattr(settings,'temperature') and hasattr(settings,'tint'),
+            'LOOKDEV_COLOR_BACKEND','Backend lacks explicit view white balance; require pinned Blender4.5.')
+    settings.exposure=value['exposure_stops'];settings.gamma=1.
+    settings.use_white_balance=True
+    settings.temperature=value['temperature_kelvin'];settings.tint=value['tint']
+    image=scene.render.image_settings
+    image.color_mode='RGBA'
+    if value['output']=='scene-linear-exr':
+        image.file_format='OPEN_EXR';image.color_depth='32';image.exr_codec='ZIP'
+    else:
+        image.file_format='PNG';image.color_depth='16'
+    scene['hatch_color_sha256']=value['sha256']
+    return {'configuration_sha256':value['sha256'],'view':settings.view_transform,
+            'output_encoding':value['output'],'display_transform_baked':value['output']=='srgb-png'}
