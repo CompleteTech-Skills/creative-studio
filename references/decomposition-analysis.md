@@ -164,6 +164,13 @@ installation:
 
 ```bash
 python -m unittest discover -s tests -p 'test_decomposition_analysis.py' -v
-HATCH_ANALYSIS_BACKEND_TEST=1 python -m unittest discover -s tests \
+HATCH_ANALYSIS_BACKEND_TEST=1 python -m unittest discover -s tests/optional \
   -p 'test_decomposition_analysis_backend.py' -v
 ```
+
+Optional backend and Windows-only native-handle suites live under `tests/optional/`
+(without a package initializer), outside the required 2D discovery root. The
+analysis workflow invokes the real backend suite on each OS and explicitly invokes
+`test_decomposition_windows_records.py` on Windows. Required core tests exercise
+nonregular retry records with POSIX FIFOs or Windows directories without platform
+skips; the delivery gate keeps its existing strict skip policy.
