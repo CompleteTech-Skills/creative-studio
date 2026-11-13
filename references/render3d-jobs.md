@@ -44,7 +44,9 @@ or growing input files cannot silently enter the cache. Database completion is
 recorded only after successful publication. A crash between publication and the
 transaction commit leaves a reusable verified cache entry, not a false completion.
 Corrupt cache bytes are retained in a named quarantine before a newly rendered,
-verified replacement is installed. Failed backend output is preserved for
+verified replacement is installed. Both the retained evidence and its replacement
+count against cache capacity; repair fails without moving either entry when that
+capacity is insufficient. Failed backend output is preserved for
 inspection.
 
 `verify-reuse` rehashes and decodes artifacts before reuse. `refresh` bypasses

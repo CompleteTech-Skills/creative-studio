@@ -195,6 +195,17 @@ class JobStore:
             entries.append(dict(key=child.name,bytes=size))
         return entries
 
+    def _retained_cache_bytes(self):
+        """Quarantined corrupt entries remain evidence and consume the quota."""
+        total=0
+        for entry in safe_path(self.root,'staging').glob('corrupt-*'):
+            require(entry.is_dir() and not entry.is_symlink(),
+                    'ownership','Invalid retained cache evidence.')
+            for path in entry.rglob('*'):
+                require(not path.is_symlink(),'ownership','Retained cache contains a symlink.')
+                if path.is_file():total+=path.stat().st_size
+        return total
+
     def cache_inventory(self):
         with self._transaction() as db:
             pinned={row[0] for row in db.execute('SELECT DISTINCT cache_key FROM frames')}
@@ -410,7 +421,7 @@ class JobStore:
                 require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
                         'cancelled','Cancellation requested before publication.')
                 destination=safe_path(self.root,'cache/'+lease['cache_key'])
-                used=sum(entry['bytes'] for entry in self._cache_entries())
+                used=sum(entry['bytes'] for entry in self._cache_entries())+self._retained_cache_bytes()
                 staged=sum(path.stat().st_size for path in stage.rglob('*') if path.is_file())
                 require(destination.exists() or used+staged<=self.capacity['storage_bytes'],
                         'storage-exhaustion','Verified cache publication exceeds store capacity.')
@@ -421,6 +432,8 @@ class JobStore:
                     except (Render3DError,ValueError,OSError,KeyError):
                         # Preserve corrupt bytes as evidence before installing a
                         # newly rendered and independently verified replacement.
+                        require(used+staged<=self.capacity['storage_bytes'],
+                                'storage-exhaustion','Cache repair would exceed capacity while retaining corrupt evidence.')
                         quarantine=safe_path(self.root,'staging/corrupt-'+uuid.uuid4().hex)
                         _rename_no_replace(destination,quarantine)
                         try:_rename_no_replace(stage,destination)

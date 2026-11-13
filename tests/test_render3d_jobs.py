@@ -151,6 +151,22 @@ class JobTests(unittest.TestCase):
         self.assertEqual((preserved[0]/'frame.png').read_bytes(),b'corrupt')
         self.assertEqual(self.store.status(other)['frames'][0]['state'],'complete')
 
+    def test_corrupt_cache_repair_preserves_quota_and_prior_evidence(self):
+        job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
+        self.store.publish(lease,output,result,self.verify)
+        cache=self.root/'jobs/cache'/lease['cache_key']
+        (cache/'frame.png').write_bytes(b'corrupt')
+        changed=deepcopy(self.request);changed['id']='quota';changed['destination']['path']='quota'
+        other=self.submit(changed);second=self.store.claim(other)
+        output2,result2=self.output(second)
+        # Existing cache must not bypass admission simply because its key exists.
+        self.store.capacity['storage_bytes']=sum(p.stat().st_size for p in cache.rglob('*') if p.is_file())+1
+        with self.assertRaises(Render3DError) as caught:
+            self.store.publish(second,output2,result2,self.verify)
+        self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+        self.assertEqual((cache/'frame.png').read_bytes(),b'corrupt')
+        self.assertEqual(self.store.status(other)['frames'][0]['state'],'running')
+
     def test_pinned_cache_cannot_be_cleaned_and_history_is_paginated(self):
         job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
         self.store.publish(lease,output,result,self.verify)
