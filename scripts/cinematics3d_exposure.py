@@ -77,7 +77,7 @@ def measure(root, inventory, source, rgba, *, max_work_bytes=MAX_WORK_BYTES):
         alpha = alpha[visible]
         nonpositive += int((visible_luminance <= 0).sum())
         log_values = np.log2(np.maximum(visible_luminance, 2.**-40))
-        below += int((log_values < -40).sum()); above += int((log_values > 24).sum())
+        below += int((visible_luminance < 2.**-40).sum()); above += int((log_values > 24).sum())
         over_one += int((visible_luminance > 1).sum())
         log_sum += float(np.dot(log_values, alpha)); coverage += float(alpha.sum())
         indices = np.minimum(np.floor((np.clip(log_values, -40, 24)+40)*4).astype(np.int64), 255)
