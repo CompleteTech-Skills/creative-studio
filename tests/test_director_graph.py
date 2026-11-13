@@ -27,11 +27,12 @@ class DirectorGraphTests(unittest.TestCase):
         self.request = deepcopy(next(x for x in fixtures if x.get('method') == 'GraphCompiler.compile'
                                      and x['kind'] == 'director-request'))
         self.now = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        self.evidence = self.write('probe', {'operation': 'native-cpu', 'status': 'available',
-                                           'execution_verified': True, 'fixture': True}, kind='evidence')
         self.input = self.write('native-request', {'type': 'synthetic native job specification'}, kind='native-request')
         limits = deepcopy(self.request['input']['budget'])
         limits.update(max_cpu_seconds=100, max_gpu_seconds=100)
+        self.evidence = self.write('probe', {'operation': 'native-cpu', 'status': 'available',
+                                           'execution_verified': True, 'fixture': True,
+                                           'policy_limits': limits, 'version': 'test'}, kind='evidence')
         self.snapshot = dict(capabilities=[dict(operation='native-cpu', version='test', status='available',
                             limits=limits, probe_evidence=[self.evidence], execution_verified=True)],
                              expires_at=(self.now + timedelta(hours=1)).isoformat())
@@ -239,6 +240,15 @@ class DirectorGraphTests(unittest.TestCase):
 
     def test_generated_plan_schema_matches_authority(self):
         self.assertEqual(json.loads((ROOT / 'profiles/director-execution-plan.schema.json').read_text()), dg.plan_schema())
+
+    def test_native_render_and_provider_capabilities_cannot_be_substituted(self):
+        for operation, schema, owner in [('RenderAdapter.submit', 'job-snapshot', 'RenderAdapter'),
+                                         ('PlanningProvider.generate_structured', 'planning-artifact', 'PlanningProvider'),
+                                         ('AcquisitionGateway.claim', 'acquisition-state', 'AcquisitionGateway')]:
+            plan = deepcopy(self.plan)
+            plan['nodes'][0].update(operation=operation, output_schema=schema, native_owner=owner)
+            with self.subTest(operation=operation), self.assertRaises(ValueError):
+                dg.validate_plan(plan)
         self.request['input']['budget']['max_cpu_seconds'] = 100
         self.request['context']['capability_snapshot_sha256'] = 'a' * 64
         with self.assertRaises(ValueError):

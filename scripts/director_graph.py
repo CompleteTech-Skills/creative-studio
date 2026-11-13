@@ -81,6 +81,15 @@ def validate_plan(plan):
                  'Nodes must delegate to the named native interface owner.')
         _require(node['output_schema'] == METHODS[node['operation']][1], 'OUTPUT',
                  'Output schema must match the native method contract.')
+        if node['operation'] == 'RenderAdapter.submit':
+            _require(bool({'blender.cpu', 'blender.gpu'} & set(node['required_capabilities'])),
+                     'CAPABILITY', 'Render submission requires an executed Blender backend capability.')
+        if node['operation'] == 'PlanningProvider.generate_structured':
+            _require('planning.provider' in node['required_capabilities'], 'CAPABILITY',
+                     'Model planning requires its actual provider capability.')
+        if node['operation'].startswith('AcquisitionGateway.'):
+            _require('native.acquisition' in node['required_capabilities'], 'CAPABILITY',
+                     'Acquisition must use the native acquisition capability.')
         for key in ('required_capabilities', 'requirement_ids'):
             _require(len(node[key]) == len(set(node[key])), 'DUPLICATE', 'Duplicate ' + key + '.')
         _require(set(node['requirement_ids']) <= set(requirements), 'REFERENCE', 'Unknown requirement.')
@@ -236,7 +245,16 @@ def compile_graph(request, root, *, now=None):
                      for name in node['required_capabilities']), 'CAPABILITY',
                  'Every mandatory capability needs retained execution evidence.')
         from director_capabilities import assert_admission
+        resource_estimate = {}
+        if node['estimated_seconds'] is not None:
+            if node['resource_class'] in ('cpu', 'render'):
+                resource_estimate['max_cpu_seconds'] = node['estimated_seconds']
+            elif node['resource_class'] == 'gpu':
+                resource_estimate['max_gpu_seconds'] = node['estimated_seconds']
+        if node['resource_class'] == 'provider':
+            resource_estimate['max_provider_calls'] = 1
         assert_admission(snapshot, node['required_capabilities'], evidence_root=root, now=now,
+                         resources=resource_estimate,
                          network_policy=request['context']['policy']['network'],
                          budget_reservation_id=request['context']['budget_reservation_id'],
                          allow_unknown_price=request['context']['policy']['paid'] == 'allow-unknown-price')
