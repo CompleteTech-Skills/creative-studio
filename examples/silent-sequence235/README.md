@@ -52,3 +52,15 @@ prior receipt. The current implementation requires the separately integrated
 canonical capability owner and will fail before staging if it is absent. No new
 native-integration acceptance is claimed until that owner's API and verifier are
 integrated and a new exact-source receipt is recorded.
+
+The subsequent [capability integration execution](capability-integration/execution.json)
+records that gate on source `ceab2d3f`: all 21 repository modules came from this
+single integrated checkout. The retained exports under `capability-integration`
+were produced through the canonical descriptor capability, snapshot, image
+verifier and private publication authorities. All four actual Blender source
+formats were copied and independently decoded, with exact source/output channel
+equality at first/middle/last samples and preserved alpha and scene-linear HDR.
+The 14 precision/publication regressions, two portable tests with optional imports
+blocked, and two numerical compositing tests passed without skips. Historical
+receipts and exports above remain unchanged. This evidence does not grant visual
+approval or approve later changes to the complete merge candidate.

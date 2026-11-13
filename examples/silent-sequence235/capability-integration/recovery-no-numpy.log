@@ -1,0 +1,7 @@
+test_background_is_explicit_and_bounded (test_silent_render3d.LinearCompositeTests.test_background_is_explicit_and_bounded) ... ok
+test_unsupported_or_excessive_native_inventory_fails_before_decode (test_silent_render3d.LinearCompositeTests.test_unsupported_or_excessive_native_inventory_fails_before_decode) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
