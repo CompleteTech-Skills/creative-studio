@@ -84,3 +84,8 @@ times, and the existing owner's validation of each declared skeleton, controller
 skin and clip. Optional unrigged static imports remain supported; neither missing
 animation nor missing skins is fabricated. The final foundation suite has 39
 tests, including regressions for every reviewed failure.
+
+Render result JSON has a separate 1 GiB decoding budget for large frame/pass
+inventories; all other documents and the default shared decoder retain the
+32 MiB limit. Oversized non-result documents still reject. This is an input-byte
+bound, not a promise that arbitrary result inventories fit available memory.

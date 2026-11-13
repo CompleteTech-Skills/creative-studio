@@ -371,3 +371,16 @@ class OutputBoundaryRegressions(unittest.TestCase):
             with patch('render3d_snapshot.tempfile.mkdtemp',side_effect=OSError(errno.ENOSPC,'disk full')):
                 with self.assertRaises(Render3DError) as caught:create_snapshot(rig.root,root/'snapshot',NativeRigAdapter())
             self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+
+    def test_result_specific_json_limit_preserves_default_decoder_limit(self):
+        from rig_errors import decode_json,RigError
+        value=dict(schema_version=1,kind='render3d-result',job='job',request_sha256='0'*64,snapshot_sha256='1'*64,backend=backend(),status='partial',requested_frames=[0],successful=[],failed=[],skipped=[0],reused=[],images=[],diagnostics=[],usage=dict(elapsed_seconds=None,peak_memory_bytes=None,output_bytes=None,measurement='unavailable'),logs=[],manifest=None,verification=dict(status='not-run',verifier=None,evidence=None))
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'result.json'
+            payload=json.dumps(value).encode()+b' '*(32*1024**2)
+            path.write_bytes(payload)
+            with self.assertRaises(RigError):decode_json(payload)
+            self.assertEqual(load(path),value)
+            self.assertEqual(load(path,'RenderResult'),value)
+            path.write_bytes(json.dumps(request()).encode()+b' '*(32*1024**2))
+            with self.assertRaises(Render3DError):load(path)

@@ -18,6 +18,7 @@ from rig_contracts import COORDINATES, arr, obj, ref
 from rig_errors import RigError, decode_json, finite_json, object_hash, portable_name
 
 VERSION = '1.0.0'
+MAX_RESULT_JSON_BYTES = 1024**3
 MAX_FILES = 4096
 MAX_FILE_BYTES = 256 * 1024**2
 MAX_TOTAL_BYTES = 1024**3
@@ -300,8 +301,15 @@ def _settings(value):
 def load(path, kind=None):
     try:
         path = Path(path)
-        require(path.stat().st_size <= 32 * 1024**2, 'invalid-input', 'JSON exceeds 32 MiB.')
-        return validate(decode_json(path.read_bytes()), kind)
+        size=path.stat().st_size
+        limit=MAX_RESULT_JSON_BYTES if kind in (None,'RenderResult') else 32*1024**2
+        require(size <= limit, 'invalid-input', 'JSON exceeds the bounded document size.')
+        with path.open('rb') as stream:
+            payload=stream.read(limit+1)
+        value=decode_json(payload,max_bytes=limit)
+        is_result=isinstance(value,dict) and value.get('kind')=='render3d-result'
+        require(is_result or len(payload)<=32*1024**2,'invalid-input','Non-result JSON exceeds 32 MiB.')
+        return validate(value, kind)
     except (OSError, RigError) as exc:
         raise Render3DError('invalid-input', str(exc), path=path) from exc
 
