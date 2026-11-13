@@ -37,6 +37,9 @@ def encoding_schema():
 
 
 def validate_encoding(profile, settings):
+    if (not isinstance(profile, dict) or not isinstance(profile.get('codec'), str) or
+            profile['codec'] not in QUALITY):
+        raise ValueError('unsupported codec controls')
     try:
         _structural(settings, encoding_schema(), 'silent encoding controls')
     except (OverflowError, RecursionError) as exc:
@@ -59,7 +62,8 @@ def validate_encoding(profile, settings):
 
 
 def quality_settings(profile, quality='standard', *, fps=None, threads=1):
-    if quality not in QUALITY.get(profile.get('codec'), {}):
+    if (not isinstance(profile, dict) or not isinstance(profile.get('codec'), str) or
+            not isinstance(quality, str) or quality not in QUALITY.get(profile.get('codec'), {})):
         raise ValueError('unsupported codec quality profile')
     value, speed = QUALITY[profile['codec']][quality]
     rate = fps_fraction({'numerator': 24, 'denominator': 1} if fps is None else fps)
@@ -86,3 +90,90 @@ def arguments(profile, settings):
         if control['mode'] == 'constrained':
             result += ['-maxrate', str(control['maxrate']), '-bufsize', str(control['bufsize'])]
     return result
+
+
+QUALITY_PROFILE_VERSION = 1
+SOFTWARE_ENCODERS = {'h264': 'libx264', 'vp9': 'libvpx-vp9', 'av1': 'libaom-av1'}
+
+
+def _profile_digest(value):
+    import hashlib
+    import json
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':'),
+                                     allow_nan=False).encode('utf-8')).hexdigest()
+
+
+def _validate_rate(rate):
+    try:
+        _structural(rate, _obj({'numerator': _int(1, 240000), 'denominator': _int(1, 10000)}),
+                    'named profile frame rate')
+    except (OverflowError, RecursionError) as exc:
+        raise ValueError('frame rate exceeds numeric/nesting limits') from exc
+
+
+def capture_quality_profile(profile, quality='standard', *, fps=None, threads=1):
+    """Capture a versioned, immutable-by-value named software profile.
+
+    Callers retain this manifest beside the request and pass its ``encoding``
+    field to make_request. Existing request schemas and defaults stay compatible.
+    The digest binds the exact named profile, frame rate and resolved controls.
+    """
+    if (not isinstance(profile, dict) or not isinstance(profile.get('codec'), str) or
+            not isinstance(profile.get('encoder'), str) or not isinstance(quality, str)):
+        raise ValueError('invalid named quality profile selection')
+    codec = profile.get('codec')
+    if codec not in SOFTWARE_ENCODERS or profile.get('encoder') != SOFTWARE_ENCODERS[codec]:
+        raise ValueError('named quality profiles require a supported software encoder')
+    rate = {'numerator': 24, 'denominator': 1} if fps is None else copy.deepcopy(fps)
+    _validate_rate(rate)
+    settings = quality_settings(profile, quality, fps=rate, threads=threads)
+    value = {'schema_version': QUALITY_PROFILE_VERSION, 'kind': 'silent-quality-profile',
+             'codec': codec, 'encoder': profile['encoder'], 'name': quality,
+             'fps': rate, 'encoding': settings}
+    return {**value, 'sha256': _profile_digest(value)}
+
+
+def validate_quality_profile(value):
+    """Reject changed, stale, unknown-version or mislabeled named profiles."""
+    if not isinstance(value, dict) or set(value) != {
+            'schema_version', 'kind', 'codec', 'encoder', 'name', 'fps', 'encoding', 'sha256'}:
+        raise ValueError('invalid named quality profile manifest')
+    if type(value['schema_version']) is not int or value['schema_version'] != QUALITY_PROFILE_VERSION:
+        raise ValueError('unsupported named quality profile version')
+    if value['kind'] != 'silent-quality-profile' or not isinstance(value['encoding'], dict):
+        raise ValueError('invalid named quality profile manifest')
+    expected = capture_quality_profile({'codec': value['codec'], 'encoder': value['encoder']},
+        value['name'], fps=value['fps'], threads=value['encoding'].get('threads'))
+    if value != expected:
+        raise ValueError('named quality profile controls or digest changed')
+    return copy.deepcopy(value)
+
+
+def estimate_storage(profile, settings, *, frame_count, fps, max_output_bytes=512 * 1024**2):
+    """Return a bounded planning estimate, never a quality-mode size promise.
+
+    Average bitrate gives an exact rational *target* for elementary video bytes;
+    codec rate control and container overhead can change actual size. The broad
+    range is deliberately the enforced export byte cap for either control mode.
+    No sample encode, hardware probe or measured size is invented here.
+    """
+    settings = validate_encoding(profile, settings)
+    if type(frame_count) is not int or not 1 <= frame_count <= 18000:
+        raise ValueError('frame count must be a bounded positive integer')
+    if type(max_output_bytes) is not int or not 1024 <= max_output_bytes <= 2 * 1024**3:
+        raise ValueError('output byte budget must lie in 1024..2 GiB')
+    from fractions import Fraction
+    _validate_rate(fps)
+    duration = Fraction(frame_count, 1) / fps_fraction(fps)
+    control = settings['rate_control']
+    target = None
+    if control['mode'] != 'quality':
+        size = duration * control['bitrate'] / 8
+        target = (size.numerator + size.denominator - 1) // size.denominator
+    return {'schema_version': 1, 'kind': 'silent-storage-estimate',
+            'codec': profile['codec'], 'rate_control': control['mode'],
+            'duration': {'numerator': duration.numerator, 'denominator': duration.denominator},
+            'nominal_video_bytes': target, 'output_byte_range': {'minimum': 0, 'maximum': max_output_bytes},
+            'nominal_target_exceeds_budget': target is not None and target > max_output_bytes,
+            'uncertainty': 'Source-dependent codec size and container overhead; range is the enforced output cap, not a confidence interval.',
+            'measured_sample': None}

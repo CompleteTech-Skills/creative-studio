@@ -279,3 +279,18 @@ handle and publishes from the same encoder used by ordinary path exports. Both
 passes inherit the pinned staging descriptor. No procfd alias is converted back
 to a mutable destination pathname. The caller retains ownership of its original
 handle and must keep any source capabilities alive for the call.
+
+Named codec presets can be retained independently of the compatible request
+schema with `silent_profiles.capture_quality_profile(profile, level, fps=rate)`.
+The version-1 manifest records the selected software encoder, level, exact frame
+rate, resolved controls and a content digest. Retain it beside the request, pass
+its `encoding` field to `make_request`, and use `validate_quality_profile` when
+reopening it; altered controls, unknown versions and mislabeled encoders fail.
+
+`silent_profiles.estimate_storage(profile, controls, frame_count=N, fps=rate,
+max_output_bytes=budget)` reports exact rational duration and, for bitrate modes,
+a nominal elementary-video byte target. Quality-mode size remains unknown.
+Both modes disclose source/codec/container uncertainty and the enforced output
+cap as a broad range, rather than a statistical confidence claim. No measured
+sample or hardware execution is implied. A target exceeding the cap is flagged;
+the existing encoder still enforces actual output and pass-log byte limits.
