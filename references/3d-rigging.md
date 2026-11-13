@@ -401,3 +401,25 @@ float64 position-buffer sizes. Missing-animation/capability results add no work.
 These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
+
+`rig_api.discover_hand_controls(rig)` reports represented hand anatomy separately
+from the unchanged state-catalog capability list. It uses explicit semantic roles
+and actual positive skin influences (including their controlling ancestors), not
+bone IDs or template labels. Articulated fingers require existing continuous
+three-or-more-joint chains; paws, grippers, mittens and claws remain unavailable
+when that anatomy is absent. Socket and IK references are reported for represented
+substitutes. Representation does not certify useful motion amplitude or visual
+acceptance.
+
+`rig_api.apply_hand_control(rig, pose, control_id, **parameters)` returns a checked
+ordinary Pose. Discovered `fingers:left`/`fingers:right` controls reuse native
+curl/spread on the reported existing fingers. `slide:CONSTRAINT_ID` is available
+only for a represented gripper's authored, nonconstant single-axis translation
+constraint; `amount` in `[0,1]` selects its local travel interval. This is gripper
+travel, not jaw aperture or successful grasping. In particular, the robotic
+fixture's `gripper-slide` moves the gripper assembly and does not close its jaws.
+Paw/mitten/claw positioning uses existing Pose, IK and socket APIs; no substitute
+finger actuator is synthesized. Unavailable controls, invalid parameters, stale
+pose versions and incomplete skin bindings fail explicitly. Evaluation applies
+native constraints once and verifies actual deformation without changing the
+source rig or input pose.
