@@ -47,6 +47,13 @@ class SoftBodyAdmissionTests(unittest.TestCase):
         for key,value in [('fps',23),('disk_cache',False),('time_scale',.5)]:
             altered=deepcopy(report);altered[key]=value
             with self.assertRaises(BackendError):_validate_output(None,world,dict(payloads,**{'simulate-report.json':canonical(altered)}))
+        pinned_world=deepcopy(world);pinned_world['components'][0]['pins']=[2]
+        pinned=deepcopy(report);pinned['world_sha256']=digest(canonical(pinned_world));pinned['native_settings']['use_goal']=True
+        pinned['pin_settings']=dict(default=1.,minimum=0.,maximum=1.,spring=.999,friction=0.,weights=[1. if i==2 else 0. for i in range(66)])
+        _validate_output(None,pinned_world,dict(payloads,**{'simulate-report.json':canonical(pinned)}))
+        for key,value in [('default',0.),('friction',50.),('weights',[0.]*66),('spring','invalid')]:
+            corrupted=deepcopy(pinned);corrupted['pin_settings'][key]=value
+            with self.assertRaises(BackendError):_validate_output(None,pinned_world,dict(payloads,**{'simulate-report.json':canonical(corrupted)}))
         altered=deepcopy(report);altered['native_settings']['pull']=.1
         with self.assertRaises(BackendError):_validate_output(None,world,dict(payloads,**{'simulate-report.json':canonical(altered)}))
 
