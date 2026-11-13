@@ -6,11 +6,14 @@ image correctness, hardware availability, or production visual approval.
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import contextmanager
 from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 import math
+import os
+import stat
 import hashlib
 import unicodedata
 
@@ -299,13 +302,24 @@ def _settings(value):
             'unsupported-feature', 'Scene-linear masters cannot bake a display view transform.')
 
 
+@contextmanager
+def open_regular(path, limit):
+    """Open bounded caller-owned bytes without blocking on replaced special files."""
+    flags = (os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+             | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode), 'missing-asset', 'Expected a regular file.', path=path)
+        require(info.st_size <= limit, 'invalid-input', 'File exceeds bounded size.', path=path)
+        yield stream
+
+
 def load(path, kind=None):
     try:
         path = Path(path)
-        size=path.stat().st_size
         limit=MAX_RESULT_JSON_BYTES if kind in (None,'RenderResult') else 32*1024**2
-        require(size <= limit, 'invalid-input', 'JSON exceeds the bounded document size.')
-        with path.open('rb') as stream:
+        with open_regular(path, limit) as stream:
             payload=stream.read(limit+1)
         value=decode_json(payload,max_bytes=limit)
         is_result=isinstance(value,dict) and value.get('kind')=='render3d-result'
@@ -345,7 +359,7 @@ def make_frame_spec(request, index, snapshot_path, *, adapter=None):
     try:
         require(not snapshot_path.is_symlink() and snapshot_path.is_file(),
                 'missing-asset', 'Expected a regular snapshot file.')
-        with snapshot_path.open('rb') as stream:
+        with open_regular(snapshot_path, 32*1024**2) as stream:
             payload=stream.read(32*1024**2+1)
     except OSError as exc:
         raise Render3DError('missing-asset',str(exc),path=snapshot_path) from exc
