@@ -127,7 +127,7 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
             width,height=effective['settings']['resolution']
             camera_render=dict(schema_version=1,kind='camera3d-render',id='cinematic-render',version='1.0.0',
                 width=width,height=height,pixel_aspect=dict(numerator=1,denominator=1),overscan=1,gate_fit='crop',
-                output=effective['settings']['output']['format'],color_space=effective['settings']['output']['color_space'],
+                output=effective['settings']['output']['format'],color_space={'linear':'linear-srgb','srgb':'srgb'}[effective['settings']['output']['color_space']],
                 transparent=effective['settings']['output']['alpha']=='straight',max_pixels=width*height)
             try:
                 native=optical_plan(resolved,camera_render)

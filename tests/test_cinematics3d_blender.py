@@ -104,6 +104,9 @@ class Compiler(unittest.TestCase):
         self.assertEqual(compiled['plan']['dof']['sensor_fit'],'horizontal')
         self.assertEqual(compiled['plan']['dof']['native_gate']['shift_x'],-.2)
         self.assertEqual(compiled['plan']['dof']['native_gate']['shift_y'],-.3)
+        exr=request();exr['settings']['output'].update(format='exr',bit_depth=32,color_space='linear')
+        exr_compiled=compile_plan(registry,stack,exr,inventory(),input_bytes={'optics.json':payload})
+        validate_compiled(exr_compiled,exr_compiled['request'])
         for inputs in ({},{'optics.json':payload+b' '}):
             with self.assertRaises(RigError):compile_plan(registry,stack,request(),inventory(),input_bytes=inputs)
 
