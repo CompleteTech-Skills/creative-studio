@@ -409,13 +409,68 @@
                 "max_storage_bytes",
                 "max_provider_calls"
               ]
+            },
+            "budget_snapshot": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "schema_version": {
+                  "const": 1
+                },
+                "kind": {
+                  "const": "director-local-budget"
+                },
+                "limits": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "max_cpu_seconds": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000000000000.0
+                    },
+                    "max_memory_bytes": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000000000000.0
+                    },
+                    "max_storage_bytes": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000000000000.0
+                    },
+                    "max_provider_calls": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000000000000.0
+                    }
+                  },
+                  "required": [
+                    "max_cpu_seconds",
+                    "max_memory_bytes",
+                    "max_storage_bytes",
+                    "max_provider_calls"
+                  ]
+                },
+                "revision_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                }
+              },
+              "required": [
+                "schema_version",
+                "kind",
+                "limits",
+                "revision_sha256"
+              ]
             }
           },
           "required": [
             "input_sha256",
             "capability_sha256",
             "required_operations",
-            "resources"
+            "resources",
+            "budget_snapshot"
           ]
         },
         {

@@ -28,17 +28,18 @@ overlaps, and terminal boundary 120 is exactly five seconds.
 
 The default output is `state: planned` with `admission: null`. To obtain an
 admitted intent, provide a current evidence-backed CapabilityRegistry result,
-its exact evidence directory and a resource-estimate JSON file:
+its exact evidence directory, a resource-estimate JSON file and a project budget snapshot:
 
 ```sh
 python scripts/director_planner.py \
   --capabilities /path/to/probe/result.json \
   --evidence-root /path/to/probe \
-  --resources /path/to/estimated-resources.json
+  --resources /path/to/estimated-resources.json \
+  --budget /path/to/budget-snapshot.json
 ```
 
-Resource estimates declare `max_cpu_seconds`, `max_memory_bytes`,
-`max_storage_bytes` and `max_provider_calls`. The local path permits zero
+`create_budget(limits)` constructs a versioned, hash-bound local policy snapshot. It does not reserve or spend money; transactional accounting remains with the BudgetLedger owner. A changed budget requires a new revision. Resource estimates declare `max_cpu_seconds`, `max_memory_bytes`,
+`max_storage_bytes` and `max_provider_calls`. Every estimate must fit both the project budget and the actual capability policy. The local path permits zero
 provider calls. Admission verifies Blender CPU, H.264 and native GLB import
 through the capability owner's actual evidence. The exact snapshot and intent
 are hash-bound; `validate_admitted` repeats evidence validation before downstream

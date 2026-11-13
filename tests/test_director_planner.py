@@ -82,4 +82,20 @@ class DirectorPlannerTests(unittest.TestCase):
             snapshot=director_capabilities.probe(request(['blender.cpu']),root,configuration={'blender':None})
             with self.assertRaisesRegex(ValueError,'unverified'):
                 dp.admit_intent(dp.build_intent(),snapshot,evidence_root=root,
-                    resources={'max_cpu_seconds':30,'max_memory_bytes':1000,'max_storage_bytes':1000,'max_provider_calls':0})
+                    resources={'max_cpu_seconds':30,'max_memory_bytes':1000,'max_storage_bytes':1000,'max_provider_calls':0},
+                    budget_snapshot=dp.create_budget({'max_cpu_seconds':30,'max_memory_bytes':1000,'max_storage_bytes':1000,'max_provider_calls':0}))
+
+    def test_budget_snapshots_reject_conflicts_and_stale_limits(self):
+        limits={'max_cpu_seconds':3600,'max_memory_bytes':1024**3,'max_storage_bytes':512*1024**2,'max_provider_calls':0}
+        budget=dp.create_budget(limits)
+        self.assertEqual(dp.validate_budget(budget),budget)
+        changed=deepcopy(budget);changed['limits']['max_cpu_seconds']=1
+        with self.assertRaisesRegex(ValueError,'Stale budget'):dp.validate_budget(changed)
+        for value in [float('inf'),float('nan'),-1,True]:
+            invalid=deepcopy(limits);invalid['max_cpu_seconds']=value
+            with self.subTest(value=value),self.assertRaises(ValueError):dp.create_budget(invalid)
+        invalid=deepcopy(limits);invalid['max_provider_calls']=1
+        with self.assertRaises(ValueError):dp.create_budget(invalid)
+        with self.assertRaisesRegex(ValueError,'exceed the project budget'):
+            dp.admit_intent(dp.build_intent(),{},evidence_root='unused',
+                resources={**limits,'max_cpu_seconds':3601},budget_snapshot=budget)

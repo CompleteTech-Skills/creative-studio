@@ -80,7 +80,7 @@ def build_intent(prompt=DEFAULT_PROMPT, *, project_id='robot-laboratory', weight
             'shots': [
                 {'id': 'establish', 'start_frame': 0, 'end_frame': first_end, 'duration_frames': lengths[0],
                  'camera_id': 'wide', 'actors': ['aster', 'moss'], 'props': ['access-key'],
-                 'actions': ['aster walks toward access-key', 'moss turns toward console'],
+                 'actions': ['aster turns and inspects access-key', 'moss turns toward console'],
                  'composition': 'Wide view keeps both robots, key and console visible.',
                  'transition': 'cut', 'markers': [{'id': 'key-noticed', 'frame': first_end - 1, 'target': 'aster'}]},
                 {'id': 'discovery', 'start_frame': first_end, 'end_frame': total, 'duration_frames': lengths[1],
@@ -134,17 +134,21 @@ def intent_digest(plan):
     return object_hash(plan)
 
 
-def admit_intent(plan, snapshot, *, evidence_root, resources):
+def admit_intent(plan, snapshot, *, evidence_root, resources, budget_snapshot):
     """Recheck real capability evidence and bind admission to this exact intent."""
     from director_capabilities import assert_admission
     validate_intent(plan)
     _require(plan['state'] == 'planned', 'STATE', 'Only an unadmitted plan may be admitted.')
+    validate_budget(budget_snapshot)
+    _require(isinstance(resources, dict) and set(resources) == set(budget_snapshot['limits']), 'BUDGET', 'Resource estimates must cover the budget dimensions.')
+    for name, amount in resources.items():
+        _require(type(amount) in (int, float) and 0 <= amount <= budget_snapshot['limits'][name], 'BUDGET', 'Estimated resources exceed the project budget: ' + name)
     operations = ['blender.cpu', 'codec.h264', 'importer.glb']
     assert_admission(snapshot, operations, evidence_root=evidence_root, resources=resources)
     admitted = deepcopy(plan)
     admitted['state'] = 'admitted'
     admitted['admission'] = {'input_sha256': object_hash(plan), 'capability_sha256': object_hash(snapshot),
-                             'required_operations': operations, 'resources': deepcopy(resources)}
+                             'required_operations': operations, 'resources': deepcopy(resources), 'budget_snapshot': deepcopy(budget_snapshot)}
     validate_intent(admitted)
     return admitted
 
@@ -157,6 +161,8 @@ def validate_admitted(plan, snapshot, *, evidence_root):
     unsigned = deepcopy(plan)
     unsigned.update(state='planned', admission=None)
     proof = plan['admission']
+    validate_budget(proof['budget_snapshot'])
+    _require(all(amount <= proof['budget_snapshot']['limits'][name] for name, amount in proof['resources'].items()), 'BUDGET', 'Resources exceed the project budget.')
     _require(proof['input_sha256'] == object_hash(unsigned) and
              proof['capability_sha256'] == object_hash(snapshot), 'ADMISSION', 'Stale or rebound plan admission.')
     assert_admission(snapshot, proof['required_operations'], evidence_root=evidence_root, resources=proof['resources'])
@@ -175,11 +181,14 @@ def schemas():
                 'camera_id': identifier, 'actors': {'const': ['aster', 'moss']}, 'props': {'const': ['access-key']},
                 'actions': arr(text, 1, 16), 'composition': text, 'transition': {'const': 'cut'},
                 'markers': arr(marker, 1, 16)})
+    limits = obj({name: {'type': 'number', 'minimum': 0, 'maximum': 1e15}
+                  for name in ['max_cpu_seconds', 'max_memory_bytes', 'max_storage_bytes', 'max_provider_calls']})
+    budget = obj({'schema_version': {'const': 1}, 'kind': {'const': 'director-local-budget'},
+                  'limits': limits, 'revision_sha256': {'type': 'string', 'pattern': r'^[0-9a-f]{64}(?![\s\S])'}})
     admission = obj({'input_sha256': {'type': 'string', 'pattern': r'^[0-9a-f]{64}(?![\s\S])'},
                      'capability_sha256': {'type': 'string', 'pattern': r'^[0-9a-f]{64}(?![\s\S])'},
                      'required_operations': {'const': ['blender.cpu', 'codec.h264', 'importer.glb']},
-                     'resources': obj({name: {'type': 'number', 'minimum': 0, 'maximum': 1e15}
-                                       for name in ['max_cpu_seconds', 'max_memory_bytes', 'max_storage_bytes', 'max_provider_calls']})})
+                     'resources': limits, 'budget_snapshot': budget})
     result = obj({'schema_version': {'const': 1}, 'kind': {'const': 'director-mvp-intent'}, 'project_id': identifier,
                   'interpretation': obj({'original_prompt': text, 'parser': {'const': 'restricted-two-robot-laboratory-v1'},
                     'inference_kind': {'const': 'deterministic'}, 'character_count': {'const': 2}, 'setting': text,
@@ -205,6 +214,26 @@ def _validator():
     return Draft202012Validator(schemas()['director-mvp-intent.schema.json'])
 
 
+def create_budget(limits):
+    budget = {'schema_version': 1, 'kind': 'director-local-budget', 'limits': deepcopy(limits)}
+    budget['revision_sha256'] = object_hash(budget)
+    validate_budget(budget)
+    return budget
+
+
+def validate_budget(budget):
+    import math
+    _require(isinstance(budget, dict) and set(budget) == {'schema_version', 'kind', 'limits', 'revision_sha256'} and
+             budget['schema_version'] == 1 and budget['kind'] == 'director-local-budget', 'BUDGET', 'Invalid budget snapshot.')
+    limits = budget['limits']
+    _require(isinstance(limits, dict) and set(limits) == {'max_cpu_seconds', 'max_memory_bytes', 'max_storage_bytes', 'max_provider_calls'}, 'BUDGET', 'Invalid budget dimensions.')
+    _require(all(type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1e15 for value in limits.values()) and
+             limits['max_provider_calls'] == 0, 'BUDGET', 'Invalid local budget limits; paid/provider work is not supported.')
+    unsigned = {key: value for key, value in budget.items() if key != 'revision_sha256'}
+    _require(budget['revision_sha256'] == object_hash(unsigned), 'BUDGET', 'Stale budget revision.')
+    return budget
+
+
 def main(argv=None):
     import argparse
     import json
@@ -217,6 +246,7 @@ def main(argv=None):
     parser.add_argument('--capabilities', type=Path)
     parser.add_argument('--evidence-root', type=Path)
     parser.add_argument('--resources', type=Path)
+    parser.add_argument('--budget', type=Path)
     parser.add_argument('--check-schema', action='store_true')
     args = parser.parse_args(argv)
     try:
@@ -225,11 +255,12 @@ def main(argv=None):
             _require(json.loads(path.read_text(encoding='utf-8')) == schemas()[path.name], 'SCHEMA', 'Generated intent schema drift.')
             return 0
         plan = build_intent(args.prompt, project_id=args.project_id)
-        supplied = [args.capabilities is not None, args.evidence_root is not None, args.resources is not None]
-        _require(not any(supplied) or all(supplied), 'INPUT', 'Admission requires capabilities, evidence root and resources together.')
+        supplied = [args.capabilities is not None, args.evidence_root is not None, args.resources is not None, args.budget is not None]
+        _require(not any(supplied) or all(supplied), 'INPUT', 'Admission requires capabilities, evidence root, resources and budget together.')
         if all(supplied):
             plan = admit_intent(plan, decode_json(_read_json_file(args.capabilities)),
-                                evidence_root=args.evidence_root, resources=decode_json(_read_json_file(args.resources)))
+                                evidence_root=args.evidence_root, resources=decode_json(_read_json_file(args.resources)),
+                                budget_snapshot=decode_json(_read_json_file(args.budget)))
         print(json.dumps(plan, indent=2, allow_nan=False))
         return 0
     except (RigError, OSError) as exc:
