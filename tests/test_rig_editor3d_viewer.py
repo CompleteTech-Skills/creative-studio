@@ -444,13 +444,25 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                         self.assertTrue(result['exposureRejected']); self.assertTrue(result['shadingRejected'])
                         context_checks = page.evaluate('''() => {
                             const s = window.hatchEditor.snapshot;
-                            // In the integrated app, temporarily make the native selector
-                            // invalid so this registry test can own the one active claim.
-                            const nativeFrame = document.querySelector('[aria-label=\"Exact frame\"]');
-                            const originalFrame = nativeFrame?.value;
-                            if (nativeFrame && !window.hatchEditor.getTimelineContext()) throw Error('Installed native timeline has no valid current context');
-                            if (nativeFrame) { nativeFrame.value = String(s.documents[s.project.shots[0].path].duration_frames); nativeFrame.dispatchEvent(new Event('input')); }
-                            if (window.hatchEditor.getTimelineContext() !== null) throw Error('Unexpected active provider');
+                            const nativeFrame = document.querySelector('[aria-label="Exact frame"]');
+                            if (nativeFrame) {
+                                const original = window.hatchEditor.getTimelineContext();
+                                if (!original) throw Error('Installed native timeline has no valid current context');
+                                const copy = window.hatchEditor.getTimelineContext(); copy.frame.numerator = 10;
+                                const isolated = window.hatchEditor.getTimelineContext().frame.numerator === original.frame.numerator;
+                                const stop = window.hatchEditor.registerTimelineProvider(() => original);
+                                let duplicate = false;
+                                try { window.hatchEditor.getTimelineContext(); } catch { duplicate = true; }
+                                stop();
+                                const originalFrame = nativeFrame.value;
+                                nativeFrame.value = String(s.documents[original.shot_path].duration_frames);
+                                nativeFrame.dispatchEvent(new Event('input'));
+                                const invalidAbsent = window.hatchEditor.getTimelineContext() === null;
+                                nativeFrame.value = originalFrame; nativeFrame.dispatchEvent(new Event('input'));
+                                return {mode:'native',isolated,duplicate,invalidAbsent,
+                                    restored:JSON.stringify(window.hatchEditor.getTimelineContext()) === JSON.stringify(original)};
+                            }
+                            if (window.hatchEditor.getTimelineContext() !== null) throw Error('Unexpected provider');
                             const context = {revision:s.revision,sha256:s.sha256,scene_path:s.scene_path,
                                 shot_path:s.project.shots[0].path,frame:{numerator:0,denominator:1}};
                             const stop = window.hatchEditor.registerTimelineProvider(() => context);
@@ -458,11 +470,13 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                             const isolated = window.hatchEditor.getTimelineContext().frame.numerator === 0;
                             context.revision++; let stale = false;
                             try { window.hatchEditor.getTimelineContext(); } catch { stale = true; }
-                            stop(); const absent = window.hatchEditor.getTimelineContext() === null;
-                            if (nativeFrame) { nativeFrame.value = originalFrame; nativeFrame.dispatchEvent(new Event('input')); }
-                            return [isolated,stale,absent];
+                            stop(); return {mode:'isolated',isolated,stale,absent:window.hatchEditor.getTimelineContext() === null};
                         }''')
-                        self.assertEqual(context_checks, [True, True, True])
+                        self.assertTrue(context_checks['isolated'])
+                        if context_checks['mode']=='native':
+                            self.assertTrue(context_checks['duplicate']);self.assertTrue(context_checks['invalidAbsent']);self.assertTrue(context_checks['restored'])
+                        else:
+                            self.assertTrue(context_checks['stale']);self.assertTrue(context_checks['absent'])
                         self.assertEqual(result['revision'], 0)
                         captured = result['captured']
                         self.assertEqual(captured['resolution'], [320, 240])
