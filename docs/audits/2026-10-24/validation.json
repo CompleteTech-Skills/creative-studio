@@ -1,0 +1,13 @@
+{
+  "issues": 185,
+  "prs": 31,
+  "all_original_item_ids_reconciled": true,
+  "all_items_type_area_covered": true,
+  "open_priorities_consistent": true,
+  "closed_workflow_labels_absent": true,
+  "labels": 40,
+  "parent_edges": 168,
+  "dependency_edges": 201,
+  "dependency_cycles": 0,
+  "new_documentation_links_valid": true
+}
