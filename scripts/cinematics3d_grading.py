@@ -232,7 +232,10 @@ def apply_grade(root, grade, rgba, *, source_context, mask=None, max_work_bytes=
                 _need(bool(np.isfinite(rgb).all()), 'grade operation overflow')
         weight = grade['intensity'] if mask is None else grade['intensity']*mask.reshape(-1, 1)
         source = rgba.reshape(-1, 4)[:, :3]
-        rgb = source+(rgb-source)*weight
+        # Convex blending preserves the exact 0/1 endpoints even when a
+        # strong grade maps HDR magnitudes to small values. Difference-based
+        # blending loses those values through catastrophic cancellation.
+        rgb = source*(1-weight)+rgb*weight
     _need(bool(np.isfinite(rgb).all()) and bool((np.abs(rgb) <= np.finfo(np.float32).max).all()), 'grading precision overflow')
     output.reshape(-1, 4)[:, :3] = rgb
     output = output.astype(np.float32)

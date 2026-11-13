@@ -70,6 +70,18 @@ class GradingTests(unittest.TestCase):
         result, _ = self.apply('.', bypass, source)
         np.testing.assert_array_equal(result, source)
 
+    def test_hdr_blend_endpoints_preserve_small_grade_outputs_and_exact_bypass(self):
+        source = np.array([[1e20, -1e20, 1e20, 1.], [1e20, 1e20, 1e20, .5]], np.float32)
+        operation = self.operation('channel-matrix', {'matrix': [[0., 0., 0.]]*3, 'offset': [.18, .18, .18]})
+        result, _ = self.apply('.', self.plan([operation]), source)
+        np.testing.assert_array_equal(result[:, :3], np.full((2,3), .18, np.float32))
+        bypass, _ = self.apply('.', self.plan([operation], intensity=0.), source)
+        np.testing.assert_array_equal(bypass, source)
+        masked, _ = self.apply('.', self.plan([operation]), source, mask=np.array([0., 1.], np.float32))
+        np.testing.assert_array_equal(masked[0], source[0])
+        np.testing.assert_array_equal(masked[1, :3], np.full(3, .18, np.float32))
+        np.testing.assert_array_equal(masked[:,3], source[:,3])
+
     def test_lift_gamma_gain_and_channel_matrix_have_reference_values(self):
         source = self.pixels()
         p = {'lift': [.1, 0., -.1], 'gamma': [2., 1., .5], 'gain': [1., 2., .5]}
