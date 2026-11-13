@@ -175,7 +175,10 @@ def _snapshot(payload, root, now):
     _require(not errors, 'SCHEMA', 'Invalid capability snapshot structure.')
     expected = object_hash({key: child for key, child in value.items() if key != 'digest'})
     _require(value['digest'] == expected, 'CAPABILITY', 'Capability snapshot digest is stale.')
-    expiry = datetime.fromisoformat(value['expires_at'].replace('Z', '+00:00'))
+    try:
+        expiry = datetime.fromisoformat(value['expires_at'].replace('Z', '+00:00').replace('z', '+00:00'))
+    except ValueError as exc:
+        raise RigError('DIRECTOR_GRAPH_CAPABILITY', 'Invalid capability expiry.', stage='director-graph') from exc
     _require(expiry > now, 'CAPABILITY', 'Capability snapshot expired; probe again.')
     _verify_refs(root, _all_refs(value))
     return value
