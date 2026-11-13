@@ -11,8 +11,9 @@ import tempfile
 import zipfile
 from atomic_publish import _rename_no_replace
 from rig_contracts import DEFAULT_LIMITS
-from rig_errors import MAX_JSON_BYTES, atomic_bytes, decode_json, job_lock, open_payload, portable_name, require, safe_path, sha256
+from rig_errors import RigError, MAX_JSON_BYTES, atomic_bytes, decode_json, job_lock, open_payload, portable_name, require, safe_path, sha256
 from rig_models import load_rig, rig_signature
+from rig_zip import zip_read_scope, open_zip_reader
 
 
 def _package_paths(root):
@@ -125,6 +126,21 @@ def package_rig(root, destination):
                 expanded_bytes=total, rig_sha256=inventory['rig_sha256'])
 
 
+def _restore_read_scope(path, member=None, compression=None):
+    return zip_read_scope(path, member=member, compression=compression,
+                          code='RIG_ARCHIVE_FORMAT', codec_code='RIG_ARCHIVE_CODEC', stage='restore')
+
+
+def _open_restore_member(archive, name, archive_path):
+    with _restore_read_scope(archive_path, name, archive.getinfo(name).compress_type):
+        return archive.open(name)
+
+
+def _read_restore_member(archive, source, name, size, archive_path):
+    with _restore_read_scope(archive_path, name, archive.getinfo(name).compress_type):
+        return source.read(size)
+
+
 def restore_rig(archive_path,destination,*,limits=None):
     limits=limits or DEFAULT_LIMITS;archive_path=Path(archive_path);destination=Path(destination).absolute()
     require(archive_path.is_file() and not archive_path.is_symlink(),'RIG_ARCHIVE','Archive must be a regular file.')
@@ -133,7 +149,8 @@ def restore_rig(archive_path,destination,*,limits=None):
     destination.parent.mkdir(parents=True,exist_ok=True)
     temporary=Path(tempfile.mkdtemp(prefix='.rig-restore-',dir=destination.parent))
     try:
-        with zipfile.ZipFile(archive_path) as archive:
+        archive = open_zip_reader(archive_path, code='RIG_ARCHIVE_FORMAT', codec_code='RIG_ARCHIVE_CODEC', stage='restore')
+        with archive:
             infos=archive.infolist();names={};total=0
             require(len(infos)<=limits['archive_files'],'RIG_ARCHIVE_LIMIT','Archive contains too many entries.')
             for info in infos:
@@ -147,8 +164,8 @@ def restore_rig(archive_path,destination,*,limits=None):
             require('inventory.json' in names.values(),'RIG_ARCHIVE_INVENTORY','Archive inventory is missing or uses an aliased name.')
             require(archive.getinfo('inventory.json').file_size <= MAX_JSON_BYTES,
                     'RIG_ARCHIVE_INVENTORY', 'Package inventory exceeds its JSON byte budget.')
-            with archive.open('inventory.json') as source:
-                inventory = decode_json(source.read(MAX_JSON_BYTES + 1))
+            with _open_restore_member(archive, 'inventory.json', archive_path) as source:
+                inventory = decode_json(_read_restore_member(archive, source, 'inventory.json', MAX_JSON_BYTES + 1, archive_path))
             require(isinstance(inventory, dict) and
                     set(inventory) == {'schema_version', 'kind', 'rig_sha256', 'files'} and
                     type(inventory['schema_version']) is int and inventory['schema_version'] == 1 and
@@ -176,14 +193,21 @@ def restore_rig(archive_path,destination,*,limits=None):
                 require(type(entry['bytes']) is int and entry['bytes']==info.file_size,'RIG_ARCHIVE_SIZE','Inventory size mismatch.')
                 target=safe_path(temporary,name);target.parent.mkdir(parents=True,exist_ok=True)
                 digest=hashlib.sha256();written=0
-                with archive.open(name) as source,target.open('xb') as output:
+                with _open_restore_member(archive, name, archive_path) as source,target.open('xb') as output:
                     while True:
-                        chunk=source.read(1024*1024)
+                        chunk=_read_restore_member(archive, source, name, 1024*1024, archive_path)
                         if not chunk:break
                         written+=len(chunk);require(written<=entry['bytes'],'RIG_ARCHIVE_SIZE','Expanded file exceeds inventory.')
                         output.write(chunk);digest.update(chunk)
                 require(digest.hexdigest()==entry['sha256'],'RIG_ARCHIVE_HASH','Restored bytes failed their hash.',asset=name)
-        rig=load_rig(temporary);require(rig_signature(rig.manifest)==inventory['rig_sha256'],'RIG_ARCHIVE_HASH','Restored rig signature differs.')
+        try:
+            rig=load_rig(temporary)
+        except RigError as exc:
+            if exc.report['code'] not in ('RIG_BINARY_FORMAT', 'RIG_BINARY_CODEC'):raise
+            raise RigError('RIG_ARCHIVE_CODEC' if exc.report['code']=='RIG_BINARY_CODEC' else 'RIG_ARCHIVE_FORMAT',
+                'Restored native ZIP input could not be decoded.', stage='restore', asset=exc.report['asset'],
+                observed=exc.report['observed'], correction=exc.report['correction'], preserved=str(archive_path)) from exc
+        require(rig_signature(rig.manifest)==inventory['rig_sha256'],'RIG_ARCHIVE_HASH','Restored rig signature differs.')
         _rename_no_replace(temporary,destination)
         return dict(path=str(destination),rig_sha256=inventory['rig_sha256'],files=len(entries),verified=True)
     finally:
