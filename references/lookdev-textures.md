@@ -141,3 +141,24 @@ KTX2 compression. Source decoding and mipmap working memory retain their own
 separate admission limit. Shader binding, GPU texture upload and backend-native
 compression must consume these explicit buffers through their owning renderer.
 Run `python -m unittest discover -s tests -p test_lookdev_texture_cache.py -v`.
+
+## Native consumption of disposable cached buffers
+
+`lookdev_texture_blender.create_cached_blender_image(cache, decoded, name=...,
+profile='browser', mip_level=0)` prepares the bounded CPU pyramid, selects an
+explicit level and installs those exact pixels through `create_blender_image`.
+It returns the packed native image and a derivation receipt containing original
+source hash, cache key, selected dimensions, bytes and float32 pixel hash. The
+same receipt is stored on the native image and survives a saved project when the
+image remains assigned to a shader. Clearing CPU cache buffers does not remove
+native shader images. Callers own image assignment and rollback/removal.
+
+The opt-in `HATCH_LOOKDEV_CACHE_TEST=1` gate uses `HATCH_BLENDER` and an optional
+new `HATCH_LOOKDEV_CACHE_EVIDENCE` directory. Run `python -m unittest discover -s
+tests -p test_rig_lookdev_cache_consumer.py -v`. The trusted fixture renders two
+actual Cycles emission shaders sampling selected derived red/blue images,
+measures the rendered colors, and reopens the shader-bound blue packed image to
+compare its exact pixel hash and derivation. This establishes native shader
+consumption of derived pixels. GPU residency and canonical PBR texture-slot
+binding remain separate renderer/material adapter work; texture-bearing
+canonical material plans still reject until that bridge is implemented.
