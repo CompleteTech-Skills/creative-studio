@@ -60,3 +60,11 @@ when sharing a host. This regression renders a small synthetic articulated rig,
 checks actual evaluated vertex and pixel changes, and decodes PNG 8/16-bit and
 EXR half/full-float outputs. It does not establish PBR texture fidelity, data
 passes, a complete film, or production visual approval.
+
+## Bound output and native passes
+
+Unmarked combined-only requests preserve the original backend path. To use the canonical quality adapter, call `render3d_quality_binding.bind_quality_request(request)` before queue submission. This returns a new request carrying optional `settings.quality_sha256`; it does not mutate an existing request or queue identity. Auxiliary pass requests require this binding. `validate_quality_settings(settings)` must run before a consumer accepts any completed job or cached frame, as well as before worker execution. A changed helper requires rebinding and a new cache identity.
+
+The digest covers the canonical output plan and the exact trusted quality helper/binding/dependency bytes. Frame settings hashes therefore change with helper code and output settings. The supervisor and worker check helper bytes before and after execution, retain the bound plan in the worker report/manifest, and independently decode every requested image before publication. Output storage admission reserves all requested passes and per-frame temporary images.
+
+Bound PNG8/16 supports combined output; EXR16 supports combined and albedo; EXR32 supports combined, depth, normal and albedo. Transparent albedo uses the beauty coverage alpha. Half-float depth/normal reject before source decoding. `quality-bound-passes` in capabilities advertises this explicit request binding requirement, rather than implicit handling of unmarked requests.

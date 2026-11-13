@@ -24,6 +24,7 @@ from atomic_publish import _rename_no_replace
 from rig_errors import RigError, atomic_json, atomic_bytes, read_json, safe_path, sha256, object_hash
 from render3d_contracts import (Render3DError, require, validate, make_frame_spec,
                                 frame_times, VERSION, load, open_regular)
+from render3d_quality_binding import validate_quality_settings, adapter_hash
 from render3d_snapshot import NativeRigAdapter, Scene3DAdapter, verify_snapshot, create_snapshot
 
 WORKER = Path(__file__).with_name('render3d_blender_worker.py')
@@ -118,7 +119,9 @@ def _supervise(command, *, cwd, timeout, memory_bytes, storage_bytes, cancelled=
 def _output_storage_estimate(request):
     width,height=request['settings']['resolution']
     count=request['frame_range']['end']-request['frame_range']['start']
-    return width*height*16*count
+    passes=request['settings']['output']['passes']
+    multiplier=2*len(passes) if 'quality_sha256' in request['settings'] else 1
+    return width*height*16*count*multiplier
 
 
 def _source_storage_budget(request, snapshot):
@@ -282,7 +285,7 @@ class BlenderBackend:
     def capabilities(self):
         return dict(schema_version=1,kind='render3d-capabilities',adapter=dict(id='blender',version=VERSION),
                     backend=self.inspect_version(),discovery='available',initialization='not-run',execution='not-run',
-                    evidence=[],engines=['cycles'],features=['png','exr','native-rig','scene3d'],diagnostics=[])
+                    evidence=[],engines=['cycles'],features=['png','exr','native-rig','scene3d','quality-bound-passes','exr32-depth','exr32-normal','exr-albedo'],diagnostics=[])
 
     def probe(self,configuration):
         # Hardware owner implements real GPU/device initialization separately.
@@ -293,7 +296,7 @@ class BlenderBackend:
         validate(settings,'RenderSettings')
         require(settings['engine']=='cycles','unsupported-backend','This adapter currently supports Cycles.')
         require(settings['device_policy']=='cpu','unsupported-device','GPU selection requires the hardware-policy adapter.')
-        require(settings['output']['passes']==['combined'],'unsupported-feature','Auxiliary render passes require the pass adapter.')
+        validate_quality_settings(settings)
         require(snapshot['scope'] in ('scene3d','native-rig-preview'),'unsupported-feature','Unsupported source snapshot scope.')
         return dict(valid=True)
 
@@ -307,11 +310,13 @@ class BlenderBackend:
         # Metadata-only admission must precede owner verification: the native
         # owner decodes full geometry while verifying the source closure.
         settings=request['settings'];resources=settings['resources'];width,height=settings['resolution']
+        quality=validate_quality_settings(settings)
+        output_estimate=_output_storage_estimate(request)
         frame_count=request['frame_range']['end']-request['frame_range']['start']
-        estimate=width*height*64+snapshot['total_bytes']*8+frame_count*16384
+        estimate=width*height*64*len(settings['output']['passes'])+snapshot['total_bytes']*8+frame_count*16384
         require(estimate<=resources['memory_bytes'],'system-memory','Scene/image admission exceeds memory budget.')
         source_bytes=2*snapshot['total_bytes']+request['snapshot']['bytes']
-        require(source_bytes+width*height*16*frame_count<=resources['storage_bytes'],
+        require(source_bytes+output_estimate<=resources['storage_bytes'],
                 'storage-exhaustion','Overlapping source copies, metadata and output estimate exceed storage budget.')
         source_budget=_source_storage_budget(request,snapshot)
         verify_snapshot(root,adapter,max_total_bytes=source_budget)
@@ -331,29 +336,37 @@ class BlenderBackend:
             require(len(original)==request['snapshot']['bytes'] and hashlib.sha256(original).hexdigest()==request['snapshot']['sha256'],
                     'stale-asset','Snapshot metadata differs from request-bound bytes.')
             atomic_bytes(frozen/'snapshot.json',original)
-            _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes']+width*height*16*frame_count)
+            _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes']+output_estimate)
             source=stage/'source';source.mkdir()
             scene=(_prepare_scene if snapshot['scope']=='scene3d' else _prepare_native)(request,frozen,source)
             require(scene['geometry_vertices']>0 and scene['geometry_triangles']>0,'missing-asset','Rendering requires actual nonempty geometry.')
             backend=self.inspect_version()
             job=dict(schema_version=1,mode='render',settings=settings,scene=scene,output='../frames',report='../worker-report.json')
+            if quality is not None:job['quality']=quality
             job_payload=(json.dumps(job,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
-            _check_storage(stage,resources['storage_bytes'],reserve=len(job_payload)+snapshot['total_bytes']+width*height*16*frame_count)
+            _check_storage(stage,resources['storage_bytes'],reserve=len(job_payload)+snapshot['total_bytes']+output_estimate)
             atomic_bytes(source/'job.json',job_payload)
             command=[self.executable,'--background','--factory-startup','--disable-autoexec','--python-exit-code','1','--python',str(WORKER),'--',str(source/'job.json')]
             log,usage=_supervise(command,cwd=stage,timeout=resources['timeout_seconds'],memory_bytes=resources['memory_bytes'],storage_bytes=resources['storage_bytes'],cancelled=cancelled)
             (stage/'blender.log').write_bytes(log)
             require(sha256(self.executable)==backend['executable_sha256'] and sha256(WORKER)==backend['worker_sha256'],
                     'stale-asset','Executed backend code changed during rendering.')
+            if quality is not None:
+                require(adapter_hash()==quality['adapter_sha256'], 'stale-asset', 'Quality helper code changed during rendering.')
             report=read_json(stage/'worker-report.json')
+            if quality is not None:
+                require(report.get('quality')==quality, 'verification-failed', 'Worker quality binding differs from admitted plan.')
             require(report['version']==backend['application_version'],'verification-failed','Worker version changed after admission.')
             require(report['rendered']==[f['index'] for f in scene['frames']],'incomplete-output','Worker did not report every requested frame.')
             images=[]
             extension=settings['output']['format']
             for frame in scene['frames']:
-                relative=f'frames/{frame["index"]:06d}.{extension}';path=stage/relative
-                images.append(dict(frame=frame['index'],file=dict(path=relative,sha256=sha256(path),bytes=path.stat().st_size),
-                    format=extension,bit_depth=settings['output']['bit_depth'],pass_name='combined',resolution=[width,height]))
+                for pass_name in settings['output']['passes']:
+                    relative=(f'frames/{frame["index"]:06d}.{extension}' if pass_name=='combined'
+                              else f'passes/{pass_name}/{frame["index"]:06d}.exr')
+                    path=stage/relative
+                    images.append(dict(frame=frame['index'],file=dict(path=relative,sha256=sha256(path),bytes=path.stat().st_size),
+                        format=extension,bit_depth=settings['output']['bit_depth'],pass_name=pass_name,resolution=[width,height]))
                 if progress:progress(frame['index'])
             manifest=dict(schema_version=1,request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],backend=backend,
                           frames=[frame['spec'] for frame in scene['frames']],worker=report,fixture=snapshot['fixture'])

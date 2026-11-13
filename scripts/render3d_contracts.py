@@ -90,6 +90,7 @@ def definitions():
                         exposure=dict(type='number', minimum=-32, maximum=32),
                         view_transform={'enum': ['standard', 'agx']},
                         resources=resources))
+    settings['properties']['quality_sha256'] = digest
     backend = obj(dict(id=identifier, adapter_version=version, application_version=text,
                        executable_sha256=digest, worker_sha256=digest, platform=text,
                        engine={'enum': ['cycles', 'eevee']}, device=identifier))

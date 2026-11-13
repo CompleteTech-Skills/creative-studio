@@ -124,10 +124,19 @@ def main():
     path=Path(sys.argv[sys.argv.index('--')+1]).resolve();root=path.parent
     require(path.stat().st_size<=32*1024**2,'Worker job exceeds32MiB')
     job=json.loads(path.read_text())
-    require(set(job)=={'schema_version','mode','settings','scene','output','report'} and job['schema_version']==1 and job['mode']=='render','Unexpected worker job shape')
+    require(set(job)-{'quality'}=={'schema_version','mode','settings','scene','output','report'} and job['schema_version']==1 and job['mode']=='render','Unexpected worker job shape')
     require(bpy.app.version[:2]==(4,5),'Supported Blender is4.5LTS')
     require(job['output']=='../frames' and job['report']=='../worker-report.json','Unexpected worker output paths')
-    output=root.parent/'frames';output.mkdir(exist_ok=False)
+    quality=job.get('quality')
+    if quality is not None:
+        sys.path.insert(0,str(Path(__file__).parent))
+        from render3d_quality import render_frame
+        from render3d_quality_binding import adapter_hash
+        require(adapter_hash()==quality['adapter_sha256'],'Quality helper code differs from admitted bytes')
+        from rig_errors import object_hash
+        require(object_hash(quality)==job['settings'].get('quality_sha256'),'Quality plan differs from request binding')
+    output=root.parent/'frames'
+    if quality is None:output.mkdir(exist_ok=False)
     scene=bpy.context.scene;settings=job['settings'];description=job['scene']
     bpy.ops.object.select_all(action='SELECT');bpy.ops.object.delete(use_global=False)
     scene.render.engine='CYCLES';scene.cycles.device='CPU';scene.cycles.samples=settings['samples'];scene.cycles.seed=settings['seed']
@@ -170,8 +179,11 @@ def main():
         background.inputs['Color'].default_value=(*frame['world']['background'],1)
         background.inputs['Strength'].default_value=2**frame['world']['exposure']
         scene.frame_set(1);bpy.context.view_layer.update()
-        scene.render.filepath=str(output/f'{frame["index"]:06d}.{settings["output"]["format"]}')
-        bpy.ops.render.render(write_still=True)
+        if quality is None:
+            scene.render.filepath=str(output/f'{frame["index"]:06d}.{settings["output"]["format"]}')
+            bpy.ops.render.render(write_still=True)
+        else:
+            render_frame(scene,quality['plan'],root.parent,frame['index'])
         rendered.append(frame['index'])
         deps=bpy.context.evaluated_depsgraph_get();sample={}
         for obj in all_imported:
@@ -184,6 +196,9 @@ def main():
         geometry_vertices=sum(len(o.data.vertices) for o in all_imported if o.type=='MESH'),
         geometry_triangles=sum(len(o.data.polygons) for o in all_imported if o.type=='MESH'),
         armatures=sum(o.type=='ARMATURE' for o in all_imported),samples=measurements)
+    if quality is not None:
+        require(adapter_hash()==quality['adapter_sha256'],'Quality helper code changed during rendering')
+        report['quality']=quality
     (root.parent/'worker-report.json').write_text(json.dumps(report,allow_nan=False,indent=2))
 
 
