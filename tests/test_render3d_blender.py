@@ -114,6 +114,26 @@ class Supervision(unittest.TestCase):
 
 
 class ResourceAdmission(unittest.TestCase):
+    def test_missing_private_publication_adapter_rejects_before_decode_or_destination(self):
+        from unittest.mock import patch
+        from rig_test_helpers import fixture
+        from render3d_snapshot import create_snapshot,NativeRigAdapter
+        from render3d_blender import BlenderBackend
+        from test_render3d_contracts import request,file
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'native').mkdir()
+            rig=fixture(root/'native',animated=False)
+            create_snapshot(rig.root,root/'snapshot',NativeRigAdapter())
+            spec=request();spec['snapshot']=file(payload=(root/'snapshot/snapshot.json').read_bytes())
+            backend=object.__new__(BlenderBackend)
+            with patch('render3d_blender.private_stage_supported',return_value=False):
+                with patch('rig_models.load_rig',side_effect=AssertionError('Unsupported publication must precede native decoding')) as decode:
+                    with self.assertRaises(Render3DError) as caught:
+                        backend.render_frames(spec,root/'snapshot',root/'new-parent/output')
+            self.assertEqual(caught.exception.report['category'],'unsupported-feature')
+            decode.assert_not_called()
+            self.assertFalse((root/'new-parent').exists())
+
     def test_tiny_memory_budget_rejects_before_any_native_owner_decode(self):
         from unittest.mock import patch
         from rig_test_helpers import fixture
@@ -348,7 +368,30 @@ class NativeRendering(unittest.TestCase):
                     exposure=0,view_transform='standard',resources=dict(memory_bytes=2*1024**3,
                         storage_bytes=128*1024**2,timeout_seconds=120,workers=1,max_frames=10)))
             backend=BlenderBackend()
-            result=backend.render_frames(request,root/'snapshot',root/'render')
+            # Replace the public staging basename before actual Blender I/O.
+            # Worker output, host verification, final rename, and cleanup must
+            # retain the original directory authority throughout the render.
+            import render3d_blender as implementation
+            from unittest.mock import patch
+            supervise=implementation._supervise
+            substitutions=[]
+            def replace_outer(command,**options):
+                stage=Path(options['cwd'])
+                self.assertEqual(stage.parts[:4],('/','proc','self','fd'))
+                original=Path(os.readlink(stage.parent))
+                retained=original.with_name(original.name+'-retained')
+                original.rename(retained)
+                original.mkdir()
+                (original/'unverified.txt').write_text('UNVERIFIED REPLACEMENT')
+                substitutions.append((original,retained))
+                return supervise(command,**options)
+            with patch.object(implementation,'_supervise',side_effect=replace_outer):
+                result=backend.render_frames(request,root/'snapshot',root/'render')
+            self.assertEqual(len(substitutions),1)
+            replacement,retained=substitutions[0]
+            self.assertEqual((replacement/'unverified.txt').read_text(),'UNVERIFIED REPLACEMENT')
+            self.assertFalse((root/'render/unverified.txt').exists())
+            self.assertFalse((retained/'payload').exists())
             self.assertEqual(result['verification']['status'],'passed')
             self.assertEqual(result['usage']['output_bytes'],
                 sum(p.stat().st_size for p in (root/'render').rglob('*') if p.is_file()))

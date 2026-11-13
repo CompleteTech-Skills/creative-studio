@@ -22,7 +22,7 @@ from typing import Protocol
 from atomic_publish import _rename_no_replace
 from render3d_contracts import (COORDINATES, MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES,
                                 Render3DError, require, validate, load, snapshot_hash, VERSION, open_regular)
-from rig_errors import RigError, atomic_json, safe_path, sha256
+from rig_errors import RigError, atomic_json, safe_path, sha256, normalize_root, scoped_directory_descriptor
 
 
 @dataclass(frozen=True)
@@ -212,8 +212,9 @@ No source revision or output cache is overwritten or pruned.
 """
     total_limit = _total_limit(max_total_bytes)
     source_root, destination = Path(source_root).absolute(), Path(destination).absolute()
-    require(not source_root.is_symlink(), 'invalid-input', 'Snapshot root cannot be a symlink.')
-    source_root = source_root.resolve()
+    with scoped_directory_descriptor(source_root) as descriptor:
+        require(descriptor is not None or not source_root.is_symlink(), 'invalid-input', 'Snapshot root cannot be an unregistered symlink.')
+    source_root = normalize_root(source_root)
     require(not destination.exists() and not destination.is_symlink(), 'ownership', 'Snapshot destination already exists.')
     require(not (destination.parent.resolve() / destination.name).is_relative_to(source_root), 'ownership', 'Snapshot destination cannot be inside source.')
     try:
@@ -265,8 +266,9 @@ def verify_snapshot(root, adapter: SceneAdapter, *, max_total_bytes=None):
     """Re-read immutable inventory and owner semantics before each reuse."""
     total_limit = _total_limit(max_total_bytes)
     root = Path(root).absolute()
-    require(not root.is_symlink(), 'invalid-input', 'Snapshot root cannot be a symlink.')
-    root = root.resolve()
+    with scoped_directory_descriptor(root) as descriptor:
+        require(descriptor is not None or not root.is_symlink(), 'invalid-input', 'Snapshot root cannot be an unregistered symlink.')
+    root = normalize_root(root)
     try:
         document = load(safe_path(root, 'snapshot.json', exists=True), 'RenderSnapshot')
         require(document['total_bytes'] <= total_limit, 'storage-exhaustion',
