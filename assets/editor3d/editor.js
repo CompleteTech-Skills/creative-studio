@@ -270,7 +270,7 @@ async function capturePreview(metadata) {
         evaluated.frame?.numerator !== metadata.frame || evaluated.frame?.denominator !== 1 ||
         JSON.stringify(evaluated.time) !== JSON.stringify(time)) throw Error("Native evaluation differs from capture metadata.");
     for (const [id, node] of Object.entries(evaluated.nodes)) {
-      if (!objects.has(id) || node.native_clip || JSON.stringify(node.material_overrides || []) !== JSON.stringify(nodes.get(id)?.material_overrides || []))
+      if (!objects.has(id) || node.native_clip || node.native_pose || node.native_pose_evaluated || node.native_state || JSON.stringify(node.material_overrides || []) !== JSON.stringify(nodes.get(id)?.material_overrides || []))
         throw Error("This evaluated geometry/material binding has no exact browser capture adapter.");
       if (node.visible !== false && unavailableNodes.has(id)) throw Error(unavailableNodes.get(id));
       if (node.camera) {

@@ -143,7 +143,13 @@ class EditorServer(HTTPServer):
     def __init__(self, repository, *, port=0, token=None, workers=4, routes=None):
         require(isinstance(workers, int) and 1 <= workers <= 8, 'EDITOR3D_VIEW_WORKERS', 'Use 1–8 workers.')
         self.repository = repository
-        self.routes = dict(routes or {})
+        # The standard editor launch enables the installed native timeline UI.
+        # Register its fixed handlers at the same boundary as explicit extensions.
+        self.routes = {}
+        if Path(__file__).with_name('editor3d_timeline.py').is_file():
+            from editor3d_timeline import routes as timeline_routes
+            self.routes.update(timeline_routes())
+        self.routes.update(routes or {})
         self.upload_directory = tempfile.TemporaryDirectory(prefix="hatch-editor-uploads-")
         self.uploads = {}
         self.upload_lock = threading.Lock()

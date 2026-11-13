@@ -122,6 +122,23 @@ class TimelineTests(unittest.TestCase):
         with self.assertRaises(RigError):select_scene(self.repo,{**body,'expected_revision':undo['revision'],'transaction_id':'missing','scene':'absent'})
         self.assertEqual(self.repo.snapshot(),undo)
 
+    def test_standard_server_registers_native_timeline_without_injected_routes(self):
+        import json
+        import threading
+        from urllib.request import Request,urlopen
+        from editor3d_viewer import EditorServer
+        server=EditorServer(self.repo);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            before=self.repo.snapshot()
+            body=dict(expected_revision=before['revision'],expected_sha256=before['sha256'],transaction_id='normal-launch',commands=[self.key(0,[5,0,0])])
+            request=Request('http://127.0.0.1:'+str(server.server_port)+'/api/timeline/edit',data=json.dumps(body).encode(),headers={'Content-Type':'application/json','Authorization':'Bearer '+server.token},method='POST')
+            with urlopen(request,timeout=30) as response:result=json.load(response)
+            self.assertEqual(result['revision'],1)
+            selected=self.shot(result)
+            self.assertEqual(result['documents'][selected]['tracks'][0]['keys'],[dict(frame=0,value=[5,0,0])])
+            self.assertEqual(EditorRepository(self.repo.root).snapshot(),result)
+        finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
     def test_prepare_never_mutates_input(self):
         snap=self.repo.snapshot();before=deepcopy(snap)
         prepare_timeline_commands(snap,[self.key(0,[5,0,0])]);self.assertEqual(snap,before)
