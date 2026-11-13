@@ -1,0 +1,41 @@
+{
+  "bodies": [
+    {
+      "id": "ball",
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "translation": [
+        0.0,
+        1.7635310888290405,
+        0.0
+      ]
+    },
+    {
+      "id": "floor",
+      "rotation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ],
+      "translation": [
+        0.0,
+        -0.10000000149011612,
+        0.0
+      ]
+    }
+  ],
+  "frame": 12,
+  "time": {
+    "numerator": 1,
+    "denominator": 2
+  },
+  "source": "hash-verified-sample-cache-replay",
+  "world_sha256": "1174afd8aa90cc3565fc7dfcde62022304cb937366755d9e9c0e515120fef692",
+  "fixture": true,
+  "contacts": "not-exposed-by-Blender-adapter"
+}

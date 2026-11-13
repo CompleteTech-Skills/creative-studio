@@ -1,0 +1,4 @@
+# Optional isolated CPython3.11 worker only; never a 2D or host dependency.
+# PyBullet3.2.7 publishes a CPython3.11 Linux wheel; CPython3.12 may be unavailable.
+numpy==2.3.5
+pybullet==3.2.7
