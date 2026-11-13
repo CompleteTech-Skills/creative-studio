@@ -1,11 +1,15 @@
 import http.client
 import json
+import os
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 import tempfile
 import threading
 import unittest
 from rig_test_helpers import fixture
-from rig_http import RigServer
+from rig_http import RigServer,RigHandler
+from rig_errors import RigError
 
 
 class RigHttpTests(unittest.TestCase):
@@ -15,10 +19,11 @@ class RigHttpTests(unittest.TestCase):
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.addCleanup(self.stop)
     def stop(self):self.server.shutdown();self.server.server_close();self.thread.join(timeout=2)
-    def request(self,method,path,body=None,*,token=True,origin=None):
+    def request(self,method,path,body=None,*,token=True,origin=None,authorization=None):
         connection=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=10)
         headers={'Content-Type':'application/json'}
         if token:headers['Authorization']='Bearer '+self.server.token
+        if authorization is not None:headers['Authorization']=authorization
         if origin:headers['Origin']=origin
         connection.request(method,path,json.dumps(body).encode() if body is not None else None,headers)
         response=connection.getresponse();value=json.loads(response.read());status=response.status;connection.close();return status,value
@@ -41,3 +46,57 @@ class RigHttpTests(unittest.TestCase):
     def test_unknown_parameters_and_routes_fail(self):
         self.assertEqual(self.request('POST','/v1/rig-jobs/fixture/skin',{'arbitrary':'code'})[0],400)
         self.assertEqual(self.request('GET','/v1/rig-jobs/absent')[0],404)
+
+    def test_malformed_or_non_ascii_authorization_returns_structured_401(self):
+        for header in ('Bearer café','Basic credentials','Bearer wrong','', 'Bearer '+'a'*4097):
+            with self.subTest(header=header[:40]):
+                code,value=self.request('GET','/v1/rigs/fixture',authorization=header)
+                self.assertEqual(code,401,value)
+                self.assertEqual(value['error']['code'],'RIG_API_AUTH')
+        self.assertEqual(self.request('GET','/v1/rigs/fixture')[0],200)
+        handler=object.__new__(RigHandler);handler.server=SimpleNamespace(token=self.server.token)
+        handler.headers={'Authorization':'Bearer ☃'};responses=[]
+        handler._respond=lambda *args:responses.append(args)
+        handler._run()
+        self.assertEqual(responses[0][0],401)
+        self.assertEqual(responses[0][1]['error']['code'],'RIG_API_AUTH')
+
+    def test_configured_token_validation_is_structured_and_default_remains_valid(self):
+        for token in ('é'*24,'a'*4097,'a'*23,'a'*24+'\n','',True,10**400):
+            with self.subTest(token_type=type(token).__name__),self.assertRaises(RigError) as failure:
+                RigServer(self.temp.name,self.temp.name,token=token)
+            self.assertEqual(failure.exception.report['code'],'RIG_API_TOKEN')
+        server=RigServer(self.temp.name,self.temp.name)
+        try:self.assertGreaterEqual(len(server.token),24);self.assertTrue(server.token.isascii())
+        finally:server.server_close()
+
+    def test_http_generate_rejects_custom_objects_paths_and_cwd_json(self):
+        from rig_templates import ROOT,load_rig_template
+        local=Path(self.temp.name)/'local-template.json'
+        local.write_bytes((ROOT/'custom.json').read_bytes())
+        original=Path.cwd()
+        try:
+            os.chdir(self.temp.name)
+            self.assertEqual(load_rig_template(local.name)['id'],'custom')
+            for template in ({'custom':'object'},[],None,False,1,'local-template.json','humanoid.json',
+                             './humanoid','rig-templates/humanoid.json',str((ROOT/'humanoid.json').resolve())):
+                with self.subTest(template=template):
+                    code,value=self.request('POST','/v1/rig-jobs/fixture/generate',{'template':template})
+                    self.assertEqual(code,400,value);self.assertEqual(value['error']['code'],'RIG_API_TEMPLATE')
+            self.assertEqual(self.request('POST','/v1/rig-jobs/fixture/generate',{'template':'humanoid'})[0],200)
+        finally:os.chdir(original)
+
+    def test_dispatch_resolves_exact_installed_ids_before_native_mutation(self):
+        from rig_templates import ROOT,list_templates
+        handler=object.__new__(RigHandler);handler.path='/v1/rig-jobs/fixture/generate';handler.command='POST'
+        handler._root=lambda identifier:identifier
+        for template in list_templates():
+            handler._body=lambda template=template:{'template':template['id']}
+            with patch('rig_models.load_rig',return_value=SimpleNamespace()),patch('rig_operations.mutate') as mutate:
+                handler._dispatch()
+                parameters=mutate.call_args.args[2]
+                self.assertEqual(parameters['template'],str((ROOT/(template['id']+'.json')).resolve()))
+        handler._body=lambda:{}
+        with patch('rig_models.load_rig',return_value=SimpleNamespace()),patch('rig_operations.mutate') as mutate:
+            handler._dispatch()
+            self.assertEqual(mutate.call_args.args[2]['template'],str((ROOT/'humanoid.json').resolve()))
