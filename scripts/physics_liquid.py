@@ -52,6 +52,7 @@ def verify_cache(root, *, expected_world_sha256=None):
             core.require(len(payload)==entry['bytes'] and core.digest(payload)==entry['sha256'],
                 'PHYSICS_CACHE_CORRUPT','Liquid artifact changed.')
             payloads[name]=payload
+        core.require(reader.names()==names|{'liquid-cache.json'},'PHYSICS_CACHE_CORRUPT','Liquid inventory changed during snapshot reads.')
         class Snapshot:
             def read(self,name,limit=core.MAX_CACHE_BYTES):
                 value=payloads.get(name)
