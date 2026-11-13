@@ -111,4 +111,8 @@ local frame, with1e-8m tolerance. A violation fails the whole request with
 `PHYSICS_QUERY_NUMERICAL` and capability-gap status. It never becomes an invented
 miss or a replacement intersection. Query receipts retain the validation status
 and tolerance. Outside-slab regression cases characterize the native false hits
-at1e-5m beyond a1m box and .001m beyond a1000m box and require rejection.
+near the edge of1m and1000m boxes and require rejection.
+
+The surface check establishes the accuracy of accepted native box hits; it does
+not prove completeness for every grazing or tangent ray. Native misses remain
+native outcomes. No universal exact all-ray classification is claimed.

@@ -59,6 +59,7 @@ for size,gap in [(1.,1e-5),(1000.,.001)]:
   shape=collision_build_query_shapes(p,client,collider,Path(directory))[0]
   body=p.createMultiBody(baseMass=0,baseCollisionShapeIndex=shape,physicsClientId=client)
   p.changeDynamics(body,-1,collisionMargin=0,physicsClientId=client)
+  p.performCollisionDetection(physicsClientId=client)
   x=size/2+gap
   hit=p.rayTest([x,size,0],[x,-size,0],physicsClientId=client)[0]
   assert hit[0]>=0,('characterized native tolerance changed',size,gap)
