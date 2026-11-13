@@ -137,9 +137,9 @@ def generate_lods(geometry,*,cell_sizes,source_version,regenerate_normals=False,
     """
     limits=_limits(limits);validate_geometry(geometry,limits)
     require(type(regenerate_normals) is bool,'MODEL3D_LOD_POLICY','Normal policy must be boolean.')
-    require(isinstance(cell_sizes,(list,tuple)) and 2<=len(cell_sizes)<=5 and all(type(v) in (int,float) and math.isfinite(v) and v>0 for v in cell_sizes)
+    require(isinstance(cell_sizes,(list,tuple)) and 2<=len(cell_sizes)<=5 and all(type(v) in (int,float) and 0<v<=1e100 and math.isfinite(v) for v in cell_sizes)
             and all(a<b for a,b in zip(cell_sizes,cell_sizes[1:])), 'MODEL3D_LOD_POLICY','Supply 2–5 strictly increasing positive cell sizes.')
-    require(type(max_distance) in (int,float) and math.isfinite(max_distance) and max_distance>=0
+    require(type(max_distance) in (int,float) and 0<=max_distance<=1e100 and math.isfinite(max_distance)
             and type(min_silhouette_iou) in (int,float) and 0<=min_silhouette_iou<=1,'MODEL3D_LOD_POLICY','Invalid distance/silhouette thresholds.')
     require(isinstance(budgets or {},dict) and set(budgets or {})<= {'vertices','triangles','materials','texture_pixels'},'MODEL3D_LOD_BUDGET','Unknown budget.')
     require(per_part is None or isinstance(per_part,dict),'MODEL3D_LOD_BUDGET','Part budgets must be a mapping.')
