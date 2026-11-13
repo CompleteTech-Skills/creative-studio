@@ -134,6 +134,8 @@ def evaluate_caches(caches):
             worker_sha256=core.digest(payloads['worker.py']),
             world_sha256=verified['world_sha256'], backend=verified['backend'], resources=verified['resources'],
             settings=settings, viscosity_m2_per_s=domain['viscosity'])
+        # Do not retain this cache while the next bounded snapshot is loaded.
+        del payloads, payload, mesh
     result = assess_series(series, cell_size=h, emission_end_frame=expected_settings['emission_end_frame'])
     return dict(protocol=1, experiment='pouring-48-resolution24-v1', assessment=result,
         assessor_sha256=core.digest(Path(__file__).read_bytes()),
