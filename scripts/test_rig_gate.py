@@ -7,7 +7,7 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
 GROUPS={
- 'schema-math':['test_rig_math.py','test_rig_contracts.py','test_rig_compatibility.py','test_rig_camera3d_contracts.py','test_rig_scene3d_math.py','test_rig_landmarks.py','test_rig_editor3d_contracts.py','test_animation3d_contracts.py','test_animation3d_independent.py'],
+ 'schema-math':['test_rig_math.py','test_rig_contracts.py','test_rig_compatibility.py','test_rig_camera3d_contracts.py','test_rig_scene3d_math.py','test_rig_landmarks.py','test_rig_editor3d_contracts.py','test_animation3d_contracts.py','test_animation3d_independent.py','test_animation3d_closure.py','test_animation3d_owner_adapters.py'],
  'skinning':['test_rig_skinning.py','test_rig_weight_input_boundaries.py'],
  'animation-ik':['test_rig_controls.py','test_rig_animation.py','test_rig_specializations.py','test_rig_morph_authoring.py'],
  'interoperability':['test_rig_interop.py','test_rig_import_transforms.py','test_rig_material_validation.py','test_rig_texture_integrity.py','test_rig_jpeg.py'],

@@ -51,6 +51,12 @@ Executed channel interpolation is step, linear, Hermite and quaternion SLERP. Bo
 
 ## Exact project admission
 
+```sh
+python scripts/animation3d.py admit-project --root saved/project --project animation-project.json
+```
+
+The CLI returns the exact inventory, byte total and admission scope as JSON. A failure returns a typed diagnostic and exit status 2.
+
 ```python
 from animation3d_assets import load_project
 receipt = load_project('saved/project', 'animation-project.json')
