@@ -146,11 +146,11 @@ class ProviderPricingContractTests(unittest.TestCase):
                            expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())
                 value['digest']=object_hash(value)
                 return value
-            def admit(value,allowed_providers=('fixture-provider',),**extra):
+            def admit(value,allowed_providers=('fixture-provider',),provider_calls=2,budget_amount=.5,**extra):
                 return cap.assert_admission(value,['planning.provider'],evidence_root=root,
-                      resources={'max_provider_calls':2},network_policy='allow-configured',
+                      resources={'max_provider_calls':provider_calls},network_policy='allow-configured',
                       budget_reservation_id='fixture-reservation',budget_currency='USD',
-                      budget_amount=.5,paid_policy='bounded',allowed_providers=allowed_providers,**extra)
+                      budget_amount=budget_amount,paid_policy='bounded',allowed_providers=allowed_providers,**extra)
             if not (hasattr(os,'O_NOFOLLOW') and os.open in os.supports_dir_fd):
                 with self.assertRaises(RigError) as failure:
                     admit(snapshot())
@@ -172,5 +172,14 @@ class ProviderPricingContractTests(unittest.TestCase):
                     admit(snapshot(price))
             with self.assertRaises(RigError):admit(snapshot(None,None,'unknown'))
             admit(snapshot(None,None,'unknown'),allow_unknown_price=True)
+            from decimal import localcontext
+            with localcontext() as context:
+                context.prec=3
+                with self.assertRaisesRegex(RigError,'provider amount exceeds budget'):
+                    admit(snapshot(.1234),provider_calls=3,budget_amount=.37)
+                admit(snapshot(.1233),provider_calls=3,budget_amount=.37)
+                limits['max_amount']=.37
+                with self.assertRaisesRegex(RigError,'provider amount exceeds capability policy'):
+                    admit(snapshot(.1234),provider_calls=3,budget_amount=1)
             limits['max_amount']=None
             with self.assertRaises(RigError):admit(snapshot())
