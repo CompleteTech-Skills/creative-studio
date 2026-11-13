@@ -100,3 +100,41 @@ class RigHttpTests(unittest.TestCase):
         with patch('rig_models.load_rig',return_value=SimpleNamespace()),patch('rig_operations.mutate') as mutate:
             handler._dispatch()
             self.assertEqual(mutate.call_args.args[2]['template'],str((ROOT/'humanoid.json').resolve()))
+
+    def test_http_template_corrections_share_installed_id_admission(self):
+        from copy import deepcopy
+        from rig_errors import timestamp
+        from rig_models import rig_signature
+        correction=dict(schema_version=1,kind='hatch-3d-rig-correction',rig_id=self.rig.manifest['id'],
+            rig_version=self.rig.manifest['version'],expected_sha256=rig_signature(self.rig.manifest),
+            author='http-fixture',reason='Use installed template',created_at=timestamp(),
+            edits=[dict(operation='template',target='skeleton',value={'template':'custom'})])
+        for template in ({'custom':'object'},'local-template.json','custom.json','./custom',None):
+            bad=deepcopy(correction);bad['edits'][0]['value']['template']=template
+            with self.subTest(template=template):
+                code,value=self.request('PATCH','/v1/rigs/fixture',bad)
+                self.assertEqual(code,400,value);self.assertEqual(value['error']['code'],'RIG_API_TEMPLATE')
+        for edits in (None,'bad',[None],[{'operation':'template','value':None}]):
+            bad=deepcopy(correction);bad['edits']=edits
+            with self.subTest(edits=edits):
+                code,value=self.request('PATCH','/v1/rigs/fixture',bad)
+                self.assertEqual(code,400,value)
+                self.assertIn(value['error']['code'],('RIG_SCHEMA','RIG_API_TEMPLATE'))
+        code,value=self.request('PATCH','/v1/rigs/fixture',correction)
+        self.assertEqual(code,200,value)
+        from rig_models import load_rig
+        loaded=load_rig(self.rig.root)
+        self.assertEqual([bone['role'] for bone in loaded.skeleton['bones']],['root'])
+
+    def test_template_correction_dispatch_normalizes_only_template_values(self):
+        from rig_templates import ROOT
+        handler=object.__new__(RigHandler);handler.path='/v1/rigs/fixture';handler.command='PATCH'
+        handler._root=lambda identifier:identifier
+        body={'edits':[{'operation':'template','value':{'template':'custom'}},
+                       {'operation':'expression','value':{'name':'unchanged'}}]}
+        handler._body=lambda:body
+        with patch('rig_models.load_rig',return_value=SimpleNamespace()),patch('rig_operations.mutate') as mutate:
+            handler._dispatch()
+            edits=mutate.call_args.args[2]['correction']['edits']
+            self.assertEqual(edits[0]['value']['template'],str((ROOT/'custom.json').resolve()))
+            self.assertEqual(edits[1],{'operation':'expression','value':{'name':'unchanged'}})

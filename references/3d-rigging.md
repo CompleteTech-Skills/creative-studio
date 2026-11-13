@@ -239,7 +239,7 @@ The server binds only `127.0.0.1` and prints its local bearer token. Configured 
 | `POST /v1/rigs/{id}/pose`, `/solve-ik` | Evaluate a native pose or spatial target |
 | `POST .../retarget`, `/review` | Retarget from another local job or apply a bound review receipt |
 
-Operation parameters are shared with `rig_operations.py`; unknown mutation fields fail. HTTP `generate` accepts only exact installed canonical template IDs (for example `humanoid`), which the server resolves to installed files before calling native mutation. Custom template dictionaries, JSON filenames, CWD files, path aliases and explicit paths are refused over HTTP; native Python/CLI custom-template support is unchanged. A stale correction returns a conflict, missing jobs return 404, unauthenticated requests 401, and occupied workers 429. Tests issue real local HTTP requests rather than stubbing route behavior.
+Operation parameters are shared with `rig_operations.py`; unknown mutation fields fail. HTTP `generate` and template-replacement corrections accept only exact installed canonical template IDs (for example `humanoid`), which the server resolves to installed files before calling native mutation. Custom template dictionaries, JSON filenames, CWD files, path aliases and explicit paths are refused over HTTP; native Python/CLI custom-template support is unchanged. A stale correction returns a conflict, missing jobs return 404, unauthenticated requests 401, and occupied workers 429. Tests issue real local HTTP requests rather than stubbing route behavior.
 
 ## Resource limits, jobs and recovery
 

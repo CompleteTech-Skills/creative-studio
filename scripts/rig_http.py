@@ -99,7 +99,16 @@ class RigHandler(BaseHTTPRequestHandler):
         if self.command=='GET' and len(parts)==4 and parts[3]=='artifacts':
             return dict(artifacts=[dict(path=p.relative_to(root).as_posix(),bytes=p.stat().st_size,sha256=sha256(p)) for p in sorted(root.rglob('*')) if p.is_file() and not p.is_symlink()])
         body=self._body()
-        if self.command=='PATCH' and parts[1]=='rigs' and len(parts)==3:return mutate(root,'correct',dict(correction=body))
+        if self.command=='PATCH' and parts[1]=='rigs' and len(parts)==3:
+            edits=body.get('edits')
+            if isinstance(edits,list):
+                for edit in edits:
+                    if isinstance(edit,dict) and edit.get('operation')=='template':
+                        value=edit.get('value')
+                        require(isinstance(value,dict) and 'template' in value,'RIG_API_TEMPLATE',
+                                'Template corrections require an exact installed template ID.')
+                        value['template']=_installed_template(value['template'])
+            return mutate(root,'correct',dict(correction=body))
         require(self.command=='POST' and len(parts)==4,'RIG_API_NOT_FOUND','Unsupported route or method.')
         operation=parts[3]
         aliases={'generate':'auto','skin':'weights','test-motion':'test-motion','validate':'validate','analyze':'analyze','state-map':'state-map','animate':'animate','configure':'configure'}
