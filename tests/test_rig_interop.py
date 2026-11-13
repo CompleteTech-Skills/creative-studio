@@ -125,6 +125,40 @@ class RigExternalIntegrationTests(unittest.TestCase):
         self.assertGreater(report['compared_vertices'],0)
 
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_preserves_nonzero_defaults_without_morph_channels(self):
+        from rig_blender import export_blender
+        from rig_skinning import evaluate_deformation
+        from rig_skeleton import neutral_pose
+        # No animation and a skeletal-only action both must preserve the source
+        # morph. The known 0.2m delta makes a silent zero reset observable.
+        self.rig.geometry.meshes[0].morph_defaults['blink']=1.
+        for clip in self.rig.clips.values():
+            clip['tracks']=[track for track in clip['tracks'] if track['path']!='weights']
+        skeletal_clips=deepcopy(self.rig.clips)
+        for animated in (False,True):
+            with self.subTest(animated=animated):
+                self.rig.clips=deepcopy(skeletal_clips) if animated else {}
+                expected=evaluate_deformation(self.rig,neutral_pose(self.rig.skeleton))
+                report=export_blender(self.rig,Path(self.temp.name)/('defaults-%s.blend'%animated))
+                self.assertTrue(report['ok']);self.assertTrue(report['reopened'])
+                # Skeletal animation has the adapter's existing resampling
+                # tolerance; the static default has a direct tight comparison.
+                self.assertLess(report['max_vertex_error_m'],.01 if animated else 1e-5)
+                imported=load_character_model(report['roundtrip_path'])
+                mesh=imported.geometry.meshes[0]
+                self.assertAlmostEqual(mesh.morph_defaults['blink'],1.)
+                if not animated:
+                    sample=report['samples'][0]['meshes'][mesh.id]
+                    np.testing.assert_allclose(sample,expected[mesh.id]['positions'],atol=1e-5)
+        # Creation-only exports must also save the source default, even when no
+        # independent reopen is requested by the caller.
+        self.rig.clips={}
+        created=export_blender(self.rig,Path(self.temp.name)/'defaults-create-only.blend',verify=False)
+        self.assertTrue(created['ok']);self.assertFalse(created['reopened'])
+        self.assertLess(np.max(np.abs(np.asarray(created['samples'][0]['meshes'][self.rig.geometry.meshes[0].id])-
+                                     expected[self.rig.geometry.meshes[0].id]['positions'])),1e-5)
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
     def test_blender_creation_receipt_does_not_claim_reopen(self):
         from rig_blender import export_blender
         report=export_blender(self.rig,Path(self.temp.name)/'created.blend',verify=False)
