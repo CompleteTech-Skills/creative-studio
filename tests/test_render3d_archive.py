@@ -87,3 +87,14 @@ class Archives(unittest.TestCase):
             with patch('render3d_archive._open_archive',side_effect=replace):
                 with self.assertRaises(Render3DError):restore_render(path,root/'restored')
             self.assertFalse((root/'restored').exists())
+
+    def test_oversized_central_directory_rejects_before_zipfile_allocation(self):
+        import struct
+        import render3d_archive as module
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);path=root/'huge.zip'
+            with path.open('wb') as stream:
+                stream.seek(1024**3)
+                stream.write(struct.pack('<4s4H2LH',b'PK\x05\x06',0,0,65535,65535,1024**3,0,0))
+            with patch('render3d_archive.zipfile.ZipFile',side_effect=AssertionError('must not allocate')):
+                with self.assertRaises(Render3DError):restore_render(path,root/'restored')

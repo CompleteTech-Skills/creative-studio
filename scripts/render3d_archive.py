@@ -122,6 +122,7 @@ def archive_render(delivery_root,destination,*,request=None,snapshot_root=None):
             for item in inventory:
                 path=safe_path(payload,item['path'],exists=True)
                 archive.write(path,'payload/'+item['path'])
+        with _open_archive(target):pass
         _rename_no_replace(target,destination)
     return dict(path=str(destination),sha256=_hash(destination),bytes=destination.stat().st_size,files=len(inventory))
 
@@ -140,6 +141,14 @@ def _open_archive(path):
         info=os.fstat(stream.fileno())
         require(stat.S_ISREG(info.st_mode),'invalid-input','Archive input changed file type.')
         require(info.st_size<=MAX_TOTAL+MAX_INDEX+256*MAX_FILES,'storage-exhaustion','Archive exceeds byte budget.')
+        # Use the same bounded EOCD/ZIP64 reader as ZipFile before its eager
+        # central-directory allocation. Only fixed-size records and the <=64KiB
+        # comment tail are read at this point.
+        end=zipfile._EndRecData(stream)
+        require(end is not None,'invalid-input','Archive end record missing.')
+        require(end[zipfile._ECD_SIZE]<=MAX_INDEX and end[zipfile._ECD_ENTRIES_TOTAL]<=MAX_FILES+1,
+                'storage-exhaustion','Archive central directory exceeds budget.')
+        stream.seek(0)
         return stream
     except BaseException:
         stream.close();raise
