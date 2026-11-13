@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
 
 from editor3d_repository import EditorRepository
@@ -30,7 +31,12 @@ class TimelineBrowserTests(unittest.TestCase):
             before=repo.snapshot()
             apply_timeline(repo,dict(expected_revision=before['revision'],expected_sha256=before['sha256'],transaction_id='second',commands=[dict(operation='shot-duplicate',source='example-shot.json',id='second',name='Second')]))
             baseline=repo.snapshot()['revision']
-            server=EditorServer(repo,routes=routes());thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            handlers=routes();curve_handler=handlers['timeline/curve']
+            def delayed_curve(server,body):
+                time.sleep(.3)
+                return curve_handler(server,body)
+            handlers['timeline/curve']=delayed_curve
+            server=EditorServer(repo,routes=handlers);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
             try:
                 with sync_playwright() as runtime:
                     browser=launch_chromium(runtime)
@@ -52,6 +58,15 @@ class TimelineBrowserTests(unittest.TestCase):
                         page.get_by_role('button',name='Scrub',exact=True).click()
                         page.wait_for_function("()=>document.querySelector('[aria-label=\"Animation timeline\"] [role=status]').textContent.includes('Saved revision')")
                         self.assertEqual(page.evaluate("()=>window.hatchEditor.objects.get('mesh').position.x"),7)
+                        with page.expect_response('**/api/timeline/curve'):
+                            page.get_by_role('button',name='Evaluate channel curve',exact=True).click()
+                            page.get_by_label('Animated property',exact=True).select_option('rotation')
+                        page.wait_for_timeout(100)
+                        self.assertEqual(page.locator('[aria-label=\"Evaluated channel curve\"] polyline').count(),0)
+                        page.get_by_label('Animated property',exact=True).select_option('translation')
+                        page.get_by_role('button',name='Evaluate channel curve',exact=True).click()
+                        page.wait_for_function("()=>document.querySelectorAll('[aria-label=\"Evaluated channel curve\"] polyline').length===3")
+
                         page.get_by_label('Timeline shot',exact=True).select_option(label='Foreign')
                         page.get_by_role('button',name='Scrub',exact=True).click()
                         page.wait_for_function("()=>document.querySelector('[aria-label=\"Animation timeline\"] [role=status]').textContent.includes('Switch to the shot scene')")
