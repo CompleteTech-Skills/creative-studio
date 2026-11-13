@@ -240,6 +240,10 @@ def _validate_bindings(project, documents, native, snapshot_root):
     # bound, including auxiliary tracks, interactions and nested controls.
     for document_value in documents.values():
         for node in _walk(document_value):
+            if 'frame' in node and set(node) <= {'frame', 'subframe_ticks'}:
+                from animation3d_time import frame_position
+                require(frame_position(node) <= budgets['max_frames'], 'ANIMATION_LIMIT',
+                        'Exact frame/subframe coordinate exceeds project frame budget.')
             for name, value in node.items():
                 if type(value) is int and (name == 'frame' or name.endswith(('_frame', '_frames')) or name == 'end_frame_exclusive'):
                     require(value <= budgets['max_frames'], 'ANIMATION_LIMIT', 'Nested timeline coordinate exceeds project frame budget.')

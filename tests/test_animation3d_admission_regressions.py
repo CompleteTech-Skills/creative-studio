@@ -174,3 +174,14 @@ class ReleaseAdmissionRegressions(unittest.TestCase):
         self.clip['dependencies']=[material_ref]
         self.f.project['clips']=[self.f.put('clip.json',self.clip,'clip')]
         self.assert_code('ANIMATION_RANGE')
+
+
+    def test_project_terminal_budget_uses_exact_subframe_position(self):
+        track=deepcopy(self.clip['tracks'][0])
+        track['target']=dict(kind='node',node_id='root',property='translation')
+        self.scene['object_tracks']=[track]
+        for frame,ticks,accepted in [(100,0,True),(99,999999,True),(100,1,False),(100,500000,False)]:
+            track['keys'][-1]['time']=dict(frame=frame,subframe_ticks=ticks)
+            with self.subTest(frame=frame,ticks=ticks):
+                if accepted:self.assertTrue(self.check()['source_ready'])
+                else:self.assert_code('ANIMATION_LIMIT')
