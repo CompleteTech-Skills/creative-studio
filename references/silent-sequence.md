@@ -118,3 +118,14 @@ verifier are integrated; existing engineering outputs are preserved meanwhile.
 Required root tests contain only portable contracts without platform skips.
 Optional decoder/Linux filesystem tests live in `tests/optional` and must run
 explicitly with the canonical verifier and its optional dependencies.
+
+`export_sequence(..., progress=observer)` and the native wrapper optionally emit
+one bounded event after each frame has actually been verified under the cache
+lock: `{'stage': 'preparing', 'action': 'reused' | 'copied', 'frame': 1,
+'total_frames': N}`. `frame` is the one-based completed frame index. Controllers
+can count those actions instead of inspecting the cache before its canonical
+ownership checks and interrupted-write recovery. A matching complete bootstrap
+partial is recovered before any event; unknown or mismatched partial plans still
+fail closed. Observer exceptions retain the verified cache for explicit resume.
+Events precede the final all-frame verification and publication, so they do not
+promise completion or allow observer mutations to bypass integrity checks.

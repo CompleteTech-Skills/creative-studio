@@ -114,6 +114,86 @@ class SequenceImages(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in foreign.iterdir()),['user.txt'])
         self.assertEqual((foreign/'user.txt').read_text(),'unrelated user data')
 
+    def test_progress_counts_verified_reuse_after_owned_partial_recovery(self):
+        source=self.source();destination=self.root/'progress-resume';checks=[0]
+        def cancel_after_first():
+            checks[0]+=1
+            return checks[0]==2
+        with self.assertRaisesRegex(ValueError,'cancelled'):
+            sequence.export_sequence(source,self.root,destination,provenance=self.identity,
+                                     cancel=cancel_after_first)
+        stage=self.root/'.progress-resume.sequence-stage'
+        original=stage/'frames/000000.png';mtime=original.stat().st_mtime_ns
+        partial=stage/'frames/.000001.png.partial';partial.write_bytes(b'interrupted owned write')
+        events=[]
+        report=sequence.export_sequence(source,self.root,destination,provenance=self.identity,
+                                        progress=events.append)
+        self.assertEqual(events,[{'stage':'preparing','action':action,'frame':index+1,'total_frames':3}
+                                  for index,action in enumerate(('reused','copied','copied'))])
+        self.assertEqual(original.stat().st_mtime_ns,mtime)
+        self.assertFalse(partial.exists())
+        self.assertEqual(sequence.verify_sequence(destination),report)
+
+    def test_matching_bootstrap_partial_recovers_before_progress_is_counted(self):
+        source=self.source();destination=self.root/'bootstrap-progress'
+        stage=self.root/'.bootstrap-progress.sequence-stage';stage.mkdir(mode=0o700)
+        (stage/'lock').write_bytes(b'')
+        partial=stage/'.plan.json.partial'
+        partial.write_bytes(sequence._json_bytes({'source':source,'provenance':self.identity}))
+        events=[]
+        report=sequence.export_sequence(source,self.root,destination,provenance=self.identity,
+                                        progress=events.append)
+        self.assertEqual([event['action'] for event in events],['copied']*3)
+        self.assertFalse(partial.exists())
+        self.assertEqual(sequence.verify_sequence(destination),report)
+
+    def test_observer_failure_retains_verified_cache_for_counted_resume(self):
+        source=self.source();destination=self.root/'observer-failure'
+        def stop_after_frame(event):raise RuntimeError('observer stopped controller')
+        with self.assertRaisesRegex(RuntimeError,'observer stopped controller'):
+            sequence.export_sequence(source,self.root,destination,provenance=self.identity,
+                                     progress=stop_after_frame)
+        self.assertFalse(destination.exists())
+        original=self.root/'.observer-failure.sequence-stage/frames/000000.png'
+        mtime=original.stat().st_mtime_ns;events=[]
+        sequence.export_sequence(source,self.root,destination,provenance=self.identity,
+                                 progress=events.append)
+        self.assertEqual([event['action'] for event in events],['reused','copied','copied'])
+        self.assertEqual(original.stat().st_mtime_ns,mtime)
+
+    def test_progress_observer_runs_with_exclusive_cache_ownership(self):
+        source=self.source(count=1);destination=self.root/'observer-lock';events=[]
+        def inspect_lock(event):
+            events.append(event)
+            with self.assertRaisesRegex(ValueError,'already owned'):
+                sequence.export_sequence(source,self.root,destination,provenance=self.identity)
+        sequence.export_sequence(source,self.root,destination,provenance=self.identity,progress=inspect_lock)
+        self.assertEqual([event['action'] for event in events],['copied'])
+
+    def test_unknown_bootstrap_partial_is_preserved_without_progress(self):
+        source=self.source(count=1);destination=self.root/'unknown-bootstrap'
+        stage=self.root/'.unknown-bootstrap.sequence-stage';stage.mkdir(mode=0o700)
+        (stage/'lock').write_bytes(b'')
+        partial=stage/'.plan.json.partial';partial.write_bytes(b'unknown incomplete plan')
+        events=[]
+        with self.assertRaisesRegex(ValueError,'does not match'):
+            sequence.export_sequence(source,self.root,destination,provenance=self.identity,
+                                     progress=events.append)
+        self.assertEqual(partial.read_bytes(),b'unknown incomplete plan')
+        self.assertEqual(events,[]);self.assertFalse(destination.exists())
+
+    def test_observer_cache_mutation_is_rejected_before_publication(self):
+        source=self.source();destination=self.root/'observer-mutation'
+        def mutate_after_last(event):
+            if event['frame']==event['total_frames']:
+                (self.root/'.observer-mutation.sequence-stage/frames/000000.png').write_bytes(b'changed')
+        with self.assertRaisesRegex(ValueError,'checksum'):
+            sequence.export_sequence(source,self.root,destination,provenance=self.identity,
+                                     progress=mutate_after_last)
+        self.assertFalse(destination.exists())
+        for frame in source['frames']:
+            self.assertEqual(hashlib.sha256((self.root/frame['source_path']).read_bytes()).hexdigest(),frame['sha256'])
+
     def test_public_cache_basename_swap_cannot_replace_verified_publication(self):
         source=self.source(count=1);destination=self.root/'swap'
         stage=self.root/'.swap.sequence-stage';calls=[0]

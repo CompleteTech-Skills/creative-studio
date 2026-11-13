@@ -420,7 +420,7 @@ def _publish_cache(stage,source,report,parent_fd,destination):
 
 
 def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=None,
-                    destination_dir_fd=None,_native_token=None):
+                    destination_dir_fd=None,progress=None,_native_token=None):
     """Export exact bytes; interrupted staging is reusable on explicit retry.
 
     Destination is immutable and exclusive. Staging is a sibling directory
@@ -428,9 +428,13 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
     Damaged or foreign staging is rejected, never overwritten. Nested trusted
     transactions may supply destination_dir_fd and one portable destination
     basename; the canonical media context duplicates the FD for this operation.
+    An optional progress observer receives one event after each cached or copied
+    frame has been verified, under the cache lock and before final verification.
     """
     if not publication_supported():raise ValueError('secure sequence publication is unavailable on this platform')
     _capability_factory()  # Fail before touching an output/staging directory.
+    if progress is not None and not callable(progress):
+        raise ValueError('sequence progress observer must be callable')
     source=_check_source(copy.deepcopy(source));_json_bytes(provenance)
     if source['origin']=='blender3d' and _native_token is not _NATIVE_TOKEN:
         raise ValueError('native sources require export_native_sequence and canonical closure verification')
@@ -488,12 +492,16 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
                     _inventory(stage,source,staging=True)
                     for f in source['frames']:
                         if cancel is not None and cancel():raise ValueError('sequence export cancelled; verified staging retained')
-                        if (stage/f['path']).exists():_verify_frame(stage,f,source);continue
-                        data=_read(root,f['source_path'],MAX_FRAME_BYTES)
-                        if len(data)!=f['bytes'] or _hash(data)!=f['sha256']:
-                            raise ValueError('source frame changed after sequence admission')
-                        _write(stage,f['path'],data)
+                        reused=(stage/f['path']).exists()
+                        if not reused:
+                            data=_read(root,f['source_path'],MAX_FRAME_BYTES)
+                            if len(data)!=f['bytes'] or _hash(data)!=f['sha256']:
+                                raise ValueError('source frame changed after sequence admission')
+                            _write(stage,f['path'],data)
                         _verify_frame(stage,f,source)
+                        if progress is not None:
+                            progress({'stage':'preparing','action':'reused' if reused else 'copied',
+                                      'frame':f['index']+1,'total_frames':len(source['frames'])})
                     decoded=[_verify_frame(stage,f,source) for f in source['frames']]
                     report={'schema_version':1,'kind':'silent-image-sequence','source':source,
                         'source_sha256':media._digest(source),'request_sha256':media._digest(make_request(source,plan['provenance'])),

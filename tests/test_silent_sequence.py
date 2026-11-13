@@ -42,5 +42,14 @@ class SequenceContracts(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'unavailable'):
                 sequence.export_native_sequence({}, {}, '.', 'unused',snapshot_root='.',expected_backend={})
 
+    def test_invalid_progress_observer_fails_before_staging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            with mock.patch.object(sequence,'publication_supported',return_value=True), \
+                    mock.patch.object(sequence,'_capability_factory'):
+                with self.assertRaisesRegex(ValueError,'progress observer must be callable'):
+                    sequence.export_sequence({},'.',root/'output',provenance={},progress=False)
+            self.assertEqual(list(root.iterdir()),[])
+
 
 if __name__=='__main__':unittest.main()
