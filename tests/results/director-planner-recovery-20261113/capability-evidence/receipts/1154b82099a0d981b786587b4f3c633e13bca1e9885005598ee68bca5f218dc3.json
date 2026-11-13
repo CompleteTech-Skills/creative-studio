@@ -1,0 +1,54 @@
+{
+  "dependencies": {
+    "executable": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+    "probe_source": "6fa5537ccb4ff4d567b3a1805d08b353df0ad74a11cb55ce1d7d575b2cc37caa"
+  },
+  "dependency_fingerprint": "115389d5a19ca58aff651118e0bfa15e673114ee05a079aab37f5afeb9faa853",
+  "discovered": true,
+  "execution": {
+    "device": "CPU",
+    "exit_code": 0,
+    "reason": null,
+    "render_sha256": "81c2f2495e528252cd7df0874dc61fa2568c2de35953a6001d7cbaeca4db47f8",
+    "resolution": [
+      8,
+      8
+    ],
+    "success": true,
+    "version": "4.5.3 LTS"
+  },
+  "execution_verified": true,
+  "fallback": null,
+  "fixture": true,
+  "initialized": true,
+  "operation": "blender.cpu",
+  "payloads": [
+    {
+      "artifact_id": "probe-81c2f2495e528252cd7df0874dc61fa2568c2de35953a6001d7cbaeca4db47f8",
+      "byte_size": 704,
+      "dependencies": [],
+      "fixture": true,
+      "kind": "capability-probe-evidence",
+      "media_type": "image/png",
+      "path": "payloads/81c2f2495e528252cd7df0874dc61fa2568c2de35953a6001d7cbaeca4db47f8.png",
+      "provenance_ref": null,
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "sha256": "81c2f2495e528252cd7df0874dc61fa2568c2de35953a6001d7cbaeca4db47f8"
+    }
+  ],
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "executed",
+  "schema_version": 1,
+  "status": "available",
+  "version": "4.5.3 LTS"
+}
