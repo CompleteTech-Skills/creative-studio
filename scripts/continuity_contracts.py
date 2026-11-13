@@ -43,6 +43,7 @@ KINDS = ('identity', 'revision', 'asset', 'rig-compatibility', 'costume', 'entit
          'character-state', 'prop-state', 'environment-state', 'camera-state',
          'animation-state', 'narrative-state', 'event', 'snapshot', 'link', 'rule',
          'exception', 'issue', 'comparison', 'review', 'dependency', 'impact', 'repair')
+TEMPORAL_KINDS = ('temporal-timeline', 'temporal-event', 'temporal-snapshot')
 
 
 def obj(properties, required=None):
@@ -223,10 +224,39 @@ def definitions():
         scope=ref('scope'), rollback=ref('ref')))
     d['bindings'] = obj(dict(schema_version=dict(const=VERSION), project_id=ID, project_revision=ref('ref'),
         instances=arr(obj(dict(instance_id=ID, entity_id=ID, shot_id=ID, revision=ref('revision-pin'))))))
+    # Temporal documents are additive: existing event/snapshot wire formats stay
+    # valid. Integer ticks are exact, while native frame rates remain rational.
+    d['temporal-scene'] = obj(dict(scene=ref('ref'), scene_to_world=ref('transform'),
+        entities=arr(obj(dict(entity_id=ID, node_id=ID, identity_id=nullable(ID))), minimum=1)))
+    d['temporal-shot'] = obj(dict(shot=ref('ref'), scene_id=ID,
+        scene_start_tick=integer(), presentation_start_tick=integer(), story_start_tick=integer(),
+        story_speed=ref('rational')))
+    d['temporal-timeline'] = document('temporal-timeline', dict(timeline_id=ID, branch_id=ID,
+        project_id=ID, project_revision=ref('ref'), world_id=ID,
+        ticks_per_second=integer(1), scenes=arr(ref('temporal-scene'), minimum=1),
+        shots=arr(ref('temporal-shot'), minimum=1), dependencies=arr(ref('ref'))))
+    def transition(name, field, shape):
+        return obj(dict(event_type=dict(const=name), **{field: ID}, before=shape, after=shape))
+    scalar = dict(type=['string', 'number', 'boolean', 'null'])
+    d['temporal-operation'] = dict(oneOf=[transition('relocate', 'entity_id', ref('transform')),
+        transition('visibility', 'entity_id', BOOL), transition('set-fact', 'fact_id', scalar)])
+    d['temporal-event'] = document('temporal-event', dict(event_id=ID, tick=integer(),
+        priority=integer(0, 65535), prerequisites=arr(ID, unique=True),
+        operations=arr(ref('temporal-operation'), minimum=1), sources=arr(ref('ref')),
+        author=TEXT, revision=integer(1)))
+    d['temporal-entity'] = obj(dict(entity_id=ID, identity_id=nullable(ID),
+        transform=ref('transform'), visible=BOOL))
+    d['temporal-snapshot'] = document('temporal-snapshot', dict(timeline_id=ID, branch_id=ID,
+        project_revision=ref('ref'), world_id=ID, scene_id=nullable(ID), shot_id=nullable(ID), frame=nullable(integer()),
+        boundary=enum('before', 'after', 'terminal'), event_id=nullable(ID), story_tick=integer(),
+        scene_tick=nullable(integer()), presentation_tick=nullable(integer()), ticks_per_second=integer(1),
+        head_sha256=SHA, dependencies_sha256=SHA, evaluator_sha256=SHA,
+        entities=arr(ref('temporal-entity')), facts=arr(ref('fact')),
+        applied_events=arr(ID, unique=True), unavailable_fields=arr(ID, unique=True)))
     return d
 
 
-def schemas():
+def schemas(kinds=KINDS):
     def closure(kind):
         found = {}
         def visit(name):
@@ -242,7 +272,11 @@ def schemas():
                    '$id': 'https://gethatch.pet/schemas/continuity-' + kind + '-v1',
                    'title': 'Continuity ' + kind + ' v' + VERSION,
                    '$defs': closure(kind), '$ref': '#/$defs/' + kind}
-            for kind in KINDS}
+            for kind in kinds}
+
+
+def temporal_schemas():
+    return schemas(TEMPORAL_KINDS)
 
 
 def canonical_bytes(value):
@@ -292,6 +326,13 @@ def _typed_objects(value, schema, name=None):
         if value is None:
             return
         yield from _typed_objects(value, schema['anyOf'][0], name)
+    elif 'oneOf' in schema:
+        # Temporal operations have a strict, explicit event_type discriminator.
+        for alternative in schema['oneOf']:
+            tag = alternative.get('properties', {}).get('event_type', {}).get('const')
+            if isinstance(value, dict) and value.get('event_type') == tag:
+                yield from _typed_objects(value, alternative, name)
+                break
     elif isinstance(value, dict):
         yield name, schema, value
         properties = schema.get('properties', {})
@@ -311,7 +352,7 @@ def validate_document(value, kind=None):
     value = deepcopy(value)
     if kind is None:
         kind = str(value.get('kind', '')).removeprefix('continuity-') if isinstance(value, dict) else ''
-    if kind not in KINDS and kind not in ('bindings',):
+    if kind not in KINDS + TEMPORAL_KINDS and kind not in ('bindings',):
         raise ValueError('CONTINUITY_KIND: unsupported contract kind')
     # Optional jsonschema is needed only for explicit contract operations, never import/discovery.
     from jsonschema import Draft202012Validator
@@ -343,6 +384,8 @@ def validate_document(value, kind=None):
         if declared_type == 'provenance' and item.get('origin') == 'procedural-fixture' and not item['fixture']:
             raise ValueError('CONTINUITY_PROVENANCE: procedural fixtures cannot become original artwork')
         for key, field in item_schema.get('properties', {}).items():
+            if kind.startswith('temporal-') and field.get('type') == 'integer' and key in item:
+                item[key] = int(item[key])
             if (field == STAMP or field == nullable(STAMP)) and item.get(key) is not None:
                 datetime.strptime(item[key], '%Y-%m-%dT%H:%M:%SZ')
     for key in ('components', 'attachments', 'morphs', 'facts', 'instances', 'constraints'):
@@ -533,7 +576,7 @@ def read_reference_bytes(root, item, *, limit=MAX_BYTES):
 
 def generate(destination, check=False):
     destination = Path(destination)
-    for name, schema in schemas().items():
+    for name, schema in {**schemas(), **temporal_schemas()}.items():
         path = destination / ('continuity-' + name + '.schema.json')
         payload = (json.dumps(schema, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode()
         if check:
