@@ -193,6 +193,18 @@ class CinematicsTests(unittest.TestCase):
         current['version']='0.9.0';documents[-1]=('new.json',canonical_bytes(current))
         with self.assertRaises(RigError):Registry(documents)
 
+    def test_history_supports_byte_bounded_large_version_components(self):
+        previous=doc('preset','look',stack=ref(self.stack),previous=None)
+        previous['version']='9'*4301+'.0.0'
+        current=deepcopy(previous);current['version']='1'+'0'*4301+'.0.0';current['previous']=ref(previous,'old.json')
+        documents=[('exposure.json',canonical_bytes(self.effect)),('stack.json',canonical_bytes(self.stack)),
+                   ('old.json',canonical_bytes(previous)),('new.json',canonical_bytes(current))]
+        registry=Registry(documents)
+        self.assertEqual(registry.get(registry.reference('look',current['version'])),current)
+        current['version']='8'*4301+'.0.0';documents[-1]=('new.json',canonical_bytes(current))
+        with self.assertRaises(RigError) as caught:Registry(documents)
+        self.assertEqual(caught.exception.report['code'],'CINEMATICS_HISTORY')
+
     def test_read_cli_and_schema_drift(self):
         result=subprocess.run([sys.executable,str(ROOT/'scripts/cinematics3d_contracts.py'),'--check'],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)

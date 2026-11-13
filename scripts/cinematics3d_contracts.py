@@ -207,6 +207,13 @@ def _acyclic(edges):
     require(visited == len(edges), 'CINEMATICS_CYCLE', 'Cyclic cinematic dependency.')
 
 
+def _version_key(value):
+    # Schema already requires canonical decimal components without leading zeroes.
+    # Compare their lengths and bytes to avoid Python's integer-conversion digit
+    # limit while preserving the schema's admitted (document-byte-bounded) range.
+    return tuple((len(component), component) for component in value.split('.'))
+
+
 def _time(value):
     return value['frame'] * 1000000 + value['ticks']
 
@@ -324,7 +331,7 @@ class Registry:
             if value['kind'] == 'cinematics3d-stack': self.effective_stack(self.reference(value['id'], value['version']))
             if value['kind'] == 'cinematics3d-preset' and value['previous'] is not None:
                 previous = self.get(value['previous'])
-                require(previous['id'] == value['id'] and tuple(map(int, previous['version'].split('.'))) < tuple(map(int, value['version'].split('.'))),
+                require(previous['id'] == value['id'] and _version_key(previous['version']) < _version_key(value['version']),
                         'CINEMATICS_HISTORY', 'Preset history must advance the same immutable identity.')
 
     def reference(self, identifier, version):
