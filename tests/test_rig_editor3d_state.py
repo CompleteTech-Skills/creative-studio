@@ -242,6 +242,17 @@ class EditorNativeStateTests(unittest.TestCase):
                     self.assertEqual(page.evaluate('window.hatchEditor.objects.size'),0)
                     self.assertEqual(page.evaluate('window.hatchEditor.snapshot.revision'),before['revision'])
                     self.assertEqual(repository.snapshot(),before)
+                    self.assertTrue(page.evaluate('''() => {
+                        window.nativeContextControl=window.hatchEditor.renderer.getContext().getExtension('WEBGL_lose_context');
+                        return Boolean(window.nativeContextControl);
+                    }'''))
+                    page.evaluate('window.nativeContextControl.loseContext()')
+                    page.wait_for_function('() => document.querySelector("#diagnostic").textContent.includes("context lost")')
+                    page.wait_for_timeout(100)
+                    page.evaluate('window.nativeContextControl.restoreContext()')
+                    page.wait_for_function('() => document.querySelector("#diagnostic").textContent.includes("Expand prefab") && document.querySelector("#status").textContent.includes("viewport unavailable")')
+                    self.assertFalse(page.locator('#diagnostic').is_hidden())
+                    self.assertIsNot(page.evaluate('window.editorReady'),True)
                 finally:browser.close()
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
 
