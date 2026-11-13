@@ -16,6 +16,35 @@ from rig_models import Geometry,Mesh,RigAsset,SkinWeights
 from rig_skeleton import skeleton_from_heads,validate_skeleton
 
 
+class WingSemanticSideTests(unittest.TestCase):
+    def test_imported_ids_preserve_semantic_wing_side_and_deformation(self):
+        positions=np.array([[0.,0.,0.],[1.,0.,0.],[.5,.2,0.]])
+        for side in ('left','right'):
+            role='wing-root.'+side
+            baseline=None
+            for identifier in (role,'imported-wing','misleading.'+('right' if side=='left' else 'left')):
+                skeleton=skeleton_from_heads([dict(id=identifier,role=role,parent=None,
+                    head=[0,0,0],tail=[1,0,0])])
+                skeleton['bones'][0]['rest']['rotation']=[0,0,0,1]
+                validate_skeleton(skeleton)
+                mesh=Mesh('wing',positions.copy(),np.array([[0,1,2]]))
+                skin=SkinWeights('wing',[identifier],np.zeros((3,1),dtype=np.int64),
+                                 np.ones((3,1)),np.eye(4)[None,:,:])
+                rig=RigAsset({'skeleton':skeleton,'controllers':{'constraints':[]}},Geometry([mesh]),{'wing':skin})
+                outputs=[]
+                for controls in (dict(wing_twist=.7),dict(time=.2,wing_flap=.5,wing_fold=.2,wing_twist=.7)):
+                    pose=appendage_controls(rig,neutral_pose(skeleton),wing_side=side,**controls)
+                    actual=evaluate_deformation(rig,pose)['wing']['positions']
+                    self.assertGreater(np.max(np.abs(actual-positions)),.05)
+                    outputs.append((actual,evaluate_fk(skeleton,pose)[identifier]))
+                if baseline is None:baseline=outputs
+                else:
+                    for expected,actual in zip(baseline,outputs):
+                        with self.subTest(side=side,identifier=identifier):
+                            np.testing.assert_allclose(actual[0],expected[0],atol=1e-12)
+                            np.testing.assert_allclose(actual[1],expected[1],atol=1e-12)
+
+
 class RigSpecializationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
