@@ -109,19 +109,9 @@ def sample_track(track, time, registry):
     a,b=keys[left],keys[right]
     mode=a.get('interpolation','step' if track['value_type']=='boolean' else 'quaternion-slerp' if track['value_type']=='quaternion' else 'linear')
     if mode=='step': return deepcopy(a['value'])
-    # Convert only the bounded segment duration/fraction, not a large absolute
-    # frame number. Native Hermite tangents are value/frame on this boundary.
-    duration=float(positions[right]-positions[left]); offset=float(position-positions[left])
-    wrap=lambda value: value if isinstance(value,list) else [value]
-    native=dict(times=[0,duration],values=[wrap(a['value']),wrap(b['value'])],
-        path='rotation' if track['value_type']=='quaternion' else 'translation',
-        interpolation='CUBICSPLINE' if mode=='hermite' else 'LINEAR')
-    if mode=='hermite':
-        native.update(in_tangents=[[0]*len(wrap(a['value'])),wrap(b['in_tangent'])],
-                      out_tangents=[wrap(a['out_tangent']),[0]*len(wrap(b['value']))])
-    result=evaluate_track(native,offset)
-    require(np.isfinite(result).all(),'ANIMATION_NUMERICAL','Interpolation produced nonfinite output.',stage='animation3d')
-    value=result.tolist() if isinstance(a['value'],list) else float(result[0])
+    from animation3d_curves import evaluate_segment
+    value=evaluate_segment(track,left,position)
+    require(np.isfinite(value).all(),'ANIMATION_NUMERICAL','Interpolation produced nonfinite output.',stage='animation3d')
     # Overshoot may violate scale/morph domain even when endpoints are valid.
     from animation3d_contracts import _check_value
     _check_value(value,track['target']['kind'],track['target']['property'])

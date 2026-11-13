@@ -17,7 +17,7 @@ ROOTS = ('project', 'clip', 'track', 'target', 'layer', 'state-machine', 'retarg
          'constraint', 'interaction', 'scene', 'sequence', 'render', 'registry')
 KINDS = {name: 'animation_' + name.replace('-', '_') + '_3d' for name in ROOTS}
 MAX_STATE_TRANSITION_EXPANSIONS = 65536
-SUPPORTED_INTERPOLATION = {'step', 'linear', 'hermite', 'quaternion-slerp'}
+SUPPORTED_INTERPOLATION = {'step', 'linear', 'ease', 'bezier', 'hermite', 'catmull-rom', 'tcb', 'quaternion-slerp', 'quaternion-squad'}
 TARGET_PROPERTIES = {
     'node': {'translation':'vec3', 'rotation':'quaternion', 'scale':'vec3', 'visibility':'boolean'},
     'bone': {'translation':'vec3', 'rotation':'quaternion', 'scale':'vec3'},
@@ -220,12 +220,36 @@ def validate_track(track, duration_frames=None):
         previous=position; _check_value(key['value'],kind,prop)
         interpolation=key.get('interpolation','step' if track['value_type']=='boolean' else 'quaternion-slerp' if track['value_type']=='quaternion' else 'linear')
         require(interpolation in SUPPORTED_INTERPOLATION,'ANIMATION_INTERPOLATION','Interpolation is not executed by this foundation.',stage='animation3d')
+        require(interpolation!='bezier' or len(track['keys'])>=2,
+                'ANIMATION_INTERPOLATION','Bezier interpolation requires an actual segment.',stage='animation3d')
         require((track['value_type']!='boolean' or interpolation=='step') and
-            (track['value_type']!='quaternion' or interpolation in ('step','quaternion-slerp')) and
-            (interpolation!='quaternion-slerp' or track['value_type']=='quaternion'),
+            (track['value_type']!='quaternion' or interpolation in ('step','quaternion-slerp','quaternion-squad')) and
+            (interpolation not in ('quaternion-slerp','quaternion-squad') or track['value_type']=='quaternion'),
             'ANIMATION_INTERPOLATION','Interpolation/value combination unsupported.',stage='animation3d')
-        curve_fields=set(key)&{'ease_in','ease_out','in_handle','out_handle','tension','continuity','bias'}
-        require(not curve_fields,'ANIMATION_INTERPOLATION','Unused curve controls cannot be silently ignored.',stage='animation3d')
+        previous_mode=track['keys'][index-1].get('interpolation','linear') if index else None
+        controls=set(key)&{'ease_in','ease_out','in_handle','out_handle','tension','continuity','bias'}
+        allowed=set()
+        if index and previous_mode=='ease': allowed.add('ease_in')
+        if index<len(track['keys'])-1 and interpolation=='ease': allowed.add('ease_out')
+        if index and previous_mode=='bezier': allowed.add('in_handle')
+        if index<len(track['keys'])-1 and interpolation=='bezier': allowed.add('out_handle')
+        if interpolation=='tcb' or previous_mode=='tcb': allowed.update(('tension','continuity','bias'))
+        require(controls<=allowed,'ANIMATION_INTERPOLATION','Unused curve controls cannot be silently ignored.',stage='animation3d')
+        for control in ('tension','continuity','bias'):
+            require(-1<=key.get(control,0)<=1,'ANIMATION_CURVE','TCB controls must remain in [-1,1].',stage='animation3d')
+        required_handles=allowed&{'in_handle','out_handle'}
+        require((controls&{'in_handle','out_handle'})==required_handles,'ANIMATION_INTERPOLATION','Bezier segments require both relative handles.',stage='animation3d')
+        for name in required_handles:
+            handle=key[name]; delta=handle['value_delta']; value=key['value']
+            require(type(delta) in (int,float) if type(value) in (int,float) else isinstance(delta,list) and len(delta)==len(value),
+                    'ANIMATION_CURVE','Handle dimensions must match value.',stage='animation3d')
+            require(('weight' in handle)==handle.get('weighted',False),'ANIMATION_CURVE','Weighted handles require an explicit positive weight.',stage='animation3d')
+        if index and previous_mode=='bezier':
+            outgoing=track['keys'][index-1]['out_handle']; incoming=key['in_handle']
+            duration=float(position-frame_position(track['keys'][index-1]['time']))
+            x1=outgoing['time_delta_frames']*outgoing.get('weight',1)
+            x2=duration+incoming['time_delta_frames']*incoming.get('weight',1)
+            require(0<=x1<=x2<=duration,'ANIMATION_CURVE','Bezier time handles must be monotonic within the segment.',stage='animation3d')
         tangents=set(key)&{'in_tangent','out_tangent'}
         expected_tangents=set()
         if index and track['keys'][index-1].get('interpolation')=='hermite': expected_tangents.add('in_tangent')
