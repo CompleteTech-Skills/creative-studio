@@ -62,6 +62,23 @@ def rename_no_replace_at(source_fd, source_name, destination_fd, destination_nam
                               source_dir_fd=source_fd, destination_dir_fd=destination_fd)
 
 
+def windows_private_stage_supported():
+    """Whether the separate native Windows handle-pinning adapter exists."""
+    from atomic_windows import supported
+    return supported()
+
+
+def windows_private_stage(parent, **policies):
+    """Context yielding ``stage.path`` and exact ``stage.publish_to(path)``.
+
+    Windows writers and verifiers use the ordinary path only while the context
+    is active, finish all I/O, then publish the held payload through its method.
+    This additive platform adapter does not alter the POSIX staging defaults.
+    """
+    from atomic_windows import private_stage
+    return private_stage(parent, **policies)
+
+
 # New staging capabilities intentionally have a narrower platform contract than
 # the legacy path-based exclusive rename above. Never silently fall back to an
 # unpinned temporary pathname on an unsupported host.
