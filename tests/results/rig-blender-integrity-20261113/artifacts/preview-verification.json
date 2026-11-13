@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "blender_version": "4.5.3 LTS",
+  "engine": "Cycles CPU",
+  "samples": 16,
+  "rig_sha256": "27478845bc5cf47eda043c1c8852a74783647cb158f5ccc38266c9fd62ebd9c5",
+  "source_sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e",
+  "blend_sha256": "15bb38f7f9152f16a6e25dba8487cd7e55d704fbe5222b9a3a01048baddf7e50",
+  "fixture": true,
+  "clip": "bend",
+  "camera": "three-quarter",
+  "width": 96,
+  "height": 96,
+  "transparent": true,
+  "review_status": "pending",
+  "frames": [
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/rig-program/retained-export/preview/frame-0000.png",
+      "time": 0.0,
+      "sha256": "32e95c066592e60b2baa9f90e0a6fdba55058a87efdde6b66f7d8cb332c28a60"
+    },
+    {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/rig-program/retained-export/preview/frame-0001.png",
+      "time": 0.5,
+      "sha256": "40359abeccb7bcab76329a555f3e11d8c5946bdbb5d3aad21ee54ca32f4ec124"
+    }
+  ]
+}

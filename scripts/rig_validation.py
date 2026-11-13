@@ -53,6 +53,8 @@ def validate_rig(rig, *, require_animation=False) -> dict:
         validate_contract(rig.manifest, 'Rig');validate_geometry(rig.geometry, rig.manifest['limits'])
         skeleton_report = validate_skeleton(rig.skeleton, rig.manifest['limits'])
         validate_controllers(rig.skeleton, rig.manifest['controllers'])
+        from rig_facial import validate_eyelid_bindings
+        validate_eyelid_bindings(rig)
         _check(report, 'structure', True, 'Finite acyclic skeleton, geometry and controller graph.', 0)
         report['metrics'].update(hierarchy_cycles=0, invalid_joint_references=0, bones=skeleton_report['bones'],
                                   vertices=rig.geometry.vertex_count, triangles=rig.geometry.triangle_count)

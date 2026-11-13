@@ -5,10 +5,12 @@ import unittest
 import numpy as np
 from rig_test_helpers import fixture
 from rig_animation import (evaluate_track,evaluate_animation,validate_animation,blend_poses,crossfade,bake_clip,reduce_keys,clip_from_poses)
-from rig_skeleton import neutral_pose,rotate_bone
+from rig_skeleton import neutral_pose,rotate_bone,evaluate_fk
+from rig_math import decompose
 from rig_math import axis_angle,qangle
 from rig_facial import apply_expressions
-from rig_retarget import build_retarget_profile,retarget_animation
+from rig_retarget import build_retarget_profile,retarget_animation,retarget_pose
+from rig_skinning import evaluate_deformation
 from rig_errors import RigError
 
 
@@ -54,3 +56,56 @@ class RigAnimationTests(unittest.TestCase):
         with self.assertRaises(RigError):build_retarget_profile(self.rig,target)
         profile['source_rig']='wrong'
         with self.assertRaises(RigError):retarget_animation(self.rig,target,'bend',profile=profile)
+
+    def test_identity_retarget_preserves_authored_contact_orientation(self):
+        source=self.rig;target=fixture(self.temp.name,name='contact-target')
+        desired=axis_angle([0,1,0],.6).tolist()
+        contact=dict(schema_version=1,id='hold',chain='arm',start=0.,end=1.,
+                     target=[0.,2.,0.],orientation=desired,kind='hand')
+        clip=deepcopy(source.clips['neutral']);clip['contacts']=[contact]
+        result=retarget_animation(source,target,clip)['clip']
+        self.assertLess(qangle(result['contacts'][0]['orientation'],desired),1e-8)
+        before=evaluate_animation(source,clip,.5)['pose']
+        after=evaluate_animation(target,result,.5)['pose']
+        a=decompose(evaluate_fk(source.skeleton,before)['b2'])['rotation']
+        b=decompose(evaluate_fk(target.skeleton,after)['b2'])['rotation']
+        self.assertLess(qangle(a,b),1e-8)
+        source_mesh=evaluate_deformation(source,before)['strip']['positions']
+        target_mesh=evaluate_deformation(target,after)['strip']['positions']
+        np.testing.assert_allclose(target_mesh,source_mesh,atol=1e-8)
+        del clip['contacts'][0]['orientation']
+        positional=retarget_animation(source,target,clip)['clip']
+        self.assertNotIn('orientation',positional['contacts'][0])
+
+    def test_contact_reports_unsatisfied_orientation_after_limits(self):
+        rig=self.rig
+        rig.manifest['controllers']['constraints']=[dict(schema_version=1,id='hand-limit',
+            bone='b2',type='hinge',axis=[1,0,0],minimum=0.,maximum=.2)]
+        clip=deepcopy(rig.clips['neutral'])
+        clip['contacts']=[dict(schema_version=1,id='hold',chain='arm',start=0.,end=1.,
+            target=[0.,2.,0.],orientation=axis_angle([1,0,0],1.2).tolist(),kind='hand')]
+        report=evaluate_animation(rig,clip,.5)['contacts'][0]
+        self.assertLess(report['residual_m'],1e-8)
+        self.assertAlmostEqual(report['orientation_residual_rad'],1.)
+        self.assertFalse(report['converged'])
+
+    def test_retarget_keeps_independent_same_named_morphs_on_their_meshes(self):
+        source=self.rig;target=fixture(self.temp.name,name='morph-target')
+        for rig in (source,target):
+            other=deepcopy(rig.geometry.meshes[0]);other.id='strip-right'
+            rig.geometry.meshes.append(other)
+        pose=neutral_pose(source.skeleton)
+        pose['morphs']={'strip':{'blink':.2},'strip-right':{'blink':.8}}
+        profile=build_retarget_profile(source,target)
+        result=retarget_pose(source,target,pose,profile)
+        self.assertEqual(result['morphs'],pose['morphs'])
+        profile['morph_mapping']={'strip::blink':'strip-right::blink','strip-right::blink':'strip::blink'}
+        swapped=retarget_pose(source,target,pose,profile)
+        self.assertEqual(swapped['morphs'],{'strip':{'blink':.8},'strip-right':{'blink':.2}})
+        for mapping in ({'blink':'blink'},
+                        {'strip::blink':'strip::blink','strip-right::blink':'strip::blink'},
+                        {'strip::blink':'missing::blink'}):
+            with self.subTest(mapping=mapping):
+                profile['morph_mapping']=mapping
+                with self.assertRaises(RigError) as caught:retarget_pose(source,target,pose,profile)
+                self.assertEqual(caught.exception.report['code'],'RIG_RETARGET_MORPH')

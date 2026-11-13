@@ -116,3 +116,15 @@ files in a verified temporary snapshot, and never starts generation or a provide
 claims and review references are not authenticated approval. Preserve Y-up/meters/
 XYZW conventions and all existing 2D semantics. Do not call this bounded foundation
 a complete Model3D generator, asset library, editor, scheduler or renderer.
+
+## Bounded Model3D mesh workflows
+
+For actual primitives and local geometry import/export, read
+[mesh foundation](references/model3d/mesh-foundation.md) and use
+`python scripts/model3d.py mesh ...`. Keep native import snapshots alive until
+originals are persisted. The standalone import CLI preserves captured original
+bytes and receipts beside the derived mesh; its geometry-only exporter rejects
+skins/animation rather than dropping them. Explicit basis/unit/pivot transforms
+produce copies and never convert 2D coordinates implicitly. Use native owners
+for source hierarchies, skinning, animation and camera semantics. This bounded
+foundation does not implement reconstruction, model providers or artistic review.

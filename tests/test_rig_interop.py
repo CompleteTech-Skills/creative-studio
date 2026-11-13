@@ -16,8 +16,95 @@ from rig_interop import compare_imported,validate_gltf
 from rig_models import TextureImage
 
 
+def authoring_control_fixture(rig):
+    from rig_skeleton import skeleton_from_heads
+    from rig_skinning import generate_skin_weights
+    definitions=[{key:deepcopy(bone[key]) for key in ('id','role','parent','head','tail','deform')}
+                 for bone in rig.skeleton['bones']]
+    definitions[0]['deform']=False
+    definitions.append(dict(id='control.tip',role='authoring-control',parent='b2',
+                            head=[0,3,0],tail=[0,3.25,0],deform=False))
+    rig.manifest['skeleton']=skeleton_from_heads(definitions,source='procedural-fixture',
+        reference='Independent unweighted root and leaf control fixture',confidence=1.)
+    rig.weights=generate_skin_weights(rig.geometry,rig.skeleton)
+    return rig
+
+
 class RigInterchangeTests(unittest.TestCase):
     def setUp(self):self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.rig=fixture(self.temp.name)
+    def test_skin_joint_suffix_preserves_unweighted_authoring_bones_and_original_indices(self):
+        rig=authoring_control_fixture(self.rig)
+        palettes={name:(list(skin.joints),skin.inverse_bind.copy(),skin.indices.copy(),skin.weights.copy())
+                  for name,skin in rig.weights.items()}
+        for extension in ('glb','gltf'):
+            output=Path(self.temp.name)/('authoring.'+extension);export_gltf(rig,output)
+            document=read_gltf(output);nodes=document.json['nodes']
+            for exported in document.json['skins']:
+                name=exported['name'].removesuffix('-skin');original,inverse,indices,weights=palettes[name]
+                joints=[nodes[index]['name'] for index in exported['joints']]
+                self.assertEqual(joints[:len(original)],original)
+                self.assertEqual(joints[len(original):],['b0','control.tip'])
+                actual=document.accessor(exported['inverseBindMatrices']).reshape(-1,4,4).transpose(0,2,1)
+                np.testing.assert_allclose(actual[:len(original)],inverse,atol=1e-7)
+                np.testing.assert_allclose(actual[len(original)],np.eye(4),atol=1e-7)
+                expected=np.eye(4);expected[1,3]=-3.
+                np.testing.assert_allclose(actual[len(original)+1],expected,atol=1e-7)
+                primitive=document.json['meshes'][next(i for i,m in enumerate(document.json['meshes']) if m['extras']['hatchMeshId']==name)]['primitives'][0]
+                exported_indices=document.accessor(primitive['attributes']['JOINTS_0'])
+                exported_weights=document.accessor(primitive['attributes']['WEIGHTS_0'])
+                np.testing.assert_array_equal(exported_indices[weights>0],indices[weights>0])
+                np.testing.assert_allclose(exported_weights,weights,atol=1e-7)
+            imported=load_character_model(output)
+            by_id={bone['id']:bone for bone in imported.skeleton['bones']}
+            self.assertFalse(by_id['b0']['deform']);self.assertFalse(by_id['control.tip']['deform'])
+            self.assertEqual(by_id['control.tip']['role'],'authoring-control')
+
+    def test_non_deform_skin_weights_accept_exact_zero_and_reject_any_positive_value(self):
+        from rig_skinning import validate_skin
+        rig=authoring_control_fixture(self.rig);mesh=rig.geometry.meshes[0]
+        skin=deepcopy(rig.weights[mesh.id]);skin.joints.append('b0')
+        skin.inverse_bind=np.concatenate((skin.inverse_bind,np.eye(4)[None,:,:]))
+        skin.indices[0,-1]=len(skin.joints)-1
+        self.assertEqual(skin.weights[0,-1],0.)
+        validate_skin(skin,mesh,rig.skeleton)
+        original=skin.weights.copy();primary=int(np.argmax(original[0]))
+        for amount in (float.fromhex('0x0.0000000000001p-1022'),1/65535,.25):
+            with self.subTest(amount=amount):
+                skin.weights=original.copy();skin.weights[0,primary]-=amount;skin.weights[0,-1]=amount
+                with self.assertRaises(RigError) as caught:validate_skin(skin,mesh,rig.skeleton)
+                self.assertEqual(caught.exception.report['code'],'RIG_SKIN_DEFORM_FLAG')
+                self.assertEqual(caught.exception.report['observed'],['b0'])
+
+    def test_native_deform_metadata_is_strict_and_generic_gltf_keeps_inference(self):
+        import base64
+        rig=authoring_control_fixture(self.rig);output=Path(self.temp.name)/'native-controls.gltf'
+        export_gltf(rig,output);original=json.loads(output.read_text())
+        ordinary=deepcopy(original)
+        for node in ordinary['nodes']:node.get('extras',{}).pop('hatchBone',None)
+        generic=Path(self.temp.name)/'ordinary.gltf';generic.write_text(json.dumps(ordinary))
+        self.assertTrue(all(bone['deform'] for bone in load_character_model(generic).skeleton['bones']))
+        malformed=deepcopy(original);malformed['nodes'][0]['extras']['hatchBone']['deform']='false'
+        invalid=Path(self.temp.name)/'malformed-native.gltf';invalid.write_text(json.dumps(malformed))
+        with self.assertRaises(RigError):load_character_model(invalid)
+        # This remains valid standard glTF: normalized uint8 influences sum to1.
+        # Its explicit native flag contradicts the positive effective influence.
+        contradictory=deepcopy(original);skin=rig.weights[rig.geometry.meshes[0].id]
+        weighted=skin.joints[int(skin.indices[0,0])]
+        next(node for node in contradictory['nodes'] if node.get('name')==weighted)['extras']['hatchBone']['deform']=False
+        primitive=contradictory['meshes'][0]['primitives'][0]
+        accessor=contradictory['accessors'][primitive['attributes']['WEIGHTS_0']]
+        view=contradictory['bufferViews'][accessor['bufferView']]
+        data=bytearray(base64.b64decode(contradictory['buffers'][0]['uri'].split(',',1)[1]))
+        start=view.get('byteOffset',0)+accessor.get('byteOffset',0)
+        integer=np.zeros((accessor['count'],4),dtype=np.uint8);integer[:,0]=255
+        data[start:start+integer.nbytes]=integer.tobytes()
+        accessor['componentType']=5121;accessor['normalized']=True
+        contradictory['buffers'][0]['uri']='data:application/octet-stream;base64,'+base64.b64encode(data).decode()
+        inconsistent=Path(self.temp.name)/'contradictory-native.gltf';inconsistent.write_text(json.dumps(contradictory))
+        with self.assertRaises(RigError) as caught:load_character_model(inconsistent)
+        self.assertEqual(caught.exception.report['code'],'RIG_SKIN_DEFORM_FLAG')
+        self.assertIn(weighted,caught.exception.report['observed'])
+
     def test_glb_and_gltf_preserve_actual_skin_morph_material_animation(self):
         for extension in ('glb','gltf'):
             output=Path(self.temp.name)/('out.'+extension);export_gltf(self.rig,output)
@@ -74,11 +161,109 @@ class RigInterchangeTests(unittest.TestCase):
 class RigExternalIntegrationTests(unittest.TestCase):
     def setUp(self):self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.rig=fixture(self.temp.name)
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_preserves_unweighted_root_and_leaf_authoring_controls(self):
+        from rig_blender import export_blender
+        rig=authoring_control_fixture(self.rig)
+        for animated in (False,True):
+            with self.subTest(animated=animated):
+                working=deepcopy(rig)
+                if not animated:working.clips={}
+                report=export_blender(working,Path(self.temp.name)/('authoring-%s.blend'%animated))
+                self.assertTrue(report['ok']);self.assertTrue(report['reopened'])
+                self.assertEqual(set(report['bone_metadata']),{bone['id'] for bone in rig.skeleton['bones']})
+                self.assertEqual(report['bone_metadata']['control.tip'],dict(native_id='control.tip',
+                    role='authoring-control',deform=False,parent='b2'))
+                self.assertFalse(report['bone_metadata']['b0']['deform'])
+                self.assertGreaterEqual(report['constraints'],len(rig.manifest['controllers']['ik']))
+                for sample in report['samples']:
+                    self.assertEqual(set(sample['bones']),set(report['bone_metadata']))
+                    if not animated:np.testing.assert_allclose(sample['bones']['control.tip'],[0,3,0],atol=1e-5)
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
     def test_blender_reopen_has_actual_armature_and_deformation(self):
         from rig_blender import export_blender
         report=export_blender(self.rig,Path(self.temp.name)/'editable.blend');self.assertTrue(report['ok']);self.assertTrue(report['reopened'])
         self.assertLess(report['max_vertex_error_m'],.01);self.assertGreater(report['compared_vertices'],0)
         self.assertEqual(report['schema_version'],1);self.assertEqual(report['format'],'blend')
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_export_and_preview_accept_canonical_parent_alias(self):
+        from rig_blender import export_blender,render_blender_preview
+        root=Path(self.temp.name);actual=root/'actual';actual.mkdir();alias=root/'alias'
+        try:alias.symlink_to(actual,target_is_directory=True)
+        except OSError as exc:
+            if getattr(exc,'winerror',None)==1314:self.skipTest('Symlink privilege unavailable.')
+            raise
+        receipt=export_blender(self.rig,alias/'editable.blend')
+        self.assertTrue(receipt['ok']);self.assertEqual(Path(receipt['path']),actual.resolve()/'editable.blend')
+        report=render_blender_preview(self.rig,alias/'preview',clip='bend',times=[0.],
+            blend_path=receipt['path'],blend_sha256=receipt['sha256'],width=96,height=96)
+        self.assertEqual(len(report['frames']),1)
+        self.assertTrue(Path(report['frames'][0]['path']).is_file())
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_socket_preserves_full_native_transform_during_animation(self):
+        from rig_blender import export_blender
+        from rig_math import axis_angle
+        from rig_attachments import socket_world
+        from rig_animation import evaluate_animation
+        self.rig.manifest['attachments'] = [dict(schema_version=1, id='grip.right', bone='b1',
+            transform=dict(translation=[.13,.21,.34], rotation=axis_angle([1,2,3],.7).tolist(),
+                           scale=[.7,1.2,1.6]), role='grip', owner=self.rig.manifest['character']['id'])]
+        report=export_blender(self.rig,Path(self.temp.name)/'socket.blend')
+        self.assertTrue(report['ok']);self.assertLess(report['max_socket_transform_error'],.005)
+        for sample in report['samples']:
+            pose=evaluate_animation(self.rig,self.rig.clips[sample['clip']],sample['time'])['pose']
+            np.testing.assert_allclose(sample['sockets']['grip.right'],
+                socket_world(self.rig,pose,'grip.right'),atol=.005)
+        self.assertGreater(np.max(np.abs(np.asarray(report['samples'][0]['sockets']['grip.right']) -
+                                         np.asarray(report['samples'][1]['sockets']['grip.right']))), .01)
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_unanimated_rig_reopens_and_samples_bind_pose(self):
+        from rig_blender import export_blender
+        self.rig.clips={}
+        report=export_blender(self.rig,Path(self.temp.name)/'static.blend')
+        self.assertTrue(report['ok']);self.assertTrue(report['reopened'])
+        self.assertEqual(len(report['samples']),1)
+        self.assertEqual(report['samples'][0]['clip'],'rest')
+        self.assertEqual(report['samples'][0]['matched'],[])
+        self.assertLess(report['max_vertex_error_m'],1e-5)
+        self.assertGreater(report['compared_vertices'],0)
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_preserves_nonzero_defaults_without_morph_channels(self):
+        from rig_blender import export_blender
+        from rig_skinning import evaluate_deformation
+        from rig_skeleton import neutral_pose
+        # No animation and a skeletal-only action both must preserve the source
+        # morph. The known 0.2m delta makes a silent zero reset observable.
+        self.rig.geometry.meshes[0].morph_defaults['blink']=1.
+        for clip in self.rig.clips.values():
+            clip['tracks']=[track for track in clip['tracks'] if track['path']!='weights']
+        skeletal_clips=deepcopy(self.rig.clips)
+        for animated in (False,True):
+            with self.subTest(animated=animated):
+                self.rig.clips=deepcopy(skeletal_clips) if animated else {}
+                expected=evaluate_deformation(self.rig,neutral_pose(self.rig.skeleton))
+                report=export_blender(self.rig,Path(self.temp.name)/('defaults-%s.blend'%animated))
+                self.assertTrue(report['ok']);self.assertTrue(report['reopened'])
+                # Skeletal animation has the adapter's existing resampling
+                # tolerance; the static default has a direct tight comparison.
+                self.assertLess(report['max_vertex_error_m'],.01 if animated else 1e-5)
+                imported=load_character_model(report['roundtrip_path'])
+                mesh=imported.geometry.meshes[0]
+                self.assertAlmostEqual(mesh.morph_defaults['blink'],1.)
+                if not animated:
+                    sample=report['samples'][0]['meshes'][mesh.id]
+                    np.testing.assert_allclose(sample,expected[mesh.id]['positions'],atol=1e-5)
+        # Creation-only exports must also save the source default, even when no
+        # independent reopen is requested by the caller.
+        self.rig.clips={}
+        created=export_blender(self.rig,Path(self.temp.name)/'defaults-create-only.blend',verify=False)
+        self.assertTrue(created['ok']);self.assertFalse(created['reopened'])
+        self.assertLess(np.max(np.abs(np.asarray(created['samples'][0]['meshes'][self.rig.geometry.meshes[0].id])-
+                                     expected[self.rig.geometry.meshes[0].id]['positions'])),1e-5)
+
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
     def test_blender_creation_receipt_does_not_claim_reopen(self):
         from rig_blender import export_blender
@@ -86,6 +271,18 @@ class RigExternalIntegrationTests(unittest.TestCase):
         self.assertTrue(report['ok']);self.assertFalse(report['reopened'])
         self.assertEqual(report['schema_version'],1);self.assertEqual(report['format'],'blend')
         self.assertNotIn('roundtrip_sha256',report);self.assertNotIn('compared_vertices',report)
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_preview_rejects_a_different_embedded_rig_revision(self):
+        from rig_blender import export_blender,render_blender_preview
+        blend=Path(self.temp.name)/'source.blend'
+        receipt=export_blender(self.rig,blend,verify=False)
+        self.rig.manifest['source']['attribution']+=' changed revision'
+        destination=Path(self.temp.name)/'wrong-rig-preview'
+        with self.assertRaisesRegex(RigError,'Blender failed'):
+            render_blender_preview(self.rig,destination,clip='bend',blend_path=blend,blend_sha256=receipt['sha256'],width=96,height=96)
+        self.assertFalse(destination.exists())
+        self.assertTrue(blend.is_file())
+
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for actual Blender CPU rendering.')
     def test_blender_cpu_preview_renders_distinct_transparent_poses(self):
         from rig_blender import render_blender_preview
@@ -101,3 +298,107 @@ class RigExternalIntegrationTests(unittest.TestCase):
         from rig_browser import verify_browser
         path=Path(self.temp.name)/'viewer';create_review_ui(self.rig,path);report=verify_browser(self.rig,path)
         self.assertTrue(report['ok']);self.assertTrue(report['ui_playback']);self.assertTrue(report['ui_weights'])
+
+
+class RigBlenderPublicationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name);self.rig=fixture(self.root)
+
+    def test_existing_export_and_sidecar_are_preserved_before_worker(self):
+        from unittest.mock import patch
+        from rig_blender import export_blender
+        target=self.root/'existing.blend';target.write_bytes(b'user blend')
+        with patch('rig_blender._run') as worker:
+            with self.assertRaises(RigError):export_blender(self.rig,target)
+            worker.assert_not_called()
+        self.assertEqual(target.read_bytes(),b'user blend')
+        target.unlink();sidecar=target.with_suffix('.roundtrip.glb');sidecar.write_bytes(b'user glb')
+        with patch('rig_blender._run') as worker:
+            with self.assertRaises(RigError):export_blender(self.rig,target)
+            worker.assert_not_called()
+        self.assertEqual(sidecar.read_bytes(),b'user glb');self.assertFalse(target.exists())
+
+    def test_racing_main_preserves_writer_and_retains_verified_sidecar(self):
+        from rig_blender import _publish_outputs
+        a=self.root/'stage-glb';b=self.root/'stage-blend'
+        a.write_bytes(b'verified glb');b.write_bytes(b'verified blend')
+        sidecar=self.root/'out.roundtrip.glb';target=self.root/'out.blend'
+        target.mkdir()
+        with self.assertRaises(RigError):_publish_outputs([(a,sidecar),(b,target)])
+        self.assertTrue(target.is_dir());self.assertEqual(list(target.iterdir()),[])
+        self.assertEqual(sidecar.read_bytes(),b'verified glb');self.assertEqual(b.read_bytes(),b'verified blend')
+
+    def test_worker_failure_and_invalid_clip_do_not_create_preview_destination(self):
+        from unittest.mock import patch
+        from rig_blender import render_blender_preview
+        target=self.root/'preview'
+        with self.assertRaises(RigError):render_blender_preview(self.rig,target,clip='missing')
+        self.assertFalse(target.exists())
+        with patch('rig_blender.export_blender',side_effect=RigError('TEST_FAILURE','Injected worker failure.')):
+            with self.assertRaises(RigError):render_blender_preview(self.rig,target,clip='bend')
+        self.assertFalse(target.exists());self.assertEqual(list(self.root.glob('.hatch-blender-render-*')),[])
+
+    def test_output_parent_alias_is_canonicalized_and_leaf_links_rejected(self):
+        from rig_blender import _new_output
+        alias=self.root/'output-parent-alias'
+        actual=self.root/'actual-output-parent';actual.mkdir()
+        try:alias.symlink_to(actual,target_is_directory=True)
+        except OSError as exc:
+            if getattr(exc,'winerror',None)==1314:self.skipTest('Symlink privilege unavailable.')
+            raise
+        target=_new_output(alias/'new-folder'/'new.blend','RIG_EXPORT_EXISTS')
+        self.assertEqual(target,actual.resolve()/'new-folder'/'new.blend')
+        self.assertFalse(target.exists())
+        outside=self.root/'outside.blend';outside.write_bytes(b'preserved')
+        leaf=actual/'leaf.blend';leaf.symlink_to(outside)
+        with self.assertRaises(RigError) as caught:
+            _new_output(alias/'leaf.blend','RIG_EXPORT_EXISTS')
+        self.assertEqual(caught.exception.report['code'],'RIG_SYMLINK')
+        self.assertEqual(outside.read_bytes(),b'preserved')
+        dangling=actual/'dangling.blend';dangling.symlink_to(actual/'missing.blend')
+        with self.assertRaises(RigError):
+            _new_output(alias/'dangling.blend','RIG_EXPORT_EXISTS')
+        self.assertTrue(dangling.is_symlink())
+
+    def test_symlink_output_does_not_touch_referent(self):
+        from rig_blender import export_blender
+        real=self.root/'real.blend';real.write_bytes(b'preserved')
+        link=self.root/'link.blend'
+        try:link.symlink_to(real)
+        except OSError as exc:
+            if getattr(exc,'winerror',None)==1314:self.skipTest('Symlink privilege unavailable.')
+            raise
+        with self.assertRaises(RigError):export_blender(self.rig,link)
+        self.assertEqual(real.read_bytes(),b'preserved');self.assertTrue(link.is_symlink())
+
+    def test_supplied_blend_is_frozen_before_worker_and_receipt_hashing(self):
+        from unittest.mock import patch
+        from rig_blender import render_blender_preview
+        original=self.root/'supplied.blend';original.write_bytes(b'original saved source')
+        destination=self.root/'frozen-preview'
+        def inspect(job,**kwargs):
+            self.assertNotEqual(Path(job['input']),original)
+            self.assertEqual(Path(job['input']).read_bytes(),b'original saved source')
+            original.write_bytes(b'changed live source')
+            self.assertEqual(Path(job['input']).read_bytes(),b'original saved source')
+            raise RigError('TEST_DONE','Snapshot inspection complete.')
+        with patch('rig_blender._run',side_effect=inspect):
+            with self.assertRaisesRegex(RigError,'Snapshot inspection complete'):
+                render_blender_preview(self.rig,destination,clip='bend',blend_path=original,blend_sha256=sha256(original))
+        self.assertFalse(destination.exists())
+        self.assertEqual(original.read_bytes(),b'changed live source')
+
+    def test_supplied_blend_requires_unchanged_exact_reference(self):
+        from unittest.mock import patch
+        from rig_blender import render_blender_preview
+        source=self.root/'changed.blend';source.write_bytes(b'original')
+        expected=sha256(source);source.write_bytes(b'modified')
+        destination=self.root/'untrusted-preview'
+        with patch('rig_blender._run') as worker:
+            with self.assertRaises(RigError):
+                render_blender_preview(self.rig,destination,clip='bend',blend_path=source)
+            with self.assertRaises(RigError):
+                render_blender_preview(self.rig,destination,clip='bend',blend_path=source,blend_sha256=expected)
+            worker.assert_not_called()
+        self.assertFalse(destination.exists());self.assertEqual(source.read_bytes(),b'modified')
