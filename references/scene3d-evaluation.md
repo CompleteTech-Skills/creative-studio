@@ -49,3 +49,28 @@ exercise real GLB export/import and native deformation, rational timing, clips
 at different frame rates, active constraint intervals, independent shared assets,
 exact source rejection, budgets, material inheritance, and both camera models.
 The interoperability release gate and Scene3D hosted workflow include the suite.
+
+## Explicit lighting and path bindings
+
+A light node may carry `light_binding` with `schema_version: 1`, an exact
+canonical `light3d` reference under `light`, `intensity_scale` in [0, 1000000],
+and a linear RGB `color_multiplier` in [0,1]. This multiplies the physical source
+light; it never interprets the legacy unitless `light.intensity` as physical power.
+`light_intensity_scale` and `light_color_multiplier` tracks animate those explicit
+multipliers. Optional shot `light_overrides` replace a target's complete binding
+as the final shot override. The world binding instead carries `light`,
+`intensity_scale`, and `exposure_stops` in [-32,32], and requires an environment
+light source. A simultaneous legacy environment authority is rejected.
+`light_instances(evaluation, registry)` resolves exact source references and
+returns hashed instance intent. The canonical LookDev lighting adapter must build
+physical light plans; legacy renderers must reject these bindings until connected.
+
+Optional shot `path_bindings` carry schema_version, id, target, points,
+start_frame, end_frame, start_fraction, end_fraction, space='world', and
+orientation='preserve'. The interval is half open and bounded by shot duration.
+Exact rational progress selects arc-length interpolation through the spatial
+owner. Paths override translation channels before ordinary scene constraints;
+parent path bindings precede their children. Parent transforms and node pivots
+are accounted for. Rotation remains authored; aim constraints can orient cameras.
+Zero-length paths, missing targets, duplicate targets, unsupported spaces and
+orientation modes fail explicitly. All path points share a 250000-point budget.

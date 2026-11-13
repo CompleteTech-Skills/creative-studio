@@ -245,5 +245,45 @@ class SceneEvaluationTests(unittest.TestCase):
         self.assertNotEqual(first['nodes']['mesh']['world_matrix'],second['nodes']['mesh']['world_matrix'])
         self.assertEqual(self.bundle,before)
 
+    def test_persisted_path_is_exact_world_motion_after_parent_and_pivot(self):
+        self.scene['nodes'][0]['transform']['translation']=[3,4,5]
+        self.scene['nodes'][0]['transform']['rotation']=axis_angle([0,1,0],.3).tolist()
+        mesh=self.scene['nodes'][1]
+        mesh['transform']['pivot']=[.5,0,0]
+        mesh['transform']['rotation']=axis_angle([0,1,0],.5).tolist()
+        self.shot['path_bindings']=[dict(schema_version=1,id='travel',target='mesh',
+            points=[[0,1,0],[0,1,4],[4,1,4]],start_frame=0,end_frame=20,
+            start_fraction=0,end_fraction=1,space='world',orientation='preserve')]
+        before=deepcopy(self.bundle)
+        out=self.evaluate(10)
+        np.testing.assert_allclose(np.asarray(out['nodes']['mesh']['world_matrix'])[:3,3],[0,1,4],atol=1e-12)
+        np.testing.assert_allclose(np.asarray(self.evaluate(Fraction(5,2))['nodes']['mesh']['world_matrix'])[:3,3],
+                                   [0,1,1],atol=1e-12)
+        self.assertEqual(self.bundle,before)
+        self.assertNotEqual(self.evaluate(20)['nodes']['mesh']['world_matrix'],out['nodes']['mesh']['world_matrix'])
+        self.shot['path_bindings'][0]['points']=[[0,0,0],[0,0,0]]
+        with self.assertRaises(RigError):self.evaluate()
+
+    def test_canonical_light_binding_uses_explicit_units_and_animated_multiplier(self):
+        from lookdev_contracts import Registry,canonical_bytes
+        from test_lookdev_contracts import light
+        from scene3d_evaluate import light_instances
+        source=light();registry=Registry([('key.json',canonical_bytes(source))])
+        binding=dict(schema_version=1,light=registry.reference(source['id'],source['version']),
+                     intensity_scale=1,color_multiplier=[1,1,1])
+        lamp=node('key','light','root');lamp['light']=dict(type='point',color=[1,1,1],intensity=999)
+        lamp['light_binding']=binding
+        self.scene['nodes'].append(lamp);self.scene['lights'].append('key')
+        self.shot['tracks']=[dict(target='key',property='light_intensity_scale',interpolation='linear',
+            keys=[dict(frame=0,value=1),dict(frame=24,value=3)])]
+        out=self.evaluate(12);before=deepcopy(out)
+        resolved=light_instances(out,registry)
+        self.assertEqual(resolved['lights']['key']['intensity_scale'],2)
+        self.assertEqual(registry.get(binding['light'])['intensity'],source['intensity'])
+        self.assertEqual(out['nodes']['key']['light']['intensity'],999)
+        self.assertEqual(out,before)
+        out['nodes']['key']['light_binding']['light']['sha256']='0'*64
+        with self.assertRaises(RigError):light_instances(out,registry)
+
 
 if __name__=='__main__':unittest.main()

@@ -127,6 +127,11 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
                 elif prop == 'light_intensity':
                     require(node['type'] == 'light', 'Light channel targets a nonlight.')
                     node['light']['intensity'] = result
+                elif prop in ('light_intensity_scale','light_color_multiplier'):
+                    require(node['type'] == 'light' and 'light_binding' in node,
+                            'Canonical light channel requires a bound light node.')
+                    node['light_binding'][{'light_intensity_scale':'intensity_scale',
+                                           'light_color_multiplier':'color_multiplier'}[prop]] = result
                 elif prop == 'material':
                     matches = [ref for ref in value['dependencies'] if
                                ref['kind'] == 'material' and ref['id']+'@'+ref['version'] == result]
@@ -179,6 +184,10 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
         target['material_overrides'] = [item for item in target['material_overrides']
                                         if item['slot'] != override['slot']]
         target['material_overrides'].append({'slot': override['slot'], 'material': deepcopy(override['material'])})
+    for override in authored_shot.get('light_overrides', []):
+        require(override['target'] in nodes and nodes[override['target']]['type'] == 'light',
+                'Shot canonical light override requires a light node.')
+        nodes[override['target']]['light_binding'] = deepcopy(override['binding'])
     camera = nodes[authored_shot['camera']]
     for name, value in authored_shot['camera_overrides'].items():
         camera[name] = deepcopy(value)
@@ -186,6 +195,34 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
     # constraint evaluation. Retaining them here would imply a second evaluator.
     for node in working['nodes']:
         node['animation_bindings'] = []
+    paths = [binding for binding in authored_shot.get('path_bindings', [])
+             if binding['start_frame'] <= frame < binding['end_frame']]
+    def depth(identifier):
+        require(identifier in nodes, 'Path binding target is absent from the expanded scene.')
+        count = 0
+        while nodes[identifier]['parent'] is not None:
+            count += 1
+            identifier = nodes[identifier]['parent']
+        return count
+    if paths:
+        import numpy as np
+        from scene3d_constraints import sample_path
+        from scene3d_math import local_matrix
+        for binding in sorted(paths,key=lambda b:depth(b['target'])):
+            samples += 1
+            require(samples <= max_track_samples,'Evaluated-track budget exceeded.','SCENE3D_EVALUATION_LIMIT')
+            progress = (frame-binding['start_frame'])/(binding['end_frame']-binding['start_frame'])
+            fraction = (Fraction(str(binding['start_fraction'])) + progress *
+                        (Fraction(str(binding['end_fraction']))-Fraction(str(binding['start_fraction']))))
+            desired = sample_path(binding['points'],float(fraction))
+            node = nodes[binding['target']]
+            parent = node['parent']
+            world = (np.eye(4) if parent is None else
+                     np.asarray(SceneGraph(working).evaluate_base(parent)['world_matrix']))
+            local_target = (np.linalg.inv(world)@np.r_[desired,1])[:3]
+            transform = node['transform']
+            pivot_offset = local_matrix(transform)[:3,3]-np.asarray(transform['translation'])
+            transform['translation'] = (local_target-pivot_offset).tolist()
     validate_document(working, 'scene')
     asset_bounds = {d['id']+'@'+d['version']: d['bounds'] for d in documents.values()
                     if d['kind'] == 'scene3d-asset' and d['bounds'] is not None}
@@ -197,7 +234,7 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
                      medium='projected-2d' if node['type'] == 'billboard_2d' else '3d',
                      material_overrides=deepcopy(node['material_overrides']),
                      base_pose_only=False, animation_evaluated=True)
-        for name in ('camera', 'light', 'asset'):
+        for name in ('camera', 'light', 'light_binding', 'asset'):
             if name in node:
                 state[name] = deepcopy(node[name])
         if identifier in native:
@@ -389,4 +426,42 @@ def resolve_materials(evaluation, registry):
             materials[override['slot']] = registry.effective_material(native)
         if materials:
             result[identifier] = materials
+    return result
+
+
+def light_instances(evaluation, registry):
+    """Resolve explicit physical light bindings without reinterpreting legacy scalars.
+
+    Returned instance intent retains the canonical source reference and evaluated
+    world transform; the LookDev lighting owner builds the resulting native plan.
+    """
+    from camera3d_math import world_transform
+    from lookdev_contracts import content_hash
+    result = dict(schema_version=1,lights={},world=None)
+    identity = dict(translation=[0,0,0],rotation=[0,0,0,1],scale=[1,1,1])
+    for identifier, state in evaluation['nodes'].items():
+        if 'light_binding' not in state:
+            continue
+        binding = state['light_binding']
+        source = registry.get(binding['light'])
+        require(source['kind'] == 'light3d' and source['type'] == state['light']['type'] and
+                source['type'] != 'environment', 'Canonical light source differs from its scene node type.')
+        matrix = world_transform(identity,parent=state['world_matrix'])
+        intent = dict(reference=deepcopy(binding['light']),world_matrix=matrix.tolist(),
+                      intensity_scale=binding['intensity_scale'],
+                      color_multiplier=deepcopy(binding['color_multiplier']),enabled=bool(state['visible']))
+        intent['sha256'] = content_hash(intent)
+        result['lights'][identifier] = intent
+    binding = evaluation['world'].get('light_binding')
+    if binding is not None:
+        source = registry.get(binding['light'])
+        require(source['kind'] == 'light3d' and source['type'] == 'environment',
+                'Canonical world lighting requires an environment light.')
+        require(evaluation['world']['environment'] is None,
+                'Choose one explicit world environment authority.')
+        intent = dict(reference=deepcopy(binding['light']),intensity_scale=binding['intensity_scale'],
+                      exposure_stops=binding['exposure_stops'])
+        intent['sha256'] = content_hash(intent)
+        result['world'] = intent
+    result['sha256'] = content_hash(result)
     return result
