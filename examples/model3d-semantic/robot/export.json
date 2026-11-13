@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "semantic-robot",
+  "version": 21,
+  "format": "glb",
+  "files": {
+    "model.glb": "e3fc5adf048d70a9941c287c966e237305942e28f88f9af36b38661cbbc5b6b7",
+    "native/semantic.json": "f7960da5d49cd9d97d24e4a0e865b83de26972f4e6d746bcbf1fde1bcbacec86",
+    "native/geometry/03d1196c4b7c4b687ca68ed50d57ee8fc26bad9741e11ee3a6863f8168a100fc.npz": "03d1196c4b7c4b687ca68ed50d57ee8fc26bad9741e11ee3a6863f8168a100fc",
+    "native/evidence/07b560e68c7ccafff56f0f381905ff028b05e91d480f6e42cb07d13203366e0c.bin": "07b560e68c7ccafff56f0f381905ff028b05e91d480f6e42cb07d13203366e0c",
+    "native/evidence/d41780c19fc854a1dee8dd0c15dfee300365f5abff2f62b337e9a29daf3e4bcc.bin": "d41780c19fc854a1dee8dd0c15dfee300365f5abff2f62b337e9a29daf3e4bcc",
+    "native/evidence/b400c647879164995901a154208b22e4b9d880af2745cf1abbfc2c0ef73123d3.bin": "b400c647879164995901a154208b22e4b9d880af2745cf1abbfc2c0ef73123d3",
+    "native/evidence/67bc397bda9808d13b93467d6e218c8737dfd34b1ab58139b79c2eff97bd0a38.bin": "67bc397bda9808d13b93467d6e218c8737dfd34b1ab58139b79c2eff97bd0a38"
+  },
+  "parts": [
+    "body",
+    "character-root",
+    "head",
+    "left-arm",
+    "right-arm"
+  ],
+  "hidden_parts": [],
+  "vertices": 144,
+  "triangles": 48,
+  "independent_reimport": true,
+  "review": "visually-unreviewed",
+  "limitations": [
+    "Rigid parts are not a skinned rig or functioning animation."
+  ]
+}
