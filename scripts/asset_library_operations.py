@@ -90,10 +90,11 @@ class AssetOperations:
     The caller owns local filesystem authority. HTTP hosts must separately
     restrict request paths to authorized roots and authenticate writes.
     """
-    def __init__(self, library: str | Path | AssetLibrary, *, jobs_root=None, job_limits=None):
+    def __init__(self, library: str | Path | AssetLibrary, *, jobs_root=None, job_limits=None, project_ids=()):
         self.library = library if isinstance(library, AssetLibrary) else AssetLibrary(_path(library, exists=True))
         self.jobs_root = _path(jobs_root) if jobs_root is not None else self.library.root / 'jobs'
         self.job_limits=deepcopy(job_limits)
+        self.project_ids=self._project_ids(project_ids)
 
     @property
     def jobs(self):
@@ -114,6 +115,26 @@ class AssetOperations:
     def _reference(self, value):
         validate(value, 'AssetRef')
         return deepcopy(value)
+
+    @staticmethod
+    def _project_ids(values):
+        if not isinstance(values,(list,tuple)) or len(values)>128 or any(not isinstance(v,str) for v in values) or len(set(values))!=len(values):
+            fail('REQUEST','Project IDs must be an explicit bounded unique sequence.')
+        for value in values:module('versions').identifier(value)
+        return list(values)
+
+    def _search_index(self,root,*,create=False,project_ids=None):
+        projects=self._project_ids(self.project_ids if project_ids is None else project_ids)
+        versions=module('versions')
+        resolver=versions.ScopedResolver([('local',self.library)],project_library='local') if projects else None
+        return module('search').SearchIndex(root,{'local':self.library},create=create,
+            versions={'local':versions.AssetVersions(self.library)},usage_resolver=resolver,project_ids=projects)
+
+    def _index_signature(self,project_ids):
+        versions=module('versions');lifecycle=versions.AssetVersions(self.library)
+        resolver=versions.ScopedResolver([('local',self.library)],project_library='local') if project_ids else None
+        return object_hash(dict(entries=[dict(reference=r,annotations=self.library.annotations(r),collections=lifecycle.collections(r)) for r in self.library.list_references()],
+            usage={key:resolver.bindings(key) for key in project_ids}))
 
     def _graph(self):
         return module('dependencies').DependencyGraph({'local': self.library})
@@ -188,7 +209,7 @@ class AssetOperations:
             return call(function,p)
         if operation in ('search','semantic-search'):
             p=deepcopy(p);root=_path(p.pop('index',None),exists=True)
-            index=module('search').SearchIndex(root,{'local':self.library})
+            index=self._search_index(root)
             if operation=='semantic-search':fail('UNAVAILABLE','Semantic search requires an explicitly configured trusted provider instance through the search API.')
             return call(index.search,p)
         if operation=='bundle.verify':
@@ -264,7 +285,7 @@ class OperationAdapter:
             'thumbnail':({'reference','cache_root'}, {'config','logical_path','executable'}),
             'turntable':({'reference','cache_root'}, {'config','logical_path','executable'}),
             'export':({'reference','destination'}, {'format','runtime_path','required_capabilities','allowed_losses','trusted_native','blender','timeout','memory_bytes'}),
-            'index':({'index'}, {'locations'}),
+            'index':({'index'}, {'locations','project_ids'}),
             'bundle.create':({'roots','destination','package_id'}, {'package_type','policy','context_files'}),
             'bundle.restore':({'root','destination'}, set()),
         }
@@ -283,7 +304,8 @@ class OperationAdapter:
             if p.get('input_hashes',hashes)!=hashes:fail('STALE','Queued source/license bytes changed; submit a new request.')
             p['input_hashes']=hashes
         if self.operation=='index':
-            signature=object_hash([dict(reference=r,annotations=self.owner.library.annotations(r)) for r in self.owner.library.list_references()])
+            p['project_ids']=self.owner._project_ids(p.get('project_ids',self.owner.project_ids))
+            signature=self.owner._index_signature(p['project_ids'])
             hashes=dict(index_sources=signature)
             if p.get('input_hashes',hashes)!=hashes:fail('STALE','Index sources changed; submit a new index generation to a new destination.')
             p['input_hashes']=hashes
@@ -333,7 +355,7 @@ class OperationAdapter:
             pipeline=module('export').ExportPipeline(self.owner.library,**{k:p[k] for k in ('blender','timeout','memory_bytes') if k in p},cancelled=lambda:self._cancelled(context))
             return pipeline.export(destination=context.stage_dir/'output',**{k:v for k,v in p.items() if k not in ('destination','blender','timeout','memory_bytes')})
         if self.operation=='index':
-            index=module('search').SearchIndex(context.stage_dir/'output',{'local':self.owner.library},create=True)
+            index=self.owner._search_index(context.stage_dir/'output',create=True,project_ids=p['project_ids'])
             return index.rebuild(p.get('locations'))
         if self.operation=='bundle.create':
             return module('packages').create_package(self.owner._graph(),destination=context.stage_dir/'output',**{k:v for k,v in p.items() if k not in ('destination','input_hashes')})
@@ -375,8 +397,10 @@ class OperationAdapter:
             return module('preview').verify_preview(context.stage_dir/'cache'/staged['key'],staged['key'])
         if self.operation=='index':
             # Reopen through the canonical owner and resolve every indexed input.
-            index=module('search').SearchIndex(context.stage_dir/'output',{'local':self.owner.library})
+            index=self.owner._search_index(context.stage_dir/'output',project_ids=self.parameters['project_ids'])
             index.search('',limit=1)
+            if self.owner._index_signature(self.parameters['project_ids'])!=self.parameters['input_hashes']['index_sources']:
+                fail('STALE','Index snapshot source revisions differ from queue admission; submit a new generation.')
         if self.operation=='bundle.create':
             module('packages').verify_package(context.stage_dir/'output')
         if self.operation=='bundle.restore':
@@ -486,6 +510,10 @@ class ScopedAssetOperations:
         p=request(parameters)
         if not isinstance(operation,str):fail('REQUEST','Operation must be a string.')
         if operation not in MANAGED:fail('UNAVAILABLE','No scoped managed adapter for '+str(operation)+'.')
+        if 'project_ids' in p:
+            p['project_ids']=self.owner._project_ids(p['project_ids'])
+            if not set(p['project_ids'])<=set(self.owner.project_ids):
+                fail('SCOPE','HTTP indexing may only inspect explicitly authorized project IDs.')
         if set(p)&{'blender','executable'}:fail('SCOPE','HTTP requests cannot select executables.')
         for name in ('source','license_file','root'):
             if name in p:p[name]=self._inside(p[name],self.intake)

@@ -80,7 +80,7 @@ def run(argv=None):
             reference=dict(id=args.asset,version=args.version,sha256=args.sha256)
             if 'reference' in p and p['reference']!=reference:fail('REQUEST','Conflicting exact references.')
             p['reference']=reference
-    if hasattr(args,'project'):p.setdefault('project_id',args.project)
+    if hasattr(args,'project') and operation.startswith('project.'):p.setdefault('project_id',args.project)
     apply=getattr(args,'apply',False);dry_run=getattr(args,'dry_run',False)
     if operation=='capabilities':
         if p:fail('REQUEST','Capability discovery has no request parameters.')
@@ -94,13 +94,13 @@ def run(argv=None):
     else:
         if not hasattr(args,'library'):fail('REQUEST','Supply --library.')
         limits=decode_json(read_source_bytes(args.limits,MAX_REQUEST_BYTES)) if hasattr(args,'limits') else None
-        owner=AssetOperations(args.library,jobs_root=getattr(args,'jobs_root',None),job_limits=limits)
+        owner=AssetOperations(args.library,jobs_root=getattr(args,'jobs_root',None),job_limits=limits,project_ids=[args.project] if hasattr(args,'project') else [])
         if operation=='browser':
             if p:fail('REQUEST','Browser startup uses explicit flags, not an operation request.')
             if not hasattr(args,'index'):fail('REQUEST','Browser startup requires --index.')
             from asset_library_operations import module
             forwarded=['--library',args.library,'--index',args.index]
-            for name in ('port','jobs_root','intake_root','output_root'):
+            for name in ('port','project','jobs_root','intake_root','output_root'):
                 if hasattr(args,name):forwarded.extend(['--'+name.replace('_','-'),str(getattr(args,name))])
             code=module('browser').main(forwarded)
             return dict(ok=code in (None,0),result=dict(server_exit_code=code))

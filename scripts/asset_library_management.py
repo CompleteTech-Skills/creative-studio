@@ -132,6 +132,16 @@ class ManagementAdapter:
             if not advanced:fail('DEPENDENCY','Baseline cannot be cloned in dependency order.')
         return library
 
+    @staticmethod
+    def _staged_candidate(library,candidate,baseline):
+        expected=ref(candidate)
+        if expected in baseline:return None
+        matches=[r for r in library.list_references() if (r['id'],r['version'])==(expected['id'],expected['version'])]
+        if not matches:return None
+        if matches!=[expected] or library.resolve(expected)!=candidate:
+            fail('CONFLICT','Private staged version differs from the exact prepared candidate.')
+        return expected
+
     def stage(self,context):
         p=self.admit(replay=True);context.check_cancelled()
         if self.operation=='repair':
@@ -148,9 +158,12 @@ class ManagementAdapter:
                     payload=read_source_bytes(value)
                     if hashlib.sha256(payload).hexdigest()!=p['input_hashes'][name]:fail('STALE','Version source changed during staging.')
                     target=context.stage_dir/'version-sources'/name;target.parent.mkdir(parents=True,exist_ok=True);atomic_bytes(target,payload);sources[name]=target
-                result=versions.create(p['manifest'],sources,previous=p.get('previous'))
+                result=self._staged_candidate(library,p['manifest'],p['baseline'])
+                if result is None:result=versions.create(p['manifest'],sources,previous=p.get('previous'))
             elif action=='duplicate':
-                result=versions.duplicate(p['reference'],identity=p['identity'],version=p['version'])
+                candidate=versions.prepare_duplicate(p['reference'],identity=p['identity'],version=p['version'])
+                result=self._staged_candidate(library,candidate,p['baseline'])
+                if result is None:result=versions.duplicate(p['reference'],identity=p['identity'],version=p['version'])
             else:
                 stream=p['lifecycle']['stream']
                 staged_events=library.events(stream)

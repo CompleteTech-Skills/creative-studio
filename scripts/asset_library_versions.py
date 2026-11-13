@@ -203,7 +203,7 @@ class AssetVersions:
                 fail('LICENSE', 'New versions must retain original license evidence.')
         return self.library.register(deepcopy(manifest), sources, expected_identity_refs=known)
 
-    def duplicate(self, reference, *, identity, version='1.0.0'):
+    def prepare_duplicate(self, reference, *, identity, version='1.0.0'):
         """Copy exact registered bytes to a new identity in this same library.
 
         Immutable dependency/parent/style references retain their complete
@@ -231,7 +231,12 @@ class AssetVersions:
         provenance['edits'].append('Duplicated exact registered payload into a new library identity; native source IDs unchanged.')
         candidate['publication']['integration'] = 'not-exercised'
         candidate['publication']['visibility'] = 'private'
-        candidate = seal(candidate)
+        return seal(candidate)
+
+    def duplicate(self, reference, *, identity, version='1.0.0'):
+        """Publish a prepared exact-byte copy through the canonical version owner."""
+        candidate=self.prepare_duplicate(reference,identity=identity,version=version)
+        source=self.library.resolve(exact(reference))
         # register remains the only publication authority. It verifies the full
         # retained closure and performs expected-identity CAS inside its writer
         # transaction. Staging contains exact bytes and is never a second store.
