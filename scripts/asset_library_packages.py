@@ -99,6 +99,19 @@ def _gate(manifest, policy):
                 distribution=manifest['publication']['distribution'])
 
 
+def _restorable_identities(manifests):
+    """One canonical target cannot merge conflicting original identity spaces."""
+    versions = {}; identities = {}
+    for manifest in manifests:
+        identity = manifest['identity']; name = identity['id']
+        stable = tuple(identity[k] for k in ('namespace', 'library', 'kind', 'created_at'))
+        if identities.setdefault(name, stable) != stable:
+            fail('IDENTITY', 'Scoped assets disagree on stable identity: ' + name)
+        key = (name, manifest['version'])
+        if versions.setdefault(key, manifest['manifest_sha256']) != manifest['manifest_sha256']:
+            fail('IDENTITY', 'Scoped assets conflict on one immutable ID/version: ' + name)
+
+
 def create_package(graph: DependencyGraph, roots: list, destination, *, package_id: str,
                    package_type='collection', policy=None, context_files=None, scopes=None) -> dict:
     """Publish a complete directory with unchanged manifests and verified blobs.
@@ -139,7 +152,7 @@ def create_package(graph: DependencyGraph, roots: list, destination, *, package_
         fail('TYPE', 'An individual asset package needs exactly one root.')
     stage = Path(tempfile.mkdtemp(prefix='.asset-package-', dir=destination.parent))
     try:
-        members = {}; assets = []; fixture = True
+        members = {}; assets = []; fixture = True; manifests = []
         def write(relative, payload):
             portable_path(relative)
             if len(payload) > MAX_FILE_BYTES:
@@ -159,6 +172,8 @@ def create_package(graph: DependencyGraph, roots: list, destination, *, package_
             location = dict(library=node['library'], reference=node['reference'])
             manifest = graph.inspect(location)
             _gate(manifest, policy)
+            manifests.append(manifest)
+            _restorable_identities(manifests)
             fixture = fixture and manifest['provenance']['fixture']
             relative = 'manifests/' + manifest['manifest_sha256'] + '.json'
             write(relative, canonical_bytes(manifest))
@@ -279,9 +294,12 @@ def _verify(root):
         fail('CONTEXT', 'Scene/project consumer documents are absent.')
     if expected != set(index['members']) or fixture != index['fixture']:
         fail('INVENTORY', 'Index contains unreferenced payloads or altered fixture status.')
+    _restorable_identities(manifests)
     graph = DependencyGraph({name: _PackageLibrary(items) for name, items in libraries.items()})
     for lock in locks.values():
         graph.verify_lock(lock)
+        if lock['graph']['diagnostics']:
+            fail('DEPENDENCY', 'Canonical restoration requires every declared dependency.')
     if set(locations) != {location_key(n) for lock in locks.values() for n in lock['graph']['nodes']}:
         fail('INVENTORY', 'Asset inventory differs from exact dependency closure.')
     if index['package_type'] == 'asset' and (len(locks) != 1 or len(next(iter(locks.values()))['graph']['roots']) != 1):
@@ -319,7 +337,7 @@ def restore_package(root, destination) -> dict:
         pending = {m['manifest_sha256']: m for m in manifests}; published = set()
         while pending:
             eligible = [m for m in pending.values() if all(d['target']['sha256'] in published
-                        for d in dependency_edges(m) if d['required'])]
+                        for d in dependency_edges(m))]
             if not eligible:
                 fail('DEPENDENCY', 'Package cannot be restored in dependency order.')
             for manifest in eligible:
