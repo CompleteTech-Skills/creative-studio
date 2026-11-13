@@ -586,5 +586,6 @@ for call in (lambda:validate_contract({'kind':'editor3d-request'}),lambda:frame_
     except RigError as exc:assert exc.report['code']=='EDITOR3D_DEPENDENCY',exc.report
     else:raise AssertionError('missing dependency accepted')
 '''
-        result=subprocess.run([sys.executable,'-c',script],capture_output=True,text=True)
+        result=subprocess.run([sys.executable,'-c',script],capture_output=True,text=True,
+            env={**os.environ,'PYTHONPATH':str(ROOT/'scripts')})
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
