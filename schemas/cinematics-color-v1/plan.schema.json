@@ -1,0 +1,433 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cinematics color plan v1",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "cinematics-color-plan"
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "config": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "cinematics-color-config"
+        },
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "config_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "config_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^[A-Za-z0-9._/-]+$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 33554432
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "path",
+              "bytes",
+              "sha256"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "search_paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9._/-]+$"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "declared_roles": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 128,
+          "required": [
+            "scene_linear",
+            "cie_xyz_d65_interchange"
+          ],
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "file_transforms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^[A-Za-z0-9._/-]+$"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^[A-Za-z0-9._/-]+$"
+              }
+            },
+            "required": [
+              "source",
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "closure_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "config_path",
+        "config_sha256",
+        "files",
+        "search_paths",
+        "declared_roles",
+        "file_transforms",
+        "closure_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "cinematics-color-source"
+        },
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "config_closure_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "working_space": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "primaries": {
+          "type": "object",
+          "properties": {
+            "r": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 1e-06,
+                "maximum": 1
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "g": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 1e-06,
+                "maximum": 1
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "b": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 1e-06,
+                "maximum": 1
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "w": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 1e-06,
+                "maximum": 1
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "r",
+            "g",
+            "b",
+            "w"
+          ],
+          "additionalProperties": false
+        },
+        "transfer": {
+          "const": "linear"
+        },
+        "alpha_mode": {
+          "enum": [
+            "straight",
+            "premultiplied"
+          ]
+        },
+        "view_applied": {
+          "const": false
+        },
+        "exposure_applied": {
+          "const": false
+        },
+        "source_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_artifact_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "kind",
+        "schema_version",
+        "config_closure_sha256",
+        "working_space",
+        "primaries",
+        "transfer",
+        "alpha_mode",
+        "view_applied",
+        "exposure_applied",
+        "source_manifest_sha256",
+        "source_artifact_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "target": {
+      "enum": [
+        "scene-linear",
+        "sdr-srgb"
+      ]
+    },
+    "display": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "view": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "look": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "exposure_stops": {
+      "type": "number",
+      "minimum": -24,
+      "maximum": 24
+    },
+    "output_alpha": {
+      "enum": [
+        "straight",
+        "premultiplied"
+      ]
+    },
+    "ocio_version": {
+      "const": "2.5.2"
+    },
+    "arithmetic": {
+      "const": "float32"
+    },
+    "output_primaries": {
+      "type": "object",
+      "properties": {
+        "r": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "g": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "b": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "w": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "r",
+        "g",
+        "b",
+        "w"
+      ],
+      "additionalProperties": false
+    },
+    "output_transfer": {
+      "enum": [
+        "linear",
+        "srgb"
+      ]
+    },
+    "output_matrix": {
+      "const": "rgb"
+    },
+    "output_range": {
+      "const": "full"
+    },
+    "measured_source_primaries": {
+      "type": "object",
+      "properties": {
+        "r": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "g": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "b": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "w": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "r",
+        "g",
+        "b",
+        "w"
+      ],
+      "additionalProperties": false
+    },
+    "output_calibration_max_error": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "exclusiveMaximum": 0.0005
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "config",
+    "source",
+    "target",
+    "display",
+    "view",
+    "look",
+    "exposure_stops",
+    "output_alpha",
+    "ocio_version",
+    "arithmetic",
+    "output_primaries",
+    "output_transfer",
+    "output_matrix",
+    "output_range",
+    "measured_source_primaries",
+    "output_calibration_max_error",
+    "plan_sha256"
+  ],
+  "additionalProperties": false
+}

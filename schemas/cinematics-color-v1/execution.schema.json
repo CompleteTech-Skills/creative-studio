@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cinematics color execution v1",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "const": "cinematics-color-execution"
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "plan_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "config_closure_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ocio_version": {
+      "const": "2.5.2"
+    },
+    "numpy_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "processor_cache_id": {
+      "type": "string",
+      "maxLength": 16384
+    },
+    "input_dtype": {
+      "enum": [
+        "float16",
+        "float32",
+        "float64"
+      ]
+    },
+    "output_dtype": {
+      "const": "float32"
+    },
+    "shape": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 16777216
+      },
+      "minItems": 2,
+      "maxItems": 3
+    },
+    "input_pixels_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "output_pixels_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "pixel_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16777216
+    },
+    "source_context_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_render_verified": {
+      "const": false
+    },
+    "pixel_transform_executed": {
+      "const": true
+    },
+    "view_applied": {
+      "type": "boolean"
+    },
+    "exposure_applications": {
+      "const": 1
+    },
+    "exposure_stops": {
+      "type": "number",
+      "minimum": -24,
+      "maximum": 24
+    },
+    "output_transfer": {
+      "enum": [
+        "linear",
+        "srgb"
+      ]
+    },
+    "output_primaries": {
+      "type": "object",
+      "properties": {
+        "r": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "g": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "b": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "w": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 1e-06,
+            "maximum": 1
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "r",
+        "g",
+        "b",
+        "w"
+      ],
+      "additionalProperties": false
+    },
+    "output_alpha": {
+      "enum": [
+        "straight",
+        "premultiplied"
+      ]
+    },
+    "rgb_min": {
+      "type": "number"
+    },
+    "rgb_max": {
+      "type": "number"
+    },
+    "rgb_below_zero": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 50331648
+    },
+    "rgb_above_one": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 50331648
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "plan_sha256",
+    "config_closure_sha256",
+    "ocio_version",
+    "numpy_version",
+    "processor_cache_id",
+    "input_dtype",
+    "output_dtype",
+    "shape",
+    "input_pixels_sha256",
+    "output_pixels_sha256",
+    "pixel_count",
+    "source_context_sha256",
+    "source_render_verified",
+    "pixel_transform_executed",
+    "view_applied",
+    "exposure_applications",
+    "exposure_stops",
+    "output_transfer",
+    "output_primaries",
+    "output_alpha",
+    "rgb_min",
+    "rgb_max",
+    "rgb_below_zero",
+    "rgb_above_one"
+  ],
+  "additionalProperties": false
+}

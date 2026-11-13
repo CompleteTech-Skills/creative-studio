@@ -25,7 +25,7 @@ MAX_CONFIG_BYTES = 1024**2
 MAX_PIXELS = 16_777_216
 MAX_WORK_BYTES = 512 * 1024**2
 REC709_D65 = {'r': [0.64, 0.33], 'g': [0.30, 0.60], 'b': [0.15, 0.06], 'w': [0.3127, 0.3290]}
-_ALLOWED_SUFFIXES = {'.ocio', '.cube', '.spi1d', '.spi3d', '.spimtx'}
+_ALLOWED_SUFFIXES = {'.ocio', '.cube', '.spi1d', '.spimtx'}
 _SHA = re.compile(r'^[0-9a-f]{64}$')
 _PORTABLE = re.compile(r'^[A-Za-z0-9._/-]+$')
 _RESERVED = {'con', 'prn', 'aux', 'nul', *('com'+str(i) for i in range(1, 10)), *('lpt'+str(i) for i in range(1, 10))}
@@ -66,10 +66,13 @@ def _bytes(root, name, limit):
     _path(name)
     root = Path(root).absolute()
     target = root/name
-    _need(root.resolve() == root and target.resolve().is_relative_to(root), 'redirected color path')
-    for ancestor in [target, *target.parents]:
-        _need(not ancestor.is_symlink(), 'color symlink is unsupported')
-    before = target.lstat()
+    try:
+        _need(root.resolve() == root and target.resolve().is_relative_to(root), 'redirected color path')
+        for ancestor in [target, *target.parents]:
+            _need(not ancestor.is_symlink(), 'color symlink is unsupported')
+        before = target.lstat()
+    except OSError as exc:
+        raise ValueError('unsafe/unavailable color payload: '+str(exc)) from exc
     _need(stat.S_ISREG(before.st_mode) and before.st_size <= limit, 'color payload must be a bounded regular file')
     descriptors = []
     flags = os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0)
@@ -103,6 +106,60 @@ def _hash(payload):
     return hashlib.sha256(payload).hexdigest()
 
 
+def _lut(payload, suffix):
+    """Bound declared LUT allocation before handing any file to OCIO."""
+    lines = [line.split('#', 1)[0].strip() for line in payload.decode('utf-8', 'strict').splitlines()]
+    lines = [line for line in lines if line]
+    def numbers(tokens, size):
+        _need(len(tokens) == size and all(len(token) <= 128 for token in tokens), 'invalid LUT numeric row')
+        values = [float(token) for token in tokens]
+        _need(all(math.isfinite(value) and abs(value) <= 1e12 for value in values), 'nonfinite/excessive LUT sample')
+        return values
+    if suffix == '.spimtx':
+        _need(len(payload) <= 4096, 'matrix LUT byte budget exceeded')
+        numbers(' '.join(lines).split(), 12)
+        return
+    if suffix == '.spi1d':
+        _need('{' in lines and '}' in lines, 'invalid SPI1D braces')
+        begin, end = lines.index('{'), lines.index('}')
+        _need(begin <= 16 and end == len(lines)-1, 'invalid SPI1D header or trailing data')
+        fields = {}
+        for line in lines[:begin]:
+            key, *tokens = line.split()
+            _need(key not in fields, 'duplicate SPI1D field')
+            fields[key] = tokens
+        _exact(fields, ['Version', 'From', 'Length', 'Components'], 'SPI1D header')
+        _need(fields['Version'] == ['1'], 'unsupported SPI1D version')
+        domain = numbers(fields['From'], 2); _need(domain[0] < domain[1], 'invalid SPI1D domain')
+        _need(len(fields['Length']) == len(fields['Components']) == 1, 'invalid SPI1D size')
+        length, channels = int(fields['Length'][0]), int(fields['Components'][0])
+        _need(2 <= length <= 65536 and 1 <= channels <= 4 and end-begin-1 == length, 'SPI1D grid budget/count mismatch')
+        for line in lines[begin+1:end]:
+            numbers(line.split(), channels)
+        return
+    _need(suffix == '.cube', 'unsupported flat LUT format')
+    fields, rows = {}, []
+    for line in lines:
+        key, *tokens = line.split()
+        if key in ('TITLE', 'DOMAIN_MIN', 'DOMAIN_MAX', 'LUT_1D_SIZE', 'LUT_3D_SIZE'):
+            _need(not rows and key not in fields and len(fields) < 6, 'duplicate/late CUBE header')
+            fields[key] = tokens
+        else:
+            _need('LUT_1D_SIZE' in fields or 'LUT_3D_SIZE' in fields, 'CUBE grid must precede data')
+            rows.append(line)
+            _need(len(rows) <= 65**3, 'CUBE data budget exceeded')
+    grids = [key for key in ('LUT_1D_SIZE', 'LUT_3D_SIZE') if key in fields]
+    _need(len(grids) == 1 and len(fields[grids[0]]) == 1, 'CUBE needs exactly one grid')
+    size = int(fields[grids[0]][0])
+    dimensions = 1 if grids[0] == 'LUT_1D_SIZE' else 3
+    _need(2 <= size <= (65536 if dimensions == 1 else 65) and len(rows) == size**dimensions, 'CUBE grid budget/count mismatch')
+    low = numbers(fields.get('DOMAIN_MIN', ['0', '0', '0']), 3)
+    high = numbers(fields.get('DOMAIN_MAX', ['1', '1', '1']), 3)
+    _need(all(a < b for a, b in zip(low, high)), 'invalid CUBE domain')
+    for line in rows:
+        numbers(line.split(), 3)
+
+
 def _yaml(payload):
     """Parse OCIO's tagged YAML without custom constructors, aliases or expansion."""
     try:
@@ -112,15 +169,18 @@ def _yaml(payload):
     _need(len(payload) <= MAX_CONFIG_BYTES, 'OCIO config exceeds byte budget')
     text = payload.decode('utf-8', 'strict')
     depth = 0
-    for count, token in enumerate(yaml.scan(text), 1):
-        _need(count <= 30_000, 'OCIO config token budget exceeded')
-        _need(not isinstance(token, (yaml.tokens.AliasToken, yaml.tokens.AnchorToken)), 'OCIO YAML aliases are unsupported')
-        if isinstance(token, (yaml.tokens.BlockMappingStartToken, yaml.tokens.BlockSequenceStartToken,
-                              yaml.tokens.FlowMappingStartToken, yaml.tokens.FlowSequenceStartToken)):
-            depth += 1
-            _need(depth <= 64, 'OCIO YAML depth exceeded')
-        elif isinstance(token, (yaml.tokens.BlockEndToken, yaml.tokens.FlowMappingEndToken, yaml.tokens.FlowSequenceEndToken)):
-            depth -= 1
+    try:
+        for count, token in enumerate(yaml.scan(text), 1):
+            _need(count <= 30_000, 'OCIO config token budget exceeded')
+            _need(not isinstance(token, (yaml.tokens.AliasToken, yaml.tokens.AnchorToken)), 'OCIO YAML aliases are unsupported')
+            if isinstance(token, (yaml.tokens.BlockMappingStartToken, yaml.tokens.BlockSequenceStartToken,
+                                  yaml.tokens.FlowMappingStartToken, yaml.tokens.FlowSequenceStartToken)):
+                depth += 1
+                _need(depth <= 64, 'OCIO YAML depth exceeded')
+            elif isinstance(token, (yaml.tokens.BlockEndToken, yaml.tokens.FlowMappingEndToken, yaml.tokens.FlowSequenceEndToken)):
+                depth -= 1
+    except yaml.YAMLError as exc:
+        raise ValueError('invalid bounded OCIO YAML: '+str(exc)) from exc
     class Loader(yaml.SafeLoader):
         pass
     def mapping(loader, node, deep=False):
@@ -200,11 +260,14 @@ def capture_config(root, config_path='config.ocio'):
         rows.append({'path': name, 'bytes': len(payload), 'sha256': _hash(payload)})
         if name == config_path:
             config = payload
+        elif Path(name).suffix.lower() != '.ocio':
+            _lut(payload, Path(name).suffix.lower())
     search, roles, references = _yaml(config)
     resolved = []
     for reference in references:
         candidates = [x for x in [reference, *[(PurePosixPath(p)/reference).as_posix() for p in search]] if x in names]
         _need(len(set(candidates)) == 1, 'missing or ambiguous OCIO file transform: '+reference)
+        _need(Path(candidates[0]).suffix.lower() in ('.cube', '.spi1d', '.spimtx'), 'unsupported OCIO file-transform resource')
         resolved.append({'source': reference, 'path': candidates[0]})
     value = {'kind': 'cinematics-color-config', 'schema_version': VERSION, 'config_path': config_path,
              'config_sha256': _hash(config), 'files': rows, 'search_paths': search,
@@ -216,7 +279,7 @@ def capture_config(root, config_path='config.ocio'):
 def validate_inventory(value):
     _exact(value, ['kind', 'schema_version', 'config_path', 'config_sha256', 'files', 'search_paths',
                    'declared_roles', 'file_transforms', 'closure_sha256'], 'color config inventory')
-    _need(value['kind'] == 'cinematics-color-config' and value['schema_version'] == VERSION, 'unsupported color config version')
+    _need(value['kind'] == 'cinematics-color-config' and type(value['schema_version']) is int and value['schema_version'] == VERSION, 'unsupported color config version')
     finite_json(value)
     _path(value['config_path']); _sha(value['config_sha256']); _sha(value['closure_sha256'])
     _need(type(value['files']) is list and 0 < len(value['files']) <= MAX_FILES, 'invalid color file inventory')
@@ -280,7 +343,9 @@ def snapshot_config(root, inventory):
     inventory = validate_inventory(inventory)
     verify_config(root, inventory)
     with tempfile.TemporaryDirectory(prefix='cinematics-color-') as temporary:
-        stage = Path(temporary)
+        # macOS may spell its system temporary root through /var -> /private.
+        # Internal new directories use their canonical physical spelling.
+        stage = Path(temporary).resolve()
         for row in inventory['files']:
             payload = _bytes(root, row['path'], MAX_FILE_BYTES)
             _need(len(payload) == row['bytes'] and _hash(payload) == row['sha256'], 'color profile changed during snapshot')
@@ -306,15 +371,18 @@ def _config(root, inventory):
     _need(capture_config(root, inventory['config_path']) == inventory, 'stale color profile inventory')
     ocio = _ocio()
     with snapshot_config(root, inventory) as stage:
-        config = ocio.Config.CreateFromFile(str(stage/inventory['config_path']))
-        config.validate()
+        try:
+            config = ocio.Config.CreateFromFile(str(stage/inventory['config_path']))
+            config.validate()
+        except Exception as exc:
+            raise ValueError('invalid/unsupported OCIO config: '+str(exc)) from exc
         yield config, ocio
 
 
 def inspect_config(root, inventory=None):
     inventory = capture_config(root) if inventory is None else validate_inventory(inventory)
     with _config(root, inventory) as (config, ocio):
-        return {'kind': 'cinematics-color-capabilities', 'schema_version': VERSION,
+        result = {'kind': 'cinematics-color-capabilities', 'schema_version': VERSION,
                 'ocio_version': ocio.GetVersion(), 'config': inventory,
                 'roles': {role: config.getColorSpace(role).getName() for role in inventory['declared_roles']},
                 'color_spaces': [{'name': space.getName(), 'is_data': space.isData(), 'description': space.getDescription()}
@@ -322,6 +390,17 @@ def inspect_config(root, inventory=None):
                 'displays': [{'name': display, 'views': [{'name': view, 'looks': config.getDisplayViewLooks(display, view)}
                               for view in config.getViews(display)]} for display in config.getDisplays()],
                 'looks': [look.getName() for look in config.getLooks()]}
+        _need(len(result['color_spaces']) <= 1024 and len(result['displays']) <= 64 and len(result['looks']) <= 128,
+              'color capability collection budget exceeded')
+        for space in result['color_spaces']:
+            _name(space['name']); _need(len(space['description']) <= 16384, 'color description budget exceeded')
+        for display in result['displays']:
+            _name(display['name']); _need(len(display['views']) <= 64, 'view budget exceeded')
+            for view in display['views']:
+                _name(view['name']); _need(len(view['looks']) <= 1024, 'view look-expression budget exceeded')
+        for look in result['looks']:
+            _name(look)
+        return result
 
 
 def _primaries(value):
@@ -330,18 +409,18 @@ def _primaries(value):
         _need(type(pair) is list and len(pair) == 2, 'chromaticity must be an xy pair')
         for number in pair:
             _number(number, 0.000001, 1)
-        _need(sum(pair) <= 1.000001, 'impossible chromaticity')
+        _need(sum(pair) <= 1.000001, 'unsupported chromaticity')
 
 
 def validate_source(value):
     _exact(value, ['kind', 'schema_version', 'config_closure_sha256', 'working_space', 'primaries', 'transfer',
-                   'alpha_mode', 'view_applied', 'source_manifest_sha256', 'source_artifact_sha256'], 'color source context')
-    _need(value['kind'] == 'cinematics-color-source' and value['schema_version'] == VERSION, 'unsupported source color version')
+                   'alpha_mode', 'view_applied', 'exposure_applied', 'source_manifest_sha256', 'source_artifact_sha256'], 'color source context')
+    _need(value['kind'] == 'cinematics-color-source' and type(value['schema_version']) is int and value['schema_version'] == VERSION, 'unsupported source color version')
     for key in ('config_closure_sha256', 'source_manifest_sha256', 'source_artifact_sha256'):
         _sha(value[key])
     _name(value['working_space']); _primaries(value['primaries'])
-    _need(value['transfer'] == 'linear' and value['view_applied'] is False,
-          'source must be scene-linear with no previously applied view transform')
+    _need(value['transfer'] == 'linear' and value['view_applied'] is False and value['exposure_applied'] is False,
+          'source must be scene-linear with no previously baked exposure/view transform')
     _need(value['alpha_mode'] in ('straight', 'premultiplied'), 'unsupported source alpha mode')
     return deepcopy(value)
 
@@ -390,6 +469,20 @@ def _calibrate_srgb(config, ocio, source):
         maximum = max(maximum, max(abs(a-b) for a, b in zip(actual, expected)))
     _need(maximum < 5e-4, 'declared sRGB display fails independent XYZ/OETF calibration')
     return maximum
+
+
+def probe_scene_linear(root, inventory=None):
+    """Measure the pinned config's source basis; not an image/header inference."""
+    inventory = capture_config(root) if inventory is None else validate_inventory(inventory)
+    source = inventory['declared_roles']['scene_linear']
+    with _config(root, inventory) as (config, ocio):
+        primaries = _measure(config, source)
+        _primaries(primaries)
+        return {'kind': 'cinematics-scene-linear-probe', 'schema_version': VERSION,
+                'config_closure_sha256': inventory['closure_sha256'], 'ocio_version': ocio.GetVersion(),
+                'working_space': source, 'xyz_role': config.getColorSpace('cie_xyz_d65_interchange').getName(),
+                'primaries': primaries, 'method': 'actual-ocio-basis-to-cie-xyz-d65',
+                'source_render_verified': False}
 
 
 def _processor(config, ocio, plan):
@@ -445,7 +538,8 @@ def transform_pixels(root, plan, rgba, *, max_work_bytes=MAX_WORK_BYTES):
     _exact(plan, ['kind', 'schema_version', 'config', 'source', 'target', 'display', 'view', 'look', 'exposure_stops',
                   'output_alpha', 'ocio_version', 'arithmetic', 'output_primaries', 'output_transfer', 'output_matrix',
                   'output_range', 'measured_source_primaries', 'output_calibration_max_error', 'plan_sha256'], 'color plan')
-    _need(isinstance(rgba, np.ndarray) and rgba.dtype.kind == 'f' and rgba.ndim in (2, 3) and rgba.shape[-1] == 4 and rgba.flags.c_contiguous,
+    _need(isinstance(rgba, np.ndarray) and rgba.dtype.kind == 'f' and rgba.dtype.isnative and rgba.dtype.itemsize in (2, 4, 8)
+          and rgba.ndim in (2, 3) and rgba.shape[-1] == 4 and rgba.flags.c_contiguous,
           'expected floating Nx4 or HxWx4 RGBA pixels')
     count = math.prod(rgba.shape[:-1])
     _need(0 < count <= MAX_PIXELS and type(max_work_bytes) is int and 0 < max_work_bytes <= MAX_WORK_BYTES, 'pixel/work budget exceeded')
@@ -453,6 +547,9 @@ def transform_pixels(root, plan, rgba, *, max_work_bytes=MAX_WORK_BYTES):
     _need(rgba.nbytes + count*24 + min(count, 65536)*3*4 + 2*sum(row['bytes'] for row in inventory['files']) <= max_work_bytes,
           'color transform exceeds working byte budget')
     _need(bool(np.isfinite(rgba).all()) and bool(((rgba[..., 3] >= 0) & (rgba[..., 3] <= 1)).all()), 'invalid pixels or alpha')
+    maximum = float(np.finfo(np.float32).max)
+    _need(float(rgba.min()) >= -maximum and float(rgba.max()) <= maximum,
+          'source values exceed float32 processor precision')
     expected = make_plan(root, inventory, plan['source'], target=plan['target'], display=plan['display'],
                          view=plan['view'], look=plan['look'], exposure_stops=plan['exposure_stops'], output_alpha=plan['output_alpha'])
     _need(plan == expected, 'stale/forged color plan')
@@ -467,8 +564,10 @@ def transform_pixels(root, plan, rgba, *, max_work_bytes=MAX_WORK_BYTES):
             alpha = block[:, 3:4]
             if plan['source']['alpha_mode'] == 'premultiplied':
                 _need(not bool(((alpha == 0) & (rgb != 0)).any()), 'premultiplied zero-alpha pixels must contain zero RGB')
-                np.divide(rgb, alpha, out=rgb, where=alpha != 0)
-            rgb *= 2.**plan['exposure_stops']
+                with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
+                    np.divide(rgb, alpha, out=rgb, where=alpha != 0)
+            with np.errstate(over='ignore', invalid='ignore'):
+                rgb *= 2.**plan['exposure_stops']
             _need(bool(np.isfinite(rgb).all()), 'exposure/unpremultiplication overflow')
             cpu.applyRGB(rgb)
             if plan['output_alpha'] == 'premultiplied':
@@ -483,7 +582,7 @@ def transform_pixels(root, plan, rgba, *, max_work_bytes=MAX_WORK_BYTES):
                'output_pixels_sha256': _hash(memoryview(output).cast('B')), 'pixel_count': count,
                'source_context_sha256': object_hash(plan['source']), 'source_render_verified': False,
                'pixel_transform_executed': True, 'view_applied': plan['target'] != 'scene-linear',
-               'exposure_applications': 1, 'output_transfer': plan['output_transfer'],
+               'exposure_applications': 1, 'exposure_stops': plan['exposure_stops'], 'output_transfer': plan['output_transfer'],
                'output_primaries': plan['output_primaries'], 'output_alpha': plan['output_alpha'],
                'rgb_min': float(output[..., :3].min()), 'rgb_max': float(output[..., :3].max()),
                'rgb_below_zero': int((output[..., :3] < 0).sum()), 'rgb_above_one': int((output[..., :3] > 1).sum())}
@@ -494,3 +593,72 @@ def linear_to_srgb_reference(value):
     """IEC sRGB scalar validation oracle; never an alternative grading engine."""
     _number(value, -65536, 65536)
     return value*12.92 if value <= .0031308 else 1.055*(value**(1/2.4))-.055
+
+
+def schemas():
+    """Structural documents; hashes, config meaning and pixel relations use APIs."""
+    def obj(properties):
+        return {'type': 'object', 'properties': properties, 'required': list(properties), 'additionalProperties': False}
+    def arr(items, maximum, minimum=0):
+        return {'type': 'array', 'items': items, 'minItems': minimum, 'maxItems': maximum}
+    sha = {'type': 'string', 'pattern': '^[0-9a-f]{64}$'}
+    name = {'type': 'string', 'minLength': 1, 'maxLength': 256}
+    path = {'type': 'string', 'minLength': 1, 'maxLength': 512, 'pattern': '^[A-Za-z0-9._/-]+$'}
+    version = {'type': 'integer', 'const': VERSION}
+    def kind(value):
+        return {'type': 'string', 'const': value}
+    xy = arr({'type': 'number', 'minimum': .000001, 'maximum': 1}, 2, 2)
+    primaries = obj({key: deepcopy(xy) for key in ('r', 'g', 'b', 'w')})
+    inventory = obj({'kind': kind('cinematics-color-config'), 'schema_version': version, 'config_path': path,
+                     'config_sha256': sha, 'files': arr(obj({'path': path, 'bytes': {'type': 'integer', 'minimum': 0, 'maximum': MAX_FILE_BYTES}, 'sha256': sha}), MAX_FILES, 1),
+                     'search_paths': arr(path, 64), 'declared_roles': {'type': 'object', 'minProperties': 1, 'maxProperties': 128, 'required': ['scene_linear', 'cie_xyz_d65_interchange'], 'additionalProperties': name},
+                     'file_transforms': arr(obj({'source': path, 'path': path}), MAX_FILES), 'closure_sha256': sha})
+    source = obj({'kind': kind('cinematics-color-source'), 'schema_version': version, 'config_closure_sha256': sha,
+                  'working_space': name, 'primaries': primaries, 'transfer': {'const': 'linear'},
+                  'alpha_mode': {'enum': ['straight', 'premultiplied']}, 'view_applied': {'const': False},
+                  'exposure_applied': {'const': False}, 'source_manifest_sha256': sha, 'source_artifact_sha256': sha})
+    plan = obj({'kind': kind('cinematics-color-plan'), 'schema_version': version, 'config': inventory, 'source': source,
+                'target': {'enum': ['scene-linear', 'sdr-srgb']}, 'display': {'type': 'string', 'maxLength': 256},
+                'view': {'type': 'string', 'maxLength': 256}, 'look': {'type': 'string', 'maxLength': 256},
+                'exposure_stops': {'type': 'number', 'minimum': -24, 'maximum': 24},
+                'output_alpha': {'enum': ['straight', 'premultiplied']}, 'ocio_version': {'const': OCIO_VERSION},
+                'arithmetic': {'const': 'float32'}, 'output_primaries': primaries, 'output_transfer': {'enum': ['linear', 'srgb']},
+                'output_matrix': {'const': 'rgb'}, 'output_range': {'const': 'full'}, 'measured_source_primaries': primaries,
+                'output_calibration_max_error': {'type': ['number', 'null'], 'minimum': 0, 'exclusiveMaximum': .0005}, 'plan_sha256': sha})
+    execution = obj({'kind': kind('cinematics-color-execution'), 'schema_version': version, 'plan_sha256': sha,
+                     'config_closure_sha256': sha, 'ocio_version': {'const': OCIO_VERSION}, 'numpy_version': name,
+                     'processor_cache_id': {'type': 'string', 'maxLength': 16384}, 'input_dtype': {'enum': ['float16', 'float32', 'float64']},
+                     'output_dtype': {'const': 'float32'}, 'shape': arr({'type': 'integer', 'minimum': 1, 'maximum': MAX_PIXELS}, 3, 2),
+                     'input_pixels_sha256': sha, 'output_pixels_sha256': sha, 'pixel_count': {'type': 'integer', 'minimum': 1, 'maximum': MAX_PIXELS},
+                     'source_context_sha256': sha, 'source_render_verified': {'const': False}, 'pixel_transform_executed': {'const': True},
+                     'view_applied': {'type': 'boolean'}, 'exposure_applications': {'const': 1}, 'exposure_stops': {'type': 'number', 'minimum': -24, 'maximum': 24},
+                     'output_transfer': {'enum': ['linear', 'srgb']}, 'output_primaries': primaries,
+                     'output_alpha': {'enum': ['straight', 'premultiplied']}, 'rgb_min': {'type': 'number'}, 'rgb_max': {'type': 'number'},
+                     'rgb_below_zero': {'type': 'integer', 'minimum': 0, 'maximum': MAX_PIXELS*3}, 'rgb_above_one': {'type': 'integer', 'minimum': 0, 'maximum': MAX_PIXELS*3}})
+    capabilities = obj({'kind': kind('cinematics-color-capabilities'), 'schema_version': version,
+                        'ocio_version': {'const': OCIO_VERSION}, 'config': inventory,
+                        'roles': {'type': 'object', 'maxProperties': 128, 'additionalProperties': name},
+                        'color_spaces': arr(obj({'name': name, 'is_data': {'type': 'boolean'}, 'description': {'type': 'string', 'maxLength': 16384}}), 1024),
+                        'displays': arr(obj({'name': name, 'views': arr(obj({'name': name, 'looks': {'type': 'string', 'maxLength': 1024}}), 64)}), 64),
+                        'looks': arr(name, 128)})
+    probe = obj({'kind': kind('cinematics-scene-linear-probe'), 'schema_version': version,
+                 'config_closure_sha256': sha, 'ocio_version': {'const': OCIO_VERSION}, 'working_space': name,
+                 'xyz_role': name, 'primaries': primaries, 'method': {'const': 'actual-ocio-basis-to-cie-xyz-d65'},
+                 'source_render_verified': {'const': False}})
+    result = {'config': inventory, 'source': source, 'plan': plan, 'execution': execution, 'capabilities': capabilities, 'probe': probe}
+    return {name+'.schema.json': {'$schema': 'https://json-schema.org/draft/2020-12/schema', 'title': 'Cinematics color '+name+' v1', **schema}
+            for name, schema in result.items()}
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['capture', 'inspect', 'probe-scene-linear'])
+    parser.add_argument('--root', required=True)
+    args = parser.parse_args()
+    operation = {'capture': capture_config, 'inspect': inspect_config, 'probe-scene-linear': probe_scene_linear}[args.command]
+    print(json.dumps(operation(args.root), indent=2, allow_nan=False))
+
+
+if __name__ == '__main__':
+    main()
