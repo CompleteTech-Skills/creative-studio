@@ -6,6 +6,7 @@ backend identity. This is integrity/provenance verification, not a new render.
 from pathlib import Path
 import hashlib
 import json
+import struct
 import os
 import shutil
 import stat
@@ -148,6 +149,22 @@ def _open_archive(path):
         require(end is not None,'invalid-input','Archive end record missing.')
         require(end[zipfile._ECD_SIZE]<=MAX_INDEX and end[zipfile._ECD_ENTRIES_TOTAL]<=MAX_FILES+1,
                 'storage-exhaustion','Archive central directory exceeds budget.')
+        size=end[zipfile._ECD_SIZE];offset=end[zipfile._ECD_OFFSET]
+        require(offset>=0 and offset+size==end[zipfile._ECD_LOCATION],
+                'invalid-input','Prepended or inconsistent archive directory.')
+        stream.seek(offset);consumed=0;count=0
+        while consumed<size:
+            header=stream.read(46)
+            require(len(header)==46 and header[:4]==b'PK\x01\x02',
+                    'invalid-input','Malformed central directory.')
+            name,extra,comment=struct.unpack_from('<HHH',header,28)
+            consumed+=46+name+extra+comment;count+=1
+            require(consumed<=size and count<=MAX_FILES+1,
+                    'storage-exhaustion','Actual archive entry count exceeds budget.')
+            require(name<=1032,'invalid-input','Archive filename exceeds portable budget.')
+            stream.seek(name+extra+comment,1)
+        require(consumed==size and count==end[zipfile._ECD_ENTRIES_TOTAL],
+                'invalid-input','Central directory entry count disagrees.')
         stream.seek(0)
         return stream
     except BaseException:

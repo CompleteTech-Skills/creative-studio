@@ -98,3 +98,14 @@ class Archives(unittest.TestCase):
                 stream.write(struct.pack('<4s4H2LH',b'PK\x05\x06',0,0,65535,65535,1024**3,0,0))
             with patch('render3d_archive.zipfile.ZipFile',side_effect=AssertionError('must not allocate')):
                 with self.assertRaises(Render3DError):restore_render(path,root/'restored')
+
+    def test_forged_entry_count_rejected_before_zipfile_allocation(self):
+        import struct
+        import render3d_archive as module
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'forged.zip'
+            header=bytearray(46);header[:4]=b'PK\x01\x02';struct.pack_into('<H',header,28,1)
+            central=(bytes(header)+b'x')*10
+            path.write_bytes(central+struct.pack('<4s4H2LH',b'PK\x05\x06',0,0,1,1,len(central),0,0))
+            with patch('render3d_archive.zipfile.ZipFile',side_effect=AssertionError('must not allocate')):
+                with self.assertRaises(Render3DError):restore_render(path,Path(temporary)/'result')
