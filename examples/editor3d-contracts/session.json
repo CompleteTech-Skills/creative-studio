@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "kind": "editor3d-session",
+  "id": "session",
+  "project_id": "project",
+  "base_revision": 0,
+  "base_project_sha256": "62ca33b39a103db474de2a1e5f285a7bdc95d4d6d90550a2c716ca2826a57562",
+  "selection": [
+    "node"
+  ],
+  "active_scene": "scene",
+  "playhead": 0,
+  "viewport": {
+    "translation": [
+      0,
+      0,
+      5
+    ],
+    "rotation": [
+      0,
+      0,
+      0,
+      1
+    ],
+    "scale": [
+      1,
+      1,
+      1
+    ]
+  },
+  "overlays": [
+    "grid"
+  ],
+  "tool": "select",
+  "unsaved_command_ids": []
+}
