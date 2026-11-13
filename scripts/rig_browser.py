@@ -17,8 +17,15 @@ def verify_browser(rig,viewer,*,screenshot=None,headless=True):
     from rig_skinning import evaluate_deformation
     from rig_models import rig_signature
     from rig_errors import read_json
-    require(read_json(Path(viewer)/'review.json')['rig_sha256']==rig_signature(rig.manifest),
+    viewer_config=read_json(Path(viewer)/'review.json')
+    require(viewer_config['rig_sha256']==rig_signature(rig.manifest),
             'RIG_BROWSER_STALE','Regenerate the viewer for the current rig revision.')
+    aliases=viewer_config.get('clip_aliases',{})
+    require(isinstance(aliases,dict) and all(isinstance(k,str) and isinstance(v,str) and v in rig.clips
+            for k,v in aliases.items()),'RIG_BROWSER_CLIP_ALIAS','Viewer aliases must bind clips in the current rig.')
+    reduced=viewer_config.get('reduced_motion_clip',aliases.get('neutral','neutral' if 'neutral' in rig.clips else None))
+    require(reduced is None or isinstance(reduced,str) and reduced in rig.clips,
+            'RIG_BROWSER_REDUCED','Reduced-motion target is absent from this rig version.')
     server=ThreadingHTTPServer(('127.0.0.1',0),partial(QuietHandler,directory=str(viewer)))
     thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
     try:
@@ -68,7 +75,9 @@ def verify_browser(rig,viewer,*,screenshot=None,headless=True):
                 solved=page.evaluate('args=>window.hatchReview.solveIK(...args)',[chain['id'],target])
                 require(np.isfinite(solved['residual_m']),'RIG_BROWSER_IK','Interactive IK returned a nonfinite residual.')
                 ik_edit=True;page.select_option('#control-mode','fk');page.click('#reset-pose')
-            page.check('#reduced');require(page.input_value('#clip')=='neutral','RIG_BROWSER_REDUCED','Reduced motion did not select the neutral pose.')
+            page.check('#reduced');require(page.input_value('#clip')==(reduced or ''),'RIG_BROWSER_REDUCED','Reduced motion did not select the declared clip or actual rest pose.')
+            stopped=page.evaluate('window.hatchReview.time');page.wait_for_timeout(120)
+            require(page.evaluate('window.hatchReview.time')==stopped,'RIG_BROWSER_REDUCED','Reduced motion did not stop playback.')
             page.uncheck('#reduced');page.select_option('#clip',selected)
             page.evaluate('window.hatchReview.evaluate(.65)')
             if screenshot:
