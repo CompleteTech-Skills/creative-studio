@@ -53,6 +53,35 @@ class SearchTests(unittest.TestCase):
         self.assertEqual([r['location'] for r in self.index.search('Find low-polygon trees for an outdoor scene.')['results']],[low])
         self.assertEqual(self.index.search('medieval stone village')['total'],1)
 
+    def test_singular_and_plural_prop_light_queries_bind_kind_on_real_assets(self):
+        prop=self.register('fixture-box',kind='prop')
+        # Register a genuine glTF point-light payload, with no query words in
+        # its name/keywords, so lexical matching cannot conceal a missing kind.
+        from asset_library import file_record
+        document={'asset':{'version':'2.0'},'extensionsUsed':['KHR_lights_punctual'],
+                  'extensions':{'KHR_lights_punctual':{'lights':[{'type':'point','intensity':10}]}},
+                  'nodes':[{'extensions':{'KHR_lights_punctual':{'light':0}}}],
+                  'scenes':[{'nodes':[0]}],'scene':0}
+        payload=self.root/'lamp.gltf';payload.write_text(json.dumps(document))
+        manifest=deepcopy(self.template)
+        manifest['identity'].update(id='fixture-lamp',slug='fixture-lamp',name='Fixture Lamp',kind='light')
+        record=file_record(payload,'payload/lamp.gltf',role='light')
+        manifest['files']=[record,manifest['files'][1]]
+        manifest['provenance']['sources']=[record]
+        manifest['publication']['inventory']=[f['path'] for f in manifest['files']]
+        manifest['compatibility']['formats']=['gltf']
+        reference=self.library.register(seal(manifest),{
+            record['path']:payload,manifest['files'][1]['path']:self.example/manifest['files'][1]['path']})
+        light={'library':'local','reference':reference}
+        self.index.rebuild([prop,light])
+        for kind,words,expected in [('prop',('prop','props'),prop),('light',('light','lights'),light)]:
+            for word in words:
+                with self.subTest(query=word):
+                    response=self.index.search('Find a '+word)
+                    self.assertEqual(response['query']['constraints'],{'kind':[kind]})
+                    self.assertEqual(response['query']['tokens'],[])
+                    self.assertEqual([row['location'] for row in response['results']],[expected])
+
     def test_stable_sort_and_snapshot_cursor_preserve_all_tied_results(self):
         for name in ['delta','alpha','beta','gamma']:self.register(name,keywords=['matching'])
         self.index.rebuild(self.refs)

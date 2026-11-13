@@ -56,6 +56,65 @@ class AssetTechnicalTests(unittest.TestCase):
         path = self.root / 'source.glb'; builder.write(path)
         return path
 
+    def registered_native_rig(self, change=None):
+        from rig_jobs import save_rig
+        rig = fixture(self.root, name='native', animated=False)
+        if change is not None:
+            change(rig.manifest['controllers'])
+            save_rig(rig, operation='technical-controller-regression')
+        prefab = json.loads((ROOT / 'examples/scene3d-contracts/example-prefab.json').read_bytes())
+        prefab['nodes'] = prefab['nodes'][:1]
+        prefab['dependencies'] = [{'kind': 'hatch-3d-rig', 'id': rig.manifest['id'],
+            'version': rig.manifest['version'], 'path': 'native/rig.json',
+            'sha256': hashlib.sha256((rig.root / 'rig.json').read_bytes()).hexdigest()}]
+        path = self.root / 'native-prefab.json'
+        path.write_text(json.dumps(prefab))
+        files = {p.relative_to(self.root).as_posix(): (p, 'source')
+                 for p in rig.root.rglob('*') if p.is_file()}
+        files['prefab.json'] = (path, 'runtime')
+        return rig, self.register(files, 'prefab')
+
+    def test_registered_native_rig_validates_unused_controllers_without_mutation(self):
+        from rig_ik import validate_controllers
+        rig, ref = self.registered_native_rig()
+        validate_controllers(rig.skeleton, rig.manifest['controllers'])
+        manifest = self.library.resolve(ref)
+        before = {record['path']: self.library.read_file(ref, record['path'])
+                  for record in manifest['files']}
+        report = validate_asset(self.library, ref)
+        self.assertEqual(report['status'], 'technically-verified')
+        self.assertEqual(self.library.resolve(ref), manifest)
+        self.assertEqual(report['file_hashes'],
+                         {name: hashlib.sha256(payload).hexdigest() for name, payload in before.items()})
+        self.assertEqual({name: self.library.read_file(ref, name) for name in before}, before)
+
+    def test_registered_native_rig_rejects_unused_ik_missing_bone(self):
+        from rig_ik import validate_controllers
+        rig, ref = self.registered_native_rig(
+            lambda controllers: controllers['ik'][0]['bones'].__setitem__(-1, 'missing-bone'))
+        manifest = self.library.resolve(ref)
+        with self.assertRaises(RigError) as native:
+            validate_controllers(rig.skeleton, rig.manifest['controllers'])
+        self.assertEqual(native.exception.report['code'], 'RIG_IK_CHAIN')
+        with self.assertRaises(RigError) as actual:
+            validate_asset(self.library, ref)
+        self.assertEqual(actual.exception.report['code'], native.exception.report['code'])
+        self.assertEqual(self.library.resolve(ref), manifest)
+
+    def test_registered_native_rig_rejects_unused_constraint_missing_target(self):
+        from rig_ik import validate_controllers
+        rig, ref = self.registered_native_rig(lambda controllers: controllers['constraints'].append(
+            {'schema_version': 1, 'id': 'follow', 'type': 'copy-position',
+             'bone': 'b2', 'target': 'missing-bone'}))
+        manifest = self.library.resolve(ref)
+        with self.assertRaises(RigError) as native:
+            validate_controllers(rig.skeleton, rig.manifest['controllers'])
+        self.assertEqual(native.exception.report['code'], 'RIG_CONSTRAINT_REFERENCE')
+        with self.assertRaises(RigError) as actual:
+            validate_asset(self.library, ref)
+        self.assertEqual(actual.exception.report['code'], native.exception.report['code'])
+        self.assertEqual(self.library.resolve(ref), manifest)
+
     def test_geometry_inspects_actual_transformed_positions_channels_and_hashes(self):
         path = self.geometry(translation=[2,3,4])
         ref = self.register({'runtime/asset.glb': (path, 'runtime')})

@@ -26,6 +26,8 @@ Khronos validator package.
 
 The implementation delegates model decoding, geometry diagnostics, skin and
 skeleton checks, animation checks, and Scene3D contracts to their existing owners.
+Native rig dependencies also invoke the complete `rig_ik.validate_controllers`
+authority, including IK chains and constraints unused by animation clips.
 It reports real transformed bounds, triangle/vertex counts, topology warnings,
 normal/tangent unit error, UV ranges, material slots, decoded texture dimensions,
 morph channels, hierarchy matrices, rest and hierarchy signatures, inverse-bind
