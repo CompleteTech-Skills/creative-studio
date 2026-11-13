@@ -130,6 +130,7 @@ class TimelineBrowserTests(unittest.TestCase):
                         self.assertEqual(EditorRepository(repo.root).snapshot()['scene']['id'],'foreign-scene')
                         page.click('#undo');page.wait_for_function('(revision)=>window.hatchEditor.snapshot.revision===revision',arg=baseline+5)
                         self.assertEqual(page.evaluate('()=>window.hatchEditor.snapshot.scene.id'),'example-scene')
+                        page.wait_for_function("()=>!document.querySelector('[aria-label=\"translation X\"]').disabled&&window.hatchEditor.objects.get('mesh').position.x===2")
                         print('TIMELINE_BROWSER_ACCEPTANCE '+json.dumps(dict(head=metadata['head'],status='passed',revision=repo.snapshot()['revision'],snapshot_sha256=repo.snapshot()['sha256']),sort_keys=True),flush=True)
 
 
