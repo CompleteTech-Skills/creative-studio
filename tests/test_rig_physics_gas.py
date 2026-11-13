@@ -96,6 +96,15 @@ class GasNativeTests(unittest.TestCase):
                         '--threads','2','--python-exit-code','2','--python',str(restored/'worker.py'),'--',
                         str(restored/'gas-job.json')],capture_output=True,timeout=60)
                     self.assertEqual(rerender.returncode,0,rerender.stderr[-2000:].decode(errors='replace'))
+                    from PIL import Image
+                    for frame in settings['render_frames']:
+                        name=f'replay-frame-{frame:04d}.png'
+                        with Image.open(restored/name) as actual, Image.open(destination/name) as expected:
+                            self.assertEqual(actual.size,expected.size)
+                            self.assertEqual(actual.tobytes(),expected.tobytes())
+                        # Native PNG metadata records the relocated source path. Restore the
+                        # published bytes after proving pixels, before testing cache corruption.
+                        (restored/name).write_bytes((destination/name).read_bytes())
                     self.assertEqual(verify_cache(restored),report)
                     missing=next((restored/'cache/data').glob('*.vdb'))
                     missing.unlink()
@@ -107,6 +116,7 @@ class GasNativeTests(unittest.TestCase):
         target=os.environ.get('HATCH_GAS_EVIDENCE')
         with tempfile.TemporaryDirectory(prefix='hatch-gas-comparisons-') as temporary:
             root=Path(target) if target else Path(temporary)
+            root.mkdir(parents=True,exist_ok=True)
             fields={}
             for name,kwargs in [('control',{}),('wind',dict(wind=4.)),('obstacle',dict(obstacle=True))]:
                 world,payloads,settings=build_gas_inputs(**kwargs)
