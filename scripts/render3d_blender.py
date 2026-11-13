@@ -362,7 +362,7 @@ def render_frames(request,snapshot_root,destination,*,executable=None,cancelled=
     return BlenderBackend(executable).render_frames(request,snapshot_root,destination,cancelled=cancelled,progress=progress)
 
 
-def recover_verified_stage(request, stage, destination, *, expected_backend, executable):
+def _recover_verified_stage(request, stage, destination, *, expected_backend, executable, expected_images):
     """Finish pixel verification of a retained, fully executed private stage.
 
     This does not execute a worker or infer execution from arbitrary images.
@@ -390,13 +390,16 @@ def recover_verified_stage(request, stage, destination, *, expected_backend, exe
             'verification-failed', 'Stage did not fail solely at optional PNG verification.')
     manifest, worker = captured('manifest.json'), captured('worker-report.json')
     backend = deepcopy(expected_backend)
+    expected_images = deepcopy(expected_images)
     require(manifest['backend'] == backend, 'verification-failed', 'Retained backend differs from original admission.')
     require(backend['worker_sha256'] == sha256(WORKER), 'stale-asset', 'Original worker code is unavailable.')
     # Bind original executable bytes, not just a version string. The supervisor
     # already admitted this exact identity; this API never discovers a substitute.
     with open_regular(executable, 512*1024**2) as stream:
-        digest = hashlib.sha256()
+        digest, count = hashlib.sha256(), 0
         for chunk in iter(lambda: stream.read(1024*1024), b''):
+            count += len(chunk)
+            require(count <= 512*1024**2, 'invalid-input', 'Original executable grew beyond hash budget.')
             digest.update(chunk)
     require(digest.hexdigest() == backend['executable_sha256'], 'stale-asset', 'Original executable bytes are unavailable.')
     root = stage / 'snapshot'
@@ -424,10 +427,21 @@ def recover_verified_stage(request, stage, destination, *, expected_backend, exe
     images = [dict(frame=index, file=artifact(f'frames/{index:06d}.png'), format='png',
                    bit_depth=settings['output']['bit_depth'], pass_name='combined', resolution=settings['resolution'])
               for index in frames]
+    require([dict(frame=item['frame'], **item['file']) for item in images] == expected_images,
+            'corrupt-output', 'Retained images differ from the trusted supervisor checkpoint.')
+    total = 0
+    for path in stage.rglob('*'):
+        require(not path.is_symlink(), 'ownership', 'Retained stage contains a symlink.')
+        if path.is_file():
+            with open_regular(path, settings['resources']['storage_bytes']) as stream:
+                total += os.fstat(stream.fileno()).st_size
+            require(total <= settings['resources']['storage_bytes'], 'storage-exhaustion', 'Retained stage exceeds aggregate storage budget.')
+        else:
+            require(path.is_dir(), 'ownership', 'Retained stage contains a special file.')
     result = dict(schema_version=1, kind='render3d-result', job=request['id'], request_sha256=object_hash(request),
         snapshot_sha256=snapshot['snapshot_sha256'], backend=backend, status='complete', requested_frames=frames,
         successful=frames, failed=[], skipped=[], reused=[], images=images,
-        diagnostics=['Recovered fully executed retained sequence after optional PNG decoder became available. Process usage was not retained.'],
+        diagnostics=['Trusted supervisor continuation checkpoint '+object_hash(expected_images)+': recovered private sequence after optional PNG decoder failure. This verifies continuity from the checkpoint, not retrospective execution authentication. Process usage unavailable.'],
         usage=dict(elapsed_seconds=None, peak_memory_bytes=None, output_bytes=None, measurement='unavailable'),
         logs=[artifact('blender.log')], manifest=artifact('manifest.json'),
         verification=dict(status='not-run', verifier=None, evidence=None))
@@ -438,3 +452,19 @@ def recover_verified_stage(request, stage, destination, *, expected_backend, exe
     atomic_json(stage/'result.json', result)
     _rename_no_replace(stage, target)
     return result
+
+
+
+def recover_verified_stage(request, stage, destination, *, expected_backend, executable, expected_images):
+    """Resume only trusted supervisor-owned execution with an external byte checkpoint.
+
+    This proves exact-byte continuity from that checkpoint, not retrospective
+    authentication of an untrusted producer's claimed prior execution.
+    """
+    try:
+        return _recover_verified_stage(request, stage, destination, expected_backend=expected_backend,
+            executable=executable, expected_images=expected_images)
+    except Render3DError:
+        raise
+    except (OSError, RigError) as exc:
+        raise Render3DError('invalid-input', str(exc)) from exc

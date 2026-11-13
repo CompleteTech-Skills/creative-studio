@@ -9,6 +9,8 @@ measured independently; every split-shot animation boundary must agree with the
 corresponding full native performance. A reconstructed canonical Scene3D binding
 must match the supplied binding inventory before rendering.
 
+Install the independent PNG decoder (`pypng`) and the native rig dependencies before execution. The runner checks decoding and H264 encoding availability before rendering.
+
 Run heavy validation under the shared host queue lock:
 
 ```sh
@@ -30,3 +32,13 @@ unreviewed, and this engineering fixture does not imply production art approval.
 Failures retain private `.director-delivery-*` diagnostics and never publish a
 successful destination. The orchestration does not implement resumable jobs;
 Director #31 owns persistence, interruption and selective rework acceptance.
+
+
+A supervised optional-decoder failure can continue with
+`--resume-retained-stage PRIVATE_STAGE --retained-inventory TRUSTED_CHECKPOINT`.
+The external checkpoint supplies the original supervisor's backend identity and
+exact frame index/path/byte/hash inventory. Recovered frames must match it and
+pass independent full decoding before publication. Process usage lost before
+publication remains unavailable. This is continuation integrity from a trusted
+checkpoint, not retrospective authentication of an untrusted producer's claimed
+execution. It is separate from the native job resume acceptance in Director #31.

@@ -201,7 +201,7 @@ def encode_rendered_mvp(root, shots, destination, *, ffmpeg=None, ffprobe=None):
             'verification': verification, 'visual_review': 'not-performed'}
 
 
-def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffprobe=None, retained_stage=None):
+def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffprobe=None, retained_stage=None, retained_inventory=None):
     """Execute both canonical shots and encode independently verified masters.
 
     Use a new destination. Failed output remains private for diagnosis; a final
@@ -217,10 +217,28 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
     from render3d_acceptance import inspect_render
     from scene3d_contracts import load_project
     from render3d_contracts import validate
+    # Admit the independent decoder and encoder before starting expensive work.
+    try:
+        import png
+        import numpy
+    except ImportError as exc:
+        raise RigError('DIRECTOR_DELIVERY', 'Install pypng and numpy before rendering the MVP.') from exc
+    from silent_video import capabilities
+    media_capabilities = capabilities(ffmpeg=ffmpeg, ffprobe=ffprobe)
+    _require(media_capabilities['status'] == 'available' and
+             media_capabilities['profiles']['h264-mp4']['status'] == 'supported',
+             'Silent H264 encoder and independent media verifier must be available before rendering.')
     root = Path(performance_root).absolute()
     destination = Path(destination).absolute()
     _require(not destination.exists() and not destination.is_symlink(), 'Use a new delivery destination.')
     _require(destination.parent.is_dir(), 'Delivery parent does not exist.')
+    retained_admission = None
+    if retained_stage is not None:
+        from render3d_contracts import open_regular
+        from rig_errors import decode_json
+        _require(retained_inventory is not None, 'Trusted supervisor inventory checkpoint is required.')
+        with open_regular(retained_inventory, 1024**2) as stream:
+            retained_admission = decode_json(stream.read(1024**2+1), max_bytes=1024**2)
     motion = verify_performance_motion(root)
     static = verify_no_motion_negative(root)
     bundle = load_project(root / 'scene-project')
@@ -287,11 +305,10 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
                 from rig_errors import decode_json
                 candidates = list(stage.glob('.render3d-*'))
                 _require(len(candidates) == 1, 'Expected one fully executed retained render stage.')
-                with open_regular(candidates[0] / 'manifest.json', 64*1024**2) as stream:
-                    admitted = decode_json(stream.read(64*1024**2+1), max_bytes=64*1024**2)['backend']
+                admitted = retained_admission['backend']
                 _require(identity == admitted, 'Original admitted backend is unavailable for retained recovery.')
                 result = recover_verified_stage(request, candidates[0], stage / identifier,
-                    expected_backend=admitted, executable=backend.executable)
+                    expected_backend=admitted, executable=backend.executable, expected_images=retained_admission['images'])
             else:
                 result = backend.render_frames(request, snapshot_root, stage / identifier)
             shot = dict(request=request, result=result, directory=identifier,
@@ -307,7 +324,10 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
         receipt = dict(schema_version=1, kind='director-mvp-delivery', motion=motion,
             static_motion_negative=static, snapshot=snapshot, backend=identity,
             shots=[dict(request=item['request'], result=item['result'], directory=item['directory']) for item in shots],
-            inspections=inspections, media=media, negatives=negatives, visual_review='unreviewed')
+            inspections=inspections, media=media, negatives=negatives, visual_review='unreviewed',
+            retained_recovery=(dict(checkpoint_sha256=sha256(retained_inventory),
+                limitation='Trusted supervisor continuation from captured private-stage bytes; no retrospective cryptographic execution authentication.')
+                if retained_admission is not None else None))
         if (stage / 'failure.json').exists():
             (stage / 'failure.json').rename(stage / 'prior-verification-failure.json')
         atomic_json(stage / 'delivery.json', receipt)
@@ -372,8 +392,9 @@ if __name__ == '__main__':
     parser.add_argument('--ffmpeg')
     parser.add_argument('--ffprobe')
     parser.add_argument('--resume-retained-stage', type=Path)
+    parser.add_argument('--retained-inventory', type=Path)
     args = parser.parse_args()
     result = render_mvp(args.performance_root, args.destination, blender=args.blender,
-                        ffmpeg=args.ffmpeg, ffprobe=args.ffprobe, retained_stage=args.resume_retained_stage)
+                        ffmpeg=args.ffmpeg, ffprobe=args.ffprobe, retained_stage=args.resume_retained_stage, retained_inventory=args.retained_inventory)
     print(json.dumps({'destination': str(args.destination), 'frame_count': result['media']['verification']['frame_count'],
                       'visual_review': result['visual_review']}))
