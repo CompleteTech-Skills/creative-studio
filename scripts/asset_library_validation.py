@@ -228,6 +228,7 @@ def _scene_documents(root, manifest, payloads, geometry, limits):
             elif ref.get('kind') == 'hatch-3d-rig':
                 from rig_models import load_rig
                 from rig_skeleton import validate_skeleton
+                from rig_ik import validate_controllers
                 from rig_skinning import validate_skin
                 from rig_animation import validate_animation
                 from rig_models import validate_geometry
@@ -238,6 +239,7 @@ def _scene_documents(root, manifest, payloads, geometry, limits):
                     fail('REFERENCE', 'Native rig identity differs from declared scene binding.', target)
                 validate_geometry(rig.geometry, limits)
                 validate_skeleton(rig.skeleton, limits)
+                validate_controllers(rig.skeleton, rig.manifest['controllers'])
                 for mesh, skin in rig.weights.items():
                     validate_skin(skin, rig.geometry.by_id()[mesh], rig.skeleton, limits)
                 for clip in rig.clips.values():
