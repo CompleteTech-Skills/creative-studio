@@ -97,6 +97,11 @@ def register_fixtures(library, fixture):
             'runtime/checker.png' if kind == 'texture' else 'runtime/asset.glb')
         files = [file_record(source, logical, 'runtime'),
                  file_record(fixture['license'], 'source/license.txt', 'license')]
+        sources = {logical: source, 'source/license.txt': fixture['license']}
+        if kind == 'character' and 'native' in fixture:
+            for name, path in fixture['native'].items():
+                files.append(file_record(path, name, 'evidence'))
+                sources[name] = path
         value = deepcopy(base)
         value.update(version=VERSION, files=files)
         value['identity'].update(id='demo-' + kind, slug='demo-' + kind, name='Library demo ' + kind,
@@ -114,5 +119,5 @@ def register_fixtures(library, fixture):
         value['compatibility'].update(formats=[source.suffix[1:]],
             material_capabilities=['gltf-pbr'] if kind not in ('camera', 'light', 'texture') else [],
             texture_channels=['baseColor'] if kind in ('material', 'character', 'environment', 'prop') else [])
-        references[kind] = library.register(seal(value), {logical: source, 'source/license.txt': fixture['license']})
+        references[kind] = library.register(seal(value), sources)
     return references

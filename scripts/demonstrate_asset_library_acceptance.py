@@ -96,8 +96,26 @@ def demonstrate(output, executable):
     from rig_math import matrix_quaternion
     output=Path(output).absolute();output.mkdir(parents=True,exist_ok=False)
     fixture=create_fixtures(output/'source')
+    from asset_library_import import BlenderAdapter, _check_gltf
+    from rig_contracts import DEFAULT_LIMITS
+    native=BlenderAdapter(executable).execute('gltf',fixture['files']['character'],output/'native-blender',fixture=True)
+    _,native_validation=_check_gltf(native['outputs']['glb'],DEFAULT_LIMITS)
+    native_evidence=output/'source/blender-interoperability.json'
+    atomic_json(native_evidence,dict(inspection=native['inspection'],execution=native['execution'],
+        worker_sha256=native['worker_sha256'],capability=native['capability'],independent=native_validation,
+        saved_and_reopened=True,fixture=True,production_approved=False))
+    fixture['native']={'native/character.blend':native['outputs']['blend'],
+        'native/roundtrip.glb':native['outputs']['glb'],'evidence/blender.json':str(native_evidence)}
+    atomic_json(output/'source/fixtures.json',fixture)
     library=AssetLibrary(output/'library',create=True);refs=register_fixtures(library,fixture)
     graph=DependencyGraph({'local':library});adapter=SceneLibraryAdapter(graph)
+    from asset_library_search import SearchIndex
+    search=SearchIndex(output/'search',{'local':library},create=True,dependency_graph=graph)
+    search.rebuild()
+    discovery=search.search('character',filters={'kind':'character'})
+    require(any(item['location']['reference']==refs['character'] for item in discovery['results']),
+            'Metadata search did not discover the actual character version.')
+    atomic_json(output/'discovery.json',discovery)
     project=adapter.new_project('library-acceptance')
     def binding(kind):
         path='native/'+kind+'.json' if kind in ('camera','light') else 'runtime/asset.glb'
