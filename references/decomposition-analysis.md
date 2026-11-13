@@ -82,7 +82,8 @@ identity and version, available model-file hashes, annotation confidence and
 source-space primitives, provider call ID or a nonempty reason it is unavailable,
 actual elapsed/cost fields when known, and errors. Use null for unknown elapsed
 or cost, never invented measurements. The request records the prompt and bounded
-parameters; fixed local cascades reject text prompts. Inline polygons and runs
+provider parameters (up to 32 scalar/string-list entries; Python callers can also
+pin `expected_model` before an external handoff); fixed local cascades reject text prompts. Inline polygons and runs
 avoid external mask paths and resource URIs. Model output cannot replace the
 foreground owner or run arbitrary code. Unknown fields, nonfinite numbers,
 malformed hierarchy, out-of-canvas coordinates, unsupported categories and unsafe

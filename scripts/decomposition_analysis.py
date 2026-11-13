@@ -29,14 +29,17 @@ MODEL_FILES = ('haarcascade_frontalface_default.xml', 'haarcascade_eye.xml')
 MODEL = obj({'provider': TEXT, 'name': TEXT, 'version': TEXT,
              'files': array(obj({'name': TEXT, 'sha256': HASH}), 32),
              'identity_evidence': TEXT})
+PARAM_VALUE = {'anyOf': [NOTE, {'type':'number'}, BOOLEAN, {'type':'null'}, array(NOTE,32)]}
+PARAMETERS = {'type':'object', 'maxProperties':32, 'additionalProperties':PARAM_VALUE}
+LOCAL_PARAMETERS = obj({'scale_factor': {'type':'number','minimum':1.01,'maximum':2},
+                        'min_neighbors': {'type':'integer','minimum':1,'maximum':20}})
 REQUEST = obj({'base_manifest_sha256': HASH, 'schema_version': {'const': 1}, 'kind': {'const': 'decomposition-analysis-request'},
     'source': obj({'path': TEXT, 'sha256': HASH, 'width': {'type': 'integer', 'minimum': 1},
                    'height': {'type': 'integer', 'minimum': 1}}),
     'references': array(obj({'role': {'enum': ['foreground', 'reference']}, 'path': TEXT, 'sha256': HASH}), 16),
     'taxonomy': array(TEXT, 128, 1), 'backend': {'enum': ['opencv-haar', 'external']},
     'model': {'anyOf': [MODEL, {'type': 'null'}]}, 'prompt': NOTE,
-    'parameters': obj({'scale_factor': {'type': 'number', 'minimum': 1.01, 'maximum': 2},
-                       'min_neighbors': {'type': 'integer', 'minimum': 1, 'maximum': 20}}),
+    'parameters': PARAMETERS,
     'policy': obj({'enabled': {'const': True}, 'network_allowed': {'const': False},
                    'max_cost': {'const': 0}, 'max_seconds': {'type': 'integer', 'minimum': 1, 'maximum': 120},
                    'max_pixels': {'type': 'integer', 'minimum': 1, 'maximum': MAX_PIXELS}})})
@@ -106,6 +109,8 @@ def _job(root, identifier):
 
 def _source(root, request):
     validate_structure(request, REQUEST, 'analysis request')
+    if request['backend'] == 'opencv-haar':
+        validate_structure(request['parameters'], LOCAL_PARAMETERS, 'OpenCV parameters')
     manifest = load_decomposition(root)
     source = request['source']
     if (manifest['source']['sha256'] != source['sha256'] or
@@ -122,18 +127,18 @@ def _source(root, request):
 
 
 def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_seconds=30,
-            scale_factor=1.1, min_neighbors=5):
+            scale_factor=1.1, min_neighbors=5, parameters=None, expected_model=None):
     root = Path(root)
     if not enabled:
         raise ValueError('analysis is disabled; explicit --enable-analysis is required')
     manifest = load_decomposition(root)
-    model = _model() if backend == 'opencv-haar' else None
+    model = _model() if backend == 'opencv-haar' else expected_model
     request = {'base_manifest_sha256': sha(root / 'decomposition.json'), 'schema_version': 1, 'kind': 'decomposition-analysis-request',
         'source': {key: manifest['source'][key] for key in ('path', 'sha256')},
         'references': [{'role': 'foreground', **manifest['foreground']['mask']}],
         'taxonomy': taxonomy or ['face/region', 'face/eye-region'], 'backend': backend,
         'model': model, 'prompt': prompt,
-        'parameters': {'scale_factor': scale_factor, 'min_neighbors': min_neighbors},
+        'parameters': parameters if parameters is not None else ({'scale_factor': scale_factor, 'min_neighbors': min_neighbors} if backend == 'opencv-haar' else {}),
         'policy': {'enabled': True, 'network_allowed': False, 'max_cost': 0,
                    'max_seconds': max_seconds, 'max_pixels': MAX_PIXELS}}
     request['source'].update({key: manifest['canvas'][key] for key in ('width', 'height')})
@@ -205,6 +210,8 @@ def _validated_response(root, identifier, response):
     local = request['backend'] == 'opencv-haar'
     if local and (response['model'] != request['model'] or response['evidence']['execution'] != 'local'):
         raise ValueError('local response model/execution mismatch')
+    if request['model'] is not None and response['model'] != request['model']:
+        raise ValueError('response does not match the selected model')
     if not local and response['evidence']['execution'] != 'external-assertion':
         raise ValueError('external execution is only an attributed assertion')
     if response['evidence']['call_id'] is None and not response['evidence']['unavailable_reason'].strip():
@@ -371,8 +378,16 @@ def retry(root, identifier):
             if target.exists() and sha(path) != sha(target):
                 raise ValueError('retry history conflict')
             if not target.exists():
-                with target.open('xb') as output:
-                    output.write(path.read_bytes())
+                descriptor, temp_name = tempfile.mkstemp(prefix='.record-', dir=history)
+                temporary = Path(temp_name)
+                try:
+                    with open(descriptor, 'wb', closefd=True) as output:
+                        output.write(path.read_bytes())
+                    from atomic_publish import _rename_no_replace
+                    _rename_no_replace(temporary, target)
+                finally:
+                    if temporary.exists():
+                        temporary.unlink()
             if name != 'state.json':
                 path.unlink()
     state = {key: info[key] for key in ('attempts','request_sha256','applied_revision','error')}

@@ -155,6 +155,16 @@ class AnalysisTests(unittest.TestCase):
         with mock.patch.object(analysis,'MAX_JOBS',1):
             with self.assertRaisesRegex(ValueError,'quota'):self.prepare(prompt='other request')
 
+    def test_external_parameters_and_selected_model_are_bound(self):
+        model={'provider':'synthetic-fixture','name':'none','version':'fixture-v1','files':[],
+               'identity_evidence':'Fixture only; no model executed'}
+        job=analysis.prepare(self.root,'external',enabled=True,taxonomy=['face/region'],
+                             parameters={'threshold':0.7,'labels':['face/region']},expected_model=model)
+        self.assertEqual(job['request']['parameters']['threshold'],.7)
+        wrong=self.response(job);wrong['model']['version']='other'
+        with self.assertRaisesRegex(ValueError,'selected model'):self.ingest(job,wrong)
+        self.ingest(job)
+
     def test_external_failure_can_be_explicitly_retried_with_retained_response(self):
         job=self.prepare()
         failed=self.response(job);failed.update(status='failed',errors=['Synthetic provider failure'])
