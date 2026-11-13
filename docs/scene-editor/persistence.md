@@ -127,3 +127,14 @@ checkpoint timing, interruption before and after HEAD publication, corrupt
 journals, actual archive restoration, content tampering, path attacks, resource
 limits and racing destinations. Browser interaction, render execution and full
 editor acceptance remain the separately tested viewport/render integrations.
+
+### Immutable viewport resources
+
+The preview bridge identifies each native asset by its complete reference:
+`[id, version, path, sha256]`. Browser lookup uses that same tuple; an asset ID
+alone is insufficient when a restored project contains multiple revisions.
+Geometry instance budgets count only nodes bound to that exact reference.
+`test_distinct_asset_versions_keep_geometry_and_instance_budgets` verifies two
+validated native versions retain their different geometry and budget counts;
+`test_two_native_asset_versions_render_distinct_meshes` checks their actual
+browser geometry. The preview remains a derived view of the saved snapshot.

@@ -29,6 +29,12 @@ MAX_PREVIEW_VERTICES = 500_000
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def asset_identity(reference):
+    """Exact immutable native reference used by both producer and browser."""
+    return json.dumps([reference['id'], reference['version'], reference['path'],
+                       reference['sha256']], ensure_ascii=False, separators=(',', ':'))
+
+
 def preview_snapshot(repository, snapshot):
     """Bind a real viewport payload to an immutable native repository snapshot."""
     from rig_import import load_character_model
@@ -56,10 +62,11 @@ def preview_snapshot(repository, snapshot):
             path = safe_path(root, name)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(payload)
-        for document in snapshot['documents'].values():
+        for document_path, document in snapshot['documents'].items():
             if document.get('kind') != 'scene3d-asset':
                 continue
-            identifier = document['id']
+            identifier = asset_identity(dict(id=document['id'], version=document['version'],
+                path=document_path, sha256=inventory[document_path]['sha256']))
             path = safe_path(root, document['content']['path'], exists=True)
             try:
                 require(path.suffix.lower() in ('.obj', '.glb'), 'EDITOR3D_VIEW_FORMAT',
@@ -67,7 +74,8 @@ def preview_snapshot(repository, snapshot):
                 limits = dict(DEFAULT_LIMITS)
                 limits['vertices'] = min(limits['vertices'], MAX_PREVIEW_VERTICES)
                 imported = load_character_model(path, limits=limits)
-                instances = sum(node.get('asset', {}).get('id') == identifier for node in scene['nodes'])
+                instances = sum(asset_identity(node['asset']) == identifier
+                                for node in scene['nodes'] if node.get('asset'))
                 projected_vertices += imported.geometry.vertex_count * instances
                 require(projected_vertices <= MAX_PREVIEW_VERTICES, 'EDITOR3D_VIEW_LIMIT',
                         'Instanced geometry exceeds the 500,000-vertex viewport budget.')
