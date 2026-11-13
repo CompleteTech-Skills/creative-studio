@@ -45,6 +45,8 @@ usage again. Distinct rate-limit/retry attempts retain their expenditure.
 - `complete` or `failed` records known actual usage and releases unused capacity.
 - Unexpected actual consumption above the reserved estimate is preserved and
   returns `over_budget=True`. It is not erased to make the ledger look healthy.
+  Accumulated actual spend retains up to all 128 accepted deltas per reservation,
+  including totals above the per-delta bound.
   If total usage exceeds a hard project/provider limit, all further admission
   against that limit fails.
 
