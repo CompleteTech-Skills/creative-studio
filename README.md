@@ -42,6 +42,10 @@ Deterministic scripts preserve motion, validate provenance, compose the atlas, a
 </tr>
 </table>
 
+## Animation3D foundation
+
+Validate separately versioned animation documents with `python scripts/animation3d.py validate --file FILE`; inspect supported operations with `python scripts/animation3d.py capabilities`. The [foundation guide](references/3d-animation-contracts.md) covers exact rational time, strict contracts and native rig channel sampling. Full timeline, scene evaluation and cinematic rendering remain downstream work.
+
 ## Model3D contract and payload verification
 
 The additive [Model3D foundation](references/model3d-contracts.md) validates strict
@@ -199,10 +203,15 @@ The [style validation record](references/style-validation.md) documents the styl
 
 ## 🚀 Hatch your own
 
+This repository is **Creative Studio**. The installed skill remains **`hatch-pet`**
+for compatibility with existing invocations, profiles and local installations.
+The repository name does not imply that the planned Director, general 3D scene
+editor or physics production programs are complete.
+
 Install the skill into Codex:
 
 ```bash
-git clone https://github.com/CompleteDotTech/hatch-pet "${CODEX_HOME:-$HOME/.codex}/skills/hatch-pet"
+git clone https://github.com/CompleteTech-Skills/creative-studio "${CODEX_HOME:-$HOME/.codex}/skills/hatch-pet"
 ```
 
 Then just ask:
@@ -385,7 +394,12 @@ More detail lives in [`SKILL.md`](SKILL.md), [`references/animation-rows.md`](re
 
 Run `python -m unittest discover -s tests -v` for the complete local regression suite, including model-free reconstruction checks against retained non-fixture pilot sources. These tests do not call imagegen or confer artwork approval. `python tests/fixture_workflow.py --output-dir C:/work/hatch-fixture-demo --profile examples/web-status.json` creates a clearly labeled legacy demonstration without calling imagegen or installing a pet.
 
-The complete development suite uses `requirements-test.txt` and a local Playwright Chromium binary. Install them if missing with `python -m pip install -r requirements-test.txt` and `python -m playwright install chromium`. The standalone `scripts/doctor.py` reports local capabilities without requiring browser tools.
+For the existing 2D suite, use a separate environment with `requirements-delivery.txt` and a local Playwright Chromium binary, then run `HATCH_DECOMPOSITION_BROWSER_TEST=1 python scripts/test_rig_gate.py compatibility`. For complete discovery including the optional 3D tests, install `requirements-test.txt` and `requirements-rig-test.txt` in another environment and run `python -m unittest discover -s tests -v`. These environments have different pinned dependency versions; do not combine the delivery and rig requirement files. Install Chromium separately inside **each** environment with its own `python -m playwright install chromium`; the pinned Playwright versions require different browser builds. Set `HATCH_DECOMPOSITION_BROWSER_TEST=1` when running either suite to opt into the decomposition browser regression. Blender, the Khronos validator and opt-in browser checks have separate setup and release gates in [the 3D guide](references/3d-rigging.md); an optional-tool skip is not an interoperability pass. The standalone `scripts/doctor.py` reports local capabilities without requiring browser tools.
+
+See [contributor and triage guidance](CONTRIBUTING.md) for evidence terminology,
+label governance and the separation between local tests, CI and production review.
+The [24 October repository audit](docs/audits/2026-10-24/README.md) records the
+complete issue/PR inventory, subsystem findings and verified governance changes.
 
 ### Director engineering baseline
 
