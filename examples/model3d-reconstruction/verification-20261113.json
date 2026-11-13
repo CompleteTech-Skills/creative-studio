@@ -1,26 +1,28 @@
 {
   "schema_version": 1,
-  "scope": "issue46boundedlocalreconstruction; notfullparent10acceptance",
-  "base": "9ea50854b70ccc23b11ecf51844a96f0e7f3ad92",
+  "scope": "Issue46 bounded local reconstruction; central integration and full parent10 acceptance remain open.",
+  "base": "0226b6f3b2c37ff76d06a60df67fba37b3494dde",
   "commands": {
     "regression": "python -m unittest discover -s tests -p 'test_model3d_*.py' -v",
     "focused": "python -m unittest discover -s tests -p 'test_model3d_reconstruction*.py' -v",
     "demo": "python scripts/model3d_reconstruction_demo.py --destination NEW"
   },
   "validation": {
-    "model_before_final_metadata_hardening": {
-      "tests": 195,
+    "model3d_final": {
+      "tests": 206,
       "passed": true,
-      "seconds": 67.097
+      "seconds": 21.331,
+      "log": "reconstruction46-model-final-e1e0a88.log"
     },
-    "final_reconstruction_tests": {
-      "tests": 23,
+    "independent_review_tests": {
+      "tests": 31,
       "passed": true,
-      "seconds": 0.341
+      "seconds": 1.653,
+      "decisive_five_finding_probe": "pass"
     },
     "demo": {
       "generated_files": 32,
-      "acceptance_sha256": "333ac4330f404ef2346d23bdf6b62c460ffb89aa1c236a6ad025088508bebb59",
+      "acceptance_sha256": "7a61fbfc1d0ba550286e881bcd5bced35ba97443f3df7dee7084a47d3a558d03",
       "methods": [
         "C-artwork-limited-extrusion",
         "D-contour-with-hole",
@@ -108,26 +110,35 @@
           "preserved": null
         }
       },
-      "incomplete_warning": {
-        "boundary_uncertainty_m": 0.21650635094610965,
-        "uncertainties": [
-          "Hidden concavities and internal surfaces remain unknown; no observed anatomy is inferred.",
-          "Voxel faces are derived boundaries of an approximate silhouette intersection, not directly measured surface samples.",
-          "Some views share the same calibration and add no independent geometric constraint.",
-          "Viewing axes are collinear; depth constraints depend on projection and camera baselines, and completeness is unproven."
-        ]
-      }
+      "incomplete_uncertainties": [
+        "Hidden concavities and internal surfaces remain unknown; no observed anatomy is inferred.",
+        "Voxel faces are derived boundaries of an approximate silhouette intersection, not directly measured surface samples.",
+        "Some views share the same calibration and add no independent geometric constraint.",
+        "Viewing axes are collinear; depth constraints depend on projection and camera baselines, and completeness is unproven."
+      ]
     }
   },
   "source_hashes": {
-    "scripts/model3d_reconstruction.py": "7023396433b631e68d451fdffcd7f4972a3f36eb37bda5d971a07522633c20d8",
-    "scripts/model3d_reconstruction_demo.py": "b094fbc1d85a231b2af43980cf0240fc5ef9cdb1dee724452dd6c9c52b0acdb8",
-    "scripts/model3d_reconstruction_solids.py": "463879cce7c1796d4fdceb0a2f6a5210e2b40370b36b07e00ec2fefbde444c0a",
-    "scripts/model3d_reconstruction_views.py": "75330a586126f65157c2bb12c6a142aa1d10902d727c8ce611a795a710727a4e"
+    "scripts/model3d_reconstruction.py": "8e9a49d2a6bc9e51ef2a70eef2e78421409259301705262aad555983fb8ffe16",
+    "scripts/model3d_reconstruction_demo.py": "aa633c822ee1bbe25592631cb4a6d5668721aee556fb68df986abbba53f7f9bf",
+    "scripts/model3d_reconstruction_solids.py": "e1a3127b16ca79163a8e16c965952186e6a74eeab141043b7452cdbb3db45393",
+    "scripts/model3d_reconstruction_views.py": "de25bc2387a097c1a18a8193823c7d27ed39c7759ed56739e07743a9a0c91ce8"
   },
   "limits": [
-    "CentralCLI/schema/capability/job integration remains pending sharedowner.",
-    "No provider, automatic calibration, bilateral-symmetry completion, Blenderauthoring, productionapproval or parent10completion claimed."
+    "Central CLI/schema/capability/job integration remains pending shared owner.",
+    "No provider, automatic calibration, bilateral symmetry completion, Blender authoring, production approval or parent10 completion claimed."
   ],
-  "review": "freshindependentreviewpending"
+  "review": {
+    "result": "clean",
+    "head": "e1e0a882b078e8c4f15f0de39802b01110ffbb29",
+    "base": "0226b6f3b2c37ff76d06a60df67fba37b3494dde",
+    "resolved_findings": [
+      "Stale geometry/report/occupancy publication",
+      "Strict JPEG entropy and PNG raster verification",
+      "Signed integer minimum metric bound overflow",
+      "Mixed boolean numerical admission",
+      "UV seam vertex allocation budget"
+    ]
+  },
+  "implementation_head": "e1e0a882b078e8c4f15f0de39802b01110ffbb29"
 }
