@@ -101,7 +101,7 @@ def run(argv=None):
                 if action in ('cancel','resume','run') and not apply:fail('APPLY','Job mutation requires --apply.')
                 function={'status':owner.job_status,'cancel':owner.cancel_job,
                     'resume':owner.resume_job,'run':owner.run_job}[action]
-                result=function(identifier)
+                result=dict(status='plan',job=identifier,operation=action,executed=False) if dry_run and action in ('cancel','resume','run') else function(identifier)
         else:
             if operation=='storage.gc' and apply:
                 operation='storage.gc.apply'

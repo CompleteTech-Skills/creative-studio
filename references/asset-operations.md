@@ -51,7 +51,12 @@ final canonical library. Recovery recognizes the same exact immutable digest;
 conflicting versions fail. Index/preview/export/package outputs retain verified
 staging and use a sibling copy plus the existing exclusive rename helper, so
 process exit after publication cannot cause a second publication or erase a
-racing destination. Interrupted verified staging is retained for explicit resume.
+racing destination. Interrupted verified staging is retained for explicit resume. Index idempotency
+includes exact library references and annotation revisions. Rebuilt indexes use an
+explicit new generation destination; an existing generation is preserved, and
+searching a stale generation reports the canonical stale-cache diagnostic. Jobs
+with uncertain verified publication must recover before cancellation can claim
+that no publication occurred.
 
 Resource pool ceilings and runtime/attempt/staging budgets are persisted in the
 job store. `--limits limits.json` configures lower ceilings for a new store;

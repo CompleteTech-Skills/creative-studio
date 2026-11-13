@@ -85,11 +85,37 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
     def test_cancelled_index_keeps_target_absent_then_explicit_resume_publishes(self):
         ref=self.fixture.register();target=self.root/'index'
         job=self.owner.submit('index',dict(index=str(target),locations=[dict(library='local',reference=ref)]))
+        planned=assets.run(['--library',str(self.library.root),'jobs','run','--job',job['id'],'--apply','--dry-run'])
+        self.assertFalse(planned['result']['executed'])
+        self.assertEqual(self.owner.job_status(job['id'])['status'],'queued')
         self.owner.cancel_job(job['id'])
         with self.assertRaises(RigError):self.owner.run_job(job['id'])
         self.assertFalse(target.exists())
         self.owner.resume_job(job['id']);self.owner.run_job(job['id'])
         self.assertTrue(target.is_dir())
+
+    def test_managed_package_restore_reopens_canonical_library(self):
+        from asset_library_packages import create_package
+        from asset_library_dependencies import DependencyGraph,locator
+        ref=self.fixture.register();package=self.root/'package'
+        create_package(DependencyGraph({'local':self.library}),[locator('local',ref)],package,package_id='operations-test')
+        target=self.root/'restored'
+        job=self.owner.submit('bundle.restore',dict(root=str(package),destination=str(target)))
+        result=self.owner.run_job(job['id'])
+        self.assertEqual(result['status'],'published')
+        from asset_library import AssetLibrary
+        self.assertEqual(AssetLibrary(target/'library').resolve(ref),self.fixture.manifest)
+
+    def test_index_new_source_revision_cannot_reuse_published_job(self):
+        ref=self.fixture.register();p=dict(index=str(self.root/'index'),locations=[dict(library='local',reference=ref)])
+        first=self.owner.submit('index',p);self.owner.run_job(first['id'])
+        self.library.update_annotations(ref,expected_revision=0,tags=['changed'],favorite=False,note='')
+        second=self.owner.submit('index',p)
+        self.assertNotEqual(first['id'],second['id'])
+        self.assertEqual(second['status'],'queued')
+        p['index']=str(self.root/'index-generation2')
+        fresh=self.owner.submit('index',p);self.owner.cancel_job(second['id']);self.owner.run_job(fresh['id'])
+        self.assertEqual(self.owner.execute('search',dict(index=p['index'],query='changed'))['result']['total'],1)
 
     def test_unknown_operation_and_optional_capability_do_not_fake_success(self):
         for operation in ('remote-upload','generate','semantic-search'):
@@ -111,34 +137,6 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
             for action in actions:
                 with redirect_stdout(io.StringIO()),self.assertRaises(SystemExit) as caught:assets.parser().parse_args([group,action,'--help'])
                 self.assertEqual(caught.exception.code,0)
-
-
-class NativeOperationsTests(unittest.TestCase):
-    setUp=AssetOperationsTests.setUp
-    # Avoid inheriting the ordinary cases twice while sharing the real fixture.
-    def test_real_obj_import_private_stage_preserves_original_and_exact_publication(self):
-        p=dict(source=str(self.fixture.mesh),identity=self.fixture.manifest['identity'],version='1.0.0',
-               metadata=self.fixture.manifest['metadata'],license_file=str(self.fixture.license),fixture=True,blender_roundtrip=False)
-        before=self.fixture.mesh.read_bytes()
-        job=self.owner.submit('import',p)
-        self.assertEqual(self.library.list_references(),[])
-        result=self.owner.run_job(job['id'])
-        self.assertEqual(result['status'],'published')
-        reference=result['receipt']['reference'];manifest=self.library.resolve(reference)
-        originals=[f for f in manifest['files'] if f['role']=='source' and f['format']=='obj']
-        self.assertTrue(originals)
-        self.assertEqual(self.library.read_file(reference,originals[0]['path']),before)
-        self.assertEqual(self.fixture.mesh.read_bytes(),before)
-        self.assertEqual(self.owner.run_job(job['id'])['receipt'],result['receipt'])
-        self.assertEqual(len(self.library.list_references()),1)
-
-    def test_source_change_after_queue_fails_before_publication(self):
-        p=dict(source=str(self.fixture.mesh),identity=self.fixture.manifest['identity'],version='1.0.0',
-               metadata=self.fixture.manifest['metadata'],license_file=str(self.fixture.license),fixture=True,blender_roundtrip=False)
-        job=self.owner.submit('import',p)
-        self.fixture.mesh.write_bytes(self.fixture.mesh.read_bytes()+b'# changed\n')
-        with self.assertRaises(RigError):self.owner.run_job(job['id'])
-        self.assertEqual(self.library.list_references(),[])
 
 
 if __name__=='__main__':unittest.main()

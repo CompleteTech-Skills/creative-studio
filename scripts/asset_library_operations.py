@@ -271,6 +271,15 @@ class OperationAdapter:
             hashes=dict(source=hashlib.sha256(source).hexdigest(),license_file=hashlib.sha256(license_data).hexdigest(),closure=probe['files'])
             if p.get('input_hashes',hashes)!=hashes:fail('STALE','Queued source/license bytes changed; submit a new request.')
             p['input_hashes']=hashes
+        if self.operation=='index':
+            signature=object_hash([dict(reference=r,annotations=self.owner.library.annotations(r)) for r in self.owner.library.list_references()])
+            hashes=dict(index_sources=signature)
+            if p.get('input_hashes',hashes)!=hashes:fail('STALE','Index sources changed; submit a new index generation to a new destination.')
+            p['input_hashes']=hashes
+        if self.operation=='bundle.restore':
+            hashes=dict(package_sha256=module('packages').verify_package(_path(p['root'],exists=True))['package_sha256'])
+            if p.get('input_hashes',hashes)!=hashes:fail('STALE','Package changed since queue admission.')
+            p['input_hashes']=hashes
         for key in ('destination','index','cache_root'):
             if key in p:p[key]=str(_path(p[key]))
         return p
@@ -306,7 +315,7 @@ class OperationAdapter:
             index=module('search').SearchIndex(context.stage_dir/'output',{'local':self.owner.library},create=True)
             return index.rebuild(p.get('locations'))
         if self.operation=='bundle.create':
-            return module('packages').create_package(self.owner._graph(),destination=context.stage_dir/'output',**{k:v for k,v in p.items() if k!='destination'})
+            return module('packages').create_package(self.owner._graph(),destination=context.stage_dir/'output',**{k:v for k,v in p.items() if k not in ('destination','input_hashes')})
         if self.operation=='bundle.restore':
             return module('packages').restore_package(_path(p['root'],exists=True),context.stage_dir/'output')
         fail('UNAVAILABLE','Managed operation adapter unavailable.')
@@ -341,8 +350,15 @@ class OperationAdapter:
             # Reopen through the canonical owner and resolve every indexed input.
             index=module('search').SearchIndex(context.stage_dir/'output',{'local':self.owner.library})
             index.search('',limit=1)
-        if self.operation in ('bundle.create','bundle.restore'):
+        if self.operation=='bundle.create':
             module('packages').verify_package(context.stage_dir/'output')
+        if self.operation=='bundle.restore':
+            _,manifests,_=module('packages')._verify(_path(self.parameters['root'],exists=True))
+            restored=AssetLibrary(context.stage_dir/'output'/'library')
+            if len(restored.list_references())!=len(manifests):fail('VERIFY','Restored library inventory differs.')
+            for manifest in manifests:
+                ref=dict(id=manifest['identity']['id'],version=manifest['version'],sha256=manifest['manifest_sha256'])
+                if restored.resolve(ref)!=manifest:fail('VERIFY','Restored canonical version differs from original package.')
         root=context.stage_dir/'output'
         return dict(inventory=self._inventory(root))
 
