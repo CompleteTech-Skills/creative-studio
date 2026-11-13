@@ -11,7 +11,7 @@ GROUPS={
  'skinning':['test_rig_skinning.py', 'test_rig_weight_input_boundaries.py'],
  'animation-ik':['test_rig_controls.py', 'test_rig_animation.py', 'test_rig_specializations.py', 'test_rig_morph_authoring.py'],
  'interoperability':['test_rig_interop.py', 'test_rig_import_transforms.py', 'test_rig_material_validation.py', 'test_rig_texture_integrity.py', 'test_rig_jpeg.py', 'test_rig_scene3d_service.py', 'test_rig_scene3d_materials.py', 'test_rig_scene3d_evaluate.py', 'test_rig_scene3d_pose.py', 'test_rig_scene3d_capture.py'],
- 'operations-archive':['test_rig_editor3d_inspectors.py', 'test_rig_correction_validation.py', 'test_rig_workflow.py', 'test_rig_http.py', 'test_rig_render.py', 'test_rig_editor3d_repository.py', 'test_rig_scene3d_lifecycle.py', 'test_rig_editor3d_timeline.py', 'test_rig_scene3d_document_snapshots.py']}
+ 'operations-archive':['test_rig_editor3d_pose_inspector.py', 'test_rig_editor3d_inspectors.py', 'test_rig_correction_validation.py', 'test_rig_workflow.py', 'test_rig_http.py', 'test_rig_render.py', 'test_rig_editor3d_repository.py', 'test_rig_scene3d_lifecycle.py', 'test_rig_editor3d_timeline.py', 'test_rig_scene3d_document_snapshots.py']}
 
 
 def main():

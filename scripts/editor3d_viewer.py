@@ -128,7 +128,7 @@ def preview_snapshot(repository, snapshot):
                 assets[identifier] = dict(format='unavailable', message=str(error))
         from editor3d_components import project_components
         components, component_vertices = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices,
-            max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES)
+            max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES,defer_poses=True)
     result['viewport_nodes'] = components
     result['viewport_assets'] = assets
     if (ROOT / 'scripts/editor3d_inspectors.py').is_file():
@@ -155,6 +155,9 @@ class EditorServer(HTTPServer):
         if Path(__file__).with_name('editor3d_timeline.py').is_file():
             from editor3d_timeline import routes as timeline_routes
             self.routes.update(timeline_routes())
+        if Path(__file__).with_name('editor3d_pose_inspector.py').is_file():
+            from editor3d_pose_inspector import pose_routes
+            self.routes.update(pose_routes())
         self.routes.update(routes or {})
         self.upload_directory = tempfile.TemporaryDirectory(prefix="hatch-editor-uploads-")
         self.uploads = {}

@@ -3,6 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 import tempfile
 import unittest
+import os
 import numpy as np
 
 from asset_library import AssetLibrary
@@ -147,6 +148,105 @@ class PoseInspectorTests(unittest.TestCase):
         unchanged=self.repository.snapshot()
         with self.assertRaises(RigError):apply_pose_edit(self.repository,self.request('reset','overlap-reset'))
         self.assertEqual(self.repository.snapshot()['sha256'],unchanged['sha256'])
+
+    def test_standard_server_pose_routes_authenticate_and_publish_exact_native_pose(self):
+        import json
+        import threading
+        import urllib.error
+        import urllib.request
+        from editor3d_viewer import EditorServer
+        server=EditorServer(self.repository)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+        def post(route,body,authenticated=True):
+            headers={'Content-Type':'application/json'}
+            if authenticated:headers['Authorization']='Bearer '+server.token
+            request=urllib.request.Request('http://127.0.0.1:'+str(server.server_port)+'/api/'+route,
+                data=json.dumps(body).encode(),headers=headers,method='POST')
+            try:
+                with urllib.request.urlopen(request,timeout=30) as response:
+                    return response.status,json.load(response)
+            except urllib.error.HTTPError as error:
+                return error.code,json.load(error)
+        before=self.repository.snapshot()
+        request=self.request('set','http-pose',bones={'b1':{'translation':[.1,.2,.3]}})
+        self.assertEqual(post('inspectors/pose/edit',request,False)[0],401)
+        self.assertEqual(post('inspectors/pose/describe',{'node_id':'actor','path':'/etc/passwd'})[0],400)
+        self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
+        status,description=post('inspectors/pose/describe',{'node_id':'actor'})
+        self.assertEqual(status,200,description)
+        self.assertEqual(description['owner_id'],'actor')
+        status,result=post('inspectors/pose/edit',request)
+        self.assertEqual(status,200,result)
+        after=self.repository.snapshot()
+        self.assertEqual(after['revision'],before['revision']+1)
+        self.assertEqual(result['sha256'],after['sha256'])
+        self.assertEqual(post('inspectors/pose/edit',request)[1]['sha256'],after['sha256'])
+        reopened=EditorRepository(self.repository.root)
+        pose=describe_pose(reopened,reopened.snapshot(),'actor')['authored_pose']
+        self.assertEqual(pose['bones']['b1']['translation'],[.1,.2,.3])
+        self.assertTrue(self.evaluation(after)['native_geometry_sampled'])
+
+    @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST')=='1','Enable actual Chromium pose acceptance explicitly.')
+    def test_actual_browser_authors_and_displays_exact_native_pose_geometry(self):
+        import threading
+        from editor3d_viewer import EditorServer
+        from browser_runtime import launch_chromium
+        from playwright.sync_api import sync_playwright
+        server=EditorServer(self.repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        self.addCleanup(server.server_close);self.addCleanup(thread.join);self.addCleanup(server.shutdown)
+        with sync_playwright() as runtime:
+            browser=launch_chromium(runtime)
+            try:
+                page=browser.new_page(viewport={'width':1400,'height':1100})
+                page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
+                page.evaluate("window.hatchEditor.select('actor')")
+                section=page.get_by_role('region',name='Native pose inspector')
+                # A named section maps to a region; use its explicit DOM identity
+                # so browser accessibility differences cannot hide test coverage.
+                section=page.locator('section[aria-label="Native pose inspector"]')
+                section.get_by_role('button',name='Save selected bone pose',exact=True).wait_for()
+                section.get_by_label('Pose bone',exact=True).select_option('b1')
+                section.get_by_label('Bone translation 0',exact=True).fill('.35')
+                before=self.repository.snapshot()
+                section.get_by_role('button',name='Save selected bone pose',exact=True).click()
+                page.wait_for_function('() => window.hatchEditor.snapshot.revision === '+str(before['revision']+1))
+                page.get_by_text('Native pose saved, reloaded and evaluated.',exact=True).wait_for()
+                saved=self.repository.snapshot();evaluated=self.evaluation(saved)
+                def world_vertices():
+                    return page.evaluate('''() => {
+                      const result={};
+                      for (const [id,object] of window.hatchEditor.objects) {
+                        object.updateWorldMatrix(true,true);
+                        object.traverse(child=>{
+                          if(!child.isMesh || child.userData.nativeMeshId===undefined)return;
+                          const values=child.geometry.attributes.position,points=[];
+                          for(let i=0;i<values.count;i++) {
+                            const m=child.matrixWorld.elements,x=values.getX(i),y=values.getY(i),z=values.getZ(i);
+                            points.push([m[0]*x+m[4]*y+m[8]*z+m[12],m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14]]);
+                          }
+                          (result[id]??={})[child.userData.nativeMeshId]=points;
+                        });
+                      }
+                      return result;
+                    }''')
+                observed=world_vertices()
+                for identifier,meshes in evaluated['native_geometry'].items():
+                    for mesh,points in meshes.items():np.testing.assert_allclose(observed[identifier][mesh],points,atol=1e-6,rtol=1e-6)
+                damaged=deepcopy(evaluated)
+                first=next(iter(damaged['native_geometry']));mesh=next(iter(damaged['native_geometry'][first]))
+                damaged['native_geometry'][first][mesh].pop()
+                self.assertIn('topology',page.evaluate('(value)=>{try{window.hatchEditor.preview(value);return "accepted";}catch(error){return error.message;}}',damaged))
+                self.assertEqual(observed,world_vertices())
+                page.evaluate('window.hatchEditor.clearPreview()')
+                posed=[node['id'] for node in saved['scene']['nodes'] if node.get('metadata',{}).get('source_component') is not None and node['id'].startswith('actor')]
+                self.assertTrue(posed)
+                for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
+                reopened=EditorRepository(self.repository.root)
+                self.assertEqual(describe_pose(reopened,reopened.snapshot(),'actor')['authored_pose']['bones']['b1']['translation'][0],.35)
+            finally:browser.close()
 
 
 if __name__=='__main__':unittest.main()

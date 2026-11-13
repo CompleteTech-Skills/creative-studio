@@ -305,11 +305,76 @@ async function capturePreview(metadata) {
     busy = false; attach();
   }
 }
+// Native samples are world-space vertices from the exact saved scene evaluator.
+// Validate the complete update before touching any currently displayed geometry.
+function nativeGeometryUpdates(evaluation) {
+  const samples = evaluation.native_geometry || {}, updates = [];
+  let vertices = 0;
+  const evaluated = new Map(Array.isArray(evaluation.nodes) ?
+    evaluation.nodes.map(node => [node.id, node]) : Object.entries(evaluation.nodes));
+  for (const [id, object] of objects) {
+    if (object.userData.requiresTimelinePreview && !Object.hasOwn(samples, id))
+      throw Error("The saved pose requires an exact native geometry sample: " + id);
+  }
+  for (const [id, meshes] of Object.entries(samples)) {
+    const object = objects.get(id), node = nodes.get(id), state = evaluated.get(id);
+    if (!object || node?.metadata?.source_component === undefined || !state?.world_matrix)
+      throw Error("Native geometry has no exact imported component: " + id);
+    const targets = new Map();
+    object.traverse(child => {
+      if (child.isMesh && child.userData.nativeMeshId !== undefined) {
+        const key = child.userData.nativeMeshId;
+        if (targets.has(key)) throw Error("Duplicate native mesh identity.");
+        targets.set(key, child);
+      }
+    });
+    if (Object.keys(meshes).length !== targets.size || !targets.size)
+      throw Error("Native sample mesh membership differs from the saved component.");
+    const matrix = new THREE.Matrix4().set(...state.world_matrix.flat());
+    if (!matrix.elements.every(Number.isFinite) || Math.abs(matrix.determinant()) === 0)
+      throw Error("Native component transform cannot be inverted.");
+    const inverse = matrix.clone().invert();
+    for (const [meshId, points] of Object.entries(meshes)) {
+      const target = targets.get(meshId), attribute = target?.geometry.attributes.position;
+      if (!attribute || !Array.isArray(points) || points.length !== attribute.count)
+        throw Error("Native sample topology differs from the saved component.");
+      vertices += points.length;
+      if (vertices > 100000) throw Error("Native preview exceeds 100,000 vertices.");
+      const positions = new Float32Array(points.length * 3);
+      points.forEach((point, index) => {
+        if (!Array.isArray(point) || point.length !== 3 || !point.every(Number.isFinite))
+          throw Error("Native preview vertices must be finite triples.");
+        new THREE.Vector3(...point).applyMatrix4(inverse).toArray(positions, index * 3);
+      });
+      if (!positions.every(Number.isFinite)) throw Error("Native preview exceeds browser coordinate precision.");
+      updates.push({target, positions});
+    }
+  }
+  return updates;
+}
+function restoreNativeGeometry() {
+  for (const object of objects.values()) object.traverse(child => {
+    const geometry = child.geometry, original = geometry?.userData.nativeBindPositions;
+    if (!original) return;
+    geometry.attributes.position.array.set(original);
+    geometry.attributes.position.needsUpdate = true;
+    geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
+  });
+}
 function preview(scene) {
   if (scene.world && (!Number.isFinite(scene.world.exposure) || scene.world.exposure < -20 || scene.world.exposure > 20))
     throw Error("Evaluated preview exposure is supported from -20 to +20 stops.");
   if (scene.revision !== undefined && (scene.revision !== revision || scene.snapshot_sha256 !== sha256 ||
       scene.scene?.path !== currentSnapshot.scene_path)) throw Error("Evaluation belongs to another saved scene revision.");
+  const geometryUpdates = nativeGeometryUpdates(scene);
+  restoreNativeGeometry();
+  for (const {target, positions} of geometryUpdates) {
+    const geometry = target.geometry;
+    geometry.userData.nativeBindPositions ??= geometry.attributes.position.array.slice();
+    geometry.attributes.position.array.set(positions);
+    geometry.attributes.position.needsUpdate = true;
+    geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
+  }
   lastEvaluation = structuredClone(scene);
   playing = false;
   previewActive = true;
@@ -343,13 +408,14 @@ function preview(scene) {
   refreshPreviewEditState();
 }
 function clearPreview() {
+  restoreNativeGeometry();
   lastEvaluation = null;
   previewActive = false;
   for (const node of doc.nodes) {
     const object = objects.get(node.id);
     object.matrixAutoUpdate = true;
     setTransform(object, node.transform);
-    object.visible = node.visible;
+    object.visible = node.visible && !object.userData.requiresTimelinePreview;
     applyNativeProperties(object, node);
   }
   renderer.toneMappingExposure = 2 ** doc.world.exposure;
@@ -754,6 +820,8 @@ async function install(snapshot) {
           }
           applyProjectedMaterials(actual, snapshot.viewport_materials?.[node.id] || []);
           object.add(actual);
+          object.userData.requiresTimelinePreview = asset.requires_timeline_preview === true;
+          if (object.userData.requiresTimelinePreview) object.visible = false;
         } catch (error) {
           unavailableNodes.set(node.id, error.message);
           diagnostic("Asset " + node.asset.id + ": " + error.message);

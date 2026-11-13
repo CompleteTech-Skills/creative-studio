@@ -40,7 +40,7 @@ function vector(parent, title, initial, min, max) {
   parent.append(field); return inputs;
 }
 
-export function mountInspectors({container, getSnapshot, getSelection, api, reload}) {
+export function mountInspectors({container, getSnapshot, getSelection, api, reload, getTimelineContext, preview}) {
   let current = null, selected = [], disposed = false, busy = false;
   const status = element("p", "", {role: "status", "aria-live": "polite"});
   async function submit(path, body) {
@@ -85,10 +85,71 @@ export function mountInspectors({container, getSnapshot, getSelection, api, relo
       else if (node.type === "light") lightInspector(node);
       else {
         materialInspector(node);
-        if (node.type === "skinned_character") container.append(element("p", "Bone and morph preview may be inspected in the viewport. Persistent pose, constraints and mirroring require the native rig transaction adapter; these controls are unavailable."));
+        poseInspector(node);
       }
     }
     worldInspector(scene);
+  }
+  async function poseInspector(node) {
+    const section=element("section");section.setAttribute("aria-label","Native pose inspector");
+    const loading=element("p","Loading native pose capabilities…");section.append(loading);container.append(section);
+    try {
+      const descriptor=await api("inspectors/pose/describe",{node_id:node.id});
+      if (!section.isConnected || disposed) return;
+      loading.remove();section.append(element("h3","Authored native pose"));
+      const field=element("fieldset");field.disabled=busy || !descriptor.editable;
+      field.append(element("legend","Bones and morphs"));section.append(field);
+      if (!descriptor.editable) section.append(element("p",descriptor.read_only_reason));
+      const bone=label(field,"Pose bone",choice(descriptor.skeleton.root,descriptor.skeleton.bones.map(item=>item.id)));
+      const inputs=element("div");field.append(inputs);
+      let translation,rotation,scale;
+      function drawBone() {
+        inputs.replaceChildren();
+        const rest=descriptor.skeleton.bones.find(item=>item.id===bone.value).rest;
+        const authored=descriptor.authored_pose.bones[bone.value] || {};
+        function components(title,initial,minimum,maximum) {
+          const row=element("fieldset"),result=[];row.append(element("legend",title));
+          initial.forEach((value,index)=>result.push(label(row,title+" "+index,number(value,minimum,maximum))));
+          inputs.append(row);return result;
+        }
+        translation=components("Bone translation",authored.translation || rest.translation,-1000000,1000000);
+        rotation=components("Bone quaternion XYZW",authored.rotation || rest.rotation,-1,1);
+        scale=components("Bone scale",authored.scale || rest.scale,0.000001,1000000);
+      }
+      bone.onchange=drawBone;drawBone();
+      async function save(operation,extra={}) {
+        if (busy || disposed) return;
+        try {
+          const context=getTimelineContext?.();
+          if (!context) throw Error("Select a saved shot and exact frame before posing.");
+          busy=true;field.disabled=true;status.textContent="Saving authored native pose…";
+          const snapshot=getSnapshot();
+          await api("inspectors/pose/edit",{expected_revision:snapshot.revision,expected_sha256:snapshot.sha256,
+            transaction_id:crypto.randomUUID(),node_id:descriptor.owner_id,operation,
+            timeline:{shot_path:context.shot_path,frame:context.frame},...extra});
+          await reload();
+          const installed=getSnapshot(),selected=getTimelineContext?.();
+          if (!selected) throw Error("Pose saved; select its saved shot to preview.");
+          const evaluated=await api("timeline/evaluate",{revision:installed.revision,sha256:installed.sha256,
+            shot:selected.shot_path,frame:selected.frame,sample_geometry:true});
+          preview(evaluated);status.textContent="Native pose saved, reloaded and evaluated.";
+        } catch(error) {status.textContent=error.message || String(error);}
+        finally {busy=false;if (!disposed) render();}
+      }
+      const set=element("button","Save selected bone pose",{type:"button"});
+      set.onclick=()=>{try {save("set",{bones:{[bone.value]:{translation:values(translation),rotation:values(rotation),scale:values(scale)}}});}
+        catch(error) {status.textContent=error.message;}};field.append(set);
+      for (const [mesh,targets] of Object.entries(descriptor.morph_targets)) for (const target of targets) {
+        const weight=label(field,"Morph "+mesh+" / "+target,number(descriptor.authored_pose.morphs[mesh]?.[target] || 0,-10,10));
+        const button=element("button","Save morph "+mesh+" / "+target,{type:"button"});
+        button.onclick=()=>{try {save("set",{morphs:{[mesh]:{[target]:values([weight])[0]}}});}catch(error){status.textContent=error.message;}};
+        field.append(button);
+      }
+      const reset=element("button","Reset authored pose",{type:"button"});reset.onclick=()=>save("reset");field.append(reset);
+      const approved=label(field,"I approve this rig's mirror symmetry",checkbox(false));
+      const mirror=element("button","Mirror authored pose",{type:"button"});mirror.onclick=()=>save("mirror",{symmetry_approved:approved.checked});field.append(mirror);
+      section.append(element("p","Rest skeleton and constraint configuration remain read-only. Pose and clip blending is unavailable."));
+    } catch(error) {if(section.isConnected)loading.textContent="Native posing unavailable: "+(error.message || String(error));}
   }
   async function materialInspector(node) {
     const section=element("section"), loading=element("p","Loading exact material slots…");

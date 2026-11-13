@@ -44,3 +44,28 @@ The inspector tests also run in the `operations-archive` release gate.
 The native tests include exact source preservation, material version publication,
 reopening, stale-revision rejection, undo/redo, lock enforcement and nonfinite /
 invalid values. They use engineering fixtures, not production artwork.
+
+## Native pose authoring
+
+The native pose inspector resolves one exact imported rig below the selected
+node. Bone translation, XYZW quaternion and scale are authored as absolute local
+Pose overrides; omitted channels use the skeleton rest transform. Morph controls
+retain the mesh and target identity. Reset publishes a neutral Pose. Mirroring
+requires explicit approval of the rig symmetry. Every edit uses the selected
+saved shot and frame, publishes one immutable revision, and reloads before
+requesting native geometry from the canonical scene evaluator. Skeleton rest
+assets are preserved. Inherited collection and layer locks disable authoring.
+
+The viewport consumes the evaluator's world-space vertex samples using the exact
+imported node and mesh identities. It validates membership, topology, finite
+coordinates and the 100,000-vertex budget before applying an update, then
+recomputes normals and bounds. Clearing preview restores bind geometry; saved
+pose-bound components stay hidden until their exact frame is sampled. Constraint
+configuration, rest-skeleton editing and pose/clip blending remain unavailable.
+These engineering fixtures do not establish full issue103 acceptance or visual
+approval.
+
+Run `PYTHONPATH=scripts:tests python -m unittest test_rig_editor3d_pose_inspector -v`.
+Set `HATCH_EDITOR_BROWSER_TEST=1` to run the actual Chromium authoring, every-world-
+vertex comparison, malformed-sample atomicity and clear-preview checks. The
+Scene3D service workflow runs this browser acceptance explicitly.
