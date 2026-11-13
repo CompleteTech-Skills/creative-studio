@@ -109,7 +109,10 @@ cannot redirect publication elsewhere. An existing destination, including a raci
 symlink, is preserved. The private staging directory is also pinned before any
 frame or encoded bytes are written; its replaceable basename is never reopened
 for publication or recursive cleanup. Cleanup preserves a foreign replacement.
-Cancellation callbacks run during encoding and verification, with no callback
+The shared [private staging authority](atomic-publication.md) clears only its
+owned contents and retains tiny empty outer wrappers for explicit maintenance;
+it never deletes a possibly replaced outer basename. Cancellation callbacks run
+during encoding and verification, with no callback
 between the final original-byte recheck and exclusive publication. Private
 partials are removed after failures. The returned
 receipt binds the actual artifact, source manifest and request hashes and

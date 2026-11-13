@@ -325,6 +325,28 @@ class SilentMedia(core.SilentContracts):
 
 
 class DescriptorPublication(unittest.TestCase):
+    def test_source_open_preserves_pinned_root_during_namespace_swap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with video._pin_directory(root) as parent_fd:
+                with video._private_stage(parent_fd) as (stage, descriptor):
+                    (stage/'source.bin').write_bytes(b'owned source bytes')
+                    name = next(root.glob('.silent-export-*'))
+                    original_open = os.open
+                    swapped = []
+                    def swap_before_root_open(path, flags, *args, **kwargs):
+                        if not swapped and kwargs.get('dir_fd') is None:
+                            name.rename(root/'moved-owned-stage')
+                            name.mkdir(mode=0o700)
+                            (name/'source.bin').write_bytes(b'foreign replacement bytes')
+                            swapped.append(True)
+                        return original_open(path, flags, *args, **kwargs)
+                    with patch.object(video.os, 'open', side_effect=swap_before_root_open):
+                        with video._open_source(stage, 'source.bin') as stream:
+                            self.assertEqual(stream.read(), b'owned source bytes')
+                    self.assertTrue(swapped)
+                    self.assertEqual((name/'source.bin').read_bytes(), b'foreign replacement bytes')
+
     @unittest.skipUnless(video.secure_publication_supported(), 'Linux descriptor path adapter')
     def test_stage_cleanup_does_not_follow_replaced_basename(self):
         with tempfile.TemporaryDirectory() as directory:
