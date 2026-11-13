@@ -114,6 +114,26 @@ class Supervision(unittest.TestCase):
 
 
 class ResourceAdmission(unittest.TestCase):
+    def test_missing_private_publication_adapter_rejects_before_decode_or_destination(self):
+        from unittest.mock import patch
+        from rig_test_helpers import fixture
+        from render3d_snapshot import create_snapshot,NativeRigAdapter
+        from render3d_blender import BlenderBackend
+        from test_render3d_contracts import request,file
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'native').mkdir()
+            rig=fixture(root/'native',animated=False)
+            create_snapshot(rig.root,root/'snapshot',NativeRigAdapter())
+            spec=request();spec['snapshot']=file(payload=(root/'snapshot/snapshot.json').read_bytes())
+            backend=object.__new__(BlenderBackend)
+            with patch('render3d_blender.private_stage_supported',return_value=False):
+                with patch('rig_models.load_rig',side_effect=AssertionError('Unsupported publication must precede native decoding')) as decode:
+                    with self.assertRaises(Render3DError) as caught:
+                        backend.render_frames(spec,root/'snapshot',root/'new-parent/output')
+            self.assertEqual(caught.exception.report['category'],'unsupported-feature')
+            decode.assert_not_called()
+            self.assertFalse((root/'new-parent').exists())
+
     def test_tiny_memory_budget_rejects_before_any_native_owner_decode(self):
         from unittest.mock import patch
         from rig_test_helpers import fixture

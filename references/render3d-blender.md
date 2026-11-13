@@ -10,6 +10,14 @@ The adapter accepts owner-verified native-rig previews and Scene3D snapshots.
 It captures the source closure before preparing sanitized GLB derivatives, binds
 frame specifications to the requested shot, and rechecks executable and worker
 identities after execution. A caller-owned destination is never overwritten.
+The private publication adapter currently requires Linux procfs and directory-relative
+filesystem operations; other hosts fail with `unsupported-feature` before source
+decoding or destination creation. All staging and worker I/O retain an explicitly
+inherited directory capability. Publication renames the verified inner payload
+relative to pinned source and destination descriptors; cleanup preserves any
+foreign replacement at the outer staging basename. Empty owned wrappers remain
+for explicit maintenance.
+
 Failed staging directories retain `failure.json` and the bounded Blender log;
 they are diagnostic evidence, not published render results.
 

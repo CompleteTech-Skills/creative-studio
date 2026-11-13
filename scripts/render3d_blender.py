@@ -21,7 +21,7 @@ import tempfile
 import threading
 import time
 
-from atomic_publish import _rename_no_replace, pinned_directory, private_stage
+from atomic_publish import _rename_no_replace, pinned_directory, private_stage, private_stage_supported
 from rig_errors import RigError, atomic_json, atomic_bytes, read_json, safe_path, sha256, object_hash, directory_capability, normalize_root
 from render3d_contracts import (Render3DError, require, validate, make_frame_spec,
                                 frame_times, VERSION, load, open_regular)
@@ -308,6 +308,8 @@ class BlenderBackend:
         require(not target.exists() and not target.is_symlink(),'ownership','Render destination already exists.')
         require(not target.parent.resolve().joinpath(target.name).is_relative_to(root.resolve()),'ownership','Output cannot be nested in source snapshot.')
         snapshot=load(root/'snapshot.json','RenderSnapshot');self.validate(snapshot,request['settings'])
+        require(private_stage_supported(),'unsupported-feature',
+                'Verified private render publication requires the tested Linux procfs/dirfd adapter.')
         adapter=Scene3DAdapter() if snapshot['scope']=='scene3d' else NativeRigAdapter()
         # Metadata-only admission must precede owner verification: the native
         # owner decodes full geometry while verifying the source closure.
