@@ -5,10 +5,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from contextvars import copy_context
 
 SCRIPTS = Path(__file__).resolve().parents[1]/'scripts'
 sys.path.insert(0,str(SCRIPTS))
+import rig_errors
 from rig_errors import (RigError,directory_capability,normalize_root,open_payload,safe_path)
 
 
@@ -84,6 +86,49 @@ class DirectoryCapabilityTests(unittest.TestCase):
         with self.assertRaises(OSError):os.fstat(owned)
         with self.assertRaises(RigError):_ = cap.path
         self.assertTrue(os.fstat(self.fd))
+
+    def test_rejected_borrowed_fd_race_closes_unexposed_owned_duplicate(self):
+        other=self.root/'other';other.mkdir()
+        otherfd=os.open(other,os.O_RDONLY|os.O_DIRECTORY)
+        borrowed=os.dup(self.fd);created=[];real_dup=os.dup
+        def racing_dup(fd):
+            os.dup2(otherfd,borrowed)
+            owned=real_dup(fd);created.append(owned);return owned
+        try:
+            before=len(list(Path('/proc/self/fd').iterdir()))
+            with patch.object(rig_errors.os,'dup',side_effect=racing_dup):
+                with self.assertRaises(RigError) as caught:
+                    with directory_capability(borrowed):self.fail('changed descriptor admitted')
+            self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_CHANGED')
+            self.assertEqual(len(created),1)
+            with self.assertRaises(OSError):os.fstat(created[0])
+            self.assertEqual(len(list(Path('/proc/self/fd').iterdir())),before)
+            self.assertEqual(os.fstat(borrowed).st_ino,os.fstat(otherfd).st_ino)
+        finally:os.close(borrowed);os.close(otherfd)
+
+    def test_exposed_owned_descriptor_reuse_never_closes_foreign_object(self):
+        other=self.root/'other';other.mkdir()
+        otherfd=os.open(other,os.O_RDONLY|os.O_DIRECTORY)
+        reused=None
+        try:
+            with directory_capability(self.fd) as cap:
+                reused=cap.fd
+                os.close(reused);os.dup2(otherfd,reused)
+                with self.assertRaises(RigError):_ = cap.path
+            self.assertEqual(os.fstat(reused).st_ino,os.fstat(otherfd).st_ino)
+        finally:
+            if reused is not None:os.close(reused)
+            os.close(otherfd)
+
+    def test_ordinary_root_rename_after_admission_reports_structured_io_error(self):
+        original=rig_errors.safe_path
+        def admitting_then_renaming(root,name,**kwargs):
+            result=original(root,name,**kwargs)
+            self.stage.rename(self.root/'moved')
+            return result
+        with patch.object(rig_errors,'safe_path',side_effect=admitting_then_renaming):
+            with self.assertRaises(RigError) as caught:self.read(self.stage/'payload')
+        self.assertEqual(caught.exception.report['code'],'RIG_PAYLOAD_IO')
 
     def test_copied_context_cannot_resurrect_expired_capability(self):
         with directory_capability(self.fd) as cap:
