@@ -48,7 +48,12 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
         page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1 && document.querySelector("#status").textContent.includes("Saved revision")')
         copied=next(node['id'] for node in self.repository.snapshot()['scene']['nodes'] if node['id'].startswith('copy-'))
         # Home/End navigate without transforming either original or duplicate.
-        root=page.locator('[data-id="root"]');root.focus();page.keyboard.press('End');page.keyboard.press('Enter')
+        root=page.locator('[data-id="root"]');root.focus();page.keyboard.press('Home')
+        for _ in range(rows.count()):
+            if page.evaluate('document.activeElement.dataset.id') == copied: break
+            page.keyboard.press('ArrowDown')
+        self.assertEqual(page.evaluate('document.activeElement.dataset.id'),copied)
+        page.keyboard.press('Enter')
         self.assertEqual(page.evaluate('window.hatchEditor.selection'),[copied])
         field=page.get_by_label('translation X',exact=True);field.focus();field.fill('3.25');field.press('Tab')
         page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2 && document.querySelector("#status").textContent.includes("Saved revision")')
