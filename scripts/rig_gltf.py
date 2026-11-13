@@ -243,7 +243,8 @@ def scene_graph(document: GltfDocument, *, import_scale=1.) -> tuple[dict, dict,
     roots = selected.get('nodes', [])
     require(len(set(roots)) == len(roots), 'RIG_GLTF_HIERARCHY', 'Scene roots must be unique.')
     world, active, order = {}, set(), []
-    def visit(i, parent_world):
+    def visit(i, parent_world, depth=0):
+        require(depth <= 256, 'RIG_LIMIT_DEPTH', 'glTF hierarchy exceeds the supported depth of 256.')
         _index(i, len(nodes), 'scene node')
         require(i not in active and i not in world, 'RIG_GLTF_HIERARCHY', 'Scene node hierarchy has a cycle or repeated instance.')
         active.add(i)
@@ -251,7 +252,7 @@ def scene_graph(document: GltfDocument, *, import_scale=1.) -> tuple[dict, dict,
             world[i] = _validate_node_transform(parent_world @ node_matrix(nodes[i]))
             if import_scale != 1.:_validate_node_transform(conversion @ world[i])
         order.append(i)
-        for child in nodes[i].get('children', []):visit(child, world[i])
+        for child in nodes[i].get('children', []):visit(child, world[i], depth + 1)
         active.remove(i)
     for root in roots:
         require(root not in parents, 'RIG_GLTF_HIERARCHY', 'A scene root cannot also have a parent.')

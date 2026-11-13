@@ -154,7 +154,7 @@ class PrimitiveTests(unittest.TestCase):
                     self.assertEqual(imported.geometry.triangle_count,len(original.mesh.triangles))
                     self.assertEqual(imported.geometry.meshes[0].name,'semantic-'+kind)
                     np.testing.assert_allclose(imported.geometry.meshes[0].positions,original.mesh.positions,atol=1e-7)
-                    self.assertIn(path,imported.source_files)
+                    self.assertIn(path.resolve(),imported.source_files)
                     self.assertEqual(before,{p:hashlib.sha256(p.read_bytes()).hexdigest() for p in before})
 
     def test_tiny_geometry_relative_normalization(self):

@@ -97,7 +97,7 @@ def import_canonical(library, ref, *, entry=None, limits=None):
             sum(int(item['bytes']) for item in inventory.values()) <= min(limits['dependency_bytes'], limits['memory_bytes']//3) and
             all(item['bytes'] <= limits['source_bytes'] for item in inventory.values()),
             'MODEL3D_BUDGET', 'Canonical inventory exceeds encoded-byte limits before reading.')
-    temporary = _temporary(); root = Path(temporary.name)
+    temporary = _temporary(); root = Path(temporary.name).resolve()
     try:
         records = []
         for name,item in inventory.items():
