@@ -17,6 +17,10 @@ from test_render3d_contracts import request
 
 
 class QualityBinding(unittest.TestCase):
+    def setUp(self):
+        profile=patch('render3d_quality_binding.color_profile',return_value=(Path('/unused'),dict(closure_sha256='a'*64,files=[])))
+        profile.start();self.addCleanup(profile.stop)
+
     def test_binding_is_explicit_immutable_and_rejects_changed_plan_or_code(self):
         source=request();bound=bind_quality_request(source)
         self.assertNotIn('quality_sha256',source['settings'])

@@ -132,6 +132,9 @@ def main():
         sys.path.insert(0,str(Path(__file__).parent))
         from render3d_quality import render_frame
         from render3d_quality_binding import adapter_hash
+        from cinematics3d_color import verify_config_bytes
+        from render3d_color_context import color_context
+        verify_config_bytes(root.parent/'color-config',quality['color_config'])
         require(adapter_hash()==quality['adapter_sha256'],'Quality helper code differs from admitted bytes')
         from rig_errors import object_hash
         require(object_hash(quality)==job['settings'].get('quality_sha256'),'Quality plan differs from request binding')
@@ -163,7 +166,7 @@ def main():
     else:
         require(description['camera'] in objects and objects[description['camera']].type=='CAMERA','Requested camera is unavailable')
         scene.camera=objects[description['camera']]
-    rendered=[];measurements=[]
+    rendered=[];measurements=[];color_contexts=[]
     for position,frame in enumerate(description['frames']):
         for entry in description['nodes']:
             state=entry['frames'][position];obj=objects[entry['id']]
@@ -184,6 +187,7 @@ def main():
             bpy.ops.render.render(write_still=True)
         else:
             render_frame(scene,quality['plan'],root.parent,frame['index'])
+            color_contexts.append(dict(frame=frame['index'],context=color_context(scene,root.parent/'color-config',quality['color_config'],quality['plan'])))
         rendered.append(frame['index'])
         deps=bpy.context.evaluated_depsgraph_get();sample={}
         for obj in all_imported:
@@ -198,7 +202,9 @@ def main():
         armatures=sum(o.type=='ARMATURE' for o in all_imported),samples=measurements)
     if quality is not None:
         require(adapter_hash()==quality['adapter_sha256'],'Quality helper code changed during rendering')
+        verify_config_bytes(root.parent/'color-config',quality['color_config'])
         report['quality']=quality
+        report['color_context']=dict(kind='render3d-color-context-sequence',schema_version=1,frames=color_contexts)
     (root.parent/'worker-report.json').write_text(json.dumps(report,allow_nan=False,indent=2))
 
 
