@@ -265,6 +265,30 @@ finally:case.tearDown()
         self.assertEqual((cache/'frame.png').read_bytes(),b'corrupt')
         self.assertEqual(self.store.status(other)['frames'][0]['state'],'running')
 
+    def test_wrong_shape_cache_metadata_rejects_and_repairs(self):
+        job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
+        self.store.publish(lease,output,result,self.verify)
+        metadata=self.store.root/'cache'/lease['cache_key']/'cache.json'
+        original=json.loads(metadata.read_text())
+        malformed=[[],None,"invalid",False,17,{},dict(original,spec=[]),dict(original,backend=None),
+                   dict(original,request=None),dict(original,result=[]),
+                   dict(original,report=[]),dict(original,version=2)]
+        for index,value in enumerate(malformed):
+            with self.subTest(index=index):
+                atomic_json(metadata,value)
+                req=deepcopy(self.request);req['id']='repair-'+str(index)
+                req['destination']['path']='repair-'+str(index)
+                other=self.submit(req);second=self.store.claim(other)
+                self.assertFalse(self.store.reuse(second,self.verify))
+                output2,result2=self.output(second)
+                self.store.publish(second,output2,result2,self.verify)
+                self.assertEqual(self.store.status(other)['frames'][0]['state'],'complete')
+        # Resume must invalidate malformed metadata without a raw Python error.
+        atomic_json(metadata,[])
+        self.store.resume(job,verifier=self.verify)
+        self.assertEqual(self.store.status(job)['frames'][0]['state'],'queued')
+        self.assertEqual(len(list((self.store.root/'staging').glob('corrupt-*'))),len(malformed))
+
     def test_pinned_cache_cannot_be_cleaned_and_history_is_paginated(self):
         job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
         self.store.publish(lease,output,result,self.verify)

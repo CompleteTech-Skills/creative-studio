@@ -377,6 +377,15 @@ class JobStore:
         path=safe_path(self.root,'cache/'+lease['cache_key'])
         require(path.is_dir() and not path.is_symlink(),'missing-asset','Cache entry unavailable.')
         record=_metadata(safe_path(path,'cache.json',exists=True))
+        require(isinstance(record,dict) and set(record)=={
+                    'version','cache_key','spec','backend','request','result','report'},
+                'stale-cache','Cache metadata has an invalid record shape.')
+        require(type(record['version']) is int and record['version']==VERSION
+                and isinstance(record['report'],dict),
+                'stale-cache','Cache metadata version or verification report is invalid.')
+        for field,kind in (('spec','FrameSpec'),('backend','BackendIdentity'),
+                           ('request','RenderRequest'),('result','RenderResult')):
+            validate(record[field],kind)
         require(record['cache_key']==lease['cache_key'] and record['spec']['cache_key']==lease['spec']['cache_key'] and record['backend']==lease['backend'],
                 'stale-cache','Cache identity differs from requested frame.')
         require({k:v for k,v in record['spec'].items() if k!='destination'} ==
