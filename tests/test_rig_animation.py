@@ -5,10 +5,12 @@ import unittest
 import numpy as np
 from rig_test_helpers import fixture
 from rig_animation import (evaluate_track,evaluate_animation,validate_animation,blend_poses,crossfade,bake_clip,reduce_keys,clip_from_poses)
-from rig_skeleton import neutral_pose,rotate_bone
+from rig_skeleton import neutral_pose,rotate_bone,evaluate_fk
+from rig_math import decompose
 from rig_math import axis_angle,qangle
 from rig_facial import apply_expressions
 from rig_retarget import build_retarget_profile,retarget_animation
+from rig_skinning import evaluate_deformation
 from rig_errors import RigError
 
 
@@ -54,3 +56,23 @@ class RigAnimationTests(unittest.TestCase):
         with self.assertRaises(RigError):build_retarget_profile(self.rig,target)
         profile['source_rig']='wrong'
         with self.assertRaises(RigError):retarget_animation(self.rig,target,'bend',profile=profile)
+
+    def test_identity_retarget_preserves_authored_contact_orientation(self):
+        source=self.rig;target=fixture(self.temp.name,name='contact-target')
+        desired=axis_angle([0,1,0],.6).tolist()
+        contact=dict(schema_version=1,id='hold',chain='arm',start=0.,end=1.,
+                     target=[0.,2.,0.],orientation=desired,kind='hand')
+        clip=deepcopy(source.clips['neutral']);clip['contacts']=[contact]
+        result=retarget_animation(source,target,clip)['clip']
+        self.assertLess(qangle(result['contacts'][0]['orientation'],desired),1e-8)
+        before=evaluate_animation(source,clip,.5)['pose']
+        after=evaluate_animation(target,result,.5)['pose']
+        a=decompose(evaluate_fk(source.skeleton,before)['b2'])['rotation']
+        b=decompose(evaluate_fk(target.skeleton,after)['b2'])['rotation']
+        self.assertLess(qangle(a,b),1e-8)
+        source_mesh=evaluate_deformation(source,before)['strip']['positions']
+        target_mesh=evaluate_deformation(target,after)['strip']['positions']
+        np.testing.assert_allclose(target_mesh,source_mesh,atol=1e-8)
+        del clip['contacts'][0]['orientation']
+        positional=retarget_animation(source,target,clip)['clip']
+        self.assertNotIn('orientation',positional['contacts'][0])
