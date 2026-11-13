@@ -226,6 +226,46 @@ class RigWorkflowTests(unittest.TestCase):
                 restore_rig(archive, Path(self.temp.name) / 'too-large')
         self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_INVENTORY')
 
+    def test_demo_archive_output_rejects_symlink_escape_before_work(self):
+        import verify_rig_demos
+        root = Path(self.temp.name) / 'unsafe-demo'
+        outside = Path(self.temp.name) / 'outside'
+        root.mkdir()
+        outside.mkdir()
+        try:
+            (root / 'packages').symlink_to(outside, target_is_directory=True)
+        except OSError as error:
+            if os.name == 'nt' and getattr(error, 'winerror', None) == 1314:
+                self.skipTest('Windows symlink creation privilege is unavailable: ' + str(error))
+            raise
+        with self.assertRaises(RigError) as error:
+            verify_rig_demos.verify(root, archives=True)
+        self.assertIn(error.exception.report['code'], ('RIG_SYMLINK', 'RIG_PATH'))
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual([p.name for p in root.iterdir()], ['packages'])
+
+    def test_demo_archive_reports_paths_relative_to_symlinked_root(self):
+        import verify_rig_demos
+        root = Path(self.temp.name) / 'real-demo'
+        root.mkdir()
+        for name in ('humanoid-retarget', 'quadruped-retarget'):
+            fixture(root, name=name)
+        alias = Path(self.temp.name) / 'demo-alias'
+        try:
+            alias.symlink_to(root, target_is_directory=True)
+        except OSError as error:
+            if os.name == 'nt' and getattr(error, 'winerror', None) == 1314:
+                self.skipTest('Windows symlink creation privilege is unavailable: ' + str(error))
+            raise
+        with patch.object(verify_rig_demos, 'ARCHETYPES', ()):
+            report = verify_rig_demos.verify(alias, archives=True)
+        self.assertEqual(report['status'], 'automated-fixture-acceptance-passed')
+        for item in report['fixtures']:
+            relative = Path(item['archive']['path'])
+            self.assertFalse(relative.is_absolute())
+            self.assertEqual(sha256(alias / relative), item['archive']['sha256'])
+            self.assertTrue(item['archive']['restored_and_evaluated'])
+
     def test_repeated_demo_verification_preserves_retained_archives(self):
         import verify_rig_demos
         root = Path(self.temp.name) / 'demo-verification'
