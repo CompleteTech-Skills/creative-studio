@@ -334,9 +334,11 @@ def run_batch(jobs, handler, *, handler_version, retry=False):
         try:
             result = run_job(root, handler, handler_version=handler_version, retry=retry)
             results.append(dict(root=str(root), ok=True, status=result['status']))
-        except (RigError, OSError) as exc:
+        except Exception as exc:
             results.append(dict(root=str(root), ok=False,
-                                error=exc.report if isinstance(exc, RigError) else dict(code='MODEL3D_IO', message=str(exc))))
+                                error=exc.report if isinstance(exc, RigError) else dict(
+                                    code='MODEL3D_IO' if isinstance(exc,OSError) else 'MODEL3D_JOB_HANDLER',
+                                    message=str(exc)[:4096])))
     return dict(schema_version=1, results=results, succeeded=sum(item['ok'] for item in results))
 
 
@@ -389,6 +391,11 @@ def _zip_preflight(stream, size):
     stream.seek(max(0, size-65557)); tail = stream.read(min(size, 65557))
     end = tail.rfind(b'PK\x05\x06')
     require(end >= 0 and len(tail)-end >= 22, 'MODEL3D_ARCHIVE_INVALID', 'Missing ZIP end directory.')
+    # zipfile reads an adjacent ZIP64 locator in preference to classic EOCD
+    # fields. Reject that unsupported authority before constructing ZipFile;
+    # otherwise its larger real central directory bypasses our allocation cap.
+    require(end < 20 or tail[end-20:end-16] != b'PK\x06\x07',
+            'MODEL3D_ARCHIVE_LIMIT', 'ZIP64 end directories are not supported.')
     _, disk, directory_disk, local_count, count, directory_bytes, offset, comment = struct.unpack_from('<4s4H2LH', tail, end)
     require(end+22+comment == len(tail) and disk == directory_disk == 0
             and local_count == count and 1 < count <= 10001

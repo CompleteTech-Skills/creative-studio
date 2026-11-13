@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import tempfile
 import time
@@ -146,6 +147,18 @@ j.run_job(sys.argv[1],handler,handler_version='v1')
         report=jobs.run_batch([self.job,second],bad,handler_version='v1')
         self.assertEqual(report['succeeded'],1);self.assertEqual(jobs.status(self.job)['status'],'completed')
 
+    def test_batch_continues_after_ordinary_handler_exception(self):
+        self.create(); second=self.root/'second'; jobs.create_job(second,self.request)
+        def handler(context):
+            if context.root == self.job:raise ValueError('bad model parameters')
+            self.handler(context)
+        report=jobs.run_batch([self.job,second],handler,handler_version='v1')
+        self.assertEqual(report['succeeded'],1)
+        self.assertEqual(report['results'][0]['error']['code'],'MODEL3D_JOB_HANDLER')
+        self.assertEqual(jobs.status(self.job)['status'],'failed')
+        self.assertEqual(jobs.status(second)['status'],'completed')
+        self.assertEqual(jobs.status(second)['attempts'],1)
+
     def test_path_and_size_budgets_preserve_destination(self):
         with self.assertRaises(RigError):self.create(inputs={'../bad':self.root/'missing'})
         self.assertFalse(self.job.exists())
@@ -212,6 +225,18 @@ j.run_job(sys.argv[1],handler,handler_version='v1')
         with self.assertRaises(RigError) as caught:jobs.restore_job(hostile,self.root/'bad')
         self.assertEqual(caught.exception.report['code'],'MODEL3D_ARCHIVE_LIMIT')
         self.assertFalse((self.root/'bad').exists())
+        # ZIP64's locator would override the apparently small classic EOCD.
+        original=archive.read_bytes();end=original.rfind(b'PK\x05\x06')
+        _,_,_,count,_,size,start,_=struct.unpack_from('<4s4H2LH',original,end)
+        end64=struct.pack('<4sQ2H2L4Q',b'PK\x06\x06',44,45,45,0,0,count,count,size,start)
+        locator=struct.pack('<4sLQL',b'PK\x06\x07',0,end,1)
+        classic=bytearray(original[end:]);classic[8:12]=struct.pack('<2H',2,2)
+        classic[12:20]=struct.pack('<2L',1,0)
+        hostile64=self.root/'zip64-override.zip';hostile64.write_bytes(original[:end]+end64+locator+classic)
+        with patch('model3d_jobs.zipfile.ZipFile',side_effect=AssertionError('allocated before preflight')):
+            with self.assertRaises(RigError) as caught:jobs.restore_job(hostile64,self.root/'bad64')
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_ARCHIVE_LIMIT')
+        self.assertFalse((self.root/'bad64').exists())
 
 
 if __name__=='__main__':unittest.main()
