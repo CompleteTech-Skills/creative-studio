@@ -70,8 +70,10 @@ The selected run retains the original source, proposal receipt, all candidate
 masks and overlay in `foreground-analysis/`; its annotation records the exact
 receipt digest and selected IDs. It has source-bound unassigned foreground,
 zero-error recomposition of selected pixels, and pending semantic review.
-Running the separate face/eye analyzer later does not turn these whole-object
-masks into anatomical parts. Use existing manual correction for bad boundaries.
+The run's `analysis.semantic_model_called` remains false because this stage does
+not run the component analyzer; the retained foreground receipt separately records
+the actual local instance-model execution. Running the separate face/eye analyzer
+later does not turn these whole-object masks into anatomical parts. Use existing manual correction for bad boundaries.
 
 ## Evidence boundaries
 
