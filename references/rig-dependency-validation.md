@@ -106,7 +106,7 @@ pin; no source asset or historical evidence needs rewriting.
 
 ## Review follow-up validation
 
-Fresh validation under Python 3.12.15 and Pillow 13.0.0 passed all 54 Model3D
+Fresh validation under Python 3.14.8 and Pillow 13.0.0 passed all 54 Model3D
 contract tests and the workflow's robotic-model validation command. The complete
 logs and source-bound receipt are committed in
 [`pillow13-review-20261113`](../tests/results/pillow13-review-20261113/receipt.json).
