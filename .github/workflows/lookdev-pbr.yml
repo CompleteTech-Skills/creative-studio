@@ -33,6 +33,10 @@ jobs:
           HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
           HATCH_LOOKDEV_BLENDER_TEST: '1'
           HATCH_LOOKDEV_EVIDENCE: /tmp/lookdev-pbr-evidence
+      - name: Render and measure the mandatory nine-cell PBR sweep
+        run: python scripts/lookdev_laboratory.py --blender /tmp/blender-4.5.3-linux-x64/blender --output "${RUNNER_TEMP}/lookdev-laboratory-evidence" 2>&1 | tee "${RUNNER_TEMP}/lookdev-laboratory.log"
+        env:
+          HATCH_LOOKDEV_LAB_TMPDIR: ${{ runner.temp }}/lookdev-laboratory-tmp
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -40,3 +44,5 @@ jobs:
           path: |
             /tmp/lookdev-pbr.log
             /tmp/lookdev-pbr-evidence/
+            ${{ runner.temp }}/lookdev-laboratory.log
+            ${{ runner.temp }}/lookdev-laboratory-evidence/
