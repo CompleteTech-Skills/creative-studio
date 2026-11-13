@@ -164,9 +164,16 @@ class EnvironmentTests(unittest.TestCase):
             asset=b['documents'][ground['asset']['path']]
             self.assertEqual(len(asset['lods']),2)
             self.assertEqual(asset['resources']['triangles'],128)
+            from scene3d_materials import project_material_slots
+            projection=project_material_slots(asset)
+            self.assertEqual(projection[0]['slot'],'surface')
+            self.assertIsNone(projection[0]['material_index'])
+            self.assertEqual(projection[0]['mesh'],asset['id'])
             lods=[b['documents'][r['path']] for r in asset['lods']]
             self.assertEqual([a['resources']['triangles'] for a in lods],[32,8])
-            for lod in lods:self.assertTrue((root/lod['content']['path']).is_file())
+            for lod in lods:
+                self.assertTrue((root/lod['content']['path']).is_file())
+                self.assertEqual(project_material_slots(lod)[0]['mesh'],lod['id'])
 
     def test_multi_recipe_snapshot_is_atomic_and_records_local_placement(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -16,6 +16,7 @@ from scene3d_geometry import primitive, wall, count, positive
 from scene3d_graph import SceneGraph, require, _inventories
 from scene3d_snapshot import snapshot_project
 from scene3d_terrain import Heightfield, scatter
+from scene3d_materials import obj_material_bindings
 
 
 def encode(value):
@@ -112,12 +113,15 @@ def _mesh_resource(mesh,bundle,documents,payloads,*,lods=()):
     mesh.validate();raw=mesh.obj();sha=hashlib.sha256(raw).hexdigest();path='generated/mesh-'+sha+'.obj'
     payloads[path]=raw;file=dict(path=path,sha256=sha)
     identity=sha if not lods else hashlib.sha256((sha+json.dumps(lods,sort_keys=True,separators=(',',':'))).encode()).hexdigest()
+    # A mapping upgrade is a new immutable asset identity, even when OBJ bytes match.
+    identity=hashlib.sha256(('obj-surface-v1\0'+identity).encode()).hexdigest()
     identifier='mesh-'+identity[:32]
     asset=dict(schema_version=1,kind='scene3d-asset',id=identifier,version='1.0.0',name=identifier,
         asset_type='mesh',content=file,source=file,provenance=dict(origin='authored',fixture=False,tool='scene3d-generator-v1',
         inputs=[],attribution='Procedural scene geometry',license='CC0-1.0'),coordinate_system=COORDINATES,
         original_coordinate_system='right-handed Y-up meters',pivot=[0,0,0],meshes=[file],materials=[],bounds=mesh.bounds,
         collision=None,sockets=[],components={},skeleton=None,animations=[],lods=list(lods),dependencies=list(lods),
+        material_bindings=obj_material_bindings(identifier),
         resources=dict(vertices=len(mesh.vertices),triangles=len(mesh.triangles),bytes=len(raw)),validation=[],review=dict(status='unreviewed',receipts=[]))
     validate_document(asset,'asset');asset_path='generated/'+identifier+'.json'
     reference=dict(path=asset_path,sha256=digest(asset),id=identifier,version='1.0.0',kind='scene3d-asset')

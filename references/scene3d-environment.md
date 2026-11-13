@@ -50,6 +50,14 @@ exclusions and uses a grid index for minimum-distance tests. Spacing defaults
 to 1.3 meters and cannot be less than the crown diameter. Impossible counts
 fail before publication. Heightfields cannot represent caves or overhangs.
 
+Every generated base and LOD asset uses the shared `scene3d_materials` canonical
+OBJ projection: one named `surface`, with no invented source material index or
+Blender local slot index. Adding this projection creates a new immutable asset
+identity even when its OBJ bytes match an earlier generated asset. Existing
+projects and their old pins remain reopenable during regeneration upgrades.
+Material overrides and renderer-local assignment use the shared projection
+adapter; adding the descriptor alone does not claim translated PBR materials.
+
 Generated assets and recipes have exact file hashes. Generated nodes retain
 fingerprints and stable IDs. Regeneration preserves changed nodes, manual
 children where valid, and deleted-node tombstones, and returns explicit
