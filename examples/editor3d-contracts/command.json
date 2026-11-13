@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "kind": "editor3d-command",
+  "id": "command",
+  "project_id": "project",
+  "scene_id": "scene",
+  "expected_revision": 0,
+  "expected_project_sha256": "62ca33b39a103db474de2a1e5f285a7bdc95d4d6d90550a2c716ca2826a57562",
+  "transaction_id": "transaction",
+  "operation": "set-transform",
+  "targets": [
+    "node"
+  ],
+  "input": {
+    "owner": "scene3d",
+    "id": "native-scene",
+    "version": "1.0.0",
+    "native_kind": "scene3d-scene",
+    "file": {
+      "path": "unavailable/scene.json",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 1,
+      "media_type": "application/json"
+    }
+  },
+  "inverse": null,
+  "author": "fixture-author"
+}

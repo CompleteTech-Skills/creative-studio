@@ -224,7 +224,9 @@ Defaults: 256 MiB encoded source, 1 GiB dependencies/archive expansion, one mill
 
 `configure --file limits.json` uses strict bounded overrides. `status` shows active/pending/failed/stale work. `resume` retries failed/interrupted operations within the attempt budget. An OS file lock gives one writer ownership; claims survive in the journal and lock ownership releases after a process crash. Cache identity covers the core rig, parameters, implementation files and retained artifact hashes. Changing a covered input makes prior results stale. Failed exports never count as independent acceptance.
 
-Archive inventory covers every included file, hash and size. Restoration rejects path escapes, aliases/collisions, links, encrypted/special files, excessive expansion and unexpected/missing members, verifies all bytes in a fresh temporary directory, loads the actual rig, then promotes the directory. A restored fixture is evaluated again by the demonstration gate.
+Archive creation requires a new destination and holds the run writer lock. It streams bounded files, rejects files that change during capture, restores and loads the completed temporary ZIP to verify its actual closure, then publishes exclusively. A pre-existing or racing destination is preserved; only this attempt’s temporary files are removed.
+
+Archive inventory covers every included file, hash and size. Restoration rejects path escapes, aliases/collisions, links, encrypted/special files, excessive expansion and unexpected/missing members, verifies all bytes in a fresh temporary directory, loads the actual rig, then promotes the directory. A restored fixture is evaluated again by the demonstration gate. Repeated demo verification writes new archives beneath a fresh `packages/verification-*` directory and records those exact relative paths, preserving previously retained packages.
 
 Restoration requires a new destination and rejects destination symlinks, including those with missing targets. If another writer creates that destination before publication, even as an empty directory or symlink, restoration fails, preserves the competing destination, and removes only its own temporary extraction directory.
 
@@ -258,6 +260,35 @@ python scripts/generate_rig_templates.py --check
 Generation requires a new destination. Verification can be rerun without `--generate` on an existing set. The retained fixtures, source GLBs, real animation channels, pose sheets, transparent frame sequences, browser screenshots, editable Blender files, independent reports and archive receipts are indexed by `examples/rig-3d/acceptance.json`. Consult [acceptance and limitations](3d-rigging-acceptance.md) before treating any engineering fixture or gate as a production-art approval.
 
 The public production delivery command remains scoped to all existing 2D tests by default (`--tests --test-scope 2d`), so its pinned environment does not need NumPy, pygltflib or Blender. It filters only the new `test_rig_*.py` modules before import and retains strict skip accounting. Use the focused 3D command above and the nine named CI jobs for 3D acceptance. The delivery runner also accepts `--test-scope all` when the complete 3D environment and test flags are enabled; unexpected integration skips still fail that gate.
+
+Weight-edit input validation preserves the original skin on failure. Direct
+`edit_weights` calls use the smaller of four and the stored width when the
+influence limit is omitted. Explicit limits require an integer from one through
+the stored width; larger requests and null fail instead of silently discarding
+authored influences. Correction assignments and mirrors cap the profile limit
+to that stored width. `copy_weights` requires integer vertex references without
+coercing correction sources (booleans are not
+vertices). `smooth_weights` requires integer iterations from zero through 64 and
+a finite numeric strength from zero through one. These bounded API repairs do
+not establish completion of the broader #53 skinning acceptance.
+
+### Authored landmark admission
+
+`rig auto --landmarks FILE` accepts a source-bound object containing exactly
+`source_sha256` and `landmarks`. Each bone-keyed landmark requires `head` and
+`tail` arrays of three finite JSON numbers and `approved: true`. Numeric strings,
+booleans, unknown bone IDs, missing coordinates and unsupported fields fail with
+a typed diagnostic. The existing bone contract validates evidence source,
+nonempty reference and confidence in `[0, 1]` before the fitter returns a status.
+Landmarks take precedence over semantic regions and bounds; geometric sources
+or confidence below `0.9` retain an explicit anatomy uncertainty. This validates
+supplied annotations; it does not independently establish anatomy approval.
+
+The `test_rig_landmarks.py` regression exercises the real mutation dispatcher,
+valid source-bound fitting/reload and rejection with unchanged active manifest,
+immutable revisions and original source bytes. It covers the landmark-admission
+part of #52; broader import, template composition and native acceptance remain
+separate requirements.
 
 ## Native texture admission
 
