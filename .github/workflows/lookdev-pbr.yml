@@ -1,0 +1,53 @@
+name: LookDev physical surface validation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  surface-contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-rig-test.txt
+      - run: python -m unittest discover -s tests -p '*lookdev*py' -v
+  physical-surfaces:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-rig-test.txt
+      - name: Install software EEVEE libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1-mesa-dri libgles2
+      - name: Install checksum-verified Blender 4.5.3 LTS
+        run: |
+          curl -fL --retry 3 https://download.blender.org/release/Blender4.5/blender-4.5.3-linux-x64.tar.xz -o /tmp/blender.tar.xz
+          echo '975c58fcb244273838534bba771e64ad87739216b0f9b39a888531a49a72d845  /tmp/blender.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/blender.tar.xz -C /tmp
+      - run: python -m unittest discover -s tests -p test_rig_lookdev_blender.py -v 2>&1 | tee /tmp/lookdev-pbr.log
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          EGL_PLATFORM: surfaceless
+          HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
+          HATCH_LOOKDEV_BLENDER_TEST: '1'
+          HATCH_LOOKDEV_EVIDENCE: /tmp/lookdev-pbr-evidence
+      - run: python -m unittest discover -s tests -p test_rig_lookdev_texture_blender.py -v 2>&1 | tee /tmp/lookdev-textures.log
+        env:
+          HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
+          HATCH_LOOKDEV_TEXTURE_TEST: '1'
+          HATCH_LOOKDEV_TEXTURE_EVIDENCE: /tmp/lookdev-texture-evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lookdev-pbr-evidence
+          path: |
+            /tmp/lookdev-pbr.log
+            /tmp/lookdev-pbr-evidence/
+            /tmp/lookdev-textures.log
+            /tmp/lookdev-texture-evidence/
