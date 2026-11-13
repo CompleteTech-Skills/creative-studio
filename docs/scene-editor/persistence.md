@@ -166,6 +166,8 @@ size. It asks the authenticated native timeline evaluator for that exact state a
 renders a PNG through the native camera at the requested dimensions. Only sRGB
 with the standard linear-exposure display transform is supported. Native clips
 without a matching geometry adapter and changed material bindings are rejected;
+local imported-clip poses, active drags and alternate debug shading must be exited
+before capture. The gizmo stays detached while the exact native evaluation loads;
 no image is labelled as an equivalent production render. The viewer restores its
 prior size, projection state, overlays and evaluated pose after capture.
 

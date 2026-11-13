@@ -429,10 +429,16 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                             let exposureRejected = false;
                             try { window.hatchEditor.preview({nodes:[],world:{exposure:1024}}); }
                             catch { exposureRejected = true; }
-                            return {captured,rejected,projectionRejected,exposureRejected,revision:window.hatchEditor.snapshot.revision};
+                            const shading = document.querySelector('#shading');
+                            shading.value = 'wireframe'; shading.dispatchEvent(new Event('change'));
+                            let shadingRejected = false;
+                            try { await window.hatchEditor.capturePreview(metadata); } catch { shadingRejected = true; }
+                            shading.value = 'material'; shading.dispatchEvent(new Event('change'));
+                            return {captured,rejected,projectionRejected,exposureRejected,shadingRejected,revision:window.hatchEditor.snapshot.revision};
                         }''')
                         self.assertTrue(result['rejected']); self.assertTrue(result['projectionRejected'])
-                        self.assertTrue(result['exposureRejected']); self.assertEqual(result['revision'], 0)
+                        self.assertTrue(result['exposureRejected']); self.assertTrue(result['shadingRejected'])
+                        self.assertEqual(result['revision'], 0)
                         captured = result['captured']
                         self.assertEqual(captured['resolution'], [320, 240])
                         from PIL import Image

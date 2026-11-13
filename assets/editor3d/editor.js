@@ -187,6 +187,8 @@ function applyNativeProperties(object, node) {
 }
 async function capturePreview(metadata) {
   if (busy || lost || disposed || !window.editorReady) throw Error("The saved viewport is not ready for capture.");
+  if (drag || $("clip").value || $("shading").value !== "material")
+    throw Error("Return to saved material shading without a local clip or active drag before capture.");
   const required = ["revision", "sha256", "shot", "camera", "frame", "source_time", "color_space", "view_transform", "resolution"];
   if (Object.keys(metadata).sort().join() !== required.sort().join() || metadata.revision !== revision || metadata.sha256 !== sha256)
     throw Error("Capture requires the exact current saved revision and complete metadata.");
@@ -205,6 +207,7 @@ async function capturePreview(metadata) {
       BigInt(time.numerator)*BigInt(shot.fps.numerator) !== BigInt(metadata.frame)*BigInt(shot.fps.denominator)*BigInt(time.denominator))
     throw Error("Capture source time differs from the exact saved shot frame.");
   busy = true;
+  gizmo.detach();
   const epoch = loadEpoch, previous = lastEvaluation && structuredClone(lastEvaluation);
   const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio();
   const oldTone = renderer.toneMapping, oldColor = renderer.outputColorSpace;
