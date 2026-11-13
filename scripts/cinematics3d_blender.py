@@ -68,7 +68,9 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
     require(request['settings']['engine']=='cycles' and request['settings']['device_policy']=='cpu',
             'CINEMATICS_BACKEND','Cinematic integration currently uses the verified Cycles CPU backend.')
     require('CYCLES' in probe['engines'],'CINEMATICS_BACKEND','Installed Blender does not expose Cycles.')
-    require(registry.get(stack_reference)['scope']!='object','CINEMATICS_UNSUPPORTED',
+    stack=registry.get(stack_reference)
+    require(stack['kind']=='cinematics3d-stack','CINEMATICS_KIND','Expected a cinematic stack.')
+    require(stack['scope']!='object','CINEMATICS_UNSUPPORTED',
             'Object-local settings require an object-aware native adapter.')
     effective=deepcopy(request);effects=registry.effective_stack(stack_reference)
     require(len(effects)<=128,'CINEMATICS_LIMIT','Too many effective effects.')

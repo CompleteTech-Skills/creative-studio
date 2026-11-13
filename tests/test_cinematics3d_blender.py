@@ -34,6 +34,8 @@ class Compiler(unittest.TestCase):
         registry,stack=bundle([e]);req=request();original=deepcopy(req)
         compiled=compile_plan(registry,stack,req,inventory())
         self.assertEqual(req,original);self.assertEqual(compiled['request']['settings']['exposure'],2)
+        with self.assertRaises(RigError):
+            compile_plan(registry,registry.reference('exposure','1.0.0'),req,inventory())
         self.assertFalse(compiled['executed']);validate_bound_plan(compiled['plan'],compiled['request'])
         validate_configuration(compiled['plan'],compiled['configuration'])
         self.assertEqual(compiled['configuration']['documents/exposure.json'],canonical_bytes(e))
