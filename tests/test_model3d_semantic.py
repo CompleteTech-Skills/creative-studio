@@ -262,5 +262,37 @@ class SemanticTests(unittest.TestCase):
                 patch('model3d_semantic.deepcopy',side_effect=AssertionError('copied before budget')):
             with self.assertRaises(RigError):create_asset(self.asset.geometry)
 
+    def test_zip64_directory_locator_is_rejected_before_zipfile_allocation(self):
+        import model3d_semantic_io as semantic_io
+        import struct
+        save_asset(self.asset,self.root/'zip-source');original=read_json(self.root/'zip-source/semantic.json')
+        payload_path=self.root/'zip-source'/original['geometry']['data']['path'];good=payload_path.read_bytes()
+        position=good.rfind(b'PK\x05\x06');locator=struct.pack('<4sLQL',b'PK\x06\x07',0,0,1)
+        for comment_length in (0,65535):
+            with self.subTest(comment=comment_length):
+                end=bytearray(good[position:position+22]);end[20:22]=comment_length.to_bytes(2,'little')
+                payload_path.write_bytes(good[:position]+locator+end+b'x'*comment_length)
+                manifest=deepcopy(original);manifest['geometry']['data']['sha256']=sha256(payload_path)
+                manifest['sha256']=object_hash({k:v for k,v in manifest.items() if k!='sha256'})
+                atomic_json(self.root/'zip-source/semantic.json',manifest)
+                with patch.object(semantic_io.zipfile,'ZipFile',side_effect=AssertionError('allocated before locator admission')) as opened:
+                    with self.assertRaises(RigError) as caught:load_asset(self.root/'zip-source')
+                    self.assertEqual(caught.exception.report['code'],'MODEL3D_SEMANTIC_LIMIT')
+                    opened.assert_not_called()
+
+    def test_zip64_small_member_headers_remain_supported(self):
+        import io,zipfile
+        save_asset(self.asset,self.root/'small-zip64');manifest=read_json(self.root/'small-zip64/semantic.json')
+        payload_path=self.root/'small-zip64'/manifest['geometry']['data']['path'];original=payload_path.read_bytes()
+        stream=io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(original)) as source,zipfile.ZipFile(stream,'w',zipfile.ZIP_DEFLATED) as target:
+            for record in source.infolist():
+                with target.open(record.filename,'w',force_zip64=True) as out:out.write(source.read(record.filename))
+        payload_path.write_bytes(stream.getvalue());manifest['geometry']['data']['sha256']=sha256(payload_path)
+        manifest['sha256']=object_hash({k:v for k,v in manifest.items() if k!='sha256'})
+        atomic_json(self.root/'small-zip64/semantic.json',manifest)
+        loaded=load_asset(self.root/'small-zip64')
+        self.assertEqual(part_signatures(loaded),part_signatures(self.asset))
+
 
 if __name__=='__main__':unittest.main()

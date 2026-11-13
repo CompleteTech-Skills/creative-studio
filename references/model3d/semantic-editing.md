@@ -82,6 +82,9 @@ snapshot. It rejects malformed nested structures, conflicting paths, unknown
 versions, altered blobs and stale dependencies. Saved earlier revisions are never
 overwritten. The native file representation remains authoritative; this is not a
 new mesh serialization engine or a machine power-loss durability guarantee.
+Native bundle directory admission rejects authoritative ZIP64 locators before
+opening the ZIP directory, even behind a maximal comment or bounded classic
+fields. Ordinary small ZIP64 member headers remain supported.
 
 `export_asset(asset, NEW_DIR, format='glb'|'gltf')` writes actual hierarchical part
 nodes and native mesh children, supported PBR/images/UVs/morphs, semantic extras

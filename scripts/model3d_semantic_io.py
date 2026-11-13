@@ -90,6 +90,13 @@ def _bundle_budget(path,evidence_bytes):
         require(end+22+comment==len(tail) and disk==cd_disk==0 and local_count==count
                 and 0<count<=DEFAULT_LIMITS['archive_files'] and central_bytes<=8*1024**2
                 and offset+central_bytes<=size,'MODEL3D_SEMANTIC_LIMIT','Native bundle directory exceeds the semantic profile.')
+        # ZipFile consults this authoritative locator even when the classic
+        # counts/sizes are small. With a maximal comment it sits outside tail.
+        absolute_end=max(0,size-65557)+end
+        if absolute_end>=20:
+            stream.seek(absolute_end-20)
+            require(stream.read(4)!=b'PK\x06\x07','MODEL3D_SEMANTIC_LIMIT',
+                    'ZIP64 directory locators are outside the bounded semantic bundle profile.')
     try:
         with zipfile.ZipFile(path) as bundle:
             require((sum(info.file_size for info in bundle.infolist())+evidence_bytes)*12<=DEFAULT_LIMITS['memory_bytes'],
