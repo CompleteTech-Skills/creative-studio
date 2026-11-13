@@ -151,36 +151,41 @@ def main():
         bpy.data.images.remove(image)
         return pixels
     for label, enabled in [('pinhole', False), ('physical-dof', True)]:
-        camera.data.dof.use_dof = enabled
+        optics['depth_of_field']['enabled'] = enabled
+        camera = apply_camera(scene, optics, render, world_matrix=world, camera_object=camera)
         rendered.append(render_pixels(label))
     difference = float(np.abs(rendered[0] - rendered[1]).mean())
     if difference <= .01:
         raise AssertionError(f'physical DOF did not visibly change actual render: {difference}')
-    camera.data.dof.use_dof = False
-    scene.view_settings.exposure = 1
+    optics['depth_of_field']['enabled'] = False
+    camera = apply_camera(scene, optics, render, world_matrix=world, camera_object=camera, exposure=1)
     exposure_pixels = render_pixels('exposure-one-stop')
     exposure_difference = float(np.abs(rendered[0] - exposure_pixels).mean())
     if exposure_difference <= .01:
         raise AssertionError('exposure did not change the actual render')
-    scene.view_settings.exposure = 0
+    camera = apply_camera(scene, optics, render, world_matrix=world, camera_object=camera)
     moving = bpy.data.objects['depth-cube-0']
     moving.location.x = -.6; moving.keyframe_insert('location', frame=0)
     moving.location.x = -.16; moving.keyframe_insert('location', frame=2)
     scene.frame_set(1)
     sharp_motion = render_pixels('moving-sharp')
-    scene.render.use_motion_blur = True
-    scene.render.motion_blur_shutter = 1
+    camera = apply_camera(scene, optics, render, world_matrix=world, camera_object=camera,
+                          motion_blur=True, shutter_frames=1)
     blurred_motion = render_pixels('moving-blur')
     motion_difference = float(np.abs(sharp_motion - blurred_motion).mean())
     if motion_difference <= .001:
         raise AssertionError('physical motion blur did not change the actual render')
-    camera.data.dof.use_dof = True
+    optics['depth_of_field']['enabled'] = True
+    camera = apply_camera(scene, optics, render, world_matrix=world, camera_object=camera,
+                          motion_blur=True, shutter_frames=1)
     blend = destination / 'optics.blend'
     bpy.ops.wm.save_as_mainfile(filepath=str(blend))
     bpy.ops.wm.open_mainfile(filepath=str(blend), load_ui=False, use_scripts=False)
     reopened = bpy.context.scene.camera
     if not reopened.data.dof.use_dof or abs(reopened.data.dof.focus_distance - 3) > 1e-6:
         raise AssertionError('saved optical state did not survive independent Blender reopen')
+    if not bpy.context.scene.render.use_motion_blur or bpy.context.scene.view_settings.exposure != 0:
+        raise AssertionError('saved shutter/exposure state did not survive independent Blender reopen')
     (destination / 'resolved-inputs.json').write_text(json.dumps(dict(optics=optics, render=render), indent=2) + '\n')
     files = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in destination.iterdir() if p.is_file()}
     report = dict(ok=True, fixture=True, production_visual_approval=False,
