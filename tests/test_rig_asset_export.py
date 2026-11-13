@@ -153,7 +153,7 @@ class ExportTests(unittest.TestCase):
         from rig_gltf import GltfBuilder
         altered=GltfBuilder();altered.json=changed;altered.binary=bytearray(doc.buffers[0])
         output=self.root/'changed-parent.glb';altered.write(output)
-        with self.assertRaisesRegex(RigError,'joint hierarchy'):_native_compare(source,output,DEFAULT_LIMITS)
+        with self.assertRaisesRegex(RigError,'source hierarchy'):_native_compare(source,output,DEFAULT_LIMITS)
         # Geometry shape is identical but the actual normal attribute reverses.
         def normals(path,value):
             builder=GltfBuilder();p=builder.accessor([[0,0,0],[1,0,0],[0,1,0]],'VEC3',bounds=True)
