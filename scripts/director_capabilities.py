@@ -353,7 +353,7 @@ def _provider_receipt_price(evidence, limits):
 def assert_admission(snapshot, required_operations, *, evidence_root=None, now=None,
                      resources=None, network_policy='deny', price_per_call=None,
                      budget_reservation_id=None, allow_unknown_price=False,
-                     budget_currency=None, budget_amount=None):
+                     budget_currency=None, budget_amount=None, paid_policy='deny'):
     """Fail closed for missing/stale/unexecuted native capabilities or resources."""
     _need(isinstance(snapshot,dict),'SCHEMA','Capability snapshot must be an object.')
     if snapshot.get('kind')=='director-result':
@@ -404,6 +404,8 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
             _need(known is not None or allow_unknown_price,'PRICE','Unknown provider price requires explicit authority.')
             if known is not None:
                 price,currency=known
+                _need(price==0 or paid_policy in ('bounded','allow-unknown-price'),
+                      'POLICY','Nonzero provider pricing requires explicit paid authority.')
                 _need(budget_currency==currency and type(budget_amount) in (int,float)
                       and math.isfinite(budget_amount) and budget_amount>=0,
                       'PRICE','Known provider price requires a matching currency and bounded amount.')

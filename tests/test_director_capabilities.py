@@ -149,7 +149,7 @@ class ProviderPricingContractTests(unittest.TestCase):
                 return cap.assert_admission(value,['planning.provider'],evidence_root=root,
                       resources={'max_provider_calls':2},network_policy='allow-configured',
                       budget_reservation_id='fixture-reservation',budget_currency='USD',
-                      budget_amount=.5,**extra)
+                      budget_amount=.5,paid_policy='bounded',**extra)
             admit(snapshot())
             admit(snapshot(0))
             with self.assertRaises(RigError):admit(snapshot(),price_per_call=.1)
