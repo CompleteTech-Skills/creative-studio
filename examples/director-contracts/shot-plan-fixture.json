@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "kind": "director-shot-plan",
+  "id": "shot-plan-fixture",
+  "semantic_version": "1.0.0",
+  "story": {
+    "artifact_id": "story-plan-fixture",
+    "kind": "director-story-plan",
+    "schema_version": 1,
+    "semantic_version": "1.0.0",
+    "path": "examples/director-contracts/story-plan-fixture.json",
+    "sha256": "0ac5c41b2d022ddf8f5cc8a9dc559cb41988043d349c97457d457010e42ac2ed",
+    "byte_size": 1094,
+    "media_type": "application/json",
+    "provenance_ref": null,
+    "fixture": true,
+    "dependencies": []
+  },
+  "duration_frames": 720,
+  "frame_rate": {
+    "numerator": 24,
+    "denominator": 1
+  },
+  "shots": [
+    {
+      "id": "shot-a",
+      "scene_id": "laboratory-fixture",
+      "beat_ids": [
+        "discovery"
+      ],
+      "start_frame": 0,
+      "end_frame": 720,
+      "duration_frames": 720,
+      "camera": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "actors": [
+        "aster-fixture",
+        "moss-fixture"
+      ],
+      "props": [
+        "object-fixture"
+      ],
+      "actions": [],
+      "markers": [],
+      "environment": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "lighting": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "composition": [],
+      "entry_constraints": [],
+      "exit_constraints": [],
+      "transition": {
+        "kind": "cut",
+        "overlap_frames": 0
+      },
+      "required_assets": [],
+      "dependencies": [],
+      "render_settings": {
+        "artifact_id": "fixture-evidence",
+        "kind": "test-fixture",
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "path": "examples/director-contracts/evidence.txt",
+        "sha256": "a830419a9ea426abae098cca3bd07abd330efbca87490492e7885a6e1fdac075",
+        "byte_size": 82,
+        "media_type": "text/plain",
+        "provenance_ref": null,
+        "fixture": true,
+        "dependencies": []
+      },
+      "qa_requirements": [],
+      "review": "unreviewed"
+    }
+  ]
+}
