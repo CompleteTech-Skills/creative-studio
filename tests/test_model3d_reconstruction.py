@@ -138,6 +138,16 @@ class ReconstructionTests(unittest.TestCase):
                     self.assertEqual(json.loads((destination/'reconstruction.json').read_text())['review'],'pending')
                     with self.assertRaises(RigError):publish(result,destination)
 
+    def test_revolution_seam_vertices_are_budgeted_before_ring_allocation(self):
+        with patch('model3d_reconstruction_solids.math.cos',side_effect=AssertionError('allocated before budget')):
+            with self.assertRaises(RigError) as caught:revolve_profile([[1,i] for i in range(488)],segments=512)
+        self.assertEqual(caught.exception.report['code'],'RECON_LIMIT')
+
+    def test_mixed_boolean_metric_samples_never_become_numbers(self):
+        with self.assertRaises(RigError):revolve_profile([[True,0],[1,1]])
+        with self.assertRaises(RigError):extrude_contour([[False,0],[1,0],[0,1]],thickness=.2)
+        with self.assertRaises(RigError):heightfield([[0,True],[1,0]],spacing=[1,1],base_thickness=.2)
+
     def test_signed_integer_minimum_cannot_bypass_metric_bounds(self):
         minimum=np.iinfo(np.int64).min
         with self.assertRaises(RigError):extrude_contour(np.array([[minimum,0],[0,0],[0,1]],dtype=np.int64),thickness=.2)

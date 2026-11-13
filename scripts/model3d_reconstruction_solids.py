@@ -126,7 +126,7 @@ def revolve_profile(profile, *, segments=32, cap_ends=True, evidence=None):
     values=_array(profile,(len(profile),2),'profile')
     require(np.all(values[:,0]>=0) and np.all(np.diff(values[:,1])>0) and np.all(values[1:-1,0]>0)
             and np.max(values[:,0])>0,'RECON_PROFILE','Profile Y must increase; radius is nonnegative and interior radii positive.')
-    _budget(len(values)*segments+2,2*segments*len(values))
+    _budget(len(values)*(segments+1)+2,2*segments*len(values))
     positions=[];rings=[];uv=[]
     lengths=np.r_[0,np.cumsum(np.linalg.norm(np.diff(values,axis=0),axis=1))];lengths/=lengths[-1]
     for j,(radius,y) in enumerate(values):
@@ -180,8 +180,8 @@ def heightfield(heights, *, spacing, base_thickness, evidence=None):
     """
     require(isinstance(heights,(list,tuple,np.ndarray)),'RECON_HEIGHT','Expected a bounded2Dheight array.')
     require(isinstance(heights,np.ndarray) and heights.ndim==2 or isinstance(heights,(list,tuple)) and 2<=len(heights)<=256 and all(isinstance(row,(list,tuple,np.ndarray)) and len(row)==len(heights[0]) for row in heights),'RECON_HEIGHT','Heightfield rows must have equal bounded dimensions.')
-    try:values=np.asarray(heights)
-    except (TypeError,ValueError,OverflowError):require(False,'RECON_HEIGHT','Heightfield values must be regular numeric samples.')
+    require(2<=len(heights)<=256 and 2<=len(heights[0])<=256,'RECON_HEIGHT','Heightfield dimensions must stay in2..256.')
+    values=_array(heights,(len(heights),len(heights[0])),'heightfield')
     require(values.ndim==2 and 2<=values.shape[0]<=256 and 2<=values.shape[1]<=256
             and values.dtype.kind in 'fiu','RECON_HEIGHT','Heightfield grid must be2..256per dimension and numeric.')
     require(np.isfinite(values).all() and np.all(values>=-1e6) and np.all(values<=1e6),'RECON_HEIGHT','Height samples must be finite metric values.')

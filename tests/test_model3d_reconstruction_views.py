@@ -61,6 +61,12 @@ class VisualHullTests(unittest.TestCase):
                 self.assertEqual(caught.exception.report['code'],'RECON_STALE')
                 self.assertFalse(destination.exists())
 
+    def test_mixed_boolean_intrinsics_and_extrinsics_reject_before_coercion(self):
+        mask=np.ones((4,4),dtype=bool)
+        with self.assertRaises(RigError):calibrated_view(mask,name='bool',calibration='known',evidence={'fixture':True},camera_to_world=np.eye(4),intrinsics=[[True,0,2],[0,1,2],[0,0,1]])
+        world=np.eye(4).tolist();world[0][0]=True
+        with self.assertRaises(RigError):calibrated_view(mask,name='bool',calibration='known',evidence={'fixture':True},camera_to_world=world,orthographic=[-1,1,-1,1])
+
     def test_true_surface_reprojection_detects_unsupported_foreground(self):
         mask=np.zeros((16,16),bool);mask[4:12,4:12]=True;mask[0,0]=True
         result=carve_visual_hull([view('front',[0,0,3],mask),view('right',[3,0,0])],[[-1]*3,[1]*3],[4]*3)

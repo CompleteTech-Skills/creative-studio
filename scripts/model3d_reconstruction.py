@@ -98,8 +98,13 @@ def _array(value, dimensions, label):
     require(isinstance(value,(list,tuple,np.ndarray)),'RECON_PARAMETER',label+' must be a numeric array.')
     def shape_ok(item,shape):
         if isinstance(item,np.ndarray):return item.shape==shape
-        return isinstance(item,(list,tuple)) and len(item)==shape[0] and (len(shape)==1 or all(shape_ok(row,shape[1:]) for row in item))
+        return isinstance(item,(list,tuple)) and len(item)==shape[0] and (all(not isinstance(v,(list,tuple,np.ndarray)) for v in item) if len(shape)==1 else all(shape_ok(row,shape[1:]) for row in item))
     require(shape_ok(value,dimensions),'RECON_PARAMETER',label+' has invalid shape.')
+    def numeric(item):
+        if isinstance(item,np.ndarray):return item.dtype.kind in 'fiu'
+        if isinstance(item,(list,tuple)):return all(numeric(v) for v in item)
+        return isinstance(item,(int,float,np.integer,np.floating)) and not isinstance(item,(bool,np.bool_))
+    require(numeric(value),'RECON_PARAMETER',label+' must contain numbers, not booleans or strings.')
     try:array=np.asarray(value)
     except (ValueError,TypeError,OverflowError) as exc:raise RigError('RECON_PARAMETER',label+' is not a regular numeric array.') from exc
     require(array.shape==dimensions and array.dtype.kind in 'fiu' and np.isfinite(array).all()
