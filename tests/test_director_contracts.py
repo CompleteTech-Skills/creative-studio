@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import jsonschema
 
@@ -217,6 +218,15 @@ class DirectorContractTests(unittest.TestCase):
                 self.structural_validator().validate(changed)
                 with self.assertRaises(ValueError):
                     dc.validate_document(changed)
+
+    def test_context_accepts_rfc3339_lowercase_and_rejects_invalid_deadlines(self):
+        request = self.method_sample('CapabilityRegistry.probe', 'director-request')
+        request['context']['deadline'] = '2030-01-01t00:00:00z'
+        dc.validate_document(request)
+        dc.validate_method_request('CapabilityRegistry.probe', request)
+        request['context']['deadline'] = '2030-01-01t25:00:00z'
+        with self.assertRaises(dc.RigError):
+            dc.validate_document(request)
 
     def test_context_rejects_implicit_network_and_paid_authority(self):
         original = self.sample('director-request')
@@ -462,8 +472,6 @@ class DirectorContractTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 dc.validate_bundle(changed)
 
-    @unittest.skipUnless(hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd,
-                         'Secure descriptor-relative closure is unavailable on this platform.')
     def test_byte_closure_rejects_tampering_and_symlink_without_writes(self):
         result = self.method_sample('PlanningProvider.generate_structured')
         artifact = self.artifact(result)
@@ -474,6 +482,12 @@ class DirectorContractTests(unittest.TestCase):
             source = (ROOT / artifact['path']).read_bytes()
             path.write_bytes(source)
             before = {p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            if not (hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd):
+                with self.assertRaises(dc.RigError) as caught:
+                    dc.validate_bundle([result], root=root)
+                self.assertEqual(caught.exception.report['code'], 'DIRECTOR_PLATFORM')
+                self.assertEqual(before, {p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()})
+                return
             dc.validate_bundle([result], root=root)
             integral_result = self.integral_json_numbers(result)
             representation = json.dumps(integral_result, sort_keys=True)
@@ -493,6 +507,14 @@ class DirectorContractTests(unittest.TestCase):
                 os.mkfifo(path)
                 with self.assertRaises(ValueError):
                     dc.validate_bundle([result], root=root)
+
+    def test_unavailable_secure_reads_fail_closed_with_typed_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(os, 'supports_dir_fd', set()):
+                with self.assertRaises(dc.RigError) as caught:
+                    dc.validate_bundle([self.method_sample('PlanningProvider.generate_structured')], root=directory)
+            self.assertEqual(caught.exception.report['code'], 'DIRECTOR_PLATFORM')
+            self.assertEqual(list(Path(directory).iterdir()), [])
 
     def test_position_basis_is_reversible_and_matches_literal_expectations(self):
         self.assertEqual(dc.convert_position([2, 3, 4]), [2, -4, 3])

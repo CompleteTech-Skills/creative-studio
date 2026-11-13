@@ -7,6 +7,7 @@ from copy import deepcopy
 from fractions import Fraction
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -83,10 +84,62 @@ class SyntheticFileAdapter:
 
 
 class Render3DIndependentTests(unittest.TestCase):
+    @unittest.skipUnless(hasattr(os, 'mkfifo') and hasattr(os, 'O_NONBLOCK'),
+                         'FIFO and nonblocking file descriptors required')
+    def test_source_replaced_with_fifo_does_not_block_snapshot_copy(self):
+        from unittest.mock import patch
+        import render3d_snapshot as snapshot
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, stage = root / 'source', root / 'stage'
+            source.mkdir(); stage.mkdir()
+            item = source / 'data.bin'
+            item.write_bytes(b'original')
+            real_open = os.open
+            def replace_before_open(path, flags, *args, **kwargs):
+                # Check before opening so regression failure cannot hang CI.
+                self.assertTrue(flags & os.O_NONBLOCK)
+                item.unlink(); os.mkfifo(item)
+                return real_open(path, flags, *args, **kwargs)
+            with patch.object(snapshot.os, 'open', side_effect=replace_before_open):
+                with self.assertRaises(Render3DError) as caught:
+                    snapshot._copy_verified(source, stage, 'data.bin', hashlib.sha256(b'original').hexdigest())
+            self.assertEqual(caught.exception.report['category'], 'missing-asset')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo') and hasattr(os, 'O_NONBLOCK'),
+                         'FIFO and nonblocking file descriptors required')
+    def test_fifo_replacement_rejected_at_each_public_read_boundary(self):
+        from unittest.mock import patch
+        import render3d_contracts as contracts
+        for boundary in ('load', 'plan', 'verify'):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); source = root / 'source'; source.mkdir()
+                adapter = SyntheticFileAdapter()
+                (source / 'source.bin').write_bytes(adapter.files['source.bin'])
+                destination = root / 'snapshot'
+                create_snapshot(source, destination, adapter)
+                path = destination / 'snapshot.json'
+                value = request(); value['snapshot'] = file_ref('snapshot/snapshot.json', path.read_bytes())
+                target = destination / ('source.bin' if boundary == 'verify' else 'snapshot.json')
+                real_open = os.open
+                def replace_before_open(name, flags, *args, **kwargs):
+                    if Path(name) == target:
+                        self.assertTrue(flags & os.O_NONBLOCK)
+                        target.unlink(); os.mkfifo(target)
+                    return real_open(name, flags, *args, **kwargs)
+                with patch.object(contracts.os, 'open', side_effect=replace_before_open):
+                    with self.assertRaises(Render3DError):
+                        if boundary == 'load':
+                            load(path, 'RenderSnapshot')
+                        elif boundary == 'plan':
+                            make_frame_spec(value, 17, path, adapter=adapter)
+                        else:
+                            verify_snapshot(destination, adapter)
 
     def sources(self, adapter=None):
         adapter = adapter or SyntheticFileAdapter()
@@ -338,6 +391,41 @@ class Render3DIndependentTests(unittest.TestCase):
         reopened = load_rig(destination)
         self.assertGreater(sum(len(mesh.positions) for mesh in reopened.geometry.meshes), 0)
         self.assertEqual(set(reopened.clips), {'bend', 'neutral'})
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo') and hasattr(os, 'O_NONBLOCK'),
+                         'FIFO and nonblocking file descriptors required')
+    def test_native_owner_replacement_rejects_before_legacy_payload_loading(self):
+        from unittest.mock import patch
+        import render3d_contracts as contracts
+        rig = fixture(self.root)
+        target = rig.root / 'rig.json'
+        real_open = os.open
+        def replace_before_open(name, flags, *args, **kwargs):
+            if Path(name) == target:
+                self.assertTrue(flags & os.O_NONBLOCK)
+                target.unlink(); os.mkfifo(target)
+            return real_open(name, flags, *args, **kwargs)
+        with patch.object(contracts.os, 'open', side_effect=replace_before_open):
+            with self.assertRaises(Render3DError):
+                create_snapshot(rig.root, self.root / 'rejected-native', NativeRigAdapter())
+        self.assertFalse((self.root / 'rejected-native').exists())
+
+    def test_source_growth_cannot_exceed_total_copy_budget_after_preflight(self):
+        from unittest.mock import patch
+        import render3d_snapshot as snapshot
+        source, adapter = self.sources(SyntheticFileAdapter({'a.bin': b'aaa', 'b.bin': b'bbb'}))
+        target = source / 'b.bin'
+        real_open = os.open
+        def grow_before_open(name, flags, *args, **kwargs):
+            if Path(name) == target:
+                target.write_bytes(b'bbbb')
+            return real_open(name, flags, *args, **kwargs)
+        destination = self.root / 'budget-rejected'
+        with patch.object(snapshot, 'MAX_TOTAL_BYTES', 6), patch.object(snapshot.os, 'open', side_effect=grow_before_open):
+            with self.assertRaises(Render3DError) as caught:
+                create_snapshot(source, destination, adapter)
+        self.assertEqual(caught.exception.report['category'], 'storage-exhaustion')
+        self.assertFalse(destination.exists())
 
     def test_complete_result_requires_actual_verifier_identity_and_evidence(self):
         value = dict(schema_version=1, kind='render3d-result', job='job',
