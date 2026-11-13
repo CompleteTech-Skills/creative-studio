@@ -57,7 +57,10 @@ def optical_plan(optics, render, *, exposure=0.0, motion_blur=False, shutter_fra
         raise ValueError('camera3d Blender aperture blades must be zero or at least three')
     aspect = width / height
     return dict(type='PERSP' if p['type'] == 'perspective' else 'ORTHO',
-                lens=p.get('focal_length_mm'), sensor_width=width * render['overscan'],
+                lens=p.get('focal_length_mm'),
+                # Blender's sensor width is always millimeters, even when its
+                # orthographic scale expresses world-space meter coverage.
+                sensor_width=width * render['overscan'] if p['type'] == 'perspective' else 36.0,
                 ortho_scale=width * render['overscan'],
                 shift_x=-p['shift_x'] / render['overscan'],
                 shift_y=-p['shift_y'] / (render['overscan'] * aspect),
