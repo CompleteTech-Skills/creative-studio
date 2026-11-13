@@ -86,3 +86,28 @@ removal, and appends restoration through `bind`; it does not rewrite history.
 Management CLI/HTTP adapters can delegate to these methods without introducing
 another project registry. Scene document removal uses the existing separate
 SceneLibraryAdapter/ProjectStore authority and its own explicit CAS.
+
+## Duplicate as a new asset
+
+`AssetVersions(library).duplicate(reference, identity=new_identity,
+version='1.0.0')` publishes an independent identity from an exact registered
+version in the same canonical library. Supply the complete new `AssetIdentity`,
+including a different ID and explicit creation time. Kind, subtype and original
+attribution must remain unchanged; licensing, allowed uses, provider/source
+receipts and fixture status are retained. This is copying, not generation.
+
+Every inventoried file is copied byte for byte through the registry's ordinary
+hash-checked registration path. Content-addressed blobs are deduplicated. Exact
+dependency, style and historical parent references retain their verified closure
+in that same library; the source exact reference is additionally retained as a
+provenance parent. This operation does not export a separate library or rewrite
+native IDs inside files. Portable cross-library packages remain the packaging
+owner's responsibility.
+
+The duplicate has no inherited selection, tags, favorites, previews or external
+integration claim. Technical payload verification does not grant artistic,
+licensing or distribution approval. Existing identities and concurrent creation
+of the requested identity fail through the ordinary identity-history guard.
+An interrupted canonical commit uses normal `AssetLibrary.recover()`; inspect the
+recovered exact reference before retrying. Retrying an already recovered identity
+fails rather than publishing a second version.
