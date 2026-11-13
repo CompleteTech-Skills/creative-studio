@@ -9,7 +9,6 @@ import math
 from lookdev_contracts import content_hash
 from rig_errors import finite_json, require
 from rig_animation import evaluate_track as native_track
-from rig_math import quaternion
 
 MAX_FRAME=10_000_000
 
@@ -38,7 +37,7 @@ def validate_track(value):
                     'LOOKDEV_TRACK','Invalid vector.')
             if dimension is None:dimension=len(sample)
             require(len(sample)==dimension,'LOOKDEV_TRACK','Track dimensions differ.')
-            if kind=='color':require(len(sample) in (3,4) and all(x>=0 for x in sample),'LOOKDEV_TRACK','Colors must be nonnegative scene-linear RGB(A).')
+            if kind=='color':require(len(sample) in (3,4) and all(x>=0 for x in sample) and (len(sample)==3 or sample[3]<=1),'LOOKDEV_TRACK','Colors must be nonnegative scene-linear RGB with bounded alpha.')
             if kind=='quaternion':
                 require(len(sample)==4 and abs(sum(x*x for x in sample)-1)<1e-5,'LOOKDEV_TRACK','Expected normalized XYZW quaternion.')
     return deepcopy(value)
@@ -70,6 +69,10 @@ def evaluate_state(base, tracks, frame, *, locks=()):
     require(isinstance(tracks,list) and len(tracks)<=1024,'LOOKDEV_TRACK','Unbounded track collection.')
     require(isinstance(locks,(list,tuple)) and all(isinstance(p,(list,tuple)) and all(isinstance(k,str) for k in p) for p in locks),
             'LOOKDEV_TRACK','Expected explicit continuity-lock paths.')
+    finite_json(base)
+    has_digest='sha256' in base
+    if has_digest:
+        require(base['sha256']==content_hash({k:v for k,v in base.items() if k!='sha256'}),'LOOKDEV_TRACK','Authored state changed.')
     result=deepcopy(base);occupied=set()
     for entry in tracks:
         require(isinstance(entry,dict) and set(entry)=={'path','track'},'LOOKDEV_TRACK','Invalid binding.')
@@ -88,4 +91,5 @@ def evaluate_state(base, tracks, frame, *, locks=()):
                 'LOOKDEV_CONTINUITY_LOCK','Animated property violates continuity lock.')
         target[path[-1]]=value
     finite_json(result)
+    if has_digest:result['sha256']=content_hash({k:v for k,v in result.items() if k!='sha256'})
     return result

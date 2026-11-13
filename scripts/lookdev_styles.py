@@ -146,7 +146,7 @@ def bind_identity(registry, *, character, identity_sha256, slots):
             require(key not in occupied,'LOOKDEV_IDENTITY','A mesh slot has more than one semantic owner.')
             occupied.add(key)
         fields=slot['protected_fields']
-        require(isinstance(fields,list) and len(fields)==len(set(fields)) and
+        require(isinstance(fields,list) and all(isinstance(f,str) for f in fields) and len(fields)==len(set(fields)) and
                 set(fields) <= set(material['surface']), 'LOOKDEV_IDENTITY','Unknown or duplicate protected fields.')
         output[semantic]={'material':deepcopy(slot['material']),'targets':deepcopy(slot['targets']),
                           'protected':{f:deepcopy(material['surface'][f]) for f in fields},
@@ -169,7 +169,7 @@ def validate_binding(binding):
         _keys(slot, {'material','targets','protected','effective_sha256'}, 'LOOKDEV_IDENTITY')
         _keys(slot['material'], {'id','version','sha256','kind','path'}, 'LOOKDEV_IDENTITY')
         _identifier(slot['material']['id']);_digest(slot['material']['sha256']);_digest(slot['effective_sha256'])
-        require(isinstance(slot['protected'],dict) and len(slot['protected'])<=32,'LOOKDEV_IDENTITY','Invalid protected fields.')
+        require(isinstance(slot['protected'],dict) and len(slot['protected'])<=32 and set(slot['protected'])<=set(default_surface()),'LOOKDEV_IDENTITY','Invalid protected fields.')
         require(isinstance(slot['targets'],list) and 0<len(slot['targets'])<=4096,'LOOKDEV_IDENTITY','Invalid targets.')
         for target in slot['targets']:
             _keys(target, {'object_id','slot_id'}, 'LOOKDEV_IDENTITY')
