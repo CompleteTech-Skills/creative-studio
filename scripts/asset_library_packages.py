@@ -274,7 +274,7 @@ def _verify(root):
     if not isinstance(index['assets'], list) or not 1 <= len(index['assets']) <= 4096:
         fail('LIMIT', 'Package asset inventory exceeds bounds.')
     expected = set(index['locks'].values()); libraries = {}; manifests = []; gates = []; fixture = True
-    locations = []
+    locations = []; manifest_cache = {}
     for asset in index['assets']:
         _keys(asset, ('location', 'manifest'), 'Package asset')
         node = asset['location']; token = location_key(node)
@@ -283,7 +283,9 @@ def _verify(root):
         locations.append(token)
         if asset['manifest'] != 'manifests/' + node['reference']['sha256'] + '.json':
             fail('SCHEMA', 'Noncanonical manifest path.')
-        manifest = load_manifest(_read(root, asset['manifest'], MAX_INDEX_BYTES))
+        if asset['manifest'] not in manifest_cache:
+            manifest_cache[asset['manifest']] = load_manifest(_read(root, asset['manifest'], MAX_INDEX_BYTES))
+        manifest = manifest_cache[asset['manifest']]
         if (manifest['identity']['id'], manifest['version'], manifest['manifest_sha256']) != token[1:]:
             fail('IDENTITY', 'Package asset reference differs from its manifest.')
         libraries.setdefault(node['library'], {})[token[1:]] = manifest
@@ -361,6 +363,7 @@ def _incomplete_diagnostics(root):
                 problems[path] = dict(code='CORRUPT_MEMBER', path=path, expected=record, affected_assets=[])
     for path in sorted(actual - set(members) - {INDEX}):
         problems[path] = dict(code='EXTRA_MEMBER', path=path, affected_assets=[])
+    manifest_cache = {}
     for asset in assets:
         _keys(asset, ('location', 'manifest'), 'Diagnostic asset')
         # Validate the declared exact locator before exposing it to a caller.
@@ -368,31 +371,41 @@ def _incomplete_diagnostics(root):
         locator = location(asset['location'])
         path = asset['manifest']; portable_path(path)
         if path in problems:
-            problems[path]['affected_assets'].append(locator)
+            row = problems[path]
+            row['affected_asset_count'] = row.get('affected_asset_count', 0) + 1
+            if len(row['affected_assets']) < 128:
+                row['affected_assets'].append(locator)
             continue
         if path not in members:
             continue
-        raw = _read(root, path, MAX_INDEX_BYTES)
-        if _record(raw) != members[path]:
-            continue
-        manifest = load_manifest(raw)
+        if path not in manifest_cache:
+            raw = _read(root, path, MAX_INDEX_BYTES)
+            if _record(raw) != members[path]:
+                continue
+            manifest_cache[path] = load_manifest(raw)
+        manifest = manifest_cache[path]
         if (manifest['identity']['id'], manifest['version'], manifest['manifest_sha256']) != location_key(locator)[1:]:
             continue
+        seen_blobs = set()
         for file in manifest['files']:
             blob = 'blobs/' + file['sha256']
             if blob in problems:
                 row = problems[blob]
-                if locator not in row['affected_assets']:
-                    row['affected_assets'].append(locator)
-                row.setdefault('logical_files', []).append(dict(asset=locator, path=file['path'],
-                                                               sha256=file['sha256']))
+                if blob not in seen_blobs:
+                    seen_blobs.add(blob)
+                    row['affected_asset_count'] = row.get('affected_asset_count', 0) + 1
+                    if len(row['affected_assets']) < 128:
+                        row['affected_assets'].append(locator)
+                row['logical_file_count'] = row.get('logical_file_count', 0) + 1
+                if len(row.setdefault('logical_files', [])) < 128:
+                    row['logical_files'].append(dict(asset=locator, path=file['path'], sha256=file['sha256']))
     ordered = [problems[path] for path in sorted(problems)]
     # Bound nested fanout as well as the number of diagnostic paths.
     for row in ordered:
-        row['affected_asset_count'] = len(row['affected_assets'])
+        row.setdefault('affected_asset_count', len(row['affected_assets']))
         row['affected_assets'] = row['affected_assets'][:128]
         if 'logical_files' in row:
-            row['logical_file_count'] = len(row['logical_files'])
+            row.setdefault('logical_file_count', len(row['logical_files']))
             row['logical_files'] = row['logical_files'][:128]
     return dict(diagnostics=ordered[:128], diagnostic_count=len(ordered),
                 diagnostics_truncated=len(ordered) > 128)
