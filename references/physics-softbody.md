@@ -12,12 +12,12 @@ static canonical box/sphere collider meshes. The common physics world contract
 owns component mass, edge stiffness, damping, gravity, pins and collider IDs.
 Stiffness is admitted from 0.01 to 0.99 and maps to native pull/push. Total mass
 is divided by the vertex count to set native vertex mass. Normalized damping
-maps to Blender's edge damping range 0–50. Air friction is explicitly zero.
+maps to Blender's edge damping range 0–50. Air friction is explicitly zero. Numerical stability is checked from actual evaluated output; admission alone does not promise a stable trajectory for every parameter combination.
 Pins use a source-bound goal vertex group; numerical pin residuals must be
 inspected. Native fixed minimum/maximum steps per output interval are
 `iterations * substeps`, with adaptive step selection disabled. Requests whose
 rational fixed interval disagrees with these configured limits are rejected.
-Native substep state is not exported or asserted independently.
+Native substep state is not exported or asserted independently. The retained fixture uses 1,000 native steps per 24 fps output interval (1/24,000 second), with a 100,000 step budget. Output is bounded to 128 frames and a Blender FPS numerator at most 32,767.
 
 Outputs retain evaluated vertex positions in the canonical right-handed Y-up
 meter coordinate system. The adapter uses the existing conversion authority's
@@ -31,10 +31,14 @@ The unchanged general rigid-body adapter does not advertise those capabilities.
 A native reopened-file reverse seek under changed gravity checks that the saved
 bake supplies the retained evaluated vertices. Restarting the solver from an
 arbitrary intermediate state is not implemented. Published files use exclusive
-no-replace promotion, and every cache inventories all required native bytes.
+no-replace promotion, and every cache inventories all required native bytes. Simulation and reopen use separate immutable trusted jobs. Disk caching is enabled after saving the native project so Blender retains the setting.
 
 A static verification report establishes exact-byte/source consistency and
-checks recorded native observations. It is not a signed provenance service or
+checks recorded native observations, source geometry, native jobs, Blend containers and decoded diagnostic PNGs. Cache inspection and metrics use the exact verified byte snapshot. Worker bytes are bound to this installed adapter version. It is not a signed provenance service or
 a fresh solver execution. `probe` without `--smoke` reports discovery separately
-from actual solver readiness. Unsupported fields, missing bytes, changed source
+from actual solver readiness. The adapter exposes soft-body capability probes, resource estimates, cache validation and evaluated-mesh inspection; transform-only animation export is unsupported.
+
+Unsupported fields, missing bytes, changed source
 hashes, malformed topology and exceeded resource limits fail before publication.
+
+Run the explicit solver gate with `HATCH_SOFTBODY_TEST=1 HATCH_BLENDER=/path/to/blender python -B -m unittest discover -s tests -p test_rig_physics_softbody.py -v`. Ordinary 2D discovery does not execute this gate. The native workflow runs it with the existing checksum-verified Blender and isolated host dependencies. Diagnostic artwork remains an engineering fixture, and the broader stage/parent acceptance remains open.

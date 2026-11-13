@@ -124,7 +124,7 @@ class SoftBodyBackend(BlenderBackend):
         frames=world['frame_range']['end']
         memory=512*1024**2+source_bytes*8+mesh_vertices*128
         output=8*1024**2+source_bytes*2+mesh_vertices*frames*128
-        require(memory<=world['budgets']['memory_bytes'] and output<=min(world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']),
+        require(memory<=world['budgets']['memory_bytes'] and output<=min(world['budgets']['cache_bytes'],world['budgets']['temporary_bytes'],world['budgets']['bake_file_bytes']),
                 'PHYSICS_RESOURCE_LIMIT','Native soft-body resource estimate exceeds admission')
         return ResourceEstimate(source_bytes,mesh_vertices,mesh_triangles,frames,
             (frames-1)*world['solver']['iterations']*world['solver']['substeps'],memory,output,min(300.,world['budgets']['timeout_seconds']))
@@ -230,7 +230,7 @@ class SoftBodyBackend(BlenderBackend):
         require(replay.get('ok') is True and replay.get('maximum_vertex_error',1)>-1 and replay['maximum_vertex_error']<=1e-5,
             'PHYSICS_CACHE_CORRUPT','Native deformation replay failed')
         files=tuple(_inventory(root));total=sum(f['bytes'] for f in files)
-        require(total<=world['budgets']['cache_bytes'],'PHYSICS_RESOURCE_LIMIT','Final native cache exceeds budget')
+        require(total<=min(world['budgets']['cache_bytes'],world['budgets']['bake_file_bytes']),'PHYSICS_RESOURCE_LIMIT','Final native cache exceeds budget')
         usage=dict(elapsed_seconds=time.monotonic()-start,peak_memory_bytes=max(usage['peak_memory_bytes'],replay_usage['peak_memory_bytes']),
             output_bytes=total,solver_steps=prepared.estimate.solver_steps)
         result=SimulationResult(prepared.token,root,prepared.world_sha256,owner['identity'],files,usage,replay,prepared.fixture)
@@ -258,7 +258,8 @@ def _validate_output(root,world,payloads=None):
     report=parse(payloads['simulate-report.json']);samples=parse(payloads['deformation.json'])
     comp=world['components'][0]
     require(report.get('ok') is True and report.get('is_baked') is True and report.get('world_sha256')==digest(canonical(world)) and
-        report.get('application_version','').startswith('4.5.3'),'PHYSICS_BAKE_FAILED','Native soft-body bake missing or inconsistent')
+        report.get('application_version')=='4.5.3 LTS' and report.get('application_build')=='67807e1800cc' and
+        report.get('operation')=='simulate' and report.get('sample_count')==world['frame_range']['end'] and report.get('vertex_count')==comp['vertex_count'],'PHYSICS_BAKE_FAILED','Native soft-body bake missing or inconsistent')
     require(report.get('fps')==world['fps']['numerator'] and report.get('fps_base')==world['fps']['denominator'] and report.get('time_scale')==1 and report.get('disk_cache') is True,
             'PHYSICS_CACHE_CORRUPT','Native clock or disk cache differs from requested settings')
     steps=world['solver']['iterations']*world['solver']['substeps']
@@ -278,7 +279,7 @@ def _validate_output(root,world,payloads=None):
     return samples
 
 
-def _load_verified_cache(root,*,expected_world_sha256=None):
+def _read_verified_cache(root,*,expected_world_sha256=None):
     root=Path(root)
     with _Reader(root) as reader:
         manifest=parse(reader.read('cache.json'));validate_manifest(manifest)
@@ -293,7 +294,7 @@ def _load_verified_cache(root,*,expected_world_sha256=None):
             require(record['bytes']<=MAX_CACHE_BYTES-total,'PHYSICS_RESOURCE_LIMIT','Aggregate cache byte bound exceeded')
             payload=reader.read(record['path'],record['bytes']);total+=len(payload);payloads[record['path']]=payload;require(len(payload)==record['bytes'] and digest(payload)==record['sha256'],'PHYSICS_CACHE_CORRUPT','Changed cache bytes')
         world=admit(parse(payloads['world.json']))
-        require(total==manifest['usage']['output_bytes'] and total<=world['budgets']['cache_bytes'],
+        require(total==manifest['usage']['output_bytes'] and total<=min(world['budgets']['cache_bytes'],world['budgets']['bake_file_bytes']),
                 'PHYSICS_CACHE_CORRUPT','Cache usage and byte budgets differ from retained files')
         require(digest(canonical(world))==manifest['world_sha256'],'PHYSICS_CACHE_CORRUPT','Changed world hash')
         required={'world.json','worker.py','softbody-job.json','softbody-reopen-job.json','softbody.blend','deformation.json',
@@ -313,13 +314,54 @@ def _load_verified_cache(root,*,expected_world_sha256=None):
         for path,payload in payloads.items():
             if path.startswith('inputs/'):_write(source_root/path[7:],payload)
         bundle,meshes=_component_meshes(source_root,world)
+    from physics_backend_evidence import blend_container,EvidenceError
+    try:blend_container(payloads['softbody.blend'])
+    except EvidenceError as exc:raise BackendError('PHYSICS_CACHE_CORRUPT',str(exc)) from exc
+    worker=Path(__file__).with_name('physics_softbody_worker.py').read_bytes()
+    require(payloads['worker.py']==worker,'PHYSICS_CACHE_CORRUPT','Native worker differs from installed adapter version')
+    job=dict(protocol=1,world=world,world_sha256=manifest['world_sha256'],meshes=meshes,worker_sha256=digest(worker),mode='simulate')
+    require(payloads['softbody-job.json']==canonical(job) and payloads['softbody-reopen-job.json']==canonical(dict(job,mode='reopen')),
+            'PHYSICS_CACHE_CORRUPT','Native jobs differ from admitted source geometry/world/worker')
+    backend=manifest['backend']
+    require(backend['id']=='blender' and backend['adapter_version']=='1.0.0' and backend['application_version']=='Blender 4.5.3 LTS' and
+            backend['solver_name']=='Blender native soft-body surface spring solver' and backend['device']=='cpu' and backend['precision']=='mixed',
+            'PHYSICS_CACHE_CORRUPT','Native backend identity is inconsistent')
+    import io
+    from PIL import Image
+    for name in ('initial.png','impact.png','final.png'):
+        try:
+            with Image.open(io.BytesIO(payloads[name])) as image:
+                require(image.format=='PNG' and image.size==(160,160),'PHYSICS_CACHE_CORRUPT','Unexpected diagnostic image format or dimensions')
+                image.verify()
+            with Image.open(io.BytesIO(payloads[name])) as image:image.load()
+        except (OSError,ValueError,SyntaxError) as exc:raise BackendError('PHYSICS_CACHE_CORRUPT','Invalid diagnostic PNG') from exc
     require(manifest['fixture']==bundle['project']['provenance']['fixture'],
             'PHYSICS_CACHE_CORRUPT','Fixture status differs from admitted source')
     samples=_validate_output(root,world,payloads)
+    import struct
+    component=world['components'][0];count=component['vertex_count']
+    prefix='blendcache_softbody/'+component['id'].encode().hex().upper()
+    expected_caches={prefix+'_%06d_00.bphys'%(frame+1) for frame in range(len(samples['samples']))}
+    require({p for p in paths if p.endswith('.bphys')}==expected_caches,'PHYSICS_CACHE_CORRUPT','Native point-cache frame inventory differs')
+    for frame,sample in enumerate(samples['samples']):
+        payload=payloads[prefix+'_%06d_00.bphys'%(frame+1)]
+        require(len(payload)==20+count*24 and payload[:8]==b'BPHYSICS' and struct.unpack_from('<3I',payload,8)==(0,count,6),
+                'PHYSICS_CACHE_CORRUPT','Malformed or unsupported native soft-body point cache')
+        for index,point in enumerate(sample['positions']):
+            native=struct.unpack_from('<3f',payload,20+index*24);observed=(native[0],native[2],-native[1])
+            require(all(math.isfinite(a) and abs(a-b)<=1e-5 for a,b in zip(observed,point)),
+                    'PHYSICS_CACHE_CORRUPT','Native deformation cache differs from evaluated mesh samples')
     initial=samples['samples'][0]['positions'];source=meshes[world['components'][0]['id']]['positions']
     require(len(initial)==len(source) and max(abs(a-b) for pa,pb in zip(initial,source) for a,b in zip(pa,pb))<=1e-5,
             'PHYSICS_CACHE_CORRUPT','Initial evaluated vertices differ from admitted geometry')
     return dict(status='hash-and-native-source-verified',sample_count=len(samples['samples']),fixture=manifest['fixture'],review_status='unreviewed'),samples,world
+
+
+def _load_verified_cache(root,*,expected_world_sha256=None):
+    try:return _read_verified_cache(root,expected_world_sha256=expected_world_sha256)
+    except BackendError:raise
+    except (KeyError,TypeError,ValueError,AttributeError,OSError,OverflowError,RecursionError) as exc:
+        raise BackendError('PHYSICS_CACHE_CORRUPT','Malformed soft-body cache: '+str(exc)) from exc
 
 
 def verify_cache(root,*,expected_world_sha256=None):

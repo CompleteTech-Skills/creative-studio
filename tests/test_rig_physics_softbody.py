@@ -2,12 +2,13 @@
 from copy import deepcopy
 from pathlib import Path
 import os
+import shutil
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from physics_backends import BackendError,canonical,parse,digest
+from physics_backends import BackendError,canonical,parse,digest,_run_process,_inventory
 from physics_softbody import SoftBodyBackend,admit,_component_meshes,verify_cache,_validate_output
 from physics_softbody_example import build_softbody_inputs
 
@@ -36,10 +37,10 @@ class SoftBodyAdmissionTests(unittest.TestCase):
     def test_native_report_rejects_false_clock_and_requested_properties(self):
         world,_=build_softbody_inputs();world['frame_range']['end']=2
         comp=world['components'][0]
-        report=dict(ok=True,is_baked=True,world_sha256=digest(canonical(world)),application_version='4.5.3 LTS',
+        report=dict(ok=True,is_baked=True,world_sha256=digest(canonical(world)),application_version='4.5.3 LTS',application_build='67807e1800cc',operation='simulate',sample_count=2,vertex_count=66,
             fps=24,fps_base=1,time_scale=1,disk_cache=True,native_settings=dict(mass=comp['mass']/comp['vertex_count'],
             friction=0,pull=comp['stiffness'],push=comp['stiffness'],damping=comp['damping']*50,
-            step_min=100,step_max=100,use_auto_step=False,use_goal=False))
+            step_min=1000,step_max=1000,use_auto_step=False,use_goal=False))
         data=dict(component='ball',samples=[dict(frame=f,positions=[[0,0,0]]*66) for f in range(2)])
         payloads={'simulate-report.json':canonical(report),'deformation.json':canonical(data)}
         _validate_output(None,world,payloads)
@@ -77,6 +78,8 @@ class SoftBodyAdmissionTests(unittest.TestCase):
         self.assertEqual(report.categories['rigid-body'].state,'unsupported')
         self.assertFalse(report.headless_smoke_verified)
         self.assertGreater(backend.estimate_resources(world,mesh_vertices=66).solver_steps,0)
+        low=deepcopy(world);low['budgets']['bake_file_bytes']=1
+        with self.assertRaises(BackendError):backend.estimate_resources(low,mesh_vertices=66)
         with self.assertRaises(BackendError):backend.export_animation('/missing','/missing')
         with patch('physics_softbody.verify_cache',return_value={'status':'ok'}) as verify:
             backend.verify('cache',expected_world_sha256='expected')
@@ -99,6 +102,15 @@ class SoftBodyAdmissionTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('HATCH_SOFTBODY_TEST')=='1','Explicit Blender soft-body gate')
 class NativeSoftBodyTests(unittest.TestCase):
+    @staticmethod
+    def _change_json(path,key,value):
+        data=parse(path.read_bytes());data[key]=value;path.write_bytes(canonical(data))
+
+    @staticmethod
+    def _collapse_initial(path):
+        data=parse(path.read_bytes());data['samples'][0]['positions']=[[0,0,0] for _ in data['samples'][0]['positions']]
+        path.write_bytes(canonical(data))
+
     def test_real_deformation_and_reopened_cache(self):
         backend=SoftBodyBackend(os.environ['HATCH_BLENDER']);world,payloads=build_softbody_inputs()
         prepared=backend.prepare(world,payloads)
@@ -112,11 +124,35 @@ class NativeSoftBodyTests(unittest.TestCase):
                 initial=[p[1] for p in samples[0]['positions']]
                 final=[p[1] for p in samples[-1]['positions']]
                 self.assertGreater(sum(initial)/len(initial)-sum(final)/len(final),1)
+                self.assertGreater(min(final),-.05)
+                self.assertLess(abs(sum(p[0] for p in samples[-1]['positions'])/66),.1)
+                self.assertLess(abs(sum(p[2] for p in samples[-1]['positions'])/66),.1)
                 radii=[]
                 for sample in samples:
                     points=sample['positions'];center=[sum(p[a] for p in points)/len(points) for a in range(3)]
                     radii.append([sum((p[a]-center[a])**2 for a in range(3))**.5 for p in points])
                 self.assertGreater(max(abs(r-.5) for values in radii for r in values),.02)
+                # Published native files must replay after relocation, with changed gravity.
+                relocated=Path(name)/'relocated';shutil.copytree(destination,relocated)
+                _run_process(backend._command(relocated,reopen=True),relocated,timeout=30,
+                    memory_bytes=world['budgets']['memory_bytes'],output_bytes=world['budgets']['temporary_bytes'],label='relocation')
+                self.assertEqual(parse((relocated/'reopen-report.json').read_bytes())['maximum_vertex_error'],0)
+                # Rehashed edits must still fail semantic/source consistency checks.
+                for label,edit in [
+                    ('fixture',lambda path,m:m.update(fixture=False)),
+                    ('native-missing',lambda path,m:(path/'softbody.blend').unlink()),
+                    ('native-clock',lambda path,m:self._change_json(path/'simulate-report.json','fps',12)),
+                    ('initial-geometry',lambda path,m:self._collapse_initial(path/'deformation.json'))]:
+                    clone=Path(name)/label;shutil.copytree(destination,clone)
+                    manifest=parse((clone/'cache.json').read_bytes());edit(clone,manifest)
+                    manifest['files']=[f for f in _inventory(clone) if f['path']!='cache.json']
+                    manifest['usage']['output_bytes']=sum(f['bytes'] for f in manifest['files'])
+                    (clone/'cache.json').write_bytes(canonical(manifest))
+                    with self.assertRaises(BackendError,msg=label):verify_cache(clone)
+                # Publication must preserve a preexisting user directory.
+                occupied=Path(name)/'occupied';occupied.mkdir();(occupied/'sentinel').write_bytes(b'keep')
+                with self.assertRaises(BackendError):backend.bake(result,occupied)
+                self.assertEqual((occupied/'sentinel').read_bytes(),b'keep')
                 (destination/'deformation.json').write_bytes(b'{}')
                 with self.assertRaises(BackendError):verify_cache(destination)
             finally:backend.cleanup(prepared)
