@@ -111,7 +111,8 @@ def definitions():
                    max_attempts=dict(type='integer', minimum=1, maximum=16),
                    cache_policy={'enum': ['verify-reuse', 'refresh']},
                    destination=obj(dict(path=path, owner_token=identifier))))
-    frame = doc('frame', dict(index=count, local_index=count, presentation_time=time,
+    frame = doc('frame', dict(project=identity, scene=identity, shot=identity,
+                 index=count, local_index=count, presentation_time=time,
                  source_time=time, camera=identifier, snapshot_sha256=digest, settings_sha256=digest,
                  dependencies=arr(digest, 1, MAX_FILES), output=output, destination=path, cache_key=digest))
     counts = obj({name: count for name in ('requested', 'queued', 'active', 'completed', 'failed')})
@@ -363,10 +364,12 @@ def make_frame_spec(request, index, snapshot_path, *, adapter=None):
     if isinstance(adapter, Scene3DAdapter):
         try:
             adapter.validate_request(snapshot_path.parent, request, snapshot)
-        except RigError as exc:
+        except (RigError, OSError) as exc:
             raise Render3DError('stale-asset', str(exc)) from exc
     presentation, source = frame_times(request, index)
-    frame = dict(schema_version=1, kind='render3d-frame', index=index,
+    frame = dict(schema_version=1, kind='render3d-frame',
+                 project=deepcopy(request['project']), scene=deepcopy(request['scene']),
+                 shot=deepcopy(request['shot']), index=index,
                  local_index=index - request['frame_range']['start'],
                  presentation_time=rational(presentation), source_time=rational(source),
                  camera=request['camera'], snapshot_sha256=snapshot['snapshot_sha256'],
