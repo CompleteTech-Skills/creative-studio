@@ -99,6 +99,13 @@ class SoftBodyAdmissionTests(unittest.TestCase):
                 worker.assert_not_called()
         finally:backend.cleanup(prepared)
 
+    def test_metrics_preserve_verified_fixture_provenance(self):
+        world,_=build_softbody_inputs();world['id']='custom-world'
+        data=dict(samples=[dict(frame=0,positions=[[0.,0.,0.]]*66)])
+        for fixture in (True,False):
+            with patch('physics_softbody._load_verified_cache',return_value=({'fixture':fixture},data,world)):
+                self.assertIs(metrics('unused')['fixture'],fixture)
+
 
 @unittest.skipUnless(os.environ.get('HATCH_SOFTBODY_TEST')=='1','Explicit Blender soft-body gate')
 class NativeSoftBodyTests(unittest.TestCase):
