@@ -27,6 +27,80 @@ class TextureTests(unittest.TestCase):
         np.testing.assert_allclose(again.pixels,image.pixels)
         self.assertEqual(image.source_sha256,hashlib.sha256(data).hexdigest())
 
+    def test_independently_written_exr_half_float_and_compressions(self):
+        import json
+        root=Path(__file__).parent/'fixtures'/'lookdev-textures'
+        provenance=json.loads((root/'provenance.json').read_text())
+        for record in provenance['records']:
+            data=(root/record['file']).read_bytes()
+            self.assertEqual(hashlib.sha256(data).hexdigest(),record['sha256'])
+            image=t.decode_texture(data,role='environment',encoding='linear-srgb')
+            dtype=np.float16 if record['file'].startswith('float16') else np.float32
+            expected=np.linspace(0,4,17*19*4,dtype=dtype).reshape(17,19,4);expected[:,:,3]=1
+            np.testing.assert_array_equal(image.pixels,expected.astype(np.float32))
+            self.assertEqual(image.bit_depth,16 if dtype is np.float16 else 32)
+            for malformed in (data[:-1],data+b'extra',data[:4]+b'\x02\x10\x00\x00'+data[8:]):
+                with self.assertRaises(RigError):t.decode_texture(malformed,role='environment',encoding='linear-srgb')
+
+    def test_high_bit_color_preserves_low_bits(self):
+        import zlib,struct
+        def chunk(kind,payload):return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff)
+        for color_type,channels in [(0,1),(2,3),(4,2),(6,4)]:
+            header=struct.pack('>IIBBBBB',1,1,16,color_type,0,0,0)
+            samples=[0x1234]*channels
+            if color_type in (4,6):samples[-1]=65534
+            raw=b'\x00'+struct.pack('>'+'H'*channels,*samples)
+            data=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',header)+chunk(b'IDAT',zlib.compress(raw))+chunk(b'IEND',b'')
+            actual=t.decode_texture(data,role='base-color',encoding='linear-srgb')
+            self.assertEqual(actual.channels,channels);self.assertEqual(actual.bit_depth,16)
+            self.assertAlmostEqual(float(actual.pixels[0,0,0]),0x1234/65535,places=7)
+            if color_type in (4,6):self.assertLess(float(actual.pixels[0,0,3]),1)
+
+    def test_sixteen_bit_transparency_and_every_filter(self):
+        import zlib,struct
+        def chunk(kind,payload):return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff)
+        for color,channels in [(0,1),(2,3)]:
+            source=(np.arange(5*4*channels,dtype=np.uint16)*1001+12345).reshape(5,4,channels)
+            rows=source.astype('>u2').view(np.uint8).reshape(5,4*channels*2)
+            packed=[];bpp=channels*2
+            for y,row in enumerate(rows):
+                filtered=[]
+                for x,value in enumerate(row):
+                    a=int(row[x-bpp]) if x>=bpp else 0;b=int(rows[y-1,x]) if y else 0;c=int(rows[y-1,x-bpp]) if y and x>=bpp else 0
+                    if y==0:prediction=0
+                    elif y==1:prediction=a
+                    elif y==2:prediction=b
+                    elif y==3:prediction=(a+b)//2
+                    else:
+                        estimate=a+b-c;distances=[abs(estimate-a),abs(estimate-b),abs(estimate-c)]
+                        prediction=[a,b,c][distances.index(min(distances))]
+                    filtered.append((int(value)-prediction)%256)
+                packed.append(bytes([y])+bytes(filtered))
+            header=struct.pack('>IIBBBBB',4,5,16,color,0,0,0)
+            transparent=source[0,0].astype('>u2').tobytes()
+            data=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',header)+chunk(b'tRNS',transparent)+chunk(b'IDAT',zlib.compress(b''.join(packed)))+chunk(b'IEND',b'')
+            actual=t.decode_texture(data,role='base-color',encoding='linear-srgb')
+            expected=source.astype(np.float32)/65535
+            np.testing.assert_allclose(actual.pixels[:,:,:3],np.repeat(expected,3,axis=2) if channels==1 else expected,atol=1e-7)
+            self.assertEqual(actual.pixels[0,0,3],0)
+            self.assertEqual(actual.pixels[0,1,3],1)
+            # Pillow independently validates the same filtered pixel stream.
+            with Image.open(io.BytesIO(data)) as image:
+                image.load()
+                if channels==1:np.testing.assert_array_equal(np.array(image),source[:,:,0])
+                else:np.testing.assert_array_equal(np.array(image),source.astype('>u2').view(np.uint8).reshape(5,4,channels,2)[:,:,:,0])
+
+    def test_unsigned_height_arithmetic_is_not_wrapped(self):
+        values=np.array([[1,0],[1,0]],np.uint8)
+        actual=t.normal_from_height(values,wrap='clamp')
+        expected=t.normal_from_height(values.astype(np.float32),wrap='clamp')
+        np.testing.assert_allclose(actual,expected,atol=1e-6)
+        self.assertGreater(actual[0,0,0],.5)
+
+    def test_unbounded_or_unphysical_height_rejected(self):
+        for value in (1e38,float('inf'),float('nan'),-1):
+            with self.assertRaises(RigError):t.normal_from_height(np.full((2,2),value,np.float32))
+
     def test_data_stays_linear(self):
         image=t.decode_texture(png(np.full((2,3,3),128,np.uint8)),role='roughness',encoding='data')
         self.assertAlmostEqual(float(image.pixels[0,0,0]),128/255,places=6)
@@ -98,6 +172,13 @@ class TextureTests(unittest.TestCase):
         pixels[:,:,:3]=t.normal_from_height(values)[:,:,:3]
         image.role='normal'
         for level in t.mipmaps(image):np.testing.assert_allclose(np.linalg.norm(level[:,:,:3]*2-1,axis=-1),1,atol=1e-5)
+
+    def test_color_mipmap_respects_straight_alpha(self):
+        pixels=np.array([[[1,0,0,0],[0,0,1,1]]],np.float32)
+        image=t.DecodedTexture(pixels,'PNG','0'*64,'base-color','linear-srgb')
+        result=t.mipmaps(image)[0]
+        np.testing.assert_allclose(result[0,0],[0,0,1,.5])
+        np.testing.assert_array_equal(image.pixels,pixels)
 
     def test_orm_packing_and_dimension_validation(self):
         maps=[t.decode_texture(png(np.full((2,2,3),v,np.uint8)),role=role,encoding='data') for v,role in zip([32,128,255],['occlusion','roughness','metallic'])]

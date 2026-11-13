@@ -143,13 +143,173 @@ def _radiance(data, limits):
     return np.concatenate((rgb, np.ones((height, width, 1), np.float32)), axis=2)
 
 
+def _exr(data, limits):
+    """Bounded RGB(A) half/float scanline EXR with NONE/ZIPS/ZIP compression.
+
+    Implements the published OpenEXR file layout. Multipart, deep/tiled, sampled
+    channels and other compression schemes require a separate native adapter.
+    """
+    import struct
+    import zlib
+    np = _np()
+    require(len(data) >= 8 and data[:4] == b'v/1\x01', 'TEXTURE_EXR', 'Invalid EXR signature.')
+    require(struct.unpack_from('<I', data, 4)[0] == 2, 'TEXTURE_EXR', 'Only single-part scanline EXR version 2 is supported.')
+    cursor = 8
+    def string():
+        nonlocal cursor
+        end = data.find(b'\x00', cursor, min(len(data),cursor+256))
+        require(end >= 0, 'TEXTURE_EXR', 'Invalid bounded EXR attribute string.')
+        result=data[cursor:end];cursor=end+1
+        return result
+    attributes={}
+    while True:
+        name=string()
+        if not name:break
+        require(name not in attributes and len(attributes)<128,'TEXTURE_EXR','Duplicate or excessive EXR attributes.')
+        kind=string()
+        require(cursor+4<=len(data),'TEXTURE_EXR','Truncated EXR attribute.')
+        length=struct.unpack_from('<I',data,cursor)[0];cursor+=4
+        require(length<=65536 and cursor+length<=len(data) and cursor+length<=1024*1024,
+                'TEXTURE_EXR','EXR attribute exceeds header budget.')
+        attributes[name]=(kind,data[cursor:cursor+length]);cursor+=length
+    def attr(name,kind,length=None):
+        require(name in attributes and attributes[name][0]==kind and
+                (length is None or len(attributes[name][1])==length), 'TEXTURE_EXR','Missing or invalid EXR attribute '+name.decode())
+        return attributes[name][1]
+    bounds=struct.unpack('<iiii',attr(b'dataWindow',b'box2i',16))
+    x0,y0,x1,y1=bounds;width=x1-x0+1;height=y1-y0+1
+    _size(width,height,limits,128)
+    attr(b'displayWindow',b'box2i',16)
+    compression=attr(b'compression',b'compression',1)[0]
+    require(compression in (0,2,3),'TEXTURE_EXR','EXR decoder supports NONE, ZIPS and ZIP compression.')
+    require(attr(b'lineOrder',b'lineOrder',1)[0] in (0,1),'TEXTURE_EXR','Unsupported EXR line ordering.')
+    if b'chromaticities' in attributes:
+        colors=struct.unpack('<8f',attr(b'chromaticities',b'chromaticities',32))
+        require(np.allclose(colors,(.64,.33,.30,.60,.15,.06,.3127,.3290),atol=1e-5,rtol=0),
+                'TEXTURE_EXR','Non-sRGB EXR primaries require an explicit color conversion adapter.')
+    channels_payload=attr(b'channels',b'chlist');offset=0;channels=[]
+    while offset<len(channels_payload):
+        end=channels_payload.find(b'\x00',offset)
+        require(end>=0,'TEXTURE_EXR','Truncated EXR channel name.')
+        name=channels_payload[offset:end];offset=end+1
+        if not name:break
+        require(name in (b'R',b'G',b'B',b'A') and name not in [n for n,_ in channels] and offset+16<=len(channels_payload),
+                'TEXTURE_EXR','Expected unique RGB(A) channels only.')
+        dtype,linear,reserved,x_sampling,y_sampling=struct.unpack_from('<iB3sii',channels_payload,offset);offset+=16
+        require(dtype in (1,2) and linear in (0,1) and reserved==b'\x00'*3 and x_sampling==y_sampling==1,
+                'TEXTURE_EXR','Expected full-resolution half/float EXR channels.')
+        channels.append((name,dtype))
+    require(offset==len(channels_payload) and {n for n,_ in channels} in ({b'R',b'G',b'B'},{b'R',b'G',b'B',b'A'}),
+            'TEXTURE_EXR','EXR requires a complete RGB or RGBA channel set.')
+    row_bytes=width*sum(2 if dtype==1 else 4 for _,dtype in channels)
+    block_rows=16 if compression==3 else 1
+    count=(height+block_rows-1)//block_rows
+    require(cursor+count*8<=len(data),'TEXTURE_EXR','Truncated EXR chunk index.')
+    offsets=struct.unpack_from('<'+'Q'*count,data,cursor);cursor+=count*8
+    pixels=np.ones((height,width,4),np.float32);spans=[]
+    for index,position in enumerate(offsets):
+        require(cursor<=position<=len(data)-8,'TEXTURE_EXR','EXR chunk offset is outside the pixel section.')
+        y,packed_bytes=struct.unpack_from('<iI',data,position)
+        require(y==y0+index*block_rows and packed_bytes>0 and position+8+packed_bytes<=len(data),
+                'TEXTURE_EXR','Invalid EXR chunk row or size.')
+        rows=min(block_rows,height-index*block_rows);expected=rows*row_bytes
+        require(packed_bytes<=expected,'TEXTURE_EXR','EXR chunk cannot exceed its raw sample budget.')
+        payload=data[position+8:position+8+packed_bytes]
+        if packed_bytes==expected:
+            raw=payload
+        else:
+            require(compression!=0,'TEXTURE_EXR','Uncompressed EXR chunk size mismatch.')
+            try:
+                inflater=zlib.decompressobj();filtered=inflater.decompress(payload,expected+1)
+                require(len(filtered)==expected and inflater.eof and not inflater.unconsumed_tail and not inflater.unused_data,
+                        'TEXTURE_EXR','EXR zlib payload is truncated, excessive or concatenated.')
+            except zlib.error as exc:raise RigError('TEXTURE_EXR','EXR ZIP decompression failed.') from exc
+            # Invert the byte predictor by bounded prefix sum, then undo the
+            # even-byte/odd-byte shuffle defined by ZIP compression.
+            values=np.frombuffer(filtered,dtype=np.uint8).astype(np.int64)
+            values[1:]-=128
+            values=np.cumsum(values,dtype=np.int64).astype(np.uint8)
+            shuffled=np.empty(expected,np.uint8);middle=(expected+1)//2
+            shuffled[::2]=values[:middle];shuffled[1::2]=values[middle:]
+            raw=shuffled.tobytes()
+        sample_offset=0
+        for row in range(rows):
+            for name,dtype in channels:
+                item_size=2 if dtype==1 else 4
+                samples=np.frombuffer(raw,dtype='<f2' if dtype==1 else '<f4',count=width,offset=sample_offset)
+                pixels[index*block_rows+row,:,b'RGBA'.index(name)]=samples
+                sample_offset+=width*item_size
+        spans.append((position,position+8+packed_bytes))
+    spans.sort()
+    require(spans[0][0]==cursor and spans[-1][1]==len(data) and all(a[1]==b[0] for a,b in zip(spans,spans[1:])),
+            'TEXTURE_EXR','EXR chunk spans overlap, contain gaps or leave trailing data.')
+    return pixels,len(channels),max(16 if dtype==1 else 32 for _,dtype in channels)
+
+
+def _png16(data, limits):
+    """Precision-preserving noninterlaced 16-bit grayscale/RGB(+alpha) PNG."""
+    import struct,zlib
+    np=_np()
+    width,height,depth,color,compression,filtering,interlace=struct.unpack_from('>IIBBBBB',data,16)
+    require(depth==16 and color in (0,2,4,6) and compression==filtering==interlace==0,
+            'TEXTURE_FORMAT','16-bit PNG requires noninterlaced grayscale/RGB with optional alpha.')
+    channels={0:1,2:3,4:2,6:4}[color];bpp=channels*2;stride=width*bpp
+    _size(width,height,limits,160)
+    offset=8;pieces=[];transparent=None
+    while offset<len(data):
+        length=struct.unpack_from('>I',data,offset)[0];kind=data[offset+4:offset+8]
+        if kind==b'IDAT':pieces.append(data[offset+8:offset+8+length])
+        if kind==b'tRNS':
+            require(transparent is None and color in (0,2) and length==(2 if color==0 else 6),
+                    'TEXTURE_DECODE','Invalid or repeated 16-bit PNG transparency key.')
+            transparent=data[offset+8:offset+8+length]
+        offset+=length+12
+    expected=(stride+1)*height
+    inflater=zlib.decompressobj()
+    try:raw=inflater.decompress(b''.join(pieces),expected+1)
+    except zlib.error as exc:raise RigError('TEXTURE_DECODE','Invalid 16-bit PNG raster.') from exc
+    require(len(raw)==expected and inflater.eof and not inflater.unused_data and not inflater.unconsumed_tail,
+            'TEXTURE_DECODE','Invalid 16-bit PNG decoded length.')
+    encoded=np.frombuffer(raw,np.uint8).reshape(height,stride+1)
+    reconstructed=np.empty((height,stride),np.uint8)
+    for y in range(height):
+        mode=int(encoded[y,0]);current=encoded[y,1:].astype(np.int32)
+        previous=reconstructed[y-1].astype(np.int32) if y else np.zeros(stride,np.int32)
+        require(0<=mode<=4,'TEXTURE_DECODE','Invalid PNG row filter.')
+        if mode==1:
+            current=np.cumsum(current.reshape(width,bpp),axis=0,dtype=np.int64).reshape(-1)%256
+        elif mode==2:current=(current+previous)%256
+        elif mode in (3,4):
+            for x in range(0,stride,bpp):
+                left=current[x-bpp:x] if x else np.zeros(bpp,np.int32)
+                above=previous[x:x+bpp]
+                if mode==3:predict=(left+above)//2
+                else:
+                    upperleft=previous[x-bpp:x] if x else np.zeros(bpp,np.int32)
+                    estimate=left+above-upperleft
+                    a=abs(estimate-left);b=abs(estimate-above);c=abs(estimate-upperleft)
+                    predict=np.where((a<=b)&(a<=c),left,np.where(b<=c,above,upperleft))
+                current[x:x+bpp]=(current[x:x+bpp]+predict)%256
+        reconstructed[y]=current
+    integers=reconstructed.reshape(-1).view('>u2').reshape(height,width,channels)
+    samples=integers.astype(np.float32)/65535
+    pixels=np.ones((height,width,4),np.float32)
+    if color in (0,4):pixels[:,:,:3]=samples[:,:,:1]
+    else:pixels[:,:,:3]=samples[:,:,:3]
+    if color in (4,6):pixels[:,:,3]=samples[:,:,-1]
+    elif transparent is not None:
+        key=np.frombuffer(transparent,dtype='>u2')
+        pixels[:,:,3]=(~np.all(integers==key,axis=-1)).astype(np.float32)
+    return pixels,channels
+
+
 def decode_texture(data, *, role, encoding, limits=Limits()):
     """Decode exact supplied bytes, with budget admission before raster allocation.
 
     PNG/JPEG reuse the rig importer's strict container/entropy verifier. WebP is
     static, fully decoded and must have an exact RIFF length. HDR is scene-linear.
-    EXR is deliberately rejected here: its multipart/compression allocation needs
-    the renderer's sandboxed decoder, not a permissive Pillow fallback.
+    EXR admits only bounded RGB(A) scanline half/float NONE/ZIPS/ZIP layouts.
+    Multipart, tiled, deep and other compressed layouts fail before decoding.
     """
     np = _np()
     require(isinstance(data, bytes) and 0 < len(data) <= limits.encoded_bytes,
@@ -162,6 +322,10 @@ def decode_texture(data, *, role, encoding, limits=Limits()):
         pixels = _radiance(data, limits)
         format_name = "HDR"
         channels, bit_depth = 3, 32
+    elif data.startswith(b'v/1\x01'):
+        require(encoding == 'linear-srgb' and role in COLOR_ROLES, 'TEXTURE_ENCODING', 'RGB(A) EXR inputs require scene-linear color.')
+        pixels, channels, bit_depth = _exr(data, limits)
+        format_name = 'EXR'
     else:
         from PIL import Image, ImageFile
         require(not ImageFile.LOAD_TRUNCATED_IMAGES, "TEXTURE_POLICY", "Truncated-image loading must remain disabled.")
@@ -183,7 +347,10 @@ def decode_texture(data, *, role, encoding, limits=Limits()):
                         require(data[:4] == b"RIFF" and data[8:12] == b"WEBP" and int.from_bytes(data[4:8], "little") + 8 == len(data),
                                 "TEXTURE_DECODE", "Invalid WebP container length.")
                     image.load()
-                    if image.mode.startswith("I;16") or image.mode in ("I", "F"):
+                    if format_name == 'PNG' and data[24] == 16:
+                        pixels, channels = _png16(data, limits)
+                        bit_depth = 16
+                    elif image.mode.startswith("I;16") or image.mode in ("I", "F"):
                         require(role in DATA_ROLES, "TEXTURE_ENCODING", "High-bit scalar raster requires a data role.")
                         scalar = np.array(image, dtype=np.float32) / (65535 if image.mode != "F" else 1)
                         pixels = np.stack((scalar, scalar, scalar, np.ones_like(scalar)), axis=-1)
@@ -193,7 +360,8 @@ def decode_texture(data, *, role, encoding, limits=Limits()):
         except (OSError, ValueError, SyntaxError, Image.DecompressionBombWarning, Image.DecompressionBombError) as exc:
             raise RigError("TEXTURE_DECODE", "Texture cannot be decoded safely: " + str(exc)) from exc
         if encoding == "srgb": pixels[:, :, :3] = srgb_to_linear(pixels[:, :, :3])
-    require(np.isfinite(pixels).all() and (pixels >= 0).all(), "TEXTURE_PIXELS", "Decoded pixels must be finite and nonnegative.")
+    require(np.isfinite(pixels).all() and (pixels >= 0).all() and (pixels[:,:,3] <= 1).all(),
+            "TEXTURE_PIXELS", "Decoded pixels must be finite/nonnegative with alpha in [0,1].")
     return DecodedTexture(pixels.astype(np.float32), format_name, hashlib.sha256(data).hexdigest(), role, encoding, channels, bit_depth)
 
 
@@ -294,7 +462,9 @@ def procedural_maps(kind, *, width=256, height=256, seed=0, scale=1.0, frequency
 def normal_from_height(values, *, strength=1.0, wrap="repeat"):
     np = _np()
     require(isinstance(values, np.ndarray) and values.ndim == 2 and min(values.shape) >= 1
-            and values.size <= 4*1024*1024 and np.isfinite(values).all(), "TEXTURE_HEIGHT", "Expected bounded finite height values.")
+            and values.size <= 4*1024*1024 and max(values.shape)<=16384 and np.isfinite(values).all()
+            and (values>=0).all() and (values<=1).all(), "TEXTURE_HEIGHT", "Expected bounded normalized finite height values.")
+    values = values.astype(np.float64)
     strength = _finite(strength, 0, 1000, "normal strength")
     require(wrap in ("repeat", "clamp", "mirror"), "TEXTURE_WRAP", "Unsupported wrap mode.")
     mode = {"repeat": "wrap", "clamp": "edge", "mirror": "symmetric"}[wrap]
@@ -330,7 +500,14 @@ def mipmaps(texture, *, limits=Limits()):
             integrated = cumulative[indices] + moved[tail]*fractions
             result = np.diff(integrated, axis=0)/(length/count)
             return np.moveaxis(result.astype(np.float32), 0, axis)
-        output = downsample(downsample(pixels, nh, 0), nw, 1)
+        working = pixels
+        if texture.role in COLOR_ROLES:
+            working = pixels.copy()
+            working[:,:,:3] *= working[:,:,3:4]
+        output = downsample(downsample(working, nh, 0), nw, 1)
+        if texture.role in COLOR_ROLES:
+            output[:,:,:3] = np.divide(output[:,:,:3], output[:,:,3:4],
+                                      out=np.zeros_like(output[:,:,:3]), where=output[:,:,3:4]>1e-8)
         if texture.role == "normal":
             normals = output[:,:,:3]*2-1
             norm = np.linalg.norm(normals, axis=-1, keepdims=True)
@@ -474,7 +651,8 @@ def publish_texture(source, destination, *, role, encoding, attribution, license
     """
     require(isinstance(attribution,str) and 0<len(attribution)<=4096 and isinstance(license_id,str) and 0<len(license_id)<=256,
             "TEXTURE_PROVENANCE","Explicit attribution and license are required.")
-    finite_ops=canonical_bytes(list(operations))
+    operations = list(operations)
+    finite_ops=canonical_bytes(operations)
     require(len(finite_ops)<=65536,"TEXTURE_LIMIT","Operation metadata exceeds its budget.")
     texture=decode_texture(source,role=role,encoding=encoding,limits=limits)
     destination=Path(destination).absolute();parent=destination.parent

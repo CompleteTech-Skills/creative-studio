@@ -13,8 +13,15 @@ static WebP requires exact RIFF length and complete decoding. Radiance RGBE
 supports canonical flat or channel-RLE scanlines with bounded headers, dimensions,
 run lengths and exact exhaustion. Source exposure/color-correction headers and
 legacy repeated-pixel HDR encoding reject explicitly. HDR values remain above
-1.0 and cannot be silently clipped into PNG. EXR decoding remains unsupported in
-this module; it needs the renderer's separately bounded native decoder.
+1.0 and cannot be silently clipped into PNG. RGB(A) scanline EXR decodes bounded
+half/float channels with NONE, ZIPS and ZIP compression. Deep, tiled, multipart,
+subsampled, non-sRGB primaries and other EXR compression modes reject explicitly.
+The decoder follows the [OpenEXR file layout](https://openexr.com/en/latest/OpenEXRFileLayout.html).
+Six fixtures independently written by OpenEXR 3.3.4 verify exact half/float pixels.
+Noninterlaced 16-bit grayscale/RGB PNG with optional alpha is reconstructed at
+full sample precision after the native importer verifies its container. All five
+PNG row filters preserve low bits; Pillow's implicit 8-bit conversion is not used.
+16-bit interlaced PNG rejects explicitly rather than silently losing precision.
 
 `verify_texture_document(document, payload)` first validates the existing
 Texture3D contract, then checks exact hash/bytes and decoded dimensions, channels,
@@ -32,7 +39,8 @@ Kinds: wood, stone, marble, concrete, fabric, leather, scratched-metal,
 brushed-metal, clay, sand, painted-plastic, ceramic and toon-ramp. Seed, resolution,
 scale, frequency, variation, turbulence and two linear RGB endpoints are explicit.
 These are analytic engineering textures; they are not provider-generated assets
-or material-quality approval. Normal generation differentiates the height field
+or material-quality approval. Normal generation accepts normalized [0,1] height
+samples, converts integer arrays before arithmetic, and differentiates the field
 with an explicit repeat/clamp/mirror boundary and positive-Y tangent convention.
 
 `mipmaps(decoded)` computes an area-filtered pyramid in linear/data space,
