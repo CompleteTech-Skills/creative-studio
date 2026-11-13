@@ -178,9 +178,49 @@ class PrefabLibrary:
         document['provenance']['origin'] = 'derived'
         document['provenance']['tool'] = 'scene3d-prefab-extraction-v1'
         validate_document(document, 'prefab')
+        # Graph edits may introduce mapped clips absent from the original
+        # catalog. Stage their exact transitive closure with the new prefab;
+        # a failed extraction must not leave partial catalog registrations.
+        staged = PrefabLibrary()
+        staged._documents = dict(self._documents)
+        staged._payloads = dict(self._payloads)
+        staged._references = dict(self._references)
+        animation_payloads = graph.animation_payloads()
+        visiting, admitted = set(), set()
+        def admit_animation(reference, depth=0):
+            if reference.get('kind') != 'scene3d-animation':
+                return
+            require(depth <= MAX_DEPTH, 'Extracted animation closure exceeds depth bound.', 'SCENE3D_PREFAB_DEPTH')
+            identity = (reference['kind'], reference['id'], reference['version'])
+            if identity in admitted:
+                staged.resolve(reference)
+                return
+            require(identity not in visiting, 'Recursive extracted animation closure.', 'SCENE3D_PREFAB_CYCLE')
+            visiting.add(identity)
+            if identity in staged._documents:
+                source = staged.resolve(reference)
+            else:
+                payload = animation_payloads.get(reference['path'])
+                require(payload is not None and hashlib.sha256(payload).hexdigest() == reference['sha256'],
+                        'Extracted prefab needs its exact animation context.', 'SCENE3D_ANIMATION_CONTEXT')
+                source = validate_document(decode_json(payload), 'animation')
+                require((source['id'], source['version']) == (reference['id'], reference['version']),
+                        'Extracted animation identity differs from its exact reference.')
+                # Count parents immediately too; staged registration is private
+                # and register_bytes enforces combined catalog bounds.
+                require(staged.register_bytes(payload, reference['path']) == reference,
+                        'Extracted animation reference changed during catalog admission.')
+            for nested in all_refs(source):
+                admit_animation(nested, depth+1)
+            visiting.remove(identity)
+            admitted.add(identity)
+        for dependency in all_refs(document):
+            admit_animation(dependency)
+        reference = staged.register(document)
+        staged._has_fixture(reference)  # Require a usable complete owner closure.
         # Evaluate against the complete expanded context before catalog mutation.
-        placement = SceneGraph(self.expand(scene)['scene']).evaluate_base(root_id)['world_matrix']
-        reference = self.register(document)
+        placement = SceneGraph(staged.expand(scene)['scene']).evaluate_base(root_id)['world_matrix']
+        self._documents, self._payloads, self._references = staged._documents, staged._payloads, staged._references
         return dict(reference=reference, prefab=document, placement=placement)
 
     def _validate_scene(self, scene):
@@ -302,6 +342,9 @@ class PrefabLibrary:
         active = set()
         clip_cache = {}
         work = 0
+        derivation_budget = dict(count=len(self._payloads), bytes=sum(map(len, self._payloads.values())))
+        require(derivation_budget['count'] <= MAX_FILES and derivation_budget['bytes'] <= MAX_TOTAL_BYTES,
+                'Prefab source context exceeds its file/byte budget.', 'SCENE3D_PREFAB_LIMIT')
         def derive_clip(reference, mapping, context, depth):
             if reference['kind'] != 'scene3d-animation':
                 return deepcopy(reference)
@@ -309,6 +352,11 @@ class PrefabLibrary:
             key = (reference['sha256'], context)
             if key in clip_cache:
                 return deepcopy(clip_cache[key])
+            # Reserve parents before recursively deriving children so every
+            # in-flight unique document consumes its own remaining slot.
+            require(derivation_budget['count'] < MAX_FILES,
+                    'Derived prefab animation count exceeds bound.', 'SCENE3D_PREFAB_LIMIT')
+            derivation_budget['count'] += 1
             clip = self.resolve(reference)
             require(clip['kind'] == 'scene3d-animation', 'Wrong clip kind.')
             clip['id'] = scoped_id(context, clip['id'], 'clip')
@@ -326,8 +374,13 @@ class PrefabLibrary:
             clip['provenance']['tool'] = 'scene3d-prefab-animation-target-map-v1'
             clip['provenance']['inputs'].append(dict(path=reference['path'], sha256=reference['sha256']))
             payload = canonical_bytes(clip)
+            require(len(payload) <= 16*1024*1024 and
+                    derivation_budget['bytes'] + len(payload) <= MAX_TOTAL_BYTES,
+                    'Derived prefab animation bytes exceed bound.', 'SCENE3D_PREFAB_LIMIT')
+            derivation_budget['bytes'] += len(payload)
             path = 'derived-animations/'+clip['id']+'/'+clip['version']+'.json'
             r = _reference(clip, payload, path)
+            require(path not in derived, 'Conflicting derived prefab animation identity.')
             derived[path] = clip
             clip_cache[key] = r
             return deepcopy(r)
