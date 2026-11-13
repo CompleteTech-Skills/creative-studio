@@ -34,7 +34,9 @@ def _records(inventory):
                      'Capture inventory key and record path disagree.')
             records.append(dict(record, path=path))
     else:
-        records = list(inventory)
+        records = [dict(record) if isinstance(record, Mapping) else record for record in inventory]
+    _require(0 < len(records) <= DEFAULT_LIMITS['archive_files'],
+             'Captured inventory metadata exceeds its count bound.')
     seen, aliases = set(), set()
     for record in records:
         _require(isinstance(record, Mapping) and isinstance(record.get('path'), str),
@@ -79,8 +81,12 @@ def capture_verified_files(root, verified_inventory):
         total = 0
         for record in records:
             remaining = DEFAULT_LIMITS['dependency_bytes'] - total
-            _require(remaining > 0, 'Capture dependency bytes exceed their aggregate bound.')
-            payload = read_source_bytes(root/record['path'], min(MAX_FILE_BYTES, remaining))
+            _require(remaining >= 0, 'Capture dependency bytes exceed their aggregate bound.')
+            bound = min(MAX_FILE_BYTES, remaining)
+            if record['sha256'] == hashlib.sha256(b'').hexdigest():
+                payload = read_source_bytes(root/record['path'], bound, allow_empty=True)
+            else:
+                payload = read_source_bytes(root/record['path'], bound)
             _require(hashlib.sha256(payload).hexdigest() == record['sha256'],
                      'Dependency differs from its registered exact bytes.', 'SCENE3D_SOURCE_CHANGED')
             _require('bytes' not in record or len(payload) == record['bytes'],

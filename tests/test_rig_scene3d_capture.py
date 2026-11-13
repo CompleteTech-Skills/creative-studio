@@ -93,7 +93,11 @@ class VerifiedCaptureTests(unittest.TestCase):
     @unittest.skipUnless(hasattr(os,'symlink'),'Requires symbolic links')
     def test_symlink_file_or_ancestor_is_rejected(self):
         target=self.root/'geometry/mesh.obj'
-        raw=target.read_bytes();target.unlink();target.symlink_to(self.root/'texture.png')
+        raw=target.read_bytes();target.unlink()
+        try: target.symlink_to(self.root/'texture.png')
+        except OSError as exc:
+            if os.name == 'nt': self.skipTest('Windows symlink creation privilege is unavailable: '+str(exc))
+            raise
         with self.assertRaises(RigError):
             with capture_verified_files(self.root,self.inventory):self.fail('Symlink yielded')
         target.unlink();target.write_bytes(raw)
@@ -114,3 +118,47 @@ except RigError: pass
         result=subprocess.run([sys.executable,'-c',code,str(self.root),json.dumps(self.inventory)],
                               capture_output=True,text=True,timeout=10)
         self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_exact_empty_evidence_survives_complete_project_capture_and_reopen(self):
+        from scene3d_example import build_example
+        from scene3d_contracts import canonical_bytes,load_project
+        root=self.root/'project'
+        bundle=build_example(root)
+        (root/'empty.log').write_bytes(b'')
+        project=deepcopy(bundle['project'])
+        project['dependency_lock'].append(dict(id='empty-evidence',version='1.0.0',kind='evidence',
+            path='empty.log',sha256=hashlib.sha256(b'').hexdigest()))
+        (root/'project.json').write_bytes(canonical_bytes(project))
+        verified=load_project(root)
+        with capture_verified_files(root,verified['inventory']) as captured:
+            self.assertEqual((captured/'empty.log').read_bytes(),b'')
+            self.assertEqual(load_project(captured)['inventory'],verified['inventory'])
+        from asset_library import read_source_bytes
+        with self.assertRaises(RigError):read_source_bytes(root/'empty.log')
+        with patch.dict(__import__('rig_contracts').DEFAULT_LIMITS,dependency_bytes=0):
+            with capture_verified_files(root,[dict(path='empty.log',sha256=hashlib.sha256(b'').hexdigest(),bytes=0)]) as captured:
+                self.assertEqual((captured/'empty.log').read_bytes(),b'')
+
+    def test_caller_list_metadata_is_copied_before_validation_and_cannot_escape(self):
+        import scene3d_capture
+        record=dict(path='texture.png',**self.inventory['texture.png'])
+        validate=scene3d_capture.portable_path
+        def mutate(path):
+            result=validate(path)
+            record['path']='../escape.bin'
+            return result
+        with patch.object(scene3d_capture,'portable_path',mutate):
+            with capture_verified_files(self.root,[record]) as captured:
+                self.assertEqual((captured/'texture.png').read_bytes(),b'exact texture bytes')
+                self.assertFalse((captured.parent/'escape.bin').exists())
+        self.assertEqual(record['path'],'../escape.bin')
+
+    def test_trailing_registered_empty_file_does_not_exceed_exact_aggregate_budget(self):
+        from rig_contracts import DEFAULT_LIMITS
+        (self.root/'zzz-empty.log').write_bytes(b'')
+        inventory={**deepcopy(self.inventory),'zzz-empty.log':dict(sha256=hashlib.sha256(b'').hexdigest(),bytes=0)}
+        exact=sum(record['bytes'] for record in inventory.values())
+        with patch.dict(DEFAULT_LIMITS,dependency_bytes=exact):
+            with capture_verified_files(self.root,inventory) as captured:
+                self.assertEqual((captured/'zzz-empty.log').read_bytes(),b'')
+                self.assertEqual(sum(p.stat().st_size for p in captured.rglob('*') if p.is_file()),exact)

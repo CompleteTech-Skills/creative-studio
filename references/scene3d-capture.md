@@ -36,3 +36,8 @@ private file lifetime, original-source and inventory mutation, exact hashes and
 byte counts, malformed inventories, bounded budgets, symlink files/ancestors,
 and actual FIFO rejection in a timeout-bounded subprocess. Existing imported
 service FIFO and source-replacement regressions remain in the service suite.
+
+Exact empty evidence files are admitted only when their registered hash is the
+SHA256 of empty bytes. The canonical reader retains strict nonempty defaults
+for ordinary library ingestion; capture explicitly opts into empty regular-file
+reads. An exact aggregate budget can include trailing empty evidence files.
