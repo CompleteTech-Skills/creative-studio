@@ -2,6 +2,7 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -150,6 +151,11 @@ class ProviderPricingContractTests(unittest.TestCase):
                       resources={'max_provider_calls':2},network_policy='allow-configured',
                       budget_reservation_id='fixture-reservation',budget_currency='USD',
                       budget_amount=.5,paid_policy='bounded',**extra)
+            if not (hasattr(os,'O_NOFOLLOW') and os.open in os.supports_dir_fd):
+                with self.assertRaises(RigError) as failure:
+                    admit(snapshot())
+                self.assertEqual(failure.exception.report['code'],'DIRECTOR_PLATFORM')
+                return
             admit(snapshot())
             admit(snapshot(0))
             with self.assertRaises(RigError):admit(snapshot(),price_per_call=.1)
