@@ -443,7 +443,9 @@ def _recover_verified_stage(request, stage, destination, *, expected_backend, ex
     result = dict(schema_version=1, kind='render3d-result', job=request['id'], request_sha256=object_hash(request),
         snapshot_sha256=snapshot['snapshot_sha256'], backend=backend, status='complete', requested_frames=frames,
         successful=frames, failed=[], skipped=[], reused=[], images=images,
-        diagnostics=['Trusted supervisor continuation checkpoint '+object_hash(expected_images)+': recovered private sequence after optional PNG decoder failure. This verifies continuity from the checkpoint, not retrospective execution authentication. Process usage unavailable.'],
+        diagnostics=[dict(code='RENDER3D_RETAINED_CONTINUATION', category='external-tool',
+            message='Trusted supervisor checkpoint '+object_hash(expected_images)+': recovered exact private sequence after optional PNG decoder failure; continuity from checkpoint only, not retrospective execution authentication. Process usage unavailable.',
+            path='manifest.json', remediation='Retain the original supervised stage, external checkpoint and verification evidence.')],
         usage=dict(elapsed_seconds=None, peak_memory_bytes=None, output_bytes=None, measurement='unavailable'),
         logs=[artifact('blender.log')], manifest=artifact('manifest.json'),
         verification=dict(status='not-run', verifier=None, evidence=None))
