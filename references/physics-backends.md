@@ -85,10 +85,14 @@ Capability states have distinct meanings:
 | `degraded` | A temporary resource condition, such as the occupied worker slot, prevents admission. |
 | `failed-validation` | Attempted execution/output verification failed. |
 
-All other physics categories report `unsupported`; joints, forces, impulses,
-initial velocities, character authority, sensors, filtered collision groups,
-compound colliders and external geometry formats are not silently ignored.
-The supported profile is intentionally narrower than the world schema.
+All non-rigid physics categories report `unsupported`. Joints, character authority,
+sensors, filtered collision groups, compound colliders and external geometry
+formats are not silently ignored. Rigid controls are backend-specific: DIRECT
+admits verified forces, finite-step impulses and initial velocities; Blender
+admits bounded central forces and native sleep settings. Both admit the bounded
+kinematic translation profile. See [rigid-body controls](physics-rigid-bodies.md)
+for exact mappings and rejected requests. The supported profile remains narrower
+than the world schema.
 
 ## Concrete limits and physical mappings
 
@@ -102,13 +106,16 @@ The supported profile is intentionally narrower than the world schema.
   coordinates directly with explicitly configured gravity.
 - Output frames are `[0,N)`, with `2 <= N <= 1024`. Blender frames1..N correspond
   to output frames0..N-1. A terminal frameN is not a cached output frame.
-- The frame interval must contain an exact integral1..1000 fixed steps at1..240fps.
-  Native effective substeps and solver iterations are read back and compared.
-  This bounded profile does not replace #169's complete timing/stability work.
+- Blender requires an exact integral1..1000 native substeps per frame at1..240fps.
+  DIRECT admits independent rational solver and output clocks and samples completed
+  solver brackets. Native effective settings are read back and compared; see
+  [exact physics clocks](physics-timing.md) for timing and interpolation limits.
 - Primitive dimensions .001..1000m; positions within10000m; dynamic mass
-  .001..1,000,000kg. Bodies have no transform parent, shifted center of mass, or
-  initial velocity. Inertia must match the uniform analytic primitive; unsupported
-  custom tensors are rejected instead of being discarded.
+  .001..1,000,000kg. Bodies have no transform parent. Blender requires an unshifted
+  center of mass, zero initial velocity and uniform analytic primitive inertia.
+  DIRECT admits bounded initial velocities, shifted centers of mass and validated
+  positive physical inertia tensors, with native readback and pose conversion.
+  Unsupported requests are rejected instead of discarded.
 - One collider per body with identity local transform, no sensor, group1 and
   mask`0xffffffff`. Both declared friction coefficients must agree and be<=1;
   Blender's single coefficient is not misrepresented as separate static/dynamic
@@ -201,8 +208,10 @@ are canonicalized before file I/O; malformed records return structured failures.
 Receipts are unsigned local evidence,
 not cryptographic reviewer identity or a fresh solver execution. A consumer must
 not reinterpret a supplied cache's receipt as human/production-art approval.
-Inspection is labeled hash-verified sample-cache replay. No interpolation or
-uncached timestamp is invented.
+Inspection is labeled hash-verified sample-cache replay. Frame inspection reads
+completed output samples. Exact-time seeking may interpolate verified completed
+solver brackets for DIRECT, or completed output samples for Blender; provenance
+labels the interpolation and extrapolation is rejected. See the timing guide.
 
 ## Reproduce inspectable outputs
 
