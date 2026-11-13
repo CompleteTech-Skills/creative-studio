@@ -137,7 +137,11 @@ run, three attempts per request, four million source pixels, eight MiB per
 request/response metadata file, 30 seconds per local attempt by default (Python
 API range 1–120), one OpenCV thread and a 64 KiB worker log. Annotation component,
 mask-run and working-set limits remain owned by the existing decomposition
-validator. The whole machine's memory/CPU isolation is not claimed.
+validator. Source and reference files retain the ordinary import's 64 MiB
+byte limit. They are hashed through admitted regular-file descriptors; local
+image decoding uses those same verified source bytes, so a later filename
+replacement cannot change the detector input. The whole machine's memory/CPU
+isolation is not claimed.
 
 Python callers can use `prepare`, `run`, `ingest`, `apply`, `status` and `retry`
 from `decomposition_analysis` while holding `hatch.ownership(root)`, matching the

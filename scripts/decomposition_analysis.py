@@ -9,6 +9,7 @@ import argparse
 import copy
 import json
 import hashlib
+import io
 import os
 import stat
 import shutil
@@ -18,7 +19,7 @@ import sys
 import tempfile
 import time
 
-from asset_contracts import hash_object, sha
+from asset_contracts import hash_object, sha, MAX_SOURCE_BYTES
 from character_decomposition import (_annotation, load_decomposition,
                                      rebuild_from_annotation)
 from decomposition_spec import (ANNOTATION_SCHEMA, HASH, TEXT, NOTE, BOOLEAN,
@@ -236,6 +237,34 @@ def provenance(root, annotation, source_hash):
     return record
 
 
+def _source_bytes(root, reference):
+    """Hash bounded bytes from the canonical admitted regular-file descriptor."""
+    from rig_errors import open_payload
+    # Decomposition callers historically accept ordinary OS root aliases.
+    # Resolve that adapter boundary before using the stricter native reader.
+    physical_root = Path(root).resolve()
+    with open_payload(physical_root, reference['path']) as (stream, _):
+        if os.fstat(stream.fileno()).st_size > MAX_SOURCE_BYTES:
+            raise ValueError('analysis source/reference exceeds byte quota')
+        payload = stream.read(MAX_SOURCE_BYTES + 1)
+        if len(payload) > MAX_SOURCE_BYTES:
+            raise ValueError('analysis source/reference exceeds byte quota')
+    if hashlib.sha256(payload).hexdigest() != reference['sha256']:
+        raise ValueError('analysis source/reference bytes changed')
+    return payload
+
+
+def _source_image(root, request):
+    """Decode the exact admitted/hash-verified source bytes, without reopening."""
+    from PIL import Image
+    payload = _source_bytes(root, request['source'])
+    with Image.open(io.BytesIO(payload)) as image:
+        expected = (request['source']['width'], request['source']['height'])
+        if image.size != expected or image.width * image.height > request['policy']['max_pixels']:
+            raise ValueError('analysis source dimensions changed or exceed pixel quota')
+        return image.convert('RGB')
+
+
 def _source(root, request):
     validate_structure(request, REQUEST, 'analysis request')
     if request['backend'] == 'opencv-haar':
@@ -249,9 +278,7 @@ def _source(root, request):
     if source['width'] * source['height'] > request['policy']['max_pixels']:
         raise ValueError('analysis source exceeds pixel quota')
     for ref in [source, *request['references']]:
-        path = safe_path(root, ref['path'])
-        if not path.is_file() or sha(path) != ref['sha256']:
-            raise ValueError('analysis source/reference bytes changed')
+        _source_bytes(root, ref)
     return manifest
 
 
@@ -598,8 +625,7 @@ def _worker(root, identifier):
         raise ValueError('local cascade identity changed')
     started = time.monotonic()
     cv2.setNumThreads(1)
-    with Image.open(safe_path(root, request['source']['path'])) as image:
-        rgb = np.asarray(image.convert('RGB'))
+    rgb = np.asarray(_source_image(root, request))
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
     face = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / MODEL_FILES[0]))
     eyes = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / MODEL_FILES[1]))

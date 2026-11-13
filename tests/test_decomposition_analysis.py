@@ -51,6 +51,61 @@ class AnalysisTests(unittest.TestCase):
         p=self.home/'response.json';atomic_json(p,response or self.response(job))
         return analysis.ingest(self.root,job['job'],p)
 
+    def test_source_reader_rejects_replaced_nonregular_leaf_without_waiting(self):
+        import rig_errors
+        if os.name == 'nt' or not hasattr(os, 'O_NOFOLLOW'):
+            # Native Windows handles have dedicated actual CI; exercise the
+            # portable same-byte source route rather than introduce a skip.
+            self.assertEqual(analysis._source_image(self.root, self.prepare()['request']).size, (32,32))
+            return
+        for replacement in ('fifo', 'symlink'):
+            with self.subTest(replacement=replacement):
+                ref={'path': 'adversarial.bin', 'sha256': '0' * 64}
+                target=self.root/ref['path']; target.write_bytes(b'original')
+                outside=self.home/'outside.bin'; outside.write_bytes(b'foreign')
+                original_safe_path=rig_errors.safe_path; changed=False
+                def replace_after_path_admission(root, name, **kwargs):
+                    nonlocal changed
+                    target_path=original_safe_path(root,name,**kwargs)
+                    if not changed and name==target.name:
+                        changed=True; target.unlink()
+                        if replacement=='fifo': os.mkfifo(target)
+                        else: target.symlink_to(outside)
+                    return target_path
+                try:
+                    with mock.patch.object(rig_errors, 'safe_path', side_effect=replace_after_path_admission):
+                        with self.assertRaises(ValueError): analysis._source_bytes(self.root, ref)
+                    self.assertTrue(changed)
+                    self.assertEqual((self.root/'decomposition.json').read_bytes(), self.original)
+                    self.assertEqual(outside.read_bytes(), b'foreign')
+                finally:
+                    target.unlink(missing_ok=True)
+
+    def test_source_reader_preserves_source_capacity_and_rejects_oversize(self):
+        from asset_contracts import MAX_SOURCE_BYTES
+        target=self.root/'bounded.bin'; data=b'x'*(analysis.MAX_RESPONSE_BYTES+1); target.write_bytes(data)
+        ref={'path': target.name, 'sha256': sha(target)}
+        self.assertEqual(analysis._source_bytes(self.root, ref), data)
+        with target.open('wb') as stream: stream.truncate(MAX_SOURCE_BYTES+1)
+        with self.assertRaisesRegex(ValueError, 'byte quota'):
+            analysis._source_bytes(self.root, ref)
+
+    def test_source_decode_uses_admitted_hash_verified_bytes(self):
+        request=self.prepare()['request']; target=self.root/request['source']['path']
+        original_bytes=target.read_bytes(); admitted=analysis._source_bytes
+        def replace_after_read(root, reference):
+            payload=admitted(root,reference)
+            Image.new('RGBA',(32,32),'#f01020').save(target)
+            return payload
+        try:
+            with mock.patch.object(analysis,'_source_bytes',side_effect=replace_after_read):
+                image=analysis._source_image(self.root,request)
+            self.assertEqual(image.getpixel((0,0)),(0x78,0xb8,0xee))
+            with self.assertRaisesRegex(ValueError,'bytes changed'):
+                analysis._source_image(self.root,request)
+        finally:
+            target.write_bytes(original_bytes)
+
     def test_disabled_requires_permission_and_is_failure_isolated(self):
         with self.assertRaisesRegex(ValueError,'disabled'):
             analysis.prepare(self.root,'external')
