@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 import re
 import tempfile
 
-from rig_errors import RigError, finite_json, object_hash, normalize_root, open_payload
+from rig_errors import RigError, finite_json, object_hash, normalize_root, open_payload, scoped_directory_descriptor
 
 VERSION = 1
 OCIO_VERSION = '2.5.2'
@@ -67,8 +67,10 @@ def _root(root):
     # Unregistered procfs paths and ordinary symbolic roots remain rejected.
     root = Path(root).absolute()
     try:
-        normalized = normalize_root(root)
-        _need(normalized == root and root.is_dir(), 'color profile root cannot traverse symlinks')
+        with scoped_directory_descriptor(root) as directory_fd:
+            normalized = normalize_root(root)
+            _need((directory_fd is not None or normalized == root) and normalized.is_dir(),
+                  'color profile root cannot traverse symlinks')
     except (OSError, RigError) as exc:
         raise ValueError('unsafe/unavailable color root: '+str(exc)) from exc
     return normalized

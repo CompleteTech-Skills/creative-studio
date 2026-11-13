@@ -27,6 +27,10 @@ class CapabilityColorTests(unittest.TestCase):
                 shutil.copytree(ROOT/'tests/fixtures/cinematics-color/profile', profile)
                 (profile/'luts/identity.spi1d').write_text('unverified replacement')
                 self.assertEqual(color.capture_config(capability.path), inventory)
+                # Registered borrowed aliases re-anchor to the owned live FD.
+                borrowed = Path('/proc/self/fd')/str(descriptor)
+                self.assertEqual(color.capture_config(borrowed), inventory)
+                self.assertEqual(color.verify_config_bytes(borrowed, inventory), inventory['closure_sha256'])
                 self.assertEqual(color.verify_config_bytes(capability.path, inventory), inventory['closure_sha256'])
                 with color.snapshot_config(capability.path, inventory) as snapshot:
                     self.assertEqual(color.verify_config_bytes(snapshot, inventory), inventory['closure_sha256'])
