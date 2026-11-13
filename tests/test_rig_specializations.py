@@ -11,7 +11,7 @@ from rig_skeleton import neutral_pose,evaluate_fk,mirror_pose
 from rig_skinning import evaluate_deformation
 from rig_math import decompose,axis_angle
 from rig_errors import RigError
-from rig_states import rig_capabilities
+from rig_states import rig_capabilities,map_states
 from rig_models import Geometry,Mesh,RigAsset,SkinWeights
 from rig_skeleton import skeleton_from_heads,validate_skeleton
 
@@ -128,6 +128,24 @@ class RigSpecializationTests(unittest.TestCase):
         self.assertGreater(max(np.max(np.abs(after[name]['positions']-value['positions']))
                                for name,value in before.items()),.01)
         self.assertIn('expressive-face',rig_capabilities(r))
+    def test_state_work_estimate_counts_unique_existing_clips_without_generation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            rig=fixture(directory)
+            result=map_states(rig,recipes={'static-neutral':['bend','neutral','bend']},selected=['static-neutral'])
+            estimate=result['work_estimate']
+            self.assertEqual(estimate['clip_ids'],['bend','neutral'])
+            self.assertEqual(estimate['unique_clips'],2)
+            self.assertEqual(estimate['duration_seconds'],2.)
+            self.assertEqual(estimate['frame_samples'],26)
+            self.assertEqual(estimate['keyframes'],5)
+            self.assertEqual(estimate['keyframe_scalar_values'],20)
+            self.assertEqual(estimate['float64_position_bytes_per_frame'],96)
+            self.assertEqual(estimate['float64_all_sample_position_bytes'],2496)
+            self.assertEqual(estimate['model_calls'],0)
+            self.assertIsNone(estimate['encoded_output_bytes'])
+            missing=map_states(rig,recipes={'static-neutral':'missing'},selected=['static-neutral'])
+            self.assertEqual(missing['work_estimate']['frame_samples'],0)
+            self.assertEqual(missing['work_estimate']['unique_clips'],0)
     def test_attach_detach_and_owner_transfer_preserve_world_space(self):
         r=self.humanoid;pose=neutral_pose(r.skeleton);matrix=socket_world(r,pose,'grip.right')
         prop=dict(id='cube',owner=None,socket=None,transform=decompose(matrix))
