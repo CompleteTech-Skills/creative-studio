@@ -153,11 +153,20 @@ def render_frame(scene, settings, output_root, index, *, pass_sockets=None):
                     layers.scene = scene
                     layers.layer = scene.view_layers[0].name
                     sources = {name: layers.outputs[socket] for name,socket in PASS_SOCKETS.items() if name in auxiliary}
+                    sources['alpha'] = layers.outputs['Alpha']
                     composite = tree.nodes.new('CompositorNodeComposite');created.append(composite)
                     tree.links.new(layers.outputs['Image'],composite.inputs['Image'])
                 else:
                     require(all(name in sources for name in auxiliary), 'unsupported-feature',
                             'Compositor owner did not supply every requested data pass.')
+                if 'albedo' in auxiliary and plan['alpha'] == 'straight':
+                    require('alpha' in sources, 'unsupported-feature',
+                            'Transparent albedo requires an explicit owner-supplied alpha socket.')
+                    alpha = tree.nodes.new('CompositorNodeSetAlpha');created.append(alpha)
+                    alpha.mode = 'REPLACE_ALPHA'
+                    tree.links.new(sources['albedo'],alpha.inputs['Image'])
+                    tree.links.new(sources['alpha'],alpha.inputs['Alpha'])
+                    sources = dict(sources, albedo=alpha.outputs['Image'])
                 for name in auxiliary:
                     sink = tree.nodes.new('CompositorNodeOutputFile');created.append(sink)
                     sink.base_path = str(stage/name)

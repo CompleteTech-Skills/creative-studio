@@ -89,6 +89,16 @@ try:render_frame(scene,plans[2],reject,98,pass_sockets={})
 except Render3DError:pass
 else:raise AssertionError('Missing owner sockets accepted')
 assert len(scene.node_tree.nodes)==0 and not scene.use_nodes
+# An owner's color socket alone cannot establish transparent albedo coverage.
+scene.use_nodes=True
+owned=scene.node_tree.nodes.new('CompositorNodeRLayers');owned.scene=scene
+owned.layer=scene.view_layers[0].name
+before={n.name for n in scene.node_tree.nodes}
+try:render_frame(scene,plans[2],reject,97,pass_sockets={'albedo':owned.outputs['DiffCol']})
+except Render3DError:pass
+else:raise AssertionError('Transparent owner albedo without alpha was accepted')
+assert {n.name for n in scene.node_tree.nodes}==before
+scene.node_tree.nodes.clear();scene.use_nodes=False
 reports=[]
 for index,config in enumerate(json.loads((root/'settings.json').read_text())):
  destination=root/str(index);destination.mkdir()
@@ -101,7 +111,7 @@ assert not (root/'wrong-context.png').exists()
 @unittest.skipUnless(os.environ.get('HATCH_RENDER3D_QUALITY_TEST')=='1','real Blender quality acceptance not enabled')
 class RealQuality(unittest.TestCase):
     def test_real_precision_hdr_alpha_and_passes(self):
-        from render3d_verify import verify_image
+        from render3d_verify import verify_image, decode_image
         from rig_blender import find_blender
         retained=os.environ.get('HATCH_RENDER3D_QUALITY_DIR')
         temporary=tempfile.TemporaryDirectory() if not retained else None
@@ -131,5 +141,13 @@ class RealQuality(unittest.TestCase):
                     self.assertEqual(report['channels']['A']['maximum'],1)
                     if config['output']['format']=='exr':
                         self.assertGreater(report['channels']['R']['maximum'],1)
+            if 'albedo' in config['output']['passes']:
+                beauty=next(r for r in records if r['pass_name']=='combined')
+                albedo=next(r for r in records if r['pass_name']=='albedo')
+                _,beauty_pixels=decode_image(beauty['path'],output=config['output'],resolution=[64,64])
+                _,albedo_pixels=decode_image(albedo['path'],output=config['output'],resolution=[64,64],pass_name='albedo')
+                import numpy as np
+                self.assertGreater(np.count_nonzero(beauty_pixels['A']==0),0)
+                np.testing.assert_array_equal(albedo_pixels['A'],beauty_pixels['A'])
         (root/'verified.json').write_text(json.dumps(verified,indent=2))
         if temporary:temporary.cleanup()
