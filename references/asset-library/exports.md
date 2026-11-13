@@ -14,7 +14,7 @@ receipt = pipeline.export(exact_reference, "/private/new-export", format="gltf",
                           required_capabilities=["geometry", "skins", "animation"])
 ```
 
-The destination is a **new directory**. GLB exports preserve exact canonical
+The destination is a **new directory**, whose ancestors must be actual directories rather than symlink/junction aliases. Canonicalize trusted system temporary roots before choosing a destination (for example macOS `/var` aliases). GLB exports preserve exact canonical
 runtime bytes. glTF exports preserve the exact decoded document/accessors and
 binary buffer while exposing `asset.bin` as an external dependency. Embedded
 texture buffer views remain valid glTF; the external buffer contains their bytes.
@@ -31,9 +31,9 @@ formats or generate an unrelated Blender file. The application-owned Blender
 worker opens the exact packed source with scripts/autoexec disabled, rejects
 linked data/drivers/unpacked external media, saves/reopens in distinct processes
 and exports a diagnostic GLB. Khronos independently validates that actual output.
-The native evaluator compares rest triangle corners, winding, UVs, morph values,
+The native evaluator compares rest triangle corners, winding, normals/tangents/colors/UVs, morph values,
 PBR material factors and decoded texture pixels, skin associations, bounds and
-named sampled animation. Numeric tolerances are 1e-5 m for rest geometry/morphs,
+named sampled animation. Source named scene parents/world transforms and named joint parent/rest/inverse-bind data remain bound across backend-added wrapper nodes. Unnamed/ambiguous native node profiles and multiple source scenes fail explicitly. Numeric tolerances are 1e-5 m for rest geometry/morphs,
 1e-6 for UV/material/weights and the existing evaluator's 0.01 m sampled-animation
 maximum. Triangle/vertex/mesh order and normal splitting may change; changed
 surface data fails. Unsupported object-only animation and changed clip names
@@ -45,7 +45,7 @@ are staged before one exclusive atomic directory rename. Existing and racing
 destinations are preserved. Cancellation before publication leaves no public
 output; completed earlier batch exports remain valid if a later request fails.
 Batches contain at most eight requests and run sequentially (concurrency one).
-Runtime memory/byte/time/closure budgets are bounded. Missing optional geometry
+Runtime memory/byte/time/closure budgets, including conservative decoded triangle-comparison allocation, are bounded. Missing optional geometry
 dependencies produce `LIBRARY_EXPORT_DEPENDENCY`; optional Blender execution
 requires the existing exercised Linux resource/process adapter.
 

@@ -21,7 +21,7 @@ ROOT=Path(__file__).resolve().parents[1]
 class ExportTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.root=Path(self.temp.name)
+        self.root=Path(self.temp.name).resolve()
         rig=fixture(self.root)
         self.source=self.root/'source.glb';export_gltf(rig,self.source)
         self.license=self.root/'license.txt';self.license.write_text('CC0 synthetic engineering fixture.\n')
