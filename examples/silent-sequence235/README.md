@@ -43,3 +43,12 @@ This is pending owner integration, not a claim that installing only the ordinary
 [the sequence guide](../../references/silent-sequence.md) for the API, CLI,
 resource limits, resumable staging and integrity/approval boundaries. The
 remaining full film, shared CLI and release integration remain with #97/#241.
+
+The exporter has since adopted the shared private-staging authority and the
+canonical scoped `directory_capability` path boundary. The recorded `72bb9ac`
+bootstrap above is historical execution evidence: it does not supply that newer
+boundary. `execution-pre-capability-integration.json` preserves the complete
+prior receipt. The current implementation requires the separately integrated
+canonical capability owner and will fail before staging if it is absent. No new
+native-integration acceptance is claimed until that owner's API and verifier are
+integrated and a new exact-source receipt is recorded.

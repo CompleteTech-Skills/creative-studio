@@ -99,3 +99,22 @@ release regression evidence remain with #97/#241 and the canonical renderer.
 
 See [retained actual exports](../examples/silent-sequence235/README.md) for exact
 source/decoder identities and the current canonical-owner integration dependency.
+
+The current consumer integration uses the shared `atomic_publish.private_stage`
+authority and its explicit `private_stage_supported()` predicate. A publication
+payload is constructed and checked under that shared context; local temporary
+publisher/cleanup forks are not retained. Private reads use the canonical
+`rig_errors.open_payload`, with explicitly minted scoped
+`directory_capability(fd)` authority. Multiple nested cache/publication
+capabilities remain active together. Raw procfd strings do not grant authority,
+and no helper resolves the scoped root back to its replaceable physical name.
+Missing canonical capability support fails before creating output staging.
+
+The previous native execution receipt is preserved as
+`execution-pre-capability-integration.json`. Those hashes describe its recorded
+historical source, not the new consumer integration. A new actual proof/receipt
+will be retained after the canonical descriptor-boundary owner and independent
+verifier are integrated; existing engineering outputs are preserved meanwhile.
+Required root tests contain only portable contracts without platform skips.
+Optional decoder/Linux filesystem tests live in `tests/optional` and must run
+explicitly with the canonical verifier and its optional dependencies.

@@ -12,12 +12,12 @@ import json
 import os
 from pathlib import Path
 import stat
-import tempfile
 import shutil
 import re
 import unicodedata
 
-from atomic_publish import _rename_no_replace
+from atomic_publish import (_rename_no_replace, pinned_directory, private_stage,
+                            private_stage_supported)
 import silent_video as media
 
 MAX_FRAME_BYTES = 256 * 1024**2
@@ -49,6 +49,22 @@ def _relative(name):
                 re.match(r'(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)',part)):
             raise ValueError('sequence path must be portable and relative')
     return name
+
+
+def _capability_factory():
+    try:
+        from rig_errors import directory_capability
+    except ImportError as exc:
+        raise ValueError('canonical descriptor-capability boundary is unavailable; integrate its owner before sequence export') from exc
+    return directory_capability
+
+
+def _capability(descriptor):
+    return _capability_factory()(descriptor)
+
+
+def publication_supported():
+    return private_stage_supported()
 
 
 def _hash(data):
@@ -110,7 +126,8 @@ def make_request(source,provenance):
 
 def _read(root, relative, maximum):
     try:
-        with media._open_source(root,relative) as stream:
+        from rig_errors import open_payload
+        with open_payload(root,relative) as stream:
             info=os.fstat(stream.fileno())
             if not 0<info.st_size<=maximum:
                 raise ValueError('sequence file size exceeds budget')
@@ -171,7 +188,7 @@ def _verify_frame(root,frame,source):
     data=_read(root,frame['path'],MAX_FRAME_BYTES)
     if len(data)!=frame['bytes'] or _hash(data)!=frame['sha256']:
         raise ValueError('sequence frame checksum/size mismatch')
-    decoded=_decode(media._path(root,frame['path']),source)
+    decoded=_decode(Path(root)/_relative(frame['path']),source)
     if decoded['sha256']!=frame['sha256'] or decoded['bytes']!=frame['bytes']:
         raise ValueError('sequence frame changed during independent decode')
     return decoded
@@ -213,7 +230,7 @@ def build_source(root,paths,*,fps,output,identity,source_start=0):
             'path':f'frames/{i:06d}.{output.get("format", "invalid")}','sha256':_hash(data),'bytes':len(data)})
     _check_source(source)
     for frame in source['frames']:
-        report=_decode(media._path(root,frame['source_path']),source)
+        report=_decode(Path(root)/_relative(frame['source_path']),source)
         if report['sha256']!=frame['sha256']:raise ValueError('source changed during decode')
     return source
 
@@ -322,8 +339,8 @@ def verify_sequence(root,*,expected_receipt_sha256=None):
     verifier does not assert access to an absent original native snapshot.
     """
     root=Path(root)
-    with media._pin_directory(root) as descriptor:
-        pinned=Path('/proc/self/fd')/str(descriptor)
+    with pinned_directory(root) as descriptor, _capability(descriptor) as authority:
+        pinned=authority.path
         raw=_read(pinned,'sequence.json',MAX_JSON_BYTES)
         if expected_receipt_sha256 is not None and _hash(raw)!=expected_receipt_sha256:
             raise ValueError('sequence receipt identity changed')
@@ -376,36 +393,30 @@ def _publish_cache(stage,source,report,parent_fd,destination):
     required=sum(f['bytes'] for f in source['frames'])+2*MAX_JSON_BYTES
     if shutil.disk_usage(parent).free<required:
         raise ValueError('insufficient free storage for private sequence publication')
-    wrapper=Path(tempfile.mkdtemp(prefix='.sequence-publish-',dir=parent))
-    wrapper_fd=os.open(wrapper.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent_fd)
-    payload_fd=None
-    try:
+    with private_stage(parent_fd,prefix='.sequence-publish-') as (_,wrapper_fd):
         os.mkdir('payload',mode=0o700,dir_fd=wrapper_fd)
         payload_fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=wrapper_fd)
-        payload=Path('/proc/self/fd')/str(payload_fd)
-        os.mkdir('frames',mode=0o700,dir_fd=payload_fd)
-        _write(payload,'lock',b'')
-        _write(payload,'plan.json',_read(stage,'plan.json',MAX_JSON_BYTES))
-        _write(payload,'sequence.json',_read(stage,'sequence.json',MAX_JSON_BYTES))
-        for frame in source['frames']:
-            data=_read(stage,frame['path'],MAX_FRAME_BYTES)
-            if len(data)!=frame['bytes'] or _hash(data)!=frame['sha256']:
-                raise ValueError('verified cache changed before private publication')
-            _write(payload,frame['path'],data)
-            _verify_frame(payload,frame,source)
-        _inventory(payload,source)
-        if (_read_json(payload,'sequence.json')!=report or
-                _read_json(payload,'plan.json')!={'source':source,'provenance':report['provenance']}):
-            raise ValueError('sequence publication metadata changed')
-        os.fsync(payload_fd)
-        _rename_no_replace('payload',destination.name,source_dir_fd=wrapper_fd,destination_dir_fd=parent_fd)
-        os.fsync(parent_fd)
-        # Keep the tiny private parent rather than pathname-based cleanup of a
-        # parent another process could replace. The immutable payload is final;
-        # persistent input cache remains available for explicit reuse/inspection.
-    finally:
-        if payload_fd is not None:os.close(payload_fd)
-        os.close(wrapper_fd)
+        try:
+            with _capability(payload_fd) as authority:
+                payload=authority.path
+                os.mkdir('frames',mode=0o700,dir_fd=payload_fd)
+                _write(payload,'lock',b'')
+                _write(payload,'plan.json',_read(stage,'plan.json',MAX_JSON_BYTES))
+                _write(payload,'sequence.json',_read(stage,'sequence.json',MAX_JSON_BYTES))
+                for frame in source['frames']:
+                    data=_read(stage,frame['path'],MAX_FRAME_BYTES)
+                    if len(data)!=frame['bytes'] or _hash(data)!=frame['sha256']:
+                        raise ValueError('verified cache changed before private publication')
+                    _write(payload,frame['path'],data)
+                    _verify_frame(payload,frame,source)
+                _inventory(payload,source)
+                if (_read_json(payload,'sequence.json')!=report or
+                        _read_json(payload,'plan.json')!={'source':source,'provenance':report['provenance']}):
+                    raise ValueError('sequence publication metadata changed')
+                os.fsync(payload_fd)
+                _rename_no_replace('payload',destination.name,source_dir_fd=wrapper_fd,destination_dir_fd=parent_fd)
+                os.fsync(parent_fd)
+        finally:os.close(payload_fd)
 
 
 def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=None,_native_token=None):
@@ -415,6 +426,8 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
     bound to the complete source/provenance identity, not a guessed frame cache.
     Damaged or foreign staging is rejected, never overwritten.
     """
+    if not publication_supported():raise ValueError('secure sequence publication is unavailable on this platform')
+    _capability_factory()  # Fail before touching an output/staging directory.
     source=_check_source(copy.deepcopy(source));_json_bytes(provenance)
     if source['origin']=='blender3d' and _native_token is not _NATIVE_TOKEN:
         raise ValueError('native sources require export_native_sequence and canonical closure verification')
@@ -424,75 +437,81 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
     if stage_name is None:stage_name='.'+destination.name+'.sequence-stage'
     if not isinstance(stage_name,str) or not stage_name or '/' in stage_name or '\\' in stage_name or stage_name in ('.','..') or stage_name==destination.name:
         raise ValueError('sequence stage must be a separate sibling basename')
-    with media._pin_directory(destination.parent) as parent_fd:
+    with pinned_directory(destination.parent) as parent_fd:
         parent=Path('/proc/self/fd')/str(parent_fd)
         created_stage=True
         try:os.mkdir(stage_name,mode=0o700,dir_fd=parent_fd)
         except FileExistsError:created_stage=False
         stage_fd=os.open(stage_name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent_fd)
         try:
-            stage=Path('/proc/self/fd')/str(stage_fd)
-            # Never create even a lock inode in an unrelated existing directory.
-            # A complete matching plan is the persistent ownership boundary.
-            if not created_stage:
-                if (stage/'plan.json').exists():
-                    if _read_json(stage,'plan.json')!=plan:raise ValueError('staging belongs to another source/provenance')
-                elif set(os.listdir(stage))=={'lock','.plan.json.partial'}:
-                    if _read(stage,'.plan.json.partial',MAX_JSON_BYTES)!=_json_bytes(plan):
-                        raise ValueError('incomplete staging plan does not match request')
-                else:raise ValueError('unrecognized preexisting sequence staging')
-            lock_fd=os.open('lock',os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW|os.O_NONBLOCK,0o600,dir_fd=stage_fd)
-            try:
-                if not stat.S_ISREG(os.fstat(lock_fd).st_mode):raise ValueError('invalid sequence stage lock')
-                import fcntl
-                try:fcntl.flock(lock_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
-                except BlockingIOError as exc:raise ValueError('sequence staging is already owned') from exc
-                marker=stage/'plan.json'
-                if marker.exists():
-                    if _read_json(stage,'plan.json')!=plan:raise ValueError('staging belongs to another source/provenance')
-                    if not (stage/'frames').exists():os.mkdir('frames',dir_fd=stage_fd)
+            identity=os.fstat(stage_fd)
+            if identity.st_uid!=os.geteuid() or stat.S_IMODE(identity.st_mode)&0o077:
+                raise ValueError('persistent sequence cache must be private and owned by this user')
+            with _capability(stage_fd) as authority:
+                stage=authority.path
+                # Never create even a lock inode in an unrelated existing directory.
+                # A complete matching plan is the persistent ownership boundary.
+                if not created_stage:
+                    if (stage/'plan.json').exists():
+                        if _read_json(stage,'plan.json')!=plan:raise ValueError('staging belongs to another source/provenance')
+                    elif set(os.listdir(stage))=={'lock','.plan.json.partial'}:
+                        if _read(stage,'.plan.json.partial',MAX_JSON_BYTES)!=_json_bytes(plan):
+                            raise ValueError('incomplete staging plan does not match request')
+                    else:raise ValueError('unrecognized preexisting sequence staging')
+                lock_fd=os.open('lock',os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW|os.O_NONBLOCK,0o600,dir_fd=stage_fd)
+                try:
+                    if not stat.S_ISREG(os.fstat(lock_fd).st_mode):raise ValueError('invalid sequence stage lock')
+                    import fcntl
+                    try:fcntl.flock(lock_fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                    except BlockingIOError as exc:raise ValueError('sequence staging is already owned') from exc
+                    marker=stage/'plan.json'
+                    if marker.exists():
+                        if _read_json(stage,'plan.json')!=plan:raise ValueError('staging belongs to another source/provenance')
+                        if not (stage/'frames').exists():os.mkdir('frames',dir_fd=stage_fd)
+                        for f in source['frames']:
+                            _clear_partial(stage,'frames/.'+Path(f['path']).name+'.partial')
+                        _clear_partial(stage,'.sequence.json.partial')
+                    else:
+                        names=set(os.listdir(stage))
+                        if names=={'lock','.plan.json.partial'}:
+                            partial=_read(stage,'.plan.json.partial',MAX_JSON_BYTES)
+                            if partial!=_json_bytes(plan):raise ValueError('incomplete staging plan does not match request')
+                            _clear_partial(stage,'.plan.json.partial')
+                        elif names!={'lock'}:raise ValueError('unrecognized sequence staging')
+                        _write(stage,'plan.json',_json_bytes(plan));os.mkdir('frames',dir_fd=stage_fd)
+                    if not set(os.listdir(stage))<={'lock','plan.json','frames','sequence.json'}:
+                        raise ValueError('unrecognized sequence staging entry')
+                    os.fsync(stage_fd)
+                    _inventory(stage,source,staging=True)
                     for f in source['frames']:
-                        _clear_partial(stage,'frames/.'+Path(f['path']).name+'.partial')
-                    _clear_partial(stage,'.sequence.json.partial')
-                else:
-                    names=set(os.listdir(stage))
-                    if names=={'lock','.plan.json.partial'}:
-                        partial=_read(stage,'.plan.json.partial',MAX_JSON_BYTES)
-                        if partial!=_json_bytes(plan):raise ValueError('incomplete staging plan does not match request')
-                        _clear_partial(stage,'.plan.json.partial')
-                    elif names!={'lock'}:raise ValueError('unrecognized sequence staging')
-                    _write(stage,'plan.json',_json_bytes(plan));os.mkdir('frames',dir_fd=stage_fd)
-                if not set(os.listdir(stage))<={'lock','plan.json','frames','sequence.json'}:
-                    raise ValueError('unrecognized sequence staging entry')
-                os.fsync(stage_fd)
-                _inventory(stage,source,staging=True)
-                for f in source['frames']:
-                    if cancel is not None and cancel():raise ValueError('sequence export cancelled; verified staging retained')
-                    if (stage/f['path']).exists():_verify_frame(stage,f,source);continue
-                    data=_read(root,f['source_path'],MAX_FRAME_BYTES)
-                    if len(data)!=f['bytes'] or _hash(data)!=f['sha256']:
-                        raise ValueError('source frame changed after sequence admission')
-                    _write(stage,f['path'],data)
-                    _verify_frame(stage,f,source)
-                decoded=[_verify_frame(stage,f,source) for f in source['frames']]
-                report={'schema_version':1,'kind':'silent-image-sequence','source':source,
-                    'source_sha256':media._digest(source),'request_sha256':media._digest(make_request(source,plan['provenance'])),
-                    'provenance':plan['provenance'],
-                    'provenance_sha256':media._digest(plan['provenance']),'decoded':decoded,
-                    'transform':'byte-preserving-copy','visual_review':'not-performed'}
-                if (stage/'sequence.json').exists():
-                    if _read_json(stage,'sequence.json')!=report:raise ValueError('staged sequence receipt differs')
-                else:_write(stage,'sequence.json',_json_bytes(report))
-                # Independent final verification uses a pinned directory, too.
-                _inventory(stage,source)
-                if cancel is not None and cancel():raise ValueError('sequence export cancelled before publication')
-                _publish_cache(stage,source,report,parent_fd,destination)
-                return report
-            finally:os.close(lock_fd)
+                        if cancel is not None and cancel():raise ValueError('sequence export cancelled; verified staging retained')
+                        if (stage/f['path']).exists():_verify_frame(stage,f,source);continue
+                        data=_read(root,f['source_path'],MAX_FRAME_BYTES)
+                        if len(data)!=f['bytes'] or _hash(data)!=f['sha256']:
+                            raise ValueError('source frame changed after sequence admission')
+                        _write(stage,f['path'],data)
+                        _verify_frame(stage,f,source)
+                    decoded=[_verify_frame(stage,f,source) for f in source['frames']]
+                    report={'schema_version':1,'kind':'silent-image-sequence','source':source,
+                        'source_sha256':media._digest(source),'request_sha256':media._digest(make_request(source,plan['provenance'])),
+                        'provenance':plan['provenance'],
+                        'provenance_sha256':media._digest(plan['provenance']),'decoded':decoded,
+                        'transform':'byte-preserving-copy','visual_review':'not-performed'}
+                    if (stage/'sequence.json').exists():
+                        if _read_json(stage,'sequence.json')!=report:raise ValueError('staged sequence receipt differs')
+                    else:_write(stage,'sequence.json',_json_bytes(report))
+                    # Independent final verification uses a pinned directory, too.
+                    _inventory(stage,source)
+                    if cancel is not None and cancel():raise ValueError('sequence export cancelled before publication')
+                    _publish_cache(stage,source,report,parent_fd,destination)
+                    return report
+                finally:os.close(lock_fd)
         finally:os.close(stage_fd)
 
 
 def export_native_sequence(request,result,render_root,destination,*,snapshot_root,expected_backend,**options):
+    if not publication_supported():raise ValueError('secure sequence publication is unavailable on this platform')
+    _capability_factory()
     source,proof=native_source(request,result,render_root,snapshot_root=snapshot_root,expected_backend=expected_backend)
     return export_sequence(source,render_root,destination,provenance=proof,_native_token=_NATIVE_TOKEN,**options)
 
