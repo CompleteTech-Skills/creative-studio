@@ -168,6 +168,21 @@ def _capture_closure(reader, references):
     return CapturedClosure(resources, payloads, roots, aliases)
 
 
+def capture_closure(reader, references):
+    """Portable closure capture through an owner's already validated reader.
+
+    reader(path, maximum_bytes) must return original immutable bytes, enforcing
+    the owner's filesystem boundary. Size/type bounds are independently checked.
+    """
+    require(callable(reader), 'LOOKDEV_CLOSURE_READER', 'Expected a validated bounded source reader.')
+    def bounded(path, maximum):
+        payload = reader(path, maximum)
+        require(isinstance(payload, bytes) and len(payload) <= maximum,
+                'LOOKDEV_CLOSURE_LIMIT', 'Reader returned nonbytes or oversized source: ' + path)
+        return payload
+    return _capture_closure(bounded, references)
+
+
 def load_closure(root, references):
     """Capture transitive exact references without requiring a project index.
 
@@ -177,7 +192,7 @@ def load_closure(root, references):
     """
     descriptor = _directory_fd(root)
     try:
-        return _capture_closure(lambda path, maximum: _read_at(descriptor, path, maximum), references)
+        return capture_closure(lambda path, maximum: _read_at(descriptor, path, maximum), references)
     finally:
         os.close(descriptor)
 
@@ -225,7 +240,7 @@ class Project:
             require(path in self.sources and len(self.sources[path]) <= maximum,
                     'LOOKDEV_CLOSURE_SOURCE', 'Missing or oversized captured dependency: ' + path)
             return self.sources[path]
-        return _capture_closure(reader, [reference])
+        return capture_closure(reader, [reference])
 
     def list(self, group):
         return [deepcopy(r) for r in self.references if r['kind'] in GROUPS[group]]
