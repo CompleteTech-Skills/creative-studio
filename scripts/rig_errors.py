@@ -131,9 +131,9 @@ def atomic_json(path: str | Path, value: Any) -> None:
 
 def portable_name(name: str) -> str:
     # Same portable spelling policy as the existing decomposition transport.
-    from decomposition_package import _relative
+    from portable_paths import existing_relative
     try:
-        return _relative(name)
+        return existing_relative(name)
     except ValueError as exc:
         raise RigError('RIG_PATH', str(exc), asset=str(name)) from exc
 
