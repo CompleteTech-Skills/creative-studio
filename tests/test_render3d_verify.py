@@ -272,6 +272,29 @@ class ImageVerification(unittest.TestCase):
                 os.mkfifo(path);rejects();path.unlink()
             folder.rmdir();folder.symlink_to(root,target_is_directory=True);rejects()
 
+    @unittest.skipUnless(sys.platform=='linux','Explicit directory capability requires Linux procfd.')
+    def test_artifact_capture_uses_active_directory_after_stage_replacement(self):
+        import os
+        from rig_errors import directory_capability
+        with tempfile.TemporaryDirectory() as temporary:
+            parent=Path(temporary);stage=parent/'stage';stage.mkdir()
+            payload=b'original-context';(stage/'context.json').write_bytes(payload)
+            ref=dict(path='context.json',bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())
+            descriptor=os.open(stage,os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                with directory_capability(descriptor) as cap:
+                    stage.rename(parent/'retained');stage.mkdir()
+                    (stage/'context.json').write_bytes(b'foreign-context!')
+                    self.assertEqual(read_file_ref(cap.path,ref),payload)
+                    alias=Path('/proc/self/fd')/str(descriptor)
+                    self.assertEqual(read_file_ref(alias,ref),payload)
+                    other=parent/'other';other.mkdir();(other/'context.json').write_bytes(payload)
+                    fd=os.open(other,os.O_RDONLY|os.O_DIRECTORY)
+                    try:
+                        with self.assertRaises(Render3DError):read_file_ref(Path('/proc/self/fd')/str(fd),ref)
+                    finally:os.close(fd)
+            finally:os.close(descriptor)
+
     def test_unexpected_directory_and_nonregular_inventory_reject(self):
         import os
         with tempfile.TemporaryDirectory() as temporary:
