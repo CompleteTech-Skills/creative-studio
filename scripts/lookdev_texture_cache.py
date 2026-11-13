@@ -55,17 +55,21 @@ class DerivedTextureCache:
         import numpy as np
         chosen=PROFILES.get(profile) if isinstance(profile,str) else profile
         require(isinstance(chosen,UploadProfile),'TEXTURE_PROFILE','Unknown upload profile.')
-        require(isinstance(texture,DecodedTexture) and texture.role in COLOR_ROLES|DATA_ROLES
+        require(isinstance(texture,DecodedTexture) and isinstance(texture.role,str)
+                and isinstance(texture.encoding,str) and isinstance(texture.source_sha256,str)
+                and texture.role in COLOR_ROLES|DATA_ROLES
                 and texture.encoding in ({'srgb','linear-srgb'} if texture.role in COLOR_ROLES else {'data'})
                 and re.fullmatch('[0-9a-f]{64}',texture.source_sha256 or '') is not None,
                 'TEXTURE_CACHE','Expected decoded texture with exact source hash and interpretation.')
         pixels=texture.pixels
         require(isinstance(pixels,np.ndarray) and pixels.dtype==np.float32
-                and pixels.ndim==3 and pixels.shape[2]==4 and np.isfinite(pixels).all()
-                and (pixels>=0).all(), 'TEXTURE_CACHE','Expected finite nonnegative float32 RGBA pixels.')
+                and pixels.ndim==3 and pixels.shape[2]==4,
+                'TEXTURE_CACHE','Expected float32 RGBA pixels.')
         h,w=pixels.shape[:2]
         require(0<h<=16384 and 0<w<=16384 and h*w<=Limits().pixels,
                 'TEXTURE_LIMIT','Upload source exceeds decoded pixel bounds.')
+        require(np.isfinite(pixels).all() and (pixels>=0).all(),
+                'TEXTURE_CACHE','Upload pixels must remain finite and nonnegative.')
         dimensions=[]
         while True:
             dimensions.append((w,h))

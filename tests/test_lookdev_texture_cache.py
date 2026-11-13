@@ -29,8 +29,10 @@ class UploadCacheTests(unittest.TestCase):
         texture=self.texture()
         receipt,levels=cache.prepare(texture)
         levels[0][:]=1
+        receipt['mip_dimensions'][0][0]=999
         second,copies=cache.prepare(texture)
         self.assertTrue(second['cache_hit'])
+        self.assertEqual(second['mip_dimensions'][0],[4,4])
         np.testing.assert_array_equal(copies[0],texture.pixels)
         cache.prepare(self.texture(0.75))
         self.assertEqual(cache.entries,1);self.assertEqual(cache.bytes_used,336)
@@ -51,6 +53,11 @@ class UploadCacheTests(unittest.TestCase):
         texture.role='metallic'
         self.assertNotEqual(cache.prepare(texture)[0]['key'],first)
         with self.assertRaises(RigError):cache.prepare(texture,profile='imaginary')
+        for field,value in [('source_sha256',42),('role',[]),('encoding',None)]:
+            malformed=self.texture();setattr(malformed,field,value)
+            with self.subTest(field=field),self.assertRaises(RigError):cache.prepare(malformed)
+        for budget in (True,0,-1):
+            with self.assertRaises(RigError):DerivedTextureCache(budget)
 
 
 if __name__=='__main__':unittest.main()
