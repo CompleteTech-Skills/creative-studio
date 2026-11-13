@@ -112,12 +112,17 @@ def export_scene_frame(source_root, scene, shot, frame, destination, *, max_vert
                 if any('prefab' in n for n in authored['nodes']) else authored)
     nodes = {n['id']:n for n in expanded['nodes']}
     output = Geometry([]);cache={};expected={};mesh_owner={};vertex_count=0
+    override_refs=[item['material'] for state in evaluation['nodes'].values()
+                   for item in state.get('material_overrides',[])]
+    lookdev_closure=None;override_materials={}
+    if override_refs:
+        from lookdev import load_closure
+        lookdev_closure=load_closure(source_root,override_refs)
     losses = ['Editable animation, skinning, procedural recipes, prefab links and constraints are baked to a static frame.',
               'Native world/background/exposure and unitless lights are retained as provenance extras, not portable glTF lighting.',
               'Normals are regenerated for the sampled surface; tangent attributes are omitted.']
     for identifier, state in evaluation['nodes'].items():
         node = nodes[identifier]
-        _require(not state.get('material_overrides'), 'Material overrides require the LookDev export adapter.')
         if 'asset' not in state or not state['visible']:continue
         reference = state['asset'];asset = bundle['documents'][reference['path']]
         key = reference['path']
@@ -125,6 +130,11 @@ def export_scene_frame(source_root, scene, shot, frame, destination, *, max_vert
             geometry,native_root=_native_asset(source_root,asset)
             cache[key]=(geometry,native_root,_append_materials(output,geometry))
         geometry,native_root,material_offset=cache[key]
+        projection=[]
+        if state.get('material_overrides'):
+            from scene3d_materials import project_material_slots
+            projection=project_material_slots(asset,component=node.get('metadata',{}).get('source_component'),
+                                              overrides=state['material_overrides'])
         world=np.asarray(state['world_matrix'],dtype=float)
         _require(np.isfinite(world).all() and np.linalg.cond(world[:3,:3]) <= 1e8,
                  'Export transform is singular or ill-conditioned.')
@@ -153,7 +163,20 @@ def export_scene_frame(source_root, scene, shot, frame, destination, *, max_vert
             export_id='scene-mesh-'+hashlib.sha256((identifier+'\0'+mesh_id).encode()).hexdigest()[:24]
             attributes={key:deepcopy(value) for key,value in mesh.attributes.items()
                         if key not in ('NORMAL','TANGENT')}
-            output.meshes.append(Mesh(export_id,local,mesh.triangles.copy(),mesh.material+material_offset,
+            selected=[p for p in projection if p['encoding']=='obj' or p['mesh']==mesh_id]
+            _require(not projection or len(selected)==1, 'Material projection must select one exact native mesh primitive.')
+            material_index=mesh.material+material_offset
+            if selected and selected[0]['override'] is not None:
+                override=selected[0]['override']
+                canonical=lookdev_closure.canonical_reference(override)
+                override_key=(canonical['path'],canonical['sha256'])
+                if override_key not in override_materials:
+                    from lookdev_blender import material_plan,gltf_material
+                    material=gltf_material(material_plan(lookdev_closure.registry,canonical,engine='CYCLES'))
+                    override_materials[override_key]=len(output.materials);output.materials.append(material)
+                    output.extensions_used=sorted(set(output.extensions_used)|set(material.get('extensions',{})))
+                material_index=override_materials[override_key]
+            output.meshes.append(Mesh(export_id,local,mesh.triangles.copy(),material_index,
                                       attributes=attributes,name=mesh.name,region=mesh.region))
             expected[export_id]=world_positions;mesh_owner[export_id]=identifier
     _require(output.meshes,'A scene export requires visible actual geometry.')
@@ -219,7 +242,10 @@ def export_scene_frame(source_root, scene, shot, frame, destination, *, max_vert
                     frame=evaluation['frame'],status='static-frame-validated',production_approved=False,
                     output=dict(path='scene.glb',sha256=sha256(output_file),bytes=output_file.stat().st_size),
                     vertices=output.vertex_count,triangles=output.triangle_count,meshes=len(output.meshes),
-                    dependency_receipt=inputs,losses=losses,khronos=validation,
+                    dependency_receipt=inputs,
+                    lookdev_closure=(dict(sha256=lookdev_closure.sha256,inventory=lookdev_closure.inventory)
+                                     if lookdev_closure is not None else None),
+                    losses=losses,khronos=validation,
                     native_reimport=dict(independent=False,decoder='hatch-native',meshes=len(actual),
                                          triangle_topology_equal=True,material_and_image_bytes_equal=True,
                                          max_world_vertex_error_m=error,tolerance_m=1e-4,ok=True))

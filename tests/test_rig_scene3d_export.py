@@ -76,6 +76,35 @@ class SceneExportTests(unittest.TestCase):
         definition=read_gltf(self.root/'perspective/scene.glb').json['cameras'][0]['perspective']
         self.assertEqual(definition['aspectRatio'],1.)
 
+    def test_exact_scalar_lookdev_override_uses_canonical_primitive_mapping(self):
+        import hashlib
+        from test_lookdev_contracts import material
+        from lookdev_contracts import canonical_bytes as material_bytes
+        from scene3d_contracts import canonical_bytes
+        from scene3d_materials import obj_material_bindings
+        paint=material();paint['surface']['base_color']=[1.,0.,0.,1.]
+        raw=material_bytes(paint);(self.source/'paint.json').write_bytes(raw)
+        pin=dict(id=paint['id'],version=paint['version'],kind='material',path='paint.json',sha256=hashlib.sha256(raw).hexdigest())
+        docs=deepcopy(self.bundle['documents'])
+        docs['triangle.json']['material_bindings']=obj_material_bindings('triangle')
+        next(n for n in docs['example-scene.json']['nodes'] if n['id']=='mesh')['material_overrides']=[dict(slot='surface',material=pin)]
+        docs['project.json']['dependency_lock'].append(pin)
+        def refresh(value):
+            if isinstance(value,dict):
+                if 'path' in value and 'sha256' in value and value['path'] in docs:
+                    value['sha256']=hashlib.sha256(canonical_bytes(docs[value['path']])).hexdigest()
+                for child in value.values():refresh(child)
+            elif isinstance(value,list):
+                for child in value:refresh(child)
+        for _ in range(8):
+            for doc in docs.values():refresh(doc)
+        for path,doc in docs.items():(self.source/path).write_bytes(canonical_bytes(doc))
+        report=export_scene_frame(self.source,'example-scene','example-shot',0,self.root/'red')
+        doc=read_gltf(self.root/'red/scene.glb').json
+        primitive=doc['meshes'][0]['primitives'][0]
+        self.assertEqual(doc['materials'][primitive['material']]['pbrMetallicRoughness']['baseColorFactor'],[1.,0.,0.,1.])
+        self.assertIn('paint.json',report['lookdev_closure']['inventory'])
+
     def test_new_destination_exclusive_and_frame_rejection(self):
         occupied=self.root/'occupied';occupied.mkdir();(occupied/'mine').write_text('preserve')
         for destination,frame in [(occupied,0),(self.root/'bad-frame',24),(self.root/'nonexact',0.5)]:
