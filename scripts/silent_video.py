@@ -23,9 +23,12 @@ import tempfile
 import time
 
 from PIL import Image
-from atomic_publish import _rename_no_replace
-from production_contracts import _structural, safe_path, read_json
+from atomic_publish import (_rename_no_replace, pinned_directory, private_stage,
+                            private_stage_supported)
+from production_contracts import _structural, read_json
+from rig_errors import directory_capability, normalize_root, open_payload, safe_path
 from production_render import fps_fraction, file_hash
+from silent_profiles import encoding_schema, validate_encoding, arguments as encoding_arguments
 
 MAX_FRAMES = 18000
 MAX_SOURCE_BYTES = 2 * 1024**3
@@ -40,6 +43,9 @@ PROFILES = {
     'vp9-webm': {'container': 'webm', 'codec': 'vp9', 'encoder': 'libvpx-vp9',
                  'extension': '.webm', 'pixel_format': 'yuv420p', 'alpha': 'opaque',
                  'color': 'untagged-sdr', 'precision': 8, 'crf': 30, 'preset': 'good'},
+    'av1-webm': {'container': 'webm', 'codec': 'av1', 'encoder': 'libaom-av1',
+                 'extension': '.webm', 'pixel_format': 'yuv420p', 'alpha': 'opaque',
+                 'color': 'untagged-sdr', 'precision': 8, 'crf': 32, 'preset': '6'},
 }
 
 
@@ -57,7 +63,7 @@ FPS = _obj({'numerator': _int(1, 240000), 'denominator': _int(1, 10000)})
 FILE = _obj({'index': _int(0, MAX_FRAMES-1), 'path': {'type': 'string', 'minLength': 1, 'maxLength': 1024},
              'sha256': SHA, 'bytes': _int(1, MAX_FRAME_BYTES)})
 SOURCE = _obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-frame-source'},
-               'origin': {'enum': ['synthetic', 'production2d', 'blender3d', 'assembled']},
+               'origin': {'enum': ['synthetic', 'production2d', 'blender3d', 'assembled', 'transformed']},
                'format': {'const': 'png'}, 'precision': {'const': 8},
                'alpha': {'const': 'opaque'}, 'color': {'const': 'untagged-sdr'},
                'width': _int(2, 4096), 'height': _int(2, 4096), 'fps': FPS,
@@ -67,6 +73,7 @@ LIMITS = _obj({'timeout_seconds': _int(1, 3600), 'max_output_bytes': _int(1024, 
 REQUEST = _obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-video-request'},
                 'source': SOURCE, 'profile': {'enum': list(PROFILES)},
                 'audio': _obj({'policy': {'const': 'forbidden'}}), 'limits': LIMITS})
+REQUEST['properties']['encoding'] = encoding_schema()
 
 
 def schemas():
@@ -84,6 +91,12 @@ def schemas():
         'timebase_tolerance': fraction, 'profile': {'enum': list(PROFILES)},
         'source_pixel_comparison': {'type': 'array', 'maxItems': 3, 'items': _obj({'index': _int(0, MAX_FRAMES-1), 'rgb_psnr_db': {'type': 'number', 'minimum': 18, 'maximum': 100}, 'minimum_psnr_db': {'const': 18.0}})},
         'probe': raw, 'timeline': raw, 'decode': raw, 'visual_review': {'const': 'not-performed'}})
+    # Optional additions preserve validation of historical receipts.
+    result['artifact']['properties']['reported_fps'] = FPS
+    result['artifact']['properties']['rate_quantization'] = _obj({
+        'kind': {'enum': ['exact', 'matroska-nanosecond-rational']},
+        'default_duration_ns': _int(0, 10**9), 'nominal_period_error': fraction})
+    result['artifact']['properties']['passes'] = {'type': 'array', 'minItems': 1, 'maxItems': 2, 'items': raw}
     result['job'] = _obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-video-job'},
         'request_sha256': SHA, 'source_manifest_sha256': SHA,
         'status': {'enum': ['queued', 'running', 'verifying', 'complete', 'failed', 'cancelled']},
@@ -105,7 +118,7 @@ def _digest(value):
 
 
 def _path(root, relative):
-    path = safe_path(root, relative)
+    path = safe_path(root, relative, exists=True)
     # Cross-platform alias and control-character rejection before native I/O.
     for part in relative.split('/'):
         if (part[-1:] in (' ', '.') or any(ord(c) < 32 for c in part) or
@@ -114,29 +127,13 @@ def _path(root, relative):
     return path
 
 
+@contextmanager
 def _open_source(root, relative):
-    """Walk directory descriptors without following replaceable symlinks."""
-    path = _path(root, relative)
-    if os.name == 'posix' and hasattr(os, 'O_NOFOLLOW'):
-        fd = os.open(Path(root).resolve(), os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            parts = relative.split('/')
-            for part in parts[:-1]:
-                next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
-                os.close(fd)
-                fd = next_fd
-            result = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
-        finally:
-            os.close(fd)
-        if not stat.S_ISREG(os.fstat(result).st_mode):
-            os.close(result)
-            raise ValueError('frame source must be a regular file')
-        return os.fdopen(result, 'rb')
-    stream = path.open('rb')
-    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode) or path.is_symlink():
-        stream.close()
-        raise ValueError('frame source must be a regular file')
-    return stream
+    """Use the shared descriptor authority for both frames and staged movies."""
+    root = normalize_root(root)
+    _path(root, relative)
+    with open_payload(root, relative) as (stream, _):
+        yield stream
 
 
 def _read_frame(root, relative):
@@ -265,10 +262,13 @@ def source_from_blender_manifest(root, manifest):
     return source
 
 
-def make_request(source, profile='h264-mp4'):
-    return validate_request({'schema_version': 1, 'kind': 'silent-video-request',
+def make_request(source, profile='h264-mp4', *, encoding=None):
+    request = {'schema_version': 1, 'kind': 'silent-video-request',
                              'source': copy.deepcopy(source), 'profile': profile,
-                             'audio': {'policy': 'forbidden'}, 'limits': dict(DEFAULT_LIMITS)})
+                             'audio': {'policy': 'forbidden'}, 'limits': dict(DEFAULT_LIMITS)}
+    if encoding is not None:
+        request['encoding'] = copy.deepcopy(encoding)
+    return validate_request(request)
 
 
 def validate_request(request):
@@ -277,6 +277,8 @@ def validate_request(request):
     except (OverflowError, RecursionError) as exc:
         raise ValueError('request exceeds numeric/nesting limits') from exc
     validate_source(request['source'])
+    if 'encoding' in request:
+        validate_encoding(PROFILES[request['profile']], request['encoding'])
     return request
 
 
@@ -287,11 +289,12 @@ def _binary(name, override=None):
     return str(Path(candidate).resolve())
 
 
-def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
+def _run(command, limits, *, cancel=None, output=None, pass_fds=(), progress=None, scratch_prefix=None):
     """Bound both process duration and captured evidence, including fast exits."""
     start = time.monotonic()
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, pass_fds=pass_fds)
+        offset, pending, fields = 0, b'', {}
         try:
             while True:
                 status = process.poll()
@@ -303,6 +306,33 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
                     raise ValueError('media command exceeded evidence byte budget')
                 if output is not None and output.exists() and output.stat().st_size > limits['max_output_bytes']:
                     raise ValueError('encoded output exceeds byte budget')
+                if scratch_prefix is not None:
+                    files = list(scratch_prefix.parent.glob(scratch_prefix.name + '*'))
+                    if len(files) > 16 or sum(path.stat().st_size for path in files) > limits['max_log_bytes']:
+                        raise ValueError('encoder pass statistics exceed byte budget')
+                if progress is not None:
+                    # pread preserves the file offset shared with the child.
+                    size = os.fstat(stdout.fileno()).st_size
+                    chunk = os.pread(stdout.fileno(), size - offset, offset)
+                    offset += len(chunk)
+                    pending += chunk
+                    while b'\n' in pending:
+                        line, pending = pending.split(b'\n', 1)
+                        if len(line) > 4096:
+                            raise ValueError('encoder progress line exceeds byte budget')
+                        key, separator, value = line.decode('ascii', 'strict').partition('=')
+                        if separator:
+                            fields[key] = value
+                        if key == 'progress':
+                            frame = int(fields.get('frame', '0'))
+                            if not 0 <= frame <= MAX_FRAMES or value not in ('continue', 'end'):
+                                raise ValueError('invalid encoder progress')
+                            raw_time = fields.get('out_time_us', '0')
+                            progress({'phase': 'encoding', 'frame': frame, 'speed': fields.get('speed', ''),
+                                      'out_time_us': None if raw_time == 'N/A' else int(raw_time), 'status': value})
+                            fields = {}
+                    if len(pending) > 4096:
+                        raise ValueError('encoder progress line exceeds byte budget')
                 if status is not None:
                     break
                 time.sleep(.02)
@@ -326,13 +356,14 @@ def capabilities(*, ffmpeg=None, ffprobe=None):
         evidence = {name: _run([binary, '-version'], DEFAULT_LIMITS)
                     for name, binary in [('ffmpeg', encoder), ('ffprobe', probe)]}
         lists = {flag: _run([encoder, '-hide_banner', flag], DEFAULT_LIMITS)['stdout']
-                 for flag in ['-encoders', '-muxers', '-pix_fmts']}
+                 for flag in ['-encoders', '-decoders', '-muxers', '-pix_fmts']}
     except (ValueError, OSError) as exc:
         result.update(status='unavailable', reason=str(exc))
         return result
     publication_supported = secure_publication_supported()
     for name, profile in PROFILES.items():
         supported = (publication_supported and re.search(r'\b'+re.escape(profile['encoder'])+r'\b', lists['-encoders']) and
+                     re.search(r'\b'+re.escape(profile['codec'])+r'\b', lists['-decoders'], re.IGNORECASE) and
                      re.search(r'\b'+profile['container']+r'\b', lists['-muxers']) and
                      re.search(r'\byuv420p\b', lists['-pix_fmts']))
         result['profiles'][name] = {**profile, 'status': 'supported' if supported else 'unsupported'}
@@ -363,6 +394,96 @@ def _fraction(value, label):
         return result
     except (ValueError, TypeError, ZeroDivisionError) as exc:
         raise ValueError('invalid '+label+' in probe') from exc
+
+
+def _webm_default_duration(path):
+    """Read the sole video TrackEntry's integer-nanosecond DefaultDuration.
+
+    Parse bounded EBML metadata, never scan compressed packet bytes for magic
+    signatures. Unknown sizes are accepted only for the top-level Segment.
+    """
+    with Path(path).open('rb') as stream:
+        length, visited = os.fstat(stream.fileno()).st_size, 0
+
+        def vint(identifier=False):
+            first = stream.read(1)
+            if not first or first[0] == 0:
+                raise ValueError('invalid WebM element header')
+            size, mask = 1, 128
+            while not first[0] & mask:
+                size, mask = size + 1, mask >> 1
+            if size > (4 if identifier else 8):
+                raise ValueError('oversized WebM element header')
+            rest = stream.read(size - 1)
+            if len(rest) != size - 1:
+                raise ValueError('truncated WebM element header')
+            value = int.from_bytes(first + rest, 'big')
+            if identifier:
+                return value, False
+            value &= (1 << (7 * size)) - 1
+            return value, value == (1 << (7 * size)) - 1
+
+        def elements(start, end, segment=False):
+            nonlocal visited
+            position = start
+            while position < end:
+                visited += 1
+                if visited > 4096:
+                    raise ValueError('WebM metadata element budget exceeded')
+                stream.seek(position)
+                identity, _ = vint(True)
+                size, unknown = vint()
+                begin = stream.tell()
+                finish = end if unknown else begin + size
+                if finish > end or finish > length or (unknown and not (segment and identity == 0x18538067)):
+                    raise ValueError('invalid WebM element extent')
+                yield identity, begin, finish
+                position = finish
+
+        segments = (item for item in elements(0, length, True) if item[0] == 0x18538067)
+        segment = next(segments, None)
+        if segment is None:
+            raise ValueError('WebM Segment unavailable')
+        tracks = None
+        for item in elements(segment[1], segment[2]):
+            if item[0] == 0x1654AE6B:
+                tracks = item
+                break
+            if item[0] == 0x1F43B675:
+                raise ValueError('WebM track metadata must precede packet clusters')
+        if tracks is None:
+            raise ValueError('WebM Tracks unavailable')
+        entries = [item for item in elements(tracks[1], tracks[2]) if item[0] == 0xAE]
+        if len(entries) != 1:
+            raise ValueError('WebM must declare exactly one track')
+        values = {}
+        for identity, begin, finish in elements(entries[0][1], entries[0][2]):
+            if identity in (0x83, 0x23E383):
+                if identity in values or not 1 <= finish - begin <= 8:
+                    raise ValueError('invalid WebM duration/track declaration')
+                stream.seek(begin)
+                values[identity] = int.from_bytes(stream.read(finish - begin), 'big')
+        if values.get(0x83) != 1 or not 1 <= values.get(0x23E383, 0) <= 10**9:
+            raise ValueError('WebM video DefaultDuration unavailable')
+        return values[0x23E383]
+
+
+def _verify_nominal_rate(path, reported, expected, container):
+    error = abs(1 / reported - 1 / expected)
+    if reported == expected:
+        return {'kind': 'exact', 'default_duration_ns': 0,
+                'nominal_period_error': {'numerator': 0, 'denominator': 1}}
+    if container != 'webm':
+        raise ValueError('encoded rational frame rate mismatch')
+    duration_ns = _webm_default_duration(path)
+    period = Fraction(duration_ns, 10**9)
+    # Matroska stores integer nanoseconds. FFmpeg reduces its inverse using
+    # av_reduce(..., 30000); at >=1 FPS this bounds the period denominator.
+    if (abs(period - 1 / expected) > Fraction(1, 10**9) or
+            1 / reported != period.limit_denominator(30000)):
+        raise ValueError('encoded rational frame rate mismatch')
+    return {'kind': 'matroska-nanosecond-rational', 'default_duration_ns': duration_ns,
+            'nominal_period_error': {'numerator': error.numerator, 'denominator': error.denominator}}
 
 
 def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, cancel=None, diagnostics=None):
@@ -408,8 +529,8 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
         if profile['container'] not in formats:
             raise ValueError('encoded container mismatch')
         fps = fps_fraction(source['fps'])
-        if _fraction(video['avg_frame_rate'], 'frame rate') != fps:
-            raise ValueError('encoded rational frame rate mismatch')
+        reported_fps = _fraction(video['avg_frame_rate'], 'frame rate')
+        rate_quantization = _verify_nominal_rate(path, reported_fps, fps, profile['container'])
         tick = _fraction(video['time_base'], 'time base')
         duration = Fraction(data['format']['duration'])
         if abs(duration - Fraction(expected_count, 1)/fps) > 2*tick:
@@ -464,6 +585,8 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
             'source_manifest_sha256': _digest(source), 'request_sha256': _digest(request),
             'video_stream_count': 1, 'audio_stream_count': 0, 'other_stream_count': 0,
             'frame_count': expected_count, 'fps': source['fps'],
+            'reported_fps': {'numerator': reported_fps.numerator, 'denominator': reported_fps.denominator},
+            'rate_quantization': rate_quantization,
             'duration': {'numerator': duration.numerator, 'denominator': duration.denominator},
             'timebase_tolerance': {'numerator': (2*tick).numerator, 'denominator': (2*tick).denominator},
             'profile': request['profile'], 'source_pixel_comparison': pixel_checks, 'probe': inspected, 'timeline': timeline, 'decode': decoded,
@@ -525,6 +648,9 @@ def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=
                 'fps', 'duration', 'timebase_tolerance', 'profile'):
         if receipt[key] != actual[key]:
             raise ValueError('corrupt/stale silent receipt: '+key)
+    for key in ('reported_fps', 'rate_quantization'):
+        if key in receipt and receipt[key] != actual[key]:
+            raise ValueError('corrupt/stale silent receipt: '+key)
     old_probe, new_probe = json.loads(receipt['probe']['stdout']), json.loads(actual['probe']['stdout'])
     for data in (old_probe, new_probe):
         data['format'].pop('filename', None)
@@ -545,34 +671,50 @@ def _destination(path):
     return path
 
 
+def _destination_name(value):
+    value = os.fspath(value)
+    if (not isinstance(value, str) or not 1 <= len(value) <= 255 or value in ('.', '..') or
+            any(character in value for character in ('/', '\\', ':')) or value[-1] in (' ', '.') or
+            any(ord(character) < 32 for character in value) or
+            re.match(r'(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)', value)):
+        raise ValueError('descriptor destination requires one portable filename')
+    return value
+
+
 def secure_publication_supported():
     # The current subprocess path adapter uses Linux procfs and inherited FDs.
     # The shared primitive also supports macOS dirfds, but no untested fdescfs
     # subprocess adapter is advertised as working.
-    return sys.platform.startswith('linux') and Path('/proc/self/fd').is_dir()
+    return private_stage_supported()
 
 
 @contextmanager
 def _pin_directory(path):
     if not secure_publication_supported():
         raise ValueError('secure silent encoding currently requires Linux procfs; verification remains portable')
-    path = Path(path).absolute()
-    descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        for part in path.parts[1:]:
-            current = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = current
+    with pinned_directory(path) as descriptor:
         yield descriptor
-    finally:
-        os.close(descriptor)
 
+
+@contextmanager
+def _private_stage(parent_fd, prefix='.silent-export-'):
+    with private_stage(parent_fd, prefix=prefix) as (_, descriptor):
+        # Explicit registration retains this directory across owner namespace
+        # changes. Unregistered procfd strings remain untrusted inputs.
+        with directory_capability(descriptor) as capability:
+            yield capability.path, capability.fd
 
 
 def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
     validate_request(request)
     request = copy.deepcopy(request)
-    destination = _destination(destination)
+    destination = Path(_destination_name(destination))
+    try:
+        os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        pass
+    else:
+        raise ValueError('destination must be new')
     profile = PROFILES[request['profile']]
     if destination.suffix != profile['extension']:
         raise ValueError('destination extension differs from explicit profile')
@@ -581,10 +723,10 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
     caps = capabilities(ffmpeg=ffmpeg, ffprobe=ffprobe)
     if caps['status'] != 'available' or caps['profiles'][request['profile']]['status'] != 'supported':
         raise ValueError('requested media profile unavailable/unsupported; no fallback')
-    if shutil.disk_usage(destination.parent).free < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
+    filesystem = os.fstatvfs(parent_fd)
+    if filesystem.f_bavail * filesystem.f_frsize < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
         raise ValueError('insufficient free storage for bounded snapshot and output')
-    with tempfile.TemporaryDirectory(prefix='.silent-export-', dir=Path('/proc/self/fd')/str(parent_fd)) as tmp:
-        stage = Path(tmp)
+    with _private_stage(parent_fd) as (stage, source_fd):
         inputs = stage/'frames'; inputs.mkdir()
         _snapshot(request, root, inputs)
         output = stage/('output.partial'+profile['extension'])
@@ -593,40 +735,84 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
                    '-framerate', str(fps), '-start_number', '0', '-i', str(inputs/'%06d.png'),
                    '-map', '0:v:0', '-an', '-sn', '-dn', '-map_metadata', '-1', '-map_chapters', '-1',
                    '-frames:v', str(len(request['source']['frames'])), '-c:v', profile['encoder'],
-                   '-pix_fmt', profile['pixel_format'], '-vf', 'setsar=1', '-crf', str(profile['crf']),
-                   '-threads', '1']
-        if request['profile'] == 'h264-mp4':
-            command += ['-preset', profile['preset'], '-g', str(max(1, round(fps*2))), '-movflags', '+faststart']
+                   '-pix_fmt', profile['pixel_format'], '-vf', 'setsar=1']
+        if 'encoding' in request:
+            command += encoding_arguments(profile, request['encoding'])
         else:
-            command += ['-deadline', 'good', '-b:v', '0']
+            command += ['-crf', str(profile['crf']), '-threads', '1']
+            if request['profile'] == 'h264-mp4':
+                command += ['-preset', profile['preset'], '-g', str(max(1, round(fps*2)))]
+            elif request['profile'] == 'vp9-webm':
+                command += ['-deadline', 'good', '-b:v', '0']
+            else:
+                command += ['-cpu-used', profile['preset'], '-row-mt', '1', '-b:v', '0']
+        if progress is not None:
+            command += ['-progress', 'pipe:1', '-nostats']
+        passes = []
+        two_pass = request.get('encoding', {}).get('rate_control', {}).get('mode') == 'two-pass'
+        passlog = stage / 'encoder-pass'
+        if two_pass:
+            if progress is not None:
+                progress({'phase': 'encode-pass-1', 'total_frames': len(request['source']['frames'])})
+            passes.append(_run(command + ['-pass', '1', '-passlogfile', str(passlog), '-f', 'null', '-'],
+                request['limits'], cancel=cancel, pass_fds=(source_fd,), progress=progress, scratch_prefix=passlog))
+            command += ['-pass', '2', '-passlogfile', str(passlog)]
+        if profile['container'] == 'mp4':
+            command += ['-movflags', '+faststart']
         command += [str(output)]
         if progress is not None:
             progress({'phase': 'encode', 'total_frames': len(request['source']['frames'])})
-        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(parent_fd,))
-        receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
+        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(source_fd,),
+                         progress=progress, scratch_prefix=passlog if two_pass else None)
         if cancel is not None and cancel():
-            raise ValueError('silent export cancelled before publication')
+            raise ValueError('silent export cancelled before verification')
+        receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
+        # Verification rechecks original bytes after its final cancellation
+        # callback. No user callback may mutate staging between that check and
+        # publication.
         # Never replace a file or even an empty directory created by another writer.
         # Source and destination basenames resolve relative to pinned directory
         # descriptors, never a path a concurrent writer can replace by a symlink.
-        source_fd = os.open(stage.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
-        try:
-            _rename_no_replace(output.name, destination.name,
-                               source_dir_fd=source_fd, destination_dir_fd=parent_fd)
-        finally:
-            os.close(source_fd)
+        _rename_no_replace(output.name, destination.name,
+                           source_dir_fd=source_fd, destination_dir_fd=parent_fd)
         receipt['encode'] = execution
+        if two_pass:
+            receipt['passes'] = passes + [execution]
         receipt['path'] = destination.name
         if progress is not None:
             progress({'phase': 'complete', 'frame_count': receipt['frame_count']})
         return receipt
 
 
-def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
+@contextmanager
+def destination_directory(destination, *, destination_dir_fd=None):
+    """Yield one portable basename and an owned destination-directory FD.
+
+    An explicitly supplied descriptor is duplicated for this context only.
+    Ordinary paths retain strict no-symlink admission and pinned publication.
+    Nested transactions reuse this authority rather than admitting proc aliases.
+    """
+    if destination_dir_fd is not None:
+        name = _destination_name(destination)
+        if type(destination_dir_fd) is not int or destination_dir_fd < 0:
+            raise ValueError('destination descriptor must identify an open directory')
+        descriptor = os.dup(destination_dir_fd)
+        try:
+            if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                raise ValueError('destination descriptor must identify an open directory')
+            yield name, descriptor
+        finally:
+            os.close(descriptor)
+    else:
+        destination = _destination(destination)
+        with _pin_directory(destination.parent) as parent_fd:
+            yield destination.name, parent_fd
+
+
+def encode(request, root, destination, *, destination_dir_fd=None, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
     validate_request(request)
-    destination = _destination(destination)
-    with _pin_directory(destination.parent) as parent_fd:
-        return _encode_pinned(request, root, destination, parent_fd, ffmpeg=ffmpeg,
+    with destination_directory(destination, destination_dir_fd=destination_dir_fd) as (name, descriptor):
+        return _encode_pinned(request, root, name, descriptor, ffmpeg=ffmpeg,
                               ffprobe=ffprobe, cancel=cancel, progress=progress)
 
 

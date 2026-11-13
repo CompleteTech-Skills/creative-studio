@@ -106,7 +106,15 @@ publication. The output directory is opened without following symlinks and pinne
 by descriptor through staging, subprocesses and the final rename. A concurrent
 parent rename retains that original directory identity; a substituted pathname
 cannot redirect publication elsewhere. An existing destination, including a racing empty directory or
-symlink, is preserved. Private partials are removed after failures. The returned
+symlink, is preserved. The private staging directory is also pinned before any
+frame or encoded bytes are written; its replaceable basename is never reopened
+for publication or recursive cleanup. Cleanup preserves a foreign replacement.
+The shared [private staging authority](atomic-publication.md) clears only its
+owned contents and retains tiny empty outer wrappers for explicit maintenance;
+it never deletes a possibly replaced outer basename. Cancellation callbacks run
+during encoding and verification, with no callback
+between the final original-byte recheck and exclusive publication. Private
+partials are removed after failures. The returned
 receipt binds the actual artifact, source manifest and request hashes and
 retains commands, raw probe output, timeline and decode evidence. Persist it in
 the enclosing renderer's existing transaction; this low-level API does not
@@ -132,7 +140,14 @@ Real acceptance tests create labeled synthetic PNGs and run installed media
 binaries. They do not claim 3D geometry or production-art approval. See
 `tests/results/silent-video-foundations.json` for executed results, source
 revision, versions, logs and limitations. Run focused acceptance with
-`python -m unittest discover -s tests -p test_silent_video.py -v`.
+`python -m unittest discover -s tests -p test_silent_video.py -v` runs the
+portable contract checks without optional skips. The dedicated Linux media
+gate runs `HATCH_SILENT_MEDIA_TEST=1 python -m unittest discover -s tests/optional
+-p test_silent_video_native.py -v` with real FFmpeg/ffprobe and descriptor
+publication tests. Its optional directory is intentionally not a package, so
+portable required discovery does not misreport unsupported native encoding as
+executed or relax its unexpected-skip policy.
+
 
 ## Exact multi-shot frame assembly
 
@@ -187,3 +202,111 @@ an explicit three-integer sRGB background, using sRGB decoding, linear-light
 over and sRGB encoding; 50% white over black yields approximately188 rather
 than128. This optional adapter uses NumPy and does not belong to 2D-only import
 paths. EXR/HDR inputs are rejected until a separate verified transform is selected.
+
+## Capability-gated AV1 baseline
+
+`av1-webm` selects `libaom-av1` explicitly, with 8-bit opaque `yuv420p`, CRF32,
+CPU speed6, row multithreading and a zero average-bitrate target. Capability
+reporting checks the actual encoder, a matching decoder, WebM muxer, pixel
+format and secure publication support. It reports unsupported if this baseline
+is unavailable; it never substitutes VP9, H.264, hardware encoding or a different
+AV1 implementation. Codec speed and CRF are specific to this encoder. Independent
+stream enumeration, full strict decode, rational timestamps and actual pixel
+checks apply to AV1 just as they do to the established profiles. This baseline
+does not claim HDR, 10-bit, transparent WebM, configurable bitrate or two-pass
+support; those require explicit validated profile work.
+
+AV1/WebM can report a nominal rate such as19001/317 for requested60000/1001,
+even when the full presentation timeline is correct. Matroska stores
+[`DefaultDuration` as integer nanoseconds](https://www.matroska.org/technical/elements.html),
+and [FFmpeg's demuxer reduces its inverse with a30000 rational bound](https://ffmpeg.org/doxygen/8.0/matroskadec_8c_source.html).
+When a WebM nominal rate differs, verification parses the actual EBML track
+metadata, requires its duration to differ from the requested period by at most
+one nanosecond, and requires the reported rate to equal that metadata's bounded
+rational reduction. It records both the requested and reported rate plus the
+quantization proof. All frame-count, timestamp, duration, stream and pixel checks
+remain mandatory. MP4 still requires exact rational nominal rate equality.
+A real60fps file is rejected for60000/1001 even when a short clip's millisecond
+frame timestamps happen to coincide; generic frame-rate tolerance is not used.
+
+## Typed encoder controls
+
+`silent_profiles.quality_settings(PROFILES[name], level, fps=rate)` supplies
+versioned code-owned draft, preview, standard, high and master settings. Pass the
+result as `make_request(source, name, encoding=settings)`. H.264 uses x264
+software presets and CRF0–51; VP9/AV1 use their own CQ/CRF scales and bounded
+integer CPU speed. Each has separate quality defaults. All profiles remain
+lossy, including the quality level named master.
+
+The strict optional encoding object accepts1–2 threads, GOP1–600 and one
+explicit rate-control object: quality, average bitrate, constrained bitrate with
+maxrate/buffer size, or two-pass bitrate. It accepts no arbitrary FFmpeg flags.
+Two-pass exports retain both real command receipts, bound private statistics
+files by the evidence-byte budget, restart from source on failure, and publish
+only after the second pass independently verifies. Unsupported controls fail
+before subprocess work. No hardware encoder or fallback is selected implicitly.
+
+An optional `progress` callback receives actual FFmpeg `-progress` frame, speed,
+output-time and completion records, alongside phase notifications. `out_time_us`
+can be null while an encoder cannot yet report muxed time; it is encoder
+progress, not authoritative presentation timing. Independent final timestamps
+remain authoritative. Statistics parsing uses position-preserving reads of a
+bounded private log, so progress observation does not alter child output.
+
+## Explicit frame resolution and FPS conversion
+
+`silent_transform.profile(width, height, fps, fit=..., fps_policy=...)` supports
+bounded even custom dimensions, including1280×720,1920×1080,3840×2160, square,
+portrait and other declared pixel aspect ratios. Samples remain square; output
+DAR is width/height. `preserve` requires unchanged dimensions. `letterbox` fits
+without cropping on an explicit RGB background; `fill` crops the centered source
+rectangle; `stretch` explicitly permits distortion. Lanczos raster resampling
+uses the encoded PNG values and does not claim a scene-linear color conversion.
+Extreme aspect ratios crop in source coordinates, avoiding huge intermediates.
+
+FPS changes require `fps_policy='nearest'`. Output count is the exact source
+duration times target FPS, rounded to the nearest integer with ties upward.
+Each output timestamp selects the nearest source timestamp, with upward ties
+and endpoint clamping. The complete source/output index map is retained; any
+unavoidable duration quantization is an exact signed fraction in the report.
+`preserve` requires equal rational source/target FPS. No frame conversion occurs
+implicitly and no temporal interpolation is claimed.
+
+`silent_transform.transform(source, root, profile, new_directory)` verifies all
+original inputs, writes a bounded sequence and hash-bound `transform.json`, then
+publishes the complete private payload atomically. Originals stay untouched.
+`verify(root, source_root=original_root)` rechecks inventories, mappings and every
+actual transformed pixel against the declared operation. The strict
+[profile](../schemas/silent-frame-profile-v1.schema.json) and
+[transform](../schemas/silent-frame-transform-v1.schema.json) schemas describe
+this separate conversion artifact. PNG8 opacity/color rules remain unchanged;
+transparent or HDR input needs its own explicit verified preparation step.
+
+For descriptor-owned job directories, `encode(request, source_root, 'movie.mp4',
+destination_dir_fd=attempt_fd)` uses a validated, duplicated directory handle
+and a portable basename. It checks collisions and available storage through that
+handle and publishes from the same encoder used by ordinary path exports. Both
+passes inherit the pinned staging descriptor. No procfd alias is converted back
+to a mutable destination pathname. The caller retains ownership of its original
+handle and must keep any source capabilities alive for the call.
+
+Named codec presets can be retained independently of the compatible request
+schema with `silent_profiles.capture_quality_profile(profile, level, fps=rate)`.
+The version-1 manifest records the selected software encoder, level, exact frame
+rate, resolved controls and a content digest. Retain it beside the request, pass
+its `encoding` field to `make_request`, and use `validate_quality_profile` when
+reopening it; altered controls, unknown versions and mislabeled encoders fail.
+
+`silent_profiles.estimate_storage(profile, controls, frame_count=N, fps=rate,
+max_output_bytes=budget)` reports exact rational duration and, for bitrate modes,
+a nominal elementary-video byte target. Quality-mode size remains unknown.
+Both modes disclose source/codec/container uncertainty and the enforced output
+cap as a broad range, rather than a statistical confidence claim. No measured
+sample or hardware execution is implied. A target exceeding the cap is flagged;
+the existing encoder still enforces actual output and pass-log byte limits.
+
+Nested exporters share `silent_video.destination_directory(destination,
+destination_dir_fd=None)`, which yields a portable basename and an owned
+pinned/duplicated directory descriptor for the context lifetime. Explicit FD
+callers supply only a basename; ordinary path callers retain strict symlink
+rejection. This does not admit raw procfs aliases or close caller-owned FDs.

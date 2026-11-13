@@ -58,6 +58,8 @@ Use the existing optional rig dependencies below. The [executable example](examp
 reuses unchanged source and animated GLB files; missing or corrupt required content
 fails verification. Structural-only checks explicitly leave payloads unverified.
 
+The additive [cinematic authoring contracts](references/cinematics3d-contracts.md) define versioned effect stacks, immutable references and explicit capability admission. These are authoring contracts; effect execution and final silent cinematic delivery remain separate acceptance work.
+
 ## Explicit silent video exports
 
 The [silent-video API](references/silent-video.md) encodes exact opaque PNG inventories to independently verified video-only H.264 MP4 or VP9 WebM. It rejects every audio stream, checks actual decoded frames and timestamps, and publishes exclusively after verification. Existing H.264/AAC production review movies retain their audio behavior. This media layer does not claim completed 3D rendering or HDR/EXR delivery.

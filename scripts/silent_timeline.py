@@ -13,9 +13,8 @@ import os
 from pathlib import Path
 import re
 import shutil
-import tempfile
 
-from atomic_publish import _rename_no_replace
+from atomic_publish import _rename_no_replace, private_stage
 from production_contracts import read_json, MAX_MANIFEST_BYTES
 from production_render import fps_fraction
 import silent_video as video
@@ -100,8 +99,9 @@ def assemble(shots, destination, *, cancel=None):
     if shutil.disk_usage(destination.parent).free < total_bytes + 1024 * 1024:
         raise ValueError('insufficient free storage for timeline')
     with video._pin_directory(destination.parent) as parent_fd:
-        with tempfile.TemporaryDirectory(prefix='.silent-timeline-', dir=Path('/proc/self/fd') / str(parent_fd)) as tmp:
-            stage = Path(tmp)
+        with private_stage(parent_fd, prefix='.silent-timeline-') as (private_path, wrapper_fd):
+            stage = private_path / 'payload'
+            stage.mkdir(mode=0o700)
             frames = stage / 'frames'
             frames.mkdir()
             inventory, mapping, retained = [], [], []
@@ -139,7 +139,7 @@ def assemble(shots, destination, *, cancel=None):
             validate(stage)
             if cancel is not None and cancel():
                 raise ValueError('timeline assembly cancelled before publication')
-            _rename_no_replace(stage.name, destination.name, source_dir_fd=parent_fd, destination_dir_fd=parent_fd)
+            _rename_no_replace('payload', destination.name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
     return manifest
 
 

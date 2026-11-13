@@ -25,7 +25,8 @@
             "synthetic",
             "production2d",
             "blender3d",
-            "assembled"
+            "assembled",
+            "transformed"
           ]
         },
         "format": {
@@ -124,7 +125,8 @@
     "profile": {
       "enum": [
         "h264-mp4",
-        "vp9-webm"
+        "vp9-webm",
+        "av1-webm"
       ]
     },
     "audio": {
@@ -163,6 +165,138 @@
         "timeout_seconds",
         "max_output_bytes",
         "max_log_bytes"
+      ]
+    },
+    "encoding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "speed": {
+          "anyOf": [
+            {
+              "enum": [
+                "ultrafast",
+                "superfast",
+                "veryfast",
+                "faster",
+                "fast",
+                "medium",
+                "slow",
+                "slower",
+                "veryslow"
+              ]
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 8
+            }
+          ]
+        },
+        "threads": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2
+        },
+        "gop": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600
+        },
+        "rate_control": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "const": "quality"
+                },
+                "value": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 63
+                }
+              },
+              "required": [
+                "mode",
+                "value"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "const": "bitrate"
+                },
+                "bitrate": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 1000000000
+                }
+              },
+              "required": [
+                "mode",
+                "bitrate"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "const": "constrained"
+                },
+                "bitrate": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 1000000000
+                },
+                "maxrate": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 1000000000
+                },
+                "bufsize": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 2000000000
+                }
+              },
+              "required": [
+                "mode",
+                "bitrate",
+                "maxrate",
+                "bufsize"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "mode": {
+                  "const": "two-pass"
+                },
+                "bitrate": {
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 1000000000
+                }
+              },
+              "required": [
+                "mode",
+                "bitrate"
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "speed",
+        "threads",
+        "gop",
+        "rate_control"
       ]
     }
   },

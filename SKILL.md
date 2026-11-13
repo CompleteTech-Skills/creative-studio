@@ -116,3 +116,7 @@ files in a verified temporary snapshot, and never starts generation or a provide
 claims and review references are not authenticated approval. Preserve Y-up/meters/
 XYZW conventions and all existing 2D semantics. Do not call this bounded foundation
 a complete Model3D generator, asset library, editor, scheduler or renderer.
+
+## Cinematic authoring contracts
+
+For cinematic effect configurations, read [cinematic contracts](references/cinematics3d-contracts.md). Use `cinematics3d_contracts.py` for strict validation and `cinematics3d_example.py` for native-source and relocation checks. Reuse native scene/camera/material/animation/render owners. Registry entries describe parameters, not available renderer features; admission never proves execution. Final cinematic media require independently verified zero audio streams, while legacy audio-capable workflows remain unchanged.
