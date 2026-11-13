@@ -232,6 +232,23 @@ class CapabilityTest(unittest.TestCase):
         self.assertGreaterEqual(m['process_cpu_seconds'],0)
         self.assertIn(m['rss_status'],('measured','unavailable'))
 
+    def test_native_peak_memory_measurement_and_windows_independent_baseline(self):
+        from continuity_capabilities import _peak_memory_bytes
+        peak = _peak_memory_bytes()
+        print('Native process lifetime peak bytes:',peak,flush=True)
+        self.assertIsNotNone(peak)
+        self.assertGreater(peak,0)
+        if sys.platform == 'win32':
+            import os
+            import subprocess
+            # .NET Process exposes the OS peak independently of our ctypes
+            # declarations; query this Python PID, not the PowerShell child.
+            baseline = int(subprocess.check_output(['powershell','-NoProfile','-Command',
+                '(Get-Process -Id '+str(os.getpid())+').PeakWorkingSet64'],text=True).strip())
+            print('Independent Windows .NET process peak bytes:',baseline,flush=True)
+            self.assertGreater(baseline,0)
+            self.assertLess(abs(peak-baseline),64*1024*1024)
+
     def test_measured_memory_limit_blocks_before_owner_execution(self):
         owner, request=self.bound('geometry-inspection')
         request['checks'][0]['resources']['memory_bytes']=1

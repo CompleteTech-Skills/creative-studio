@@ -493,7 +493,8 @@ class Admission:
                 return item  # A fallback never waives a hard gate.
             peak = _peak_memory_bytes()
             if peak is None or peak > check['resources']['memory_bytes']:
-                item.update(outcome='failed', error='CONTINUITY_CAPABILITY_LIMIT: process peak memory unavailable or exceeds reservation',
+                item.update(outcome='failed', error=('CONTINUITY_CAPABILITY_LIMIT: process peak memory unavailable' if peak is None else
+                        'CONTINUITY_CAPABILITY_LIMIT: process peak memory '+str(peak)+' bytes exceeds reservation '+str(check['resources']['memory_bytes'])+' bytes'),
                     unsatisfied_gates=['resource-memory_bytes'])
                 return item
             try:
