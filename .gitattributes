@@ -26,6 +26,8 @@ assets/rig-viewer/** -text
 assets/rig-viewer/vendor/** linguist-vendored
 rig-templates/*.json text eol=lf
 
+# Scene3D example manifests hash the exact original JSON and mesh bytes.
+examples/scene3d-contracts/** -text
 # Shared JSON decoder evidence and its source-bound test retain exact bytes.
 tests/results/shared-json-decoder-20261024/** -text
 tests/test_rig_contracts.py text eol=lf
