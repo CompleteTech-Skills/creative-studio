@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 import numpy as np
 from rig_animation import clip_from_poses, evaluate_animation, validate_animation
 from rig_constraints import apply_constraints
@@ -116,7 +117,7 @@ def _constrain_dofs(target, pose, dofs):
     return constrained
 
 
-def retarget_pose(source, target, pose: dict, profile: dict) -> dict:
+def retarget_pose(source, target, pose: dict, profile: dict, *, _twist_angles=None) -> dict:
     validate_contract(profile, 'RetargetProfile')
     require(profile['source_rig']==source.manifest['id'] and profile['target_rig']==target.manifest['id'],
             'RIG_RETARGET_ID','Retarget calibration targets different character identities.')
@@ -146,6 +147,10 @@ def retarget_pose(source, target, pose: dict, profile: dict) -> dict:
             distribution = distributions[name];axis = distribution['axis']
             delta = qmul(qinverse(bone['rest']['rotation']), values['rotation'])
             swing, twist = swing_twist(delta, axis);angle = signed_twist(twist, axis)
+            if _twist_angles is not None:
+                if name in _twist_angles:
+                    angle += round((_twist_angles[name]-angle)/(2*math.pi))*2*math.pi
+                _twist_angles[name] = angle
             total = sum(recipient['weight'] for recipient in distribution['recipients'])
             values['rotation'] = quaternion(qmul(bone['rest']['rotation'],
                 qmul(swing, axis_angle(axis, angle*max(0., 1.-total))))).tolist()
@@ -191,11 +196,20 @@ def retarget_animation(source, target, clip: dict | str, *, profile=None, partia
     validate_animation(source, clip)
     profile = profile or build_retarget_profile(source, target, partial=partial)
     times = np.linspace(0, clip['duration'], max(2, int(np.ceil(clip['duration']*clip['fps']))+1)).tolist()
-    poses = [];source_error = 0.
+    poses = [];source_error = 0.;twist_angles = {}
     for t in times:
         evaluated = evaluate_animation(source, clip, t, _validated=True)
         source_error = max(source_error, max((r['residual_m'] for r in evaluated['contacts']), default=0.))
-        poses.append(retarget_pose(source, target, evaluated['pose'], profile))
+        poses.append(retarget_pose(source, target, evaluated['pose'], profile, _twist_angles=twist_angles))
+    if clip['loop'] and profile.get('twist_distribution'):
+        joints = set(profile['twist_distribution'])
+        joints.update(recipient['bone'] for distribution in profile['twist_distribution'].values()
+                      for recipient in distribution['recipients'])
+        bones = {b['id']: b for b in target.skeleton['bones']}
+        require(all(qangle(poses[0]['bones'].get(name, {}).get('rotation', bones[name]['rest']['rotation']),
+                           poses[-1]['bones'].get(name, {}).get('rotation', bones[name]['rest']['rotation'])) <= 1e-6
+                    for name in joints), 'RIG_RETARGET_TWIST_LOOP',
+                'Distributed twist does not close at the loop seam; use a nonlooping clip or closing twist shares.')
     source_chains = {c['id']: c for c in source.manifest['controllers']['ik']}
     target_chains = target.manifest['controllers']['ik'];sr, tr = evaluate_fk(source.skeleton), evaluate_fk(target.skeleton)
     contacts, omissions = [], profile['omissions'].copy()

@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import numpy as np
 from rig_test_helpers import fixture
+from rig_animation import clip_from_poses, evaluate_animation
 from rig_errors import RigError
 from rig_math import axis_angle, decompose, qangle, qmul, qmatrix
 from rig_models import Geometry, Mesh, SkinWeights
@@ -153,3 +154,27 @@ class RetargetControlTests(unittest.TestCase):
         old = build_retarget_profile(source, source)
         explicit = build_retarget_profile(source, source, supported_dofs={}, twist_distribution={})
         self.assertEqual(retarget_pose(source, source, pose, old), retarget_pose(source, source, pose, explicit))
+
+    def test_animation_unwraps_twist_across_pi_without_intermediate_mesh_snap(self):
+        source = self.source;target = twist_chain(source)
+        profile = build_retarget_profile(source, target, twist_distribution=distribution())
+        poses = [rotate_bone(source.skeleton, neutral_pose(source.skeleton), 'b1',
+                             axis_angle([0, 1, 0], math.radians(angle))) for angle in (179., 181.)]
+        clip = clip_from_poses(source, 'cross-pi', [0., 1.], poses, fps=12, loop=False)
+        output = retarget_animation(source, target, clip, profile=profile)['clip']
+        vertices = [evaluate_deformation(target, evaluate_animation(target, output, t)['pose'])['strip']['positions']
+                    for t in (0., .49, .51, 1.)]
+        for value, angle in zip((vertices[0], vertices[-1]), (179., 181.)):
+            fraction = math.radians(angle)/3
+            np.testing.assert_allclose(value[2], [.1*math.cos(fraction), 1., -.1*math.sin(fraction)], atol=1e-10)
+        self.assertLess(np.max(np.abs(vertices[2]-vertices[1])), .001)
+        self.assertLess(np.max(np.abs(vertices[-1]-vertices[0])), .004)
+
+    def test_nonclosing_distributed_twist_loop_rejects_instead_of_snapping(self):
+        source = self.source;target = twist_chain(source)
+        profile = build_retarget_profile(source, target, twist_distribution=distribution())
+        poses = [rotate_bone(source.skeleton, neutral_pose(source.skeleton), 'b1',
+                             axis_angle([0, 1, 0], math.radians(angle))) for angle in (0., 120., 240., 360.)]
+        clip = clip_from_poses(source, 'turn-loop', [0., 1., 2., 3.], poses, fps=12, loop=True)
+        with self.assertRaises(RigError) as caught:retarget_animation(source, target, clip, profile=profile)
+        self.assertEqual(caught.exception.report['code'], 'RIG_RETARGET_TWIST_LOOP')
