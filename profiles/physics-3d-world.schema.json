@@ -1247,6 +1247,32 @@
                   "break_force",
                   "break_torque"
                 ]
+              },
+              "sleep": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "initially_sleeping": {
+                    "type": "boolean"
+                  },
+                  "linear_threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "angular_threshold": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "initially_sleeping"
+                ]
               }
             },
             "required": [
@@ -1779,6 +1805,7 @@
                   "force",
                   "impulse",
                   "torque",
+                  "angular-impulse",
                   "wind",
                   "drag",
                   "turbulence",
@@ -1861,6 +1888,12 @@
                 },
                 "minItems": 1,
                 "maxItems": 9
+              },
+              "application": {
+                "enum": [
+                  "center",
+                  "world-point"
+                ]
               }
             },
             "required": [

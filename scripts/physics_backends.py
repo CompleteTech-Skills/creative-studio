@@ -138,6 +138,9 @@ def _world(value):
     for field in ('fps',):
         value[field] = {key: int(item) for key, item in value[field].items()}
     value['frame_range'] = {key: int(item) for key, item in value['frame_range'].items()}
+    for force in value['forces']:
+        force['frame_range'] = {key:int(item) for key,item in force['frame_range'].items()}
+        force['seed'] = int(force['seed'])
     value['solver']['fixed_step'] = {key: int(item) for key, item in value['solver']['fixed_step'].items()}
     for key in ('substeps', 'iterations', 'seed'):
         value['solver'][key] = int(value['solver'][key])
@@ -570,12 +573,14 @@ def _admit_world(value, backend):
     solver, budget = world['solver'], world['budgets']
     require(solver['backend'] == backend and solver['adapter_version'] == ADAPTER_VERSION,
             'PHYSICS_BACKEND', 'World must select this exact backend and adapter version.', category='invalid-input')
-    require(set(solver['required_categories']) == {'rigid-body'} and not world['components'] and not world['joints'] and not world['forces'] and not world['events'],
+    require(set(solver['required_categories']) == {'rigid-body'} and not world['components'] and not world['joints'] and not world['events'],
             'PHYSICS_CAPABILITY_UNAVAILABLE', 'Only uncoupled rigid-body worlds are implemented in this adapter.', category='capability-gap')
     require(solver['reproducibility'] in ('not-guaranteed', 'verified-cache-replay'),
             'PHYSICS_REPRODUCIBILITY', 'Recomputation is not promised deterministic; request verified cache replay or not-guaranteed.', category='capability-gap')
     stability = solver.get('stability', {})
     supported = {'contact_penetration_tolerance', 'max_linear_velocity', 'max_angular_velocity'} if backend == 'pybullet' else set()
+    require(backend != 'pybullet' or all(stability.get(key,50) <= 50 for key in ('max_linear_velocity','max_angular_velocity')),
+            'PHYSICS_STABILITY_UNSUPPORTED','This native adapter supports at most 50 m/s and 50 rad/s; higher limits could conceal native velocity clamping.',category='capability-gap')
     require(not (set(stability)-supported), 'PHYSICS_STABILITY_UNSUPPORTED',
             'Requested stability controls are unsupported by this backend: '+str(sorted(set(stability)-supported)), category='capability-gap')
     require(world['frame_range']['start'] == 0 and 2 <= world['frame_range']['end'] <= MAX_FRAMES,
@@ -599,10 +604,17 @@ def _admit_world(value, backend):
         require(material['collision_margin'] == 0, 'PHYSICS_MARGIN_UNSUPPORTED',
                 'Nonzero additional contact skin has not been verified; native margin property storage is not physical separation support.',category='capability-gap')
     for body in world['bodies']:
-        require(len(body['id'].encode()) <= 63 and body['category'] == 'rigid-body' and body['mode'] in ('dynamic', 'static') and body['parent'] is None and body['animation'] is None,
-                'PHYSICS_BODY_UNSUPPORTED', 'Only unparented static/dynamic bodies with native names <=63 bytes are implemented.', category='capability-gap')
-        require(not any(body['linear_velocity'] + body['angular_velocity'] + body['mass']['center_of_mass']),
-                'PHYSICS_BODY_UNSUPPORTED', 'Initial velocity and shifted center of mass are not silently approximated.', category='capability-gap')
+        require(len(body['id'].encode()) <= 63 and body['category'] == 'rigid-body' and body['mode'] in ('dynamic', 'static', 'kinematic') and body['parent'] is None,
+                'PHYSICS_BODY_UNSUPPORTED', 'Only unparented static/dynamic/kinematic rigid bodies with native names <=63 bytes are implemented.', category='capability-gap')
+        require(backend == 'pybullet' or not any(body['linear_velocity'] + body['angular_velocity'] + body['mass']['center_of_mass']),
+                'PHYSICS_BODY_UNSUPPORTED', 'Blender direct initial velocity and shifted center of mass lack an admitted native API.', category='capability-gap')
+        require(all(math.sqrt(sum(x*x for x in body[key])) <= 50 for key in ('linear_velocity','angular_velocity')) and max(map(abs,body['mass']['center_of_mass'])) <= 1000,
+                'PHYSICS_SETTINGS', 'Initial speed must be <=50 m/s, angular speed <=50 rad/s, and COM within native bounds.', category='invalid-input')
+        require(body['mode'] != 'kinematic' or not any(body['mass']['center_of_mass']), 'PHYSICS_BODY_UNSUPPORTED',
+                'The bounded kinematic profile requires a centered zero-mass inertial frame.',category='capability-gap')
+        if backend == 'pybullet' and 'sleep' in body:
+            require(not {'linear_threshold','angular_threshold'}.intersection(body['sleep']),
+                    'PHYSICS_SLEEP_UNSUPPORTED', 'PyBullet API exposes activation states but not configurable native sleep thresholds.', category='capability-gap')
         require(max(map(abs, body['transform']['translation'])) <= 10000 and body['mass']['kilograms'] <= 1e6,
                 'PHYSICS_SETTINGS', 'Position/mass exceeds documented native bounds.', category='invalid-input')
         require(len(body['colliders']) == 1, 'PHYSICS_SHAPE_UNSUPPORTED', 'Exactly one box/sphere collider per body is supported.', category='capability-gap')
@@ -616,14 +628,53 @@ def _admit_world(value, backend):
         if body['mode'] == 'dynamic':
             require(body['mass']['kilograms'] >= .001, 'PHYSICS_MASS_UNSUPPORTED',
                     'Blender rigid-body mass has a 0.001kg lower bound.', category='capability-gap')
+            tensor=body['mass']['inertia'];scale=max(abs(x) for row in tensor for x in row)
+            a,b,c=[x/scale for x in tensor[0]];_,d,e=[x/scale for x in tensor[1]];_,_,f=[x/scale for x in tensor[2]]
+            determinant=a*d*f+2*b*c*e-a*e*e-d*c*c-f*b*b
+            require(scale*determinant/(a+d+f)**2 >= 1e-12 and determinant/(a+d+f)**2 >= 1e-10, 'PHYSICS_INERTIA_UNSUPPORTED',
+                    'Native tensor needs minimum principal inertia at least 1e-12 kg m² and a conservative bounded condition ratio.',category='capability-gap')
             expected = _primitive_inertia(body)
-            for i in range(3):
+            for i in range(3) if backend == 'blender' else []:
                 for j in range(3):
                     observed = body['mass']['inertia'][i][j]
                     target = expected[i] if i == j else 0.
                     require(abs(observed-target) <= max(expected)*1e-6,
                             'PHYSICS_INERTIA_UNSUPPORTED', 'Requested inertia differs from the native uniform primitive.', category='capability-gap')
+    _admit_rigid_controls(world, backend)
     return world, math.ceil(steps_per_frame)
+
+
+
+def _admit_rigid_controls(world, backend):
+    dynamic = {body['id'] for body in world['bodies'] if body['mode'] == 'dynamic'}
+    require(len(world['forces']) <= 128, 'PHYSICS_RESOURCE_LIMIT', 'At most 128 explicit force controls are admitted.')
+    effective = _ratio(world['solver']['fixed_step']) / world['solver']['substeps']
+    fps = _ratio(world['fps'])
+    control_steps = timing_clock(world)['solver_steps']
+    require(sum(len(force['bodies']) for force in world['forces']) * control_steps <= 5_000_000,
+            'PHYSICS_RESOURCE_LIMIT', 'Aggregate native force/body/step operation budget exceeded.',category='resource-exhaustion')
+    for force in world['forces']:
+        require(force['frame_range']['start'] < world['frame_range']['end']-1, 'PHYSICS_FORCE_TIME_UNSUPPORTED',
+                'Physical controls must start before the final completed output sample.',category='capability-gap')
+        application = force.get('application', 'world-point')
+        require(set(force['bodies']) <= dynamic and force['type'] in ('force','torque','impulse','angular-impulse'),
+                'PHYSICS_FORCE_UNSUPPORTED', 'Native controls apply only to dynamic rigid bodies and explicit physical wrenches.', category='capability-gap')
+        require(force['categories'] == ['rigid-body'] and force['seed'] == 0 and force['strength'] <= 1e6 and
+                max(map(abs,force['vector'])) <= 1e6 and max(map(abs,force['point'])) <= 10000 and
+                max(abs(x*force['strength']) for x in force['vector']) <= 1e6,
+                'PHYSICS_FORCE_UNSUPPORTED', 'Native physical control exceeds bounded nonstochastic profile.', category='capability-gap')
+        if application == 'center':
+            require(force['point'] == [0,0,0], 'PHYSICS_FORCE_UNSUPPORTED', 'Center application requires zero unused point.',category='capability-gap')
+        if force['type'] in ('torque','angular-impulse'):
+            require(force['point'] == [0,0,0] and application == 'center', 'PHYSICS_FORCE_UNSUPPORTED',
+                    'Torque controls must explicitly use center and zero unused point.', category='capability-gap')
+        if force['type'] in ('impulse','angular-impulse'):
+            require(force['frame_range']['end'] == force['frame_range']['start']+1 and
+                    (Fraction(force['frame_range']['start'],1)/fps/effective).denominator == 1,
+                    'PHYSICS_FORCE_TIME_UNSUPPORTED', 'A discrete impulse occupies exactly one native step at an aligned frame boundary.', category='capability-gap')
+        if backend == 'blender':
+            require(force['type'] == 'force' and application == 'center' and force['point'] == [0,0,0] and set(force['bodies']) == dynamic,
+                    'PHYSICS_FORCE_UNSUPPORTED', 'Blender native effectors expose global central force only; off-center wrenches, torque and impulse are unavailable.', category='capability-gap')
 
 
 def _source_admission(root, world, project_manifest):
@@ -713,6 +764,17 @@ def _source_admission(root, world, project_manifest):
             vertices += len(points)
             triangles += len(mesh.triangles)
             used.add(reference['id'])
+        for body in world['bodies']:
+            if body['mode'] == 'kinematic':
+                from physics_rigid import compile_motion
+                reference = assets[body['animation']]
+                clip = bundle['documents'].get(reference['path'])
+                require(clip is not None and bundle['inventory'][reference['path']]['sha256'] == reference['sha256'] and
+                        clip['version'] == reference['version'] and clip['provenance']['fixture'] == scene['provenance']['fixture'],
+                        'PHYSICS_SOURCE_IDENTITY', 'Kinematic clip must belong to the exact validated native closure.')
+                meshes[body['id']]['motion'] = compile_motion(body, clip, world,
+                    lambda okay,message: require(okay,'PHYSICS_MOTION_UNSUPPORTED',message,category='capability-gap'))
+                used.add(reference['id'])
         require(used == set(assets), 'PHYSICS_UNUSED_ASSET', 'Every declared world asset must be used by its native body.', category='invalid-input')
         require(vertices <= world['budgets']['vertices'] and triangles <= world['budgets']['triangles'],
                 'PHYSICS_RESOURCE_LIMIT', 'Actual decoded mesh counts exceed physical admission.', category='resource-exhaustion')
@@ -943,7 +1005,7 @@ class BlenderBackend:
             native_reopen=replay, solver_report=report,
             native_consumption_control=control,
             native_continuation='unsupported-clean-restart-only',
-            unsupported=['joints', 'forces', 'initial-velocity', 'sensors', 'mask-filtering', 'other-categories'],
+            unsupported=['joints','off-center-forces','torques','impulses','initial-velocity','shifted-center-of-mass','custom-inertia','sensors','mask-filtering','other-categories'],
             restart='clean-restart-only', artistic_review='not-performed')))
         files = tuple(_inventory(root))
         measured['output_bytes'] = sum(item['bytes'] for item in files)
@@ -980,7 +1042,7 @@ class BlenderBackend:
             materials = {item['id']:item for item in world['materials']}
             for observed, body in zip(report['actual_bodies'],world['bodies']):
                 material = materials[body['colliders'][0]['material']]
-                require(observed.get('id') == body['id'] and observed.get('type') == ('ACTIVE' if body['mode']=='dynamic' else 'PASSIVE') and
+                require(observed.get('id') == body['id'] and observed.get('type') == ('PASSIVE' if body['mode']=='static' else 'ACTIVE') and
                         observed.get('shape') == body['colliders'][0]['shape']['type'].upper(),
                         'PHYSICS_BAKE_FAILED', 'Native authority/shape differs from the physical world.', category='backend-crash')
                 values = {'effective_mass':body['mass']['kilograms'], 'friction':material['dynamic_friction'],
@@ -1045,7 +1107,9 @@ class BlenderBackend:
 
     def probe(self, *, smoke=False):
         require(type(smoke) is bool, 'PHYSICS_REQUEST', 'smoke must be an explicit boolean.', category='invalid-input')
-        limitations = ('Only sphere/box OBJ rigid bodies are admitted; all other declared features fail closed.',
+        limitations = ('Only sphere/box OBJ collision shapes are admitted; other shape/category profiles fail closed.',
+                      'Central global effectors, native kinematic translation and sleep controls are implemented; basic readiness smoke does not exercise them.',
+                      'Direct off-center forces, torque, impulses, initial velocity, shifted COM and custom inertia lack an admitted Blender API.',
                       'Nonzero additional contact skin is unsupported; native shape margin property is not evidence of extra separation.',
                       'CPU Bullet only; GPU rendering hardware does not establish physics acceleration.',
                       'Blender does not expose its embedded Bullet version separately.',
@@ -1189,13 +1253,13 @@ class PyBulletBackend(BlenderBackend):
                 fields={'code','world_sha256','solver_step','solver_time','setting','limit','observed'}
                 require(type(failure) is dict and set(failure)==fields and failure['code']=='PHYSICS_NUMERICAL_INSTABILITY' and
                         failure['world_sha256']==prepared.world_sha256 and type(failure['solver_step']) is int and
-                        1<=failure['solver_step']<=timing_clock(world)['solver_steps'] and failure['setting'] in world['solver'].get('stability',{}) and
-                        failure['limit']==world['solver']['stability'][failure['setting']] and type(failure['observed']) in (int,float) and failure['observed']>failure['limit'],
+                        0<=failure['solver_step']<=timing_clock(world)['solver_steps'] and failure['setting'] in ('max_linear_velocity','max_angular_velocity') and
+                        failure['limit']==min(world['solver'].get('stability',{}).get(failure['setting'],50.),50.) and type(failure['observed']) in (int,float) and failure['observed']>failure['limit'],
                         'PHYSICS_BACKEND_CRASH','Malformed numerical failure observations.',category='backend-crash')
                 time_value=failure['solver_step']*_ratio(world['solver']['fixed_step'])/world['solver']['substeps']
                 require(failure['solver_time']==rational(time_value),'PHYSICS_BACKEND_CRASH','Failure solver clock differs.',category='backend-crash')
                 error=BackendError('PHYSICS_NUMERICAL_INSTABILITY','Observed '+failure['setting']+' exceeded limit at solver step '+str(failure['solver_step'])+' time '+str(time_value),
-                    category='numerical-instability',last_valid_frame=max(0,math.floor((time_value-_ratio(world['solver']['fixed_step'])/world['solver']['substeps'])*_ratio(world['fps']))))
+                    category='numerical-instability',last_valid_frame=None if failure['solver_step']==0 else max(0,math.floor((time_value-_ratio(world['solver']['fixed_step'])/world['solver']['substeps'])*_ratio(world['fps']))))
                 error.report.update(solver_step=failure['solver_step'],solver_time=failure['solver_time'],setting=failure['setting'],limit=failure['limit'],observed=failure['observed'])
                 raise error
             raise
@@ -1235,7 +1299,8 @@ class PyBulletBackend(BlenderBackend):
         limitations=('Optional PyBullet3.2.7; not installed or imported by normal2D workflows.',
                      'DIRECT CPU only; distinct numerical behavior from Blender.',
                      'Only box/sphere rigid bodies, fixed stepping and actual contacts are implemented.',
-                     'Forces, impulses, queries, joints and solver checkpoint continuation remain unsupported.',
+                     'Bounded native force/torque/one-step integrated impulses, initial velocities and inertial frames are implemented; basic readiness smoke does not exercise these controls.',
+                     'Queries, joints and solver checkpoint continuation remain unsupported; explicit sleep thresholds are unavailable.',
                      'Cache export contains exact sampled transforms/contacts, not native solver checkpoint state.')
         try:
             identity=self._discover()
@@ -1307,14 +1372,43 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
     for actual,body in zip(report['actual_bodies'],world['bodies']):
         material=materials[body['colliders'][0]['material']]
         shape=body['colliders'][0]['shape']
-        expected_margin=shape['radius'] if shape['type']=='sphere' else material['collision_margin']
+        controls=report.get('rigid_controls',{}).get('bodies',[None]*len(world['bodies']))[world['bodies'].index(body)]
+        wrapped=controls is not None and (any(controls['inertial_position']) or abs(abs(controls['inertial_rotation'][3])-1)>1e-10)
+        expected_margin=(0 if wrapped else shape['radius']) if shape['type']=='sphere' else material['collision_margin']
+        expected_semantics=('transformed primitive wrapper margin' if wrapped else 'inherent sphere radius') if shape['type']=='sphere' else 'explicit box collision margin'
+        require(actual['margin_semantics']==expected_semantics,'PHYSICS_BAKE_FAILED','Native margin semantics differ from the admitted child representation.',category='backend-crash')
+        require(type(actual.get('center_of_mass')) is list and len(actual['center_of_mass'])==3 and all(type(a) in (int,float) and math.isfinite(a) and abs(a-b)<=1e-6 for a,b in zip(actual['center_of_mass'],body['mass']['center_of_mass'])),
+                'PHYSICS_BAKE_FAILED','DIRECT observed center of mass differs.',category='backend-crash')
         require(actual.get('id')==body['id'] and all(type(actual.get(key)) in (int,float) and math.isfinite(actual[key]) and
                     abs(actual[key]-expected)<=max(1e-9,abs(expected))*1e-6 for key,expected in
                     [('mass',body['mass']['kilograms']),('friction',material['dynamic_friction']),('restitution',material['restitution']),('native_margin',expected_margin)]),
                 'PHYSICS_BAKE_FAILED','DIRECT effective mass/friction/restitution/margin differs.',category='backend-crash')
-        expected_inertia=[body['mass']['inertia'][i][i] for i in range(3)]
+        if 'rigid_controls' in report:
+            import numpy as np
+            from rig_math import qmatrix, qmul
+            controls=report['rigid_controls']['bodies'][world['bodies'].index(body)]
+            rotation=qmatrix(controls['inertial_rotation'])
+            collision=controls['collision'];native_shape=body['colliders'][0]['shape']
+            expected_dimensions=[native_shape['radius']]*3 if native_shape['type']=='sphere' else native_shape['size']
+            require(collision['type']==native_shape['type'] and np.allclose(collision['dimensions'],expected_dimensions,rtol=1e-6,atol=0) and
+                    np.max(np.abs(rotation @ np.asarray(collision['translation'])+np.asarray(body['mass']['center_of_mass'])))<=1e-6 and
+                    np.allclose(qmatrix(qmul(controls['inertial_rotation'],collision['rotation'])),np.eye(3),rtol=0,atol=1e-6),
+                    'PHYSICS_BAKE_FAILED','Native collision child/frame differs from the unchanged declared primitive.',category='backend-crash')
+            tensor=rotation @ np.diag(controls['principal_inertia']) @ rotation.T
+            requested=np.asarray(body['mass']['inertia'])
+            if body['mode']=='dynamic':
+                moments,axes=np.linalg.eigh(requested)
+                relative=(axes.T @ tensor @ axes) / np.sqrt(np.outer(moments,moments))
+                matches=all(x>0 for x in controls['principal_inertia']) and float(np.max(np.abs(relative-np.eye(3)))) <= 1e-5
+            else:
+                matches=all(x==0 for x in controls['principal_inertia']) and not np.any(tensor)
+            require(matches, 'PHYSICS_BAKE_FAILED',
+                    'Native principal inertia/frame does not reconstruct every requested relative inertia direction.',category='backend-crash')
+            expected_inertia=controls['principal_inertia']
+        else:
+            expected_inertia=[body['mass']['inertia'][i][i] for i in range(3)]
         require(type(actual.get('inertia')) is list and len(actual['inertia'])==3 and
-                all(type(a) in (int,float) and math.isfinite(a) and abs(a-b)<=max(1e-9,abs(b))*1e-5 for a,b in zip(actual['inertia'],expected_inertia)),
+                all(type(a) in (int,float) and math.isfinite(a) and abs(a-b)<=max(1e-300,abs(b))*1e-5 for a,b in zip(actual['inertia'],expected_inertia)),
                 'PHYSICS_BAKE_FAILED','DIRECT native inertia differs from the admitted primitive.',category='backend-crash')
 
 

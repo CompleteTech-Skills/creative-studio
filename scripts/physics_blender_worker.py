@@ -55,9 +55,12 @@ def checked_job(path):
             value[key] = item
         return value
     value = json.loads(payload, object_pairs_hook=pairs)
-    if set(value) != {'protocol', 'mode', 'world', 'world_sha256', 'meshes', 'worker_sha256', 'fixture'}:
+    keys = {'protocol', 'mode', 'world', 'world_sha256', 'meshes', 'worker_sha256', 'fixture'}
+    if value.get('mode') in ('render-replay', 'reopen-replay'):
+        keys.add('replay')
+    if set(value) != keys:
         raise ValueError('Unknown or missing worker input.')
-    if value['protocol'] != PROTOCOL or value['mode'] not in ('simulate', 'reopen', 'consumption-control'):
+    if value['protocol'] != PROTOCOL or value['mode'] not in ('simulate', 'reopen', 'consumption-control', 'render-replay', 'reopen-replay'):
         raise ValueError('Unsupported worker operation.')
     if hashlib.sha256(canonical(value['world'])).hexdigest() != value['world_sha256']:
         raise ValueError('World digest differs from admitted configuration.')
@@ -66,7 +69,7 @@ def checked_job(path):
     world = value['world']
     if len(world['bodies']) > 32 or not 1 <= world['frame_range']['end'] <= 1024:
         raise ValueError('Worker body/frame bound exceeded.')
-    if world['frame_range']['start'] != 0 or world['components'] or world['joints'] or world['forces'] or world['events']:
+    if world['frame_range']['start'] != 0 or world['components'] or world['joints'] or world['events']:
         raise ValueError('This worker supports only zero-origin, uncoupled rigid-body jobs.')
     return path.resolve().parent, value
 
@@ -158,19 +161,24 @@ def samples(scene, bodies, frames):
     return result
 
 
-def preview(root,scene,bodies):
+def preview(root,scene,bodies, replay_framing=None):
     """A small, explicitly neutral diagnostic render, never art approval."""
     points=[bpy.data.objects[body['id']].evaluated_get(bpy.context.evaluated_depsgraph_get()).matrix_world.translation.copy() for body in bodies]
     center=sum(points,Vector())/len(points)
     extent=max(1.,max((point-center).length for point in points))
     # Include actual mesh extents, so a broad floor is not cropped to its origin.
     extent=max(extent,max(max(bpy.data.objects[body['id']].dimensions) for body in bodies))
+    if replay_framing is not None:
+        center, extent, replay_ortho_scale = replay_framing
     camera_data=bpy.data.cameras.new('physics-diagnostic-camera')
     camera=bpy.data.objects.new('physics-diagnostic-camera',camera_data)
     scene.collection.objects.link(camera)
     camera.location=center+Vector((1.,-1.4,1.1)).normalized()*extent*2
     camera.rotation_euler=(center-camera.location).to_track_quat('-Z','Y').to_euler()
     camera_data.type='ORTHO';camera_data.ortho_scale=extent*1.8
+    if replay_framing is not None:
+        camera_data.ortho_scale=replay_ortho_scale
+        camera_data.clip_end=max(1000., extent*10.)
     scene.camera=camera
     light_data=bpy.data.lights.new('physics-diagnostic-light','AREA')
     light=bpy.data.objects.new('physics-diagnostic-light',light_data)
@@ -186,7 +194,19 @@ def preview(root,scene,bodies):
     for body in bodies:
         material=bpy.data.materials.new(body['id']+'-neutral-diagnostic')
         material.diffuse_color=(.1,.4,.8,1) if body['mode']=='dynamic' else (.35,.35,.35,1)
+        if replay_framing is not None:
+            material.diffuse_color=(.005,.02,.65,1) if body['mode']=='dynamic' else (.22,.22,.22,1)
+            material.use_nodes=True
+            surface=material.node_tree.nodes.get('Principled BSDF')
+            surface.inputs['Base Color'].default_value=material.diffuse_color
+            surface.inputs['Roughness'].default_value=.8
+            surface.inputs['Specular IOR Level'].default_value=.15
         bpy.data.objects[body['id']].data.materials.append(material)
+    if replay_framing is not None:
+        scene.view_settings.view_transform='Standard'
+        scene.view_settings.look='None'
+        scene.view_settings.exposure=0.
+        scene.view_settings.gamma=1.
     scene.render.engine='CYCLES';scene.cycles.device='CPU';scene.cycles.samples=4
     scene.render.resolution_x=128;scene.render.resolution_y=128;scene.render.resolution_percentage=100
     scene.render.image_settings.file_format='PNG';scene.render.image_settings.color_mode='RGBA'
@@ -210,7 +230,7 @@ def create(root, job):
     scene.gravity = (BASIS.to_3x3() @ Vector(world['gravity']))[:]
     materials = {item['id']: item for item in world['materials']}
     for body in world['bodies']:
-        if body['category'] != 'rigid-body' or body['mode'] not in ('static', 'dynamic'):
+        if body['category'] != 'rigid-body' or body['mode'] not in ('static', 'dynamic', 'kinematic'):
             raise ValueError('Unsupported body authority or category.')
         proxy = body['colliders'][0]
         if len(body['colliders']) != 1 or proxy['shape']['type'] not in ('sphere', 'box'):
@@ -235,7 +255,8 @@ def create(root, job):
         obj.select_set(True)
         bpy.ops.rigidbody.object_add()
         rb = obj.rigid_body
-        rb.type = 'ACTIVE' if body['mode'] == 'dynamic' else 'PASSIVE'
+        rb.type = 'PASSIVE' if body['mode'] == 'static' else 'ACTIVE'
+        rb.kinematic = body['mode'] == 'kinematic'
         rb.collision_shape = 'SPHERE' if proxy['shape']['type'] == 'sphere' else 'BOX'
         rb.use_margin = True
         material = materials[proxy['material']]
@@ -244,10 +265,35 @@ def create(root, job):
         rb.linear_damping = material['linear_damping']
         rb.angular_damping = material['angular_damping']
         rb.collision_margin = material['collision_margin']
-        rb.use_deactivation = False
+        sleep = body.get('sleep',dict(enabled=False,initially_sleeping=False,linear_threshold=.4,angular_threshold=.5))
+        rb.use_deactivation = sleep['enabled']
+        rb.use_start_deactivated = sleep['initially_sleeping']
+        rb.deactivate_linear_velocity = sleep.get('linear_threshold',.4)
+        rb.deactivate_angular_velocity = sleep.get('angular_threshold',.5)
+        if body['mode'] == 'kinematic':
+            motion=source['motion']
+            for key in motion['keys']:
+                frame=1+key['frame']*world['fps']['numerator']*motion['fps']['denominator']/(world['fps']['denominator']*motion['fps']['numerator'])
+                obj.location=BASIS.to_3x3() @ Vector(key['value'])
+                obj.keyframe_insert(data_path='location',frame=frame)
+            for curve in obj.animation_data.action.fcurves:
+                for key in curve.keyframe_points:key.interpolation='LINEAR' if motion['interpolation']=='linear' else 'CONSTANT'
+            obj.location=BASIS.to_3x3() @ Vector(body['transform']['translation'])
         if body['mode'] == 'dynamic':
             rb.mass = body['mass']['kilograms']
         obj.select_set(False)
+    effectors=[]
+    for force in world['forces']:
+        vector=BASIS.to_3x3() @ Vector([x*force['strength'] for x in force['vector']])
+        bpy.ops.object.effector_add(type='WIND', location=(0,0,0))
+        effector=bpy.context.object;effector.name='physical-force-'+force['id']
+        effector.rotation_euler=vector.to_track_quat('Z','Y').to_euler() if vector.length else (0,0,0)
+        field=effector.field;field.shape='PLANE';field.flow=0;field.noise=0;field.falloff_power=0
+        for frame,strength in [(1,0),(force['frame_range']['start']+2,vector.length*scene.render.fps),(force['frame_range']['end']+2,0)]:
+            field.strength=strength;field.keyframe_insert(data_path='strength',frame=frame)
+        for curve in effector.animation_data.action.fcurves:
+            for key in curve.keyframe_points:key.interpolation='CONSTANT'
+        effectors.append(dict(id=force['id'],object=effector.name,type=field.type,shape=field.shape,flow=field.flow,falloff_power=field.falloff_power,strength_per_newton=scene.render.fps))
     physics = scene.rigidbody_world
     if physics is None:
         raise ValueError('Native rigid-body world was not created.')
@@ -285,9 +331,15 @@ def create(root, job):
         seed_policy='recorded identity only; no stochastic parameter is used by this adapter',
         quality_policy='explicit admitted substeps/iterations; quality label does not retune solver',
         sphere_margin_policy='analytic sphere radius is inherent; nonzero additional skin is rejected',
+        rigid_controls=dict(version=1,force_policy='Blender native WIND plane effector central force only',forces=world['forces'],effectors=effectors,
+            bodies=[dict(id=body['id'],mode=body['mode'],kinematic=bpy.data.objects[body['id']].rigid_body.kinematic,
+                sleep=dict(enabled=bpy.data.objects[body['id']].rigid_body.use_deactivation,
+                    initially_sleeping=bpy.data.objects[body['id']].rigid_body.use_start_deactivated,
+                    linear_threshold=bpy.data.objects[body['id']].rigid_body.deactivate_linear_velocity,
+                    angular_threshold=bpy.data.objects[body['id']].rigid_body.deactivate_angular_velocity)) for body in world['bodies']]),
         actual_bodies=[dict(id=body['id'], type=bpy.data.objects[body['id']].rigid_body.type,
             shape=bpy.data.objects[body['id']].rigid_body.collision_shape,
-            effective_mass=body['mass']['kilograms'] if body['mode']=='static' else bpy.data.objects[body['id']].rigid_body.mass,
+            effective_mass=body['mass']['kilograms'] if body['mode']!='dynamic' else bpy.data.objects[body['id']].rigid_body.mass,
             friction=bpy.data.objects[body['id']].rigid_body.friction,
             restitution=bpy.data.objects[body['id']].rigid_body.restitution,
             linear_damping=bpy.data.objects[body['id']].rigid_body.linear_damping,
@@ -324,6 +376,203 @@ def reopen(root, job):
                 maximum_replay_error=maximum, replay_tolerance=1e-5)
 
 
+def replay_byte_count(value):
+    """JSON Schema integer also permits finite integral-valued JSON floats."""
+    if (type(value) not in (int, float) or not 0 <= value <= 256*1024*1024 or
+        (type(value) is float and (not math.isfinite(value) or not value.is_integer()))):
+        raise ValueError('Unbounded or nonintegral replay source size.')
+    return int(value)
+
+
+def replay_inputs(root, job):
+    """Reject substitutions before loading our own generated .blend."""
+    replay = job['replay']
+    if set(replay) != {'cache_manifest_sha256', 'states_sha256', 'source_files',
+                       'project_manifest', 'source_backend', 'meshes_sha256'}:
+        raise ValueError('Unexpected replay binding.')
+    source = root/'source-cache'
+    payloads = {}
+    # Descriptor relative, no-follow reads, including every ancestor.
+    for item in replay['source_files']:
+        if set(item) != {'path', 'bytes', 'sha256'}:
+            raise ValueError('Invalid replay inventory.')
+        byte_count = replay_byte_count(item['bytes'])
+        parts = item['path'].split('/')
+        if any(part in ('', '.', '..') for part in parts) or item['path'].startswith('/'):
+            raise ValueError('Invalid replay source path.')
+        fd = os.open(source, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            for part in parts[:-1]:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                os.close(fd); fd = child
+            file_fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+            with os.fdopen(file_fd, 'rb') as stream:
+                import stat
+                before = os.fstat(stream.fileno())
+                if not stat.S_ISREG(before.st_mode) or before.st_size != byte_count:
+                    raise ValueError('Unbounded replay source.')
+                data = stream.read(byte_count+1)
+                after = os.fstat(stream.fileno())
+                if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns) or len(data) != byte_count or hashlib.sha256(data).hexdigest() != item['sha256']:
+                    raise ValueError('Replay source changed.')
+        finally:
+            os.close(fd)
+        if item['path'] in payloads:
+            raise ValueError('Duplicate replay source.')
+        payloads[item['path']] = data
+    manifest = json.loads(payloads['cache.json'])
+    if (hashlib.sha256(payloads['cache.json']).hexdigest() != replay['cache_manifest_sha256'] or
+        hashlib.sha256(payloads['states.json']).hexdigest() != replay['states_sha256'] or
+        manifest['backend'] != replay['source_backend'] or manifest['backend']['id'] != 'pybullet' or
+        manifest['world_sha256'] != job['world_sha256'] or
+        hashlib.sha256(payloads['world.json']).hexdigest() != job['world_sha256'] or
+        hashlib.sha256(canonical(job['meshes'])).hexdigest() != replay['meshes_sha256'] or
+        {item['path'] for item in manifest['files']} | {'cache.json'} != set(payloads)):
+        raise ValueError('Replay source identity mismatch.')
+    for item in manifest['files']:
+        if hashlib.sha256(payloads[item['path']]).hexdigest() != item['sha256'] or len(payloads[item['path']]) != item['bytes']:
+            raise ValueError('Replay manifest mismatch.')
+    states = json.loads(payloads['states.json'])
+    if states['world_sha256'] != job['world_sha256']:
+        raise ValueError('Replay states world mismatch.')
+    expected = list(range(job['world']['frame_range']['end']))
+    if [sample['frame'] for sample in states['samples']] != expected:
+        raise ValueError('Replay requires every integer cached frame.')
+    ids = [body['id'] for body in job['world']['bodies']]
+    for sample in states['samples']:
+        if [body['id'] for body in sample['bodies']] != ids:
+            raise ValueError('Replay body identity mismatch.')
+        for body in sample['bodies']:
+            if not all(math.isfinite(v) for v in body['translation']+body['rotation']):
+                raise ValueError('Nonfinite replay pose.')
+    return states
+
+
+def replay_scene(root, job):
+    states = replay_inputs(root, job)
+    bodies = job['world']['bodies']
+    images = []
+    if job['mode'] == 'render-replay':
+        bpy.ops.wm.read_factory_settings(use_empty=True)
+        bpy.context.preferences.filepaths.save_version = 0
+        scene = bpy.context.scene
+        scene.frame_start = 1
+        scene.frame_end = len(states['samples'])
+        scene['physics_scope'] = 'DIRECT solved-state replay; Blender rendering only'
+        scene['source_cache_sha256'] = job['replay']['cache_manifest_sha256']
+        scene['states_sha256'] = job['replay']['states_sha256']
+        scene['source_backend'] = canonical(job['replay']['source_backend']).decode('utf-8')
+        scene['interpolation_accuracy'] = 'not-established; only integer cached frames verified'
+        scene.render.fps = int(job['world']['fps']['numerator'])
+        scene.render.fps_base = float(job['world']['fps']['denominator'])
+        for body in bodies:
+            source = job['meshes'][body['id']]
+            if len(source['vertices']) > 4096 or len(source['triangles']) > 8192:
+                raise ValueError('Replay geometry bound exceeded.')
+            mesh = bpy.data.meshes.new(body['id']+'-mesh')
+            mesh.from_pydata([tuple(BASIS.to_3x3() @ Vector(v)) for v in source['vertices']], [], source['triangles'])
+            if mesh.validate(verbose=False):
+                raise ValueError('Replay mesh changed during native validation.')
+            mesh.update()
+            obj = bpy.data.objects.new(body['id'], mesh)
+            scene.collection.objects.link(obj)
+            obj.rotation_mode = 'QUATERNION'
+            for sample in states['samples']:
+                pose = next(item for item in sample['bodies'] if item['id'] == body['id'])
+                obj.location = BASIS.to_3x3() @ Vector(pose['translation'])
+                x,y,z,w = pose['rotation']
+                obj.rotation_quaternion = (BASIS @ Quaternion((w,x,y,z)).to_matrix().to_4x4() @ BASIS.transposed()).to_quaternion()
+                obj.keyframe_insert(data_path='location', frame=sample['frame']+1)
+                obj.keyframe_insert(data_path='rotation_quaternion', frame=sample['frame']+1)
+        scene.frame_set(1)
+        # Setup camera, lights and neutral materials exactly once.
+        # Transform all eight corners of each admitted mesh's local bounds at
+        # every solved pose. Thin floors retain their actual vertical extent.
+        import itertools
+        corners = {}
+        for body in bodies:
+            vertices = job['meshes'][body['id']]['vertices']
+            bounds = [(min(v[axis] for v in vertices), max(v[axis] for v in vertices)) for axis in range(3)]
+            corners[body['id']] = [Vector(point) for point in itertools.product(*bounds)]
+        view_rotation = (-Vector((1.,-1.4,1.1)).normalized()).to_track_quat('-Z','Y')
+        view_inverse = view_rotation.inverted()
+        projected_low = Vector((math.inf, math.inf, math.inf))
+        projected_high = Vector((-math.inf, -math.inf, -math.inf))
+        low = Vector((math.inf, math.inf, math.inf))
+        high = Vector((-math.inf, -math.inf, -math.inf))
+        for sample in states['samples']:
+            for pose in sample['bodies']:
+                origin = Vector(pose['translation'])
+                x,y,z,w = pose['rotation']
+                rotation = Quaternion((w,x,y,z))
+                for corner in corners[pose['id']]:
+                    point = BASIS.to_3x3() @ (origin + rotation @ corner)
+                    projected = view_inverse @ point
+                    for axis in range(3):
+                        projected_low[axis] = min(projected_low[axis], projected[axis])
+                        projected_high[axis] = max(projected_high[axis], projected[axis])
+                        low[axis] = min(low[axis], point[axis])
+                        high[axis] = max(high[axis], point[axis])
+        center = view_rotation @ ((projected_low+projected_high)*.5)
+        # Fixed square orthographic camera fits every transformed corner in
+        # screen space, with 12 percent margin across the full trajectory.
+        screen_span = max(projected_high.x-projected_low.x, projected_high.y-projected_low.y, 1.)
+        ortho_scale = screen_span*1.12
+        extent = max(1., (high-low).length*.5)
+        scene['replay_camera_scope'] = 'complete cached trajectory and transformed actual mesh bounds'
+        image = preview(root, scene, bodies, replay_framing=(center, extent, ortho_scale))
+        frames = sorted({0, len(states['samples'])//2, len(states['samples'])-1})
+        image['frame'] = 0; image['scope'] = 'DIRECT solved-state replay; neutral diagnostic only'
+        images.append(image)
+        for frame in frames[1:]:
+            scene.frame_set(frame+1)
+            name = 'preview-%04d.png' % frame
+            scene.render.filepath = str(root/name)
+            if bpy.ops.render.render(write_still=True) != {'FINISHED'}:
+                raise ValueError('Replay render failed.')
+            images.append(dict(image, frame=frame, path=name, sha256=hashlib.sha256((root/name).read_bytes()).hexdigest()))
+        bpy.ops.wm.save_as_mainfile(filepath=str(root/'scene.blend'))
+    else:
+        if (root/'scene.blend').is_symlink():
+            raise ValueError('Unsafe replay scene.')
+        bpy.ops.wm.open_mainfile(filepath=str(root/'scene.blend'), load_ui=False, use_scripts=False)
+        scene = bpy.context.scene
+    if (scene.rigidbody_world is not None or scene.get('source_cache_sha256') != job['replay']['cache_manifest_sha256'] or
+        scene.get('states_sha256') != job['replay']['states_sha256'] or
+        scene.get('source_backend') != canonical(job['replay']['source_backend']).decode('utf-8') or
+        {obj.name for obj in scene.objects if obj.type == 'MESH'} != {body['id'] for body in bodies}):
+        raise ValueError('Saved replay native identity differs.')
+    for body in bodies:
+        obj = bpy.data.objects[body['id']]
+        source = job['meshes'][body['id']]
+        if obj.rigid_body is not None or len(obj.data.vertices) != len(source['vertices']) or len(obj.data.polygons) != len(source['triangles']):
+            raise ValueError('Replay geometry/native solver identity differs.')
+        for vertex, expected in zip(obj.data.vertices, source['vertices']):
+            if (vertex.co - BASIS.to_3x3() @ Vector(expected)).length > 1e-6:
+                raise ValueError('Reopened actual mesh vertices differ.')
+        if [list(face.vertices) for face in obj.data.polygons] != source['triangles']:
+            raise ValueError('Reopened actual mesh topology differs.')
+    actual = samples(scene, bodies, reversed(range(len(states['samples']))))
+    maximum = 0.
+    for sample in actual:
+        reference = states['samples'][sample['frame']]
+        for pose, expected in zip(sample['bodies'], reference['bodies']):
+            maximum = max(maximum, max(abs(a-b) for a,b in zip(pose['translation'], expected['translation'])))
+            # q and -q encode the identical rotation.
+            maximum = max(maximum, min(max(abs(a-b) for a,b in zip(pose['rotation'], expected['rotation'])),
+                                       max(abs(a+b) for a,b in zip(pose['rotation'], expected['rotation']))))
+    if maximum > 1e-5:
+        raise ValueError('Native replay cached poses differ.')
+    return dict(ok=True, operation=job['mode'], backend=backend_identity(),
+                verified_frames=len(actual), maximum_replay_error=maximum,
+                source_cache_sha256=job['replay']['cache_manifest_sha256'],
+                states_sha256=job['replay']['states_sha256'], previews=images,
+                worker_sha256=job['worker_sha256'], world_sha256=job['world_sha256'],
+                source_backend=job['replay']['source_backend'],
+                blend_sha256=hashlib.sha256((root/'scene.blend').read_bytes()).hexdigest(),
+                scope='DIRECT solved-state replay; Blender rendering only', artistic_review='not-performed')
+
+
 def main():
     root, job = checked_job(sys.argv[sys.argv.index('--') + 1])
     if tuple(bpy.app.version) != (4, 5, 3) or bpy.app.build_hash.decode('ascii') != '67807e1800cc':
@@ -332,6 +581,8 @@ def main():
         result = create(root, job)
     elif job['mode'] == 'reopen':
         result = reopen(root, job)
+    elif job['mode'] in ('render-replay', 'reopen-replay'):
+        result = replay_scene(root, job)
     else:
         result = consumption_control(root, job)
     emit(root, result)
