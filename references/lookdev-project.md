@@ -58,3 +58,32 @@ material/light controls, shared renderer budgets/cache/resume integration, GLB
 and Blender delivery, backend comparisons and evidence-bound visual review are
 separate mandatory requirements. Passing source validation/native export does
 not establish these behaviors.
+
+## Scene and renderer source closure API
+
+`load_closure(root, exact_references)` captures a bounded transitive native
+closure without requiring `lookdev-project.json`. `Project.capture_closure(ref)`
+selects the same subset from already captured project bytes. Both return a
+`CapturedClosure` exposing:
+
+- `registry`: canonical LookDev Registry with resolved dependencies.
+- `references`: canonicalized requested root references.
+- `all_references`: every canonical resource reference in the closure.
+- `sources`: root-relative path to immutable captured source/payload bytes.
+- `inventory`: exact source sizes and SHA-256 hashes.
+- `sha256`: canonical inventory hash.
+- `canonical_reference(ref)`: canonical reference for an admitted source pin.
+
+An existing Scene3D material root reference may use `kind: "material"`; the
+loader checks its exact ID, version, path and original-byte hash, requires an
+actual native material base/instance/variant, and returns that actual native
+kind. Transitive LookDev references always use native kinds. No other kind alias
+is inferred. This canonicalization is an explicit adapter boundary and does not
+change any source bytes or hashes.
+
+Scene snapshots should include `closure.sources` and their complete inventory,
+including all texture payloads and inherited material documents. Passing only a
+material's root JSON file omits dependencies and cannot establish portable
+rendering. Geometry primitive/material-slot projection remains owned by Scene3D;
+this API resolves resources and does not invent material assignments. Provenance
+and attribution remain verbatim in the retained source documents.

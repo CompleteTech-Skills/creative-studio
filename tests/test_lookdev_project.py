@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from lookdev import Project, INDEX
+from lookdev import Project, INDEX, load_closure
 from lookdev_contracts import canonical_bytes
 from rig_errors import RigError
 from test_lookdev_contracts import material, reference, texture, image_bytes
@@ -134,3 +134,32 @@ class ProjectTests(unittest.TestCase):
                 Project(self.root).export_native(destination)
         self.assertEqual((destination/'sentinel').read_text(),'user work')
         self.assertEqual(list(destination.iterdir()),[destination/'sentinel'])
+
+    def test_scene_material_closure_retains_only_transitive_exact_sources(self):
+        tex=texture()
+        mat=material()
+        texture_ref=reference(tex,'albedo-1.0.0.json')
+        mat['dependencies']=[texture_ref]
+        mat['texture_slots']={'base_color':dict(texture=texture_ref,channels='rgba',texcoord=0,
+            offset=[0,0,0],scale=[1,1,1],rotation_radians=0,strength=1)}
+        unrelated=material();unrelated['id']='unrelated'
+        self.write_project([mat,tex,unrelated],{'textures/albedo.png':image_bytes()})
+        exact=reference(mat,'ceramic-1.0.0.json')
+        scene_ref=dict(exact,kind='material')
+        closure=load_closure(self.root,[scene_ref])
+        self.assertEqual(closure.references,[exact])
+        self.assertEqual(closure.canonical_reference(scene_ref),exact)
+        self.assertEqual(set(closure.sources),{'ceramic-1.0.0.json','albedo-1.0.0.json','textures/albedo.png'})
+        self.assertEqual(closure.registry.effective_material(exact)['texture_slots']['base_color']['texture'],texture_ref)
+        selected=Project(self.root).capture_closure(exact)
+        self.assertEqual(selected.sha256,closure.sha256)
+        self.assertEqual(selected.sources,closure.sources)
+        (self.root/'ceramic-1.0.0.json').write_text('{}')
+        self.assertEqual(closure.registry.get(exact),mat)
+        with self.assertRaises(RigError):load_closure(self.root,[scene_ref])
+
+    def test_scene_alias_rejects_wrong_kind_or_hash(self):
+        exact=reference(material(),'ceramic-1.0.0.json')
+        for incorrect in (dict(exact,kind='light'),dict(exact,sha256='0'*64),dict(exact,id='other')):
+            with self.assertRaises(RigError):load_closure(self.root,[incorrect])
+        with self.assertRaises(RigError):load_closure(self.root,[])

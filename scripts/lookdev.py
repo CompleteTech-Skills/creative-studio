@@ -16,7 +16,7 @@ import stat
 import secrets
 
 from atomic_publish import rename_no_replace_at
-from lookdev_contracts import Registry, canonical_bytes, content_hash, portable_path
+from lookdev_contracts import Registry, canonical_bytes, content_hash, portable_path, validate_resource
 from rig_errors import RigError, decode_json, require
 
 INDEX = 'lookdev-project.json'
@@ -86,6 +86,102 @@ def _read_at(root_fd, name, maximum):
         os.close(descriptor)
 
 
+class CapturedClosure:
+    """Verified native resource closure; no unrelated project files included."""
+    def __init__(self, resources, payloads, root_references, aliases):
+        self.sources = dict(resources, **payloads)
+        self.registry = Registry(list(resources.items()), payloads=payloads)
+        self.all_references = sorted((self.registry.reference(value['id'], value['version'])
+                for value in (decode_json(raw) for raw in resources.values())),
+                key=lambda r: (r['kind'], r['id'], r['version']))
+        self.references = deepcopy(root_references)
+        self._aliases = deepcopy(aliases)
+        self.inventory = {p: dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+                          for p, raw in sorted(self.sources.items())}
+        self.sha256 = content_hash(self.inventory)
+
+    def canonical_reference(self, source_reference):
+        key = canonical_bytes(source_reference)
+        if key in self._aliases:
+            return deepcopy(self._aliases[key])
+        self.registry.get(source_reference)
+        return deepcopy(source_reference)
+
+
+def _capture_closure(reader, references):
+    require(isinstance(references, (list, tuple)) and 0 < len(references) <= 1024,
+            'LOOKDEV_CLOSURE_REFERENCE', 'Supply one to 1024 exact root references.')
+    resources, payloads, aliases, roots = {}, {}, {}, []
+    total_resources = total_payloads = 0
+    path_aliases = {}
+
+    def claim(path):
+        portable_path(path)
+        folded = path.casefold()
+        require(folded not in path_aliases or path_aliases[folded] == path,
+                'LOOKDEV_CLOSURE_ALIAS', 'Case-aliased source paths are rejected.')
+        path_aliases[folded] = path
+
+    def visit(reference, depth=0, root=False):
+        nonlocal total_resources, total_payloads
+        require(depth <= 64, 'LOOKDEV_CLOSURE_DEPTH', 'Dependency closure exceeds 64 levels.')
+        require(isinstance(reference, dict) and set(reference) == {'id','version','kind','path','sha256'},
+                'LOOKDEV_CLOSURE_REFERENCE', 'Supply a complete exact resource reference.')
+        path = reference['path'];claim(path)
+        require(path not in payloads, 'LOOKDEV_CLOSURE_ALIAS', 'Resource and payload paths overlap.')
+        if path not in resources:
+            require(len(resources) < 1024, 'LOOKDEV_CLOSURE_LIMIT', 'More than 1024 source documents.')
+            raw = reader(path, min(2 * 1024**2, 32 * 1024**2 - total_resources))
+            total_resources += len(raw)
+            resources[path] = raw
+        raw = resources[path]
+        value = validate_resource(decode_json(raw))
+        canonical = dict(id=value['id'], version=value['version'], kind=value['kind'], path=path,
+                         sha256=hashlib.sha256(raw).hexdigest())
+        expected = dict(reference)
+        # Scene3D's existing material alias is admitted only at an explicitly
+        # supplied root; transitive LookDev dependencies remain canonical.
+        if root and expected['kind'] == 'material':
+            require(value['kind'] in MATERIALS, 'LOOKDEV_CLOSURE_TYPE', 'Scene material must resolve to a native material.')
+            expected['kind'] = value['kind']
+        require(expected == canonical, 'LOOKDEV_CLOSURE_REFERENCE', 'Exact source reference mismatch: ' + path)
+        key = canonical_bytes(reference)
+        if key in aliases:
+            return canonical
+        aliases[key] = canonical
+        for dependency in value['dependencies']:
+            visit(dependency, depth+1)
+        if value['kind'] == 'texture3d':
+            source = value['file'];name=source['path'];claim(name)
+            require(name not in resources, 'LOOKDEV_CLOSURE_ALIAS', 'Payload and resource paths overlap.')
+            if name not in payloads:
+                require(len(payloads) < 1024, 'LOOKDEV_CLOSURE_LIMIT', 'More than 1024 payloads.')
+                raw_payload = reader(name, min(64 * 1024**2 - total_payloads, source['bytes']))
+                total_payloads += len(raw_payload)
+                payloads[name] = raw_payload
+            require(len(payloads[name]) == source['bytes'] and hashlib.sha256(payloads[name]).hexdigest() == source['sha256'],
+                    'LOOKDEV_CLOSURE_PAYLOAD', 'Exact texture payload mismatch: ' + name)
+        return canonical
+
+    for reference in references:
+        roots.append(visit(reference, root=True))
+    return CapturedClosure(resources, payloads, roots, aliases)
+
+
+def load_closure(root, references):
+    """Capture transitive exact references without requiring a project index.
+
+    Scene callers may pass a root with kind=material. The returned canonical
+    reference uses the actual material3d/instance/variant kind. Every dependency
+    and texture payload is retained as original bytes for snapshot publication.
+    """
+    descriptor = _directory_fd(root)
+    try:
+        return _capture_closure(lambda path, maximum: _read_at(descriptor, path, maximum), references)
+    finally:
+        os.close(descriptor)
+
+
 class Project:
     """A bounded captured source closure; later operations use captured bytes."""
     def __init__(self, root):
@@ -122,6 +218,14 @@ class Project:
         self.inventory = {p: {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
                           for p, data in sorted(self.sources.items())}
         self.sha256 = content_hash(self.inventory)
+
+    def capture_closure(self, reference):
+        """Select one transitive source subset from already captured bytes."""
+        def reader(path, maximum):
+            require(path in self.sources and len(self.sources[path]) <= maximum,
+                    'LOOKDEV_CLOSURE_SOURCE', 'Missing or oversized captured dependency: ' + path)
+            return self.sources[path]
+        return _capture_closure(reader, [reference])
 
     def list(self, group):
         return [deepcopy(r) for r in self.references if r['kind'] in GROUPS[group]]
