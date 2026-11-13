@@ -234,6 +234,70 @@ class CameraTrackTests(unittest.TestCase):
         local[0]['coordinate_space']='parent'
         with self.assertRaises(ValueError):at(local,parent_world=parent)
 
+    def test_reusable_track_overrides_keep_source_and_seek_determinism(self):
+        from camera3d_animation import sample_camera_track_overrides
+        directory = ROOT/'examples/camera3d'
+        registry = self.registry(directory)
+        optics = json.loads((directory/'optics.json').read_text())
+        base = json.loads((directory/'main-camera.json').read_text())['transform']
+        shared = [self.track('translation', [[0,0,10],[4,0,6]], 'vec3'),
+                  self.track('focal_length', [50,100])]
+        overrides = [self.track('translation', [[2,0,10],[6,0,6]], 'vec3')]
+        original = copy.deepcopy((base, optics, shared, overrides, registry.document))
+        def at(frame, values=overrides):
+            return sample_camera_track_overrides('camera', base, optics, shared,
+                values, dict(frame=frame), registry, duration_frames=24)
+        middle = at(12)
+        self.assertEqual(middle['transform']['translation'], [4,0,8])
+        self.assertEqual(middle['optics']['projection']['focal_length_mm'],75)
+        self.assertEqual(middle['override_channels'], ['translation'])
+        for frame in (24,0,12,3,12):
+            self.assertEqual(at(frame), at(frame))
+        self.assertEqual(at(12), middle)
+        other = copy.deepcopy(overrides); other[0]['keys'][1]['value'][0] = 8
+        self.assertNotEqual(at(12,other)['dependency_sha256'],middle['dependency_sha256'])
+        # Even an overridden shared channel remains part of the immutable key.
+        shared[0]['keys'][1]['value'][0] = 5
+        self.assertNotEqual(at(12)['dependency_sha256'], middle['dependency_sha256'])
+        shared[0]['keys'][1]['value'][0] = 4
+        self.assertEqual((base,optics,shared,overrides,registry.document), original)
+        middle['transform']['translation'][0] = 123
+        self.assertEqual(at(12)['transform']['translation'],[4,0,8])
+
+    def test_track_override_layers_reject_foreign_duplicate_and_invalid_keys(self):
+        from camera3d_animation import sample_camera_track_overrides
+        from rig_errors import RigError
+        directory=ROOT/'examples/camera3d'; registry=self.registry(directory)
+        optics=json.loads((directory/'optics.json').read_text())
+        base=json.loads((directory/'main-camera.json').read_text())['transform']
+        shared=[self.track('focal_length',[50,100])]
+        override=self.track('focal_length',[60,110])
+        def evaluate(values, sources=shared, frame=12):
+            return sample_camera_track_overrides('camera',base,optics,sources,
+                values,dict(frame=frame),registry,duration_frames=24)
+        for values in ([override,override],{},[dict(override,target=dict(kind='camera',camera_id='missing',property='focal_length'))]):
+            with self.assertRaises((ValueError,RigError)): evaluate(values)
+        bad=copy.deepcopy(shared);bad[0]['keys'][1]['value']=-1
+        with self.assertRaises((ValueError,RigError)): evaluate([override],bad)
+        with self.assertRaises(ValueError):evaluate([override],frame=25)
+        with self.assertRaises(ValueError):evaluate([override]*4096)
+        # Disabled override uses its own authored default through the canonical sampler.
+        disabled=dict(override,enabled=False,default_value=70)
+        self.assertEqual(evaluate([disabled])['optics']['projection']['focal_length_mm'],70)
+
+    def test_track_override_rejects_changed_native_source_even_when_replaced(self):
+        from camera3d_animation import sample_camera_track_overrides
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary)/'camera';shutil.copytree(ROOT/'examples/camera3d',directory)
+            registry=self.registry(directory)
+            optics=json.loads((directory/'optics.json').read_text())
+            base=json.loads((directory/'main-camera.json').read_text())['transform']
+            tracks=[self.track('focal_length',[50,100])]
+            (directory/'optics.json').write_bytes((directory/'optics.json').read_bytes()+b' ')
+            with self.assertRaises(ValueError):
+                sample_camera_track_overrides('camera',base,optics,tracks,tracks,
+                    dict(frame=12),registry,duration_frames=24)
+
     def test_competing_fov_and_unknown_camera_are_rejected(self):
         from camera3d_animation import sample_camera_tracks
         from animation3d_registry import TargetRegistry

@@ -86,6 +86,71 @@ def sample_camera_tracks(camera_id, base_transform, optics, tracks, time, regist
     return {'transform':transform,'optics':out,'controls':controls,'terminal':position==duration_frames}
 
 
+
+def sample_camera_track_overrides(camera_id, base_transform, optics, tracks, overrides,
+                                  time, registry, *, duration_frames,
+                                  horizontal_gate_mm=None, parent_world=None):
+    """Replace authored camera channels per shot without editing shared tracks.
+
+    Both lists contain ordinary Animation3D tracks. An override replaces the
+    complete channel (including enabled/default semantics), rather than blending
+    samples or mutating the shared clip. Unmentioned channels remain shared.
+    All source and override tracks undergo native admission before selection.
+    """
+    import hashlib
+    from animation3d_time import frame_position
+    from camera3d_contracts import canonical_bytes
+    if not isinstance(tracks, list) or not isinstance(overrides, list):
+        raise ValueError('camera3d shared tracks and overrides must be lists')
+    if len(tracks) + len(overrides) > 4096:
+        raise ValueError('camera3d combined animation track limit exceeded')
+    if type(duration_frames) is not int or not 1 <= duration_frames <= 10000000:
+        raise ValueError('camera3d invalid animation duration')
+    position = frame_position(time)
+    if not 0 <= position <= duration_frames:
+        raise ValueError('camera3d time outside animation interval')
+    from animation3d_contracts import KINDS, validate_contract, validate_track
+    key_count = 0
+    for track in tracks + overrides:
+        validate_contract({'schema_version': 1, 'kind': KINDS['track'], 'value': track})
+        validate_track(track, duration_frames)
+        key_count += len(track['keys'])
+        if key_count > 250000:
+            raise ValueError('camera3d combined override keyframe limit exceeded')
+    shared, local = deepcopy(tracks), deepcopy(overrides)
+    base, optical = deepcopy(base_transform), deepcopy(optics)
+    layers = []
+    for layer in (shared, local):
+        channels = {}
+        for track in layer:
+            # Canonical validation checks the entire track, including keys that
+            # are not sampled at this frame and channels replaced by overrides.
+            registry.validate_track(track, duration_frames)
+            target = track['target']
+            if target['kind'] != 'camera' or target['camera_id'] != camera_id:
+                raise ValueError('camera3d override targets another owner/camera')
+            prop = target['property']
+            if prop in channels:
+                raise ValueError('camera3d duplicate animated camera property in layer')
+            channels[prop] = track
+        layers.append(channels)
+    selected = dict(layers[0]); selected.update(layers[1])
+    state = sample_camera_tracks(camera_id, base, optical, list(selected.values()),
+        time, registry, duration_frames=duration_frames,
+        horizontal_gate_mm=horizontal_gate_mm, parent_world=parent_world)
+    source = {'shared_tracks': shared, 'override_tracks': local,
+              'registry': registry.document, 'camera_id': camera_id,
+              'base_transform': base, 'optics': optical,
+              'duration_frames': duration_frames, 'horizontal_gate_mm': horizontal_gate_mm,
+              'parent_world': None if parent_world is None else parent_world.tolist()
+                  if hasattr(parent_world, 'tolist') else parent_world,
+              'frame_position': [position.numerator, position.denominator],
+              'algorithm': 'camera-channel-replacement-v1'}
+    state['dependency_sha256'] = hashlib.sha256(canonical_bytes(source)).hexdigest()
+    state['override_channels'] = sorted(layers[1])
+    return state
+
+
 def smooth_samples(samples, *, radius=2):
     """Bake a bounded centered triangular filter with truncated edge windows.
 

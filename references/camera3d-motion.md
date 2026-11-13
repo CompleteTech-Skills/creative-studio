@@ -40,7 +40,17 @@ space. World-space translation/quaternion tracks require an explicit rigid
 Explicit `parent` track space is rejected pending separate semantics; omitted
 or `local` space uses native parent-relative TRS. Callers must use a matching base transform and optics from their
 resolved camera graph; tracks replace only authored channels. Preset/resource
-resolution and reusable binding overrides remain owned by Camera3D sequencing.
+resolution remains owned by Camera3D sequencing. For shot-specific animation,
+`sample_camera_track_overrides` accepts shared and local lists of ordinary
+Animation3D tracks. Local channels replace complete shared channels by property;
+other channels remain shared. A disabled local track uses its own default value.
+Every shared/override track is validated against the actual native registry,
+even when replaced. Both lists together are bounded to 4096 tracks and 250000 keyframes. No input is
+edited. The returned dependency hash includes the complete shared and local
+tracks, registry references, base state, optical/parent settings and exact clock;
+changes to either source invalidate cached evaluated state. Callers persist
+these existing track documents with their shot binding; this adapter introduces
+no alternate keyframe schema or implicit mutation of a reusable clip.
 
 `camera3d_animation.smooth_samples` bakes a centered triangular window over
 position, rotation and focus. Rotation is deterministic ordered shortest-arc
