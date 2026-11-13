@@ -62,10 +62,65 @@ RESPONSE = obj({'schema_version': {'const': 1}, 'kind': {'const': 'decomposition
     'errors': array(TEXT, 128)})
 
 
+def _windows_record_descriptor(path):
+    """Open a disk file's own handle, rejecting Windows reparse points/devices."""
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    class FileInformation(ctypes.Structure):
+        _fields_ = [('attributes', wintypes.DWORD), ('created', wintypes.FILETIME),
+            ('accessed', wintypes.FILETIME), ('written', wintypes.FILETIME),
+            ('volume', wintypes.DWORD), ('size_high', wintypes.DWORD),
+            ('size_low', wintypes.DWORD), ('links', wintypes.DWORD),
+            ('index_high', wintypes.DWORD), ('index_low', wintypes.DWORD)]
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+        wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    create.restype = wintypes.HANDLE
+    kind = kernel.GetFileType
+    kind.argtypes, kind.restype = [wintypes.HANDLE], wintypes.DWORD
+    information = kernel.GetFileInformationByHandle
+    information.argtypes = [wintypes.HANDLE, ctypes.POINTER(FileInformation)]
+    information.restype = wintypes.BOOL
+    close = kernel.CloseHandle
+    close.argtypes, close.restype = [wintypes.HANDLE], wintypes.BOOL
+    # GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT.
+    # Excluding write/delete sharing keeps the admitted handle stable while read.
+    handle = create(os.fspath(path), 0x80000000, 0x1, None, 3, 0x00200000, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    transferred = False
+    try:
+        if kind(handle) != 1:  # FILE_TYPE_DISK; no pipe/device handle is read.
+            raise ValueError('analysis record must be a regular disk file: ' + str(path))
+        details = FileInformation()
+        if not information(handle, ctypes.byref(details)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if details.attributes & (0x400 | 0x10):  # REPARSE_POINT or DIRECTORY.
+            raise ValueError('analysis record must be a regular file without reparse points: ' + str(path))
+        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+        transferred = True  # The CRT descriptor owns/ultimately closes the handle.
+        return descriptor
+    finally:
+        if not transferred:
+            close(handle)
+
+
+_WINDOWS_RECORD_IO = sys.platform == 'win32'
+
+
 def _record_bytes(path):
     """Read a bounded regular record without following links or blocking on FIFOs."""
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        if _WINDOWS_RECORD_IO:
+            descriptor = _windows_record_descriptor(path)
+        else:
+            if not all(hasattr(os, flag) for flag in ('O_NOFOLLOW', 'O_NONBLOCK')):
+                raise ValueError('safe analysis record reads require no-follow/nonblocking platform support')
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError as exc:
         raise ValueError('analysis record cannot be opened safely: ' + str(path)) from exc
     with os.fdopen(descriptor, 'rb') as stream:

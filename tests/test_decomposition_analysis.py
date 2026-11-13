@@ -318,6 +318,47 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(json.loads((folder/'state.json').read_text()),state)
         self.assertTrue((folder/'retry.json').is_file())
 
+    def test_missing_posix_flags_dispatches_to_windows_safe_descriptor(self):
+        record=self.home/'portable.json';record.write_bytes(b'{"kind":"fixture"}')
+        real_open=os.open
+        with mock.patch.object(analysis,'_WINDOWS_RECORD_IO',True), mock.patch.object(
+                analysis,'_windows_record_descriptor',side_effect=lambda path: real_open(path,os.O_RDONLY)) as windows:
+            # This tests dispatch, not actual Windows kernel behavior. Native
+            # handle validation runs in the Windows CI matrix separately.
+            with mock.patch.dict(os.__dict__):
+                os.__dict__.pop('O_NOFOLLOW',None);os.__dict__.pop('O_NONBLOCK',None)
+                self.assertEqual(analysis._record_json(record),{'kind':'fixture'})
+                job=self.prepare()
+                self.assertEqual(analysis.status(self.root,job['job'])['status'],'awaiting-external')
+                self.assertEqual(self.ingest(job)['status'],'proposed')
+        self.assertTrue(windows.called)
+
+    @unittest.skipIf(sys.platform=='win32', 'POSIX fallback policy')
+    def test_missing_posix_safety_flag_fails_closed_without_open(self):
+        with mock.patch.dict(os.__dict__):
+            os.__dict__.pop('O_NOFOLLOW',None)
+            with mock.patch.object(analysis.os,'open',side_effect=AssertionError('must not open')):
+                with self.assertRaisesRegex(ValueError,'platform support'):
+                    analysis._record_bytes(self.source)
+
+    @unittest.skipUnless(sys.platform=='win32', 'actual Windows kernel/CRT handle validation')
+    def test_windows_native_record_reader_preserves_bytes_and_rejects_nonfiles(self):
+        record=self.home/'native.json';payload=b'{"line":"first\\nsecond"}\r\n'
+        record.write_bytes(payload)
+        for _ in range(32):
+            self.assertEqual(analysis._record_bytes(record),payload)
+        # Successful read handles must close exactly once and release share locks.
+        record.rename(self.home/'renamed.json')
+        with self.assertRaises(ValueError):
+            analysis._record_bytes(self.home)
+        link=self.home/'record-link.json'
+        try:
+            link.symlink_to(self.home/'renamed.json')
+        except (OSError,NotImplementedError):
+            self.skipTest('Windows symlink creation privilege unavailable; native reads/directory rejection passed')
+        with self.assertRaises(ValueError):
+            analysis._record_bytes(link)
+
     def test_runtime_timeout_kills_real_subprocess_and_keeps_manual_route(self):
         model={'provider':'synthetic-fixture','name':'none','version':'test','files':[], 'identity_evidence':'No detector used by timeout test'}
         with mock.patch.object(analysis,'_model',return_value=model):
