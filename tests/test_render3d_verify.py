@@ -250,6 +250,8 @@ class ImageVerification(unittest.TestCase):
             self.assertEqual(read_file_ref(root,ref),payload)
             with self.assertRaises(Render3DError):read_file_ref(root,ref,memory_bytes=len(payload)-1)
             with self.assertRaises(Render3DError):read_file_ref(root,ref,max_bytes=len(payload)-1)
+            bad=deepcopy(result);bad['verification']['evidence']=deepcopy(ref)
+            with self.assertRaises(Render3DError):verify_result(request,bad,root,snapshot_root=snapshot,expected_backend=backend)
             request['settings']['resources']['storage_bytes']=report['output_bytes']-1
             result['request_sha256']=object_hash(request)
             with self.assertRaises(Render3DError) as error:

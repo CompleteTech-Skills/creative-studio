@@ -320,7 +320,6 @@ class RenderArtifactVerifier:
                 'incomplete-output','Only a complete candidate sequence can be verified.')
         validate(result.get('verification'),'Verification')
         pending=deepcopy(result);pending['status']='partial'
-        pending['verification']=dict(status='not-run',verifier=None,evidence=None)
         validate(pending,'RenderResult')
         root=Path(root)
         require(not root.is_symlink(),'corrupt-output','Output root may not be a symlink.')
