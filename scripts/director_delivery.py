@@ -346,6 +346,7 @@ def verify_media_negatives(root, shots, media, *, ffmpeg=None, ffprobe=None):
     """Execute missing/corrupt master and audio controls against retained bytes."""
     import subprocess
     from render3d_verify import RenderArtifactVerifier
+    from render3d_contracts import Render3DError
     from silent_video import verify_export, _binary
     root = Path(root)
     first = shots[0]
@@ -362,8 +363,10 @@ def verify_media_negatives(root, shots, media, *, ffmpeg=None, ffprobe=None):
             try:
                 RenderArtifactVerifier(first['snapshot_root'], first['expected_backend']).verify(
                     first['request'], first['result'], root / first['directory'])
-            except Exception as exc:
-                outcomes[name] = {'rejected': True, 'error': str(exc)}
+            except Render3DError as exc:
+                _require(exc.report['category'] in ('corrupt-output', 'missing-asset'),
+                         'Frame negative failed for an unrelated reason.')
+                outcomes[name] = {'rejected': True, 'error': str(exc), 'category': exc.report['category']}
             else:
                 raise ValueError(name + ' negative unexpectedly accepted')
         finally:
