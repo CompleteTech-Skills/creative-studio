@@ -58,6 +58,14 @@ Use the existing optional rig dependencies below. The [executable example](examp
 reuses unchanged source and animated GLB files; missing or corrupt required content
 fails verification. Structural-only checks explicitly leave payloads unverified.
 
+The additive [mesh foundation](references/model3d/mesh-foundation.md) creates real
+editable primitives, captures local model sources before decoding, converts
+explicit units/bases/pivots, measures topology, and verifies GLB/glTF/OBJ exports.
+Run `python scripts/model3d.py mesh capabilities` for supported boundaries or
+`python scripts/demonstrate_model3d_mesh.py --destination output/new-mesh-demo`
+for eighteen real format roundtrips. Original import bytes remain in exported
+source inventories; fixture checks do not grant production-art approval.
+
 ## Real 3D rigs and animation
 
 The optional 3D engine imports real GLB/glTF, OBJ or packed Blender models, preserves original assets, constructs editable skeletons, generates normalized skin weights, and evaluates FK, spatial IK, contacts, expressions and animation channels. It includes humanoid, quadruped, six-legged winged, robotic and extensible custom templates; manual corrections, semantic retargeting, local review, animated GLB export and independently reopened Blender files.
