@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "repository": "CompleteTech-Skills/creative-studio",
+  "recorded_at": "2026-11-13T12:40:44.345441+00:00",
+  "authorized_scope": "User-authorized repository issue216 governance implementation",
+  "reviewed_policy_merge": "bab0f2888866dcce07ed7d10d24dc268efba10c6",
+  "current_main_at_activation": "4d83833d5d45a8f43842d924132925d8c631ea0f",
+  "policy_review": "Independent complete candidate PR297 review, source PR264 policy and immutable workflow preservation reviewed",
+  "branch_protection": {
+    "strict_status_checks": true,
+    "checks": [
+      {
+        "context": "3D contracts and mathematical expectations",
+        "app_id": 15368
+      },
+      {
+        "context": "Animation, constraints, contacts and IK",
+        "app_id": 15368
+      },
+      {
+        "context": "Blender headless save/reopen and deformation",
+        "app_id": 15368
+      },
+      {
+        "context": "Delivery (macos-latest)",
+        "app_id": 15368
+      },
+      {
+        "context": "Delivery (ubuntu-latest)",
+        "app_id": 15368
+      },
+      {
+        "context": "Delivery (windows-latest)",
+        "app_id": 15368
+      },
+      {
+        "context": "Existing 2D compatibility",
+        "app_id": 15368
+      },
+      {
+        "context": "Import/export and Khronos interoperability",
+        "app_id": 15368
+      },
+      {
+        "context": "Model3D real payloads (macos-latest)",
+        "app_id": 15368
+      },
+      {
+        "context": "Model3D real payloads (ubuntu-latest)",
+        "app_id": 15368
+      },
+      {
+        "context": "Model3D real payloads (windows-latest)",
+        "app_id": 15368
+      },
+      {
+        "context": "Operations, local API and archive restoration",
+        "app_id": 15368
+      },
+      {
+        "context": "Rig generation and real skinning",
+        "app_id": 15368
+      },
+      {
+        "context": "Three-character and mechanical demonstrations",
+        "app_id": 15368
+      },
+      {
+        "context": "Three.js browser playback and vertex comparison",
+        "app_id": 15368
+      }
+    ],
+    "enforce_admins": true,
+    "pull_request_reviews": {
+      "url": "https://api.github.com/repos/CompleteTech-Skills/creative-studio/branches/main/protection/required_pull_request_reviews",
+      "dismiss_stale_reviews": true,
+      "require_code_owner_reviews": false,
+      "require_last_push_approval": false,
+      "required_approving_review_count": 0
+    },
+    "allow_force_pushes": false,
+    "allow_deletions": false,
+    "conversation_resolution": true
+  },
+  "private_vulnerability_reporting": true,
+  "vulnerability_alerts": {
+    "enabled": true,
+    "readback_http_status": 204
+  },
+  "security_and_analysis": {
+    "dependabot_security_updates": {
+      "status": "disabled"
+    },
+    "secret_scanning": {
+      "status": "enabled"
+    },
+    "secret_scanning_ai_detection": {
+      "status": "disabled"
+    },
+    "secret_scanning_delegated_alert_dismissal": {
+      "status": "disabled"
+    },
+    "secret_scanning_delegated_bypass": {
+      "status": "disabled"
+    },
+    "secret_scanning_non_provider_patterns": {
+      "status": "disabled"
+    },
+    "secret_scanning_push_protection": {
+      "status": "enabled"
+    },
+    "secret_scanning_validity_checks": {
+      "status": "disabled"
+    }
+  },
+  "historical_workflows": {
+    "utc": "2026-11-13T12:39:47.799937+00:00",
+    "workflows": [
+      {
+        "id": 394350696,
+        "path": ".github/workflows/model3d-source-transfer.yml",
+        "before": "active",
+        "runs_checked": 1,
+        "after": "disabled_manually"
+      },
+      {
+        "id": 394394294,
+        "path": ".github/workflows/model3d-stat-transfer.yml",
+        "before": "active",
+        "runs_checked": 1,
+        "after": "disabled_manually"
+      },
+      {
+        "id": 394370612,
+        "path": ".github/workflows/model3d-test-fixture-transfer.yml",
+        "before": "active",
+        "runs_checked": 3,
+        "after": "disabled_manually"
+      },
+      {
+        "id": 394264892,
+        "path": ".github/workflows/roadmap-capture.yml",
+        "before": "active",
+        "runs_checked": 8,
+        "after": "disabled_manually"
+      },
+      {
+        "id": 394275719,
+        "path": ".github/workflows/roadmap-test-tools.yml",
+        "before": "active",
+        "runs_checked": 1,
+        "after": "disabled_manually"
+      }
+    ]
+  },
+  "verification": {
+    "required_contexts": "All15names and GitHub Actions app15368 independently matched successful checks on merged policy mainbab0f28",
+    "rule_evaluation": "Readback confirms required PR policy, strict checks and admin enforcement; no direct ref mutation attempted",
+    "preservation": "Historical branches, commits and artifacts retained; only five reviewed inactive workflow registrations disabled"
+  },
+  "limitations": [
+    "No second independent GitHub reviewer identity exists; required approving review count is zero. Independent agent full-head review remains an additional procedural merge gate.",
+    "No direct-update rejection is claimed. Configuration readback is the retained equivalent rule evaluation evidence.",
+    "Secret scanning is enabled; this activation report does not claim a completed secret scan or no outstanding findings.",
+    "Historical workflow artifacts may have expired; retained source hashes and source branches are not re-execution claims.",
+    "Issue216 remains open pending independent activation-evidence review and all acceptance verification."
+  ]
+}
