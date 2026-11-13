@@ -1,8 +1,10 @@
 # Bounded Model3D primitive foundation (#44)
 
 `scripts/model3d_geometry.py` provides `box`, `sphere`, and `cylinder` as
-Python helpers returning the existing `rig_models.Mesh`. Supply a nonempty
-semantic `name`; both mesh ID and exported object name preserve it. Wrap a mesh
+Python helpers returning the existing `rig_models.Mesh`. Supply a portable
+Model3D identifier as `name`: 1–128 characters, beginning with an ASCII letter
+or digit and containing only ASCII letters, digits, `.`, `_`, `:`, or `-`.
+Both mesh ID and exported object name preserve it. Wrap a mesh
 in `Geometry([mesh], materials=[{}])` (or provide your own material table) for
 analysis and `rig_gltf.export_geometry`. No alternate mesh format or importer
 is introduced.

@@ -13,6 +13,16 @@ from rig_import import load_character_model
 
 
 class PrimitiveTests(unittest.TestCase):
+    def test_box_corner_normals_are_symmetric(self):
+        mesh=box()
+        np.testing.assert_allclose(mesh.attributes['NORMAL'],np.sign(mesh.positions)/np.sqrt(3),atol=1e-12)
+
+    def test_names_follow_native_model_identifier_contract(self):
+        for factory in (box,sphere,cylinder):
+            for name in ('Left Arm','../mesh','mesh\n','_mesh','mesh/part'):
+                with self.subTest(factory=factory.__name__,name=name),self.assertRaises(ValueError):factory(name=name)
+            self.assertEqual(factory(name='Left-Arm.1').id,'Left-Arm.1')
+
     def test_topology_and_roundtrip(self):
         for factory in (box, sphere, cylinder):
             with self.subTest(factory=factory.__name__), tempfile.TemporaryDirectory() as tmp:

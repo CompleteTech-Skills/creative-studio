@@ -5,6 +5,7 @@ Centered right-handed geometry, +Y up, +Z forward, dimensions in meters.
 from __future__ import annotations
 
 import math
+import re
 import numpy as np
 from rig_geometry import vertex_normals
 from rig_models import Mesh, Geometry, validate_geometry
@@ -23,8 +24,8 @@ def _count(value, minimum):
 
 
 def _mesh(name, vertices, faces):
-    if not isinstance(name, str) or not name.strip() or len(name) > 128:
-        raise ValueError('A nonempty name of at most 128 characters is required.')
+    if not isinstance(name, str) or not 1 <= len(name) <= 128 or re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]*',name) is None:
+        raise ValueError('Name must be a portable Model3D identifier of at most 128 characters.')
     positions = np.asarray(vertices, dtype=np.float64)
     triangles = np.asarray(faces, dtype=np.int64)
     # All primitives are convex and centered: orient every face outward.
@@ -45,8 +46,8 @@ def box(width=1., height=1., depth=1., *, name='box'):
     x, y, z = (_size(v)/2 for v in (width, height, depth))
     vertices = [(a*x, b*y, c*z) for a, b, c in
                 [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),(-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)]]
-    faces = [(0,1,2),(0,2,3),(4,6,5),(4,7,6),(0,4,5),(0,5,1),
-             (3,2,6),(3,6,7),(0,3,7),(0,7,4),(1,5,6),(1,6,2)]
+    faces = [(0,1,2),(0,2,3),(4,7,5),(5,7,6),(0,4,5),(0,5,1),
+             (3,2,7),(2,6,7),(0,3,7),(0,7,4),(1,5,2),(5,6,2)]
     return _mesh(name, vertices, faces)
 
 
