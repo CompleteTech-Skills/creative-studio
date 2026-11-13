@@ -22,8 +22,17 @@ class PoseBindingTests(unittest.TestCase):
     def file(self,path):
         return dict(path=path,sha256=hashlib.sha256((self.root/path).read_bytes()).hexdigest())
 
+    def register_authored_files(self,root,paths):
+        # Trust is established by the controlled fixture author, never by a
+        # sampler discovering mutable files at evaluation time.
+        for path in paths:
+            payload=path.read_bytes()
+            self.bundle['inventory'][path.relative_to(root).as_posix()]=dict(
+                bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())
+
     def bind(self,rig,pose,path,rig_ref=None):
         (self.root/path).write_bytes(json.dumps(pose,sort_keys=True).encode()+b"\n")
+        self.register_authored_files(self.root,[self.root/path])
         rig_ref=rig_ref or dict(kind='hatch-3d-rig',id=rig.manifest['id'],version=rig.manifest['version'],
                               **self.file('actor/rig.json'))
         return dict(schema_version=1,rig=rig_ref,pose=dict(id=pose['id'],rig_version=pose['rig_version'],file=self.file(path)))
@@ -36,6 +45,9 @@ class PoseBindingTests(unittest.TestCase):
             animations=[dict(kind='hatch-3d-animation',id=e['id'],version=e['version'],
                              **self.file('actor/'+e['path'])) for e in rig.manifest['animations']])
         self.bundle['documents']['actor.json']=asset
+        (self.root/'actor.json').write_bytes(canonical_bytes(asset))
+        self.register_authored_files(self.root,[self.root/'actor.json',
+            *(p for p in (self.root/'actor').rglob('*') if p.is_file())])
         ref=dict(kind='scene3d-asset',id='actor',version=asset['version'],path='actor.json',
                  sha256=hashlib.sha256(canonical_bytes(asset)).hexdigest())
         one=node('one','skinned_character','root');one['asset']=ref
@@ -104,6 +116,10 @@ class PoseBindingTests(unittest.TestCase):
         rig=load_rig(native);pose=rotate_bone(rig.skeleton,neutral_pose(rig.skeleton,'imported-bend'),
             rig.skeleton['bones'][1]['id'],axis_angle([0,0,1],.8))
         (copied/'pose.json').write_bytes(json.dumps(pose,sort_keys=True).encode()+b"\n")
+        for path in list(self.bundle['inventory']):
+            destination=copied/path;destination.parent.mkdir(parents=True,exist_ok=True)
+            destination.write_bytes((self.root/path).read_bytes())
+        self.register_authored_files(copied,[p for p in copied.rglob('*') if p.is_file()])
         binding=dict(schema_version=1,rig=imported.asset['skeleton'],pose=dict(id=pose['id'],rig_version=pose['rig_version'],
             file=dict(path='pose.json',sha256=hashlib.sha256((copied/'pose.json').read_bytes()).hexdigest())))
         graph=SceneGraph(self.scene)
