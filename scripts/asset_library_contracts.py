@@ -290,7 +290,10 @@ def validate(value, kind='AssetVersion'):
 
 
 def manifest_hash(value):
-    return object_hash({k: v for k, v in value.items() if k != 'manifest_sha256'})
+    try:
+        return object_hash({k: v for k, v in value.items() if k != 'manifest_sha256'})
+    except (ValueError, TypeError) as exc:
+        raise RigError('LIBRARY_JSON', 'Manifest cannot be encoded as bounded canonical JSON: ' + str(exc)) from exc
 
 
 def seal(value):
@@ -307,4 +310,7 @@ def load_manifest(payload):
 
 def canonical_bytes(value):
     finite_json(value)
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')
+    except (ValueError, TypeError) as exc:
+        raise RigError('LIBRARY_JSON', 'Contract cannot be encoded as canonical UTF-8 JSON: ' + str(exc)) from exc

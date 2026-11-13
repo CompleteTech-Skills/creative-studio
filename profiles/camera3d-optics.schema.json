@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hatch camera3d optics v1",
+  "$defs": {
+    "optics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-optics"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "projection": {
+          "$ref": "#/$defs/projection"
+        },
+        "depth_of_field": {
+          "$ref": "#/$defs/dof"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "projection",
+        "depth_of_field"
+      ]
+    },
+    "dof": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "focus_distance_m": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        },
+        "f_stop": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        },
+        "aperture_blades": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "aperture_rotation_rad": {
+          "type": "number",
+          "minimum": -1000000000.0,
+          "maximum": 1000000000.0
+        },
+        "anamorphic_ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        }
+      },
+      "required": [
+        "enabled",
+        "focus_distance_m",
+        "f_stop",
+        "aperture_blades",
+        "aperture_rotation_rad",
+        "anamorphic_ratio"
+      ]
+    },
+    "projection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "perspective"
+            },
+            "focal_length_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "sensor_width_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "sensor_height_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "sensor_fit": {
+              "enum": [
+                "horizontal",
+                "vertical",
+                "auto"
+              ]
+            },
+            "shift_x": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "shift_y": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "near_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "far_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            }
+          },
+          "required": [
+            "type",
+            "focal_length_mm",
+            "sensor_width_mm",
+            "sensor_height_mm",
+            "sensor_fit",
+            "shift_x",
+            "shift_y",
+            "near_clip_m",
+            "far_clip_m"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "orthographic"
+            },
+            "orthographic_height_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "shift_x": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "shift_y": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "near_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "far_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            }
+          },
+          "required": [
+            "type",
+            "orthographic_height_m",
+            "shift_x",
+            "shift_y",
+            "near_clip_m",
+            "far_clip_m"
+          ]
+        }
+      ]
+    }
+  },
+  "$ref": "#/$defs/optics"
+}

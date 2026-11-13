@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hatch camera3d camera v1",
+  "$defs": {
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-camera"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "transform": {
+          "$ref": "#/$defs/trs"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/parent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "optics": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-optics"
+                }
+              }
+            }
+          ]
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "camera3d-constraint"
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "animation": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "camera3d-animation"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "transform",
+        "parent",
+        "optics",
+        "constraints",
+        "animation",
+        "metadata"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "provenance"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "enum": [
+            "authored",
+            "import",
+            "derived",
+            "procedural-fixture"
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "origin",
+        "fixture",
+        "attribution",
+        "license",
+        "inputs"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/) )(?!.*[\\\\:\\x00-\\x1f*?\"<>|])(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|(?![\\s\\S])))(?!.*[. ](?:/|(?![\\s\\S])))(?!(?:[^/]+/)*(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[cC][oO][mM][1-9\u00b9\u00b2\u00b3]|[lL][pP][tT][1-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/]+(?:/[^/]+)*(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "parent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scene": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "scene3d-scene"
+                }
+              }
+            }
+          ]
+        },
+        "node": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "scene",
+        "node"
+      ]
+    },
+    "trs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "translation": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000.0,
+            "maximum": 1000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "rotation": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "scale": {
+          "type": "array",
+          "items": {
+            "const": 1
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "translation",
+        "rotation",
+        "scale"
+      ]
+    }
+  },
+  "$ref": "#/$defs/camera"
+}

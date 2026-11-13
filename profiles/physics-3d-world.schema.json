@@ -1,0 +1,1941 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/physics-3d-world-v1",
+  "title": "PhysicsWorld v1",
+  "description": "Structural bounds; runtime additionally validates graph, geometry, time and aggregate budgets. No solver capability is implied.",
+  "$defs": {
+    "Transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "translation": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000000.0,
+            "maximum": 1000000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "rotation": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "minItems": 4,
+          "maxItems": 4
+        }
+      },
+      "required": [
+        "translation",
+        "rotation"
+      ]
+    },
+    "ColliderShape": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "sphere"
+            },
+            "radius": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000000.0
+            }
+          },
+          "required": [
+            "type",
+            "radius"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "box"
+            },
+            "size": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "minItems": 3,
+              "maxItems": 3
+            }
+          },
+          "required": [
+            "type",
+            "size"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "enum": [
+                "capsule",
+                "cylinder"
+              ]
+            },
+            "radius": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000000.0
+            },
+            "height": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000000.0
+            },
+            "axis": {
+              "enum": [
+                "X",
+                "Y",
+                "Z"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "radius",
+            "height",
+            "axis"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "enum": [
+                "convex-hull",
+                "triangle-mesh"
+              ]
+            },
+            "source": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "vertices": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000.0,
+                  "maximum": 1000000000000.0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "minItems": 3,
+              "maxItems": 100000
+            },
+            "triangles": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2147483647
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "minItems": 1,
+              "maxItems": 200000
+            }
+          },
+          "required": [
+            "type",
+            "source",
+            "vertices",
+            "triangles"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "type": {
+                    "const": "convex-hull"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "vertices": {
+                    "minItems": 4
+                  },
+                  "triangles": {
+                    "minItems": 4
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "compound"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "transform": {
+                    "$ref": "#/$defs/Transform"
+                  },
+                  "shape": {
+                    "$ref": "#/$defs/ColliderShape"
+                  }
+                },
+                "required": [
+                  "transform",
+                  "shape"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 64
+            }
+          },
+          "required": [
+            "type",
+            "children"
+          ]
+        }
+      ]
+    },
+    "PhysicsWorld": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "hatch-3d-physics-world"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "coordinate_system": {
+          "const": {
+            "handedness": "right",
+            "right": "+X",
+            "up": "+Y",
+            "forward": "+Z",
+            "unit": "meter",
+            "angles": "radian",
+            "quaternion": "XYZW",
+            "matrices": "column-vectors",
+            "time": "second"
+          }
+        },
+        "physical_units": {
+          "const": {
+            "mass": "kilogram",
+            "force": "newton",
+            "torque": "newton-meter",
+            "velocity": "meter/second",
+            "angular_velocity": "radian/second",
+            "density": "kilogram/meter^3"
+          }
+        },
+        "scene": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            },
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "pattern": "^(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .](?:/(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .])*(?![\\s\\S])"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+            },
+            "kind": {
+              "enum": [
+                "geometry",
+                "rig",
+                "animation",
+                "scene",
+                "material",
+                "texture",
+                "physics-world",
+                "physics-cache"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "path",
+            "sha256",
+            "kind"
+          ]
+        },
+        "fps": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "numerator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "denominator": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "numerator",
+            "denominator"
+          ]
+        },
+        "frame_range": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ]
+        },
+        "gravity": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000000.0,
+            "maximum": 1000000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "solver": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "enum": [
+                "blender",
+                "pybullet"
+              ]
+            },
+            "adapter_version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            },
+            "fixed_step": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "numerator": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                },
+                "denominator": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                }
+              },
+              "required": [
+                "numerator",
+                "denominator"
+              ]
+            },
+            "substeps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024
+            },
+            "iterations": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "quality": {
+              "enum": [
+                "draft",
+                "preview",
+                "production",
+                "custom"
+              ]
+            },
+            "required_categories": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "rigid-body",
+                  "character",
+                  "cloth",
+                  "soft-body",
+                  "hair",
+                  "particles",
+                  "gas",
+                  "liquid",
+                  "fracture"
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 9
+            },
+            "reproducibility": {
+              "enum": [
+                "verified-cache-replay",
+                "pinned-numerical",
+                "approximate",
+                "not-guaranteed"
+              ]
+            }
+          },
+          "required": [
+            "backend",
+            "adapter_version",
+            "fixed_step",
+            "substeps",
+            "iterations",
+            "seed",
+            "quality",
+            "required_categories",
+            "reproducibility"
+          ]
+        },
+        "budgets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bodies": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "dynamic_bodies": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "colliders": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "constraints": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "triangles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "vertices": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "cloth_vertices": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "soft_body_vertices": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "hair_strands": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "particles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "fluid_secondary_particles": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "volume_cells": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "gas_cells": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "liquid_cells": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            },
+            "output_frames": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "steps": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "duration_seconds": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000000.0
+            },
+            "memory_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1125899906842624
+            },
+            "vram_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1125899906842624
+            },
+            "cache_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1125899906842624
+            },
+            "bake_file_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1125899906842624
+            },
+            "temporary_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1125899906842624
+            },
+            "cpu_workers": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "concurrent_jobs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "restart_attempts": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 99
+            },
+            "timeout_seconds": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000000.0
+            }
+          },
+          "required": [
+            "bodies",
+            "dynamic_bodies",
+            "colliders",
+            "constraints",
+            "triangles",
+            "vertices",
+            "cloth_vertices",
+            "soft_body_vertices",
+            "hair_strands",
+            "particles",
+            "fluid_secondary_particles",
+            "volume_cells",
+            "gas_cells",
+            "liquid_cells",
+            "output_frames",
+            "steps",
+            "duration_seconds",
+            "memory_bytes",
+            "vram_bytes",
+            "cache_bytes",
+            "bake_file_bytes",
+            "temporary_bytes",
+            "cpu_workers",
+            "concurrent_jobs",
+            "restart_attempts",
+            "timeout_seconds"
+          ]
+        },
+        "assets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .](?:/(?!(?:[cC][oO][nN](?:[iI][nN]\\$|[oO][uU][tT]\\$)?|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][mM][1-9]|[lL][pP][tT][1-9])(?:\\.|/|(?![\\s\\S])))[^/\\\\:\\x00-\\x1f\\x7f<>\"|?*]*[^/\\\\:\\x00-\\x1f\\x7f<>\"|?* .])*(?![\\s\\S])"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+              },
+              "kind": {
+                "enum": [
+                  "geometry",
+                  "rig",
+                  "animation",
+                  "scene",
+                  "material",
+                  "texture",
+                  "physics-world",
+                  "physics-cache"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "path",
+              "sha256",
+              "kind"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 10000
+        },
+        "materials": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "density": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "static_friction": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "dynamic_friction": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "restitution": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "linear_damping": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "angular_damping": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "collision_margin": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "pbr_material": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "combination": {
+                "const": "bullet-product"
+              }
+            },
+            "required": [
+              "id",
+              "density",
+              "static_friction",
+              "dynamic_friction",
+              "restitution",
+              "linear_damping",
+              "angular_damping",
+              "collision_margin",
+              "pbr_material",
+              "combination"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 1000
+        },
+        "bodies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "category": {
+                "enum": [
+                  "rigid-body",
+                  "character",
+                  "fracture"
+                ]
+              },
+              "mode": {
+                "enum": [
+                  "static",
+                  "dynamic",
+                  "kinematic"
+                ]
+              },
+              "authority": {
+                "enum": [
+                  "static",
+                  "physics",
+                  "animation"
+                ]
+              },
+              "parent": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "asset": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "transform": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "translation": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000.0,
+                      "maximum": 1000000000000.0
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "rotation": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    },
+                    "minItems": 4,
+                    "maxItems": 4
+                  }
+                },
+                "required": [
+                  "translation",
+                  "rotation"
+                ]
+              },
+              "mass": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "kilograms": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "center_of_mass": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000.0,
+                      "maximum": 1000000000000.0
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "inertia": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "minimum": -1000000000000.0,
+                        "maximum": 1000000000000.0
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "kilograms",
+                  "center_of_mass",
+                  "inertia"
+                ]
+              },
+              "linear_velocity": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000.0,
+                  "maximum": 1000000000000.0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "angular_velocity": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000.0,
+                  "maximum": 1000000000000.0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "colliders": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "transform": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "translation": {
+                          "type": "array",
+                          "items": {
+                            "type": "number",
+                            "minimum": -1000000000000.0,
+                            "maximum": 1000000000000.0
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        },
+                        "rotation": {
+                          "type": "array",
+                          "items": {
+                            "type": "number",
+                            "minimum": -1,
+                            "maximum": 1
+                          },
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      },
+                      "required": [
+                        "translation",
+                        "rotation"
+                      ]
+                    },
+                    "shape": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "type": {
+                              "const": "sphere"
+                            },
+                            "radius": {
+                              "type": "number",
+                              "exclusiveMinimum": 0,
+                              "maximum": 1000000000000.0
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "radius"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "type": {
+                              "const": "box"
+                            },
+                            "size": {
+                              "type": "array",
+                              "items": {
+                                "type": "number",
+                                "exclusiveMinimum": 0,
+                                "maximum": 1000000000000.0
+                              },
+                              "minItems": 3,
+                              "maxItems": 3
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "size"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "type": {
+                              "enum": [
+                                "capsule",
+                                "cylinder"
+                              ]
+                            },
+                            "radius": {
+                              "type": "number",
+                              "exclusiveMinimum": 0,
+                              "maximum": 1000000000000.0
+                            },
+                            "height": {
+                              "type": "number",
+                              "exclusiveMinimum": 0,
+                              "maximum": 1000000000000.0
+                            },
+                            "axis": {
+                              "enum": [
+                                "X",
+                                "Y",
+                                "Z"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "radius",
+                            "height",
+                            "axis"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "type": {
+                              "enum": [
+                                "convex-hull",
+                                "triangle-mesh"
+                              ]
+                            },
+                            "source": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                            },
+                            "vertices": {
+                              "type": "array",
+                              "items": {
+                                "type": "array",
+                                "items": {
+                                  "type": "number",
+                                  "minimum": -1000000000000.0,
+                                  "maximum": 1000000000000.0
+                                },
+                                "minItems": 3,
+                                "maxItems": 3
+                              },
+                              "minItems": 3,
+                              "maxItems": 100000
+                            },
+                            "triangles": {
+                              "type": "array",
+                              "items": {
+                                "type": "array",
+                                "items": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 2147483647
+                                },
+                                "minItems": 3,
+                                "maxItems": 3
+                              },
+                              "minItems": 1,
+                              "maxItems": 200000
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "source",
+                            "vertices",
+                            "triangles"
+                          ],
+                          "allOf": [
+                            {
+                              "if": {
+                                "properties": {
+                                  "type": {
+                                    "const": "convex-hull"
+                                  }
+                                }
+                              },
+                              "then": {
+                                "properties": {
+                                  "vertices": {
+                                    "minItems": 4
+                                  },
+                                  "triangles": {
+                                    "minItems": 4
+                                  }
+                                }
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "type": {
+                              "const": "compound"
+                            },
+                            "children": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                  "transform": {
+                                    "$ref": "#/$defs/Transform"
+                                  },
+                                  "shape": {
+                                    "$ref": "#/$defs/ColliderShape"
+                                  }
+                                },
+                                "required": [
+                                  "transform",
+                                  "shape"
+                                ]
+                              },
+                              "minItems": 1,
+                              "maxItems": 64
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "children"
+                          ]
+                        }
+                      ]
+                    },
+                    "material": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "group": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4294967295
+                    },
+                    "mask": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4294967295
+                    },
+                    "sensor": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "transform",
+                    "shape",
+                    "material",
+                    "group",
+                    "mask",
+                    "sensor"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 64
+              },
+              "animation": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "character_controller": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "max_speed": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "step_height": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "slope_limit_radians": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1.5707963267948966
+                  }
+                },
+                "required": [
+                  "max_speed",
+                  "step_height",
+                  "slope_limit_radians"
+                ]
+              },
+              "fracture": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "fragments": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "minItems": 2,
+                    "maxItems": 10000
+                  },
+                  "break_force": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "break_torque": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000000.0
+                  }
+                },
+                "required": [
+                  "source",
+                  "fragments",
+                  "break_force",
+                  "break_torque"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "category",
+              "mode",
+              "authority",
+              "parent",
+              "asset",
+              "transform",
+              "mass",
+              "linear_velocity",
+              "angular_velocity",
+              "colliders",
+              "animation"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 10000
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "category": {
+                    "enum": [
+                      "cloth",
+                      "soft-body",
+                      "hair"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "material": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "parent": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pins": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 2147483647
+                    },
+                    "minItems": 0,
+                    "maxItems": 100000
+                  },
+                  "vertex_count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  "stiffness": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "damping": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "mass": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "colliders": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "minItems": 0,
+                    "maxItems": 10000
+                  },
+                  "strand_count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  }
+                },
+                "required": [
+                  "id",
+                  "category",
+                  "geometry",
+                  "material",
+                  "parent",
+                  "pins",
+                  "vertex_count",
+                  "stiffness",
+                  "damping",
+                  "mass",
+                  "colliders"
+                ],
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "category": {
+                          "const": "hair"
+                        }
+                      }
+                    },
+                    "then": {
+                      "required": [
+                        "strand_count"
+                      ]
+                    },
+                    "else": {
+                      "not": {
+                        "required": [
+                          "strand_count"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "category": {
+                    "const": "particles"
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  "lifetime_seconds": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  "mass": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "radius": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "initial_velocity": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000.0,
+                      "maximum": 1000000000000.0
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "colliders": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "minItems": 0,
+                    "maxItems": 10000
+                  }
+                },
+                "required": [
+                  "id",
+                  "category",
+                  "geometry",
+                  "count",
+                  "lifetime_seconds",
+                  "seed",
+                  "mass",
+                  "radius",
+                  "initial_velocity",
+                  "colliders"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  "category": {
+                    "enum": [
+                      "gas",
+                      "liquid"
+                    ]
+                  },
+                  "transform": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "translation": {
+                        "type": "array",
+                        "items": {
+                          "type": "number",
+                          "minimum": -1000000000000.0,
+                          "maximum": 1000000000000.0
+                        },
+                        "minItems": 3,
+                        "maxItems": 3
+                      },
+                      "rotation": {
+                        "type": "array",
+                        "items": {
+                          "type": "number",
+                          "minimum": -1,
+                          "maximum": 1
+                        },
+                        "minItems": 4,
+                        "maxItems": 4
+                      }
+                    },
+                    "required": [
+                      "translation",
+                      "rotation"
+                    ]
+                  },
+                  "size": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "maximum": 1000000000000.0
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "resolution": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4096
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "density": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "viscosity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "temperature": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000000.0
+                  },
+                  "combustion": {
+                    "type": "boolean"
+                  },
+                  "emitters": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "minItems": 1,
+                    "maxItems": 10000
+                  },
+                  "colliders": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "minItems": 0,
+                    "maxItems": 10000
+                  },
+                  "max_secondary_particles": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  }
+                },
+                "required": [
+                  "id",
+                  "category",
+                  "transform",
+                  "size",
+                  "resolution",
+                  "density",
+                  "viscosity",
+                  "temperature",
+                  "combustion",
+                  "emitters",
+                  "colliders"
+                ],
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "category": {
+                          "const": "liquid"
+                        }
+                      }
+                    },
+                    "then": {
+                      "required": [
+                        "max_secondary_particles"
+                      ]
+                    },
+                    "else": {
+                      "not": {
+                        "required": [
+                          "max_secondary_particles"
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 10000
+        },
+        "joints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "type": {
+                "enum": [
+                  "fixed",
+                  "hinge",
+                  "slider",
+                  "ball",
+                  "spring",
+                  "generic-6dof"
+                ]
+              },
+              "body_a": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "body_b": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "anchor_a": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "translation": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000.0,
+                      "maximum": 1000000000000.0
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "rotation": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    },
+                    "minItems": 4,
+                    "maxItems": 4
+                  }
+                },
+                "required": [
+                  "translation",
+                  "rotation"
+                ]
+              },
+              "anchor_b": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "translation": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000000.0,
+                      "maximum": 1000000000000.0
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "rotation": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    },
+                    "minItems": 4,
+                    "maxItems": 4
+                  }
+                },
+                "required": [
+                  "translation",
+                  "rotation"
+                ]
+              },
+              "axis": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000.0,
+                  "maximum": 1000000000000.0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "limits": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000.0,
+                  "maximum": 1000000000000.0
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "stiffness": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "damping": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "motor_velocity": {
+                "type": "number",
+                "minimum": -1000000000000.0,
+                "maximum": 1000000000000.0
+              },
+              "motor_max_force": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "break_force": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "collide_connected": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "body_a",
+              "body_b",
+              "anchor_a",
+              "anchor_b",
+              "axis",
+              "limits",
+              "stiffness",
+              "damping",
+              "motor_velocity",
+              "motor_max_force",
+              "collide_connected"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 10000
+        },
+        "forces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "type": {
+                "enum": [
+                  "force",
+                  "impulse",
+                  "torque",
+                  "wind",
+                  "drag",
+                  "turbulence",
+                  "vortex"
+                ]
+              },
+              "bodies": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                },
+                "minItems": 1,
+                "maxItems": 10000
+              },
+              "vector": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000.0,
+                  "maximum": 1000000000000.0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "point": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000.0,
+                  "maximum": 1000000000000.0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "frame_range": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "start": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  "end": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  }
+                },
+                "required": [
+                  "start",
+                  "end"
+                ]
+              },
+              "strength": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1000000000000.0
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "categories": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "rigid-body",
+                    "character",
+                    "cloth",
+                    "soft-body",
+                    "hair",
+                    "particles",
+                    "gas",
+                    "liquid",
+                    "fracture"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 9
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "bodies",
+              "vector",
+              "point",
+              "frame_range",
+              "strength",
+              "seed",
+              "categories"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 10000
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "frame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "sequence": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2147483647
+              },
+              "type": {
+                "enum": [
+                  "grab",
+                  "release",
+                  "throw",
+                  "impulse",
+                  "break",
+                  "enable",
+                  "disable"
+                ]
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "actor": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "vector": {
+                "type": "array",
+                "items": {
+                  "type": "number",
+                  "minimum": -1000000000000.0,
+                  "maximum": 1000000000000.0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            },
+            "required": [
+              "id",
+              "frame",
+              "sequence",
+              "type",
+              "target",
+              "actor",
+              "vector"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 100000
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "coordinate_system",
+        "physical_units",
+        "scene",
+        "fps",
+        "frame_range",
+        "gravity",
+        "solver",
+        "budgets",
+        "assets",
+        "materials",
+        "bodies",
+        "components",
+        "joints",
+        "forces",
+        "events"
+      ]
+    }
+  },
+  "$ref": "#/$defs/PhysicsWorld"
+}
