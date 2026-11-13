@@ -78,6 +78,10 @@ class NativeReliabilityTests(unittest.TestCase):
         req['settings']['resolution'] = [640,360] if source else [64,64]
         req['settings']['samples'] = 16 if source else 64
         req['settings']['resources']['max_frames'] = count
+        if source:
+            req['settings']['seed'] = 0
+            req['settings']['output']['alpha'] = 'opaque'
+            req['settings']['resources']['timeout_seconds'] = 300
         req['settings']['resources']['memory_bytes'] = 2*1024**3
         backend = BlenderBackend()
         identity = backend.inspect_version()
