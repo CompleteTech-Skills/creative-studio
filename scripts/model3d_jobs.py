@@ -265,6 +265,7 @@ def run_job(root, handler, *, handler_version, retry=False):
         value.update(status='running', attempts=attempt, error=None,
                      active_attempt=dict(token=token, revision=revision, handler_version=handler_version))
         _save(root, value)
+        running_record = deepcopy(value)
         try:
             with tempfile.TemporaryDirectory(prefix='.attempt-', dir=root) as temp:
                 stage = Path(temp)/'checkpoint'; (stage/'output').mkdir(parents=True)
@@ -288,6 +289,10 @@ def run_job(root, handler, *, handler_version, retry=False):
                 value.update(status='completed', active_attempt=None, error=None)
                 _save(root, value)
         except Exception as exc:
+            # Completion mutates the candidate before its final manifest write.
+            # Recover the original running token/history if that write fails;
+            # retaining the mutated list/token would make recovery impossible.
+            value = deepcopy(running_record)
             value['status'] = 'cancelled' if isinstance(exc, RigError) and exc.report['code'] == 'MODEL3D_JOB_CANCELLED' else 'failed'
             value['error'] = exc.report if isinstance(exc, RigError) else dict(code='MODEL3D_JOB_HANDLER', message=str(exc)[:4096])
             # Keep a published checkpoint recoverable if final manifest I/O failed.

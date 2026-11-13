@@ -108,6 +108,32 @@ j.run_job(sys.argv[1],handler,handler_version='v1')
         self.assertEqual(jobs.status(self.job)['status'],'interrupted')
         self.assertEqual(jobs.run_job(self.job,self.handler,handler_version='v1',retry=True)['attempts'],2)
 
+    def test_transient_final_manifest_failure_keeps_published_checkpoint_recoverable(self):
+        self.create(); original_save=jobs._save
+        for after_write in (False,True):
+            # Exercise both a write failure and a caller losing its success reply.
+            if after_write:
+                self.job=self.root/'after-write';self.create()
+            failed=False
+            def fail_once(root,value):
+                nonlocal failed
+                if value['status']=='completed' and not failed:
+                    failed=True
+                    if after_write:original_save(root,value)
+                    raise OSError('transient final manifest failure')
+                original_save(root,value)
+            with self.subTest(after_write=after_write):
+                with patch('model3d_jobs._save',side_effect=fail_once):
+                    with self.assertRaises(OSError):jobs.run_job(self.job,self.handler,handler_version='v1')
+                interrupted=jobs.status(self.job)
+                self.assertEqual(interrupted['status'],'running')
+                self.assertIsNotNone(interrupted['active_attempt'])
+                self.assertEqual(interrupted['revisions'],[])
+                recovered=jobs.run_job(self.job,lambda _:self.fail('published work replayed'),handler_version='v1')
+                self.assertEqual(recovered['status'],'completed')
+                self.assertEqual(recovered['attempts'],1)
+                self.assertEqual(len(recovered['revisions']),1)
+
     def test_writer_lock_is_not_reentrant_and_batch_isolation(self):
         self.create(); second=self.root/'second'; jobs.create_job(second,self.request)
         def competing(context):
