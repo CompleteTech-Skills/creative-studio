@@ -101,3 +101,29 @@ class RigExternalIntegrationTests(unittest.TestCase):
         from rig_browser import verify_browser
         path=Path(self.temp.name)/'viewer';create_review_ui(self.rig,path);report=verify_browser(self.rig,path)
         self.assertTrue(report['ok']);self.assertTrue(report['ui_playback']);self.assertTrue(report['ui_weights'])
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BROWSER_TEST')=='1','Enable HATCH_RIG_BROWSER_TEST=1 for independent Three.js browser integration.')
+    def test_browser_retarget_without_neutral_uses_evaluated_rest_pose(self):
+        from rig_viewer import create_review_ui
+        from rig_browser import verify_browser
+        from rig_retarget import retarget_animation
+        from rig_jobs import save_rig
+        target=fixture(self.temp.name,name='retarget-browser',animated=False)
+        result=retarget_animation(self.rig,target,'bend')
+        target.clips[result['clip']['id']]=result['clip']
+        save_rig(target,operation='retarget-browser-test')
+        self.assertNotIn('neutral',target.clips)
+        path=Path(self.temp.name)/'retarget-viewer';create_review_ui(target,path)
+        report=verify_browser(target,path)
+        self.assertTrue(report['ok']);self.assertTrue(report['ui_reduced_motion'])
+        self.assertEqual(report['reduced_motion_mode'],'rest')
+        self.assertLessEqual(report['reduced_motion_max_vertex_error_m'],.01)
+        self.assertEqual({item['clip'] for item in report['clips']},set(target.clips))
+        # A selector update alone is insufficient: leave the displayed animated
+        # pose unchanged and confirm the independent rest comparison catches it.
+        script=path/'viewer.js';original=script.read_text()
+        broken=original.replace("$('clip').value='neutral';selectClip('neutral');", "$('clip').value='neutral';")
+        self.assertNotEqual(broken,original);script.write_text(broken)
+        with self.assertRaises(RigError) as caught:
+            verify_browser(target,path)
+        self.assertEqual(caught.exception.report['code'],'RIG_BROWSER_REDUCED')

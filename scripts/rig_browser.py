@@ -15,6 +15,7 @@ def verify_browser(rig,viewer,*,screenshot=None,headless=True):
     from playwright.sync_api import sync_playwright
     from rig_animation import evaluate_animation
     from rig_skinning import evaluate_deformation
+    from rig_skeleton import neutral_pose
     from rig_models import rig_signature
     from rig_errors import read_json
     require(read_json(Path(viewer)/'review.json')['rig_sha256']==rig_signature(rig.manifest),
@@ -44,7 +45,7 @@ def verify_browser(rig,viewer,*,screenshot=None,headless=True):
                         local=max(local,error);compared+=len(indices[mesh.id])
                     maximum=max(maximum,local);clip_reports.append(dict(clip=name,time=t,max_vertex_error_m=local))
             # Exercise controls through the DOM, not only internal sampling helpers.
-            selected='walk' if 'walk' in rig.clips else list(rig.clips)[-1]
+            selected='walk' if 'walk' in rig.clips else next((name for name in rig.clips if name!='neutral'),list(rig.clips)[-1])
             page.select_option('#clip',selected);page.click('#play');page.wait_for_timeout(200);page.click('#play')
             advanced=page.evaluate('window.hatchReview.time');require(advanced>0,'RIG_BROWSER_PLAYBACK','Play did not advance animation time.')
             page.check('#skeleton');page.check('#wireframe');page.check('#weights');page.select_option('#bone',rig.skeleton['bones'][1]['id'])
@@ -68,7 +69,29 @@ def verify_browser(rig,viewer,*,screenshot=None,headless=True):
                 solved=page.evaluate('args=>window.hatchReview.solveIK(...args)',[chain['id'],target])
                 require(np.isfinite(solved['residual_m']),'RIG_BROWSER_IK','Interactive IK returned a nonfinite residual.')
                 ik_edit=True;page.select_option('#control-mode','fk');page.click('#reset-pose')
-            page.check('#reduced');require(page.input_value('#clip')=='neutral','RIG_BROWSER_REDUCED','Reduced motion did not select the neutral pose.')
+            page.select_option('#clip',selected)
+            page.evaluate('value=>window.hatchReview.evaluate(value)',rig.clips[selected]['duration']*.37)
+            page.check('#reduced')
+            reduced_mode='clip' if 'neutral' in rig.clips else 'rest'
+            require(page.input_value('#clip')==('neutral' if reduced_mode=='clip' else ''),
+                    'RIG_BROWSER_REDUCED','Reduced motion did not select the neutral clip or clear the animated clip for rest.')
+            # Read the displayed vertices without selecting a clip or resetting the
+            # scene: doing either here would hide a broken reduced-motion control.
+            reduced=page.evaluate("""requests=>{const result={};window.hatchReview.scene.traverse(mesh=>{
+                const id=mesh.userData.hatchMeshId||mesh.name;
+                if(mesh.isMesh&&requests[id])result[id]=requests[id].map(index=>{
+                    const point=mesh.position.clone();mesh.getVertexPosition(index,point);
+                    mesh.localToWorld(point);return point.toArray();});});return result;}""",indices)
+            reduced_pose=(evaluate_animation(rig,rig.clips['neutral'],0.)['pose']
+                          if reduced_mode=='clip' else neutral_pose(rig.skeleton))
+            reduced_native=evaluate_deformation(rig,reduced_pose);reduced_error=0.
+            for mesh in rig.geometry.meshes:
+                points=np.asarray(reduced.get(mesh.id,[]),dtype=float)
+                expected=reduced_native[mesh.id]['positions'][indices[mesh.id]]
+                require(points.shape==expected.shape and np.isfinite(points).all(),
+                        'RIG_BROWSER_REDUCED','Reduced-motion vertex samples are missing or invalid.',asset=mesh.id)
+                reduced_error=max(reduced_error,float(np.linalg.norm(expected-points,axis=1).max()))
+            require(reduced_error<=.01,'RIG_BROWSER_REDUCED','Reduced motion did not display the evaluated neutral/rest pose.',observed=reduced_error)
             page.uncheck('#reduced');page.select_option('#clip',selected)
             page.evaluate('window.hatchReview.evaluate(.65)')
             if screenshot:
@@ -78,6 +101,7 @@ def verify_browser(rig,viewer,*,screenshot=None,headless=True):
             report=dict(reader='Three.js',version='0.180.0',browser=version,independent=True,ok=maximum<=.01,rig_sha256=rig_signature(rig.manifest),
                         max_vertex_error_m=maximum,tolerance_m=.01,compared_vertices=compared,clips=clip_reports,
                         ui_playback=True,ui_frame_step=True,ui_skeleton=True,ui_weights=True,ui_ik=ik_edit,ui_expressions=expression_edit,ui_reduced_motion=True,
+                        reduced_motion_mode=reduced_mode,reduced_motion_max_vertex_error_m=reduced_error,
                         errors=errors,asset_sha256=sha256(Path(viewer)/'character.glb'))
             if screenshot:report['screenshot_sha256']=sha256(screenshot)
             browser.close();return report
