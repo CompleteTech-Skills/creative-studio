@@ -33,22 +33,56 @@ def _references(value):
             yield from _references(child)
 
 
-def _files(value):
-    if isinstance(value, dict):
-        if isinstance(value.get('path'), str) and isinstance(value.get('sha256'), str):
-            yield value
-        if isinstance(value.get('receipt_path'), str) and isinstance(value.get('receipt_sha256'), str):
-            yield dict(path=value['receipt_path'], sha256=value['receipt_sha256'])
-        for child in value.values():
-            yield from _files(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _files(child)
+def _document_files(value):
+    """Ask each native schema owner which fields are dependency references."""
+    if not isinstance(value, dict):
+        return []
+    kind = value.get('kind', '')
+    if isinstance(kind, str) and kind.startswith('scene3d-'):
+        from scene3d_contracts import validate_document, all_refs
+        validate_document(value)
+        return list(all_refs(value))
+    if isinstance(kind, str) and kind.startswith('camera3d-'):
+        from camera3d_contracts import validate, _walk
+        validate(value)
+        return [item for item in _walk(value) if isinstance(item, dict) and
+                set(item) == {'id', 'version', 'path', 'sha256', 'kind'}]
+    from lookdev_contracts import KINDS as lookdev_kinds
+    if kind in lookdev_kinds:
+        from lookdev_contracts import validate_resource, _references
+        validate_resource(value)
+        result = list(_references(value))
+        if kind == 'texture3d':
+            result.append(value['file'])
+        return result
+    if isinstance(kind, str) and kind.startswith('model3d-'):
+        from model3d_contracts import validate_contract, file_references
+        validate_contract(value)
+        return list(file_references(value))
+    if kind == 'hatch-3d-rig':
+        from rig_contracts import validate_contract
+        validate_contract(value, 'Rig')
+        return [*value['source']['dependencies'], value['geometry']['data'],
+                *[item['data'] for item in value['skins']], *value['animations'],
+                *value['review']['receipts'], *value['validation']]
+    if kind == 'hatch-3d-rig-review':
+        from rig_contracts import validate_contract
+        validate_contract(value, 'RigReviewReceipt')
+        return list(value['evidence'])
+    if isinstance(value.get('artifacts'), list) and 'rig_sha256' in value:
+        from rig_contracts import validate_contract
+        validate_contract(value, 'RigValidationReport')
+        return list(value['artifacts'])
+    if kind in ('project', 'cast', 'clip', 'scene', 'shot'):
+        from production_contracts import validate_structure, _walk_refs
+        validate_structure(value, kind)
+        return [record for record, _ in _walk_refs(value)]
+    return []
 
 
 def _manifest_references(value):
     """Identify child documents by the native contract, never filename suffix."""
-    result = [item for item in _files(value) if isinstance(item.get('kind'), str)]
+    result = [item for item in _document_files(value) if isinstance(item.get('kind'), str)]
     if not isinstance(value, dict):
         return result
     kind = value.get('kind')
@@ -115,7 +149,7 @@ class _Closure:
         if key not in self.expanded:
             self.active.add(name)
             documents = _manifest_references(value)
-            for child in _files(value):
+            for child in _document_files(value):
                 self.capture(child, prefix, depth + 1, manifest=child in documents)
             self.active.remove(name)
             self.expanded.add(key)

@@ -257,6 +257,25 @@ class EditorNativeClosureTests(unittest.TestCase):
         with self.assertRaises(RigError) as raised:verify_editor_bundle(*edited,self.root)
         self.assertEqual(raised.exception.report['code'],'EDITOR3D_UNAVAILABLE')
 
+    def test_native_metadata_is_not_a_file_reference(self):
+        scene_path=self.root/'native/example-scene.json'
+        value=json.loads(scene_path.read_bytes())
+        value['metadata']={'path':'must-not-open.json','sha256':'0'*64}
+        scene_path.write_text(json.dumps(value))
+        def rebind(value):
+            if isinstance(value,dict):
+                if 'path' in value and 'sha256' in value:
+                    target=self.root/'native'/value['path']
+                    if target.is_file():value['sha256']=hashlib.sha256(target.read_bytes()).hexdigest()
+                for child in value.values():rebind(child)
+            elif isinstance(value,list):
+                for child in value:rebind(child)
+        for _ in range(5):
+            for path in (self.root/'native').glob('*.json'):
+                value=json.loads(path.read_bytes());rebind(value);path.write_text(json.dumps(value))
+        result=verify_editor_bundle(*bundle(self.root),self.root)
+        self.assertNotIn('native/must-not-open.json',result['files'])
+
 
 if __name__ == '__main__':
     unittest.main()
