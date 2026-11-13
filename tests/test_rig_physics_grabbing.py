@@ -143,6 +143,16 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(RigError):
             release_state(previous, dict(time=dict(numerator=1, denominator=1000), transform=transform([1, 0, 0])))
 
+    def test_ambiguous_half_turn_and_native_angular_speed_limit_fail(self):
+        previous = dict(time=dict(numerator=0, denominator=1), transform=transform())
+        for rotation in ([0,0,1,0], [0,0,-1,0]):
+            with self.subTest(rotation=rotation), self.assertRaises(RigError) as error:
+                release_state(previous, dict(time=dict(numerator=1,denominator=10),transform=transform(rotation=rotation)))
+            self.assertEqual(error.exception.report['code'], 'PHYSICS_GRIP_ROTATION_AMBIGUOUS')
+        with self.assertRaises(RigError) as error:
+            release_state(previous, dict(time=dict(numerator=1,denominator=100),transform=transform(rotation=axis_angle([0,1,0], .6).tolist())))
+        self.assertEqual(error.exception.report['code'], 'PHYSICS_GRIP_SPEED')
+
     def test_release_compiles_new_source_bound_scene_without_changing_originals(self):
         world, payloads = build_inputs(backend='pybullet')
         before_world, before_payloads = deepcopy(world), dict(payloads)
@@ -194,6 +204,14 @@ class ReleaseTests(unittest.TestCase):
         self.assertTrue(released['bodies'][0]['sleep']['enabled'])
         self.assertFalse(released['bodies'][0]['sleep']['initially_sleeping'])
         self.assertTrue(world['bodies'][0]['sleep']['initially_sleeping'])
+
+    def test_manually_supplied_release_cannot_bypass_native_velocity_magnitude(self):
+        world, payloads = build_inputs(backend='pybullet')
+        for key in ('linear_velocity', 'angular_velocity'):
+            state = release();state[key] = [40, 40, 0]
+            with self.subTest(key=key), self.assertRaises(RigError) as error:
+                compile_release(world, payloads, 'ball', state)
+            self.assertEqual(error.exception.report['code'], 'PHYSICS_GRIP_SPEED')
 
 
 if __name__ == '__main__':unittest.main()
