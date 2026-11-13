@@ -14,7 +14,7 @@ import re
 import stat
 import tempfile
 
-from rig_errors import finite_json, object_hash, open_payload, portable_name
+from rig_errors import finite_json, object_hash
 
 VERSION = 1
 OCIO_VERSION = '2.5.2'
@@ -27,6 +27,8 @@ MAX_WORK_BYTES = 512 * 1024**2
 REC709_D65 = {'r': [0.64, 0.33], 'g': [0.30, 0.60], 'b': [0.15, 0.06], 'w': [0.3127, 0.3290]}
 _ALLOWED_SUFFIXES = {'.ocio', '.cube', '.spi1d', '.spi3d', '.spimtx'}
 _SHA = re.compile(r'^[0-9a-f]{64}$')
+_PORTABLE = re.compile(r'^[A-Za-z0-9._/-]+$')
+_RESERVED = {'con', 'prn', 'aux', 'nul', *('com'+str(i) for i in range(1, 10)), *('lpt'+str(i) for i in range(1, 10))}
 
 
 def _need(ok, message):
@@ -52,18 +54,49 @@ def _number(value, low, high):
 
 
 def _path(value):
-    _need(type(value) is str and len(value) <= 512 and portable_name(value) == value, 'invalid relative color path')
-    _need(not any(c in value for c in '$%:'), 'environment or URI color paths are unsupported')
+    # A deliberately restricted profile subset keeps the worker independent
+    # of optional artwork libraries and excludes device names and aliases.
+    _need(type(value) is str and 0 < len(value) <= 512 and bool(_PORTABLE.fullmatch(value)), 'invalid relative color path')
+    _need(not value.startswith('/') and all(part not in ('', '.', '..') and not part.endswith('.')
+          and part.split('.', 1)[0].casefold() not in _RESERVED for part in value.split('/')), 'unsafe color path')
     return value
 
 
 def _bytes(root, name, limit):
     _path(name)
-    with open_payload(root, name) as (stream, info):
-        _need(info.st_size <= limit, 'color file exceeds byte budget')
-        payload = stream.read(limit+1)
-        _need(len(payload) <= limit, 'color file grew beyond byte budget')
-        return payload
+    root = Path(root).absolute()
+    target = root/name
+    _need(root.resolve() == root and target.resolve().is_relative_to(root), 'redirected color path')
+    for ancestor in [target, *target.parents]:
+        _need(not ancestor.is_symlink(), 'color symlink is unsupported')
+    before = target.lstat()
+    _need(stat.S_ISREG(before.st_mode) and before.st_size <= limit, 'color payload must be a bounded regular file')
+    descriptors = []
+    flags = os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0)
+    def identity(info):
+        value = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+        return value if os.name == 'nt' else value + (info.st_ctime_ns,)
+    try:
+        if os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW'):
+            directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            descriptors.append(os.open(root.anchor, directory_flags))
+            for part in [*root.parts[1:], *PurePosixPath(name).parts[:-1]]:
+                descriptors.append(os.open(part, directory_flags, dir_fd=descriptors[-1]))
+            descriptor = os.open(PurePosixPath(name).name, flags, dir_fd=descriptors[-1])
+        else:
+            descriptor = os.open(target, flags)
+        with os.fdopen(descriptor, 'rb') as stream:
+            opened = os.fstat(stream.fileno())
+            _need(stat.S_ISREG(opened.st_mode) and identity(opened) == identity(before), 'color file changed while opening')
+            payload = stream.read(limit+1)
+            _need(len(payload) <= limit and identity(os.fstat(stream.fileno())) == identity(before)
+                  and identity(target.lstat()) == identity(before), 'color file changed while reading')
+            return payload
+    except OSError as exc:
+        raise ValueError('unsafe/unavailable color payload: '+str(exc)) from exc
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
 def _hash(payload):
@@ -238,6 +271,9 @@ def verify_config(root, inventory):
     return inventory['closure_sha256']
 
 
+verify_config_bytes = verify_config
+
+
 @contextmanager
 def snapshot_config(root, inventory):
     """Yield a private closed profile directory; no OCIO/PyYAML import needed."""
@@ -333,6 +369,29 @@ def _measure(config, source):
     return result
 
 
+def _calibrate_srgb(config, ocio, source):
+    """Verify the declared sRGB display against an independent XYZ/OETF oracle."""
+    import numpy as np
+    columns = []
+    for key in ('r', 'g', 'b'):
+        x, y = REC709_D65[key]
+        columns.append([x/y, 1., (1-x-y)/y])
+    basis = np.array(columns, dtype=np.float64).T
+    x, y = REC709_D65['w']
+    scale = np.linalg.solve(basis, np.array([x/y, 1., (1-x-y)/y]))
+    xyz_to_709 = np.linalg.inv(basis*scale)
+    xyz = config.getProcessor(source, config.getColorSpace('cie_xyz_d65_interchange').getName()).getDefaultCPUProcessor()
+    standard = _processor(config, ocio, {'source': {'working_space': source}, 'target': 'sdr-srgb',
+                                       'display': 'sRGB', 'view': 'Standard', 'look': ''})
+    maximum = 0.
+    for patch in ([.18, .18, .18], [.5, .1, .03], [1., 1., 1.], [2., .25, .1]):
+        expected = [linear_to_srgb_reference(float(value)) for value in xyz_to_709 @ np.array(_rgb(xyz, patch))]
+        actual = _rgb(standard, patch)
+        maximum = max(maximum, max(abs(a-b) for a, b in zip(actual, expected)))
+    _need(maximum < 5e-4, 'declared sRGB display fails independent XYZ/OETF calibration')
+    return maximum
+
+
 def _processor(config, ocio, plan):
     source = plan['source']['working_space']
     if plan['target'] == 'scene-linear':
@@ -374,6 +433,7 @@ def make_plan(root, inventory, source, *, target='sdr-srgb', display='sRGB', vie
         _need(max(abs(a-b) for key in measured for a, b in zip(measured[key], source['primaries'][key])) < 5e-5,
               'declared source primaries disagree with the actual OCIO transform to CIE XYZ D65')
         value['measured_source_primaries'] = measured
+        value['output_calibration_max_error'] = None if target == 'scene-linear' else _calibrate_srgb(config, ocio, source['working_space'])
         _processor(config, ocio, value)
     value['plan_sha256'] = object_hash(value)
     return value
@@ -384,19 +444,21 @@ def transform_pixels(root, plan, rgba, *, max_work_bytes=MAX_WORK_BYTES):
     import numpy as np
     _exact(plan, ['kind', 'schema_version', 'config', 'source', 'target', 'display', 'view', 'look', 'exposure_stops',
                   'output_alpha', 'ocio_version', 'arithmetic', 'output_primaries', 'output_transfer', 'output_matrix',
-                  'output_range', 'measured_source_primaries', 'plan_sha256'], 'color plan')
-    expected = make_plan(root, plan['config'], plan['source'], target=plan['target'], display=plan['display'],
-                         view=plan['view'], look=plan['look'], exposure_stops=plan['exposure_stops'], output_alpha=plan['output_alpha'])
-    _need(plan == expected, 'stale/forged color plan')
-    _need(isinstance(rgba, np.ndarray) and rgba.dtype.kind == 'f' and rgba.ndim in (2, 3) and rgba.shape[-1] == 4,
+                  'output_range', 'measured_source_primaries', 'output_calibration_max_error', 'plan_sha256'], 'color plan')
+    _need(isinstance(rgba, np.ndarray) and rgba.dtype.kind == 'f' and rgba.ndim in (2, 3) and rgba.shape[-1] == 4 and rgba.flags.c_contiguous,
           'expected floating Nx4 or HxWx4 RGBA pixels')
     count = math.prod(rgba.shape[:-1])
     _need(0 < count <= MAX_PIXELS and type(max_work_bytes) is int and 0 < max_work_bytes <= MAX_WORK_BYTES, 'pixel/work budget exceeded')
-    _need(rgba.nbytes + count*4*4 + min(count, 65536)*3*4 <= max_work_bytes, 'color transform exceeds working byte budget')
+    inventory = validate_inventory(plan['config'])
+    _need(rgba.nbytes + count*24 + min(count, 65536)*3*4 + 2*sum(row['bytes'] for row in inventory['files']) <= max_work_bytes,
+          'color transform exceeds working byte budget')
     _need(bool(np.isfinite(rgba).all()) and bool(((rgba[..., 3] >= 0) & (rgba[..., 3] <= 1)).all()), 'invalid pixels or alpha')
+    expected = make_plan(root, inventory, plan['source'], target=plan['target'], display=plan['display'],
+                         view=plan['view'], look=plan['look'], exposure_stops=plan['exposure_stops'], output_alpha=plan['output_alpha'])
+    _need(plan == expected, 'stale/forged color plan')
     output = np.array(rgba, dtype=np.float32, copy=True, order='C')
     flat = output.reshape(-1, 4)
-    before = _hash(np.ascontiguousarray(rgba).tobytes())
+    before = _hash(memoryview(rgba).cast('B'))
     with _config(root, plan['config']) as (config, ocio):
         cpu = _processor(config, ocio, plan)
         for start in range(0, count, 65536):
@@ -418,7 +480,7 @@ def transform_pixels(root, plan, rgba, *, max_work_bytes=MAX_WORK_BYTES):
                'config_closure_sha256': plan['config']['closure_sha256'], 'ocio_version': OCIO_VERSION,
                'numpy_version': np.__version__, 'processor_cache_id': processor_id, 'input_dtype': str(rgba.dtype),
                'output_dtype': 'float32', 'shape': list(rgba.shape), 'input_pixels_sha256': before,
-               'output_pixels_sha256': _hash(output.tobytes()), 'pixel_count': count,
+               'output_pixels_sha256': _hash(memoryview(output).cast('B')), 'pixel_count': count,
                'source_context_sha256': object_hash(plan['source']), 'source_render_verified': False,
                'pixel_transform_executed': True, 'view_applied': plan['target'] != 'scene-linear',
                'exposure_applications': 1, 'output_transfer': plan['output_transfer'],
