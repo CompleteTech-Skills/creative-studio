@@ -42,3 +42,17 @@ Actual shadow movement, material placement, character readability, warm-light
 response and reflection placement still require visual inspection of the
 retained frames. Full demonstrations A, C, D, E, F, G and J, browser parity,
 portable roundtrips and full #90 acceptance remain separate release gates.
+
+The separate fixed geometry-shadow experiment uses
+`python scripts/lookdev_laboratory_experiments.py shadows` with the same
+`--output`, `--blender`, `--python-site` and `--temporary-root` arguments.
+It renders clear/occluded controls under small and large area emitters, a moved
+emitter, two occluder elevations, ground contact, changed source distance, sun
+and spot sources. The occluding cube is hidden from camera rays while remaining
+visible to shadow rays. Shadow-only diagnostics are measured attenuation ratios
+of actual linear EXR illumination; they are not an input texture. Separate
+checks require wider penumbrae with increased angular size, reversed shadow
+centroid with reversed source position, increased displacement with elevation,
+near-zero contact visibility, and reduced displacement with increased distance.
+These checks apply to this fixed geometry and source setup. They need actual
+execution and visual inspection before demonstration C can be accepted.
