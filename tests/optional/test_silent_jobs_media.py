@@ -113,5 +113,54 @@ class ActualMediaJobs(unittest.TestCase):
         self.assertEqual(retried['state']['cached_reused'],120)
         self.assertEqual(retried['state']['attempts'],2)
 
+    def test_parent_death_stops_owned_worker_and_actual_ffmpeg(self):
+        paths=[]
+        for i in range(120):
+            path=self.source/f'parent-noise-{i}.png'
+            Image.effect_noise((128,128),100).convert('RGB').save(path);paths.append(path.name)
+        source=media.build_source(self.source,paths,{'numerator':24,'denominator':1},origin='synthetic')
+        request=media.make_request(source,encoding={'threads':1,'gop':24,'speed':'veryslow',
+            'rate_control':{'mode':'quality','value':18}})
+        jobs.create(request,self.source,self.root/'job',self.root/'job-delivery')
+        controller=subprocess.Popen([sys.executable,str(Path(jobs.__file__)),'run','--job-root',str(self.root/'job')],
+            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        owned=[]
+        def children(pid):
+            try:return [int(value) for value in Path(f'/proc/{pid}/task/{pid}/children').read_text().split()]
+            except FileNotFoundError:return []
+        try:
+            deadline=time.monotonic()+30
+            while time.monotonic()<deadline and controller.poll() is None:
+                workers=children(controller.pid)
+                for worker in workers:
+                    for child in children(worker):
+                        try:command=Path(f'/proc/{child}/cmdline').read_bytes()
+                        except FileNotFoundError:continue
+                        if b'ffmpeg' in command and b'-progress' in command:
+                            owned=[worker,child];break
+                    if owned:break
+                if owned:break
+                time.sleep(.01)
+            self.assertTrue(owned,'actual owned FFmpeg process must execute before parent-death injection')
+            controller.kill();controller.wait(timeout=5)
+            deadline=time.monotonic()+5
+            def executing(pid):
+                try:return Path(f'/proc/{pid}/stat').read_text().rsplit(')',1)[1].split()[0]!='Z'
+                except FileNotFoundError:return False
+            while time.monotonic()<deadline and any(executing(pid) for pid in owned):time.sleep(.01)
+            self.assertFalse(any(executing(pid) for pid in owned),'lifetime guardian must stop its complete owned process group')
+            self.assertEqual(jobs.status(self.root/'job')['state']['phase'],'interrupted')
+            self.assertFalse((self.root/'job-delivery').exists())
+        finally:
+            if controller.poll() is None:controller.kill();controller.wait(timeout=5)
+            if owned:
+                try:
+                    command=Path(f'/proc/{owned[0]}/cmdline').read_bytes()
+                    if (str(Path(jobs.__file__)).encode() in command and b'_worker' in command
+                            and os.getpgid(owned[0])==owned[0]):
+                        os.killpg(owned[0],signal.SIGKILL)
+                except ProcessLookupError:pass
+                except FileNotFoundError:pass
+
 
 if __name__=='__main__':unittest.main()
