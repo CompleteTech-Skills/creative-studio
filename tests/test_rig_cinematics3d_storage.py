@@ -36,7 +36,6 @@ class CinematicStorage(unittest.TestCase):
                 self.assertEqual(caught.exception.report['category'],category)
                 prepare.assert_not_called();self.assertFalse(target.parent.exists())
 
-if __name__=='__main__':unittest.main()
 
 
 class ProbeDescriptorProtocol(unittest.TestCase):
@@ -69,3 +68,6 @@ class ProbeDescriptorProtocol(unittest.TestCase):
             self.assertEqual(backend.cinematics_probe(),value)
         self.assertEqual(len(descriptors),1)
         with self.assertRaises(OSError):os.fstat(descriptors[0])
+
+
+if __name__=='__main__':unittest.main()
