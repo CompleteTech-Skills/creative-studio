@@ -18,7 +18,7 @@ import numpy as np
 from camera3d_contracts import canonical_bytes, validate
 from camera3d_sequence import CameraSequence, composite_transition, transition_progress, write_transition_preview, read_rendered_png
 from camera3d_catalog import update_catalog, revise_camera, resolve_camera, export_document
-from camera3d_presets import CAMERA_PRESETS, MOVEMENT_PRESETS, SHOT_PRESETS, camera_preset, movement_preset, shot_preset, plan_storyboard_panel, native_camera_preset, import_preset, duplicate_preset
+from camera3d_presets import CAMERA_PRESETS, MOVEMENT_PRESETS, SHOT_PRESETS, camera_preset, movement_preset, shot_preset, plan_storyboard_panel, native_camera_preset, import_preset, duplicate_preset, sample_movement_preset
 from camera3d_continuity import boundary_continuity
 from test_rig_camera3d_contracts import fixtures, pointer, save_native_closure
 from camera3d_math import world_transform, project_bounds, projection_matrix
@@ -182,6 +182,19 @@ class ActualCameraPreviews(unittest.TestCase):
                     image.load();self.assertEqual(image.size,(192,128))
                 self.assertGreater(preview['alpha_pixels'],3)
                 self.assertLessEqual(max(abs(a-b) for a,b in zip(preview['actual_bounds'],preview['predicted_bounds'])),3)
+            self.assertEqual(len(report['movements']),12)
+            for movement in report['movements']:
+                self.assertEqual(len(movement['frames']),8)
+                images=[]
+                for frame in movement['frames']:
+                    path=destination/frame['path']
+                    self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),frame['sha256'])
+                    with Image.open(path) as image:
+                        image.load();images.append(image.convert('RGB'))
+                images[0].save(destination/('movement-'+movement['name']+'.gif'),save_all=True,
+                    append_images=images[1:],duration=125,loop=0)
+                if movement['name']=='static-tripod':self.assertEqual(movement['maximum_pixel_difference'],0)
+                else:self.assertGreater(movement['maximum_pixel_difference'],1e-5)
             transitions=write_transition_preview(destination/'shot-establishing-shot.png',
                 destination/'shot-close-up.png',destination/'actual-camera-transitions',duration_frames=8)
             self.assertEqual(len(transitions['frames']),24)
@@ -235,6 +248,31 @@ class CatalogAndPresets(unittest.TestCase):
         for name in SHOT_PRESETS:self.assertGreater(shot_preset(name)['subject_frame_fraction'],0)
         with self.assertRaises(ValueError):movement_preset('handheld',overrides={'amplitude_m':-1})
         with self.assertRaises(ValueError):movement_preset('slow-dolly-in',overrides={'unrecognized':1})
+
+    def test_working_movement_presets_delegate_motion_and_target_aim_deterministically(self):
+        source=camera_preset('cinematic-35mm');source['transform']['translation']=[0,0,8]
+        before=deepcopy(source)
+        for name in MOVEMENT_PRESETS:
+            with self.subTest(name=name):
+                frames=[sample_movement_preset(name,source['transform'],source['optics'],
+                    {'frame':frame},24,target_position=[0,0,0]) for frame in (0,12,23)]
+                replay=sample_movement_preset(name,source['transform'],source['optics'],
+                    {'frame':12},24,target_position=[0,0,0])
+                self.assertEqual(replay,frames[1])
+                if frames[0]['target_aim']:
+                    for frame in frames:
+                        world=world_transform(frame['transform'])
+                        direction=-world[:3,2]
+                        target=-world[:3,3];target/=np.linalg.norm(target)
+                        np.testing.assert_allclose(direction,target,atol=1e-9)
+                if name=='static-tripod':
+                    self.assertEqual(frames[0]['transform'],frames[-1]['transform'])
+                elif name!='character-follow' and name!='over-the-shoulder-tracking':
+                    self.assertNotEqual(frames[0]['transform'],frames[1]['transform'])
+                self.assertNotEqual(frames[0]['dependency_sha256'],frames[-1]['dependency_sha256'])
+        self.assertEqual(source,before)
+        with self.assertRaises(ValueError):
+            sample_movement_preset('full-orbit',source['transform'],source['optics'],{'frame':0},24)
 
     def test_storyboard_plan_projects_real_supplied_bounds_and_discloses_uncertainty(self):
         panel=dict(id='establish',subject_ids=['actor'],shot_preset='establishing-shot',duration_frames=24,notes='show the room')

@@ -248,3 +248,37 @@ def plan_storyboard_panel(panel, *, subject_bounds, aspect_ratio=16/9):
                 optics=optics, movement=movement, target_m=center.tolist(),
                 duration_frames=panel['duration_frames'], uncertainty=uncertain,
                 requires_render_review=True)
+
+
+def sample_movement_preset(name, base_transform, optics, time, duration_frames, *,
+                           overrides=None, target_position=None, fps=None):
+    """Evaluate a working preset through the motion and target-aim owners.
+
+    Tracking/orbit/reveal presets keep the supplied evaluated subject targeted;
+    static and handheld preserve their authored orientation. A target is actual
+    world data, never inferred from an image or an unresolved reference.
+    """
+    import hashlib
+    from camera3d_motion import sample_motion
+    from camera3d_constraints import look_at_world, VERSION
+    from camera3d_math import world_transform
+    from rig_math import matrix_quaternion
+    preset = movement_preset(name, overrides=overrides)
+    aimed = preset['motion'] not in ('static', 'shake')
+    if aimed and target_position is None:
+        raise ValueError('camera3d aimed movement preset requires an evaluated target')
+    sample = sample_motion(base_transform, optics, time, duration_frames,
+                           preset['motion'], preset['parameters'],
+                           target_position=target_position, fps=fps)
+    diagnostics = None
+    if aimed:
+        world, diagnostics = look_at_world(world_transform(sample['transform']), target_position)
+        sample['transform'] = dict(translation=world[:3, 3].tolist(),
+            rotation=matrix_quaternion(world[:3, :3]).tolist(), scale=[1, 1, 1])
+    dependency = dict(motion_sha256=sample['dependency_sha256'],
+                      preset=preset, target_aim=aimed,
+                      aim_algorithm=VERSION if aimed else None,
+                      transform=sample['transform'])
+    sample.update(preset=preset, target_aim=aimed, constraint_diagnostics=diagnostics,
+                  dependency_sha256=hashlib.sha256(canonical_bytes(dependency)).hexdigest())
+    return sample

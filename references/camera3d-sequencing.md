@@ -162,8 +162,13 @@ canonical world bounds. Each view compares its rendered alpha silhouette bounds
 with the canonical projection of those same bounds, within three pixels at
 192×128, and records the complete plan, output hash and actual pixel count.
 `previews.blend` preserves the actual cameras and geometry for inspection.
-The static shot previews exercise authored placement and optics; their movement
-metadata is retained without claiming that the movement was animated.
+The static shot previews exercise authored placement and optics. A second pass
+evaluates all twelve movement presets through the motion owner and the target
+aim constraint owner, rendering eight consecutive display frames at 8 fps each.
+Fixed background depth anchors expose actual tracking/follow/dolly parallax.
+The static tripod must retain identical pixels; every other movement must show
+a measured raster difference. The host gate creates animated GIF previews from
+those actual PNGs. These are short engineering previews, not the #82 film.
 
 ```bash
 HATCH_CAMERA3D_PREVIEW_TEST=1 HATCH_BLENDER=/path/to/blender \
@@ -179,3 +184,14 @@ camera renders and verifies both source hashes against the native report.
 These engineering previews establish corresponding
 camera output and framing, not production visual approval, motion-preset film
 acceptance, multi-camera editor review, or the five-shot demonstration.
+
+
+`sample_movement_preset` is the production preset sampling entry point. It
+passes the exact frame/fps, authored base pose, optics, parameters and evaluated
+world target to `camera3d_motion.sample_motion`. Dolly/tracking/pedestal/crane,
+orbit/follow and dolly-zoom presets then use the constraint owner's
+`look_at_world` to retain the supplied subject. Static tripod and handheld retain
+authored orientation. An aimed preset without an actual target fails explicitly.
+The returned dependency hash binds the motion sample and aim algorithm/version
+and the resulting pose. Presets do not infer a scene target or resolve arbitrary
+source references; those remain with the authoritative scene/project owners.
