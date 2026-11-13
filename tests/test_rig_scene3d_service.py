@@ -614,6 +614,43 @@ class SceneServiceTests(unittest.TestCase):
         self.assertTrue(library.upgrade(graph, 'instance', r1, resolutions={'node:prefab-mesh:transform': 'source'})['applied'])
         self.assertEqual(library.resolve(r2)['nodes'][1]['transform']['translation'], [5, 0, 0])
 
+    def test_prefab_animation_expansion_accounts_combined_bytes_and_inflight_files(self):
+        library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+        clip = deepcopy(self.bundle['documents']['example-animation.json'])
+        clip['id'] = 'budget-child'
+        clip['tracks'][0]['target'] = 'prefab-mesh'
+        child = library.register(clip)
+        parent = deepcopy(clip)
+        parent['id'] = 'budget-parent'
+        parent['bindings'] = [dict(target='prefab-mesh', clip=child, start_frame=0,
+                                   end_frame=24, speed=1., loop=False)]
+        parent['dependencies'] = [child]
+        reference = library.register(parent)
+        prefab = deepcopy(self.bundle['documents']['example-prefab.json'])
+        prefab['id'] = 'budget-prefab'
+        prefab['nodes'][1]['animation_bindings'] = [dict(target='prefab-mesh', clip=reference,
+            start_frame=0, end_frame=24, speed=1., loop=False)]
+        prefab['dependencies'].append(reference)
+        prefab_reference = library.register(prefab)
+        graph = self.graph()
+        for index in range(3):
+            library.instantiate(graph, prefab_reference, 'budget-instance-'+str(index))
+        scene, sources = graph.document(), library.payloads()
+        baseline = library.expand(scene)
+        derived = baseline['derived_documents']
+        self.assertEqual(len(derived), 6)
+        exact_count = len(sources) + len(derived)
+        exact_bytes = sum(map(len, sources.values())) + sum(len(canonical_bytes(d)) for d in derived.values())
+        for name, bound in [('MAX_TOTAL_BYTES', exact_bytes-1), ('MAX_FILES', exact_count-1),
+                            ('MAX_FILES', len(sources)+1)]:
+            with self.subTest(name=name, bound=bound), patch('scene3d_prefabs.'+name, bound):
+                with self.assertRaises(RigError):
+                    library.expand(scene)
+            self.assertEqual(graph.document(), scene)
+            self.assertEqual(library.payloads(), sources)
+        with patch('scene3d_prefabs.MAX_FILES', exact_count), patch('scene3d_prefabs.MAX_TOTAL_BYTES', exact_bytes):
+            self.assertEqual(library.expand(scene), baseline)
+
     def test_nested_prefabs_detach_and_derived_animation_preserve_source_bytes(self):
         library = PrefabLibrary.from_files(self.root/'source', self.bundle)
         original = deepcopy(self.bundle['documents']['example-prefab.json'])
