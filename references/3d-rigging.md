@@ -226,6 +226,8 @@ Defaults: 256 MiB encoded source, 1 GiB dependencies/archive expansion, one mill
 
 `configure --file limits.json` uses strict bounded overrides. `status` shows active/pending/failed/stale work. `resume` retries failed/interrupted operations within the attempt budget. An OS file lock gives one writer ownership; claims survive in the journal and lock ownership releases after a process crash. Cache identity covers the core rig, parameters, implementation files and retained artifact hashes. Changing a covered input makes prior results stale. Failed exports never count as independent acceptance.
 
+Archive creation requires a new destination and holds the run writer lock. It streams bounded files, rejects files that change during capture, restores and loads the completed temporary ZIP to verify its actual closure, then publishes exclusively. A pre-existing or racing destination is preserved; only this attempt’s temporary files are removed.
+
 Archive inventory covers every included file, hash and size. Restoration rejects path escapes, aliases/collisions, links, encrypted/special files, excessive expansion and unexpected/missing members, verifies all bytes in a fresh temporary directory, loads the actual rig, then promotes the directory. A restored fixture is evaluated again by the demonstration gate.
 
 Restoration requires a new destination and rejects destination symlinks, including those with missing targets. If another writer creates that destination before publication, even as an empty directory or symlink, restoration fails, preserves the competing destination, and removes only its own temporary extraction directory.
