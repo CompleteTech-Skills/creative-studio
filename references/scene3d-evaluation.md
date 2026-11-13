@@ -112,6 +112,12 @@ components. `sample_geometry=True` returns actual deformed world vertices and
 updated component/ancestor bounds through the existing importer and rig owners.
 Exposed bone/morph state is capped at 250000 total entries across components;
 posed and animated vertices share the evaluator's output vertex budget.
+Authored rig attachment sockets additionally appear as `socket_matrices` with
+`socket_matrix_space:'rig-bind'`, evaluated by `rig_attachments.socket_world` for
+the same canonical pose. Consumers obtain scene matrices by multiplying
+`world_from_rig @ socket_matrices[socket_id]`. Only manifest-declared sockets are
+returned; rigs without sockets expose an empty mapping. Socket entries share the
+existing 250000-entry native state budget.
 
 Consumers must use this state or reject pose-bound scenes; a binding is not
 permission to render the rig's rest pose. Before any native pose decoder runs,

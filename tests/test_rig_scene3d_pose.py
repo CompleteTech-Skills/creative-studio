@@ -38,8 +38,14 @@ class PoseBindingTests(unittest.TestCase):
                               **self.file('actor/rig.json'))
         return dict(schema_version=1,rig=rig_ref,pose=dict(id=pose['id'],rig_version=pose['rig_version'],file=self.file(path)))
 
-    def actors(self):
+    def actors(self,*,with_socket=False):
         rig=fixture(self.root,name='actor')
+        if with_socket:
+            from rig_jobs import save_rig
+            rig.manifest['attachments']=[dict(schema_version=1,id='tool',bone='b1',
+                transform=dict(translation=[.2,.3,0],rotation=[0,0,0,1],scale=[1,1,1]),
+                role='test-tool',owner=rig.manifest['character']['id'])]
+            save_rig(rig,operation='author-test-socket')
         asset=deepcopy(self.bundle['documents']['triangle.json'])
         asset.update(id='actor',asset_type='character',skeleton=dict(kind='hatch-3d-rig',
             id=rig.manifest['id'],version=rig.manifest['version'],**self.file('actor/rig.json')),
@@ -72,6 +78,7 @@ class PoseBindingTests(unittest.TestCase):
         self.assertNotEqual(rig.manifest['version'],rig.skeleton['version'])
         self.assertIn('b1',state['bone_matrices'])
         self.assertIn('blink',state['morph_targets'][rig.geometry.meshes[0].id])
+        self.assertEqual(state['socket_matrices'],{})
         self.assertEqual(self.bundle,before);self.assertEqual((self.root/'actor/rig.json').read_bytes(),manifest)
         self.assertTrue(out['nodes']['one']['native_pose_evaluated'])
         without_vertices=self.evaluate(source_root=self.root)
@@ -109,6 +116,24 @@ class PoseBindingTests(unittest.TestCase):
         with patch('rig_models.load_rig') as decoder:
             with self.assertRaises(RigError):self.evaluate(source_root=self.root,sample_geometry=True)
             decoder.assert_not_called()
+
+    def test_authored_socket_follows_pose_and_explicit_instance_world_mapping(self):
+        from rig_attachments import socket_world
+        rig,asset,one,two=self.actors(with_socket=True)
+        one['transform']['translation']=[7,2,3]
+        one['transform']['rotation']=axis_angle([0,1,0],.4).tolist()
+        before=deepcopy(self.bundle);source=(self.root/'actor/rig.json').read_bytes()
+        out=self.evaluate(source_root=self.root)
+        state=out['nodes']['one']['native_state'];other=out['nodes']['two']['native_state']
+        self.assertEqual(set(state['socket_matrices']),{'tool'})
+        self.assertEqual(state['socket_matrix_space'],'rig-bind')
+        matrix=np.asarray(state['socket_matrices']['tool'])
+        np.testing.assert_allclose(matrix,socket_world(rig,state['pose'],'tool'))
+        self.assertFalse(np.allclose(matrix,other['socket_matrices']['tool']))
+        np.testing.assert_allclose(np.asarray(state['world_from_rig'])@matrix,
+            np.asarray(out['nodes']['one']['world_matrix'])@socket_world(rig,state['pose'],'tool'))
+        self.assertEqual(self.bundle,before)
+        self.assertEqual((self.root/'actor/rig.json').read_bytes(),source)
 
     def test_decoder_uses_private_capture_after_original_source_changes(self):
         from rig_models import load_rig
