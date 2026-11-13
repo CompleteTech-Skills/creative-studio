@@ -45,7 +45,7 @@ def verify(root,*,blender=False,browser=False,validator=False,render=False,archi
     from rig_gltf import export_gltf
     from rig_import import load_character_model
     from rig_interop import compare_imported,validate_gltf
-    root=Path(root).absolute();results=[];archive_directory=None
+    root=Path(root).resolve();results=[];archive_directory=None
     archive_root = safe_path(root, 'packages') if archives else None
     for name in (*ARCHETYPES,'humanoid-retarget','quadruped-retarget'):
         rig=load_rig(root/name);numeric=validate_rig(rig,require_animation=True)
