@@ -751,7 +751,7 @@
         "max_provider_calls": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 2000000000
+          "maximum": 1000000000000000
         },
         "max_cpu_seconds": {
           "type": "number",
@@ -766,12 +766,12 @@
         "max_storage_bytes": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 2000000000
+          "maximum": 1000000000000000
         },
         "max_memory_bytes": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 2000000000
+          "maximum": 1000000000000000
         },
         "currency": {
           "anyOf": [
@@ -1053,7 +1053,7 @@
             "max_provider_calls": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "max_cpu_seconds": {
               "type": "number",
@@ -1068,12 +1068,12 @@
             "max_storage_bytes": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "max_memory_bytes": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "currency": {
               "anyOf": [
@@ -2691,7 +2691,7 @@
             "max_provider_calls": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "max_cpu_seconds": {
               "type": "number",
@@ -2706,12 +2706,12 @@
             "max_storage_bytes": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "max_memory_bytes": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "currency": {
               "anyOf": [
@@ -2987,7 +2987,7 @@
             "max_provider_calls": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "max_cpu_seconds": {
               "type": "number",
@@ -3002,12 +3002,12 @@
             "max_storage_bytes": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "max_memory_bytes": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "currency": {
               "anyOf": [
@@ -4342,7 +4342,7 @@
                   "max_provider_calls": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 2000000000
+                    "maximum": 1000000000000000
                   },
                   "max_cpu_seconds": {
                     "type": "number",
@@ -4357,12 +4357,12 @@
                   "max_storage_bytes": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 2000000000
+                    "maximum": 1000000000000000
                   },
                   "max_memory_bytes": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 2000000000
+                    "maximum": 1000000000000000
                   },
                   "currency": {
                     "anyOf": [
@@ -4582,7 +4582,7 @@
                   "max_provider_calls": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 2000000000
+                    "maximum": 1000000000000000
                   },
                   "max_cpu_seconds": {
                     "type": "number",
@@ -4597,12 +4597,12 @@
                   "max_storage_bytes": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 2000000000
+                    "maximum": 1000000000000000
                   },
                   "max_memory_bytes": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 2000000000
+                    "maximum": 1000000000000000
                   },
                   "currency": {
                     "anyOf": [
@@ -5509,7 +5509,7 @@
             "max_provider_calls": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "max_cpu_seconds": {
               "type": "number",
@@ -5524,12 +5524,12 @@
             "max_storage_bytes": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "max_memory_bytes": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 2000000000
+              "maximum": 1000000000000000
             },
             "currency": {
               "anyOf": [

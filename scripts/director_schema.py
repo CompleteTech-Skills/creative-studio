@@ -119,8 +119,9 @@ def _definitions():
     review_state = {'enum': ['unreviewed', 'approved', 'rejected', 'stale', 'not-applicable']}
     status = {'enum': STATUSES}
     requirements = obj(dict(explicit=texts, inferred=texts, locked=texts, ambiguities=texts, assumptions=texts))
-    budget = obj(dict(max_provider_calls=INTEGER, max_cpu_seconds=NUMBER, max_gpu_seconds=NUMBER,
-                      max_storage_bytes=INTEGER, max_memory_bytes=INTEGER,
+    budget_integer = dict(type='integer', minimum=0, maximum=10**15)
+    budget = obj(dict(max_provider_calls=budget_integer, max_cpu_seconds=NUMBER, max_gpu_seconds=NUMBER,
+                      max_storage_bytes=budget_integer, max_memory_bytes=budget_integer,
                       currency=nullable(TEXT), max_amount=nullable(NUMBER), policy_ref=nullable(ref('artifact-ref'))))
     refs = lambda **extra: dict(artifacts=artifacts, **extra)
     fields = {
