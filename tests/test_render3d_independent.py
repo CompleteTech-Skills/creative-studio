@@ -410,6 +410,23 @@ class Render3DIndependentTests(unittest.TestCase):
                 create_snapshot(rig.root, self.root / 'rejected-native', NativeRigAdapter())
         self.assertFalse((self.root / 'rejected-native').exists())
 
+    def test_source_growth_cannot_exceed_total_copy_budget_after_preflight(self):
+        from unittest.mock import patch
+        import render3d_snapshot as snapshot
+        source, adapter = self.sources(SyntheticFileAdapter({'a.bin': b'aaa', 'b.bin': b'bbb'}))
+        target = source / 'b.bin'
+        real_open = os.open
+        def grow_before_open(name, flags, *args, **kwargs):
+            if Path(name) == target:
+                target.write_bytes(b'bbbb')
+            return real_open(name, flags, *args, **kwargs)
+        destination = self.root / 'budget-rejected'
+        with patch.object(snapshot, 'MAX_TOTAL_BYTES', 6), patch.object(snapshot.os, 'open', side_effect=grow_before_open):
+            with self.assertRaises(Render3DError) as caught:
+                create_snapshot(source, destination, adapter)
+        self.assertEqual(caught.exception.report['category'], 'storage-exhaustion')
+        self.assertFalse(destination.exists())
+
     def test_complete_result_requires_actual_verifier_identity_and_evidence(self):
         value = dict(schema_version=1, kind='render3d-result', job='job',
                      request_sha256='a' * 64, snapshot_sha256='b' * 64,

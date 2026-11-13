@@ -130,8 +130,11 @@ class NativeRigAdapter:
         # Give them private, bounded regular files rather than caller-mutable paths.
         with tempfile.TemporaryDirectory(prefix='render3d-native-admission-') as temporary:
             private_root = Path(temporary)
+            copied_bytes = 0
             for path, digest in distinct.items():
-                _copy_verified(root, private_root, path, digest)
+                copied = _copy_verified(root, private_root, path, digest,
+                                        remaining=MAX_TOTAL_BYTES - copied_bytes)
+                copied_bytes += copied['bytes']
             rig = load_rig(private_root)
             # Loading authenticates storage; the existing semantic validators own
             # executable skeleton/controller/skin/clip correctness. Missing optional
@@ -159,7 +162,7 @@ class NativeRigAdapter:
                                      tuple(sorted(distinct.items())), manifest['source']['fixture'], 'native-rig-preview')
 
 
-def _copy_verified(root, stage, path, expected):
+def _copy_verified(root, stage, path, expected, *, remaining=None):
     try:
         source = safe_path(root, path, exists=True)
         target = safe_path(stage, path)
@@ -170,11 +173,12 @@ def _copy_verified(root, stage, path, expected):
                  | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
         fd = os.open(source, flags)
         digest, count = hashlib.sha256(), 0
+        limit = MAX_FILE_BYTES if remaining is None else min(MAX_FILE_BYTES, remaining)
         with os.fdopen(fd, 'rb') as stream, target.open('xb') as output:
             require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), 'missing-asset', 'Source must be a regular file.', path=path)
-            for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            for chunk in iter(lambda: stream.read(min(1024 * 1024, limit - count + 1)), b''):
                 count += len(chunk)
-                require(count <= MAX_FILE_BYTES, 'storage-exhaustion', 'Source exceeds snapshot per-file budget.', path=path)
+                require(count <= limit, 'storage-exhaustion', 'Source exceeds remaining snapshot byte budget.', path=path)
                 digest.update(chunk); output.write(chunk)
             output.flush(); os.fsync(output.fileno())
         require(digest.hexdigest() == expected, 'stale-asset', 'Source bytes differ from owner hash.', path=path)
@@ -217,7 +221,11 @@ No source revision or output cache is overwritten or pruned.
         destination.parent.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix='.render3d-snapshot-', dir=destination.parent))
         try:
-            copied = [_copy_verified(source_root, stage, path, digest) for path, digest in description.files]
+            copied, copied_bytes = [], 0
+            for path, digest in description.files:
+                item = _copy_verified(source_root, stage, path, digest,
+                                      remaining=MAX_TOTAL_BYTES - copied_bytes)
+                copied.append(item); copied_bytes += item['bytes']
             require(copied == inventory, 'stale-asset', 'Source inventory changed during snapshot creation.')
             require(adapter.describe(stage) == description, 'stale-asset', 'Frozen source failed its owner validation.')
             atomic_json(stage / 'snapshot.json', document)
