@@ -59,12 +59,14 @@ def create(job):
         marker=scene.timeline_markers.new(name,frame=frame);marker.camera=bpy.data.objects[name]
     for name,data in job['lights'].items():
         light=bpy.data.objects.new(name,bpy.data.lights.new(name,'AREA'));scene.collection.objects.link(light)
-        light.location=data['position'];light.data.energy=data['energy'];light.data.shape='DISK';light.data.size=4
+        light.location=data['position'];light.data.energy=data['energy'];light.data.color=data['color'];light.data.shape='DISK';light.data.size=4
     scene.render.engine='CYCLES';scene.cycles.device='CPU';scene.cycles.samples=16
     scene.render.threads_mode='FIXED';scene.render.threads=2
     scene.render.resolution_x=640;scene.render.resolution_y=360;scene.render.resolution_percentage=100
     scene.world=bpy.data.worlds.new('Laboratory world');scene.world.use_nodes=True
-    scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value=.15
+    scene.world.node_tree.nodes['Background'].inputs['Color'].default_value=(*job['world']['background'],1.)
+    scene.world.node_tree.nodes['Background'].inputs['Strength'].default_value=1.
+    scene.view_settings.exposure=job['world']['exposure']
     scene.frame_set(0)
     bpy.ops.wm.save_as_mainfile(filepath=job['output'],compress=True)
 
@@ -85,7 +87,9 @@ def inspect(job):
         samples.append(sample)
     return dict(blender_version=bpy.app.version_string,samples=samples,meshes=sum(o.type=='MESH' for o in scene.objects),
         armatures=sum(o.type=='ARMATURE' for o in scene.objects),actions=len(bpy.data.actions),
-        cameras=sum(o.type=='CAMERA' for o in scene.objects),lights=sum(o.type=='LIGHT' for o in scene.objects))
+        cameras=sum(o.type=='CAMERA' for o in scene.objects),lights=sum(o.type=='LIGHT' for o in scene.objects),
+        light_state={o.name:dict(position=list(o.location),energy=o.data.energy,color=list(o.data.color)) for o in scene.objects if o.type=='LIGHT'},
+        world=dict(background=list(scene.world.node_tree.nodes['Background'].inputs['Color'].default_value)[:3],exposure=scene.view_settings.exposure))
 
 
 job=json.loads(Path(sys.argv[sys.argv.index('--')+1]).read_text())

@@ -163,7 +163,8 @@ def build_performance(asset_root,destination,*,blender=None):
             laboratory=str(stage/'assets/laboratory.glb'),key=str(stage/'assets/access-key.glb'),
             key_frames=[dict(frame=s['frame'],matrix=to_blender(s['key_matrix']).tolist()) for s in all_samples],
             cameras={name:dict(matrix=blender_camera_transform(transforms[name]['world_matrix']).tolist(),fov=.9) for name in scene['cameras']},
-            lights={item['id']:dict(position=(np.array(item['transform']['translation'])[[0,2,1]]*np.array([1,-1,1])).tolist(),energy=item['light']['intensity']) for item in scene['nodes'] if item['type']=='light'},samples=SAMPLES)
+            lights={item['id']:dict(position=(np.array(item['transform']['translation'])[[0,2,1]]*np.array([1,-1,1])).tolist(),energy=item['light']['intensity'],color=item['light']['color']) for item in scene['nodes'] if item['type']=='light'},
+            world=dict(background=scene['world']['background'],exposure=scene['world']['exposure']),samples=SAMPLES)
         atomic_json(stage/'creation-job.json',job)
         executable=find_blender(blender);worker=Path(__file__).with_name('director_scene_worker.py')
         def run(payload,name):
@@ -179,6 +180,16 @@ def build_performance(asset_root,destination,*,blender=None):
         created=run(job,'create')
         reopened=run(dict(mode='reopen',input=str(stage/'laboratory.blend'),report=str(stage/'blender-reopened.json'),samples=SAMPLES),'reopen')
         require(reopened['armatures'] == 2 and reopened['cameras'] == 2 and reopened['lights'] == 2, 'DIRECTOR_BLENDER_STRUCTURE', 'Native scene lacks required rig/camera/light structure.')
+        require(set(reopened['light_state']) == set(job['lights']), 'DIRECTOR_BLENDER_LIGHTS', 'Native light identities differ.')
+        for name, expected in job['lights'].items():
+            actual = reopened['light_state'][name]
+            require(np.allclose(actual['color'], expected['color'], atol=1e-6, rtol=0) and
+                    np.allclose(actual['position'], expected['position'], atol=1e-6, rtol=0) and
+                    math.isclose(actual['energy'], expected['energy'], abs_tol=1e-6),
+                    'DIRECTOR_BLENDER_LIGHTS', 'Native light state differs from canonical scene.')
+        require(np.allclose(reopened['world']['background'], job['world']['background'], atol=1e-6, rtol=0) and
+                math.isclose(reopened['world']['exposure'], job['world']['exposure'], abs_tol=1e-6),
+                'DIRECTOR_BLENDER_WORLD', 'Native world state differs from canonical scene.')
         require([x['frame'] for x in reopened['samples']] == SAMPLES, 'DIRECTOR_BLENDER_SAMPLES', 'Native sample inventory differs.')
         from rig_import import load_character_model
         key_geometry = load_character_model(stage/'assets/access-key.glb').geometry
