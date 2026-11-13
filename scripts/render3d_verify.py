@@ -21,6 +21,47 @@ from rig_errors import RigError, object_hash, safe_path
 
 
 @contextmanager
+def captured_file_ref(root, reference, *, max_bytes=256*1024**2):
+    """Yield private, hash-bound FileRef bytes through the canonical root reader.
+
+    The stream is rewound and valid only within this context. Active directory
+    capabilities are interpreted exclusively by rig_errors.open_payload.
+    """
+    from rig_errors import open_payload
+    validate(reference,'FileRef')
+    require(type(max_bytes) is int and 0<=max_bytes<=2**40,
+            'invalid-input','Artifact byte budget must be a bounded nonnegative integer.')
+    require(reference['bytes']<=max_bytes,'storage-exhaustion','Artifact exceeds its verification byte budget.')
+    try:
+        with tempfile.TemporaryFile() as frozen:
+            digest=hashlib.sha256();size=0
+            with open_payload(root,reference['path']) as (source,info):
+                require(info.st_size==reference['bytes'],'corrupt-output','Artifact size differs from its reference.')
+                while chunk:=source.read(min(1024*1024,reference['bytes']-size+1)):
+                    size+=len(chunk)
+                    require(size<=reference['bytes'],'corrupt-output','Artifact grew beyond its reference.')
+                    digest.update(chunk);frozen.write(chunk)
+            require(size==reference['bytes'] and digest.hexdigest()==reference['sha256'],
+                    'corrupt-output','Artifact bytes differ from their committed reference.')
+            frozen.seek(0)
+            yield frozen,dict(path=reference['path'],bytes=size,sha256=digest.hexdigest())
+    except Render3DError:
+        raise
+    except (RigError,OSError,ValueError) as exc:
+        raise Render3DError('corrupt-output',str(exc),path=reference['path']) from exc
+
+
+def read_file_ref(root,reference,*,max_bytes=32*1024**2,memory_bytes=32*1024**2):
+    """Return verified captured bytes for bounded semantic manifest consumers."""
+    require(type(memory_bytes) is int and 0<=memory_bytes<=2**40,
+            'invalid-input','Artifact memory budget must be a bounded nonnegative integer.')
+    validate(reference,'FileRef')
+    require(reference['bytes']<=memory_bytes,'system-memory','Artifact exceeds the semantic reader memory budget.')
+    with captured_file_ref(root,reference,max_bytes=max_bytes) as (stream,_):
+        return stream.read(reference['bytes'])
+
+
+@contextmanager
 def _captured(path, max_bytes):
     """Hash and decode the same privately captured bytes, not a mutable path."""
     path = Path(path)
@@ -309,7 +350,7 @@ class RenderArtifactVerifier:
         expected={(frame,p) for frame in frames for p in request['settings']['output']['passes']}
         require({(image['frame'],image['pass_name']) for image in result['images']}==expected,
                 'incomplete-output','Result lacks the exact requested frame/pass inventory.')
-        settings=request['settings'];decoded=[];paths=set();total=0
+        settings=request['settings'];decoded=[];paths=set();total=0;artifacts=[]
         try:
             for item in result['images']:
                 reference=item['file'];name=reference['path'];suffix=settings['output']['format']
@@ -327,6 +368,11 @@ class RenderArtifactVerifier:
                 presentation,source=frame_times(request,item['frame'])
                 total+=image['bytes'];decoded.append(dict(frame=item['frame'],path=name,
                     presentation_time=rational(presentation),source_time=rational(source),**image))
+            for reference in result.get('artifacts',[]):
+                remaining=settings['resources']['storage_bytes']-total
+                require(remaining>=0,'storage-exhaustion','Output verification exceeds its storage budget.')
+                with captured_file_ref(root,reference,max_bytes=min(256*1024**2,remaining)) as (_,record):
+                    artifacts.append(record);total+=record['bytes']
             actual=set()
             for directory in ('frames','passes'):
                 folder=root/directory
@@ -351,6 +397,7 @@ class RenderArtifactVerifier:
         return dict(schema_version=1,kind='render3d-verification',status='passed',verifier=identity,
                     request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],
                     settings_sha256=object_hash(settings),backend=deepcopy(self.expected_backend),images=decoded,
+                    artifacts=artifacts,
                     decoded_frames=len(frames),decoded_images=len(decoded),output_bytes=total,
                     limitation='Decoded integrity and input binding do not establish semantic scene correctness or visual approval.')
 

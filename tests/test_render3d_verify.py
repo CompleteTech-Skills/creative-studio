@@ -11,7 +11,7 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from render3d_verify import verify_image,verify_result,decode_image
+from render3d_verify import verify_image,verify_result,decode_image,read_file_ref
 from render3d_contracts import Render3DError
 from render3d_snapshot import Scene3DAdapter,create_snapshot
 from rig_errors import object_hash
@@ -237,6 +237,38 @@ class ImageVerification(unittest.TestCase):
                 with self.assertRaises(Render3DError) as error:
                     verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
             self.assertEqual(error.exception.report['category'],'stale-asset')
+
+    def test_companion_artifacts_bind_actual_bytes_and_charge_storage(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            path=root/'evidence'/'context.json';path.parent.mkdir();payload=b'{"source":"fixture"}';path.write_bytes(payload)
+            ref=dict(path='evidence/context.json',bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())
+            result['artifacts']=[ref]
+            report=verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(report['artifacts'],[ref])
+            self.assertEqual(report['output_bytes'],sum(i['file']['bytes'] for i in result['images'])+len(payload))
+            self.assertEqual(read_file_ref(root,ref),payload)
+            with self.assertRaises(Render3DError):read_file_ref(root,ref,memory_bytes=len(payload)-1)
+            with self.assertRaises(Render3DError):read_file_ref(root,ref,max_bytes=len(payload)-1)
+            request['settings']['resources']['storage_bytes']=report['output_bytes']-1
+            result['request_sha256']=object_hash(request)
+            with self.assertRaises(Render3DError) as error:
+                verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(error.exception.report['category'],'storage-exhaustion')
+
+    def test_companion_artifacts_reject_tampering_symlinks_and_fifo(self):
+        import os
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            folder=root/'evidence';folder.mkdir();path=folder/'context';path.write_bytes(b'abc')
+            ref=dict(path='evidence/context',bytes=3,sha256=hashlib.sha256(b'abc').hexdigest());result['artifacts']=[ref]
+            def rejects():
+                with self.assertRaises(Render3DError):verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            path.write_bytes(b'abd');rejects();path.unlink();rejects()
+            target=root/'outside';target.write_bytes(b'abc');path.symlink_to(target);rejects();path.unlink()
+            if hasattr(os,'mkfifo'):
+                os.mkfifo(path);rejects();path.unlink()
+            folder.rmdir();folder.symlink_to(root,target_is_directory=True);rejects()
 
     def test_unexpected_directory_and_nonregular_inventory_reject(self):
         import os
