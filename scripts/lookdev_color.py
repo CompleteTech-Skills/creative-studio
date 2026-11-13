@@ -60,11 +60,12 @@ def apply_configuration(scene, value):
     settings.white_balance_temperature=value['temperature_kelvin'];settings.white_balance_tint=value['tint']
     image=scene.render.image_settings
     image.color_management='FOLLOW_SCENE'
-    image.color_mode='RGBA'
     if value['output']=='scene-linear-exr':
         image.file_format='OPEN_EXR';image.color_depth='32';image.exr_codec='ZIP'
     else:
         image.file_format='PNG';image.color_depth='16'
+    # Blender filters the color-mode enum by the current file format.
+    image.color_mode='RGBA'
     scene['hatch_color_sha256']=value['sha256']
     return {'configuration_sha256':value['sha256'],'view':settings.view_transform,
             'output_encoding':value['output'],'display_transform_baked':value['output']=='srgb-png'}
