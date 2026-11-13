@@ -118,7 +118,7 @@ def _inventory(root, *, files, bytes_):
 
 
 def _verify(root, records, budgets, *, input_=False):
-    require(isinstance(records, list) and len(records) <= budgets['files'],
+    require(isinstance(records, list) and (input_ or bool(records)) and len(records) <= budgets['files'],
             'MODEL3D_JOB_CHECKPOINT', 'Malformed checkpoint file inventory.')
     actual = _inventory(root, files=budgets['files'],
                         bytes_=budgets['input_bytes' if input_ else 'output_bytes'])

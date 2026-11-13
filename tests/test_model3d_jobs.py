@@ -290,5 +290,21 @@ j.run_job(sys.argv[1],handler,handler_version='v1')
         self.assertFalse(jobs._unique_names(['inputs/caf\u00e9/a.txt','inputs/cafe\u0301/b.txt']))
         self.assertTrue(jobs._unique_names(['inputs/caf\u00e9/a.txt','inputs/caf\u00e9/b.txt']))
 
+    def test_empty_checkpoint_cannot_be_cached_or_recovered_as_success(self):
+        self.create();completed=jobs.run_job(self.job,self.handler,handler_version='v1')
+        revision=completed['current_revision'];folder=self.job/revision
+        (folder/'output/mesh.bin').unlink()
+        receipt=read_json(folder/'receipt.json');receipt['files']=[];atomic_json(folder/'receipt.json',receipt)
+        with self.assertRaises(RigError) as caught:
+            jobs.run_job(self.job,lambda _:self.fail('empty checkpoint replayed'),handler_version='v1')
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_JOB_CHECKPOINT')
+        pending=dict(completed,status='running',current_revision=None,revisions=[],
+                     active_attempt=dict(token=revision.rsplit('-',1)[1],revision=revision,handler_version='v1'))
+        atomic_json(self.job/'job.json',pending)
+        with self.assertRaises(RigError) as caught:
+            jobs.run_job(self.job,lambda _:self.fail('empty checkpoint recovered'),handler_version='v1')
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_JOB_CHECKPOINT')
+        self.assertIsNone(read_json(self.job/'job.json')['current_revision'])
+
 
 if __name__=='__main__':unittest.main()
