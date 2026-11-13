@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "execution-plan"
+    },
+    "state": {
+      "const": "planned"
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "test": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/artifact-ref"
+            },
+            "minItems": 0,
+            "maxItems": 128
+          }
+        },
+        "required": [
+          "id",
+          "test",
+          "evidence"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 1024
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/graph-plan-node"
+      },
+      "minItems": 1,
+      "maxItems": 1024
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "artifact": {
+            "$ref": "#/$defs/artifact-ref"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "artifact"
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 4096
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "state",
+    "requirements",
+    "nodes",
+    "edges"
+  ],
+  "$defs": {
+    "artifact-ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999
+        },
+        "semantic_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "byte_size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "provenance_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/artifact-ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "artifact_id",
+        "kind",
+        "schema_version",
+        "semantic_version",
+        "path",
+        "sha256",
+        "byte_size",
+        "media_type",
+        "provenance_ref",
+        "fixture",
+        "dependencies"
+      ]
+    },
+    "graph-plan-node": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "operation": {
+          "enum": [
+            "CapabilityRegistry.probe",
+            "PlanningProvider.generate_structured",
+            "AssetResolver.resolve",
+            "AcquisitionGateway.prepare",
+            "AcquisitionGateway.claim",
+            "AcquisitionGateway.ingest",
+            "AcquisitionGateway.fail",
+            "AcquisitionGateway.reconcile",
+            "AssetBuildAdapter.build",
+            "RigMotionAdapter.prepare",
+            "SceneAssembler.assemble",
+            "FrameEvaluator.evaluate",
+            "GraphCompiler.compile",
+            "BudgetLedger.reserve",
+            "BudgetLedger.settle",
+            "BudgetLedger.release",
+            "ExecutionService.submit",
+            "ExecutionService.status",
+            "ExecutionService.resume",
+            "ExecutionService.cancel",
+            "RenderAdapter.preflight",
+            "RenderAdapter.submit",
+            "RenderAdapter.status",
+            "RenderAdapter.cancel",
+            "RenderAdapter.verify",
+            "ExportService.export",
+            "ExportService.verify",
+            "QAService.validate",
+            "QAService.record_review",
+            "RevisionService.plan",
+            "RevisionService.apply",
+            "RevisionService.impact"
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "output_schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "resource_class": {
+          "enum": [
+            "none",
+            "cpu",
+            "gpu",
+            "io",
+            "provider",
+            "render"
+          ]
+        },
+        "native_owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "estimated_seconds": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000000000.0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requirement_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "id",
+        "operation",
+        "inputs",
+        "output_schema",
+        "resource_class",
+        "native_owner",
+        "required_capabilities",
+        "estimated_seconds",
+        "requirement_ids"
+      ]
+    }
+  }
+}
