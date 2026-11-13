@@ -44,7 +44,8 @@ def build_collision_inputs(*, frames=97):
     add('thin-wall',dict(type='box',size=[.02,3,2]),[0,2,5],static=True)
     add('projectile',dict(type='sphere',radius=.05),[-7,2,5],velocity=[25,0,0])
     vertices,triangles=_box([.8,.8,.8])
-    add('hull',dict(type='convex-hull',source='ball-asset',vertices=[list(v) for v in vertices],triangles=[list(t) for t in triangles]),[7,3,-3])
+    hull=add('hull',dict(type='convex-hull',source='ball-asset',vertices=[list(v) for v in vertices],triangles=[list(t) for t in triangles]),[7,3,-3])
+    hull['colliders'][0]['group']=2
     add('compound',dict(type='compound',children=[dict(transform=dict(translation=[x,0,0],rotation=[0,0,0,1]),
         shape=dict(type='sphere',radius=.3)) for x in [-.5,.5]]),[3,4,2])
     scene.update(name='Collision Playground',description='Explicit native proxies; dynamic contacts, ramp, filters, hull, compound and high-speed tunneling probe.')

@@ -152,7 +152,7 @@ class CollisionNativeTests(unittest.TestCase):
                 self.assertAlmostEqual(observed,height,delta=.06)
                 self.assertTrue(any(frame['contacts'] for frame in contacts['samples']))
 
-    def test_real_query_preserves_zero_margin_hull_boundary(self):
+    def test_real_query_rejects_native_zero_margin_hull_gap(self):
         from physics_collision_query import raycast_cache
         world,payloads=self.base()
         points,triangles=_box([1,1,1])
@@ -161,11 +161,14 @@ class CollisionNativeTests(unittest.TestCase):
         body['colliders'][0]['group']=2
         world['bodies'][1]['colliders'][0]['group']=1
         cache,_,_=self.run_world(world,payloads,'query-margin')
-        x,y,z=body['transform']['translation']
-        query=raycast_cache(cache,0,[dict(start=[x+.49,y+2,z],end=[x+.49,y-2,z],mask=2),
-            dict(start=[x+.5005,y+2,z],end=[x+.5005,y-2,z],mask=2)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'])
+        from physics_backends import BackendError
+        for mask in [2,0xffffffff]:
+            with self.assertRaises(BackendError) as raised:
+                raycast_cache(cache,0,[dict(start=[0,5,0],end=[0,1,0],mask=mask)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'])
+            self.assertEqual(raised.exception.code,'PHYSICS_QUERY_UNSUPPORTED')
+        query=raycast_cache(cache,0,[dict(start=[0,5,0],end=[0,-1,0],mask=1)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'])
         self.assertTrue(query['results'][0]['hit'])
-        self.assertFalse(query['results'][1]['hit'])
+        self.assertEqual(query['results'][0]['body'],'floor')
 
     def test_real_sphere_offsets_and_centers_preserve_native_margin(self):
         for offset,center in [(0,0),(.2,0),(0,.2),(.2,.2)]:
@@ -201,7 +204,9 @@ class CollisionNativeTests(unittest.TestCase):
             distances[coefficient]=states['samples'][-1]['bodies'][0]['translation'][0]
             world,payloads=self.base();world['materials'][0]['restitution']=coefficient
             _,states,contacts=self.run_world(world,payloads,'bounce-'+str(coefficient))
-            first=next(i for i,frame in enumerate(contacts['samples']) if frame['contacts'])
+            # Output contacts are sampled at24fps and may miss a brief impact.
+            # The minimum followed by rebound is measured from native poses.
+            first=min(range(1,min(25,len(states['samples']))),key=lambda i:states['samples'][i]['bodies'][0]['translation'][1])
             bounce_heights[coefficient]=max(frame['bodies'][0]['translation'][1] for frame in states['samples'][first:])
         self.assertGreater(distances[0.]-distances[.9],1.)
         self.assertGreater(bounce_heights[.9]-bounce_heights[0.],.5)
@@ -231,7 +236,7 @@ class CollisionNativeTests(unittest.TestCase):
         self.assertLess(next(b for b in states['samples'][-1]['bodies'] if b['id']=='excluded')['translation'][1],-1)
         distances=[c['distance'] for f in contacts['samples'] for c in f['contacts']]
         self.assertGreater(min(distances),-.2)
-        query=raycast_cache(cache,0,[dict(start=[0,8,0],end=[0,-2,0],mask=0xffffffff)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'],preview=True)
+        query=raycast_cache(cache,0,[dict(start=[0,8,0],end=[0,-2,0],mask=1)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'],preview=True)
         self.assertTrue(query['results'][0]['hit'])
         self.assertTrue(query.pop('preview_png').startswith(b'\x89PNG\r\n\x1a\n'))
         physics._write(self.root/'query.json',physics.canonical(query))

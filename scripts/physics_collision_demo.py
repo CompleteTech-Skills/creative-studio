@@ -33,7 +33,7 @@ def demonstrate(destination, *, interpreter=None):
         previews=[];frames=[]
         from PIL import Image
         for frame in range(0,len(states),8):
-            query=raycast_cache(cache,frame,[dict(start=[0,8,0],end=[0,-1,0],mask=0xffffffff)],interpreter=interpreter,preview=True)
+            query=raycast_cache(cache,frame,[dict(start=[0,8,0],end=[0,-1,0],mask=1)],interpreter=interpreter,preview=True)
             payload=query.pop('preview_png');name=f'frame-{frame:04d}.png'
             physics._write(stage/name,payload)
             with Image.open(BytesIO(payload)) as image:frames.append(image.convert('RGB').copy())

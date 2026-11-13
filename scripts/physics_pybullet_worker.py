@@ -123,8 +123,6 @@ def main():
                 baseInertialFramePosition=body['mass']['center_of_mass'],
                 baseInertialFrameOrientation=inertial_rotation,physicsClientId=client)
             identifiers[body['id']]=value
-            if explicit_proxies:
-                p.setCollisionFilterGroupMask(value,-1,collision_signed_mask(collider['group']),collision_signed_mask(collider['mask']),physicsClientId=client)
             material=materials[collider['material']]
             p.changeDynamics(value,-1,lateralFriction=material['dynamic_friction'],restitution=material['restitution'],
                 linearDamping=material['linear_damping'],angularDamping=material['angular_damping'],
@@ -137,6 +135,11 @@ def main():
             p.changeDynamics(value,-1,activationState=activation,physicsClientId=client)
             if sleep['initially_sleeping']:
                 p.changeDynamics(value,-1,activationState=p.ACTIVATION_STATE_SLEEP,physicsClientId=client)
+        if explicit_proxies:
+            p.setPhysicsEngineParameter(collisionFilterMode=1,physicsClientId=client)
+            for body in world['bodies']:
+                collider=body['colliders'][0]
+                p.setCollisionFilterGroupMask(identifiers[body['id']],-1,collision_signed_mask(collider['group']),collision_signed_mask(collider['mask']),physicsClientId=client)
         for left,right in world.get('collision_exclusions',[]):
             p.setCollisionFilterPair(identifiers[left],identifiers[right],-1,-1,enableCollision=0,physicsClientId=client)
         reverse={v:k for k,v in identifiers.items()}

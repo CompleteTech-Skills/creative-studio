@@ -61,7 +61,7 @@ from physics_collision_query import raycast_cache
 
 result = raycast_cache(
     "output/collision-playground/cache", 24,
-    [{"start": [0, 8, 0], "end": [0, -2, 0], "mask": 0xffffffff}],
+    [{"start": [0, 8, 0], "end": [0, -2, 0], "mask": 1}],
     interpreter="/path/to/pybullet-environment/bin/python",
 )
 ```
@@ -72,7 +72,7 @@ private isolated worker, then executes native closest-hit ray queries. It does
 not advance or resume physics. Results identify the body, hit fraction, position
 and normal, or an explicit miss. Rays are limited to 1,024 per request, endpoints
 within 10,000 meters, and a nonzero segment. Unknown frames or unverified caches
-fail. `preview=True` returns a decoded PNG rendered from that same native proxy
+fail. Bullet3.2.7 misses zero-margin convex hulls in native ray tests, so rays whose masks include any convex-hull body (including compound children) fail with an explicit capability gap. Assign distinct collision groups and exclude hull groups to query supported shapes; previews still show all collision geometry. The playground places its hull in group2 and queries group1. `preview=True` returns a decoded PNG rendered from that same native proxy
 state. The returned receipt binds the source cache, world, worker and actual
 backend identity. No arbitrary input file or uploaded code is executed.
 
