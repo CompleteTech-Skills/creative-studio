@@ -1,5 +1,9 @@
 # Asset Library foundation (issue #138)
 
+New libraries now use [durable canonical records and a rebuildable SQLite index](asset-library-storage.md).
+The original SQLite-only foundation described below remains readable and can be
+explicitly migrated without changing source bytes or immutable references.
+
 This additive foundation follows the merged [baseline audit](asset-library-audit.md).
 It supplies the canonical new library contract and real-file registration/resolution
 facade. It does not complete #129 or #128, implement 3D import/technical validation
