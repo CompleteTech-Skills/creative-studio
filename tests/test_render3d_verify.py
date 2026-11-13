@@ -238,6 +238,64 @@ class ImageVerification(unittest.TestCase):
                     verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
             self.assertEqual(error.exception.report['category'],'stale-asset')
 
+    @unittest.skipUnless(sys.platform=='linux','Explicit directory capability requires Linux procfd.')
+    def test_full_image_verification_retains_png_and_exr_after_outer_replacement(self):
+        import os
+        from rig_errors import directory_capability
+        for suffix,depth in (('png',8),('exr',32)):
+            with self.subTest(format=suffix),tempfile.TemporaryDirectory() as temporary:
+                base=Path(temporary);outer=base/'outer';outer.mkdir()
+                request,result,root,snapshot,backend=self.scene_result(outer)
+                if suffix=='exr':
+                    request['settings']['output']=output('exr',32)
+                    for image in result['images']:
+                        old=root/image['file']['path'];old.unlink();path=old.with_suffix('.exr');self.exr(path)
+                        image.update(format='exr',bit_depth=32)
+                        image['file']=dict(path=path.relative_to(root).as_posix(),bytes=path.stat().st_size,
+                                           sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+                    result['request_sha256']=object_hash(request)
+                descriptor=os.open(root,os.O_RDONLY|os.O_DIRECTORY)
+                try:
+                    with directory_capability(descriptor) as cap:
+                        outer.rename(base/'retained');outer.mkdir();(outer/'output').mkdir()
+                        (outer/'output'/'frames').mkdir();(outer/'output'/'frames'/f'000000.{suffix}').write_bytes(b'foreign')
+                        retained_snapshot=base/'retained'/'snapshot'
+                        report=verify_result(request,result,cap.path,snapshot_root=retained_snapshot,expected_backend=backend)
+                        self.assertEqual(report['decoded_images'],2)
+                        image=cap.path/result['images'][0]['file']['path']
+                        metadata,pixels=decode_image(image,output=request['settings']['output'],resolution=[3,2])
+                        self.assertEqual(metadata['sha256'],result['images'][0]['file']['sha256'])
+                        self.assertEqual(pixels['R'].shape,(2,3))
+                        borrowed=Path('/proc/self/fd')/str(descriptor)
+                        self.assertEqual(verify_image(borrowed/result['images'][0]['file']['path'],
+                            output=request['settings']['output'],resolution=[3,2])['sha256'],metadata['sha256'])
+                finally:os.close(descriptor)
+
+    @unittest.skipUnless(sys.platform=='linux','Explicit directory capability requires Linux procfd.')
+    def test_image_descriptor_unrelated_closed_and_reused_aliases_reject(self):
+        import os
+        from rig_errors import directory_capability
+        with tempfile.TemporaryDirectory() as temporary:
+            base=Path(temporary);request,result,root,snapshot,backend=self.scene_result(base)
+            foreign=base/'foreign';foreign.mkdir();(foreign/'frames').mkdir();self.png(foreign/'frames/000000.png')
+            fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY);other=os.open(foreign,os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                with directory_capability(fd) as cap:
+                    name=result['images'][0]['file']['path']
+                    unrelated=Path('/proc/self/fd')/str(other)
+                    with self.assertRaises(Render3DError):verify_image(unrelated/name,output=output(),resolution=[3,2])
+                    with self.assertRaises(Render3DError):verify_result(request,result,unrelated,snapshot_root=snapshot,expected_backend=backend)
+                    alias=Path('/proc/self/fd')/str(fd)
+                    os.close(fd)
+                    with self.assertRaises(Render3DError):verify_image(alias/name,output=output(),resolution=[3,2])
+                    with self.assertRaises(Render3DError):verify_result(request,result,alias,snapshot_root=snapshot,expected_backend=backend)
+                    os.dup2(other,fd)
+                    with self.assertRaises(Render3DError):verify_image(alias/name,output=output(),resolution=[3,2])
+                    with self.assertRaises(Render3DError):verify_result(request,result,alias,snapshot_root=snapshot,expected_backend=backend)
+                    self.assertEqual(verify_image(cap.path/name,output=output(),resolution=[3,2])['resolution'],[3,2])
+            finally:
+                os.close(fd);os.close(other)
+
     def test_unexpected_directory_and_nonregular_inventory_reject(self):
         import os
         with tempfile.TemporaryDirectory() as temporary:
