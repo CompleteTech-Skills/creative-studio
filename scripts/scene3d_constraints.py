@@ -16,10 +16,14 @@ from scene3d_spatial import _vec, _positive, _box, snap_grid, snap_scale
 def snap_rotation(rotation, step_radians, *, axis=(0,1,0)):
     """Snap a rotation about a declared local axis; reject other-axis rotation."""
     q = np.asarray(quaternion(rotation,strict=True),dtype=float)
+    # q and -q must quantize to the same physical orientation.
+    if q[3] < 0 or (q[3] == 0 and next((x for x in q[:3] if x != 0),1) < 0):
+        q = -q
     axis = _vec(axis)
-    norm = np.linalg.norm(axis)
-    require(norm > 1e-10, 'Rotation snap axis is zero.', 'SCENE3D_SPATIAL')
-    axis /= norm
+    magnitude = np.max(np.abs(axis))
+    require(magnitude > 0, 'Rotation snap axis is zero.', 'SCENE3D_SPATIAL')
+    axis = axis/magnitude
+    axis /= np.linalg.norm(axis)
     step = _positive(step_radians,'rotation step')
     parallel = np.dot(q[:3],axis)
     require(np.linalg.norm(q[:3]-parallel*axis) < 1e-8,

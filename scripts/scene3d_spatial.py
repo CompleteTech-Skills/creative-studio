@@ -251,9 +251,10 @@ class SpatialIndex:
 
     def raycast(self, origin, direction, *, max_distance=1e9, exclude=(), visibility='all', first=True):
         origin, direction = _vec(origin,'ray origin'), _vec(direction,'ray direction')
-        length = np.linalg.norm(direction)
-        require(length > EPS, 'Ray direction is zero.', 'SCENE3D_SPATIAL')
-        direction = direction/length
+        magnitude = np.max(np.abs(direction))
+        require(magnitude > 0, 'Ray direction is zero.', 'SCENE3D_SPATIAL')
+        direction = direction/magnitude
+        direction = direction/np.linalg.norm(direction)
         limit = _positive(max_distance, 'ray distance', zero=True)
         require(type(first) is bool, 'Invalid first-hit flag.', 'SCENE3D_SPATIAL')
         hits, tested = [], 0

@@ -32,6 +32,7 @@ class SpatialTests(unittest.TestCase):
         np.testing.assert_allclose(hit['point'],[2.2,0,.2])
         np.testing.assert_allclose(hit['normal'],[0,1,0])
         self.assertEqual(hit['triangle'],0)
+        self.assertEqual(index.raycast([2.2,2,.2],[0,-1e308,0]),hit)
 
     def test_bounds_only_not_misrepresented_as_triangle(self):
         index = SpatialIndex(self.graph())
@@ -105,6 +106,8 @@ class SpatialTests(unittest.TestCase):
         self.assertEqual(snap_grid([-.5,.5,1.5],1),[-1,1,2])
         self.assertEqual(snap_scale([.9,1.1,2.1],.5),[1,1,2])
         np.testing.assert_allclose(snap_rotation([0,math.sin(.3),0,math.cos(.3)],math.pi/2),[0,0,0,1])
+        q = np.array([0,math.sin(.3),0,math.cos(.3)])
+        np.testing.assert_allclose(snap_rotation(q,1),snap_rotation(-q,1))
         before = graph.document()
         with self.assertRaises(RigError): snap_transform(graph,'mesh',space='local',scale_step=100)
         self.assertEqual(before,graph.document())
