@@ -71,6 +71,8 @@ def validate_options(request):
 
 def proposals(root,request):
     """Return actual learned masks; uncertain labels remain pending proposals."""
+    for variable in ('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS'):
+        os.environ[variable]='1'
     import torch
     from PIL import Image
     from transformers import CLIPSegProcessor,CLIPSegForImageSegmentation
@@ -79,7 +81,7 @@ def proposals(root,request):
     validate_options(request)
     current=identity()
     if current!=request['model']:raise ValueError('CLIPSeg identity changed after request')
-    torch.set_num_threads(2);torch.set_num_interop_threads(1)
+    torch.set_num_threads(1);torch.set_num_interop_threads(1)
     directory=model_directory()
     processor=CLIPSegProcessor.from_pretrained(directory,local_files_only=True)
     model=CLIPSegForImageSegmentation.from_pretrained(directory,local_files_only=True,use_safetensors=True).eval()
@@ -121,4 +123,6 @@ def proposals(root,request):
     # is explicit ownership only and does not assert depth, hierarchy or anatomy.
     parts.sort(key=lambda p:(p['_pixels'],p['id']))
     for index,part in enumerate(parts):part.pop('_pixels');part['z_index']=len(parts)-index
-    return parts,diagnostics,current
+    return parts,diagnostics,current,{'torch_threads':torch.get_num_threads(),
+        'torch_interop_threads':torch.get_num_interop_threads(),
+        'numerical_environment':{key:os.environ.get(key) for key in ('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS')}}

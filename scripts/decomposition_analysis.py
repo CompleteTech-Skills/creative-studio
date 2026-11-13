@@ -608,7 +608,7 @@ def _clipseg_worker(root, identifier, request):
     root = Path(root)
     _source(root, request)
     started = time.monotonic()
-    parts, diagnostics, model = proposals(root, request)
+    parts, diagnostics, model, runtime = proposals(root, request)
     response = {'schema_version': 1, 'kind': 'decomposition-analysis-response',
         'request_sha256': identifier, 'source_sha256': request['source']['sha256'],
         'status': 'proposed' if parts else 'unsupported', 'model': model,
@@ -616,7 +616,7 @@ def _clipseg_worker(root, identifier, request):
             'author': 'Local pinned CLIPSeg model',
             'note': 'Actual text-conditioned membership proposals; semantic correctness, anatomy presence and side remain uncertain.',
             'orientation': 'unknown', 'components': parts,
-            'extensions': {'clipseg_diagnostics': diagnostics}},
+            'extensions': {'clipseg_diagnostics': diagnostics, 'clipseg_runtime': runtime}},
         'evidence': {'execution': 'local', 'call_id': None,
             'unavailable_reason': 'Local inference does not issue provider call IDs.',
             'elapsed_seconds': time.monotonic() - started, 'cost': 0,

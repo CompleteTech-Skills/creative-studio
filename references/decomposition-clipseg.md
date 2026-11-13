@@ -46,7 +46,7 @@ score, proposed area and filter outcome is retained in the response diagnostics.
 No filtered result is proof of absence. Model responses remain subject to the
 strict source-bound job, cancellation, retry, immutable response and stale-apply
 checks of the analysis controller. Its default controller time limit is 120
-seconds, with two inference threads; an explicit Python `prepare` call can
+seconds, with one inference thread; an explicit Python `prepare` call can
 request a shorter limit.
 
 The internal model map is 352 pixels square and is projected back into the
