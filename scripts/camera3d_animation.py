@@ -63,7 +63,7 @@ def sample_camera_tracks(camera_id, base_transform, optics, tracks, time, regist
 
 
 def smooth_samples(samples, *, radius=2):
-    """Bake a bounded centered triangular filter with clamped edge windows.
+    """Bake a bounded centered triangular filter with truncated edge windows.
 
     Samples are complete evaluated camera states. All output is generated at
     once; subsequent seeking is list indexing and has no filter state. Position,

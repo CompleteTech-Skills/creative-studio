@@ -276,6 +276,23 @@ class CameraPathTests(unittest.TestCase):
         for value in [-.1,1.1,float('nan'),True]:
             with self.assertRaises(ValueError):path.sample(value)
 
+    def test_analytic_curvature_and_path_orientation(self):
+        # Cubic representation of x=t, y=t^2; curvature at .5 is 1/sqrt(2).
+        doc=path_doc([[0,0,0],[1/3,0,0],[2/3,1/3,0],[1,1,0]],
+                     'bezier',speed='parameter')
+        doc['orientation']='tangent'
+        path=CameraPath(doc)
+        value=path.sample(.5)
+        self.assertAlmostEqual(value['curvature_per_m'],1/math.sqrt(2),places=10)
+        base=dict(translation=[0,0,10],rotation=[0,0,0,1],scale=[1,1,1])
+        optics=json.loads((ROOT/'examples/camera3d/optics.json').read_text())
+        sample=sample_motion(base,optics,dict(frame=12),24,'path',path=path)
+        forward=world_transform(sample['transform'])[:3,:3]@np.array([0,0,-1])
+        np.testing.assert_allclose(forward,value['tangent'],atol=1e-12)
+        reversed=sample_motion(base,optics,dict(frame=12),24,'path',dict(reverse=True),path=path)
+        reverse_forward=world_transform(reversed['transform'])[:3,:3]@np.array([0,0,-1])
+        np.testing.assert_allclose(reverse_forward,-np.array(value['tangent']),atol=1e-12)
+
     def test_path_document_is_detached(self):
         doc=path_doc([[0,0,0],[1,0,0],[10,0,0]])
         path=CameraPath(doc);doc['control_points_m'][1][0]=8
