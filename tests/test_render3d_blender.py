@@ -120,6 +120,76 @@ class ResourceAdmission(unittest.TestCase):
             self.assertFalse((root/'new-parent').exists())
 
 
+    def test_declared_source_storage_rejects_before_owner_loading_or_capture(self):
+        from unittest.mock import patch
+        from rig_test_helpers import fixture
+        from rig_errors import atomic_json
+        from render3d_snapshot import create_snapshot,NativeRigAdapter
+        from render3d_blender import BlenderBackend
+        from test_render3d_contracts import request,file
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'native').mkdir()
+            rig=fixture(root/'native',animated=False)
+            payload=b'x'*(1024**2);(rig.root/'evidence.bin').write_bytes(payload)
+            rig.manifest['source']['dependencies'].append(dict(path='evidence.bin',sha256=hashlib.sha256(payload).hexdigest()))
+            atomic_json(rig.root/'rig.json',rig.manifest)
+            snapshot=create_snapshot(rig.root,root/'snapshot',NativeRigAdapter())
+            spec=request();spec['snapshot']=file(payload=(root/'snapshot/snapshot.json').read_bytes())
+            width,height=spec['settings']['resolution'];output_bytes=width*height*16*3
+            backend=object.__new__(BlenderBackend)
+            budgets=[output_bytes,snapshot['total_bytes']+spec['snapshot']['bytes']+output_bytes+snapshot['total_bytes']//2]
+            for budget in budgets:
+                with self.subTest(storage_bytes=budget):
+                    spec['settings']['resources']['storage_bytes']=budget
+                    with patch('rig_models.load_rig',side_effect=AssertionError('Storage rejection must precede native decoding')) as decode:
+                        with self.assertRaises(Render3DError) as caught:
+                            backend.render_frames(spec,root/'snapshot',root/'new-parent/output')
+                    self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+                    decode.assert_not_called()
+                    self.assertFalse((root/'new-parent').exists())
+
+    def test_capture_owner_cannot_grow_closure_into_unused_request_headroom(self):
+        from unittest.mock import patch
+        import render3d_blender as module
+        from rig_test_helpers import fixture
+        from rig_errors import atomic_json,read_json
+        from render3d_snapshot import create_snapshot,NativeRigAdapter
+        from test_render3d_contracts import request,file
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'native').mkdir()
+            rig=fixture(root/'native',animated=False)
+            snapshot=create_snapshot(rig.root,root/'snapshot',NativeRigAdapter())
+            spec=request();spec['snapshot']=file(payload=(root/'snapshot/snapshot.json').read_bytes())
+            original=module.create_snapshot
+            def substituted(source,destination,adapter,**options):
+                self.assertEqual(options['max_total_bytes'],snapshot['total_bytes'])
+                payload=b'x'*(1024**2);(Path(source)/'new.bin').write_bytes(payload)
+                manifest=read_json(Path(source)/'rig.json')
+                manifest['source']['dependencies'].append(dict(path='new.bin',sha256=hashlib.sha256(payload).hexdigest()))
+                atomic_json(Path(source)/'rig.json',manifest)
+                with patch('rig_models.load_rig',side_effect=AssertionError('Grown source must reject before decoding')) as decode:
+                    try:return original(source,destination,adapter,**options)
+                    finally:decode.assert_not_called()
+            backend=object.__new__(module.BlenderBackend)
+            with patch.object(module,'create_snapshot',side_effect=substituted):
+                with self.assertRaises(Render3DError) as caught:
+                    backend.render_frames(spec,root/'snapshot',root/'output')
+            self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+            self.assertFalse((root/'output').exists())
+
+    def test_prepared_asset_cannot_continue_after_storage_exhaustion(self):
+        from rig_test_helpers import fixture
+        from render3d_blender import _prepare_asset
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'native').mkdir()
+            rig=fixture(root/'native',animated=False)
+            workspace=root/'stage/source';workspace.mkdir(parents=True)
+            with self.assertRaises(Render3DError) as caught:
+                _prepare_asset(rig.root,{},workspace,0,native=True,storage_bytes=64)
+            self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+            self.assertTrue((workspace/'asset-0.glb').is_file())
+
+
 @unittest.skipUnless(hasattr(os,'mkfifo'),'FIFO boundary tests require POSIX')
 class SnapshotMetadataAdmission(unittest.TestCase):
     def run_boundary_child(self,root,second_read=False):
