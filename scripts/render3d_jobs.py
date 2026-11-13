@@ -497,9 +497,11 @@ class JobStore:
                            spec=spec,backend=backend)
                 record=self._verify_cache(lease,verifier)
                 source=safe_path(self.root,'cache/'+frame['cache_key'])
-                prefix='frames/'+format(frame['frame'],'08d')+'/'
                 for image in record['result']['images']:
-                    image=deepcopy(image);old=image['file'];newpath=prefix+old['path']
+                    image=deepcopy(image);old=image['file']
+                    suffix=request['settings']['output']['format']
+                    newpath=(f'frames/{image["frame"]:06d}.{suffix}' if image['pass_name']=='combined'
+                             else f'passes/{image["pass_name"]}/{image["frame"]:06d}.{suffix}')
                     src=safe_path(source,old['path'],exists=True);dst=safe_path(stage,newpath)
                     dst.parent.mkdir(parents=True,exist_ok=True)
                     total+=old['bytes']

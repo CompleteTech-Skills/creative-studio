@@ -185,6 +185,8 @@ class JobTests(unittest.TestCase):
         result=self.store.materialize(job,destination,self.verify)
         self.assertEqual(result['status'],'complete')
         self.assertEqual(len(result['images']),2)
+        self.assertEqual([i['file']['path'] for i in result['images']],
+                         ['frames/000005.png','frames/000006.png'])
         self.verify(self.request,result,destination)
         self.assertTrue((destination/'provenance/00000005.json').is_file())
         with self.assertRaises(Render3DError):self.store.materialize(job,destination,self.verify)
