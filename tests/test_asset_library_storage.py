@@ -172,6 +172,77 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
         self.assertEqual(reopened.annotations(reference)['note'], 'before migration')
         self.assertEqual(reopened.read_own_file(reference, 'mesh/triangle.obj'), self.fixture.mesh.read_bytes())
 
+    def legacy_handles(self):
+        reference = self.register()
+        shutil.rmtree(self.library.storage.root)
+        with closing(sqlite3.connect(self.library.database)) as db, db:
+            db.execute('DROP TABLE durability')
+        return reference, [AssetLibrary(self.library.root) for _ in range(3)]
+
+    def test_preupgrade_handles_publish_versions_and_annotations_durably(self):
+        reference, (migrator, old_writer, old_annotations) = self.legacy_handles()
+        migrator.upgrade_storage()
+        manifest = deepcopy(self.fixture.manifest)
+        manifest['version'] = '2.0.0'
+        newer = old_writer.register(seal(manifest), self.fixture.sources)
+        old_annotations.update_annotations(reference, expected_revision=0, tags=['retained'],
+                                           favorite=True, note='after another handle migrated')
+        migrator.recover()
+        self.assertEqual(migrator.resolve(newer), seal(manifest))
+        self.assertEqual(migrator.annotations(reference)['note'], 'after another handle migrated')
+        self.assertTrue(old_writer.storage_status()['durable'])
+        # A second explicit upgrade on a pre-upgrade handle is idempotent.
+        untouched = AssetLibrary(self.library.root)
+        self.assertEqual(untouched.upgrade_storage()['versions'], 2)
+
+    def test_writer_waiting_for_migration_refreshes_mode_after_lock(self):
+        from asset_library_storage import Storage
+        reference, (migrator, old_writer, old_annotations) = self.legacy_handles()
+        migration_ready, release, writer_started = (threading.Event() for _ in range(3))
+        failures, result = [], []
+        original_ready = Storage.ready
+        original_begin = old_writer._begin_writer
+        def paused_ready(storage):
+            original_ready(storage)
+            migration_ready.set()
+            if not release.wait(5):
+                raise RuntimeError('migration release timed out')
+        def waiting_begin(db):
+            writer_started.set()
+            original_begin(db)
+        def migrate():
+            try:
+                migrator.upgrade_storage()
+            except BaseException as exc:
+                failures.append(exc)
+        def publish():
+            try:
+                manifest = deepcopy(self.fixture.manifest)
+                manifest['version'] = '2.0.0'
+                result.append(old_writer.register(seal(manifest), self.fixture.sources))
+                old_annotations.update_annotations(reference, expected_revision=0, tags=[],
+                                                   favorite=False, note='waited migration')
+            except BaseException as exc:
+                failures.append(exc)
+        with patch.object(Storage, 'ready', paused_ready), patch.object(old_writer, '_begin_writer', waiting_begin):
+            a = threading.Thread(target=migrate)
+            b = threading.Thread(target=publish)
+            a.start()
+            try:
+                self.assertTrue(migration_ready.wait(5))
+                b.start()
+                self.assertTrue(writer_started.wait(5))
+            finally:
+                release.set()
+                a.join(10)
+                if b.ident is not None:
+                    b.join(10)
+        self.assertFalse(a.is_alive() or b.is_alive())
+        self.assertEqual(failures, [])
+        migrator.recover()
+        self.assertEqual(migrator.resolve(result[0])['version'], '2.0.0')
+        self.assertEqual(migrator.annotations(reference)['note'], 'waited migration')
+
     def test_verified_own_reads_and_exact_blob_repair(self):
         reference = self.register()
         self.assertEqual(self.library.list_references(), [reference])
