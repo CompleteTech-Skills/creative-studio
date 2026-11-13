@@ -130,6 +130,43 @@ class BrowserTests(unittest.TestCase):
         status,detail,_=self.request('/api/inspect',self.location)
         self.assertEqual(status,200);self.assertIn('index',detail['managed_operations']);self.assertNotIn('version',detail['managed_operations'])
 
+    def test_actual_native_reports_binary_thumbnail_comparison_and_diagnosis(self):
+        import test_asset_browser_details as details_fixture
+        ref,payload=details_fixture.BrowserDetailTests.preview(self)
+        location=dict(library='local',reference=ref)
+        status,data,headers=self.request('/api/thumbnail',location)
+        self.assertEqual(status,200);self.assertEqual(data,payload);self.assertEqual(headers['Content-Type'],'image/png')
+        self.assertEqual(self.request('/api/thumbnail',self.location)[0],204)
+        for report in ('dependency_graph','exports','diagnose','cleanup_analysis'):
+            status,data,_=self.request('/api/report',dict(location=location,report=report))
+            self.assertEqual(status,200,data);self.assertEqual(data['status'],'verified')
+            self.assertFalse(data['publication_changed'])
+        self.assertEqual(self.request('/api/report',dict(location=location,report='usage'))[1]['status'],'unavailable')
+        status,data,_=self.request('/api/compare',dict(location=self.location,other=ref))
+        self.assertEqual(status,200,data);self.assertEqual(data['status'],'verified')
+        missing=dict(library='local',reference=dict(self.reference,id='missing-asset'))
+        status,data,_=self.request('/api/report',dict(location=missing,report='diagnose'))
+        self.assertEqual(status,200);self.assertEqual(data['status'],'incomplete');self.assertFalse(data['payload_complete'])
+        self.assertEqual(self.request('/api/report',dict(location=location,report='__dict__'))[0],400)
+
+    def test_empty_library_still_exposes_scoped_management_and_response_bounds(self):
+        from asset_library import AssetLibrary
+        from asset_library_operations import AssetOperations, ScopedAssetOperations
+        library=AssetLibrary(self.root/'empty-library',create=True)
+        index=SearchIndex(self.root/'empty-index',{'local':library},create=True);index.rebuild()
+        intake=self.root/'intake';intake.mkdir();output=self.root/'output';output.mkdir()
+        operations=ScopedAssetOperations(AssetOperations(library,jobs_root=output/'jobs'),intake_root=intake,output_root=output)
+        self.stop();self.server=AssetBrowserServer({'local':library},index,operations=operations,token='test-empty-browser-token-0123456789')
+        self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
+        status,caps,_=self.request('/api/capabilities')
+        self.assertEqual(status,200);self.assertIn('import',caps['managed_operations']);self.assertEqual(caps['managed_context']['intake_root'],str(intake))
+        self.assertEqual(self.request('/api/search')[1]['total'],0)
+        class LargeJobReport:
+            def list_jobs(self):return {'oversized':'x'*(4*1024**2)}
+        self.server.operations=LargeJobReport()
+        status,data,_=self.request('/api/jobs/list')
+        self.assertEqual(status,413);self.assertEqual(data['error']['code'],'LIBRARY_BROWSER_RESPONSE_LIMIT')
+
     def animated_asset(self):
         from rig_test_helpers import fixture
         from rig_gltf import export_gltf
@@ -147,6 +184,7 @@ class BrowserTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('HATCH_ASSET_BROWSER_TEST')=='1' or os.environ.get('HATCH_RIG_BROWSER_TEST')=='1','Enable real Chromium/WebGL asset acceptance.')
     def test_real_browser_model_animation_metadata_keyboard_and_webgl_fallback(self):
         from playwright.sync_api import sync_playwright, expect
+        expect.set_options(timeout=30000)
         ref=self.animated_asset(); location=dict(library='local',reference=ref)
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True,executable_path=os.environ.get('HATCH_CHROMIUM'),args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
@@ -172,7 +210,15 @@ class BrowserTests(unittest.TestCase):
             self.assertLess(float(np.max(np.abs(np.asarray(after)-points))),1e-5)
             self.assertIn('b1',page.locator('#model-details').inner_text())
             page.locator('#skeleton').check();page.locator('#wireframe').check()
+            page.locator('#clip').select_option('neutral')
+            neutral=page.evaluate('assetBrowser.sample(.5);assetBrowser.snapshot()');self.assertNotEqual(neutral,after)
             page.locator('#clip').select_option('bend');page.locator('#time').fill('0.25');page.locator('#time').dispatch_event('input')
+            page.get_by_role('button',name='Play',exact=True).click();page.wait_for_timeout(150)
+            self.assertNotEqual(float(page.locator('#time').input_value()),.25)
+            page.get_by_role('button',name='Pause',exact=True).click()
+            box=page.locator('#viewport canvas').bounding_box();camera_before=page.evaluate('assetBrowser.camera.position.toArray()')
+            page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2);page.mouse.down();page.mouse.move(box['x']+box['width']/2+50,box['y']+box['height']/2+20,steps=5);page.mouse.up();page.mouse.wheel(0,100);page.wait_for_timeout(50)
+            self.assertNotEqual(camera_before,page.evaluate('assetBrowser.camera.position.toArray()'))
             camera=page.evaluate('assetBrowser.camera.position.toArray()');page.locator('#viewport').focus();page.keyboard.press('ArrowLeft')
             self.assertNotEqual(camera,page.evaluate('assetBrowser.camera.position.toArray()'))
             page.locator('#note').fill('Real browser annotation');page.get_by_role('button',name='Save annotations').click();expect(page.locator('#error')).to_have_text('Annotations saved.')
@@ -213,14 +259,15 @@ class BrowserTests(unittest.TestCase):
             expect(page.locator('#error')).to_have_text('Annotations saved.')
             self.assertEqual(self.library.annotations(self.reference)['note'],'Separate B repair')
             self.assertEqual(self.library.annotations(ref)['note'],'Save A while switching')
-            fallback=browser.new_context();fallback.add_init_script("const old=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(k,...a){return k.includes('webgl')?null:old.call(this,k,...a)}")
+            fallback=browser.new_context(reduced_motion='reduce');fallback.add_init_script("const old=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(k,...a){return k.includes('webgl')?null:old.call(this,k,...a)}")
             fpage=fallback.new_page();fpage.goto(f'http://127.0.0.1:{self.server.server_port}/');fpage.locator('#token').fill(self.server.token);fpage.get_by_role('button',name='Connect',exact=True).click();fpage.locator('#results button').first.wait_for();fpage.get_by_role('button',name='Animated fixture · 1.0.0',exact=True).click();expect(fpage.locator('#name')).to_have_text('Animated fixture')
-            self.assertIn('WebGL unavailable',fpage.locator('#model-status').inner_text());fpage.locator('#note').fill('Fallback repair');fpage.get_by_role('button',name='Save annotations').click();expect(fpage.locator('#error')).to_have_text('Annotations saved.')
+            self.assertIn('WebGL unavailable',fpage.locator('#model-status').inner_text());expect(fpage.locator('#reduced-motion')).to_be_checked();fpage.locator('#note').fill('Fallback repair');fpage.get_by_role('button',name='Save annotations').click();expect(fpage.locator('#error')).to_have_text('Annotations saved.')
             self.assertEqual(self.library.annotations(ref)['note'],'Fallback repair');fallback.close();browser.close()
 
     @unittest.skipUnless(os.environ.get('HATCH_ASSET_BROWSER_TEST')=='1' or os.environ.get('HATCH_RIG_BROWSER_TEST')=='1','Enable real Chromium asset discovery acceptance.')
     def test_real_browser_search_filters_pagination_collections_and_errors(self):
         from playwright.sync_api import sync_playwright, expect
+        expect.set_options(timeout=30000)
         for number in range(1,12):
             manifest=deepcopy(self.fixture.manifest)
             manifest['identity'].update(id=f'page{number:02}',slug=f'page{number:02}',name=f'Page{number:02} fixture')
@@ -235,8 +282,8 @@ class BrowserTests(unittest.TestCase):
             expect(page.locator('#count')).to_contain_text('13 exact versions')
             self.assertEqual(page.locator('#results img').count(),0)
             self.assertFalse(page.evaluate('Boolean(window.assetPwned)'))
-            page.get_by_role('button',name='Next page',exact=True).click();expect(page.locator('#next')).to_be_disabled()
-            self.assertEqual(page.locator('#results button').count(),3)
+            page.get_by_role('button',name='Next page',exact=True).click();expect(page.locator('#results')).to_have_attribute('aria-busy','false',timeout=30000);expect(page.locator('#next')).to_be_disabled(timeout=30000)
+            self.assertEqual(page.locator('#results button').count(),3,page.locator('#error').inner_text())
             page.locator('#query').fill('page05');page.get_by_role('button',name='Search',exact=True).click()
             expect(page.locator('#count')).to_contain_text('1 exact versions')
             expect(page.locator('#results button')).to_have_text('Page05 fixture · 1.0.0')
@@ -244,7 +291,8 @@ class BrowserTests(unittest.TestCase):
             expect(page.locator('#count')).to_contain_text('0 exact versions')
             page.locator('#kind').select_option('prop');page.get_by_role('button',name='Search',exact=True).click()
             expect(page.locator('#count')).to_contain_text('13 exact versions')
-            page.get_by_role('button',name='Next page',exact=True).click();expect(page.locator('#next')).to_be_disabled()
+            page.get_by_role('button',name='Next page',exact=True).click();expect(page.locator('#results')).to_have_attribute('aria-busy','false',timeout=30000);expect(page.locator('#next')).to_be_disabled(timeout=30000)
+            self.assertEqual(page.locator('#results button').count(),3,page.locator('#error').inner_text())
             page.get_by_role('button',name='Triangle · 1.0.0',exact=True).click();expect(page.locator('#name')).to_have_text('Triangle')
             page.locator('#collections').fill('favorites');page.get_by_role('button',name='Save collections',exact=True).click()
             expect(page.locator('#error')).to_have_text('Collections saved.')

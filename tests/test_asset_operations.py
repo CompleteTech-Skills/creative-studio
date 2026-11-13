@@ -156,7 +156,7 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
         with self.assertRaises(RigError):self.owner.submit([], {})
         self.assertEqual(self.owner.capabilities()['production_approval'],False)
 
-    def test_project_bind_uses_ordered_native_scope_and_preserves_unavailable_unbind(self):
+    def test_project_bind_unbind_and_undo_use_native_cas_and_preserve_assets(self):
         from asset_library_versions import ScopedResolver
         ref=self.fixture.register();binding=dict(library='local',reference=ref)
         p=dict(project_id='test-project',slot='hero',binding=binding,expected_revision=0)
@@ -165,10 +165,15 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
         resolver=ScopedResolver([('local',self.library)],project_library='local')
         before=resolver.bindings('test-project')
         self.assertEqual(before['bindings']['hero'],binding)
-        with self.assertRaises(RigError) as caught:self.owner.execute('project.unbind',dict(project_id='test-project',slot='hero'),apply=True)
-        self.assertEqual(caught.exception.report['code'],'LIBRARY_OPERATIONS_UNAVAILABLE')
-        self.assertEqual(resolver.bindings('test-project'),before)
+        removed=self.owner.execute('project.unbind',dict(project_id='test-project',slot='hero',expected_revision=1,expected_binding=binding),apply=True)['result']
+        self.assertEqual(removed['removed'],binding)
+        self.assertFalse(removed['immutable_assets_changed'])
+        self.assertNotIn('hero',resolver.bindings('test-project')['bindings'])
         with self.assertRaises(RigError):self.owner.execute('project.bind',p,apply=True)
+        self.owner.execute('project.undo-unbind',dict(project_id='test-project',slot='hero',expected_revision=2,unbind_revision=2),apply=True)
+        self.assertEqual(resolver.bindings('test-project')['bindings'],before['bindings'])
+        self.assertEqual(self.library.list_references(),[ref])
+        self.assertEqual(self.library.read_file(ref,'mesh/triangle.obj'),self.fixture.mesh.read_bytes())
 
     def test_browser_cli_delegates_explicit_loopback_server_arguments(self):
         from unittest.mock import patch

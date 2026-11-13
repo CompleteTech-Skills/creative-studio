@@ -68,3 +68,46 @@ Validation: `PYTHONPATH=scripts:tests python -m unittest discover -s tests -p
  test_asset_library_versions.py -v` exercises real immutable payloads, concurrent
 promotion, rollback, restrictions, deterministic scope, relocated stores and
 migration. Storage publication and recovery remain covered by the storage suite.
+
+### Removing a project pin
+
+`ScopedResolver.unbind(project_id, slot, expected_revision=revision,
+expected_binding=None)` removes only that exact slot using the same append-only
+project stream and library CAS as `bind`. It returns the canonical `event`,
+`removed` binding, `slot`, `project_id`, recomputed per-slot dependency `locks`
+and scoped `invalidated` list. No immutable asset, prior event or unrelated pin
+is deleted. A missing slot, stale revision or mismatched explicit binding fails.
+An empty project pin collection is valid.
+
+`undo_unbind(project_id, slot, expected_revision=current_revision,
+unbind_revision=removal_revision)` derives the old exact binding from retained
+canonical history. It rejects occupied slots and slots rebound after that
+removal, and appends restoration through `bind`; it does not rewrite history.
+Management CLI/HTTP adapters can delegate to these methods without introducing
+another project registry. Scene document removal uses the existing separate
+SceneLibraryAdapter/ProjectStore authority and its own explicit CAS.
+
+## Duplicate as a new asset
+
+`AssetVersions(library).duplicate(reference, identity=new_identity,
+version='1.0.0')` publishes an independent identity from an exact registered
+version in the same canonical library. Supply the complete new `AssetIdentity`,
+including a different ID and explicit creation time. Kind, subtype and original
+attribution must remain unchanged; licensing, allowed uses, provider/source
+receipts and fixture status are retained. This is copying, not generation.
+
+Every inventoried file is copied byte for byte through the registry's ordinary
+hash-checked registration path. Content-addressed blobs are deduplicated. Exact
+dependency, style and historical parent references retain their verified closure
+in that same library; the source exact reference is additionally retained as a
+provenance parent. This operation does not export a separate library or rewrite
+native IDs inside files. Portable cross-library packages remain the packaging
+owner's responsibility.
+
+The duplicate has no inherited selection, tags, favorites, previews or external
+integration claim. Technical payload verification does not grant artistic,
+licensing or distribution approval. Existing identities and concurrent creation
+of the requested identity fail through the ordinary identity-history guard.
+An interrupted canonical commit uses normal `AssetLibrary.recover()`; inspect the
+recovered exact reference before retrying. Retrying an already recovered identity
+fails rather than publishing a second version.
