@@ -6,6 +6,7 @@
       "additionalProperties": false,
       "properties": {
         "schema_version": {
+          "type": "integer",
           "const": 1
         },
         "kind": {
@@ -246,6 +247,7 @@
                   ]
                 },
                 "bit_depth": {
+                  "type": "integer",
                   "enum": [
                     8,
                     16,
@@ -285,6 +287,53 @@
                 "passes",
                 "alpha",
                 "color_space"
+              ],
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "format": {
+                        "const": "png"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "bit_depth": {
+                        "enum": [
+                          8,
+                          16
+                        ]
+                      },
+                      "color_space": {
+                        "const": "srgb"
+                      },
+                      "passes": {
+                        "const": [
+                          "combined"
+                        ]
+                      }
+                    }
+                  },
+                  "else": {
+                    "properties": {
+                      "bit_depth": {
+                        "enum": [
+                          16,
+                          32
+                        ]
+                      },
+                      "color_space": {
+                        "const": "linear"
+                      },
+                      "passes": {
+                        "contains": {
+                          "const": "combined"
+                        }
+                      }
+                    }
+                  }
+                }
               ]
             },
             "exposure": {

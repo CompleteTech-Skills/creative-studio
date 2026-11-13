@@ -14,6 +14,8 @@ import stat
 import tempfile
 import unicodedata
 import zipfile
+import zlib
+import errno
 from typing import Protocol
 
 from atomic_publish import _rename_no_replace
@@ -116,8 +118,12 @@ def _copy_verified(root, stage, path, expected):
             output.flush(); os.fsync(output.fileno())
         require(digest.hexdigest() == expected, 'stale-asset', 'Source bytes differ from owner hash.', path=path)
         return dict(path=path, sha256=expected, bytes=count)
-    except (OSError, RigError) as exc:
-        raise Render3DError('missing-asset', str(exc), path=path) from exc
+    except OSError as exc:
+        if exc.errno in (errno.ENOSPC,errno.EDQUOT):
+            raise Render3DError('storage-exhaustion',str(exc),path=path,remediation='Free destination storage or choose another volume.') from exc
+        raise Render3DError('missing-asset',str(exc),path=path) from exc
+    except RigError as exc:
+        raise Render3DError('missing-asset',str(exc),path=path) from exc
 
 
 def create_snapshot(source_root, destination, adapter: SceneAdapter):
@@ -161,7 +167,11 @@ No source revision or output cache is overwritten or pruned.
         return document
     except Render3DError:
         raise
-    except (OSError, RigError, ValueError, TypeError, KeyError, IndexError, OverflowError, zipfile.BadZipFile) as exc:
+    except OSError as exc:
+        if exc.errno in (errno.ENOSPC,errno.EDQUOT):
+            raise Render3DError('storage-exhaustion',str(exc),remediation='Free destination storage or choose another volume.') from exc
+        raise Render3DError('invalid-input',str(exc)) from exc
+    except (OSError, RigError, ValueError, TypeError, KeyError, IndexError, OverflowError, zipfile.BadZipFile, zlib.error) as exc:
         raise Render3DError('invalid-input', str(exc)) from exc
 
 
@@ -187,5 +197,5 @@ def verify_snapshot(root, adapter: SceneAdapter):
         return document
     except Render3DError:
         raise
-    except (OSError, RigError, ValueError, TypeError, KeyError, IndexError, OverflowError, zipfile.BadZipFile) as exc:
+    except (OSError, RigError, ValueError, TypeError, KeyError, IndexError, OverflowError, zipfile.BadZipFile, zlib.error) as exc:
         raise Render3DError('stale-asset', str(exc)) from exc

@@ -11,6 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 import math
+import hashlib
 import unicodedata
 
 from rig_contracts import COORDINATES, arr, obj, ref
@@ -59,13 +60,18 @@ def definitions():
     time = obj(dict(numerator=dict(type='integer', minimum=0, maximum=2**127-1),
                     denominator=dict(type='integer', minimum=1, maximum=2**127-1)))
     file = obj(dict(path=path, sha256=digest, bytes=dict(type='integer', minimum=0, maximum=MAX_FILE_BYTES)))
+    artifact = obj(dict(path=path, sha256=digest, bytes=dict(type='integer', minimum=0, maximum=2**40)))
     identity = obj(dict(id=identifier, version=version))
     bounds = obj(dict(start=count, end=positive))
     passes = arr({'enum': ['combined', 'depth', 'normal', 'albedo']}, 1, 4)
     passes['uniqueItems'] = True
-    output = obj(dict(format={'enum': ['png', 'exr']}, bit_depth={'enum': [8, 16, 32]},
+    output = obj(dict(format={'enum': ['png', 'exr']}, bit_depth={'type':'integer','enum': [8, 16, 32]},
                       passes=passes, alpha={'enum': ['opaque', 'straight']},
                       color_space={'enum': ['srgb', 'linear']}))
+    output['allOf'] = [
+        {'if':{'properties':{'format':{'const':'png'}}},'then':{'properties':{'bit_depth':{'enum':[8,16]},'color_space':{'const':'srgb'},'passes':{'const':['combined']}}},
+         'else':{'properties':{'bit_depth':{'enum':[16,32]},'color_space':{'const':'linear'},'passes':{'contains':{'const':'combined'}}}}}
+    ]
     resources = obj(dict(memory_bytes=dict(type='integer', minimum=1, maximum=2**40),
                          storage_bytes=dict(type='integer', minimum=1, maximum=2**40),
                          timeout_seconds=dict(type='integer', minimum=1, maximum=86400),
@@ -87,11 +93,11 @@ def definitions():
                           path=dict(type='string', maxLength=1024), remediation=text))
     verifier_identity = obj(dict(id=identifier, version=version, code_sha256=digest, platform=text))
     verification = obj(dict(status={'enum': ['not-run', 'passed', 'failed']},
-                            verifier=nullable(verifier_identity), evidence=nullable(file)))
-    image = obj(dict(frame=count, file=file, format={'enum': ['png', 'exr']},
-                     bit_depth={'enum': [8, 16, 32]}, pass_name={'enum': ['combined', 'depth', 'normal', 'albedo']},
+                            verifier=nullable(verifier_identity), evidence=nullable(artifact)))
+    image = obj(dict(frame=count, file=artifact, format={'enum': ['png', 'exr']},
+                     bit_depth={'type':'integer','enum': [8, 16, 32]}, pass_name={'enum': ['combined', 'depth', 'normal', 'albedo']},
                      resolution=arr(positive, 2, 2)))
-    doc = lambda kind, fields: obj(dict(schema_version={'const': 1}, kind={'const': 'render3d-' + kind}, **fields))
+    doc = lambda kind, fields: obj(dict(schema_version={'type':'integer','const': 1}, kind={'const': 'render3d-' + kind}, **fields))
     snapshot = doc('snapshot', dict(adapter=identity, source=identity,
                      coordinate_system={'const': COORDINATES}, entrypoint=path,
                      files=arr(file, 1, MAX_FILES), total_bytes=dict(type='integer', minimum=1, maximum=MAX_TOTAL_BYTES),
@@ -113,7 +119,7 @@ def definitions():
                submitted_at=text, updated_at=text, worker=nullable(identifier), heartbeat_at=nullable(text),
                attempt=dict(type='integer', minimum=0, maximum=16), counts=counts,
                state={'enum': ['queued', 'running', 'complete', 'partial', 'failed', 'cancelled', 'interrupted']},
-               cancellation_requested={'type': 'boolean'}, manifest=nullable(file), error=nullable(diagnostic)))
+               cancellation_requested={'type': 'boolean'}, manifest=nullable(artifact), error=nullable(diagnostic)))
     usage_bytes = dict(type='integer', minimum=0, maximum=2**40)
     usage = obj(dict(elapsed_seconds=nullable(seconds), peak_memory_bytes=nullable(usage_bytes),
                      output_bytes=nullable(usage_bytes), measurement={'enum': ['measured', 'estimated', 'unavailable']}))
@@ -122,7 +128,7 @@ def definitions():
                   requested_frames=arr(count, 1, 100000), successful=arr(count, 0, 100000),
                   failed=arr(count, 0, 100000), skipped=arr(count, 0, 100000), reused=arr(count, 0, 100000),
                   images=arr(image, 0, 400000), diagnostics=arr(diagnostic, 0, 1024),
-                  usage=usage, logs=arr(file, 0, 1024), manifest=nullable(file), verification=verification))
+                  usage=usage, logs=arr(artifact, 0, 1024), manifest=nullable(artifact), verification=verification))
     capabilities = doc('capabilities', dict(adapter=identity, backend=nullable(backend),
         discovery={'enum': ['available', 'unavailable', 'untested']},
         initialization={'enum': ['passed', 'failed', 'not-run']},
@@ -196,7 +202,9 @@ def validate(value, kind=None):
                 key.encode('utf-8')
                 if isinstance(child, str):
                     child.encode('utf-8')
-            if 'path' in item and item.get('path'):
+            if {'path','sha256','bytes'} <= set(item) and item.get('path'):
+                portable_name(item['path'])
+            if set(item)=={'path','owner_token'}:
                 portable_name(item['path'])
             for key in ('entrypoint', 'destination'):
                 if isinstance(item.get(key), str):
@@ -274,7 +282,7 @@ def _verification(value):
 
 def _settings(value):
     output = value['output']
-    require(not (value['device_policy'] == 'gpu-required' and value['allow_cpu_fallback']),
+    require(not (value['device_policy'] == 'gpu-required' and (value['allow_cpu_fallback'] or value['device']=='cpu')),
             'invalid-input', 'GPU-required cannot permit CPU fallback.')
     require(value['device_policy'] != 'cpu' or value['device'] in (None, 'cpu'),
             'invalid-input', 'CPU policy cannot select a GPU.')
@@ -321,23 +329,31 @@ def frame_hash(value):
 
 def make_frame_spec(request, index, snapshot_path, *, adapter=None):
     """Plan from a request-bound exact snapshot file and verified source closure."""
-    from rig_errors import sha256
     from render3d_snapshot import verify_snapshot, NativeRigAdapter
     validate(request, 'RenderRequest')
     snapshot_path = Path(snapshot_path)
-    require(not snapshot_path.is_symlink() and snapshot_path.is_file(),
-            'missing-asset', 'Expected a regular snapshot file.')
     reference = request['snapshot']
-    require(snapshot_path.stat().st_size == reference['bytes']
-            and sha256(snapshot_path) == reference['sha256'],
-            'stale-asset', 'Snapshot file differs from the request-bound bytes.')
-    snapshot = load(snapshot_path, 'RenderSnapshot')
+    try:
+        require(not snapshot_path.is_symlink() and snapshot_path.is_file(),
+                'missing-asset', 'Expected a regular snapshot file.')
+        with snapshot_path.open('rb') as stream:
+            payload=stream.read(32*1024**2+1)
+    except OSError as exc:
+        raise Render3DError('missing-asset',str(exc),path=snapshot_path) from exc
+    require(len(payload)<=32*1024**2 and len(payload)==reference['bytes']
+            and hashlib.sha256(payload).hexdigest()==reference['sha256'],
+            'stale-asset','Snapshot file differs from the request-bound bytes.')
+    try:
+        snapshot=validate(decode_json(payload),'RenderSnapshot')
+    except RigError as exc:
+        raise Render3DError('invalid-input',str(exc)) from exc
     require(snapshot_path.name == 'snapshot.json', 'invalid-input', 'Use the frozen snapshot.json entrypoint.')
     if adapter is None:
         require(snapshot['scope'] == 'native-rig-preview', 'unsupported-feature',
                 'Scene3D source planning requires its explicit owner adapter.')
         adapter = NativeRigAdapter()
-    snapshot = verify_snapshot(snapshot_path.parent, adapter)
+    verified = verify_snapshot(snapshot_path.parent, adapter)
+    require(verified==snapshot,'stale-asset','Owner-verified snapshot differs from request-authorized bytes.')
     presentation, source = frame_times(request, index)
     frame = dict(schema_version=1, kind='render3d-frame', index=index,
                  local_index=index - request['frame_range']['start'],

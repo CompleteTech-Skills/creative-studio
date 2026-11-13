@@ -6,6 +6,7 @@
       "additionalProperties": false,
       "properties": {
         "schema_version": {
+          "type": "integer",
           "const": 1
         },
         "kind": {
@@ -194,7 +195,7 @@
                 "bytes": {
                   "type": "integer",
                   "minimum": 0,
-                  "maximum": 268435456
+                  "maximum": 1099511627776
                 }
               },
               "required": [

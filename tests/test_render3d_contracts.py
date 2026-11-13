@@ -310,3 +310,64 @@ class NativeSnapshot(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+class OutputBoundaryRegressions(unittest.TestCase):
+    def test_output_files_allow_supported_storage_budgets_without_widening_sources(self):
+        image=dict(frame=0,file=dict(path='large.exr',sha256='0'*64,bytes=2**30),format='exr',bit_depth=32,pass_name='combined',resolution=[16384,16384])
+        value=dict(schema_version=1,kind='render3d-result',job='job',request_sha256='0'*64,snapshot_sha256='1'*64,backend=backend(),status='partial',requested_frames=[0],successful=[0],failed=[],skipped=[],reused=[],images=[image],diagnostics=[],usage=dict(elapsed_seconds=None,peak_memory_bytes=None,output_bytes=None,measurement='unavailable'),logs=[],manifest=None,verification=dict(status='not-run',verifier=None,evidence=None))
+        validate(value)
+        image['file']['bytes']=2**40;validate(value)
+        image['file']['bytes']=2**40+1
+        with self.assertRaises(Render3DError):validate(value)
+        with self.assertRaises(Render3DError):validate(dict(path='source.bin',sha256='0'*64,bytes=2**30),'FileRef')
+
+    def test_library_diagnostics_retain_absolute_source_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'missing.json'
+            with self.assertRaises(Render3DError) as raised:load(path)
+            report=raised.exception.report
+            validate(report,'Diagnostic')
+            self.assertEqual(report['path'],str(path))
+            bad=request();bad['snapshot']['path']=str(path)
+            with self.assertRaises(Render3DError):validate(bad)
+
+    def test_integral_float_versions_and_output_depths_are_rejected(self):
+        for field in ('schema_version','bit_depth'):
+            value=request()
+            if field=='schema_version':value[field]=1.0
+            else:value['settings']['output'][field]=8.0
+            with self.subTest(field=field),self.assertRaises(Render3DError):validate(value)
+
+    def test_gpu_required_cannot_select_cpu(self):
+        value=request();value['settings'].update(device_policy='gpu-required',device='cpu')
+        with self.assertRaises(Render3DError):validate(value)
+
+    def test_frame_output_compatibility_cannot_be_bypassed_by_rehashing(self):
+        from render3d_contracts import frame_hash
+        frame=dict(schema_version=1,kind='render3d-frame',index=0,local_index=0,presentation_time=dict(numerator=0,denominator=1),source_time=dict(numerator=0,denominator=1),camera='camera',snapshot_sha256='0'*64,settings_sha256='1'*64,dependencies=['2'*64],output=settings()['output'],destination='out',cache_key='0'*64)
+        frame['cache_key']=frame_hash(frame);validate(frame)
+        for values in (dict(format='png',bit_depth=32),dict(format='exr',bit_depth=8,color_space='srgb')):
+            bad=deepcopy(frame);bad['output'].update(values);bad['cache_key']=frame_hash(bad)
+            with self.subTest(values=values),self.assertRaises(Render3DError):validate(bad)
+
+    def test_frame_rejects_snapshot_replaced_between_authorization_and_verification(self):
+        from unittest.mock import patch
+        from rig_test_helpers import fixture
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);rig=fixture(root,animated=False);frozen=root/'frozen'
+            document=create_snapshot(rig.root,frozen,NativeRigAdapter())
+            value=request();value['snapshot']=file('snapshot.json',(frozen/'snapshot.json').read_bytes())
+            replacement=deepcopy(document);replacement['source']['id']='different'
+            replacement['snapshot_sha256']=snapshot_hash(replacement)
+            with patch('render3d_snapshot.verify_snapshot',return_value=replacement):
+                with self.assertRaises(Render3DError):make_frame_spec(value,5,frozen/'snapshot.json')
+
+    def test_staging_disk_exhaustion_has_storage_diagnostic(self):
+        from unittest.mock import patch
+        import errno
+        from rig_test_helpers import fixture
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);rig=fixture(root,animated=False)
+            with patch('render3d_snapshot.tempfile.mkdtemp',side_effect=OSError(errno.ENOSPC,'disk full')):
+                with self.assertRaises(Render3DError) as caught:create_snapshot(rig.root,root/'snapshot',NativeRigAdapter())
+            self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
