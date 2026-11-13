@@ -37,3 +37,35 @@ class CinematicStorage(unittest.TestCase):
                 prepare.assert_not_called();self.assertFalse(target.parent.exists())
 
 if __name__=='__main__':unittest.main()
+
+
+class ProbeDescriptorProtocol(unittest.TestCase):
+    @unittest.skipUnless(__import__('atomic_publish').private_stage_supported(),
+                         'Linux procfs directory capability adapter required')
+    def test_cinematic_probe_inherits_a_live_registered_directory_descriptor(self):
+        import os, stat, json
+        from unittest.mock import patch
+        from test_rig_cinematics3d_blender import inventory
+        import render3d_blender as backend_module
+        from rig_errors import scoped_directory_descriptor, sha256
+        backend=object.__new__(backend_module.BlenderBackend)
+        backend.executable=sys.executable
+        value=inventory()
+        metadata=dict(application_version=value['application_version'],
+                      executable_sha256=sha256(sys.executable),
+                      worker_sha256=sha256(backend_module.WORKER))
+        descriptors=[]
+        def supervise(command, *, cwd, pass_fds, **limits):
+            self.assertEqual(len(pass_fds),1)
+            descriptor=pass_fds[0];descriptors.append(descriptor)
+            self.assertTrue(stat.S_ISDIR(os.fstat(descriptor).st_mode))
+            self.assertEqual(command[-1],str(descriptor))
+            self.assertEqual(Path(command[-2]),cwd/'job.json')
+            with scoped_directory_descriptor(cwd) as owned:
+                self.assertIsNotNone(owned)
+            (cwd/'cinematics-probe.json').write_text(json.dumps(value))
+        with patch.object(backend,'inspect_version',return_value=metadata), \
+             patch.object(backend_module,'_supervise',side_effect=supervise):
+            self.assertEqual(backend.cinematics_probe(),value)
+        self.assertEqual(len(descriptors),1)
+        with self.assertRaises(OSError):os.fstat(descriptors[0])

@@ -290,17 +290,22 @@ class BlenderBackend:
         from cinematics3d_blender import validate_probe
         from cinematics3d_blender_runtime import __file__ as runtime_file
         runtime=Path(runtime_file); backend=self.inspect_version(); runtime_hash=sha256(runtime)
+        require(private_stage_supported(),'unsupported-feature',
+                'Native cinematic probing requires the tested Linux directory capability adapter.')
         with tempfile.TemporaryDirectory(prefix='render3d-cinematic-probe-') as temporary:
-            root=Path(temporary); atomic_json(root/'job.json',dict(schema_version=1,mode='cinematics-probe'))
-            command=[self.executable,'--background','--factory-startup','--disable-autoexec',
-                     '--python-exit-code','1','--python',str(WORKER),'--',str(root/'job.json')]
-            _supervise(command,cwd=root,timeout=60,memory_bytes=2*1024**3,storage_bytes=16*1024**2)
-            require(sha256(self.executable)==backend['executable_sha256'] and sha256(WORKER)==backend['worker_sha256']
-                    and sha256(runtime)==runtime_hash,'stale-asset','Probe code changed during execution.')
-            probe=validate_probe(read_json(root/'cinematics-probe.json'))
-            require(probe['application_version']==backend['application_version'],
-                    'verification-failed','Probe version differs from admitted executable.')
-            return probe
+            with pinned_directory(temporary) as descriptor, directory_capability(descriptor) as capability:
+                root=capability.path
+                atomic_json(root/'job.json',dict(schema_version=1,mode='cinematics-probe'))
+                command=[self.executable,'--background','--factory-startup','--disable-autoexec',
+                         '--python-exit-code','1','--python',str(WORKER),'--',str(root/'job.json'),str(capability.fd)]
+                _supervise(command,cwd=root,timeout=60,memory_bytes=2*1024**3,storage_bytes=16*1024**2,
+                           pass_fds=(capability.fd,))
+                require(sha256(self.executable)==backend['executable_sha256'] and sha256(WORKER)==backend['worker_sha256']
+                        and sha256(runtime)==runtime_hash,'stale-asset','Probe code changed during execution.')
+                probe=validate_probe(read_json(root/'cinematics-probe.json'))
+                require(probe['application_version']==backend['application_version'],
+                        'verification-failed','Probe version differs from admitted executable.')
+                return probe
 
     def capabilities(self):
         return dict(schema_version=1,kind='render3d-capabilities',adapter=dict(id='blender',version=VERSION),
