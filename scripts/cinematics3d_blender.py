@@ -153,6 +153,7 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
         validate_plan(plan)
     except ValueError as exc:
         raise RigError('CINEMATICS_PLAN',str(exc)) from exc
+    validate_configuration(plan,configuration)
     return dict(request=effective,plan=plan,configuration=configuration,probe=probe,executed=False)
 
 
