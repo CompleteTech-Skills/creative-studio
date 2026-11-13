@@ -97,3 +97,10 @@ class SceneMaterialProjectionTests(unittest.TestCase):
         with self.assertRaises(RigError):
             project_material_slots(asset,component='only-first',
                 overrides=[dict(slot=asset['material_bindings'][1]['slot'],material=self.pin)])
+
+    def test_present_empty_mapping_cannot_drop_an_explicit_default_material(self):
+        asset=deepcopy(self.imported.asset)
+        asset['material_bindings']=[]
+        with self.assertRaises(RigError): validate_document(asset,'asset')
+        with self.assertRaises(RigError):
+            project_material_slots(asset,overrides=[dict(slot='default',material=self.pin)])
