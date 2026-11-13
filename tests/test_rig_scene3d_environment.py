@@ -112,6 +112,10 @@ class TerrainTests(unittest.TestCase):
         mask=np.zeros((5,5));mask[2,2]=1
         with self.assertRaises(RigError):terrain.mask(mask,target=1)
         np.testing.assert_array_equal(terrain.heights,previous)
+        with self.assertRaises(RigError):terrain.path([[-2,0],[2,0]],width=1,elevation=1)
+        np.testing.assert_array_equal(terrain.heights,previous)
+        with self.assertRaises(RigError):terrain.path([[-2,0],[2,0]],width=1,elevation=3)
+        np.testing.assert_array_equal(terrain.heights,previous)
 
     def test_flatten_path_and_spatial_scatter(self):
         a=Heightfield(seed=8).path([[-10,0],[10,0]],width=2,elevation=0)

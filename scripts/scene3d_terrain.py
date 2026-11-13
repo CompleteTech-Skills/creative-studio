@@ -117,7 +117,7 @@ class Heightfield:
         """Flatten a bounded polyline corridor into this actual heightfield."""
         positive(width,'path width'); p=numeric_array(points,'path')
         require(p.ndim==2 and p.shape[1]==2 and 2<=len(p)<=256 and np.isfinite(p).all(),'Invalid path.')
-        require(type(elevation) in (int,float) and math.isfinite(elevation) and abs(elevation)<=10000,'Invalid path elevation.')
+        require(type(elevation) in (int,float) and math.isfinite(elevation) and abs(elevation)<=self.elevation_limit,'Path elevation exceeds its configured bound.')
         require((np.abs(p[:,0])<=self.width/2).all() and (np.abs(p[:,1])<=self.depth/2).all(),'Path exceeds terrain.')
         require((np.linalg.norm(np.diff(p,axis=0),axis=1)>1e-9).all(),'Path has empty spans.')
         axis_x=np.linspace(-self.width/2,self.width/2,self.resolution)
@@ -128,7 +128,12 @@ class Heightfield:
             delta=b-a
             t=np.clip(((grid_x-a[0])*delta[0]+(grid_z-a[1])*delta[1])/np.dot(delta,delta),0,1)
             distance=np.minimum(distance,np.hypot(grid_x-a[0]-t*delta[0],grid_z-a[1]-t*delta[1]))
+        previous=self.heights;self.heights=self.heights.copy()
         self.heights[distance<=width/2]=elevation
+        try:self.mesh()
+        except Exception:
+            self.heights=previous
+            raise
         return self
 
 
