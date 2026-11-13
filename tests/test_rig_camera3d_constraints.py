@@ -130,6 +130,18 @@ class CameraConstraintTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             track_subject(np.eye(4),target,follow_rotation=True)
 
+    def test_follow_rechecks_distance_after_height_and_weight(self):
+        target=subject([0,0,-5])
+        with self.assertRaisesRegex(ConstraintError,'conflicts'):
+            track_subject(np.eye(4),target,offset_m=[0,0,2],fixed_height_m=10,distance_range_m=[1,3])
+        with self.assertRaisesRegex(ConstraintError,'conflicts'):
+            track_subject(np.eye(4),target,offset_m=[0,0,2],weight=.1,distance_range_m=[1,3])
+
+    def test_invalid_safe_rectangle_fails_before_anchor_access(self):
+        for safe_rect in ([],[0,0,1], [0,0,0,1], [0,0,2,1]):
+            with self.assertRaises(ConstraintError):
+                frame_subject(np.eye(4),self.optics,self.render,[subject()],safe_rect=safe_rect)
+
     def test_later_aim_behind_focus_respects_warning_policy(self):
         focus=deepcopy(self.docs['constraint']);focus.update(id='focus',type='focus',failure='warn')
         look=deepcopy(focus);look.update(id='look',type='look-at',priority=2,failure='reject')
@@ -213,6 +225,8 @@ class CollisionResponseUnitTests(unittest.TestCase):
         self.assertFalse(warned['clear'])
         with self.assertRaisesRegex(ConstraintError,'starts in'):
             resolve_camera_collision([0,0,0],[-2,0,0],.1,geometry,policy='stop')
+        with self.assertRaisesRegex(ConstraintError,'not supplied'):
+            resolve_camera_collision([-2,0,0],[2,0,0],.1,object())
 
     def test_mandatory_bounds_and_continuous_path_segments(self):
         from camera3d_constraints import resolve_camera_collision,preflight_camera_path

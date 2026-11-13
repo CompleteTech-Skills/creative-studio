@@ -167,6 +167,11 @@ def frame_subject(world, optics, render, targets, *, safe_rect=(.05, .05, .95, .
     shifts, distance bounds, and clipping return an error rather than partial fit.
     """
     world = _world(world);optics = deepcopy(validate(optics, 'optics'));validate(render, 'render')
+    if not isinstance(safe_rect, (list, tuple)) or len(safe_rect) != 4:
+        raise ConstraintError('Safe rectangle requires left, top, right, bottom.')
+    left, top, right, bottom = [_number(v, 'Safe rectangle', 0, 1) for v in safe_rect]
+    if left >= right or top >= bottom:
+        raise ConstraintError('Safe rectangle has no positive area.')
     points = _points(targets)
     center = (points.min(axis=0)+points.max(axis=0))/2
     if weights is not None:
@@ -283,6 +288,11 @@ def track_subject(world, target, *, offset_m=(0, 0, 0), follow_position=True,
         target_world = cm._matrix(target['world_matrix'], rigid=True)
         world[:3, :3] = qmatrix(slerp(matrix_quaternion(world[:3, :3]),
                                      matrix_quaternion(target_world[:3, :3]), amount))
+    if distance_range_m is not None:
+        distance = float(np.linalg.norm(world[:3, 3]-point))
+        if not lo-1e-9 <= distance <= hi+1e-9:
+            raise ConstraintError('Follow height or weight conflicts with distance bounds.',
+                                  code='CAMERA3D_FOLLOW_CONFLICT')
     return world
 
 
@@ -409,6 +419,9 @@ def resolve_camera_collision(start, end, radius, queries, *, policy='reject',
         raise ConstraintError('Unsupported camera collision response policy.')
     if type(max_slide_steps) is not int or not 1<=max_slide_steps<=8:
         raise ConstraintError('Slide work limit must be an integer in 1..8.')
+    if not callable(getattr(queries, 'sweep_sphere', None)):
+        raise ConstraintError('Native scene continuous sphere sweep was not supplied.',
+                              code='CAMERA3D_COLLISION_UNAVAILABLE')
     bound=_bounds(bounds)
     if bound is not None:
         lo,hi=bound
