@@ -355,3 +355,81 @@ class BlenderBackend:
 
 def render_frames(request,snapshot_root,destination,*,executable=None,cancelled=None,progress=None):
     return BlenderBackend(executable).render_frames(request,snapshot_root,destination,cancelled=cancelled,progress=progress)
+
+
+def recover_verified_stage(request, stage, destination, *, expected_backend, executable):
+    """Finish pixel verification of a retained, fully executed private stage.
+
+    This does not execute a worker or infer execution from arbitrary images.
+    The trusted execution supervisor must supply the original admitted backend
+    identity. Only the optional PNG-decoder admission failure is recoverable.
+    Lost process usage remains explicitly unavailable.
+    """
+    from rig_errors import decode_json
+    from render3d_contracts import open_regular
+    from render3d_verify import verify_result
+    validate(request, 'RenderRequest')
+    stage, target = Path(stage).absolute(), Path(destination).absolute()
+    require(stage.is_dir() and not stage.is_symlink(), 'ownership', 'Expected retained private stage.')
+    require(not target.exists() and not target.is_symlink() and target.parent == stage.parent,
+            'ownership', 'Recover only to a new sibling output destination.')
+    def captured(name, limit=64*1024**2):
+        path = safe_path(stage, name, exists=True)
+        with open_regular(path, limit) as stream:
+            payload = stream.read(limit+1)
+        require(len(payload) <= limit, 'invalid-input', 'Retained metadata exceeds budget.')
+        return decode_json(payload, max_bytes=limit)
+    failure = captured('failure.json', 32*1024)
+    require(failure.get('category') == 'unsupported-feature' and
+            failure.get('message') == 'PNG verification requires the optional pypng and numpy packages.',
+            'verification-failed', 'Stage did not fail solely at optional PNG verification.')
+    manifest, worker = captured('manifest.json'), captured('worker-report.json')
+    backend = deepcopy(expected_backend)
+    require(manifest['backend'] == backend, 'verification-failed', 'Retained backend differs from original admission.')
+    require(backend['worker_sha256'] == sha256(WORKER), 'stale-asset', 'Original worker code is unavailable.')
+    # Bind original executable bytes, not just a version string. The supervisor
+    # already admitted this exact identity; this API never discovers a substitute.
+    with open_regular(executable, 512*1024**2) as stream:
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: stream.read(1024*1024), b''):
+            digest.update(chunk)
+    require(digest.hexdigest() == backend['executable_sha256'], 'stale-asset', 'Original executable bytes are unavailable.')
+    root = stage / 'snapshot'
+    snapshot = captured('snapshot/snapshot.json', 32*1024**2)
+    frames = list(range(request['frame_range']['start'], request['frame_range']['end']))
+    require(manifest['request_sha256'] == object_hash(request) and
+            manifest['snapshot_sha256'] == snapshot['snapshot_sha256'], 'stale-asset', 'Original input binding differs.')
+    require(manifest['frames'] == [make_frame_spec(request, index, root/'snapshot.json') for index in frames],
+            'stale-asset', 'Retained frame specifications differ from exact inputs.')
+    require(worker == manifest['worker'] and worker['version'] == backend['application_version'] and
+            worker['engine'] == 'cycles' and worker['device'] == 'cpu' and worker['rendered'] == frames and
+            worker['geometry_vertices'] > 0 and worker['geometry_triangles'] > 0,
+            'incomplete-output', 'Retained worker evidence is incomplete.')
+    settings = request['settings']
+    require(settings['output']['format'] == 'png' and settings['output']['passes'] == ['combined'],
+            'unsupported-feature', 'Recovery supports the original combined PNG sequence only.')
+    def artifact(name):
+        path = safe_path(stage, name, exists=True)
+        with open_regular(path, settings['resources']['storage_bytes']) as stream:
+            digest, size = hashlib.sha256(), 0
+            for chunk in iter(lambda: stream.read(1024*1024), b''):
+                size += len(chunk); digest.update(chunk)
+                require(size <= settings['resources']['storage_bytes'], 'storage-exhaustion', 'Retained artifact exceeds budget.')
+        return dict(path=name, sha256=digest.hexdigest(), bytes=size)
+    images = [dict(frame=index, file=artifact(f'frames/{index:06d}.png'), format='png',
+                   bit_depth=settings['output']['bit_depth'], pass_name='combined', resolution=settings['resolution'])
+              for index in frames]
+    result = dict(schema_version=1, kind='render3d-result', job=request['id'], request_sha256=object_hash(request),
+        snapshot_sha256=snapshot['snapshot_sha256'], backend=backend, status='complete', requested_frames=frames,
+        successful=frames, failed=[], skipped=[], reused=[], images=images,
+        diagnostics=['Recovered fully executed retained sequence after optional PNG decoder became available. Process usage was not retained.'],
+        usage=dict(elapsed_seconds=None, peak_memory_bytes=None, output_bytes=None, measurement='unavailable'),
+        logs=[artifact('blender.log')], manifest=artifact('manifest.json'),
+        verification=dict(status='not-run', verifier=None, evidence=None))
+    verification = verify_result(request, result, stage, snapshot_root=root, expected_backend=backend)
+    atomic_json(stage/'verification.json', verification)
+    result['verification'] = dict(status='passed', verifier=verification['verifier'], evidence=artifact('verification.json'))
+    validate(result, 'RenderResult')
+    atomic_json(stage/'result.json', result)
+    _rename_no_replace(stage, target)
+    return result

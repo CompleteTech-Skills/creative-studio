@@ -201,7 +201,7 @@ def encode_rendered_mvp(root, shots, destination, *, ffmpeg=None, ffprobe=None):
             'verification': verification, 'visual_review': 'not-performed'}
 
 
-def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffprobe=None):
+def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffprobe=None, retained_stage=None):
     """Execute both canonical shots and encode independently verified masters.
 
     Use a new destination. Failed output remains private for diagnosis; a final
@@ -224,7 +224,9 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
     motion = verify_performance_motion(root)
     static = verify_no_motion_negative(root)
     bundle = load_project(root / 'scene-project')
-    stage = Path(tempfile.mkdtemp(prefix='.director-delivery-', dir=destination.parent))
+    stage = (Path(retained_stage).absolute() if retained_stage is not None else
+             Path(tempfile.mkdtemp(prefix='.director-delivery-', dir=destination.parent)))
+    _require(stage.is_dir() and not stage.is_symlink() and stage.parent == destination.parent, 'Invalid retained delivery stage.')
     try:
         # Rebuild the render binding from the exact measured native inputs.
         # An independently valid, unrelated static project must never inherit
@@ -237,13 +239,19 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
         source_scene = read_json(root / 'scene.json')
         key_frames = [dict(frame=frame, matrix=evaluate_frame(rigs, source_scene, frame,
                       include_vertices=False)['key_matrix']) for frame in range(121)]
-        bound_root = stage / 'bound-scene-project'
+        bound_root = (Path(tempfile.mkdtemp(prefix='.binding-check-', dir=stage)) / 'project'
+                      if retained_stage is not None else stage / 'bound-scene-project')
         bind_scene_project(root, bound_root, key_frames)
         rebuilt = load_project(bound_root)
         _require(rebuilt['inventory'] == bundle['inventory'], 'Rendered Scene3D project differs from measured native performance.')
         _require(_performance_input_hashes(root) == motion['input_sha256'], 'Native inputs changed during render binding.')
         snapshot_root = stage / 'snapshot'
-        snapshot = create_snapshot(bound_root, snapshot_root, Scene3DAdapter())
+        if retained_stage is None:
+            snapshot = create_snapshot(bound_root, snapshot_root, Scene3DAdapter())
+        else:
+            from render3d_snapshot import verify_snapshot
+            snapshot = verify_snapshot(snapshot_root, Scene3DAdapter())
+            _require(load_project(snapshot_root)['inventory'] == rebuilt['inventory'], 'Retained snapshot differs from freshly bound native inputs.')
         snapshot_bytes = (snapshot_root / 'snapshot.json').read_bytes()
         backend = BlenderBackend(blender)
         identity = backend.inspect_version()
@@ -267,18 +275,41 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
             request['scene'] = {key: bundle['project']['scenes'][0][key] for key in ('id', 'version')}
             validate(request, 'RenderRequest')
             atomic_json(stage / (identifier + '-request.json'), request)
-            result = backend.render_frames(request, snapshot_root, stage / identifier)
+            if retained_stage is not None and (stage / identifier / 'result.json').is_file():
+                from render3d_contracts import load
+                from render3d_verify import verify_result
+                result = load(stage / identifier / 'result.json', 'RenderResult')
+                verify_result(request, result, stage / identifier, snapshot_root=snapshot_root, expected_backend=identity)
+            elif retained_stage is not None and identifier == 'establish':
+                from render3d_blender import recover_verified_stage
+                from rig_errors import read_json
+                from render3d_contracts import open_regular
+                from rig_errors import decode_json
+                candidates = list(stage.glob('.render3d-*'))
+                _require(len(candidates) == 1, 'Expected one fully executed retained render stage.')
+                with open_regular(candidates[0] / 'manifest.json', 64*1024**2) as stream:
+                    admitted = decode_json(stream.read(64*1024**2+1), max_bytes=64*1024**2)['backend']
+                _require(identity == admitted, 'Original admitted backend is unavailable for retained recovery.')
+                result = recover_verified_stage(request, candidates[0], stage / identifier,
+                    expected_backend=admitted, executable=backend.executable)
+            else:
+                result = backend.render_frames(request, snapshot_root, stage / identifier)
             shot = dict(request=request, result=result, directory=identifier,
                         snapshot_root=snapshot_root, expected_backend=identity)
             shots.append(shot)
+            inspection_target = stage / (identifier + '-inspection')
+            if inspection_target.exists():
+                inspection_target = stage / (identifier + '-reinspection-' + str(len(list(stage.glob(identifier + '-reinspection-*')))))
             inspections.append(inspect_render(request, result, stage / identifier, snapshot_root,
-                                               stage / (identifier + '-inspection'), expected_backend=identity))
+                                               inspection_target, expected_backend=identity))
         media = encode_rendered_mvp(stage, shots, stage / 'laboratory.mp4', ffmpeg=ffmpeg, ffprobe=ffprobe)
         negatives = verify_media_negatives(stage, shots, media, ffmpeg=ffmpeg, ffprobe=ffprobe)
         receipt = dict(schema_version=1, kind='director-mvp-delivery', motion=motion,
             static_motion_negative=static, snapshot=snapshot, backend=identity,
             shots=[dict(request=item['request'], result=item['result'], directory=item['directory']) for item in shots],
             inspections=inspections, media=media, negatives=negatives, visual_review='unreviewed')
+        if (stage / 'failure.json').exists():
+            (stage / 'failure.json').rename(stage / 'prior-verification-failure.json')
         atomic_json(stage / 'delivery.json', receipt)
         _rename_no_replace(stage, destination)
         return receipt
@@ -340,8 +371,9 @@ if __name__ == '__main__':
     parser.add_argument('--blender')
     parser.add_argument('--ffmpeg')
     parser.add_argument('--ffprobe')
+    parser.add_argument('--resume-retained-stage', type=Path)
     args = parser.parse_args()
     result = render_mvp(args.performance_root, args.destination, blender=args.blender,
-                        ffmpeg=args.ffmpeg, ffprobe=args.ffprobe)
+                        ffmpeg=args.ffmpeg, ffprobe=args.ffprobe, retained_stage=args.resume_retained_stage)
     print(json.dumps({'destination': str(args.destination), 'frame_count': result['media']['verification']['frame_count'],
                       'visual_review': result['visual_review']}))
