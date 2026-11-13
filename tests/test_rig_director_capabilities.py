@@ -14,7 +14,7 @@ class NativeCapabilityTests(unittest.TestCase):
     def test_three_real_native_importers_and_exact_evidence(self):
         operations=['importer.obj','importer.glb','importer.gltf']
         with tempfile.TemporaryDirectory() as directory:
-            path=Path(directory)/'proof';result=cap.probe(request(operations,operations),path)
+            path=Path(directory).resolve()/'proof';result=cap.probe(request(operations,operations),path)
             self.assertTrue(all(x['execution_verified'] for x in result['value']['capabilities']),result['diagnostics'])
             cap.assert_admission(result,operations,evidence_root=path,resources={'max_provider_calls':0})
             for reference in result['artifacts']:
@@ -32,15 +32,15 @@ class NativeCapabilityTests(unittest.TestCase):
 
     def test_empty_execution_evidence_cannot_admit(self):
         with tempfile.TemporaryDirectory() as directory:
-            result=cap.probe(request(['importer.obj'],['importer.obj']),Path(directory)/'proof')
+            result=cap.probe(request(['importer.obj'],['importer.obj']),Path(directory).resolve()/'proof')
             result['value']['capabilities'][0]['probe_evidence']=[]
             result['value']['digest']=object_hash({k:v for k,v in result['value'].items() if k!='digest'})
-            with self.assertRaises(RigError):cap.assert_admission(result,['importer.obj'],evidence_root=Path(directory)/'proof')
+            with self.assertRaises(RigError):cap.assert_admission(result,['importer.obj'],evidence_root=Path(directory).resolve()/'proof')
 
     def test_malformed_receipt_is_typed_failure(self):
         import hashlib
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)/'proof'
+            root=Path(directory).resolve()/'proof'
             result=cap.probe(request(['importer.obj'],['importer.obj']),root)
             reference=result['value']['capabilities'][0]['probe_evidence'][0]
             path=root/reference['path'];path.write_bytes(b'{}')
