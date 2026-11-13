@@ -9,7 +9,7 @@ from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_contr
 from rig_attachments import socket_world,attach_prop,detach_prop,transfer_prop,prop_world,solve_grasp
 from rig_skeleton import neutral_pose,evaluate_fk,mirror_pose
 from rig_skinning import evaluate_deformation
-from rig_math import decompose
+from rig_math import decompose,axis_angle
 from rig_errors import RigError
 from rig_states import rig_capabilities
 
@@ -53,6 +53,29 @@ class RigSpecializationTests(unittest.TestCase):
         for mesh in r.geometry.meshes:
             for morph in mesh.morphs.values():
                 for values in morph.values():values[:]=0.
+        self.assertNotIn('expressive-face',rig_capabilities(r))
+    def test_expression_on_unweighted_parent_moves_weighted_descendants(self):
+        r=deepcopy(self.humanoid);root=r.skeleton['root']
+        used={skin.joints[int(j)] for skin in r.weights.values() for j in set(skin.indices[skin.weights>0].tolist())}
+        self.assertNotIn(root,used)
+        r.manifest['facial']['expressions']={'move':dict(schema_version=1,morphs={},
+            bones={root:{'rotation':axis_angle([0,0,1],.2).tolist()}},incompatible=[])}
+        neutral=neutral_pose(r.skeleton)
+        before=evaluate_deformation(r,neutral)
+        after=evaluate_deformation(r,apply_expressions(r,neutral,{'move':1.}))
+        self.assertGreater(max(np.max(np.abs(after[name]['positions']-value['positions']))
+                               for name,value in before.items()),.01)
+        self.assertIn('expressive-face',rig_capabilities(r))
+    def test_antipodal_rest_quaternion_does_not_claim_facial_motion(self):
+        r=deepcopy(self.humanoid)
+        bone=next(b for b in r.skeleton['bones'] if b['id']=='head')
+        r.manifest['facial']['expressions']={'inert':dict(schema_version=1,morphs={},
+            bones={'head':{'rotation':(-np.asarray(bone['rest']['rotation'])).tolist()}},incompatible=[])}
+        neutral=neutral_pose(r.skeleton)
+        before=evaluate_deformation(r,neutral)
+        after=evaluate_deformation(r,apply_expressions(r,neutral,{'inert':1.}))
+        for name,value in before.items():
+            np.testing.assert_allclose(after[name]['positions'],value['positions'],atol=1e-12)
         self.assertNotIn('expressive-face',rig_capabilities(r))
     def test_attach_detach_and_owner_transfer_preserve_world_space(self):
         r=self.humanoid;pose=neutral_pose(r.skeleton);matrix=socket_world(r,pose,'grip.right')
