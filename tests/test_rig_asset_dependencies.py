@@ -121,6 +121,14 @@ class UnitConversionTests(unittest.TestCase):
                 self.assertEqual(snapshot.provenance['source_entry'],result['native_path'])
                 maximum=max(float(mesh.positions.max()) for mesh in snapshot.model.geometry.meshes)
                 self.assertAlmostEqual(maximum,.01,places=7)
+                from model3d_mesh_asset import build_asset
+                from test_model3d_mesh_asset import record,source,provenance
+                geometry=record(snapshot.root,result['native_path'],'model/gltf-binary')
+                (snapshot.root/'canonical.json').write_text(json.dumps(dict(canonical_ref=normalized,manifest=manifest)))
+                document=build_asset(snapshot.root,geometry,asset_id='normalized-triangle',version='1.0.0',
+                    category='prop',sources=[source(geometry)],provenance=provenance(),
+                    canonical_evidence=record(snapshot.root,'canonical.json','application/json'))
+                self.assertEqual(document['geometry'],geometry)
             with self.assertRaises(RigError) as caught:
                 import_canonical(library,normalized,entry='mesh/triangle.obj')
             self.assertEqual(caught.exception.report['code'],'MODEL3D_ENTRY')
