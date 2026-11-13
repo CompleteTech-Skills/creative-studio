@@ -1,0 +1,161 @@
+"""Native inspector commands and real Scene3D mutation checks."""
+from copy import deepcopy
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+
+from editor3d_inspectors import compile_inspector_commands, describe_inspector
+from rig_errors import RigError
+from scene3d_contracts import load_project, validate_document
+from scene3d_example import build_example, node
+from scene3d_graph import SceneGraph
+from scene3d_edit import apply_commands
+from scene3d_prefabs import PrefabLibrary
+from scene3d_snapshot import snapshot_project
+
+
+class InspectorTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp.name)
+        build_example(self.base/'source')
+        self.bundle = load_project(self.base/'source')
+        scene = deepcopy(self.bundle['documents']['example-scene.json'])
+        light = node('key-light', 'light', 'root')
+        light['light'] = dict(type='point', color=[1, 1, 1], intensity=10)
+        scene['nodes'].append(light);scene['lights'].append(light['id'])
+        self.scene = validate_document(scene)
+        self.snapshot = dict(scene=self.scene)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def test_camera_and_light_changes_use_native_validator_and_graph(self):
+        before = deepcopy(self.snapshot)
+        commands = compile_inspector_commands(self.snapshot,'camera',{'camera':{'near':0.2,'far':500,'vertical_fov':1.1}})
+        commands += compile_inspector_commands(self.snapshot,'key-light',{'light':{'intensity':25,'color':[0.1,0.4,0.9]}})
+        graph = SceneGraph(self.scene)
+        apply_commands(graph,PrefabLibrary(),dict(schema_version=1,commands=commands))
+        nodes={item['id']:item for item in graph.document()['nodes']}
+        self.assertEqual(nodes['camera']['camera']['near'],0.2)
+        self.assertEqual(nodes['camera']['camera']['far'],500)
+        self.assertEqual(nodes['key-light']['light']['intensity'],25)
+        self.assertEqual(self.snapshot,before)
+
+    def test_world_commands_are_real_native_changes(self):
+        commands=compile_inspector_commands(self.snapshot,None,{'world':{'background':[0.1,0.2,0.3],'exposure':2}})
+        graph=SceneGraph(self.scene)
+        apply_commands(graph,PrefabLibrary(),dict(schema_version=1,commands=commands))
+        self.assertEqual(graph.document()['world']['exposure'],2)
+        self.assertEqual(graph.document()['world']['background'],[0.1,0.2,0.3])
+
+    def test_camera_change_survives_native_snapshot_reopen(self):
+        graph=SceneGraph.from_bundle(self.bundle,'example-scene.json',source_root=self.base/'source')
+        commands=compile_inspector_commands({'scene':graph.document()},'camera',{'camera':{'projection':'orthographic','orthographic_height':8}})
+        apply_commands(graph,PrefabLibrary.from_files(self.base/'source',self.bundle),dict(schema_version=1,commands=commands))
+        result=snapshot_project(self.base/'source',self.base/'saved',graph,scene_path='example-scene.json')
+        reopened=load_project(self.base/'saved')['documents'][result['active_scene']['path']]
+        camera=next(item for item in reopened['nodes'] if item['id']=='camera')
+        self.assertEqual(camera['camera']['projection'],'orthographic')
+        self.assertEqual(camera['camera']['orthographic_height'],8)
+        self.assertEqual((self.base/'source/example-scene.json').read_bytes(),(self.base/'saved/example-scene.json').read_bytes())
+
+    def test_unknown_types_invalid_range_nonfinite_and_locked_fail(self):
+        for target,changes in [('camera',{'camera':{'near':200,'far':1}}),('camera',{'camera':{'unsupported':1}}),
+                               ('mesh',{'camera':{'near':1}}),('key-light',{'light':{'intensity':-1}}),
+                               ('key-light',{'light':{'intensity':float('nan')}}),('camera',{'other':{}})]:
+            with self.subTest(changes=changes),self.assertRaises(RigError):
+                compile_inspector_commands(self.snapshot,target,changes)
+        locked=deepcopy(self.snapshot)
+        next(item for item in locked['scene']['nodes'] if item['id']=='camera')['locked']=True
+        with self.assertRaises(RigError):compile_inspector_commands(locked,'camera',{'camera':{'near':1}})
+
+    def test_descriptors_report_only_actual_native_fields(self):
+        descriptor=describe_inspector(self.snapshot,'camera')
+        self.assertEqual(descriptor['kind'],'camera')
+        self.assertIn('near',descriptor['controls']['camera']['editable'])
+        self.assertIn('depth-of-field',descriptor['unavailable'])
+        self.assertFalse(describe_inspector(self.snapshot,'mesh')['controls'])
+        self.assertEqual(describe_inspector(self.snapshot)['kind'],'world')
+        with self.assertRaises(RigError):describe_inspector(self.snapshot,'missing')
+
+    def test_material_edit_publishes_new_native_version_and_preserves_source(self):
+        import hashlib
+        from editor3d_repository import EditorRepository
+        from editor3d_inspectors import apply_material_edit, describe_materials
+        material_path=Path(__file__).resolve().parents[1]/'examples/lookdev-contracts/ceramic.json'
+        original=material_path.read_bytes()
+        material=json.loads(original)
+        reference=dict(id=material['id'],version=material['version'],kind='material',
+                       path='ceramic.json',sha256=hashlib.sha256(original).hexdigest())
+        graph=SceneGraph.from_bundle(self.bundle,'example-scene.json',source_root=self.base/'source')
+        graph.configure_node('mesh',{'material_overrides':[dict(slot='ceramic',material=reference)]})
+        copied=snapshot_project(self.base/'source',self.base/'material-source',graph,scene_path='example-scene.json',extra_payloads={'ceramic.json':original})
+        repository=EditorRepository.create(self.base/'material-source',self.base/'repository',scene_path=copied['active_scene']['path'])
+        before=repository.snapshot()
+        self.assertEqual(describe_materials(repository,before,'mesh')[0]['effective']['surface']['roughness'],.24)
+        request=dict(node_id='mesh',slot='ceramic',surface=dict(roughness=.8,metallic=.6),expected_revision=before['revision'],expected_sha256=before['sha256'],transaction_id='material-edit')
+        after=apply_material_edit(repository,request)
+        self.assertEqual(after['revision'],before['revision']+1)
+        materials=describe_materials(repository,after,'mesh')
+        self.assertEqual(materials[0]['effective']['surface']['roughness'],.8)
+        self.assertEqual(materials[0]['effective']['surface']['metallic'],.6)
+        self.assertEqual(materials[0]['reference']['version'],'1.0.1')
+        self.assertEqual(repository.read_file('ceramic.json',after['sha256']),original)
+        self.assertEqual(EditorRepository(self.base/'repository').snapshot()['sha256'],after['sha256'])
+        stale=dict(request,transaction_id='stale-material-edit')
+        with self.assertRaises(RigError):apply_material_edit(repository,stale)
+        self.assertEqual(repository.snapshot()['sha256'],after['sha256'])
+        undone=repository.undo(after['revision'],'undo-material',expected_sha256=after['sha256'])
+        self.assertEqual(describe_materials(repository,undone,'mesh')[0]['effective']['surface']['roughness'],.24)
+        redone=repository.redo(undone['revision'],'redo-material',expected_sha256=undone['sha256'])
+        self.assertEqual(describe_materials(repository,redone,'mesh')[0]['effective']['surface']['roughness'],.8)
+
+
+@unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual browser acceptance explicitly.')
+class InspectorBrowserTests(unittest.TestCase):
+    def test_camera_light_world_edits_persist_and_rejections_stay_visible(self):
+        import threading
+        from editor3d_repository import EditorRepository
+        from editor3d_viewer import EditorServer
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            build_example(root/'source')
+            repository=EditorRepository.create(root/'source',root/'repository',scene_path='example-scene.json')
+            server=EditorServer(repository)
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser=launch_chromium(runtime)
+                    try:
+                        page=browser.new_page(viewport={'width':1400,'height':1000})
+                        page.goto(server.url)
+                        page.wait_for_function('() => window.editorReady === true')
+                        page.evaluate("window.hatchEditor.select('camera')")
+                        panel=page.locator('#native-inspectors')
+                        panel.get_by_label('Near plane (m)',exact=True).fill('0.2')
+                        panel.get_by_label('Far plane (m)',exact=True).fill('500')
+                        panel.get_by_role('button',name='Save camera optics',exact=True).click()
+                        page.wait_for_function("() => window.hatchEditor.snapshot.scene.nodes.find(n=>n.id==='camera').camera.near === 0.2")
+                        camera=next(n for n in repository.snapshot()['scene']['nodes'] if n['id']=='camera')
+                        self.assertEqual(camera['camera']['near'],.2)
+                        panel.get_by_label('Exposure (stops)',exact=True).fill('1.5')
+                        panel.get_by_role('button',name='Save world',exact=True).click()
+                        page.wait_for_function("() => window.hatchEditor.snapshot.scene.world.exposure === 1.5")
+                        previous=repository.snapshot()['sha256']
+                        panel.get_by_label('Near plane (m)',exact=True).fill('600')
+                        panel.get_by_role('button',name='Save camera optics',exact=True).click()
+                        panel.get_by_role('status').filter(has_text='far').wait_for()
+                        self.assertEqual(repository.snapshot()['sha256'],previous)
+                        page.reload();page.wait_for_function('() => window.editorReady === true')
+                        self.assertEqual(EditorRepository(root/'repository').snapshot()['scene']['world']['exposure'],1.5)
+                    finally:browser.close()
+            finally:
+                server.shutdown();server.server_close();thread.join(timeout=5)
+
+
+if __name__ == '__main__':unittest.main()

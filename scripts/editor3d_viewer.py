@@ -118,7 +118,12 @@ class EditorServer(HTTPServer):
     def __init__(self, repository, *, port=0, token=None, workers=4, routes=None):
         require(isinstance(workers, int) and 1 <= workers <= 8, 'EDITOR3D_VIEW_WORKERS', 'Use 1–8 workers.')
         self.repository = repository
-        self.routes = dict(routes or {})
+        self.routes = {}
+        # Built-in optional inspector extension selects fixed trusted handlers.
+        if (ROOT / "scripts/editor3d_inspectors.py").is_file():
+            from editor3d_inspectors import inspector_routes
+            self.routes.update(inspector_routes())
+        self.routes.update(routes or {})
         self.upload_directory = tempfile.TemporaryDirectory(prefix="hatch-editor-uploads-")
         self.uploads = {}
         self.upload_lock = threading.Lock()
