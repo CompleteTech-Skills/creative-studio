@@ -47,8 +47,11 @@ Scene3D hierarchy/bounds and native rig bone/socket FK, numerical framing and
 focus, deterministic poles/order, missing references, later constraint
 conflicts, and collision response using an analytical plane oracle.
 
-The analytical collision oracle validates response policy only. Acceptance
-against actual mesh swept-sphere queries remains dependent on Scene3D #62 and
-must run before declaring Camera #78 complete. Blender rendering and animated
-scene integration also remain acceptance work; this checkpoint does not claim
-the full Camera3D mission is complete.
+The analytical collision oracle validates response policy only. The explicit native integration gate
+`HATCH_CAMERA_NATIVE_SPATIAL=1` exercises the owning Scene3D #62
+`SpatialIndex.sweep_sphere` against actual triangle geometry, including stop,
+slide, nearby, adjust-distance, path clearance and initial overlap. Run with
+the owning spatial modules available on `PYTHONPATH`; missing modules fail
+when the gate is requested. Cross-owner acceptance ran against spatial
+checkpoint `a3cc379`. Blender rendering and animated scene integration remain
+acceptance work; this checkpoint does not claim the full Camera3D mission is complete.

@@ -237,3 +237,30 @@ class CollisionResponseUnitTests(unittest.TestCase):
         self.assertTrue(stopped['changed']);self.assertAlmostEqual(stopped['position'][1],2.9)
         result=preflight_camera_path([[-2,0,0],[2,0,0],[-2,0,0]],.1,geometry)
         self.assertFalse(result['clear']);self.assertEqual(result['segments'],2)
+
+
+class NativeMeshCollisionAcceptance(unittest.TestCase):
+    """Explicit integration gate requiring the owning Scene3D #62 modules."""
+    @unittest.skipUnless(__import__('os').environ.get('HATCH_CAMERA_NATIVE_SPATIAL')=='1',
+                         'Set HATCH_CAMERA_NATIVE_SPATIAL=1 with native Scene3D spatial modules')
+    def test_actual_triangle_sweep_stop_slide_and_path_preflight(self):
+        from scene3d_graph import SceneGraph
+        from scene3d_spatial import SpatialIndex
+        from camera3d_constraints import resolve_camera_collision,preflight_camera_path
+        fixture=NativeSceneTargetTests();fixture.setUp();scene=fixture.scene
+        for n in scene['nodes']:n['transform']['translation']=[0,0,0]
+        geometry=SpatialIndex(SceneGraph(scene,external_references={}),{'actor':dict(
+            vertices=[[0,-10,-10],[0,10,-10],[0,0,10]],triangles=[[0,1,2]])})
+        first=geometry.sweep_sphere([-2,0,0],[2,2,0],.1)
+        self.assertAlmostEqual(first['fraction'],.475)
+        self.assertEqual(first['node'],'actor')
+        for policy in ('stop','slide','nearby','adjust-distance'):
+            result=resolve_camera_collision([-2,0,0],[2,2,0],.1,geometry,policy=policy)
+            self.assertTrue(result['clear']);self.assertLess(result['position'][0],-.1)
+            self.assertIsNone(geometry.sweep_sphere(result['position'],result['position'],.1))
+        slid=resolve_camera_collision([-2,0,0],[2,2,0],.1,geometry,policy='slide')
+        self.assertAlmostEqual(slid['position'][1],2)
+        self.assertFalse(preflight_camera_path([[-2,0,0],[2,0,0]],.1,geometry)['clear'])
+        self.assertTrue(preflight_camera_path([[-2,0,0],[-2,2,0]],.1,geometry)['clear'])
+        with self.assertRaisesRegex(ConstraintError,'starts in'):
+            resolve_camera_collision([0,0,0],[-2,0,0],.1,geometry,policy='stop')
