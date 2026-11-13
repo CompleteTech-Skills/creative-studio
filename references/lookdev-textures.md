@@ -152,7 +152,8 @@ The opt-in `test_rig_lookdev_texture_direction.py` gate uses actual Cycles shade
 normal-vector output encoded into lossless float32 EXR. A constant tangent vector
 with nonzero X and Y is compared to an independently calculated world-space
 basis on a plane: ordinary UVs, mirrored U, UV rotation, nonuniform object scale,
-and a keyframed shape-key tilt. The assertions check vector direction and sign,
+and a keyframed shape-key tilt. Nonuniform scale uses the inverse transpose of
+the object transform and renormalizes the world shading normal. The assertions check vector direction and sign,
 not only a changed image. The tolerance is 0.002 per world-vector component.
 Set `HATCH_LOOKDEV_TEXTURE_TEST=1`, `HATCH_BLENDER` and a new
 `HATCH_LOOKDEV_DIRECTION_EVIDENCE` directory before running the gate. Use the

@@ -27,9 +27,10 @@ class DirectionTests(unittest.TestCase):
         report=json.loads((output/'report.json').read_text())
         # The texture stores encoded tangent vector (.36,.48,.8). Mirror U flips
         # tangent X; rotating UV=(v,1-u) maps +U to world +Y. Nonuniform XY
-        # object scale leaves the normalized world tangent unchanged.
+        # object scale transforms the local shading normal by its inverse transpose.
         expected={'base':[.36,.48,.8],'mirror':[-.36,.48,.8],
-                  'rotate':[-.48,.36,.8],'scale':[.36,.48,.8],
+                  'rotate':[-.48,.36,.8],
+                  'scale':np.array([.36/.7,.48/1.3,.8])/np.linalg.norm([.36/.7,.48/1.3,.8]),
                   'deform':np.array([.16,.48*np.sqrt(1.0625),.89])/np.sqrt(1.0625)}
         errors={}
         for case,vector in expected.items():
