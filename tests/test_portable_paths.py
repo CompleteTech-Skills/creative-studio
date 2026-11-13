@@ -33,7 +33,7 @@ sys.path.insert(0,sys.argv[1])
 import rig_errors
 with tempfile.TemporaryDirectory() as folder:
     root=pathlib.Path(folder); (root/'payload.bin').write_bytes(b'actual stdlib worker bytes')
-    with rig_errors.open_payload(root,'payload.bin') as stream:
+    with rig_errors.open_payload(root,'payload.bin') as (stream, _):
         assert stream.read()==b'actual stdlib worker bytes'
 assert not any(name=='PIL' or name.startswith('PIL.') for name in sys.modules)
 assert 'decomposition_package' not in sys.modules
