@@ -383,6 +383,9 @@ class AssetLibrary:
 
     def annotations(self, reference):
         with self._connect() as db:
+            # Canonical append precedes SQLite commit. Join the writer lock so
+            # active publication cannot look like a crashed split transaction.
+            db.execute('BEGIN IMMEDIATE')
             self._lookup(db, reference)
             row = db.execute('SELECT document FROM annotations WHERE id=? AND version=?',
                              (reference['id'], reference['version'])).fetchone()
@@ -518,6 +521,7 @@ class AssetLibrary:
         from asset_library_storage import validate_stream
         validate_stream(stream)
         with self._connect() as db:
+            db.execute('BEGIN IMMEDIATE')
             rows = db.execute('SELECT revision,document FROM asset_events WHERE stream=? ORDER BY revision', (stream,)).fetchall()
             if len(rows) > 65536 or [r for r, _ in rows] != list(range(1, len(rows) + 1)):
                 _fail('CORRUPT', 'Event stream is unbounded or has missing revisions.')
