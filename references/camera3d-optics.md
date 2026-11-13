@@ -52,7 +52,8 @@ Orthographic physical DOF, blade counts one/two, non-Cycles engines, unsupported
 RNA ranges and silent numeric clamping fail instead of producing a misleading
 render. Exposure is a separate scene color-management value; motion shutter is
 measured in frame intervals. Exposure is bounded to ±32 stops and shutter to
-zero through one frame. ISO/white-balance simulation is not claimed.
+zero through one frame. ISO-equivalent simulation is not claimed. Explicit
+shared native view white balance is exposed by the color binding below.
 
 A supplied camera must be unparented and free of animation/constraints: its
 already evaluated world matrix is authoritative. Repeated updates replace only
