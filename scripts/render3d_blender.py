@@ -164,6 +164,9 @@ def _prepare_scene(request,snapshot_root,workspace):
     scene_ref=next(r for r in project['scenes'] if r['id']==request['scene']['id'] and r['version']==request['scene']['version'])
     shot_ref=next(r for r in project['shots'] if r['id']==request['shot']['id'] and r['version']==request['shot']['version'])
     scene=bundle['documents'][scene_ref['path']]; shot=bundle['documents'][shot_ref['path']]
+    plan_bytes=len(scene['nodes'])*(request['frame_range']['end']-request['frame_range']['start'])*4096
+    require(plan_bytes+snapshot['total_bytes']*8<=request['settings']['resources']['memory_bytes'],
+            'system-memory','Evaluated frame plan exceeds memory budget.')
     require(not scene['world']['environment'],'unsupported-feature','HDRI environment maps require the look-development adapter.')
     require(not any(node['material_overrides'] for node in scene['nodes']),'unsupported-feature','Material overrides require the look-development adapter.')
     assets={};nodes=[]
@@ -270,9 +273,11 @@ class BlenderBackend:
         snapshot=read_json(root/'snapshot.json');validate(snapshot,'RenderSnapshot');self.validate(snapshot,request['settings'])
         adapter=Scene3DAdapter() if snapshot['scope']=='scene3d' else NativeRigAdapter()
         verify_snapshot(root,adapter)
+        make_frame_spec(request,request['frame_range']['start'],root/'snapshot.json')
         # Admission precedes creating output paths and importing expensive assets.
         settings=request['settings'];resources=settings['resources'];width,height=settings['resolution']
-        estimate=width*height*64+snapshot['total_bytes']*8
+        frame_count=request['frame_range']['end']-request['frame_range']['start']
+        estimate=width*height*64+snapshot['total_bytes']*8+frame_count*16384
         require(estimate<=resources['memory_bytes'],'system-memory','Scene/image admission exceeds memory budget.')
         require(width*height*16*(request['frame_range']['end']-request['frame_range']['start'])<=resources['storage_bytes'],
                 'storage-exhaustion','Conservative uncompressed output estimate exceeds storage budget.')
@@ -295,6 +300,8 @@ class BlenderBackend:
             command=[self.executable,'--background','--factory-startup','--disable-autoexec','--python-exit-code','1','--python',str(WORKER),'--',str(source/'job.json')]
             log,usage=_supervise(command,cwd=stage,timeout=resources['timeout_seconds'],memory_bytes=resources['memory_bytes'],storage_bytes=resources['storage_bytes'],cancelled=cancelled)
             (stage/'blender.log').write_bytes(log)
+            require(sha256(self.executable)==backend['executable_sha256'] and sha256(WORKER)==backend['worker_sha256'],
+                    'stale-asset','Executed backend code changed during rendering.')
             report=read_json(stage/'worker-report.json')
             require(report['version']==backend['application_version'],'verification-failed','Worker version changed after admission.')
             require(report['rendered']==[f['index'] for f in scene['frames']],'incomplete-output','Worker did not report every requested frame.')
@@ -319,6 +326,8 @@ class BlenderBackend:
             atomic_json(stage/'verification.json',verification)
             result['verification']=dict(status='passed',verifier=verification['verifier'],evidence=artifact('verification.json'))
             validate(result,'RenderResult');atomic_json(stage/'result.json',result)
+            require(sum(p.stat().st_size for p in stage.rglob('*') if p.is_file())<=resources['storage_bytes'],
+                    'storage-exhaustion','Verified delivery exceeds storage budget.')
             _rename_no_replace(stage,target)
             return result
         except Exception as exc:
