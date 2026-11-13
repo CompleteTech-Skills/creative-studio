@@ -28,6 +28,10 @@ COMMANDS=('capabilities','doctor','import','import-batch','generate','list','sho
 def _options(parser):
     # Flags may appear before or after subcommands, with suppressed child
     # defaults preserving values supplied to the parent parser.
+    parser.add_argument('--index',default=argparse.SUPPRESS,help='Explicit canonical search index directory')
+    parser.add_argument('--port',type=int,default=argparse.SUPPRESS,help='Browser loopback port')
+    parser.add_argument('--intake-root',default=argparse.SUPPRESS,help='Explicit HTTP intake root')
+    parser.add_argument('--output-root',default=argparse.SUPPRESS,help='Explicit HTTP output root')
     parser.add_argument('--library',default=argparse.SUPPRESS,help='Explicit private library directory')
     parser.add_argument('--project',default=argparse.SUPPRESS,help='Explicit project identifier')
     parser.add_argument('--asset',default=argparse.SUPPRESS,help='Asset identity')
@@ -91,6 +95,15 @@ def run(argv=None):
         if not hasattr(args,'library'):fail('REQUEST','Supply --library.')
         limits=decode_json(read_source_bytes(args.limits,MAX_REQUEST_BYTES)) if hasattr(args,'limits') else None
         owner=AssetOperations(args.library,jobs_root=getattr(args,'jobs_root',None),job_limits=limits)
+        if operation=='browser':
+            if p:fail('REQUEST','Browser startup uses explicit flags, not an operation request.')
+            if not hasattr(args,'index'):fail('REQUEST','Browser startup requires --index.')
+            from asset_library_operations import module
+            forwarded=['--library',args.library,'--index',args.index]
+            for name in ('port','jobs_root','intake_root','output_root'):
+                if hasattr(args,name):forwarded.extend(['--'+name.replace('_','-'),str(getattr(args,name))])
+            code=module('browser').main(forwarded)
+            return dict(ok=code in (None,0),result=dict(server_exit_code=code))
         if operation.startswith('jobs.'):
             action=args.action
             if p:fail('REQUEST','Job commands use --job and no request file.')

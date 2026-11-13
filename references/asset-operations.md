@@ -35,9 +35,9 @@ or missing capabilities return `LIBRARY_OPERATIONS_UNAVAILABLE`; a listed CLI
 verb alone does not imply its adapter is available. Semantic providers require
 the canonical search API's configured trusted provider; arbitrary provider code
 is not accepted in JSON. Canonical unbind, generic generation and remote
-publication remain unavailable. Version and metadata writes remain bounded
-synchronous native transactions; conversion/preview/export/index/package work
-uses managed jobs.
+publication remain unavailable. Metadata writes remain bounded synchronous native transactions; version,
+replacement, repair, conversion, preview, export, index and package work use
+managed jobs.
 
 Managed `submit(operation, parameters)` returns a durable queued job, not a
 finished asset. `run_job`, `resume_job`, `cancel_job`, `job_status`, and `list_jobs`
@@ -80,3 +80,26 @@ The operations tests exercise actual canonical registry/index transactions,
 process exit after publication, cancellation/resume, scope escape rejection,
 exclusive reports, and native import/original preservation. Synthetic engineering
 fixtures establish operational behavior, not artistic or production approval.
+
+## Managed version and repair operations
+
+The management extension uses the same job journal for `version`, `replace` and
+`repair`. Version requests select an explicit `action` (`create`, `promote`, or
+`rollback`); `assets version create/promote/rollback` selects that action through
+the CLI. Requests capture native CAS revisions and immutable source identities.
+They never select an implicit latest version. Replacement requests contain an
+exact canonical replacement `plan` and explicit consumer `versions`. Repair
+requests contain an authorized exact-byte `source`, `digest`, and
+`expected_bytes`; repair cannot authorize arbitrary blob substitution.
+
+Management stages use the existing canonical library, lifecycle and dependency
+owners. Each publisher has an authoritative recovery probe for the same token
+and exact output; native CAS and immutable registration reject concurrent
+conflicts. Replacing several immutable consumer versions is recoverable per
+version and does not claim a multi-library atomic transaction or automatically
+activate native project payloads. User-owned originals remain read-only.
+
+`assets browser --library LIBRARY --index INDEX --port 8768` starts the real
+canonical loopback browser server explicitly. Add all three `--jobs-root`,
+`--intake-root`, and `--output-root` flags to enable scoped managed operations.
+Starting the server does not execute a queued operation or install any asset.

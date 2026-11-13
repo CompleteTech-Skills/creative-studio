@@ -155,6 +155,13 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
             with self.assertRaises(RigError):self.owner.execute(operation,{},apply=True)
         self.assertEqual(self.owner.capabilities()['production_approval'],False)
 
+    def test_browser_cli_delegates_explicit_loopback_server_arguments(self):
+        from unittest.mock import patch
+        with patch('asset_library_browser.main',return_value=0) as start:
+            result=assets.run(['browser','--library',str(self.library.root),'--index',str(self.root/'index'),'--port','0'])
+        self.assertTrue(result['ok'])
+        self.assertEqual(start.call_args.args[0],['--library',str(self.library.root),'--index',str(self.root/'index'),'--port','0'])
+
     def test_cli_json_help_mutation_guard_and_exclusive_report(self):
         out=io.StringIO();err=io.StringIO()
         with redirect_stdout(out),redirect_stderr(err):code=assets.main(['library','create','--library',str(self.root/'cli-library')])

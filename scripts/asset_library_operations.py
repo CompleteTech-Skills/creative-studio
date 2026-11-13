@@ -37,14 +37,14 @@ MODULES = {
     'versions': 'asset_library_versions', 'dependencies': 'asset_library_dependencies',
     'search': 'asset_library_search', 'preview': 'asset_library_preview',
     'export': 'asset_library_export', 'packages': 'asset_library_packages',
-    'browser': 'asset_library_browser', 'jobs': 'asset_library_jobs',
+    'browser': 'asset_library_browser', 'jobs': 'asset_library_jobs', 'management':'asset_library_management',
 }
 MUTATIONS = frozenset(('register', 'import', 'import-batch', 'generate', 'preview', 'thumbnail',
-    'turntable', 'index', 'version.create', 'version.promote', 'version.rollback',
+    'turntable', 'index', 'version', 'version.create', 'version.promote', 'version.rollback',
     'metadata.update', 'tags.add', 'tags.remove', 'collections.create', 'project.bind',
     'project.unbind', 'replace', 'repair', 'migrate', 'export', 'bundle.create',
     'bundle.restore', 'storage.gc.apply', 'storage.upgrade', 'storage.recover'))
-MANAGED = frozenset(('import', 'preview', 'thumbnail', 'turntable', 'export', 'index', 'bundle.create', 'bundle.restore'))
+MANAGED = frozenset(('import', 'preview', 'thumbnail', 'turntable', 'export', 'index', 'bundle.create', 'bundle.restore','version','replace','repair'))
 
 
 def fail(code, message):
@@ -126,7 +126,10 @@ class AssetOperations:
                 return dict(schema_version=1, operation=operation, result=dict(status='plan',
                     parameters=parameters, requires_apply=True, executed=False))
             if not apply: fail('APPLY', 'Mutations require an explicit apply action.')
-        if operation in MANAGED:
+        if operation in ('version.create','version.promote','version.rollback'):
+            if 'action' in parameters:fail('REQUEST','Version action is selected by the explicit operation.')
+            result=self.submit('version',dict(action=operation.split('.')[1],**parameters))
+        elif operation in MANAGED:
             result = self.submit(operation, parameters)
         else:
             result = self._execute(operation, parameters)
@@ -216,12 +219,12 @@ class AssetOperations:
         if operation not in MANAGED:fail('UNAVAILABLE','Operation is not managed: '+str(operation))
         # Admission constructs the fixed adapter, validates parameters and binds
         # mutable source bytes before any durable request is queued.
-        adapter=OperationAdapter(self,operation,p)
+        adapter=self._adapter(operation,p)
         p=adapter.admit()
         resources={'import':('cpu','blender','io','hash'),'preview':('preview','blender'),
             'thumbnail':('preview','blender'),'turntable':('preview','blender'),
             'export':('cpu','blender','io'),'index':('index','io'),'bundle.create':('archive','io'),
-            'bundle.restore':('archive','io')}[operation]
+            'bundle.restore':('archive','io'),'version':('io','hash'),'replace':('io','hash'),'repair':('io','hash')}[operation]
         return module('jobs').JobManager(self.jobs_root,limits=self.job_limits,create=True).submit(operation.replace('.','-'),p,resources=resources,key=object_hash(dict(operation=operation,parameters=p)))
 
     def list_jobs(self):return self.jobs.list()
@@ -232,7 +235,12 @@ class AssetOperations:
         record=self.jobs.status(identifier)
         operation=next((value for value in MANAGED if value.replace('.', '-')==record['kind']),None)
         if operation is None:fail('UNAVAILABLE','Unknown managed job kind.')
-        return self.jobs.run(identifier,OperationAdapter(self,operation,record['parameters']))
+        return self.jobs.run(identifier,self._adapter(operation,record['parameters']))
+
+    def _adapter(self,operation,parameters):
+        if operation in ('version','replace','repair'):
+            return module('management').management_adapter(self,operation,parameters)
+        return OperationAdapter(self,operation,parameters)
 
 
 class OperationAdapter:
@@ -463,6 +471,9 @@ class ScopedAssetOperations:
             if name in p:p[name]=self._inside(p[name],self.intake)
         for name in ('destination','cache_root','index'):
             if name in p:p[name]=self._inside(p[name],self.output)
+        if 'sources' in p:
+            if not isinstance(p['sources'],dict):fail('REQUEST','Sources must be an explicit mapping.')
+            p['sources']={k:self._inside(v,self.intake) for k,v in p['sources'].items()}
         if 'context_files' in p:
             if not isinstance(p['context_files'],dict):fail('REQUEST','Context files must be an explicit mapping.')
             p['context_files']={k:self._inside(v,self.intake) for k,v in p['context_files'].items()}
