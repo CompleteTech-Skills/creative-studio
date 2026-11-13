@@ -349,6 +349,45 @@ class ScopedResolver:
         return self.libraries[self.project_library].append_event('asset-bindings.' + hashlib.sha256(identifier(project_id).encode('utf-8')).hexdigest(),
             expected_revision=expected_revision, document=dict(schema_version=1, bindings=values))
 
+    def unbind(self, project_id, slot, *, expected_revision, expected_binding=None):
+        """Remove one pinned slot through the existing append-only CAS stream."""
+        identifier(slot)
+        state = self.bindings(project_id)
+        if revision(expected_revision) != state['revision']: fail('CONFLICT', 'Project binding snapshot is stale.')
+        if slot not in state['bindings']: fail('BINDING', 'Selected project slot is absent.')
+        if expected_binding is not None and expected_binding != state['bindings'][slot]:
+            fail('CONFLICT', 'Selected exact binding differs from the current slot.')
+        if state['revision'] >= MAX_EVENTS: fail('LIMIT', 'Binding history has reached its event budget.')
+        values = deepcopy(state['bindings']); removed = values.pop(slot)
+        # Independent slot scopes may intentionally select different versions.
+        from asset_library_dependencies import DependencyGraph
+        graph = DependencyGraph(self.libraries)
+        locks = {name: graph.lock([value], include_optional=False) for name, value in values.items()}
+        event = self.libraries[self.project_library].append_event(
+            'asset-bindings.' + hashlib.sha256(identifier(project_id).encode('utf-8')).hexdigest(),
+            expected_revision=expected_revision, document=dict(schema_version=1, bindings=values))
+        return dict(event=event, removed=removed, slot=slot, project_id=project_id, locks=locks,
+                    invalidated=[slot], immutable_assets_changed=False)
+
+    def undo_unbind(self, project_id, slot, *, expected_revision, unbind_revision):
+        """Restore an exact removed pin; never overwrite a subsequent binding."""
+        identifier(slot); removed_at = revision(unbind_revision)
+        state = self.bindings(project_id)
+        if revision(expected_revision) != state['revision']: fail('CONFLICT', 'Project binding snapshot is stale.')
+        if slot in state['bindings']: fail('CONFLICT', 'Selected slot is occupied; preserving its newer binding.')
+        stream = 'asset-bindings.' + hashlib.sha256(identifier(project_id).encode('utf-8')).hexdigest()
+        previous = {}; removed = None
+        for item in _event_stream(self.libraries[self.project_library], stream):
+            current = item['document']['bindings']
+            if item['revision'] == removed_at:
+                if slot not in previous or slot in current: fail('BINDING', 'Selected revision did not unbind this slot.')
+                removed = deepcopy(previous[slot])
+            elif item['revision'] > removed_at and slot in current:
+                fail('CONFLICT', 'Selected slot was rebound after this removal.')
+            previous = current
+        if removed is None: fail('BINDING', 'Unbind revision is absent from retained history.')
+        return self.bind(project_id, slot, removed, expected_revision=expected_revision)
+
 
 class LegacyMigration:
     """Non-destructive native adapters. Unsupported owners remain explicit.
