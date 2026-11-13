@@ -50,6 +50,45 @@ def _recipe(statement):
             'parameters': parameters, 'budget': 256}
 
 
+def _preflight_project(graph, recipes):
+    """Use the actual generator and snapshot owners before claiming readiness."""
+    from scene3d_contracts import load_project, validate_prefab_instances
+    from scene3d_graph import SceneGraph
+    from scene3d_environment import _prepare_recipe
+    from scene3d_snapshot import snapshot_project
+    from pathlib import Path
+    from uuid import uuid4
+    context = graph.planning_source()
+    require(context is not None,
+            'Environment planning requires a verified project source context.',
+            'SCENE3D_LANGUAGE_CONTEXT')
+    source, scene_path = context
+    bundle = load_project(source)
+    selected = SceneGraph.from_bundle(bundle, scene_path, source_root=source)
+    require(selected.digest == graph.digest,
+            'Scene changed before environment resource planning.', 'SCENE3D_LANGUAGE_STALE')
+    scene = graph.document()
+    context = dict(bundle, documents=dict(bundle['documents']))
+    documents, payloads = {}, {}
+    for recipe in recipes:
+        prepared = _prepare_recipe(context, scene, recipe)
+        scene = prepared['scene']
+        documents.update(prepared['documents'])
+        context['documents'].update(prepared['documents'])
+        for name, raw in prepared['payloads'].items():
+            require(name not in payloads or payloads[name] == raw, 'Generated payload collision.')
+            payloads[name] = raw
+    validate_prefab_instances(scene, lambda reference: context['documents'][reference['path']],
+                              max_nodes=bundle['project']['budgets']['max_nodes'])
+    scene['revision'] += 1
+    candidate = SceneGraph(scene)
+    # The destination is never created in dry-run mode. Its trusted parent is
+    # the already selected project parent; no user-controlled output is opened.
+    snapshot_project(source, Path(source).absolute().parent / ('.scene3d-language-preflight-' + uuid4().hex),
+                     candidate, scene_path=scene_path, derived_documents=documents,
+                     extra_payloads=payloads, dry_run=True)
+
+
 def compile_environment_description(graph, text):
     from scene3d_environment import plan as geometry_plan
     statements = _text(text)
@@ -70,6 +109,12 @@ def compile_environment_description(graph, text):
             diagnostics.append({'statement': index, 'text': statement, 'code': exc.report['code'],
                                 'message': exc.report['message']})
             break
+    if not diagnostics:
+        try:
+            _preflight_project(graph, recipes)
+        except RigError as exc:
+            diagnostics.append({'statement': len(statements) - 1, 'text': statements[-1],
+                                'code': exc.report['code'], 'message': exc.report['message']})
     value = {'schema_version': 1, 'kind': 'scene3d-environment-language-plan',
              'planner': 'offline-environment-grammar-v1', 'original_text': text,
              'base_revision': graph.revision, 'base_sha256': graph.digest,

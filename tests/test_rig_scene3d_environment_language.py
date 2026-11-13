@@ -75,6 +75,77 @@ class EnvironmentLanguageTests(unittest.TestCase):
         self.assertIn('Aggregate', plan['diagnostics'][0]['message'])
         self.assertLessEqual(sum(item['triangles'] for item in plan['geometry']), 200000)
 
+    def _set_project_budget(self, **changes):
+        from scene3d_contracts import canonical_bytes
+        project = json.loads((self.source / 'project.json').read_bytes())
+        project['budgets'].update(changes)
+        (self.source / 'project.json').write_bytes(canonical_bytes(project))
+        self.bundle = load_project(self.source)
+        self.graph = SceneGraph.from_bundle(self.bundle, 'example-scene.json', source_root=self.source)
+
+    def test_project_node_budget_is_unresolved_before_ready_or_dry_run(self):
+        text = self.text.replace('two rooms', 'twenty rooms')
+        before = load_project(self.source)['inventory']
+        plan = compile_environment_description(self.graph, text)
+        self.assertEqual(plan['status'], 'unresolved')
+        self.assertIn('node budget', plan['diagnostics'][0]['message'])
+        target = self.directory / 'over-budget'
+        for dry_run in (False, True):
+            with self.assertRaises(RigError):
+                apply_environment_plan(self.source, target, 'example-scene.json', plan, dry_run=dry_run)
+        self.assertFalse(target.exists())
+        self.assertEqual(load_project(self.source)['inventory'], before)
+
+    def test_batch_node_budget_includes_existing_scene_and_all_recipes(self):
+        text = '; '.join(self.text.replace('named shop', 'named shop' + str(i)) for i in range(9))
+        plan = compile_environment_description(self.graph, text)
+        self.assertEqual(plan['status'], 'unresolved')
+        self.assertIn('node budget', plan['diagnostics'][0]['message'])
+        self.assertGreater(sum(item['nodes'] for item in plan['geometry']) + len(self.graph.document()['nodes']), 100)
+
+    def test_snapshot_file_and_byte_limits_are_preflighted(self):
+        self._set_project_budget(max_files=len(self.bundle['inventory']))
+        plan = compile_environment_description(self.graph, self.text)
+        self.assertEqual(plan['status'], 'unresolved')
+        self.assertEqual(plan['diagnostics'][0]['code'], 'SCENE3D_SNAPSHOT_LIMIT')
+        self._set_project_budget(max_files=4096)
+        size = sum(record['bytes'] for record in self.bundle['inventory'].values())
+        self._set_project_budget(max_bytes=size + 1024)
+        plan = compile_environment_description(self.graph, self.text)
+        self.assertEqual(plan['status'], 'unresolved')
+        self.assertEqual(plan['diagnostics'][0]['code'], 'SCENE3D_SNAPSHOT_LIMIT')
+
+    def test_contextless_graph_does_not_claim_project_readiness(self):
+        plan = compile_environment_description(SceneGraph(self.graph.document()), self.text)
+        self.assertEqual(plan['status'], 'unresolved')
+        self.assertEqual(plan['diagnostics'][0]['code'], 'SCENE3D_LANGUAGE_CONTEXT')
+
+    def test_regeneration_counts_effective_nodes_instead_of_adding_them_twice(self):
+        self._set_project_budget(max_files=4096, max_bytes=256 * 1024 * 1024)
+        first = compile_environment_description(self.graph, self.text)
+        target = self.directory / 'first'
+        result = apply_environment_plan(self.source, target, 'example-scene.json', first)
+        scene_path = result['snapshot']['active_scene']['path']
+        bundle = load_project(target)
+        project = json.loads((target / 'project.json').read_bytes())
+        project['budgets']['max_nodes'] = len(bundle['documents'][scene_path]['nodes'])
+        from scene3d_contracts import canonical_bytes
+        (target / 'project.json').write_bytes(canonical_bytes(project))
+        bundle = load_project(target)
+        graph = SceneGraph.from_bundle(bundle, scene_path, source_root=target)
+        before = bundle['inventory']
+        plan = compile_environment_description(graph, self.text)
+        self.assertEqual(plan['status'], 'ready', plan['diagnostics'])
+        dry_target = self.directory / 'dry-regeneration'
+        self.assertTrue(apply_environment_plan(target, dry_target, scene_path, plan, dry_run=True)['dry_run'])
+        self.assertFalse(dry_target.exists())
+        actual = self.directory / 'regeneration'
+        result = apply_environment_plan(target, actual, scene_path, plan)
+        reopened = load_project(actual)
+        self.assertEqual(len(reopened['documents'][result['snapshot']['active_scene']['path']]['nodes']),
+                         len(bundle['documents'][scene_path]['nodes']))
+        self.assertEqual(load_project(target)['inventory'], before)
+
     def test_modified_and_stale_plans_cannot_authorize_different_geometry(self):
         plan = compile_environment_description(self.graph, self.text)
         changed = deepcopy(plan)
