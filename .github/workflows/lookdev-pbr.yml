@@ -17,6 +17,8 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: python -m unittest discover -s tests -p '*lookdev*py' -v
+      - name: Texture upload cache regressions
+        run: python -m unittest discover -s tests -p test_rig_lookdev_texture_cache.py -v
   physical-surfaces:
     runs-on: ubuntu-24.04
     steps:
@@ -46,6 +48,17 @@ jobs:
           HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
           HATCH_LOOKDEV_TEXTURE_TEST: '1'
           HATCH_LOOKDEV_TEXTURE_EVIDENCE: /tmp/lookdev-texture-evidence
+      - name: Install isolated native sampler validator for Blender Python 3.11
+        run: python -m pip install --target /tmp/lookdev-blender-site --python-version 3.11 --only-binary=:all: jsonschema==4.25.1
+      - name: Canonical native sampler acceptance
+        run: PYTHONPATH=scripts:tests python -m unittest test_rig_lookdev_cache_consumer test_rig_lookdev_texture_sampling -v 2>&1 | tee /tmp/lookdev-cache-sampler.log
+        env:
+          HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
+          HATCH_LOOKDEV_CACHE_TEST: '1'
+          HATCH_LOOKDEV_CACHE_EVIDENCE: /tmp/lookdev-cache-evidence
+          HATCH_LOOKDEV_SAMPLING_TEST: '1'
+          HATCH_LOOKDEV_SAMPLING_EVIDENCE: /tmp/lookdev-sampling-evidence
+          HATCH_LOOKDEV_TEST_SITE: /tmp/lookdev-blender-site
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
@@ -55,3 +68,6 @@ jobs:
             /tmp/lookdev-pbr-evidence/
             /tmp/lookdev-textures.log
             /tmp/lookdev-texture-evidence/
+            /tmp/lookdev-cache-sampler.log
+            /tmp/lookdev-cache-evidence/
+            /tmp/lookdev-sampling-evidence/

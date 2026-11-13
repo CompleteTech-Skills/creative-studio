@@ -147,7 +147,7 @@ This is an application memory cache, not durable disk cache, GPU allocation or
 KTX2 compression. Source decoding and mipmap working memory retain their own
 separate admission limit. Shader binding, GPU texture upload and backend-native
 compression must consume these explicit buffers through their owning renderer.
-Run `python -m unittest discover -s tests -p test_lookdev_texture_cache.py -v`.
+Run `python -m unittest discover -s tests -p test_rig_lookdev_texture_cache.py -v`.
 
 ## Directional tangent ground truth
 
@@ -262,3 +262,7 @@ and decoded source samples, then saves/reopens the packed image-bound shader.
 Set `HATCH_BLENDER`, a fresh `HATCH_LOOKDEV_TRIPLANAR_EVIDENCE` directory and, when
 Blender's Python lacks validator packages, `HATCH_LOOKDEV_TEST_SITE` to compatible
 optional validator dependencies. No dependency is added to ordinary 2D use.
+
+Cache and sampler tests use the `test_rig_` optional 3D namespace. The
+ordinary 2D gate does not import them; the LookDev workflow explicitly runs
+cache regressions and the actual cache/sampler native acceptance gates.
