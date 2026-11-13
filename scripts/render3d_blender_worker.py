@@ -12,6 +12,10 @@ import math
 from pathlib import Path
 import sys
 
+# Blender's --python does not add the script directory to sys.path. Only this
+# fixed trusted sibling directory may supply optional worker adapters.
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+
 import bpy
 from mathutils import Matrix, Vector
 
