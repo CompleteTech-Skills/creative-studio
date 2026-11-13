@@ -10,12 +10,14 @@ import json
 import os
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 import wave
+import zlib
 
 from PIL import Image
 
@@ -120,6 +122,28 @@ class SilentContracts(unittest.TestCase):
             video.build_source(self.root, ['pretend.png'],
                                fps={'numerator': 24, 'denominator': 1},
                                origin='synthetic')
+
+    def test_high_precision_png_is_rejected_before_lossy_pillow_decode(self):
+        def chunk(kind, payload):
+            return (struct.pack('>I', len(payload)) + kind + payload +
+                    struct.pack('>I', zlib.crc32(kind + payload)))
+        for color_type, pixel in ((2, b'\x12\x34\x56\x78\x9a\xbc'),
+                                  (6, b'\x12\x34\x56\x78\x9a\xbc\xff\x00')):
+            # Real 16-bit PNGs; ff00 alpha is nonopaque but Pillow presents
+            # it as 255 after reducing precision to RGBA8.
+            raw = b'\x00' + pixel * 2
+            png = (b'\x89PNG\r\n\x1a\n' +
+                   chunk(b'IHDR', struct.pack('>IIBBBBB', 2, 2, 16, color_type, 0, 0, 0)) +
+                   chunk(b'IDAT', zlib.compress(raw * 2)) + chunk(b'IEND', b''))
+            path = self.root / ('precision-%d.png' % color_type)
+            path.write_bytes(png)
+            with self.subTest(color_type=color_type):
+                with Image.open(path) as im:
+                    im.load()
+                    self.assertIn(im.mode, ('RGB', 'RGBA'))
+                with self.assertRaisesRegex(ValueError, '8-bit'):
+                    video.build_source(self.root, [path.name],
+                                       fps={'numerator': 24, 'denominator': 1})
 
     def test_mismatched_frame_dimensions_are_rejected(self):
         Image.new('RGB', (32, 48)).save(self.root / self.paths[-1])

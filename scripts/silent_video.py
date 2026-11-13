@@ -152,6 +152,13 @@ def _read_frame(root, relative):
 
 def _image_unchecked(data, expected=None):
     import io
+    # Pillow exposes 16-bit RGB/RGBA PNGs as 8-bit RGB/RGBA. Inspect the
+    # encoded IHDR before decoding so this boundary cannot silently discard
+    # precision (or round nonopaque 16-bit alpha up to opaque).
+    if (len(data) < 33 or data[:8] != b'\x89PNG\r\n\x1a\n' or
+            data[8:16] != b'\x00\x00\x00\rIHDR' or
+            data[24] != 8 or data[25] not in (2, 6)):
+        raise ValueError('only 8-bit RGB/RGBA PNG masters are currently encodable')
     with Image.open(io.BytesIO(data)) as im:
         if im.format != 'PNG' or im.mode not in ('RGB', 'RGBA'):
             raise ValueError('only 8-bit RGB/RGBA PNG masters are currently encodable')
