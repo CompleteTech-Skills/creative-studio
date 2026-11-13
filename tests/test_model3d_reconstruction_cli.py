@@ -189,6 +189,18 @@ class ReconstructionRequestTests(unittest.TestCase):
             with self.assertRaises(RigError):validate_request(contour())
         self.assertFalse((self.root/'bad').exists())
 
+    def test_original_request_boolean_cannot_compare_equal_to_valid_numeric_field(self):
+        value=contour()
+        for field in ('schema_version','thickness_m'):
+            raw=deepcopy(value);raw[field]=True
+            with self.subTest(field=field),self.assertRaises(RigError) as caught:
+                execute_request(value,root=self.sources,destination=self.root/'bad',request_bytes=json.dumps(raw).encode())
+            self.assertEqual(caught.exception.report['code'],'RECON_REQUEST_SCHEMA')
+            self.assertFalse((self.root/'bad').exists())
+        raw=deepcopy(value);raw['schema_version']=1.0
+        with self.assertRaises(RigError) as caught:execute_request(value,root=self.sources,destination=self.root/'bad',request_bytes=json.dumps(raw).encode())
+        self.assertEqual(caught.exception.report['code'],'RECON_REQUEST_CHANGED')
+
     def test_validate_request_has_no_source_reads_and_help_executes(self):
         path=self.write(request('mask-extrusion',source=dict(path='missing.png',role='source'),interpretation=dict(channel='alpha',threshold=127),pixel_size_m=.1,thickness_m=.2))
         code,result=self.invoke(['validate-request','--file',str(path)])

@@ -126,7 +126,9 @@ def execute_request(request, *, root, destination, format=None, on_stage=None, r
         if on_stage is not None:on_stage(name)
     if request_bytes is None:request_bytes=(json.dumps(request,sort_keys=True,allow_nan=False)+'\n').encode()
     require(type(request_bytes) is bytes and len(request_bytes)<=MAX_REQUEST_BYTES,'RECON_REQUEST_LIMIT','Original request bytes exceed4MiB.')
-    require(decode_json(request_bytes)==request,'RECON_REQUEST_CHANGED','Original request bytes differ from the validated request.')
+    captured_request=validate_request(decode_json(request_bytes))
+    canonical=lambda value:json.dumps(value,sort_keys=True,allow_nan=False,ensure_ascii=True,separators=(',',':'))
+    require(canonical(captured_request)==canonical(request),'RECON_REQUEST_CHANGED','Original request bytes differ from the validated request, including numeric field types.')
     root=Path(root).resolve(strict=True);require(root.is_dir(),'RECON_REQUEST_ROOT','Root must be an existing source directory.')
     identity=root.stat();root_identity=(identity.st_dev,identity.st_ino)
     destination=Path(destination).absolute();parent=destination.parent.resolve(strict=True);destination=parent/destination.name
