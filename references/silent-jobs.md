@@ -30,15 +30,21 @@ checks estimated decoded memory, peak disk use and available disk space. The
 decoded memory value is an admission estimate, not an operating-system memory
 limit. This CPU encoder estimates zero GPU bytes and uses at most two threads.
 
-`run_batch` runs at most sixteen independently owned video jobs sequentially.
+`run_batch` runs at most sixteen independently owned video or image-sequence jobs
+sequentially, selecting the canonical controller from each captured plan kind.
 Every video is verified as one video stream and zero audio streams. Completed
 outputs are reused only while their exact artifact and receipt hashes still
-match. No visual approval is implied by these numerical and media checks.
+match. `silent_sequence_jobs.create(source, source_root, job_root, destination,
+provenance=...)` creates a byte-preserving imported PNG/EXR sequence job. Its
+controller reuses `silent_sequence.export_sequence` and `verify_sequence`; it
+does not convert PNG to EXR or render replacement frames. Each sequence has an
+independently decoded complete hash inventory. No visual approval is implied by
+these numerical and media checks.
 
 The secure persistent worker currently requires Linux procfs, directory file
 descriptors and the canonical scoped descriptor capability. Other platforms
 report an explicit unavailable capability. The portable contracts run on all
 three CI platforms; actual FFmpeg interruption and recovery tests run explicitly
-on Linux. PNG/EXR sequence jobs, preview batches, native render/timeline context
-authentication and cross-platform worker support remain integration requirements
+on Linux. Preview batches, native render/timeline context authentication and
+cross-platform worker support remain integration requirements
 of issue #239; this video-job increment alone does not satisfy that issue.
