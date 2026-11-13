@@ -343,7 +343,7 @@ def _provider_receipt_price(evidence, limits):
               'PRICE','Unknown provider pricing cannot declare a price or currency.')
         return None
     price=evidence.get('price_per_call');currency=evidence.get('currency')
-    _need(type(price) in (int,float) and math.isfinite(price) and price>=0,
+    _need(type(price) in (int,float) and 0<=price<=1e9 and math.isfinite(price),
           'PRICE','Retained provider price must be finite and nonnegative.')
     _need(isinstance(currency,str) and len(currency)==3 and currency.isalpha() and currency.isupper()
           and currency==limits['currency'], 'PRICE','Retained provider currency differs from policy.')
@@ -399,7 +399,7 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                   'EVIDENCE','Provider execution receipts disagree about pricing.')
             known=receipt_prices[0]
             _need(price_per_call is None or known is not None and type(price_per_call) in (int,float)
-                  and math.isfinite(price_per_call) and price_per_call==known[0],
+                  and 0<=price_per_call<=1e9 and math.isfinite(price_per_call) and price_per_call==known[0],
                   'PRICE','Explicit provider price differs from retained execution evidence.')
             _need(known is not None or allow_unknown_price,'PRICE','Unknown provider price requires explicit authority.')
             if known is not None:
@@ -407,13 +407,16 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                 _need(price==0 or paid_policy in ('bounded','allow-unknown-price'),
                       'POLICY','Nonzero provider pricing requires explicit paid authority.')
                 _need(budget_currency==currency and type(budget_amount) in (int,float)
-                      and math.isfinite(budget_amount) and budget_amount>=0,
+                      and 0<=budget_amount<=1e9 and math.isfinite(budget_amount),
                       'PRICE','Known provider price requires a matching currency and bounded amount.')
                 calls=(resources or {}).get('max_provider_calls',1)
                 _need(type(calls) is int and calls>=0,'RESOURCE','Provider call estimate must be a nonnegative integer.')
                 _need(Decimal(str(price))*calls<=Decimal(str(budget_amount)),
                       'RESOURCE','Estimated provider amount exceeds budget.')
-                _need(Decimal(str(price))*calls<=Decimal(str(item['limits']['max_amount'])),
+                policy_amount=item['limits']['max_amount']
+                _need(type(policy_amount) in (int,float) and 0<=policy_amount<=1e9 and math.isfinite(policy_amount),
+                      'PRICE','Known provider price requires a finite bounded capability amount.')
+                _need(Decimal(str(price))*calls<=Decimal(str(policy_amount)),
                       'RESOURCE','Estimated provider amount exceeds capability policy.')
     return deepcopy(value)
 

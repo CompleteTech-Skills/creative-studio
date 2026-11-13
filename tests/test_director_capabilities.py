@@ -160,3 +160,5 @@ class ProviderPricingContractTests(unittest.TestCase):
                     admit(snapshot(price))
             with self.assertRaises(RigError):admit(snapshot(None,None,'unknown'))
             admit(snapshot(None,None,'unknown'),allow_unknown_price=True)
+            limits['max_amount']=None
+            with self.assertRaises(RigError):admit(snapshot())
