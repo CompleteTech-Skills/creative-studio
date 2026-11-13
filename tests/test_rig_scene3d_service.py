@@ -930,6 +930,56 @@ class RealSceneImportTests(unittest.TestCase):
         return import_gltf(path, self.library, asset_id=asset_id, attribution='Test author',
                            license_file=self.license, **kwargs)
 
+    def test_native_evaluation_uses_private_verified_closure_after_source_replacement(self):
+        imported = self.do_import(self.source('gltf'))
+        materialize(self.library, imported.library_reference, self.root/'admitted-package')
+        native = self.root/'admitted-package/imports/imported/1.0.0/native'
+        graph = SceneGraph.from_bundle(build_example(self.root/'admitted-project'), 'example-scene.json')
+        add_import(graph, imported, 'model')
+        expected = evaluate_imported_vertices(graph, imported, native)
+        from rig_models import load_rig
+        def replace_source_then_load(private_root):
+            self.assertNotEqual(Path(private_root), native)
+            (native/'rig.json').write_bytes(b'changed after admission')
+            return load_rig(private_root)
+        with patch('rig_models.load_rig', side_effect=replace_source_then_load):
+            self.assertEqual(evaluate_imported_vertices(graph, imported, native), expected)
+        with self.assertRaises(RigError):
+            evaluate_imported_vertices(graph, imported, native)
+
+    @unittest.skipUnless(os.name == 'posix' and hasattr(os, 'mkfifo'), 'Real POSIX FIFO admission regression.')
+    def test_native_evaluation_rejects_fifo_manifest_and_dependency_without_hanging(self):
+        import multiprocessing
+        imported = self.do_import(self.source('gltf'))
+        materialize(self.library, imported.library_reference, self.root/'fifo-package')
+        native = self.root/'fifo-package/imports/imported/1.0.0/native'
+        graph = SceneGraph.from_bundle(build_example(self.root/'fifo-project'), 'example-scene.json')
+        add_import(graph, imported, 'model')
+        context = multiprocessing.get_context('fork')
+        for name in ('rig.json', 'identity.json'):
+            with self.subTest(name=name):
+                target = native/name
+                original = target.read_bytes()
+                target.unlink()
+                os.mkfifo(target)
+                def evaluate_fifo():
+                    try:
+                        evaluate_imported_vertices(graph, imported, native)
+                    except RigError:
+                        return
+                    raise AssertionError('FIFO was accepted as a registered native file.')
+                child = context.Process(target=evaluate_fifo)
+                child.start()
+                child.join(3)
+                hung = child.is_alive()
+                if hung:
+                    child.terminate()
+                    child.join(3)
+                target.unlink()
+                target.write_bytes(original)
+                self.assertFalse(hung, 'Native evaluation blocked on a FIFO.')
+                self.assertEqual(child.exitcode, 0)
+
     def test_real_hierarchical_external_gltf_registration_and_component_edits(self):
         path = self.source('gltf')
         before = {p.name: p.read_bytes() for p in self.root.glob('source.*')}
