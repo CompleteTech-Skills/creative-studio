@@ -22,6 +22,19 @@ from rig_errors import RigError, decode_json, object_hash
 
 MAX_LIBRARY_BYTES = 1024 * 1024 * 1024
 MAX_VERSIONS = 4096
+INDEX_SCHEMA = '''
+    CREATE TABLE settings(version INTEGER NOT NULL);
+    INSERT INTO settings VALUES(1);
+    CREATE TABLE blobs(sha256 TEXT PRIMARY KEY, payload BLOB NOT NULL);
+    CREATE TABLE versions(id TEXT NOT NULL, version TEXT NOT NULL,
+        sha256 TEXT UNIQUE NOT NULL, manifest BLOB NOT NULL,
+        PRIMARY KEY(id,version));
+    CREATE TABLE annotations(id TEXT NOT NULL, version TEXT NOT NULL,
+        revision INTEGER NOT NULL, document BLOB NOT NULL,
+        PRIMARY KEY(id,version));
+    CREATE TABLE asset_events(stream TEXT NOT NULL, revision INTEGER NOT NULL,
+        document BLOB NOT NULL, PRIMARY KEY(stream,revision));
+'''
 
 
 class AssetResolver(Protocol):
@@ -147,10 +160,10 @@ def file_record(source, path, role='source', required=True):
 class AssetLibrary:
     """Canonical v1 registry; exact references never silently select latest.
 
-    Storage uses one SQLite transaction for blobs, immutable manifest and initial
-    annotations. There is no second filesystem promotion/index authority. The
-    caller owns the private library directory; moving or concurrently replacing
-    that directory is unsupported. #141 adds broader storage/recovery controls.
+    New libraries retain immutable canonical records and a SQLite query index.
+    Writers serialize through SQLite; canonical commits precede index commits,
+    and explicit recovery reconciles an interrupted split commit. Legacy stores
+    retain exact bytes until explicit upgrade. The caller owns the private root.
     """
     def __init__(self, root, *, create=False):
         self.root = Path(root).absolute()
@@ -167,20 +180,26 @@ class AssetLibrary:
             fd = os.open(self.database, os.O_RDWR | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
             os.close(fd)
             with self._connect(initial=True) as db:
-                db.executescript('''
-                    CREATE TABLE settings(version INTEGER NOT NULL);
-                    INSERT INTO settings VALUES(1);
-                    CREATE TABLE blobs(sha256 TEXT PRIMARY KEY, payload BLOB NOT NULL);
-                    CREATE TABLE versions(id TEXT NOT NULL, version TEXT NOT NULL,
-                        sha256 TEXT UNIQUE NOT NULL, manifest BLOB NOT NULL,
-                        PRIMARY KEY(id,version));
-                    CREATE TABLE annotations(id TEXT NOT NULL, version TEXT NOT NULL,
-                        revision INTEGER NOT NULL, document BLOB NOT NULL,
-                        PRIMARY KEY(id,version));
-                ''')
+                db.executescript(INDEX_SCHEMA)
         with self._connect() as db:
             if db.execute('SELECT version FROM settings').fetchall() != [(1,)]:
                 _fail('VERSION', 'Unsupported library storage schema.')
+            db.execute('CREATE TABLE IF NOT EXISTS asset_events(stream TEXT NOT NULL, revision INTEGER NOT NULL, document BLOB NOT NULL, PRIMARY KEY(stream,revision))')
+            durable_flag = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='durability'").fetchone()
+            durable_required = bool(durable_flag and db.execute('SELECT canonical FROM durability').fetchone() == (1,))
+        from asset_library_storage import Storage
+        self.storage = Storage(self, create=True) if create else (
+            Storage(self) if (self.root / 'records' / 'READY').exists() else None)
+        if create:
+            self.storage.ready()
+        elif self.storage:
+            self.storage.validate_ready()
+        if durable_required and not self.storage:
+            _fail('DURABILITY', 'Required canonical records are missing; refusing to downgrade to legacy storage.')
+        if create:
+            with self._connect() as db:
+                db.execute('CREATE TABLE durability(canonical INTEGER NOT NULL)')
+                db.execute('INSERT INTO durability VALUES(1)')
 
     @contextmanager
     def _connect(self, initial=False):
@@ -210,6 +229,20 @@ class AssetLibrary:
         finally:
             db.close()
 
+    def _begin_writer(self, db):
+        """Acquire the writer lock before observing another handle's migration."""
+        db.execute('BEGIN IMMEDIATE')
+        durable_flag = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='durability'").fetchone()
+        required = bool(durable_flag and db.execute('SELECT canonical FROM durability').fetchone() == (1,))
+        if required and self.storage is None:
+            from asset_library_storage import Storage
+            # Migration and ordinary publication use this same SQLite lock.
+            # Loading after acquisition also covers writers that waited while
+            # a migration was in progress.
+            storage = Storage(self)
+            storage.validate_ready()
+            self.storage = storage
+
     def register(self, manifest, sources):
         """Register all inventoried logical files from explicit source paths.
 
@@ -235,7 +268,7 @@ class AssetLibrary:
         identity, version = manifest['identity']['id'], manifest['version']
         reference = dict(id=identity, version=version, sha256=manifest['manifest_sha256'])
         with self._connect() as db:
-            db.execute('BEGIN IMMEDIATE')
+            self._begin_writer(db)
             if db.execute('SELECT 1 FROM versions WHERE id=? AND version=?', (identity, version)).fetchone():
                 _fail('IMMUTABLE', 'This asset version already exists; publish a new version.')
             if db.execute('SELECT COUNT(*) FROM versions').fetchone()[0] >= MAX_VERSIONS:
@@ -278,6 +311,9 @@ class AssetLibrary:
             annotations = dict(schema_version=1, asset=reference, revision=0, tags=[], favorite=False, note='')
             db.execute('INSERT INTO annotations VALUES(?,?,?,?)',
                        (identity, version, 0, canonical_bytes(annotations)))
+            if self.storage:
+                self.storage.check_projection(db)
+                self.storage.append(dict(schema_version=1, kind='version', value=manifest), payloads)
         return reference
 
     def _lookup(self, db, reference):
@@ -297,10 +333,15 @@ class AssetLibrary:
             row = db.execute('SELECT payload FROM blobs WHERE sha256=? AND length(payload)=?', (f['sha256'], f['bytes'])).fetchone()
             if not row or len(row[0]) != f['bytes'] or hashlib.sha256(row[0]).hexdigest() != f['sha256']:
                 _fail('CORRUPT', 'Required inventoried content is absent or corrupt.', f['path'])
+            if self.storage:
+                payload = self.storage._read(self.storage.root / 'blobs' / f['sha256'], f['bytes'])
+                if payload != row[0]:
+                    _fail('CORRUPT', 'Canonical immutable payload differs from its verified index.', f['path'])
 
     def resolve(self, reference):
         validate(reference, 'AssetRef')
         with self._connect() as db:
+            self._begin_writer(db)
             visited, pending = set(), [reference]
             first = None
             while pending:
@@ -317,25 +358,68 @@ class AssetLibrary:
                 pending.extend(manifest['metadata']['style_refs'])
             return first
 
+    def inspect(self, reference, *, verify_payloads=True):
+        """Read this exact version without traversing its dependency graph."""
+        if type(verify_payloads) is not bool:
+            _fail('REQUEST', 'verify_payloads must be boolean.')
+        with self._connect() as db:
+            self._begin_writer(db)
+            manifest = self._lookup(db, reference)
+            if verify_payloads:
+                self._verify_payloads(db, manifest)
+            return manifest
+
+    def list_references(self, *, limit=MAX_VERSIONS):
+        limit = _bounded_integer(limit, 1, MAX_VERSIONS, code='LIMIT', label='Reference limit')
+        with self._connect() as db:
+            rows = db.execute('SELECT id,version,sha256 FROM versions ORDER BY id,version LIMIT ?', (limit,)).fetchall()
+            return [dict(id=row[0], version=row[1], sha256=row[2]) for row in rows]
+
     def read_file(self, reference, path):
         portable_path(path)
         manifest = self.resolve(reference)
         f = next((x for x in manifest['files'] if x['path'] == path), None)
         if not f: _fail('MISSING', 'Logical file is not in this exact version.', path)
         with self._connect() as db:
+            self._begin_writer(db)
+            self._verify_payloads(db, manifest)
             row = db.execute('SELECT payload FROM blobs WHERE sha256=? AND length(payload)=?', (f['sha256'], f['bytes'])).fetchone()
             if not row or len(row[0]) != f['bytes'] or hashlib.sha256(row[0]).hexdigest() != f['sha256']:
                 _fail('CORRUPT', 'Payload changed during retrieval.', path)
             return row[0]
 
+    def read_own_file(self, reference, path):
+        """Read verified own bytes; dependency admission stays with the caller."""
+        portable_path(path)
+        with self._connect() as db:
+            self._begin_writer(db)
+            manifest = self._lookup(db, reference)
+            self._verify_payloads(db, manifest)
+            file = next((x for x in manifest['files'] if x['path'] == path), None)
+            if file is None:
+                _fail('MISSING', 'Logical file is not in this exact version.', path)
+            return db.execute('SELECT payload FROM blobs WHERE sha256=?', (file['sha256'],)).fetchone()[0]
+
     def annotations(self, reference):
         with self._connect() as db:
+            # Canonical append precedes SQLite commit. Join the writer lock so
+            # active publication cannot look like a crashed split transaction.
+            self._begin_writer(db)
             self._lookup(db, reference)
             row = db.execute('SELECT document FROM annotations WHERE id=? AND version=?',
                              (reference['id'], reference['version'])).fetchone()
             if not row: _fail('CORRUPT', 'Mutable annotation record is absent.')
             result = validate(decode_json(row[0]), 'AssetAnnotations')
             if result['asset'] != reference: _fail('CORRUPT', 'Annotation identity differs from its asset.')
+            if self.storage:
+                _, history, _ = self.storage.records()
+                versions = [(revision, value) for (identity, version, revision), value in history.items()
+                            if (identity, version) == (reference['id'], reference['version'])]
+                if not versions:
+                    _fail('DURABILITY', 'Canonical annotation history is missing.')
+                expected = {k: v for k, v in max(versions, key=lambda x: x[0])[1].items() if k != '_checkpoint'}
+                if result != expected:
+                    _fail('DURABILITY', 'Annotation index differs from durable history; run recover.')
             return result
 
     def update_annotations(self, reference, *, expected_revision, tags, favorite, note):
@@ -345,13 +429,244 @@ class AssetLibrary:
                            tags=tags, favorite=favorite, note=note)
         validate(replacement, 'AssetAnnotations')
         with self._connect() as db:
-            db.execute('BEGIN IMMEDIATE')
+            self._begin_writer(db)
             self._lookup(db, reference)
             count = db.execute('UPDATE annotations SET revision=?,document=? WHERE id=? AND version=? AND revision=?',
                                (replacement['revision'], canonical_bytes(replacement), reference['id'],
                                 reference['version'], expected_revision)).rowcount
             if count != 1: _fail('CONFLICT', 'Annotation revision is stale; reload before editing.')
+            if self.storage:
+                # SQL has already advanced this row within the uncommitted
+                # transaction; check the durable history before publication.
+                self.storage.check_annotation_previous(reference, expected_revision)
+                self.storage.append(dict(schema_version=1, kind='annotations', value=replacement))
         return replacement
+
+    def upgrade_storage(self):
+        """Explicitly migrate a legacy SQLite-only library without rewriting bytes."""
+        from asset_library_storage import Storage
+        if self.storage:
+            return self.storage_status()
+        with self._connect() as db:
+            self._begin_writer(db)
+            if self.storage:
+                return self._storage_status_locked()
+            storage = Storage(self, create=not (self.root / 'records').exists())
+            # Validate all current records before making the durable copy.
+            rows = db.execute('SELECT id,version,sha256 FROM versions ORDER BY id,version').fetchall()
+            for identity, version, digest in rows:
+                manifest = self._lookup(db, dict(id=identity, version=version, sha256=digest))
+                self._verify_payloads(db, manifest)
+            for identity, version, digest in rows:
+                manifest = self._lookup(db, dict(id=identity, version=version, sha256=digest))
+                blobs = {f['sha256']: db.execute('SELECT payload FROM blobs WHERE sha256=?', (f['sha256'],)).fetchone()[0] for f in manifest['files']}
+                storage.append(dict(schema_version=1, kind='version', value=manifest), blobs)
+                row = db.execute('SELECT document FROM annotations WHERE id=? AND version=?', (identity, version)).fetchone()
+                value = validate(decode_json(row[0]), 'AssetAnnotations')
+                if value['revision']:
+                    # Legacy history was not retained; preserve its exact latest
+                    # record with an explicit checkpoint, never invent revisions.
+                    storage.append(dict(schema_version=1, kind='annotation-checkpoint', value=value))
+            storage.ready()
+            db.execute('CREATE TABLE IF NOT EXISTS durability(canonical INTEGER NOT NULL)')
+            db.execute('DELETE FROM durability')
+            db.execute('INSERT INTO durability VALUES(1)')
+            self.storage = storage
+        return self.storage_status()
+
+    @classmethod
+    def rebuild_index(cls, root):
+        """Restore a missing SQLite index from verified immutable records.
+
+        Existing database files are never replaced by this operation. Use
+        recover() to rebuild query rows in an existing usable SQLite database.
+        """
+        import tempfile
+        from atomic_publish import _rename_no_replace
+        from asset_library_storage import Storage, _sync_directory
+        root = Path(root).absolute()
+        info = root.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or root.is_symlink() or
+                getattr(info, 'st_file_attributes', 0) & 0x400 or
+                (os.name != 'nt' and (info.st_uid != os.geteuid() or info.st_mode & 0o077))):
+            _fail('ROOT', 'Index recovery requires an existing private owned library root.')
+        destination = root / 'library.sqlite3'
+        if destination.exists() or destination.is_symlink():
+            _fail('EXISTS', 'Index recovery never overwrites an existing database.')
+        instance = cls.__new__(cls)
+        instance.root = root
+        instance._root_identity = (info.st_dev, info.st_ino)
+        storage = Storage(instance)
+        instance.storage = storage
+        if not (storage.root / 'READY').is_file():
+            _fail('DURABILITY', 'Canonical storage migration did not finish.')
+        storage.validate_ready()
+        fd, name = tempfile.mkstemp(prefix='.index-recovery-', dir=root)
+        os.close(fd)
+        temporary = Path(name)
+        try:
+            from contextlib import closing
+            with closing(sqlite3.connect(temporary)) as db:
+                with db:
+                    db.executescript(INDEX_SCHEMA)
+                    result = storage.rebuild(db)
+                    db.execute('CREATE TABLE durability(canonical INTEGER NOT NULL)')
+                    db.execute('INSERT INTO durability VALUES(1)')
+            # Windows FlushFileBuffers requires a descriptor opened for writes.
+            # SQLite is closed before syncing the complete staged index.
+            with temporary.open('r+b') as stream:
+                os.fsync(stream.fileno())
+            _rename_no_replace(temporary, destination)
+            _sync_directory(root)
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+        return result
+
+    def _storage_status_locked(self):
+        if not self.storage:
+            return dict(durable=False, state='legacy-sqlite', migration='upgrade_storage')
+        manifests, blobs, annotations, snapshot = self.storage.materialize()
+        return dict(durable=True, snapshot=snapshot, versions=len(manifests),
+                    blobs=len(blobs), bytes=sum(map(len, blobs.values())),
+                    abandoned_staging=len(list((self.storage.root / 'staging').iterdir())))
+
+    def storage_status(self):
+        with self._connect() as db:
+            self._begin_writer(db)
+            return self._storage_status_locked()
+
+    def recover(self):
+        if not self.storage:
+            _fail('DURABILITY', 'Legacy library requires explicit upgrade before canonical recovery.')
+        with self._connect() as db:
+            self._begin_writer(db)
+            return self.storage.rebuild(db)
+
+    def events(self, stream):
+        from asset_library_storage import validate_stream
+        validate_stream(stream)
+        with self._connect() as db:
+            self._begin_writer(db)
+            rows = db.execute('SELECT revision,document FROM asset_events WHERE stream=? ORDER BY revision', (stream,)).fetchall()
+            if len(rows) > 65536 or [r for r, _ in rows] != list(range(1, len(rows) + 1)):
+                _fail('CORRUPT', 'Event stream is unbounded or has missing revisions.')
+            result = [dict(stream=stream, revision=revision, document=decode_json(payload)) for revision, payload in rows]
+            if self.storage and result != [value for value in self.storage.event_records() if value['stream'] == stream]:
+                _fail('DURABILITY', 'Event index differs from durable history; run recover.')
+            return result
+
+    def append_event(self, stream, *, expected_revision, document):
+        from asset_library_storage import validate_stream
+        validate_stream(stream)
+        expected_revision = _bounded_integer(expected_revision, 0, 65535, code='REVISION', label='Event revision')
+        if not self.storage:
+            _fail('DURABILITY', 'Upgrade legacy storage before appending durable events.')
+        if not isinstance(document, dict):
+            _fail('REQUEST', 'Event document must be a mapping.')
+        payload = canonical_bytes(document)
+        if len(payload) > 65536:
+            _fail('LIMIT', 'Event document exceeds 64 KiB.')
+        value = dict(stream=stream, revision=expected_revision + 1, document=decode_json(payload))
+        with self._connect() as db:
+            self._begin_writer(db)
+            current = db.execute('SELECT COALESCE(MAX(revision),0) FROM asset_events WHERE stream=?', (stream,)).fetchone()[0]
+            if current != expected_revision:
+                _fail('CONFLICT', 'Event revision is stale.')
+            durable = [r['revision'] for r in self.storage.event_records() if r['stream'] == stream]
+            if max(durable, default=0) != current:
+                _fail('DURABILITY', 'Recover committed event history before appending.')
+            self.storage.append(dict(schema_version=1, kind='event', value=value))
+            db.execute('INSERT INTO asset_events VALUES(?,?,?)', (stream, value['revision'], payload))
+        return value
+
+    def analyze_gc(self):
+        if not self.storage:
+            _fail('DURABILITY', 'Legacy library requires explicit upgrade before garbage collection.')
+        with self._connect() as db:
+            self._begin_writer(db)
+            return self.storage.gc_plan()
+
+    def apply_gc(self, plan):
+        if not self.storage:
+            _fail('DURABILITY', 'Legacy library requires explicit upgrade before garbage collection.')
+        with self._connect() as db:
+            self._begin_writer(db)
+            return self.storage.apply_gc(plan)
+
+    def backup(self, destination):
+        """Publish a complete portable private library at a new destination."""
+        import shutil
+        import tempfile
+        from atomic_publish import _rename_no_replace
+        from asset_library_storage import Storage, _sync_directory
+        if not self.storage:
+            _fail('DURABILITY', 'Upgrade legacy storage before making a canonical backup.')
+        destination = Path(destination).absolute()
+        if destination.exists() or destination.is_symlink():
+            _fail('EXISTS', 'Backup requires a new destination.')
+        parent = destination.parent.resolve(strict=True)
+        destination = parent / destination.name
+        stage = Path(tempfile.mkdtemp(prefix='.' + destination.name + '-backup-', dir=parent))
+        try:
+            with self._connect() as db:
+                self._begin_writer(db)
+                manifests, blobs, annotations, snapshot = self.storage.materialize()
+                versions = {(a, v): digest for a, v, digest in db.execute('SELECT id,version,sha256 FROM versions')}
+                if versions != {key: value['manifest_sha256'] for key, value in manifests.items()}:
+                    _fail('DURABILITY', 'Recover the split index before backing it up.')
+                for key, value in annotations.items():
+                    row = db.execute('SELECT document FROM annotations WHERE id=? AND version=?', key).fetchone()
+                    if row is None or decode_json(row[0]) != value:
+                        _fail('DURABILITY', 'Recover split annotation history before backing it up.')
+                holder = type('BackupRoot', (), {'root': stage})()
+                storage = Storage(holder, create=True)
+                for digest, payload in blobs.items():
+                    storage._publish(storage.root / 'blobs', digest, payload)
+                for path in sorted((self.storage.root / 'commits').iterdir()):
+                    storage._publish(storage.root / 'commits', path.name, self.storage._read(path, 2 * 1024 * 1024))
+                storage.ready()
+            # Build only from copied canonical records, independently of source
+            # SQLite pages and platform-local absolute names.
+            cls = type(self)
+            cls.rebuild_index(stage)
+            receipt = dict(schema_version=1, kind='asset-library-backup', snapshot=snapshot,
+                           versions=len(manifests), blobs=len(blobs), bytes=sum(map(len, blobs.values())))
+            with (stage / 'backup.json').open('xb') as stream:
+                stream.write(canonical_bytes(receipt))
+                stream.flush()
+                os.fsync(stream.fileno())
+            _sync_directory(stage)
+            _rename_no_replace(stage, destination)
+            _sync_directory(parent)
+            return receipt
+        finally:
+            if stage.exists():
+                shutil.rmtree(stage)
+
+    def recover_blob(self, digest, payload, *, expected_bytes):
+        """Repair only a referenced damaged index blob using its exact identity."""
+        expected_bytes = _bounded_integer(expected_bytes, 1, MAX_FILE_BYTES, code='LIMIT', label='Blob byte count')
+        if type(payload) is not bytes or len(payload) != expected_bytes or hashlib.sha256(payload).hexdigest() != digest:
+            _fail('HASH', 'Recovery requires exact expected blob bytes.')
+        with self._connect() as db:
+            self._begin_writer(db)
+            known = False
+            for row in db.execute('SELECT manifest FROM versions'):
+                manifest = load_manifest(row[0])
+                if any(f['sha256'] == digest and f['bytes'] == expected_bytes for f in manifest['files']):
+                    known = True
+            if not known:
+                _fail('MISSING', 'Cannot repair a blob unreferenced by an immutable version.')
+            row = db.execute('SELECT payload FROM blobs WHERE sha256=?', (digest,)).fetchone()
+            if row and row[0] == payload:
+                _fail('CONFLICT', 'Blob is already intact; recovery would not repair damage.')
+            if self.storage:
+                actual = self.storage._read(self.storage.root / 'blobs' / digest, expected_bytes)
+                if actual != payload:
+                    _fail('CORRUPT', 'Canonical payload is damaged; index repair cannot replace canonical evidence.')
+            db.execute('INSERT OR REPLACE INTO blobs VALUES(?,?)', (digest, payload))
+        return dict(sha256=digest, bytes=expected_bytes, repaired=True)
 
     def scene_reference(self, reference, path):
         manifest = self.resolve(reference)
