@@ -18,8 +18,10 @@ half/float channels with NONE, ZIPS and ZIP compression. Deep, tiled, multipart,
 subsampled, non-sRGB primaries and other EXR compression modes reject explicitly.
 The decoder follows the [OpenEXR file layout](https://openexr.com/en/latest/OpenEXRFileLayout.html).
 Six fixtures independently written by OpenEXR 3.3.4 verify exact half/float pixels.
-16-bit RGB/RGBA PNG rejects until a precision-preserving decoder is provided;
-Pillow's implicit 8-bit conversion is never represented as source precision.
+Noninterlaced 16-bit grayscale/RGB PNG with optional alpha is reconstructed at
+full sample precision after the native importer verifies its container. All five
+PNG row filters preserve low bits; Pillow's implicit 8-bit conversion is not used.
+16-bit interlaced PNG rejects explicitly rather than silently losing precision.
 
 `verify_texture_document(document, payload)` first validates the existing
 Texture3D contract, then checks exact hash/bytes and decoded dimensions, channels,

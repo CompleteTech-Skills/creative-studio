@@ -246,6 +246,63 @@ def _exr(data, limits):
     return pixels,len(channels),max(16 if dtype==1 else 32 for _,dtype in channels)
 
 
+def _png16(data, limits):
+    """Precision-preserving noninterlaced 16-bit grayscale/RGB(+alpha) PNG."""
+    import struct,zlib
+    np=_np()
+    width,height,depth,color,compression,filtering,interlace=struct.unpack_from('>IIBBBBB',data,16)
+    require(depth==16 and color in (0,2,4,6) and compression==filtering==interlace==0,
+            'TEXTURE_FORMAT','16-bit PNG requires noninterlaced grayscale/RGB with optional alpha.')
+    channels={0:1,2:3,4:2,6:4}[color];bpp=channels*2;stride=width*bpp
+    _size(width,height,limits,160)
+    offset=8;pieces=[];transparent=None
+    while offset<len(data):
+        length=struct.unpack_from('>I',data,offset)[0];kind=data[offset+4:offset+8]
+        if kind==b'IDAT':pieces.append(data[offset+8:offset+8+length])
+        if kind==b'tRNS':
+            require(transparent is None and color in (0,2) and length==(2 if color==0 else 6),
+                    'TEXTURE_DECODE','Invalid or repeated 16-bit PNG transparency key.')
+            transparent=data[offset+8:offset+8+length]
+        offset+=length+12
+    expected=(stride+1)*height
+    inflater=zlib.decompressobj()
+    try:raw=inflater.decompress(b''.join(pieces),expected+1)
+    except zlib.error as exc:raise RigError('TEXTURE_DECODE','Invalid 16-bit PNG raster.') from exc
+    require(len(raw)==expected and inflater.eof and not inflater.unused_data and not inflater.unconsumed_tail,
+            'TEXTURE_DECODE','Invalid 16-bit PNG decoded length.')
+    encoded=np.frombuffer(raw,np.uint8).reshape(height,stride+1)
+    reconstructed=np.empty((height,stride),np.uint8)
+    for y in range(height):
+        mode=int(encoded[y,0]);current=encoded[y,1:].astype(np.int32)
+        previous=reconstructed[y-1].astype(np.int32) if y else np.zeros(stride,np.int32)
+        require(0<=mode<=4,'TEXTURE_DECODE','Invalid PNG row filter.')
+        if mode==1:
+            current=np.cumsum(current.reshape(width,bpp),axis=0,dtype=np.int64).reshape(-1)%256
+        elif mode==2:current=(current+previous)%256
+        elif mode in (3,4):
+            for x in range(0,stride,bpp):
+                left=current[x-bpp:x] if x else np.zeros(bpp,np.int32)
+                above=previous[x:x+bpp]
+                if mode==3:predict=(left+above)//2
+                else:
+                    upperleft=previous[x-bpp:x] if x else np.zeros(bpp,np.int32)
+                    estimate=left+above-upperleft
+                    a=abs(estimate-left);b=abs(estimate-above);c=abs(estimate-upperleft)
+                    predict=np.where((a<=b)&(a<=c),left,np.where(b<=c,above,upperleft))
+                current[x:x+bpp]=(current[x:x+bpp]+predict)%256
+        reconstructed[y]=current
+    integers=reconstructed.reshape(-1).view('>u2').reshape(height,width,channels)
+    samples=integers.astype(np.float32)/65535
+    pixels=np.ones((height,width,4),np.float32)
+    if color in (0,4):pixels[:,:,:3]=samples[:,:,:1]
+    else:pixels[:,:,:3]=samples[:,:,:3]
+    if color in (4,6):pixels[:,:,3]=samples[:,:,-1]
+    elif transparent is not None:
+        key=np.frombuffer(transparent,dtype='>u2')
+        pixels[:,:,3]=(~np.all(integers==key,axis=-1)).astype(np.float32)
+    return pixels,channels
+
+
 def decode_texture(data, *, role, encoding, limits=Limits()):
     """Decode exact supplied bytes, with budget admission before raster allocation.
 
@@ -283,8 +340,6 @@ def decode_texture(data, *, role, encoding, limits=Limits()):
                     _size(image.width, image.height, limits)
                     require(format_name in ("PNG", "JPEG", "WEBP") and getattr(image, "n_frames", 1) == 1,
                             "TEXTURE_FORMAT", "Supported static formats are PNG, JPEG, WebP and Radiance HDR; EXR requires the renderer decoder.")
-                    if format_name == 'PNG' and len(data)>25 and data[24]==16 and data[25] in (2,6):
-                        raise RigError('TEXTURE_FORMAT', '16-bit RGB/RGBA PNG requires a precision-preserving decoder; conversion to 8-bit is refused.')
                     if format_name in ("PNG", "JPEG"):
                         from rig_import import _decode_texture
                         _decode_texture(data, {"source_bytes": limits.encoded_bytes, "memory_bytes": limits.working_bytes})
@@ -292,7 +347,10 @@ def decode_texture(data, *, role, encoding, limits=Limits()):
                         require(data[:4] == b"RIFF" and data[8:12] == b"WEBP" and int.from_bytes(data[4:8], "little") + 8 == len(data),
                                 "TEXTURE_DECODE", "Invalid WebP container length.")
                     image.load()
-                    if image.mode.startswith("I;16") or image.mode in ("I", "F"):
+                    if format_name == 'PNG' and data[24] == 16:
+                        pixels, channels = _png16(data, limits)
+                        bit_depth = 16
+                    elif image.mode.startswith("I;16") or image.mode in ("I", "F"):
                         require(role in DATA_ROLES, "TEXTURE_ENCODING", "High-bit scalar raster requires a data role.")
                         scalar = np.array(image, dtype=np.float32) / (65535 if image.mode != "F" else 1)
                         pixels = np.stack((scalar, scalar, scalar, np.ones_like(scalar)), axis=-1)
@@ -442,7 +500,14 @@ def mipmaps(texture, *, limits=Limits()):
             integrated = cumulative[indices] + moved[tail]*fractions
             result = np.diff(integrated, axis=0)/(length/count)
             return np.moveaxis(result.astype(np.float32), 0, axis)
-        output = downsample(downsample(pixels, nh, 0), nw, 1)
+        working = pixels
+        if texture.role in COLOR_ROLES:
+            working = pixels.copy()
+            working[:,:,:3] *= working[:,:,3:4]
+        output = downsample(downsample(working, nh, 0), nw, 1)
+        if texture.role in COLOR_ROLES:
+            output[:,:,:3] = np.divide(output[:,:,:3], output[:,:,3:4],
+                                      out=np.zeros_like(output[:,:,:3]), where=output[:,:,3:4]>1e-8)
         if texture.role == "normal":
             normals = output[:,:,:3]*2-1
             norm = np.linalg.norm(normals, axis=-1, keepdims=True)
@@ -586,7 +651,8 @@ def publish_texture(source, destination, *, role, encoding, attribution, license
     """
     require(isinstance(attribution,str) and 0<len(attribution)<=4096 and isinstance(license_id,str) and 0<len(license_id)<=256,
             "TEXTURE_PROVENANCE","Explicit attribution and license are required.")
-    finite_ops=canonical_bytes(list(operations))
+    operations = list(operations)
+    finite_ops=canonical_bytes(operations)
     require(len(finite_ops)<=65536,"TEXTURE_LIMIT","Operation metadata exceeds its budget.")
     texture=decode_texture(source,role=role,encoding=encoding,limits=limits)
     destination=Path(destination).absolute();parent=destination.parent
