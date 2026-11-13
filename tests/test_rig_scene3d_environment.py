@@ -40,6 +40,15 @@ class GeometryTests(unittest.TestCase):
             self.assertAlmostEqual(volume,10)
         with self.assertRaises(RigError):polygon([[0,0],[2,2],[0,2],[2,0]])
 
+    def test_custom_coordinate_overflow_is_rejected_before_normals(self):
+        for coordinate in (1e100,1e155):
+            with self.assertRaises(RigError):polygon([[0,0],[coordinate,0],[coordinate,coordinate],[0,coordinate]]).obj()
+        mesh=polygon([[0,0],[10000,0],[10000,10000],[0,10000]])
+        normals=[line for line in mesh.obj().decode().splitlines() if line.startswith('vn ')]
+        self.assertTrue(normals)
+        for line in normals:
+            self.assertAlmostEqual(np.linalg.norm([float(v) for v in line.split()[1:]]),1)
+
     def test_closed_shapes_outward_winding(self):
         for kind in ('box','sphere','cylinder','cone','torus','pipe','capsule'):
             mesh=primitive(kind);v=np.array(mesh.vertices);f=np.array(mesh.triangles)

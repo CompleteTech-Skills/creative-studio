@@ -39,12 +39,12 @@ class Mesh:
             f = np.asarray(self.triangles)
         except (TypeError,ValueError,OverflowError):
             require(False,'Triangles must be integer triples.','SCENE3D_GEOMETRY')
-        require(v.ndim == 2 and v.shape[1] == 3 and 3 <= len(v) <= 200000 and np.isfinite(v).all(),
+        require(v.ndim == 2 and v.shape[1] == 3 and 3 <= len(v) <= 200000 and np.isfinite(v).all() and (np.abs(v)<=1000000).all(),
                 'Invalid or excessive mesh vertices.', 'SCENE3D_GEOMETRY')
         require(f.ndim == 2 and f.shape[1] == 3 and 1 <= len(f) <= budget and f.dtype.kind in 'iu'
                 and f.min() >= 0 and f.max() < len(v), 'Invalid or excessive triangle indices.', 'SCENE3D_GEOMETRY')
         area = np.linalg.norm(np.cross(v[f[:, 1]]-v[f[:, 0]], v[f[:, 2]]-v[f[:, 0]]), axis=1)
-        require((area > 1e-12).all(), 'Degenerate geometry.', 'SCENE3D_GEOMETRY')
+        require(np.isfinite(area).all() and (area > 1e-12).all(), 'Degenerate geometry.', 'SCENE3D_GEOMETRY')
         return self
 
     @property
@@ -60,7 +60,9 @@ class Mesh:
         lines += ['v '+' '.join(format(float(x), '.17g') for x in p) for p in self.vertices]
         v = np.asarray(self.vertices)
         for a,b,c in self.triangles:
-            normal = np.cross(v[b]-v[a], v[c]-v[a]); normal /= np.linalg.norm(normal)
+            normal = np.cross(v[b]-v[a], v[c]-v[a]); length=float(np.linalg.norm(normal))
+            require(math.isfinite(length) and length>1e-12,'Cannot emit a nonfinite or degenerate normal.')
+            normal /= length
             lines.append('vn '+' '.join(format(float(x), '.17g') for x in normal))
         lines += ['vt 0 0','vt 1 0','vt 0 1']
         lines += [f'f {a+1}/1/{i+1} {b+1}/2/{i+1} {c+1}/3/{i+1}' for i,(a,b,c) in enumerate(self.triangles)]
@@ -193,7 +195,7 @@ def wall(width, height, thickness, openings=()):
 def polygon_triangles(points):
     """Triangulate a bounded simple polygon with deterministic ear clipping."""
     p=numeric_array(points,'points')
-    require(p.ndim==2 and p.shape[1]==2 and 3<=len(p)<=256,'Invalid polygon profile.')
+    require(p.ndim==2 and p.shape[1]==2 and 3<=len(p)<=256 and (np.abs(p)<=10000).all(),'Polygon coordinates must fit the bounded 10000 meter profile.')
     def cross(a,b,c):
         u=b-a;v=c-a
         return float(u[0]*v[1]-u[1]*v[0])
@@ -247,7 +249,7 @@ def extrude(points, height=1):
 def curve(points, radius=.1, segments=12):
     """Piecewise linear tube, using independent capped spans as editable solid geometry."""
     p=numeric_array(points,'points'); r=positive(radius,'radius'); count(segments,'segments')
-    require(p.ndim==2 and p.shape[1]==3 and 2<=len(p)<=256 and np.isfinite(p).all(),'Invalid curve points.')
+    require(p.ndim==2 and p.shape[1]==3 and 2<=len(p)<=256 and np.isfinite(p).all() and (np.abs(p)<=10000).all(),'Invalid curve points.')
     parts=[]
     for a,b in zip(p,p[1:]):
         direction=b-a; length=float(np.linalg.norm(direction)); positive(length,'curve span')
