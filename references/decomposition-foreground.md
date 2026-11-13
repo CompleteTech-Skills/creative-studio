@@ -96,3 +96,8 @@ astronaut photograph and explicitly provided Penn-Fudan photographs. Dataset
 masks are used only after inference to measure output quality, never as inputs.
 Even accurate foreground segmentation is insufficient to close automatic
 anatomy, broad character diversity, or complete semantic-decomposition issues.
+
+The current bounded-reader regression and two actual model executions are recorded
+in `examples/decomposition/foreground/execution-bounded-reader.json`. Historical
+model-quality measurements remain in `execution.json`; neither record grants
+semantic approval or establishes complete issue #225 acceptance.
