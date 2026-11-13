@@ -126,6 +126,25 @@ class PackageTests(unittest.TestCase):
         restored = restore_package(package, self.root / 'optional-restored')
         self.assertEqual(AssetLibrary(restored['library']).resolve(ref), self.library.resolve(ref))
 
+    def test_resealed_lock_cannot_omit_optional_canonical_dependencies(self):
+        doc = deepcopy(self.library.resolve(self.character)); doc['version'] = '2.0.0'
+        doc['dependencies'][0]['required'] = False
+        ref = self.library.register(seal(doc), self.fixture.sources)
+        package = self.root / 'optional-forged'
+        create_package(self.graph, [locator('local', ref)], package, package_id='optional-forged')
+        index = self.read_index(package)
+        lock_path = index['locks']['default']
+        raw = canonical_bytes(self.graph.lock([locator('local', ref)], include_optional=False))
+        (package / lock_path).write_bytes(raw)
+        index['members'][lock_path] = dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+        removed = next(asset for asset in index['assets'] if asset['location']['reference'] == self.mesh)
+        index['assets'].remove(removed)
+        del index['members'][removed['manifest']]; (package / removed['manifest']).unlink()
+        self.reseal(index, package)
+        with self.assertRaisesRegex(RigError, 'include optional'):
+            verify_package(package)
+        self.assertFalse(inspect_package(package)['verified'])
+
     def test_scene_project_context_and_all_package_types(self):
         context = self.root / 'scene.json'; context.write_text('{"fixture":true,"scene":"exact"}')
         for kind in ['asset', 'collection', 'prefab', 'scene', 'project', 'library']:

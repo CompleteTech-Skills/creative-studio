@@ -310,6 +310,8 @@ def _verify(root):
     _restorable_identities(manifests)
     graph = DependencyGraph({name: _PackageLibrary(items) for name, items in libraries.items()})
     for lock in locks.values():
+        if lock.get('include_optional') is not True:
+            fail('DEPENDENCY', 'Canonical restoration locks must include optional declared dependencies.')
         graph.verify_lock(lock)
         if lock['graph']['diagnostics']:
             fail('DEPENDENCY', 'Canonical restoration requires every declared dependency.')
