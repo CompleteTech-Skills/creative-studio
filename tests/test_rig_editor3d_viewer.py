@@ -453,6 +453,18 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                         self.assertEqual(Path(downloaded.value.path()).read_bytes(), png)
                         self.assertEqual(receipt['bytes'], len(png))
                         page.locator('[data-id="mesh"]').click()
+                        saved = repository.snapshot()
+                        evaluated = evaluate(server, dict(revision=saved['revision'], sha256=saved['sha256'],
+                            shot=saved['project']['shots'][0]['path'], frame=0))
+                        page.evaluate('value => window.hatchEditor.preview(value)', evaluated)
+                        self.assertTrue(page.get_by_label('translation X', exact=True).is_disabled())
+                        page.evaluate('''() => {
+                            window.stopPreviewEditing = window.hatchEditor.registerPreviewEditAuthorizer(() => true);
+                            window.hatchEditor.refreshPreviewEditState();
+                        }''')
+                        self.assertFalse(page.get_by_label('translation X', exact=True).is_disabled())
+                        self.assertTrue(page.locator('#name').is_disabled())
+                        self.assertTrue(page.evaluate("window.hatchEditor.objects.get('mesh').matrixAutoUpdate"))
                         page.get_by_label('translation X', exact=True).fill('5')
                         page.get_by_label('translation X', exact=True).press('Tab')
                         page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1')
@@ -461,7 +473,7 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                         self.assertEqual(calls[0]['commands'][0]['operation'], 'transform')
                         page.wait_for_function('() => window.supportInstall === 2 && window.supportCleanup === 1')
                         self.assertEqual(page.evaluate('() => window.hatchEditor.errors'), [])
-                        page.evaluate('window.unregister()')
+                        page.evaluate('window.unregister(); window.stopPreviewEditing()')
                         lifecycle = page.evaluate('''async () => {
                             let first = true; window.delayedCleanups = 0;
                             const stop = window.hatchEditor.subscribeInstalled(async () => {

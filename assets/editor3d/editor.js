@@ -42,7 +42,7 @@ let renderer,
   previewActive = false;
 const collapsed = new Set();
 const extensions = [];
-const commitInterceptors = new Set(), installSubscribers = new Map(), unavailableNodes = new Map();
+const commitInterceptors = new Set(), installSubscribers = new Map(), unavailableNodes = new Map(), previewEditAuthorizers = new Set();
 let lastEvaluation = null;
 function clearInstallSubscriptions() {
   for (const record of installSubscribers.values()) {
@@ -58,6 +58,33 @@ async function notifyInstalled(epoch) {
     if (disposed || lost || loadEpoch !== epoch || installSubscribers.get(callback) !== record) cleanup();
     else record.cleanup = cleanup;
   }));
+}
+function canEditPreview() {
+  if (!previewActive || !lastEvaluation || lastEvaluation.revision !== revision ||
+      lastEvaluation.snapshot_sha256 !== sha256 || lastEvaluation.scene?.path !== currentSnapshot.scene_path ||
+      !selection.size || selectedBone || $("clip").value) return false;
+  const shot = currentSnapshot.documents[lastEvaluation.shot?.path];
+  if (!shot || !currentSnapshot.project.shots.some(ref => ref.path === lastEvaluation.shot.path)) return false;
+  const frame = lastEvaluation.frame;
+  if (!frame || !Number.isSafeInteger(frame.numerator) || frame.denominator !== 1) return false;
+  for (const id of roots()) {
+    const node = nodes.get(id), state = lastEvaluation.nodes?.[id];
+    if (!node || node.locked || !state || node.constraints?.length || node.attachment || node.path_binding ||
+        state.native_clip || shot.path_bindings?.length || shot.temporal_constraints?.some(item =>
+          item.target === id && item.start_frame <= frame.numerator && frame.numerator < item.end_frame)) return false;
+  }
+  let allowed = 0;
+  for (const callback of previewEditAuthorizers) {
+    try { if (callback({snapshot: structuredClone(currentSnapshot), evaluation: structuredClone(lastEvaluation), selection: [...selection]}) === true) allowed++; }
+    catch { return false; }
+  }
+  return allowed === 1;
+}
+function refreshPreviewEditState() { inspect(); attach(); }
+function registerPreviewEditAuthorizer(callback) {
+  if (typeof callback !== "function") throw Error("A preview edit authorizer must be a function.");
+  previewEditAuthorizers.add(callback);
+  return () => { previewEditAuthorizers.delete(callback); refreshPreviewEditState(); };
 }
 function registerCommitInterceptor(callback) {
   if (typeof callback !== "function") throw Error("A command interceptor must be a function.");
@@ -288,7 +315,7 @@ function preview(scene) {
   }
   if (scene.world) renderer.toneMappingExposure = 2 ** scene.world.exposure;
   content.updateMatrixWorld(true);
-  inspect();
+  refreshPreviewEditState();
 }
 function clearPreview() {
   lastEvaluation = null;
@@ -394,11 +421,15 @@ async function commit(commands) {
   try {
     const envelope = {expected_revision: revision, expected_sha256: sha256,
       transaction_id: crypto.randomUUID(), commands: nativeCommands(commands), snapshot: structuredClone(currentSnapshot)};
+    const previewEdit = previewActive;
+    if (previewEdit && (!canEditPreview() || envelope.commands.some(command => command.operation !== "transform" || !roots().includes(command.parameters?.identifier))))
+      throw Error("Evaluated preview edits require authorized atomic transform autokey.");
     const intercepted = [];
     for (const callback of commitInterceptors) {
       const handled = await callback(structuredClone(envelope));
       if (handled != null) intercepted.push(handled);
     }
+    if (previewEdit && intercepted.length !== 1) throw Error("Preview edits require one atomic native command interceptor.");
     if (intercepted.length > 1) throw Error("More than one extension claimed this command transaction.");
     let result;
     if (intercepted.length) {
@@ -480,13 +511,14 @@ function refreshSelection() {
   inspect();
 }
 function attach() {
-  if (!gizmo || busy || lost || previewActive || selectedBone) {
+  if (!gizmo || busy || lost || (previewActive && !canEditPreview()) || selectedBone) {
     gizmo?.detach();
     return;
   }
   const id = roots().find((id) => !nodes.get(id).locked),
     object = objects.get(id);
   if (object) {
+    if (previewActive) for (const identifier of roots()) objects.get(identifier).matrixAutoUpdate = true;
     gizmo.attach(object);
     gizmo.enabled = true;
   } else {
@@ -867,7 +899,7 @@ function inspect() {
         !e.closest("#overlay-controls") &&
         !["clip", "play", "time", "show-all"].includes(e.id)
       )
-        e.disabled = !node || busy || node.locked || previewActive;
+        e.disabled = !node || busy || node.locked || (previewActive && (!e.closest("#transform-fields") || !canEditPreview()));
     });
   $("locked").disabled = !node || busy || previewActive;
   if (!node) {
@@ -1523,7 +1555,7 @@ window.addEventListener("keydown", (e) => {
     ];
     gizmo.setMode($("tool").value);
   } else if (
-    !previewActive &&
+    (!previewActive || canEditPreview()) &&
     ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
   ) {
     e.preventDefault();
@@ -1594,6 +1626,8 @@ window.hatchEditor = {
       api,
       upload,
       registerCommitInterceptor,
+      registerPreviewEditAuthorizer,
+      refreshPreviewEditState,
       capturePreview,
       downloadArtifact,
       subscribeInstalled,
@@ -1615,6 +1649,8 @@ window.hatchEditor = {
     return extension;
   },
   registerCommitInterceptor,
+  registerPreviewEditAuthorizer,
+  refreshPreviewEditState,
   capturePreview,
   downloadArtifact,
   subscribeInstalled,

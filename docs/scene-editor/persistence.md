@@ -175,3 +175,13 @@ Fixed authenticated routes may return `BinaryResponse` with verified artifact
 bytes, one of the supported PNG/EXR/MP4/WebM media types and a safe basename.
 `downloadArtifact` never accepts filesystem paths. Native render service admission
 and artifact-byte verification remain with the render owner.
+
+
+Preview transform editing requires one explicit extension policy registered by
+`registerPreviewEditAuthorizer`. The policy receives the exact saved snapshot,
+evaluation and selection; `refreshPreviewEditState` updates only numeric transform
+and gizmo access when autokey/frame/shot state changes. Other persistent property
+controls stay disabled during preview. Core admission rejects constrained or
+attached targets, stale evaluations and commands outside the selected transform
+roots. A preview transform must also be claimed by one atomic native command
+interceptor; it cannot silently fall back to an authored base-scene edit.
