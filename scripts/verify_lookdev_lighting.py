@@ -104,14 +104,14 @@ def render(destination,name):
 def center(pixels):return float(np.mean(pixels[46:50,46:50,:3]))
 
 
-def radiance_fixture(width=64,height=32):
+def radiance_fixture(width=64,height=32,scale=1.):
     # Self-authored equirectangular high-dynamic-range studio window, stored as
     # exact flat RGBE source. Bright and dim directions are genuine float values.
     body=bytearray()
     for y in range(height):
         for x in range(width):
             value=12. if width//8 <= x < width//3 and height//4 <= y < 3*height//4 else .05
-            mantissa,exponent=math.frexp(value)
+            mantissa,exponent=math.frexp(value*scale)
             component=int(mantissa*256)
             body.extend((component,component,component,exponent+128))
     return b'#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y '+str(height).encode()+b' +X '+str(width).encode()+b'\n'+body
@@ -207,6 +207,24 @@ def main(destination):
     initial=light_plan(registry,reference)
     bpy.context.scene.world=build_environment(initial,payload=payload)
     hdr,info=render(destination,'hdri');outputs.append(info)
+    # Identical directional HDR data at a different pixel magnitude must produce
+    # the same requested reference irradiance, through the exact-byte path.
+    import copy
+    scaled_payload=radiance_fixture(scale=4.)
+    scaled_texture=copy.deepcopy(texture)
+    scaled_texture['file'].update(sha256=hashlib.sha256(scaled_payload).hexdigest(),
+                                  bytes=len(scaled_payload))
+    scaled_ref=copy.deepcopy(texture_ref)
+    scaled_ref['sha256']=hashlib.sha256(canonical_bytes(scaled_texture)).hexdigest()
+    scaled_env=copy.deepcopy(env);scaled_env['environment']=scaled_ref;scaled_env['dependencies']=[scaled_ref]
+    scaled_registry=Registry([('texture.json',canonical_bytes(scaled_texture)),
+                              ('env.json',canonical_bytes(scaled_env))],payloads={'studio.hdr':scaled_payload})
+    scaled_plan=light_plan(scaled_registry,scaled_registry.reference(scaled_env['id'],scaled_env['version']))
+    bpy.context.scene.world=build_environment(scaled_plan,payload=scaled_payload)
+    hdr_scaled,info=render(destination,'hdri-source-scaled');outputs.append(info)
+    scale_delta=float(np.max(np.abs(hdr_scaled-hdr)))
+    assert scale_delta<1e-5,scale_delta
+    metrics['hdri_source_scale_max_delta']=scale_delta
     exposed=light_plan(registry,reference,options={'exposure_stops':1})
     bpy.context.scene.world=build_environment(exposed,payload=payload)
     hdr_exposed,info=render(destination,'hdri-exposure');outputs.append(info)

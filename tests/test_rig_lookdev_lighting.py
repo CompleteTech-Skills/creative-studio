@@ -117,6 +117,18 @@ class LightAdmission(unittest.TestCase):
         value=source();value['render_policy']['required_features']=['spectral-renderer']
         with self.assertRaises(RigError):plan(value)
 
+    def test_environment_irradiance_is_invariant_to_hdr_scale(self):
+        import numpy as np
+        from lookdev_lighting import environment_strength
+        pixels = np.ones((8,16,4), dtype=np.float32)
+        self.assertAlmostEqual(environment_strength(pixels, 1.), 1./math.pi)
+        pixels[:4,:,:3] *= 5.
+        first = environment_strength(pixels, 3.)
+        scaled = pixels.copy(); scaled[:,:,:3] *= 100.
+        self.assertAlmostEqual(environment_strength(scaled, 3.)*100., first)
+        self.assertEqual(environment_strength(pixels*0, 0.), 0.)
+        with self.assertRaises(RigError):environment_strength(pixels*0, 1.)
+
     def test_sixteen_presets_are_real_light_documents(self):
         self.assertEqual(len(preset_names()),16)
         for name in preset_names():

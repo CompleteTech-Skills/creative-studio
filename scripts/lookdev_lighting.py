@@ -161,7 +161,7 @@ def light_plan(registry, reference, *, engine='CYCLES', options=None):
             'light': light, 'options': opts, 'linear_color': rgb, 'energy': energy,
             'units': '555nm-equivalent-radiant-watt' if kind in ('point', 'spot') else
                      '555nm-equivalent-watt-per-square-meter' if kind == 'directional' else
-                     'radiant-watt' if kind == 'area' else 'radiance-scale'}
+                     'radiant-watt' if kind == 'area' else 'reference-mean-planar-watt-per-square-meter'}
     if kind == 'environment':
         texture = registry.get(light['environment'])
         require(texture['role'] == 'environment' and texture['encoding'] == 'linear-srgb',
@@ -310,6 +310,35 @@ def build_light(plan, *, collection=None, receivers=None):
         raise
 
 
+def environment_strength(pixels, irradiance, color=(1., 1., 1.)):
+    """Normalize to mean planar irradiance over all surface orientations.
+
+    E_ref = pi * spherical-mean radiance. Latitude rows have exact integrated
+    solid-angle weights; rescaling the authored HDR cannot change the watts.
+    RGB radiant power uses the declared luminance-weighted RGB convention.
+    """
+    import numpy as np
+    pixels = np.asarray(pixels)
+    require(pixels.ndim == 3 and pixels.shape[2] >= 3 and
+            pixels.shape[0] > 0 and pixels.shape[1] == 2*pixels.shape[0] and
+            np.isfinite(pixels).all() and (pixels >= 0).all(),
+            'LIGHT_ENVIRONMENT', 'Expected finite nonnegative equirectangular pixels.')
+    irradiance = _number(irradiance, 0, 1e9, 'environment irradiance')
+    color = _rgb(color)
+    edges = np.linspace(0., math.pi, pixels.shape[0]+1)
+    weights = np.cos(edges[:-1]) - np.cos(edges[1:])
+    rgb = pixels[:,:,:3].astype(np.float64)
+    radiance = (rgb * np.asarray(color) * np.asarray(WEIGHTS)).sum(axis=2)
+    reference = math.pi * float((radiance.mean(axis=1) * weights).sum()/2.)
+    if irradiance == 0:
+        return 0.
+    require(reference > 0, 'LIGHT_ENVIRONMENT', 'A black HDR cannot provide nonzero irradiance.')
+    strength = irradiance/reference
+    require(math.isfinite(strength) and strength <= 1e12,
+            'LIGHT_ENVIRONMENT', 'Environment normalization exceeds supported intensity range.')
+    return strength
+
+
 def build_environment(plan, *, payload):
     """Create a new packed world from exact bytes decoded by the texture owner.
 
@@ -330,6 +359,7 @@ def build_environment(plan, *, payload):
     require(decoded.width == texture['width'] and decoded.height == texture['height'],
             'LIGHT_ENVIRONMENT', 'Decoded environment dimensions disagree with the manifest.')
     require(decoded.source_sha256 == file['sha256'], 'LIGHT_ENVIRONMENT', 'Decoder source identity mismatch.')
+    strength = environment_strength(decoded.pixels, plan['energy'], plan['linear_color'])
     image = create_blender_image(decoded, name='hatch:' + texture['id'])
     world = bpy.data.worlds.new('hatch:' + plan['light']['id'])
     try:
@@ -350,7 +380,7 @@ def build_environment(plan, *, payload):
         multiply = nodes.new('ShaderNodeMixRGB'); multiply.blend_type = 'MULTIPLY'
         multiply.inputs[0].default_value = 1.; multiply.inputs[2].default_value = (*plan['linear_color'],1.)
         background = nodes.new('ShaderNodeBackground')
-        background.inputs['Strength'].default_value = plan['energy'] * 2**plan['options']['exposure_stops']
+        background.inputs['Strength'].default_value = strength * 2**plan['options']['exposure_stops']
         output = nodes.new('ShaderNodeOutputWorld')
         links.new(coordinates.outputs['Generated'], mapping.inputs['Vector'])
         links.new(mapping.outputs['Vector'], environment.inputs['Vector'])

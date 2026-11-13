@@ -70,7 +70,14 @@ bytes remain the texture owner's responsibility; this adapter carries their hash
 size, dimensions and resource provenance. It never loads external paths or URLs.
 Float pixels are decoded with bounded texture admission, flipped from the
 image convention to Blender's image origin, and packed into a new Blender image.
-World rotation and exposure are explicit and contribute to plan identity.
+Environment intensity in W/m² is the **mean planar irradiance over all surface
+orientations**, before exposure. The exact decoded HDR is normalized by pi times
+its solid-angle-weighted spherical mean RGB luminance. This reference convention
+preserves directional contrast but makes a global HDR pixel multiplier irrelevant
+to requested watts. It does not promise equal irradiance on every differently
+oriented surface. RGB radiant power uses the documented luminance weighting;
+black maps cannot supply nonzero irradiance. World rotation and exposure are
+explicit and contribute to plan identity.
 Camera background visibility is separated from diffuse/reflection illumination.
 
 Cycles performs native importance sampling, path-traced geometric shadows and
