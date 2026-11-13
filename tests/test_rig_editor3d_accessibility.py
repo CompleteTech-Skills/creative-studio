@@ -82,7 +82,7 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
         page.keyboard.press('Tab');self.assertTrue(search.evaluate('element => element === document.activeElement'))
         page.keyboard.press('Escape');page.wait_for_function('() => !document.querySelector("#shortcut-dialog").open')
         self.assertTrue(button.evaluate('element => element === document.activeElement'))
-        page.locator('#viewport').focus();page.keyboard.press('Shift+/');self.assertTrue(dialog.is_visible())
+        page.locator('#viewport').focus();page.keyboard.press('Shift+Slash');self.assertTrue(dialog.is_visible())
         page.keyboard.press('Escape');page.wait_for_function('() => !document.querySelector("#shortcut-dialog").open')
         self.assertTrue(page.locator('#viewport').evaluate('element => element === document.activeElement'))
         self.assertEqual(self.repository.snapshot()['revision'],0)
