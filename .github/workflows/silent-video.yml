@@ -20,6 +20,11 @@ jobs:
       - run: python -m pip install -r requirements-delivery.txt
       - run: sudo apt-get update && sudo apt-get install --yes ffmpeg
       - run: python -m unittest discover -s tests -p test_silent_video.py -v 2>&1 | tee silent-contract.log
+      - run: python -m unittest discover -s tests -p test_silent_timeline.py -v 2>&1 | tee silent-timeline-contract.log
+      - run: python -m unittest discover -s tests/optional -p test_silent_timeline_native.py -v 2>&1 | tee silent-timeline-native.log
+        env:
+          HATCH_SILENT_MEDIA_TEST: '1'
+      - run: python -m unittest discover -s tests/optional -p test_silent_timeline_descriptor.py -v 2>&1 | tee silent-timeline-descriptor.log
       - run: python -m unittest discover -s tests/optional -p test_silent_video_native.py -v 2>&1 | tee silent-media.log
         env:
           HATCH_SILENT_MEDIA_TEST: '1'
@@ -33,6 +38,9 @@ jobs:
           name: silent-media-${{ github.sha }}
           path: |
             silent-media.log
+            silent-timeline-descriptor.log
+            silent-timeline-contract.log
+            silent-timeline-native.log
             silent-profiles.log
             silent-contract.log
             legacy-review-movie.log

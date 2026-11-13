@@ -14,7 +14,7 @@ from pathlib import Path
 import re
 import shutil
 
-from atomic_publish import _rename_no_replace, private_stage
+from atomic_publish import _rename_no_replace
 from production_contracts import read_json, MAX_MANIFEST_BYTES
 from production_render import fps_fraction
 import silent_video as video
@@ -87,7 +87,7 @@ def _prepare(shots):
     return planned, baseline, total_bytes
 
 
-def assemble(shots, destination, *, cancel=None):
+def assemble(shots, destination, *, cancel=None, destination_dir_fd=None):
     """Publish a complete immutable timeline directory, or nothing.
 
     Each shot supplies an admitted source and its read-only root. Every input
@@ -95,11 +95,11 @@ def assemble(shots, destination, *, cancel=None):
     Output mapping is deterministic and exact for rational source FPS.
     """
     planned, signature, total_bytes = _prepare(shots)
-    destination = video._destination(destination)
-    if shutil.disk_usage(destination.parent).free < total_bytes + 1024 * 1024:
-        raise ValueError('insufficient free storage for timeline')
-    with video._pin_directory(destination.parent) as parent_fd:
-        with private_stage(parent_fd, prefix='.silent-timeline-') as (private_path, wrapper_fd):
+    with video.destination_directory(destination, destination_dir_fd=destination_dir_fd) as (destination_name, parent_fd):
+        storage = os.fstatvfs(parent_fd)
+        if storage.f_bavail * storage.f_frsize < total_bytes + 1024 * 1024:
+            raise ValueError('insufficient free storage for timeline')
+        with video._private_stage(parent_fd, prefix='.silent-timeline-') as (private_path, wrapper_fd):
             stage = private_path / 'payload'
             stage.mkdir(mode=0o700)
             frames = stage / 'frames'
@@ -139,7 +139,7 @@ def assemble(shots, destination, *, cancel=None):
             validate(stage)
             if cancel is not None and cancel():
                 raise ValueError('timeline assembly cancelled before publication')
-            _rename_no_replace('payload', destination.name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
+            _rename_no_replace('payload', destination_name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
     return manifest
 
 
