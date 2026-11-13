@@ -54,9 +54,12 @@ def apply_configuration(scene, value):
     except (TypeError,ValueError) as exc:
         raise RigError('LOOKDEV_COLOR_BACKEND','Requested OCIO view/look unavailable.') from exc
     settings.exposure=value['exposure_stops'];settings.gamma=1.
+    settings.use_curve_mapping=False
+    if hasattr(settings,'use_hdr_view'):settings.use_hdr_view=False
     settings.use_white_balance=True
     settings.white_balance_temperature=value['temperature_kelvin'];settings.white_balance_tint=value['tint']
     image=scene.render.image_settings
+    image.color_management='FOLLOW_SCENE'
     image.color_mode='RGBA'
     if value['output']=='scene-linear-exr':
         image.file_format='OPEN_EXR';image.color_depth='32';image.exr_codec='ZIP'

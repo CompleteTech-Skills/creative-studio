@@ -28,7 +28,7 @@ jobs:
           export HATCH_BLENDER="$RUNNER_TEMP/blender-4.5.3-linux-x64/blender"
           export HATCH_LOOKDEV_BLENDER_PYTHONPATH="$RUNNER_TEMP/blender-lookdev-deps"
           export HATCH_LOOKDEV_STYLE_EVIDENCE="$RUNNER_TEMP/lookdev-style-evidence"
-          python -m unittest discover -s tests -p 'test_lookdev*py' -v
+          python -m unittest discover -s tests -p '*lookdev*py' -v
           HATCH_LOOKDEV_STYLE_TEST=1 python -m unittest discover -s tests -p test_rig_lookdev_styles.py -v
       - uses: actions/upload-artifact@v4
         if: always()

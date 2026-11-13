@@ -72,6 +72,10 @@ def evaluate_track(track, frame):
             values=[k['in_tangent' if name=='in_tangents' else 'out_tangent'] for k in keys]
             native[name]=[[v] for v in values] if kind=='scalar' else values
     result=native_track(native,sample_frame).tolist()
+    finite_json(result)
+    if kind=='color':
+        require(all(x>=0 for x in result) and (len(result)==3 or result[3]<=1),
+                'LOOKDEV_TRACK_RANGE','Authored cubic curve leaves scene-linear RGB/alpha bounds; revise its derivatives.')
     return result[0] if kind=='scalar' else result
 
 

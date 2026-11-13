@@ -14,6 +14,8 @@ def inspect_outputs(root):
     if set(report['styles'])!=set(mapping_ids()):raise AssertionError('Required style outputs missing.')
     images={}
     for name,entry in report['styles'].items():
+        if not entry.get('effective_slot_verified') or not entry.get('linked_instance_preserved'):
+            raise AssertionError('Effective slot or source instance isolation was not verified.')
         path=root/(name+'.png')
         if hashlib.sha256(path.read_bytes()).hexdigest()!=entry['png_sha256']:raise AssertionError('Style output changed.')
         images[name]=np.asarray(Image.open(path).convert('RGB'),dtype=float)

@@ -34,6 +34,16 @@ def builder(resource):
 
 def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
 
+def configure(value):
+    # A prior export override must not silently supersede the authored look.
+    scene.view_settings.use_curve_mapping=True
+    scene.render.image_settings.color_management='OVERRIDE'
+    scene.render.image_settings.view_settings.exposure=-3
+    receipt=apply_configuration(scene,value)
+    assert scene.render.image_settings.color_management=='FOLLOW_SCENE'
+    assert not scene.view_settings.use_curve_mapping
+    return receipt
+
 report={'blender':bpy.app.version_string,'styles':{},'color':{}}
 for name in mapping_ids():
     bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3,radius=.65,location=(0,0,.7));obj=bpy.context.object
@@ -52,12 +62,22 @@ for name in mapping_ids():
         bpy.ops.object.select_all(action='DESELECT')
         for bar in bars:bar.select_set(True)
         bpy.context.view_layer.objects.active=bars[0];bpy.ops.object.join();frame=bars[0]
+    old_material=bpy.data.materials.new('unrelated-'+name);old_material.use_nodes=True
+    obj.data.materials.append(old_material);obj.material_slots[0].link='OBJECT';obj.material_slots[0].material=old_material
+    sibling=obj.copy();sibling.data=obj.data;bpy.context.collection.objects.link(sibling);sibling.hide_render=True
+    sibling_mesh=sibling.data
+    if frame:
+        frame.data.materials.append(old_material);frame.material_slots[0].link='OBJECT';frame.material_slots[0].material=old_material
     mapping=resolve_mapping(name)
     execution=execute_mapping(obj,mapping,material_builder=builder,color=(.45,.1,.04,1.),frame_object=frame)
-    apply_configuration(scene,configuration(view='AgX'))
+    assert obj.material_slots[0].material.name==execution['material']
+    assert sibling.data==sibling_mesh and sibling.material_slots[0].material==old_material
+    if frame:assert frame.material_slots[0].material!=old_material
+    configure(configuration(view='AgX'))
     path=root/(name+'.png');scene.render.filepath=str(path);bpy.ops.render.render(write_still=True)
     report['styles'][name]={'execution':execution,'png_sha256':digest(path),'faces':len(obj.data.polygons),
-        'smooth_faces':sum(p.use_smooth for p in obj.data.polygons),'mapping':mapping}
+        'smooth_faces':sum(p.use_smooth for p in obj.data.polygons),'mapping':mapping,
+        'effective_slot_verified':True,'linked_instance_preserved':True}
     if name=='porcelain':
         # Save actual OCIO outputs and HDR values; a second display transform
         # must not affect scene-linear EXR samples.
@@ -66,10 +86,11 @@ for name in mapping_ids():
                            ('exposed',configuration(view='Standard',exposure=1)),
                            ('linear',configuration(output='scene-linear-exr')),
                            ('linear-display-changed',configuration(output='scene-linear-exr',exposure=2,temperature_kelvin=3200))]:
-            receipt=apply_configuration(scene,config);suffix='.exr' if config['output']=='scene-linear-exr' else '.png'
+            receipt=configure(config);suffix='.exr' if config['output']=='scene-linear-exr' else '.png'
             out=root/('color-'+key+suffix);scene.render.filepath=str(out);bpy.ops.render.render(write_still=True)
             report['color'][key]={'configuration':config,'receipt':receipt,'file_sha256':digest(out)}
     bpy.data.objects.remove(obj,do_unlink=True)
+    bpy.data.objects.remove(sibling,do_unlink=True)
     if frame:bpy.data.objects.remove(frame,do_unlink=True)
 report['sources']={str(Path(folder)/name):digest(Path(folder)/name) for folder in job['scripts'] for name in
     ('lookdev_styles.py','lookdev_color.py','lookdev_blender.py') if (Path(folder)/name).exists()}

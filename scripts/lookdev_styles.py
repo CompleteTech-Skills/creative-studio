@@ -10,7 +10,7 @@ from copy import deepcopy
 import math
 import re
 
-from lookdev_contracts import canonical_bytes, content_hash, default_surface, validate_resource
+from lookdev_contracts import canonical_bytes, content_hash, default_surface, validate_resource, definitions
 from rig_errors import require, finite_json, RigError
 from style_registry import resolve_style, validate_snapshot
 
@@ -169,7 +169,7 @@ def validate_binding(binding):
         _keys(slot, {'material','targets','protected','effective_sha256'}, 'LOOKDEV_IDENTITY')
         _keys(slot['material'], {'id','version','sha256','kind','path'}, 'LOOKDEV_IDENTITY')
         _identifier(slot['material']['id']);_digest(slot['material']['sha256']);_digest(slot['effective_sha256'])
-        require(isinstance(slot['protected'],dict) and len(slot['protected'])<=32 and set(slot['protected'])<=set(default_surface()),'LOOKDEV_IDENTITY','Invalid protected fields.')
+        require(isinstance(slot['protected'],dict) and len(slot['protected'])<=32 and set(slot['protected'])<=set(definitions()['Surface']['properties']),'LOOKDEV_IDENTITY','Invalid protected fields.')
         require(isinstance(slot['targets'],list) and 0<len(slot['targets'])<=4096,'LOOKDEV_IDENTITY','Invalid targets.')
         for target in slot['targets']:
             _keys(target, {'object_id','slot_id'}, 'LOOKDEV_IDENTITY')
@@ -242,6 +242,7 @@ def execute_mapping(obj, mapping, *, material_builder, color=(.45,.45,.45,1.), f
         import bpy
     except ImportError as exc:
         raise RigError('LOOKDEV_BLENDER_REQUIRED','Run recipe execution inside Blender.') from exc
+    from lookdev_blender import assign_material
     require(obj.type=='MESH' and len(obj.data.polygons)>0,'LOOKDEV_STYLE_GEOMETRY','Expected real mesh geometry.')
     recipe=mapping['recipe'];geometry=recipe['geometry']
     if geometry in ('framed-glass','solid-glass','flat-solid-glass'):
@@ -295,6 +296,7 @@ def execute_mapping(obj, mapping, *, material_builder, color=(.45,.45,.45,1.), f
     new_mesh.materials.clear();new_mesh.materials.append(material)
     for face in new_mesh.polygons:face.material_index=0
     obj.data=new_mesh
+    assign_material(obj,material,slots=[0])
     if frame_object is not None and geometry=='framed-glass':
         frame_mapping=deepcopy(mapping)
         frame_mapping['recipe']={'geometry':'flat','roughness':.38,'metallic':1.}
@@ -303,6 +305,7 @@ def execute_mapping(obj, mapping, *, material_builder, color=(.45,.45,.45,1.), f
         frame_mesh=frame_object.data.copy();frame_mesh.materials.clear();frame_mesh.materials.append(frame_material)
         for face in frame_mesh.polygons:face.material_index=0
         frame_object.data=frame_mesh
+        assign_material(frame_object,frame_material,slots=[0])
     obj['hatch_style_mapping_sha256']=mapping['sha256']
     return {'style_id':mapping['style_id'],'mapping_sha256':mapping['sha256'],
             'material':material.name,'geometry':geometry,'pattern':pattern,
