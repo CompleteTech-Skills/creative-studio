@@ -52,4 +52,3 @@ class NativeTimingCacheTests(unittest.TestCase):
             for operation in [lambda:physics.verify_cache(cache),lambda:physics.inspect_time(cache,Fraction(1,24))]:
                 with self.assertRaises(physics.BackendError) as raised:operation()
                 self.assertIn('unsupported',str(raised.exception))
-
