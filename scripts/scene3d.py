@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -112,20 +113,40 @@ def execute(args):
 def main(argv=None):
     args = _parser().parse_args(argv)
     from rig_errors import RigError
+    stream, report_identity = None, None
     try:
+        if args.output:
+            # Reserve report admission before any immutable scene is published.
+            # Exclusive creation also rejects existing files and symlinks.
+            stream = args.output.open("x", encoding="utf-8")
+            info = os.fstat(stream.fileno())
+            report_identity = (info.st_dev, info.st_ino)
         result = execute(args)
         text = json.dumps(result, ensure_ascii=False, allow_nan=False, indent=2) + "\n"
-        if args.output:
-            # Existing files and symlinks are never replaced by a report.
-            with args.output.open("x", encoding="utf-8") as stream:
-                stream.write(text)
+        if stream is not None:
+            stream.write(text)
+            stream.flush()
         else:
             print(text, end="")
         return 2 if result.get("status") == "unresolved" else 0
     except (RigError, OSError, UnicodeError) as exc:
+        if stream is not None:
+            stream.close()
+            stream = None
+            # Remove only the report reserved by this attempt, never a path a
+            # different writer replaced while the command was running.
+            try:
+                current = args.output.lstat()
+                if report_identity == (current.st_dev, current.st_ino):
+                    args.output.unlink()
+            except OSError:
+                pass
         report = exc.report if isinstance(exc, RigError) else {"code": "SCENE3D_IO", "message": str(exc)}
         print(json.dumps({"ok": False, "error": report}, ensure_ascii=True), file=sys.stderr)
         return 2
+    finally:
+        if stream is not None:
+            stream.close()
 
 
 if __name__ == "__main__":

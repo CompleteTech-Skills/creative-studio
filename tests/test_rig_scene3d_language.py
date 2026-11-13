@@ -190,6 +190,27 @@ class LanguagePlanTests(unittest.TestCase):
         self.assertEqual(next(n for n in graph.document()["nodes"] if n["id"] == "mesh")["name"], "Renamed")
         self.assertEqual((target / "triangle.obj").read_bytes(), (self.source / "triangle.obj").read_bytes())
 
+    def test_cli_report_admission_failure_never_publishes_edit(self):
+        root = Path(__file__).resolve().parents[1]
+        command = [sys.executable, str(root / "scripts/scene3d.py")]
+        existing = self.directory / "existing.json"
+        existing.write_bytes(b"preserved report")
+        for report in (existing, self.directory / "missing-parent" / "report.json", self.source):
+            target = self.directory / "not-published"
+            result = subprocess.run(command + ["--output", str(report), "revise", "--project", str(self.source),
+                "--scene", "example-scene.json", "--text", "hide mesh", "--destination", str(target)],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stdout)
+            self.assertFalse(target.exists())
+        self.assertEqual(existing.read_bytes(), b"preserved report")
+        new_report = self.directory / "failed-command-report.json"
+        result = subprocess.run(command + ["--output", str(new_report), "revise", "--project", str(self.source),
+            "--scene", "example-scene.json", "--text", "unsupported request", "--destination", str(target)],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(target.exists())
+        self.assertFalse(new_report.exists())
+
     def test_cli_dry_run_does_not_publish_and_unresolved_is_nonzero(self):
         root = Path(__file__).resolve().parents[1]
         command = [sys.executable, str(root / "scripts/scene3d.py")]
