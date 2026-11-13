@@ -108,13 +108,31 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     changes, iterations = [], 0
     tolerance = chain['tolerance']
     limit = chain['iterations']
-    if chain['solver'] == 'two-bone':
-        d = float(np.clip(distance, max(lower, 1e-9), lengths.sum()))
+    pole_delta = pole-origin
+    matched_fold = (distance <= 1e-9 and np.linalg.norm(points[-1]-target) <= tolerance
+                    and np.linalg.norm(pole_delta) > 1e-9
+                    and np.dot(unit(pole_delta), unit(points[1]-origin)) >= 1.-1e-12)
+    if matched_fold:
+        # A closed multisegment chain has no endpoint axis from which to
+        # reconstruct its interior. Keep the authoritative matched seed when
+        # its pole agrees; constraints and final orientation still run below.
+        if constrained:result, changes = apply_constraints(skeleton, result, constrained, ordered=True)
+    elif chain['solver'] == 'two-bone':
         a, b = lengths
-        x = (d*d+a*a-b*b)/(2*d)
-        y = math.sqrt(max(0., a*a-x*x))
-        points[1] = origin + direction*x + _pole_perpendicular(direction, origin, pole)*y
-        points[2] = origin + direction*d
+        if distance <= 1e-9 and abs(a-b) <= 1e-9:
+            # At a complete equal-length fold there is no root-to-end axis.
+            # The pole directly names the elbow direction rather than a plane
+            # perpendicular to an invented world axis.
+            bend = pole-origin
+            if np.linalg.norm(bend) <= 1e-9:bend = points[1]-origin
+            points[1] = origin + unit(bend)*a
+            points[2] = target
+        else:
+            d = float(np.clip(distance, max(lower, 1e-9), lengths.sum()))
+            x = (d*d+a*a-b*b)/(2*d)
+            y = math.sqrt(max(0., a*a-x*x))
+            points[1] = origin + direction*x + _pole_perpendicular(direction, origin, pole)*y
+            points[2] = origin + direction*d
         result = _orient_chain(skeleton, result, names, points)
         if constrained:result, changes = apply_constraints(skeleton, result, constrained, ordered=True)
         iterations = 1
@@ -168,7 +186,13 @@ def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
     validate_chain(skeleton, chain)
     world = evaluate_fk(skeleton, pose)
     points = [world[name][:3, 3] for name in chain['bones']]
-    axis = unit(points[-1]-points[0])
-    bend = _pole_perpendicular(axis, points[0], points[1])
-    return dict(target=points[-1].tolist(), pole=(points[0]+bend*np.linalg.norm(points[-1]-points[0])).tolist(),
+    reach = float(np.linalg.norm(points[-1]-points[0]))
+    if reach <= 1e-9:
+        # A valid fully folded chain has a measurable first segment even
+        # though its endpoint coincides with its root.
+        bend = unit(points[1]-points[0])
+    else:
+        bend = _pole_perpendicular(unit(points[-1]-points[0]), points[0], points[1])
+    pole_distance = max(reach, sum(float(np.linalg.norm(b-a)) for a,b in zip(points,points[1:])))
+    return dict(target=points[-1].tolist(), pole=(points[0]+bend*pole_distance).tolist(),
                 orientation=decompose(world[chain['bones'][-1]])['rotation'])
