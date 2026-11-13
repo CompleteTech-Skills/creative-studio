@@ -1,0 +1,108 @@
+{
+  "source_commit": "0337abd50ddc7db0045934b9139157795137b371",
+  "kind": "procedural-engineering-fixture",
+  "artistic_approval": false,
+  "description": "Retained exact Blender export request, independently reopened blend/roundtrip GLB, and two actual Cycles PNGs. Native-run rig-before-socket.json preserves the stored fixture before the exported in-memory socket was added; rig.json copies the exact hash-verified export-request. No original source bytes are replaced. Raw receipts retain original local absolute paths.",
+  "files": [
+    {
+      "path": "blender-verification.json",
+      "bytes": 11083,
+      "sha256": "8f411431e936c5d7b1e23901572504335f633c37b523c03b51979a90047d3da5"
+    },
+    {
+      "path": "export-request.json",
+      "bytes": 7036,
+      "sha256": "1ef16d1b5e4d20071e9f22f2754c39922d5ea48dcf1d46eb72362f9938d6dee4"
+    },
+    {
+      "path": "fixture.glb",
+      "bytes": 1340,
+      "sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e"
+    },
+    {
+      "path": "native-run/animations/bend-09532559a2a8570c21938acae19940eacb8820d698836c0a637e1a78b097d5c1.json",
+      "bytes": 1026,
+      "sha256": "3795a8220b91fd09b8229cc8e750cb9043aee12b8398ab0be7d87aad9454d521"
+    },
+    {
+      "path": "native-run/animations/neutral-dd5559b0d3c5b287d21133c96a42845155aeaea198eceff64afc69651884aa2b.json",
+      "bytes": 906,
+      "sha256": "bf77c70469d1f3c6886fe355cc7f071cc45aa97175aaf1f05390fe3765e5853a"
+    },
+    {
+      "path": "native-run/geometry/f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a.npz",
+      "bytes": 1110,
+      "sha256": "f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a"
+    },
+    {
+      "path": "native-run/identity.json",
+      "bytes": 544,
+      "sha256": "59fff471d947d1823236016b81c771f610bacf6638c495fbddcee8ace16a2ce2"
+    },
+    {
+      "path": "native-run/job.json",
+      "bytes": 1000,
+      "sha256": "b4480af3681d6271f379a5f4d93872e69b55a81da2d11171cc38516986a12157"
+    },
+    {
+      "path": "native-run/rig/revisions/000000-7e69b432946e0dfebf13f9b75487fc0babef99f7e04761e8548f7d39ef89623b.json",
+      "bytes": 2491,
+      "sha256": "845a2f67360fedc14e4482cdba49bbfdd91425a47c38ff0efc0c953527a0be45"
+    },
+    {
+      "path": "native-run/rig/weights/aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66.npz",
+      "bytes": 978,
+      "sha256": "aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66"
+    },
+    {
+      "path": "native-run/rig-before-socket.json",
+      "bytes": 6563,
+      "sha256": "0d7fe4973ac2dc9632e7799255072441b3eb5b5f96c8643b1ba4cbb136bc5483"
+    },
+    {
+      "path": "native-run/rig.json",
+      "bytes": 7036,
+      "sha256": "1ef16d1b5e4d20071e9f22f2754c39922d5ea48dcf1d46eb72362f9938d6dee4"
+    },
+    {
+      "path": "native-run/source/fixture.glb",
+      "bytes": 1340,
+      "sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e"
+    },
+    {
+      "path": "native-run/validation/import.json",
+      "bytes": 1834,
+      "sha256": "a7369c73cb86eb16c85f3e063c5fb549ee7c59f311b617750b3e6ea0dbc73994"
+    },
+    {
+      "path": "preview/frame-0000.png",
+      "bytes": 5638,
+      "sha256": "32e95c066592e60b2baa9f90e0a6fdba55058a87efdde6b66f7d8cb332c28a60"
+    },
+    {
+      "path": "preview/frame-0001.png",
+      "bytes": 5864,
+      "sha256": "40359abeccb7bcab76329a555f3e11d8c5946bdbb5d3aad21ee54ca32f4ec124"
+    },
+    {
+      "path": "preview/frames.json",
+      "bytes": 994,
+      "sha256": "e491de10946b9398cbd3f18f3b87e5fc6257196671f9efa4097f17899467cce2"
+    },
+    {
+      "path": "preview-verification.json",
+      "bytes": 994,
+      "sha256": "e491de10946b9398cbd3f18f3b87e5fc6257196671f9efa4097f17899467cce2"
+    },
+    {
+      "path": "verified.blend",
+      "bytes": 103372,
+      "sha256": "15bb38f7f9152f16a6e25dba8487cd7e55d704fbe5222b9a3a01048baddf7e50"
+    },
+    {
+      "path": "verified.roundtrip.glb",
+      "bytes": 11904,
+      "sha256": "b26524fa1df7c5f9bfaf46498336a3550a568c6da5184c88356e944fa1c53e45"
+    }
+  ]
+}

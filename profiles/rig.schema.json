@@ -3119,6 +3119,25 @@
                   "maxItems": 3
                 },
                 "maxProperties": 10000
+              },
+              "sockets": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": -1000000000.0,
+                      "maximum": 1000000000.0
+                    },
+                    "minItems": 4,
+                    "maxItems": 4
+                  },
+                  "minItems": 4,
+                  "maxItems": 4
+                },
+                "maxProperties": 10000
               }
             },
             "required": [
@@ -3177,6 +3196,11 @@
           "maximum": 1000000000.0
         },
         "max_joint_error_m": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000.0
+        },
+        "max_socket_transform_error": {
           "type": "number",
           "minimum": 0,
           "maximum": 1000000000.0
@@ -3257,6 +3281,11 @@
                 {
                   "required": [
                     "max_joint_error_m"
+                  ]
+                },
+                {
+                  "required": [
+                    "max_socket_transform_error"
                   ]
                 },
                 {
