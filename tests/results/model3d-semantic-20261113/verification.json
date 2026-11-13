@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "source_commit": "43ecea75cadbbbd8f2bab255040eea05fd369982",
+  "tests": {
+    "model3d": 207,
+    "result": "pass",
+    "seconds": 26.389,
+    "independent_core": 17,
+    "independent_correction_probes": 10,
+    "independent_surfaces": 15
+  },
+  "demonstration": {
+    "path": "/home/complete/.cache/hatch-coordination-20261112/model47-demo-final",
+    "vertices": 144,
+    "triangles": 48,
+    "files": 29,
+    "pose_displacement_m": 1.2064928512013653,
+    "original_identity_sha256": "07b560e68c7ccafff56f0f381905ff028b05e91d480f6e42cb07d13203366e0c",
+    "texture_sha256": "67bc397bda9808d13b93467d6e218c8737dfd34b1ab58139b79c2eff97bd0a38"
+  },
+  "retained_export": "examples/model3d-semantic/robot",
+  "unexecuted": [
+    "Blender edit/save/reopen",
+    "multi-angle identity renders",
+    "browser review",
+    "human artistic approval"
+  ],
+  "review": "visually-unreviewed",
+  "full_issue47_complete": false
+}

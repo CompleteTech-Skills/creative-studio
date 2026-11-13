@@ -1,0 +1,48 @@
+{
+  "status": "CLEAN",
+  "head": "43ecea75cadbbbd8f2bab255040eea05fd369982",
+  "base": "0226b6f3b2c37ff76d06a60df67fba37b3494dde",
+  "scope": "Complete semantic core/evidence/I/O/CLI/wrapper plus core tests/demo/docs; surface algorithms separately reviewed",
+  "files": {
+    "scripts/model3d_semantic.py": "5483e8fec86488358ad0751fd1749912106cbb3a08886a323825afc74299299e",
+    "scripts/model3d_semantic_evidence.py": "fa711fedebe46081a8965eb38fedcc56e0ad32bed9da71bbd69ce208884b7dd8",
+    "scripts/model3d_semantic_io.py": "2d8af0a63a0d0e66a58ace54e812f9518c661c6bc88b0546a5253fbd5fe64e97",
+    "scripts/model3d_semantic_cli.py": "9c80f218806ab8562b437d3ca04e83c82f4c8354472a501c7ab421ec089e042a",
+    "scripts/model3d_semantic_surfaces.py": "55ac8252e0f3301a00f8ff738e1c0ecac61fcdcefb23ed04ca2b2f8932cac858",
+    "scripts/demonstrate_model3d_semantic.py": "3183e55f12ab74c9b168f66729048b3c23a8c11e9e44c3becd39fd6334ec8080",
+    "tests/test_model3d_semantic.py": "ba28f0b84893230069b35774eb48897138ee3674272acef14a48fb407188592f",
+    "references/model3d-editing.md": "87779e0251fde16e544d7bd845d24c8f1b4702e1288f996d97d9a5defde8272b",
+    "references/model3d/semantic-editing.md": "bbc12bd3085f83bdc3263097fab75692a1dda2c3d7ece20c956c3dd2ccc3357a"
+  },
+  "independent_validation": [
+    {
+      "tests": 17,
+      "seconds": 2.39,
+      "result": "PASS",
+      "log": "model47-semantic-independent-frozen-tests.log"
+    },
+    {
+      "tests": 10,
+      "seconds": 0.526,
+      "result": "PASS",
+      "log": "model47-independent-final10-probes.log"
+    }
+  ],
+  "source_modified_by_reviewer": false,
+  "resolved": [
+    "duplicate internal attachment remapping",
+    "no-follow pinned source closure before native parsing",
+    "opaque material extras remain metadata",
+    "nested structures and scalar types admitted before use",
+    "cumulative hierarchy depth enforced across cached parents",
+    "known fixture replacement propagates fixture origin",
+    "copy working-set admission before expensive clones",
+    "selected geometry transform containers avoid repeated whole asset array copies"
+  ],
+  "limitations": [
+    "No whole-program/whole-PR release approval",
+    "Surface algorithms separately reviewed",
+    "No Blender/browser/Khronos execution by this reviewer",
+    "No artistic or complete parent47/10 acceptance claim"
+  ]
+}
