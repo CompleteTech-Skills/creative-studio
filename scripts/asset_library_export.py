@@ -127,7 +127,7 @@ def _surface_signature(model):
             return {k:(texture_signature(v) if k=='index' and texture else normalized(v,k.endswith('Texture')))
                     for k,v in value.items() if k not in ('name','extras')}
         if isinstance(value,list): return [normalized(x) for x in value]
-        if isinstance(value,float):return round(value,6)
+        if isinstance(value,(int,float)) and not isinstance(value,bool):return round(float(value),6)
         return value
     materials=[]
     for material in geometry.materials:
@@ -150,13 +150,36 @@ def _surface_signature(model):
                 morphs={name:{key:np.round(array[index],5).tolist() for key,array in target.items()}
                         for name,target in sorted(mesh.morphs.items())},
                 defaults={k:round(float(v),6) for k,v in sorted(mesh.morph_defaults.items())},
-                uv={key:np.round(array[index],6).tolist() for key,array in sorted(mesh.attributes.items()) if key.startswith('TEXCOORD_')})
+                attributes={key:np.round(array[index],6).tolist() for key,array in sorted(mesh.attributes.items())})
             return canonical_bytes(values).decode('utf-8')
         for triangle in mesh.triangles:
             points=[corner(index) for index in triangle]
             ordered=min(tuple(points[i:]+points[:i]) for i in range(3))
             rows.append((material,ordered))
     return sorted(rows)
+
+def _joint_signature(path, limits):
+    """Named joint hierarchy/rest and inverse binds independent of node indices."""
+    import numpy as np
+    from rig_gltf import read_gltf, scene_graph
+    document=read_gltf(path,limits);parents,world,_=scene_graph(document)
+    nodes=document.json.get('nodes',[])
+    joints=set(index for skin in document.json.get('skins',[]) for index in skin['joints'])
+    names={index:nodes[index].get('name') for index in joints}
+    if any(not isinstance(name,str) or not name for name in names.values()) or len(set(names.values()))!=len(names):
+        fail('UNSUPPORTED','Native skeleton comparison needs unique named joints.')
+    result={}
+    for index in joints:
+        parent=parents.get(index)
+        while parent is not None and parent not in joints:parent=parents.get(parent)
+        result[names[index]]=dict(parent=names[parent] if parent is not None else None,
+            world=np.round(world[index],5).tolist(),inverse_bind=[])
+    for skin in document.json.get('skins',[]):
+        matrices=document.accessor(skin['inverseBindMatrices']).reshape(-1,4,4) if 'inverseBindMatrices' in skin else np.tile(np.eye(4),(len(skin['joints']),1,1))
+        for index,matrix in zip(skin['joints'],matrices):
+            result[names[index]]['inverse_bind'].append(np.round(matrix,5).tolist())
+    for value in result.values():value['inverse_bind']=sorted(value['inverse_bind'],key=canonical_bytes)
+    return result
 
 def _native_compare(source_path, output_path, limits):
     """Measured rest/animation checks reuse the native model/deformation owner."""
@@ -166,6 +189,11 @@ def _native_compare(source_path, output_path, limits):
     from rig_interop import compare_imported
     source, before = native_observation(source_path, limits)
     output, after = native_observation(output_path, limits)
+    for model in (source,output):
+        estimate=sum(len(mesh.triangles)*3*(1024+128*(3+sum(array.shape[1] for array in mesh.attributes.values())+sum(array.shape[1] for target in mesh.morphs.values() for array in target.values()))) for mesh in model.geometry.meshes)
+        if estimate>limits['memory_bytes']//4:fail('LIMIT','Decoded surface-comparison working set exceeds export memory budget.')
+    if _joint_signature(source_path,limits) != _joint_signature(output_path,limits):
+        fail('LOSS','Native reopen changed named joint hierarchy/rest matrices or inverse binds.')
     if _surface_signature(source) != _surface_signature(output):
         fail('LOSS', 'Native reopen changed decoded triangle geometry, morphs, UVs, PBR factors or texture pixels.')
     if before['triangles'] != after['triangles'] or before['morph_targets'] != after['morph_targets']:

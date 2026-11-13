@@ -134,6 +134,37 @@ class ExportTests(unittest.TestCase):
                 with self.assertRaisesRegex(RigError,'decoded triangle geometry'):
                     _native_compare(source,output,DEFAULT_LIMITS)
 
+    def test_native_normals_and_static_joint_parent_changes_are_rejected(self):
+        from rig_gltf import GltfBuilder
+        from asset_library_export import _native_compare
+        from rig_contracts import DEFAULT_LIMITS
+        from asset_library_import import _pack_glb
+        from rig_gltf import read_gltf
+        # Real static rig: keep every joint world rest unchanged while changing hierarchy.
+        static=fixture(self.root,name='static',animated=False)
+        source=self.root/'static-source.glb';export_gltf(static,source)
+        doc=read_gltf(source);changed=deepcopy(doc.json)
+        byname={node.get('name'):i for i,node in enumerate(changed['nodes'])}
+        a,b,c=(byname[name] for name in ['b0','b1','b2'])
+        changed['nodes'][a]['children'].append(c)
+        changed['nodes'][b]['children'].remove(c)
+        changed['nodes'][c]['translation']=[0,2,0]
+        # Pack an independently modified actual GLB, preserving source buffers.
+        from rig_gltf import GltfBuilder
+        altered=GltfBuilder();altered.json=changed;altered.binary=bytearray(doc.buffers[0])
+        # GltfBuilder stores its bytes as .data in this version.
+        altered.data=bytearray(doc.buffers[0]);output=self.root/'changed-parent.glb';altered.write(output)
+        with self.assertRaisesRegex(RigError,'joint hierarchy'):_native_compare(source,output,DEFAULT_LIMITS)
+        # Geometry shape is identical but the actual normal attribute reverses.
+        def normals(path,value):
+            builder=GltfBuilder();p=builder.accessor([[0,0,0],[1,0,0],[0,1,0]],'VEC3',bounds=True)
+            n=builder.accessor([value]*3,'VEC3')
+            builder.json.update(meshes=[dict(primitives=[dict(attributes=dict(POSITION=p,NORMAL=n))])],
+                nodes=[dict(mesh=0)],scenes=[dict(nodes=[0])],scene=0);builder.write(path)
+        before=self.root/'normal-before.glb';after=self.root/'normal-after.glb'
+        normals(before,[0,0,1]);normals(after,[0,0,-1])
+        with self.assertRaisesRegex(RigError,'decoded triangle geometry'):_native_compare(before,after,DEFAULT_LIMITS)
+
     def test_optional_geometry_dependencies_have_stable_diagnostic(self):
         import subprocess,sys
         code="""
