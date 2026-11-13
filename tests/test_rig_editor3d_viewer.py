@@ -356,6 +356,8 @@ class EditorPersistentBrowserTests(unittest.TestCase):
             orthographic.update(id='orthographic-shot', name='Orthographic override')
             orthographic['camera_overrides']['camera'] = dict(native_camera['camera'], projection='orthographic')
             (source / 'orthographic-shot.json').write_text(json.dumps(orthographic))
+            document['shots'].append(orthographic['id'])
+            (source / 'example-scene.json').write_text(json.dumps(document))
             reference = dict(project['shots'][0], id=orthographic['id'], path='orthographic-shot.json', sha256='0'*64)
             project['shots'].append(reference); project['dependency_lock'].append(reference)
             (source / 'project.json').write_text(json.dumps(project))
