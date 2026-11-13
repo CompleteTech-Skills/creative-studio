@@ -187,7 +187,9 @@ def capabilities():
         result['opencv-haar'].update(available=True, model=_model())
     except (ImportError, ValueError, AttributeError) as exc:
         result['opencv-haar']['unavailable_reason'] = str(exc)
-    result['clipseg'] = {'available': False, 'limitations': 'Text-conditioned part-mask proposals only; uncalibrated pixel scores and possible absent-part false positives require semantic review.'}
+    result['clipseg'] = {'available': False, 'accepted_for_automatic_decomposition': False,
+        'quality_status': 'Experimental: initial real-image visibility evaluation failed; masks and labels require review.',
+        'limitations': 'Text-conditioned part-mask proposals only; uncalibrated pixel scores and possible absent-part false positives require semantic review.'}
     try:
         result['clipseg'].update(available=True, model=_local_model('clipseg'))
     except (ImportError, ValueError, OSError) as exc:

@@ -61,7 +61,19 @@ before applying them rather than treating rejected ownership as a semantic pass.
 All successful components and source-faithful recomposition still require
 independent semantic review. This is not a rigging or animation-readiness gate.
 
-Current fixture tests establish only strict options, model snapshot safety and
-job binding. Real-provider execution, diverse part-quality evaluation, clothing,
-props, fantasy/nonhuman cases and absent-part false-positive measurements must be
-retained separately before this backend can be called accepted.
+Four contract fixtures establish strict options, model snapshot safety and job
+binding. A real offline probe ran 75 text queries across a NASA human photograph,
+retained Milo artwork, and Noto dragon/robot/dog illustrations with one inference
+thread. Against predeclared visibility hypotheses that still require independent
+review, only 15 of 26 visible labels passed the default gate and 4 of 36 absent
+labels falsely passed. Examples include a helmet on the dragon and a torso, tail
+and helmet on a face-only dog image. These measurements demonstrate inadequate
+initial quality, not acceptance. Training-data overlap with these images is
+unknown. The full raw masks and scores are retained without threshold tuning.
+
+The capability report therefore explicitly marks this backend unaccepted for
+automatic decomposition. Generic phrase-conditioned pixel membership is not
+sufficient evidence that a named part exists. Further source-grounded recognition,
+held-out quality evaluation and independent mask inspection are required; #226
+and the complete semantic workflow remain open. No semantic approval or validated
+character output follows from this experimental backend being installed.
