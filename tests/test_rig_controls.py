@@ -6,7 +6,7 @@ from rig_constraints import apply_constraints, constraint_order
 from rig_errors import RigError
 from rig_ik import match_fk_to_ik, solve_ik
 from rig_math import axis_angle, qangle
-from rig_skeleton import evaluate_fk, neutral_pose, rotate_bone
+from rig_skeleton import evaluate_fk, neutral_pose, rotate_bone, skeleton_from_heads
 
 
 def ik_chain(count=3, solver='two-bone'):
@@ -82,6 +82,22 @@ class RigControlTests(unittest.TestCase):
         positional=solve_ik(skeleton,pose,ik_chain(),[0,2,0])
         self.assertTrue(positional.converged)
         self.assertIsNone(positional.orientation_residual_rad)
+
+    def test_orientation_goal_does_not_replay_unrelated_fractional_constraint(self):
+        specs=[dict(id='b0',parent=None,head=[0,0,0],tail=[0,1,0]),
+               dict(id='b1',parent='b0',head=[0,1,0],tail=[0,2,0]),
+               dict(id='b2',parent='b1',head=[0,2,0],tail=[0,3,0]),
+               dict(id='copy',parent='b0',head=[2,0,0],tail=[2,1,0]),
+               dict(id='target',parent='b0',head=[4,0,0],tail=[4,1,0])]
+        skeleton=skeleton_from_heads([dict(s,role=s['id']) for s in specs])
+        constraint=dict(schema_version=1,id='fractional',bone='copy',type='copy-position',
+                        target='target',influence=.5)
+        for orientation in (None,[0,0,0,1]):
+            with self.subTest(orientation=orientation):
+                result=solve_ik(skeleton,neutral_pose(skeleton),ik_chain(),[0,2,0],
+                                constraints=[constraint],orientation=orientation)
+                np.testing.assert_allclose(evaluate_fk(skeleton,result.pose)['copy'][:3,3],[3,0,0],atol=1e-10)
+                self.assertEqual(sum(c['constraint']=='fractional' for c in result.constraints_applied),1)
 
     def test_hinge_and_prismatic_limits_act_on_actual_pose(self):
         skeleton = chain_skeleton();pose = rotate_bone(skeleton, neutral_pose(skeleton), 'b1', axis_angle([1, 0, 0], 1.2))

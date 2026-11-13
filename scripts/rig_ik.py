@@ -98,6 +98,13 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     reachable = lower-1e-7 <= distance <= lengths.sum()+1e-7
     direction = unit(target-origin) if distance > 1e-9 else unit(points[-1]-origin) if np.linalg.norm(points[-1]-origin) > 1e-9 else np.array([0., 1., 0.])
     constrained = constraint_order(skeleton, list(constraints))
+    orientation = orientation if orientation is not None else chain.get('orientation')
+    rotational = ('hinge', 'ball', 'swing-twist', 'locked', 'aim', 'copy-rotation')
+    endpoint_constraints = ([c for c in constrained if c['bone'] == names[-1] and c['type'] in rotational]
+                            if orientation is not None else [])
+    # These constraints affect the endpoint's orientation, not the chain's
+    # positional solve. Evaluate them once against its final requested pose.
+    constrained = [c for c in constrained if c not in endpoint_constraints]
     changes, iterations = [], 0
     tolerance = chain['tolerance']
     limit = chain['iterations']
@@ -138,17 +145,16 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
             world = evaluate_fk(skeleton, result)
             points = np.array([world[name][:3, 3] for name in names])
             if np.linalg.norm(points[-1]-target) <= tolerance or not reachable:break
-    orientation = orientation if orientation is not None else chain.get('orientation')
     if orientation is not None:
         world = evaluate_fk(skeleton, result)
         parent = next(b['parent'] for b in skeleton['bones'] if b['id'] == names[-1])
         parent_q = decompose(world[parent])['rotation'] if parent else [0, 0, 0, 1]
         result['bones'].setdefault(names[-1], {})['rotation'] = quaternion(qmul(qinverse(parent_q), quaternion(orientation))).tolist()
         # The endpoint orientation is a requested pose, not permission to bypass
-        # its joint limits. Apply the same ordered constraints after this final
-        # write, and measure the result after any resulting spatial changes.
-        if constrained:
-            result, current = apply_constraints(skeleton, result, constrained, ordered=True)
+        # its joint limits. Do not replay unrelated fractional constraints:
+        # a second pass would change their authored influence.
+        if endpoint_constraints:
+            result, current = apply_constraints(skeleton, result, endpoint_constraints, ordered=True)
             changes.extend(current)
     final = evaluate_fk(skeleton, result)[names[-1]]
     error = float(np.linalg.norm(final[:3, 3]-target))
