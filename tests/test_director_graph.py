@@ -277,6 +277,10 @@ class DirectorGraphTests(unittest.TestCase):
         self.request['context']['budget_reservation_id']='fixture-reservation'
         self.refresh()
         self.assertEqual(self.compile()['status'],'succeeded')
+        self.request['context']['policy']['paid']='deny'
+        with self.assertRaisesRegex(ValueError,'paid authority'):
+            self.compile()
+        self.request['context']['policy']['paid']='bounded'
         self.request['input']['budget']['max_amount']=.5
         with self.assertRaisesRegex(ValueError,'provider amount exceeds budget'):
             self.compile()
