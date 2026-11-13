@@ -90,6 +90,8 @@ Semantic mesh region IDs can come from imported `hatchRegion` extras or a `weigh
 
 The primary weight method diffuses segment-distance seeds over actual mesh adjacency, then prunes and normalizes influences. Segmented regions constrain candidate bones. Rigid weighting serves mechanical parts. Large or unsuitable diffusion workloads use a recorded bounded distance fallback. Manual vertex locks survive regeneration. Four influences are the portable viewer profile; native data and glTF also support an explicitly configured eight-influence profile, which requires a compatible external consumer.
 
+Native `hatchBone.deform` metadata is a strict boolean. GLB/glTF files without that metadata retain ordinary skin-joint inference. A declared nondeform root or control can remain in a joint palette with zero effective weights; any positive influence raises `RIG_SKIN_DEFORM_FLAG`, including very small values and normalized integer weights. Bind rigid object geometry to a dedicated, explicitly deforming anchor. Native exports append unweighted authoring bones with their rest inverse binds while preserving the original palette and influence-index meaning. Editable Blender checks preserve each native bone ID, role, deform flag and parent across save/reopen. These metadata and numerical checks do not establish artistic bone placement or stronger bone-tail precision.
+
 ## Correct and version a rig
 
 `rig.json` is the active manifest. Geometry/weights/clips live in immutable content-addressed files. Previous manifests and correction documents remain under `rig/revisions` and `rig/corrections`. Every mutation promotes the final manifest atomically after dependent files are written. A failed promotion leaves the prior active revision usable.
