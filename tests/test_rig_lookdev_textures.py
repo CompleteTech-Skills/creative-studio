@@ -289,6 +289,19 @@ class TextureTests(unittest.TestCase):
         report=t.validate_uvs([uv],[[0,1,2]]*20,max_pairs=3)['sets'][0]
         self.assertFalse(report['overlap_complete']);self.assertEqual(report['overlap_pairs_tested'],3)
 
+    def test_box_projection_oriented_faces_and_triplanar_partition(self):
+        points=np.tile([2.,3.,4.],(6,1))
+        normals=np.array([[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]])
+        np.testing.assert_array_equal(t.project_surface_uvs(points,normals),
+            [[3,4],[-3,4],[-2,4],[2,4],[2,3],[-2,3]])
+        coordinates,weights=t.project_surface_uvs(points,normals,mode='triplanar')
+        np.testing.assert_array_equal(weights,np.repeat(np.eye(3),2,axis=0))
+        self.assertEqual(coordinates.shape,(6,3,2))
+        _,weights=t.project_surface_uvs([[1,2,3]],[[1e-300,1e-300,1e-300]],mode='triplanar',sharpness=64)
+        np.testing.assert_allclose(weights,[[1/3]*3])
+        for malformed in ([[0,0,0]],[[float('nan'),0,1]]):
+            with self.assertRaises(RigError):t.project_surface_uvs([[1,2,3]],malformed)
+
     def test_projection_and_udim_actual_pixels(self):
         np.testing.assert_allclose(t.project_uvs([[1,2,3]],mode='planar'),[[1,2]])
         with self.assertRaises(RigError):t.project_uvs([[0,0,0]],mode='spherical')

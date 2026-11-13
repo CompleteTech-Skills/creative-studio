@@ -69,9 +69,12 @@ sets, index coverage, degenerate and mirrored triangles, and positive-area
 triangle overlaps. Pair work is bounded; incomplete overlap inspection is
 returned as `overlap_complete: false`. It validates supplied glTF XYZW unit
 tangents and +/-1 handedness; tangent generation stays with the rig importer.
-`project_uvs` provides planar, cylindrical and spherical projections. Box and
-triplanar projection need face/shader coordinates and are not silently replaced
-with planar projection.
+`project_uvs` provides planar, cylindrical and spherical projections. `project_surface_uvs(positions, normals)` accepts explicit per-corner surface
+coordinates and oriented face normals for box UV projection. With
+`mode="triplanar"` it returns three oriented UV projections and normalized
+normal-dependent blend weights. Callers must preserve hard-edge corners.
+Triplanar shader sampling and tangent-normal reorientation remain with the
+shader owner; returning coordinates alone does not establish rendered support.
 
 `atlas_udim` converts actual same-size/role/encoding tiles 1001–1100 into a
 bounded atlas and reports the exact UV scale and missing tiles. Missing tiles

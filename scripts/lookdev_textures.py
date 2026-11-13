@@ -650,6 +650,37 @@ def project_uvs(positions, *, mode="planar", axis="z"):
     return np.stack((u,v),axis=1)
 
 
+def project_surface_uvs(positions, normals, *, mode='box', sharpness=4.0, scale=1.0):
+    """Explicit per-corner box UVs or three triplanar UVs plus blend weights.
+
+    Inputs must be expanded to face corners at hard edges. Box mode returns
+    actual UV coordinates selected by the dominant oriented surface normal.
+    Triplanar mode returns coordinates/weights for all three axes; sampling and
+    normal-map reorientation must be performed by the owning shader adapter.
+    """
+    np=_np()
+    points=np.asarray(positions,np.float64);directions=np.asarray(normals,np.float64)
+    require(points.ndim==2 and points.shape[1]==3 and len(points)<=1_000_000
+            and directions.shape==points.shape and np.isfinite(points).all()
+            and np.isfinite(directions).all(),'TEXTURE_UV','Expected matching bounded finite positions and normals.')
+    require(mode in ('box','triplanar'),'TEXTURE_UV','Expected box or triplanar projection.')
+    sharpness=_finite(sharpness,1,64,'projection sharpness')
+    scale=_finite(scale,1e-9,1e9,'projection scale')
+    lengths=np.max(abs(directions),axis=1,keepdims=True)
+    require((lengths>0).all(),'TEXTURE_UV','Projection normals cannot be zero.')
+    # Normalize before exponentiation to avoid overflow or vanishing all weights.
+    weights=(abs(directions)/lengths)**sharpness
+    weights/=weights.sum(axis=1,keepdims=True)
+    sign=np.where(directions<0,-1.,1.)
+    uv=np.stack((np.stack((points[:,1]*sign[:,0],points[:,2]),axis=1),
+                 np.stack((-points[:,0]*sign[:,1],points[:,2]),axis=1),
+                 np.stack((points[:,0]*sign[:,2],points[:,1]),axis=1)),axis=1)*scale
+    require(np.isfinite(uv).all(),'TEXTURE_UV','Scaled projection coordinates overflow.')
+    if mode=='box':
+        return uv[np.arange(len(points)),np.argmax(abs(directions),axis=1)]
+    return uv,weights
+
+
 def atlas_udim(tiles, *, limits=Limits()):
     """Explicit tiled-image atlas conversion; caller remaps UVs using receipt scale."""
     np=_np()
