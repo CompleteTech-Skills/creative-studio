@@ -15,6 +15,27 @@ from rig_geometry import analyze_geometry, mesh_edges
 
 
 class PrimitiveTests(unittest.TestCase):
+    def test_disconnected_multiscale_surfaces_retain_actual_normal_direction(self):
+        # Independent analytic normals: both triangles lie in XY and wind +Z.
+        positions = [[0.,0,0], [1,0,0], [0,1,0],
+                     [2,0,0], [2+1e-8,0,0], [2,1e-8,0]]
+        item = editable_mesh(positions, [[0,1,2], [3,4,5]])
+        np.testing.assert_allclose(item.mesh.attributes['NORMAL'], np.tile([0,0,1], (6,1)), atol=1e-14)
+        # Small YZ surface has +X normals even beside a distant larger XY face.
+        positions[3:] = [[2,0,0], [2,1e-8,0], [2,0,1e-8]]
+        item = editable_mesh(positions, [[0,1,2], [3,4,5]])
+        np.testing.assert_allclose(item.mesh.attributes['NORMAL'][:3], np.tile([0,0,1], (3,1)), atol=1e-14)
+        np.testing.assert_allclose(item.mesh.attributes['NORMAL'][3:], np.tile([1,0,0], (3,1)), atol=1e-14)
+
+    def test_smooth_normal_undefined_vertices_are_explicit_failures(self):
+        for positions, faces in [
+            ([[0,0,0], [1,0,0], [0,1,0], [2,2,2]], [[0,1,2]]),
+            ([[0,0,0], [1,0,0], [0,1,0]], [[0,1,2], [2,1,0]])]:
+            with self.subTest(faces=faces):
+                with self.assertRaises(RigError) as caught:
+                    editable_mesh(positions, faces)
+                self.assertEqual(caught.exception.report['code'], 'MODEL3D_TOPOLOGY_NORMAL')
+
     def test_box_analytic_bounds_volume_winding_and_editable_quads(self):
         result = primitive('box', dict(width=2, height=3, depth=4), name='Semantic Box', mesh_id='semantic-box')
         report = analyze_geometry(result.geometry())
