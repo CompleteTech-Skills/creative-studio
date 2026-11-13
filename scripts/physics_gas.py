@@ -69,7 +69,12 @@ def validate_settings(value, frames):
 
 def admit(world,settings):
     world=core._world(world)
+    core.require(world['solver']['adapter_version']==core.ADAPTER_VERSION
+        and world['solver']['reproducibility'] in ('not-guaranteed','verified-cache-replay'),
+        'PHYSICS_GAS_UNSUPPORTED','Gas requires the current adapter and does not guarantee numerical rerun reproducibility.')
     frames=world['frame_range']['end']
+    core.require(world['fps']['denominator']==1 and 1<=world['fps']['numerator']<=240,
+        'PHYSICS_TIME_UNSUPPORTED','Gas output currently requires an integer frame rate between 1 and 240 fps.')
     core.require(world['frame_range']['start']==0 and 2<=frames<=48 and world['solver']['backend']=='blender'
         and set(world['solver']['required_categories'])=={'rigid-body','gas'},'PHYSICS_GAS_UNSUPPORTED','Gas jobs require 2..48 zero-origin frames and static body/gas categories.')
     core.require(len(world['components'])==1 and world['components'][0]['category']=='gas' and not world['joints']
@@ -99,15 +104,15 @@ def admit(world,settings):
             not collider['sensor'] and collider['group']==1 and collider['mask']==2**32-1,
             'PHYSICS_GAS_UNSUPPORTED','Gas inputs require identity unfiltered nonsensor collider transforms.')
     for force in world['forces']:
-        core.require(force['type'] in ('wind','turbulence') and force['bodies']==[domain['id']]
+        core.require(force['type']=='wind' and force['bodies']==[domain['id']]
             and force['categories']==['gas'] and force['frame_range']==world['frame_range']
             and (force['type']!='wind' or abs(sum(x*x for x in force['vector'])-1)<1e-6),
-            'PHYSICS_GAS_UNSUPPORTED','Only constant domain wind/turbulence forces are supported.')
+            'PHYSICS_GAS_UNSUPPORTED','Only constant domain wind forces are supported.')
     core.require('stability' not in world['solver'],'PHYSICS_GAS_UNSUPPORTED','Rigid stability settings do not map to Mantaflow.')
     settings=validate_settings(settings,frames)
     ratio=domain['density']/settings['reference_density']
     temperature=(domain['temperature']-settings['ambient_temperature'])/settings['temperature_scale']
-    core.require(0<ratio<=10 and -10<=temperature<=10,'PHYSICS_GAS_SETTINGS','Density/temperature conversion exceeds native range.')
+    core.require(0<ratio<=1 and -10<=temperature<=10,'PHYSICS_GAS_SETTINGS','Density/temperature conversion exceeds native range.')
     return world,settings
 
 
@@ -249,7 +254,7 @@ class GasBackend(core.BlenderBackend):
         core.require(self._discover(timeout=min(10,remaining()))==owner['identity'],'PHYSICS_BACKEND_CHANGED','Blender changed after gas preparation.')
         core.require(self._reader_identity(timeout=min(10,remaining()))==owner['reader_identity'],'PHYSICS_BACKEND_CHANGED','OpenVDB reader changed after gas preparation.')
         verify_inputs()
-        usage=core._run_process([self.executable,'--background','--factory-startup','--disable-autoexec','--threads','2',
+        usage=core._run_process([self.executable,'--background','--factory-startup','--disable-autoexec','--threads',str(min(2,world['budgets']['cpu_workers'])),
             '--python-exit-code','2','--python',str(root/'worker.py'),'--',str(root/'gas-job.json')],root,
             timeout=remaining(),memory_bytes=world['budgets']['memory_bytes'],
             output_bytes=min(world['budgets']['temporary_bytes'],core.MAX_CACHE_BYTES),cancel_token=cancel_token,progress=progress)
@@ -264,7 +269,10 @@ class GasBackend(core.BlenderBackend):
             'PHYSICS_BACKEND_CHANGED','Actual VDB reader differs from admitted reader identity.')
         core.require(report['native_bake'] is True and report['world_sha256']==prepared.world_sha256
             and report['settings_sha256']==core.digest(core.canonical(settings)),'PHYSICS_OUTPUT_MISSING','Native gas receipt differs from prepared request.')
+        core.require(report.get('effective_fps')==world['fps'],
+            'PHYSICS_TIME_UNSUPPORTED','Native gas frame rate differs from the requested exact clock.')
         core.blend_container((root/'scene.blend').read_bytes())
+        validate_source_readback(report,world,settings)
         core.require(set(report['observed'])==set(OBSERVED_SETTINGS),'PHYSICS_OUTPUT_MISSING','Missing native setting readback.')
         for key,value in report['observed'].items():
             core.require(key in settings and (value==settings[key] if isinstance(value,bool) else abs(value-settings[key])<=1e-5),
@@ -273,7 +281,7 @@ class GasBackend(core.BlenderBackend):
         job.update(mode='reopen',expected_blend_sha256=core.digest((root/'scene.blend').read_bytes()))
         (root/'gas-job.json').write_bytes(core.canonical(job))
         verify_inputs({'gas-job.json':core.digest(core.canonical(job))})
-        replay_usage=core._run_process([self.executable,'--background','--factory-startup','--disable-autoexec','--threads','2',
+        replay_usage=core._run_process([self.executable,'--background','--factory-startup','--disable-autoexec','--threads',str(min(2,world['budgets']['cpu_workers'])),
             '--python-exit-code','2','--python',str(root/'worker.py'),'--',str(root/'gas-job.json')],root,timeout=remaining(),
             memory_bytes=world['budgets']['memory_bytes'],output_bytes=min(world['budgets']['temporary_bytes'],core.MAX_CACHE_BYTES),
             cancel_token=cancel_token,progress=progress,label='replay')
@@ -319,6 +327,21 @@ class GasBackend(core.BlenderBackend):
         except BaseException:
             shutil.rmtree(stage,ignore_errors=True);raise
         return verify_cache(destination)
+
+
+def validate_source_readback(report,world,settings):
+    domain=world['components'][0]
+    expected={key:dict(density=domain['density']/settings['reference_density'],
+        temperature=(domain['temperature']-settings['ambient_temperature'])/settings['temperature_scale'],
+        fuel=settings['fuel']) for key in domain['emitters']}
+    expected.update({key:dict(collision_distance=settings['collision_distance']) for key in domain['colliders']})
+    actual=report.get('observed_sources')
+    core.require(type(actual) is dict and set(actual)==set(expected),'PHYSICS_CACHE_CORRUPT','Missing native gas source readback.')
+    for key,values in expected.items():
+        core.require(type(actual[key]) is dict and set(actual[key])==set(values)
+            and all(type(actual[key][name]) in (int,float) and math.isfinite(actual[key][name])
+                and abs(actual[key][name]-value)<=1e-5 for name,value in values.items()),
+            'PHYSICS_CACHE_CORRUPT','Native gas source settings differ from the request: '+key)
 
 
 def validate_fields(report,world):
@@ -377,12 +400,14 @@ def _verify_cache(root):
         core.require(native['backend']=='Blender Mantaflow' and native['version']=='4.5.3 LTS' and native['build']==core.SUPPORTED_BLENDER_BUILD
             and native['native_bake'] is True and native['frame_count']==world['frame_range']['end'] and native['cache_format']=='OPENVDB'
             and native['world_sha256']==manifest['world_sha256'] and native['settings_sha256']==manifest['settings_sha256']
-            and native['requested_resolution']==world['components'][0]['resolution'] and native['render_frames']==settings['render_frames'],
+            and native['requested_resolution']==world['components'][0]['resolution'] and native['render_frames']==settings['render_frames']
+            and native.get('effective_fps')==world['fps'],
             'PHYSICS_CACHE_CORRUPT','Native gas receipt contradicts source or settings.')
         blend=reader.read('scene.blend',core.MAX_CACHE_BYTES)
         core.blend_container(blend)
         core.require(replay['mode']=='reopen' and replay['blend_sha256']==core.digest(blend) and replay['frames']==settings['render_frames'],
             'PHYSICS_CACHE_CORRUPT','Native replay does not bind the retained Blender project.')
+        validate_source_readback(native,world,settings)
         core.require(set(native['observed'])==set(OBSERVED_SETTINGS),'PHYSICS_CACHE_CORRUPT','Missing native setting observations.')
         for key,value in native['observed'].items():
             core.require(key in settings and abs(value-settings[key])<=1e-5,'PHYSICS_CACHE_CORRUPT','Native gas setting differs from request.')
