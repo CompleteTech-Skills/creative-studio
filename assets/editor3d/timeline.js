@@ -16,6 +16,7 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
     if(!autokey.checked||!commands.some(c=>c.operation==='transform'))return null;
     if(commands.some(c=>c.operation!=='transform'))throw Error('Autokey requires a transform-only transaction.');
     if(!current.project.shots.some(ref=>ref.path===shotPath))throw Error('Reload and select the current shot before autokey.');
+    if(current.documents[shotPath].scene.path!==current.scene_path)throw Error('Switch to the shot scene before autokey.');
     const at=Number(frame.value);if(!Number.isSafeInteger(at)||at<0||at>=current.documents[shotPath].duration_frames)throw Error('Autokey frame must be inside the selected shot.');
     const keys=[];for(const cmd of commands)for(const channel of ['translation','rotation','scale'])keys.push({operation:'key-upsert',document:shotPath,target:cmd.parameters.identifier,property:channel,frame:at,value:structuredClone(cmd.parameters.transform[channel])});
     return {route:'timeline/edit',body:{expected_revision,expected_sha256,transaction_id,commands:keys}};
@@ -28,8 +29,9 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   function command(operation){return {operation,document:shotPath,target:target(),property:property.value};}
   async function scrub(at=Number(frame.value)){
     if(!snapshot||!shotPath)return;const serial=++request;const s=getSnapshot();
+    if(s.documents[shotPath]?.scene.path!==s.scene_path)throw Error('Switch to the shot scene before preview.');
     const result=await api('timeline/evaluate',{revision:s.revision,sha256:s.sha256,shot:shotPath,frame:at});
-    if(disposed||serial!==request)return;preview(result);message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
+    if(disposed||serial!==request)return;if(result.scene.path!==getSnapshot().scene_path)throw Error('Preview scene changed; reload before scrubbing.');preview(result);message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
   }
   function stop(){playing=false;cancelAnimationFrame(raf);play.textContent='Play';}
   async function tick(now){if(!playing||disposed)return;const doc=snapshot.documents[shotPath],fps=doc.fps.numerator/doc.fps.denominator;

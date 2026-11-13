@@ -185,9 +185,8 @@ def apply_timeline(repository, body):
     """Apply a fixed set of native operations through the repository transaction."""
     _keys(body,{'expected_revision','expected_sha256','transaction_id','commands'})
     commands=deepcopy(body['commands'])
-    # Validate command syntax and local semantics before creating a journal.
-    current=repository.snapshot()
-    prepare_timeline_commands(current,commands)
+    # Semantic resolution belongs inside the repository's idempotency boundary.
+    # A delivered transaction may name a document promoted by its first save.
     def build(source,destination,scene_path):
         from scene3d_snapshot import snapshot_project
         bundle=load_project(source);options=prepare_timeline_commands(bundle,commands)

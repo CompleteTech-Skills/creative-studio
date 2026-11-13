@@ -89,6 +89,16 @@ class TimelineTests(unittest.TestCase):
         with self.assertRaises(RigError):self.apply([dict(operation='scene-delete',document=before['project']['scenes'][0]['path'])])
         self.assertEqual(self.repo.snapshot(),before)
 
+    def test_duplicate_delivery_returns_original_receipt_after_later_edit(self):
+        before=self.repo.snapshot()
+        body=dict(expected_revision=before['revision'],expected_sha256=before['sha256'],transaction_id='delivered',commands=[self.key(0,[7,0,0])])
+        first=apply_timeline(self.repo,body)
+        self.assertEqual(apply_timeline(self.repo,body),first)
+        path=self.shot(first)
+        self.apply([dict(operation='key-upsert',document=path,target='mesh',property='translation',frame=12,value=[9,0,0])])
+        self.assertEqual(apply_timeline(self.repo,body),first)
+        self.assertEqual(self.repo.snapshot()['revision'],2)
+
     def test_prepare_never_mutates_input(self):
         snap=self.repo.snapshot();before=deepcopy(snap)
         prepare_timeline_commands(snap,[self.key(0,[5,0,0])]);self.assertEqual(snap,before)
