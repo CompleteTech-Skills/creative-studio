@@ -50,6 +50,13 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
     than silently trusting the result's own backend claim. Verification checks
     snapshot/request closure and every image through the canonical owner.
     """
+    if cancel is not None and cancel():
+        raise ValueError('silent source preparation cancelled')
+    resolution = request.get('settings', {}).get('resolution') if isinstance(request, dict) else None
+    if (not isinstance(resolution, list) or len(resolution) != 2 or
+            any(type(value) is not int or not 2 <= value <= 4096 or value % 2 for value in resolution) or
+            resolution[0] * resolution[1] > video.MAX_PIXELS):
+        raise ValueError('native source dimensions exceed silent export limits')
     try:
         from render3d_verify import verify_result
     except ImportError as exc:
@@ -57,6 +64,8 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
     request, result = copy.deepcopy(request), copy.deepcopy(result)
     verification = verify_result(request, result, render_root,
                                  snapshot_root=snapshot_root, expected_backend=expected_backend)
+    if cancel is not None and cancel():
+        raise ValueError('silent source preparation cancelled')
     output = request['settings']['output']
     if output['format'] != 'png' or output['bit_depth'] != 8 or output['color_space'] != 'srgb':
         raise ValueError('silent SDR adapter requires actual sRGB PNG8; EXR/HDR needs an explicit separate transform')
