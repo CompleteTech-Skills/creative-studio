@@ -203,7 +203,8 @@ def plan_storyboard_panel(panel, *, subject_bounds, aspect_ratio=16/9):
     optics = selected['camera']['optics']
     uncertain = ['World bounds do not establish occlusion, acting quality or artistic approval.']
     if 'camera_side' not in panel:
-        uncertain.append('Camera side defaults to canonical +Z; the storyboard image does not establish depth.')
+        angle = panel.get('camera_angle', 'eye-level')
+        uncertain.append(f'Camera side derives from the {angle} angle preset; the storyboard image does not establish depth.')
     side = unit(panel.get('camera_side', {'eye-level':[0,0,1], 'high':[0,1,1],
                     'low':[0,-.5,1], 'top-down':[0,1,0]}[panel.get('camera_angle','eye-level')]))
     if abs(float(np.dot(side, [0, 1, 0]))) > .999:

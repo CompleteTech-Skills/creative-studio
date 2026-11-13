@@ -73,7 +73,8 @@ def boundary_continuity(outgoing, incoming, subjects_before, subjects_after, *,
             centers.append(center)
             width, height = state['render']['width'], state['render']['height']
             rectangle = project_bounds(minimum, maximum, world, projection, width, height)
-            screen = project(center, world, projection, width, height)
+            clip = projection @ np.linalg.inv(world) @ np.r_[center, 1.]
+            screen = None if abs(float(clip[3])) < 1e-12 else project(center, world, projection, width, height)
             measurements.append((rectangle, screen, width, height))
         displacement = float(np.linalg.norm(centers[1] - centers[0]))
         if displacement > position_tolerance_m:
@@ -86,10 +87,15 @@ def boundary_continuity(outgoing, incoming, subjects_before, subjects_after, *,
             ratio = max(heights) / max(min(heights), 1e-12)
             if ratio > scale_ratio_limit:
                 warn('subject-screen-scale', subject=subject, ratio=ratio)
-        before_x = measurements[0][1]['pixel'][0] / measurements[0][2] - .5
-        after_x = measurements[1][1]['pixel'][0] / measurements[1][2] - .5
-        if before_x * after_x < -.0001:
-            warn('subject-screen-side', subject=subject, screen_x=[before_x, after_x])
+        if any(item[1] is None for item in measurements):
+            warn('subject-center-unprojectable', subject=subject,
+                 views=['outgoing' if index == 0 else 'incoming'
+                        for index, item in enumerate(measurements) if item[1] is None])
+        else:
+            before_x = measurements[0][1]['pixel'][0] / measurements[0][2] - .5
+            after_x = measurements[1][1]['pixel'][0] / measurements[1][2] - .5
+            if before_x * after_x < -.0001:
+                warn('subject-screen-side', subject=subject, screen_x=[before_x, after_x])
         # Project the actual world displacement through both camera frames.
         movement = centers[1] - centers[0]
         screen_directions = [float(np.dot(movement, world[:3, 0])) for world in (left_world, right_world)]

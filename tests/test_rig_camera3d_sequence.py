@@ -216,6 +216,19 @@ class CatalogAndPresets(unittest.TestCase):
         self.assertTrue(0<=rectangle[1]<rectangle[3]<=360)
         with self.assertRaises(ValueError):plan_storyboard_panel(panel,subject_bounds={})
 
+    def test_continuity_preserves_diagnostics_for_camera_plane_subjects(self):
+        values=fixtures()
+        state=dict(world_matrix=np.eye(4).tolist(),optics=values['optics'],render=values['render'])
+        bounds={'camera-plane':dict(minimum=[-1,-1,-1],maximum=[1,1,1]),
+                'visible':dict(minimum=[-1,-1,-6],maximum=[1,1,-4])}
+        moved=deepcopy(bounds);moved['visible']['maximum'][0]=2
+        result=boundary_continuity(state,state,bounds,moved,
+            props_before={'key':'alice'},props_after={'key':'bob'})
+        codes={warning['code'] for warning in result['warnings']}
+        self.assertIn('subject-center-unprojectable',codes)
+        self.assertIn('subject-position',codes)
+        self.assertIn('prop-state-change',codes)
+
     def test_continuity_uses_actual_camera_projections_and_world_state(self):
         values=fixtures();transform=deepcopy(values['camera']['transform']);transform['translation']=[0,1,5]
         before=dict(world_matrix=world_transform(transform).tolist(),optics=values['optics'],render=values['render'])
