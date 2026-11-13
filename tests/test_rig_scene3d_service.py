@@ -824,12 +824,15 @@ class SceneServiceTests(unittest.TestCase):
         original = scene3d_snapshot._rename_no_replace
         destination = self.root/'race'
         inode = []
-        def race(stage, target):
-            target.mkdir()
-            inode.append(target.stat().st_ino)
-            return original(stage, target)
-        with patch.object(scene3d_snapshot, '_rename_no_replace', race), self.assertRaises(OSError):
+        def race(stage, target, **publication):
+            selected = destination if publication else target
+            selected.mkdir()
+            inode.append(selected.stat().st_ino)
+            return original(stage, target, **publication)
+        with patch.object(scene3d_snapshot, '_rename_no_replace', race), self.assertRaises(OSError) as caught:
             snapshot_project(self.root/'source', destination)
+        import errno
+        self.assertEqual(caught.exception.errno, errno.EEXIST)
         self.assertEqual(destination.stat().st_ino, inode[0])
         self.assertEqual(list(destination.iterdir()), [])
         old = scene3d_snapshot.read_source_bytes
