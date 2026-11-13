@@ -38,7 +38,7 @@ class SoftBodyAdmissionTests(unittest.TestCase):
         world,_=build_softbody_inputs();world['frame_range']['end']=2
         comp=world['components'][0]
         report=dict(ok=True,is_baked=True,world_sha256=digest(canonical(world)),application_version='4.5.3 LTS',application_build='67807e1800cc',operation='simulate',sample_count=2,vertex_count=66,
-            fps=24,fps_base=1,time_scale=1,disk_cache=True,native_settings=dict(mass=comp['mass']/comp['vertex_count'],
+            fps=24,fps_base=1,time_scale=1,disk_cache=True,capabilities=dict(surface_deformation=True,volume_preservation=False,pressure=False,two_way_rigid_coupling=False),native_settings=dict(mass=comp['mass']/comp['vertex_count'],
             friction=0,pull=comp['stiffness'],push=comp['stiffness'],damping=comp['damping']*50,
             step_min=1000,step_max=1000,use_auto_step=False,use_goal=False))
         data=dict(component='ball',samples=[dict(frame=f,positions=[[0,0,0]]*66) for f in range(2)])
@@ -141,6 +141,11 @@ class NativeSoftBodyTests(unittest.TestCase):
                 for label,edit in [
                     ('fixture',lambda path,m:m.update(fixture=False)),
                     ('native-missing',lambda path,m:(path/'softbody.blend').unlink()),
+                    ('blend-malformed',lambda path,m:(path/'softbody.blend').write_bytes(b'invalid')),
+                    ('worker-malformed',lambda path,m:(path/'worker.py').write_bytes(b'invalid')),
+                    ('job-malformed',lambda path,m:(path/'softbody-job.json').write_bytes(b'invalid')),
+                    ('png-malformed',lambda path,m:(path/'initial.png').write_bytes(b'invalid')),
+                    ('point-cache-malformed',lambda path,m:next((path/'blendcache_softbody').glob('*.bphys')).write_bytes(b'invalid')),
                     ('native-clock',lambda path,m:self._change_json(path/'simulate-report.json','fps',12)),
                     ('initial-geometry',lambda path,m:self._collapse_initial(path/'deformation.json'))]:
                     clone=Path(name)/label;shutil.copytree(destination,clone)

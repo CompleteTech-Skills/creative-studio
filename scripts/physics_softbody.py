@@ -122,6 +122,8 @@ class SoftBodyBackend(BlenderBackend):
         require(all(type(v) is int and v>=0 for v in (source_bytes,mesh_vertices,mesh_triangles)) and source_bytes<=MAX_INPUT_BYTES,
                 'PHYSICS_RESOURCE_LIMIT','Invalid geometry resource counts')
         frames=world['frame_range']['end']
+        require(mesh_vertices<=world['budgets']['vertices'] and mesh_triangles<=world['budgets']['triangles'],
+                'PHYSICS_RESOURCE_LIMIT','Aggregate admitted native mesh exceeds geometry budgets')
         memory=512*1024**2+source_bytes*8+mesh_vertices*128
         output=8*1024**2+source_bytes*2+mesh_vertices*frames*128
         require(memory<=world['budgets']['memory_bytes'] and output<=min(world['budgets']['cache_bytes'],world['budgets']['temporary_bytes'],world['budgets']['bake_file_bytes']),
@@ -159,7 +161,9 @@ class SoftBodyBackend(BlenderBackend):
                     with tempfile.TemporaryDirectory(prefix='hatch-softbody-smoke-') as name:
                         cache=Path(name)/'cache';self.bake(result,cache)
                         evidence=dict(verification=self.verify(cache),metrics=metrics(cache),usage=result.usage)
-                        require(evidence['metrics']['maximum_centered_radius_change']>.02,'PHYSICS_SMOKE_FAILED','No measured deformation')
+                        m=evidence['metrics']
+                        require(m['maximum_centered_radius_change']>.02 and .2<m['final_center'][1]<1 and abs(m['final_center'][0])<.1 and abs(m['final_center'][2])<.1 and
+                                m['maximum_tail_vertex_step']<.05,'PHYSICS_SMOKE_FAILED','Native fixture failed deformation, bounded floor response or settling checks')
                 finally:self.cleanup(prepared)
                 state='available';verified=True
                 categories['soft-body']=FeatureCapability(state,True,'Actual deformation and native reopened bake verified')
@@ -259,6 +263,7 @@ def _validate_output(root,world,payloads=None):
     comp=world['components'][0]
     require(report.get('ok') is True and report.get('is_baked') is True and report.get('world_sha256')==digest(canonical(world)) and
         report.get('application_version')=='4.5.3 LTS' and report.get('application_build')=='67807e1800cc' and
+        report.get('capabilities')==dict(surface_deformation=True,volume_preservation=False,pressure=False,two_way_rigid_coupling=False) and
         report.get('operation')=='simulate' and report.get('sample_count')==world['frame_range']['end'] and report.get('vertex_count')==comp['vertex_count'],'PHYSICS_BAKE_FAILED','Native soft-body bake missing or inconsistent')
     require(report.get('fps')==world['fps']['numerator'] and report.get('fps_base')==world['fps']['denominator'] and report.get('time_scale')==1 and report.get('disk_cache') is True,
             'PHYSICS_CACHE_CORRUPT','Native clock or disk cache differs from requested settings')
@@ -338,6 +343,12 @@ def _read_verified_cache(root,*,expected_world_sha256=None):
     require(manifest['fixture']==bundle['project']['provenance']['fixture'],
             'PHYSICS_CACHE_CORRUPT','Fixture status differs from admitted source')
     samples=_validate_output(root,world,payloads)
+    recorded=parse(payloads['simulate-report.json'])
+    fields=('application_version','application_build','sample_count','vertex_count','native_settings','fps','fps_base','time_scale','disk_cache','capabilities')
+    require(all(replay.get(field)==recorded.get(field) for field in fields),'PHYSICS_CACHE_CORRUPT','Reopened native settings and identity differ from bake')
+    require(manifest['usage']['solver_steps']==(world['frame_range']['end']-1)*world['solver']['iterations']*world['solver']['substeps'] and
+            manifest['usage']['peak_memory_bytes']<=world['budgets']['memory_bytes'] and manifest['usage']['elapsed_seconds']<=world['budgets']['timeout_seconds'],
+            'PHYSICS_CACHE_CORRUPT','Recorded execution usage exceeds admitted limits or differs from clock')
     import struct
     component=world['components'][0];count=component['vertex_count']
     prefix='blendcache_softbody/'+component['id'].encode().hex().upper()
@@ -348,7 +359,9 @@ def _read_verified_cache(root,*,expected_world_sha256=None):
         require(len(payload)==20+count*24 and payload[:8]==b'BPHYSICS' and struct.unpack_from('<3I',payload,8)==(0,count,6),
                 'PHYSICS_CACHE_CORRUPT','Malformed or unsupported native soft-body point cache')
         for index,point in enumerate(sample['positions']):
-            native=struct.unpack_from('<3f',payload,20+index*24);observed=(native[0],native[2],-native[1])
+            state=struct.unpack_from('<6f',payload,20+index*24)
+            require(all(math.isfinite(v) for v in state),'PHYSICS_CACHE_CORRUPT','Nonfinite native soft-body state')
+            native=state[:3];observed=(native[0],native[2],-native[1])
             require(all(math.isfinite(a) and abs(a-b)<=1e-5 for a,b in zip(observed,point)),
                     'PHYSICS_CACHE_CORRUPT','Native deformation cache differs from evaluated mesh samples')
     initial=samples['samples'][0]['positions'];source=meshes[world['components'][0]['id']]['positions']
@@ -404,8 +417,7 @@ def main(argv=None):
         backend=SoftBodyBackend(args.blender)
         if args.command=='verify':report=verify_cache(args.cache)
         elif args.command=='inspect':report=inspect_cache(args.cache,args.frame)
-        elif args.command=='probe' and not args.smoke:
-            report=dict(backend=backend._discover(),category='soft-body',status='experimental',smoke_executed=False)
+        elif args.command=='probe':report=backend.probe(smoke=args.smoke).as_dict()
         else:
             from physics_softbody_example import build_softbody_inputs
             world,payloads=build_softbody_inputs();prepared=backend.prepare(world,payloads)
