@@ -133,6 +133,7 @@ def main():
     observed=dict(dissipation_enabled=ds.use_dissolve_smoke,dissipation_frames=ds.dissolve_speed,vorticity=ds.vorticity,
         burning_rate=ds.burning_rate,density_buoyancy=ds.alpha,heat_buoyancy=ds.beta,collision_distance=settings['collision_distance'],
         cfl=ds.cfl_condition,minimum_substeps=ds.timesteps_min,maximum_substeps=ds.timesteps_max)
+    actual_forces = {}
     for force in world['forces']:
         bpy.ops.object.effector_add(type=force['type'].upper(), location=BASIS.to_3x3() @ Vector(force['point']))
         obj = bpy.context.object
@@ -141,6 +142,8 @@ def main():
         if force['type'] == 'wind':
             direction = BASIS.to_3x3() @ Vector(force['vector'])
             obj.rotation_euler = direction.to_track_quat('Z','Y').to_euler()
+        actual_forces[force['id']] = dict(strength=obj.field.strength,seed=obj.field.seed,
+            point=list(obj.location),direction=list(obj.rotation_euler.to_matrix() @ Vector((0,0,1))))
     bpy.context.view_layer.objects.active = domain
     bpy.ops.object.select_all(action='DESELECT')
     domain.select_set(True)
@@ -189,7 +192,7 @@ def main():
         fixed_step_policy='adaptive CFL native substeps; rigid-body fixed_step is not claimed',
         effective_fps=dict(numerator=scene.render.fps,denominator=scene.render.fps_base),
         cfl=ds.cfl_condition,minimum_substeps=ds.timesteps_min,maximum_substeps=ds.timesteps_max,
-        observed_sources=observed_sources,render_frames=settings['render_frames'],world_sha256=job['world_sha256'],settings_sha256=job['settings_sha256'],observed=observed)
+        actual_gravity=list(scene.gravity),actual_forces=actual_forces,observed_sources=observed_sources,render_frames=settings['render_frames'],world_sha256=job['world_sha256'],settings_sha256=job['settings_sha256'],observed=observed)
     (root/'gas-report.json').write_bytes(canonical(report))
 
 

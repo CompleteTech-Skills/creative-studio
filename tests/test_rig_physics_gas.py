@@ -21,6 +21,7 @@ class GasAdmissionTests(unittest.TestCase):
 
     def test_unsupported_native_mapping_fails_before_any_launch(self):
         mutations=[lambda w:w['solver'].update(substeps=2),
+            lambda w:w.update(gravity=[1e6,0,0]),
             lambda w:w['solver'].update(adapter_version='9.9.9'),
             lambda w:w['solver'].update(reproducibility='pinned-numerical'),
             lambda w:w['components'][0].update(density=2.45),

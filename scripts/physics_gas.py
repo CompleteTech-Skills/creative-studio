@@ -89,6 +89,8 @@ def admit(world,settings):
     core.require(Fraction(world['solver']['fixed_step']['numerator'],world['solver']['fixed_step']['denominator']) ==
         Fraction(world['fps']['denominator'],world['fps']['numerator']) and world['solver']['substeps']==1 and world['solver']['iterations']==1,
         'PHYSICS_GAS_UNSUPPORTED','Gas timing requires one output interval; adaptive native CFL controls belong in GasSettings.')
+    core.require(all(abs(value)<=100 for value in world['gravity']),
+        'PHYSICS_GAS_UNSUPPORTED','Gas gravity components must be within 100 m/s².')
     ids={b['id'] for b in world['bodies']}
     roles=domain['emitters']+domain['colliders']
     core.require(1<=len(ids)<=16 and set(roles)==ids and len(roles)==len(set(roles)),
@@ -104,7 +106,8 @@ def admit(world,settings):
             not collider['sensor'] and collider['group']==1 and collider['mask']==2**32-1,
             'PHYSICS_GAS_UNSUPPORTED','Gas inputs require identity unfiltered nonsensor collider transforms.')
     for force in world['forces']:
-        core.require(force['type']=='wind' and force['bodies']==[domain['id']]
+        core.require(force['type']=='wind' and 0<=force['strength']<=100 and 0<=force['seed']<=10000
+            and all(abs(value)<=1000 for value in force['point']) and force['bodies']==[domain['id']]
             and force['categories']==['gas'] and force['frame_range']==world['frame_range']
             and (force['type']!='wind' or abs(sum(x*x for x in force['vector'])-1)<1e-6),
             'PHYSICS_GAS_UNSUPPORTED','Only constant domain wind forces are supported.')
@@ -272,6 +275,7 @@ class GasBackend(core.BlenderBackend):
         core.require(report.get('effective_fps')==world['fps'],
             'PHYSICS_TIME_UNSUPPORTED','Native gas frame rate differs from the requested exact clock.')
         core.blend_container((root/'scene.blend').read_bytes())
+        validate_physics_readback(report,world)
         validate_source_readback(report,world,settings)
         core.require(set(report['observed'])==set(OBSERVED_SETTINGS),'PHYSICS_OUTPUT_MISSING','Missing native setting readback.')
         for key,value in report['observed'].items():
@@ -327,6 +331,24 @@ class GasBackend(core.BlenderBackend):
         except BaseException:
             shutil.rmtree(stage,ignore_errors=True);raise
         return verify_cache(destination)
+
+
+def validate_physics_readback(report,world):
+    def basis(value):return [value[0],-value[2],value[1]]
+    def close(actual,expected):
+        return type(actual) is list and len(actual)==len(expected) and all(type(a) in (int,float)
+            and math.isfinite(a) and abs(a-b)<=1e-5*max(1,abs(b)) for a,b in zip(actual,expected))
+    core.require(close(report.get('actual_gravity'),basis(world['gravity'])),
+        'PHYSICS_CACHE_CORRUPT','Native gas gravity differs from the request.')
+    forces=report.get('actual_forces')
+    core.require(type(forces) is dict and set(forces)=={force['id'] for force in world['forces']},
+        'PHYSICS_CACHE_CORRUPT','Native gas force inventory differs from request.')
+    for force in world['forces']:
+        actual=forces[force['id']]
+        core.require(type(actual) is dict and set(actual)=={'strength','seed','point','direction'}
+            and close([actual['strength']],[force['strength']]) and actual['seed']==force['seed']
+            and close(actual['point'],basis(force['point'])) and close(actual['direction'],basis(force['vector'])),
+            'PHYSICS_CACHE_CORRUPT','Native gas force differs from request.')
 
 
 def validate_source_readback(report,world,settings):
@@ -407,6 +429,7 @@ def _verify_cache(root):
         core.blend_container(blend)
         core.require(replay['mode']=='reopen' and replay['blend_sha256']==core.digest(blend) and replay['frames']==settings['render_frames'],
             'PHYSICS_CACHE_CORRUPT','Native replay does not bind the retained Blender project.')
+        validate_physics_readback(native,world)
         validate_source_readback(native,world,settings)
         core.require(set(native['observed'])==set(OBSERVED_SETTINGS),'PHYSICS_CACHE_CORRUPT','Missing native setting observations.')
         for key,value in native['observed'].items():
