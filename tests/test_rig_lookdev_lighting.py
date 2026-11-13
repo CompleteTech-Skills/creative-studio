@@ -113,6 +113,33 @@ class LightAdmission(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(RigError):
                 _validated(actual)
 
+    def test_shadow_disabled_environment_is_rejected_without_rejecting_supported_worlds(self):
+        import hashlib
+        payload=b'#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 1 +X 2\n'+bytes([128,128,128,129])*2
+        value=source()
+        texture=dict(schema_version=1,id='sky',version='1.0.0',kind='texture3d',dependencies=[],
+                     provenance=value['provenance'],validation_status='unvalidated',capabilities=[],
+                     file={'path':'sky.hdr','sha256':hashlib.sha256(payload).hexdigest(),'bytes':len(payload)},
+                     role='environment',encoding='linear-srgb',width=2,height=1,channels=3,
+                     bit_depth=32,wrap='repeat',filter='linear',normal_orientation='not-applicable')
+        reference=dict(id='sky',version='1.0.0',kind='texture3d',path='texture.json',
+                       sha256=hashlib.sha256(canonical_bytes(texture)).hexdigest())
+        value.pop('radius_meters')
+        value.update(type='environment',environment=reference,dependencies=[reference],
+                     intensity={'value':1.,'unit':'watt-per-square-meter'})
+        for casts_shadow in (True,False):
+            value['casts_shadow']=casts_shadow
+            registry=Registry(
+                [('texture.json',canonical_bytes(texture)),('environment.json',canonical_bytes(value))],
+                payloads={'sky.hdr':payload})
+            pin=registry.reference(value['id'],value['version'])
+            if casts_shadow:
+                self.assertEqual(light_plan(registry,pin)['light']['casts_shadow'],True)
+            else:
+                with self.assertRaises(RigError) as raised:light_plan(registry,pin)
+                self.assertEqual(raised.exception.report['code'],'LIGHT_UNSUPPORTED')
+        self.assertFalse(plan(source(casts_shadow=False))['light']['casts_shadow'])
+
     def test_required_features_are_not_invented(self):
         value=source();value['render_policy']['required_features']=['spectral-renderer']
         with self.assertRaises(RigError):plan(value)

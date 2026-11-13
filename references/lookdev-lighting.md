@@ -81,7 +81,12 @@ explicit and contribute to plan identity.
 Camera background visibility is separated from diffuse/reflection illumination.
 
 Cycles performs native importance sampling, path-traced geometric shadows and
-indirect illumination; it does not substitute an AO texture for GI. EEVEE local
+indirect illumination; it does not substitute an AO texture for GI. Canonical
+`casts_shadow=False` requests shadow-disabled illumination, not merely optional
+shadow support. This adapter cannot disable world shadows independently without
+changing receiver geometry, so it rejects shadow-disabled environments before
+execution. Shadow-casting Cycles worlds remain supported; browser PMREM may have
+a different explicit shadow capability and must keep that source policy separate. EEVEE local
 light objects are supported, while unrestricted path tracing and identical
 transmission/GI are not claimed. Browser lighting, browser HDR prefiltering,
 shadow-map controls and browser/Blender comparisons remain with the preview

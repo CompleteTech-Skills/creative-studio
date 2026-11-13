@@ -138,6 +138,8 @@ def light_plan(registry, reference, *, engine='CYCLES', options=None):
     validate_resource(light)
     kind = light['type']
     opts = _options(options, kind)
+    require(kind != 'environment' or light['casts_shadow'], 'LIGHT_UNSUPPORTED',
+            'Shadow-disabled environment lighting is not supported by this adapter.')
     from lookdev_contracts import check_compatibility
     features = LOCAL_FEATURES | ({'light-environment', 'indirect-lighting', 'light-linking'}
                                  if engine == 'CYCLES' else set())
