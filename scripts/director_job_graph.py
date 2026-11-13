@@ -8,6 +8,7 @@ not silently execute dataflow edges or claim to schedule arbitrary Director DAGs
 from __future__ import annotations
 from copy import deepcopy
 import json
+import unicodedata
 from pathlib import Path
 
 from rig_errors import RigError, object_hash
@@ -46,10 +47,11 @@ class RenderGraphBindings:
         schema = dc.schemas()['director.schema.json']
         Draft202012Validator({'$defs':schema['$defs'], '$ref':'#/$defs/output-execution-graph'}).validate(graph)
         _require(not graph['edges'], 'MVP graph bindings support independent render nodes; materialize dependencies before binding.')
+        _require(len(graph['nodes'])<=2, 'The limited MVP binds at most its two native render jobs.')
         nodes = {node['id']:node for node in graph['nodes']}
         _require(len(nodes) == len(graph['nodes']) and isinstance(bindings,dict) and set(bindings)==set(nodes),
                  'Bind every unique render node exactly once.')
-        jobs = [];files={};identities={};total=0
+        jobs = [];files={};identities={};aliases={};total=0
         for identifier,node in nodes.items():
             _require(node['operation']=='RenderAdapter.submit', 'Only native render nodes are supported by this MVP adapter.')
             binding = bindings[identifier]
@@ -61,6 +63,10 @@ class RenderGraphBindings:
             _require(node['inputs'], 'Render node must retain exact native inputs.')
             for artifact in dc.artifact_references(node['inputs']):
                 path=artifact['path']
+                _require(path==unicodedata.normalize('NFC',path), 'Graph input paths must use Unicode NFC.')
+                alias=path.casefold()
+                _require(alias not in aliases or aliases[alias]==path, 'Case-colliding graph input paths.')
+                aliases[alias]=path
                 identity=(artifact['artifact_id'],artifact['semantic_version'])
                 _require(identity not in identities or identities[identity]==artifact, 'Conflicting exact graph input identity.')
                 identities[identity]=artifact
@@ -131,13 +137,6 @@ class RenderGraphBindings:
         pinned = self.status(identifier,revision=graph_revision,expected_sha256=graph_sha256)
         _require(node in pinned['bindings'], 'Unknown graph node.')
         from director_reliability import resume_verified_job
-        from render3d_snapshot import Scene3DAdapter, NativeRigAdapter, verify_snapshot
-        from rig_errors import read_json
-        native = self.store.status(pinned['bindings'][node]['job'],event_limit=0)
-        metadata = read_json(Path(native['snapshot'])/'snapshot.json')
-        scope = metadata.get('scope')
-        _require(scope in ('scene3d','native-rig-preview'), 'Unsupported native snapshot scope.')
-        verify_snapshot(native['snapshot'],Scene3DAdapter() if scope=='scene3d' else NativeRigAdapter())
         receipt = resume_verified_job(self.store,pinned['bindings'][node]['job'],verifier,expected_revision=job_revision)
         receipt['graph'] = dict(id=identifier,revision=graph_revision,sha256=graph_sha256,node=node)
         return receipt

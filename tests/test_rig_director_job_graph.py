@@ -7,6 +7,7 @@ import unittest
 
 from director_job_graph import RenderGraphBindings
 from render3d_jobs import JobStore
+from render3d_contracts import Render3DError
 from render3d_snapshot import Scene3DAdapter, create_snapshot
 from rig_errors import RigError, object_hash
 from scene3d_example import build_example
@@ -102,9 +103,20 @@ class GraphBindingsTests(unittest.TestCase):
         registered=self.adapter.register('mvp',self.graph,self.binding,self.root)
         before=self.store.status(self.job)
         (self.root/'snapshot/triangle.obj').write_bytes(b'changed payload')
-        with self.assertRaises(RigError):self.adapter.resume_node('mvp','render',None,graph_revision=1,
+        with self.assertRaises(Render3DError):self.adapter.resume_node('mvp','render',None,graph_revision=1,
             graph_sha256=registered['graph_sha256'],job_revision=before['revision'])
         self.assertEqual(self.store.status(self.job),before)
+
+    def test_case_colliding_graph_inputs_rejected_before_any_file_read(self):
+        from unittest.mock import patch
+        import director_contracts as dc
+        graph=deepcopy(self.graph)
+        alias=deepcopy(graph['nodes'][0]['inputs'][0])
+        alias.update(artifact_id='case-alias',path='snapshot/SNAPSHOT.json')
+        graph['nodes'][0]['inputs'].append(alias)
+        with patch.object(dc,'_read_artifact') as read:
+            with self.assertRaises(RigError):self.adapter.register('case-alias',graph,self.binding,self.root)
+            read.assert_not_called()
 
     def test_graph_cannot_substitute_unrelated_valid_input_for_native_snapshot(self):
         graph=deepcopy(self.graph)

@@ -42,7 +42,7 @@ this adapter has no scheduler or copied execution state. Registration, status an
 resume verify exact graph inputs and native bindings. A stale graph hash/revision
 or changed snapshot fails before changing native state.
 
-The limited MVP supports independent `RenderAdapter.submit` nodes only. Its edge
+The limited MVP supports at most two independent `RenderAdapter.submit` nodes. Its edge
 set must be empty because all source dependencies must already be materialized;
 it rejects arbitrary execution methods and pending dataflow edges. This is not an
 implementation of the broader execution service or compiler. The native proof
