@@ -332,13 +332,84 @@ def verify_package(root) -> dict:
     return _verify(root)[2]
 
 
+def _incomplete_diagnostics(root):
+    """Bounded declared inventory diagnostics; never an alternate verifier."""
+    index = decode_json(_read(root, INDEX, MAX_INDEX_BYTES))
+    if (not isinstance(index, dict) or
+        object_hash({k: v for k, v in index.items() if k != 'sha256'}) != index.get('sha256')):
+        fail('HASH', 'Cannot diagnose an unbound package index.')
+    members = index.get('members'); assets = index.get('assets')
+    if (not isinstance(members, dict) or not 1 <= len(members) < MAX_FILES or
+        not isinstance(assets, list) or len(assets) > 4096):
+        fail('LIMIT', 'Diagnostic inventory exceeds its bounds.')
+    actual = _inventory(root); total = 0; problems = {}
+    for path, record in members.items():
+        portable_path(path); _keys(record, ('bytes', 'sha256'), 'Diagnostic member')
+        if type(record['bytes']) is not int or not 1 <= record['bytes'] <= MAX_FILE_BYTES:
+            fail('LIMIT', 'Diagnostic member exceeds byte bounds.')
+        total += record['bytes']
+        if total > MAX_BYTES:
+            fail('LIMIT', 'Diagnostic package exceeds byte bounds.')
+        if path not in actual:
+            problems[path] = dict(code='MISSING_MEMBER', path=path, expected=record, affected_assets=[])
+        else:
+            try:
+                valid = _record(_read(root, path, record['bytes'])) == record
+            except (RigError, OSError):
+                valid = False
+            if not valid:
+                problems[path] = dict(code='CORRUPT_MEMBER', path=path, expected=record, affected_assets=[])
+    for path in sorted(actual - set(members) - {INDEX}):
+        problems[path] = dict(code='EXTRA_MEMBER', path=path, affected_assets=[])
+    for asset in assets:
+        _keys(asset, ('location', 'manifest'), 'Diagnostic asset')
+        # Validate the declared exact locator before exposing it to a caller.
+        from asset_library_dependencies import location
+        locator = location(asset['location'])
+        path = asset['manifest']; portable_path(path)
+        if path in problems:
+            problems[path]['affected_assets'].append(locator)
+            continue
+        if path not in members:
+            continue
+        raw = _read(root, path, MAX_INDEX_BYTES)
+        if _record(raw) != members[path]:
+            continue
+        manifest = load_manifest(raw)
+        if (manifest['identity']['id'], manifest['version'], manifest['manifest_sha256']) != location_key(locator)[1:]:
+            continue
+        for file in manifest['files']:
+            blob = 'blobs/' + file['sha256']
+            if blob in problems:
+                row = problems[blob]
+                if locator not in row['affected_assets']:
+                    row['affected_assets'].append(locator)
+                row.setdefault('logical_files', []).append(dict(asset=locator, path=file['path'],
+                                                               sha256=file['sha256']))
+    ordered = [problems[path] for path in sorted(problems)]
+    # Bound nested fanout as well as the number of diagnostic paths.
+    for row in ordered:
+        row['affected_asset_count'] = len(row['affected_assets'])
+        row['affected_assets'] = row['affected_assets'][:128]
+        if 'logical_files' in row:
+            row['logical_file_count'] = len(row['logical_files'])
+            row['logical_files'] = row['logical_files'][:128]
+    return dict(diagnostics=ordered[:128], diagnostic_count=len(ordered),
+                diagnostics_truncated=len(ordered) > 128)
+
+
 def inspect_package(root) -> dict:
     """Read-only diagnostic; never labels a manifest-only package ready."""
     try:
         return verify_package(root)
     except (RigError, OSError, ValueError, KeyError, TypeError) as exc:
-        return dict(verified=False, state='incomplete', completeness='incomplete',
-                    production_ready=False, public_distribution_authorized=False, error=str(exc))
+        result = dict(verified=False, state='incomplete', completeness='incomplete',
+                      production_ready=False, public_distribution_authorized=False, error=str(exc))
+        try:
+            result.update(_incomplete_diagnostics(root))
+        except (RigError, OSError, ValueError, KeyError, TypeError) as diagnostic_error:
+            result.update(diagnostics=[], diagnostic_count=0, diagnostics_unavailable=str(diagnostic_error))
+        return result
 
 
 def restore_package(root, destination) -> dict:

@@ -63,7 +63,14 @@ class PackageTests(unittest.TestCase):
         for label in ['missing', 'corrupt']:
             if label == 'missing': blob.unlink()
             else: blob.write_bytes(b'X' * len(original))
-            self.assertEqual(inspect_package(self.package)['state'], 'incomplete')
+            diagnostic = inspect_package(self.package)
+            self.assertEqual(diagnostic['state'], 'incomplete')
+            row = next(d for d in diagnostic['diagnostics'] if d['path'] == blob.relative_to(self.package).as_posix())
+            self.assertEqual(row['expected']['sha256'], self.fixture.files[0]['sha256'])
+            self.assertEqual(row['code'], 'MISSING_MEMBER' if label == 'missing' else 'CORRUPT_MEMBER')
+            self.assertIn(locator('local', self.mesh), row['affected_assets'])
+            self.assertIn(locator('local', self.character), row['affected_assets'])
+            self.assertEqual(row['logical_files'][0]['path'], 'mesh/triangle.obj')
             target = self.root / label
             with self.assertRaises((RigError, FileNotFoundError)):
                 restore_package(self.package, target)
