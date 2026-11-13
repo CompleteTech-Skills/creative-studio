@@ -21,7 +21,7 @@ def capabilities():
         packages[distribution] = dict(installed=importlib.util.find_spec(module) is not None, version=version)
     return dict(schema_version=1, implementation_version=VERSION, discovery_only=True,
                 packages=packages, limits=LIMITS,
-                implemented=['strict-contract-validation', 'hash-bound-payload-snapshot',
+                implemented=['bounded-local-mesh-foundation', 'strict-contract-validation', 'hash-bound-payload-snapshot',
                              'dependency-closure-validation', 'existing-GLB-glTF-OBJ-inspection'],
                 not_implemented=['model3d-generation', 'reconstruction', 'provider-execution',
                                  'model3d-job-scheduler', 'model3d-editing', 'model3d-review-approval'],
@@ -32,6 +32,8 @@ def capabilities():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
+    mesh = commands.add_parser('mesh', help='Bounded primitive/import/measurement/export workflows.')
+    mesh.add_argument('mesh_args', nargs=argparse.REMAINDER)
     commands.add_parser('capabilities', help='Report installed packages without network or provider calls.')
     validate = commands.add_parser('validate', help='Validate contracts, exact payload closure and actual asset geometry.')
     validate.add_argument('--file', required=True, help='Model3D JSON document.')
@@ -39,6 +41,9 @@ def main(argv=None):
     validate.add_argument('--structural-only', action='store_true', help='Do not read payloads; does NOT establish asset readiness.')
     args = parser.parse_args(argv)
     try:
+        if args.command == 'mesh':
+            from model3d_mesh import main as mesh_main
+            return mesh_main(args.mesh_args)
         if args.command == 'capabilities':
             result = capabilities()
         else:

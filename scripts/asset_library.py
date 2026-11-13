@@ -16,6 +16,9 @@ import sqlite3
 import stat
 from typing import Protocol
 
+from asset_library_types import (AssetAnnotations, AssetFile, AssetRef, AssetVersion,
+                                 SceneAssetReference)
+
 from asset_library_contracts import (MAX_FILE_BYTES, MAX_MANIFEST_BYTES,
     MAX_VERSION_BYTES, canonical_bytes, load_manifest, portable_path, validate)
 from rig_errors import RigError, decode_json, object_hash
@@ -25,8 +28,8 @@ MAX_VERSIONS = 4096
 
 
 class AssetResolver(Protocol):
-    def resolve(self, reference: dict) -> dict: ...
-    def read_file(self, reference: dict, path: str) -> bytes: ...
+    def resolve(self, reference: AssetRef) -> AssetVersion: ...
+    def read_file(self, reference: AssetRef, path: str) -> bytes: ...
 
 
 def _fail(code, message, path=None):
@@ -106,7 +109,7 @@ def _read_source_bytes(path, limit=MAX_FILE_BYTES):
     return payload
 
 
-def read_source_bytes(path, limit=MAX_FILE_BYTES):
+def read_source_bytes(path: str | Path, limit: int | float = MAX_FILE_BYTES) -> bytes:
     """Read exact bounded source bytes or return a structured library diagnostic."""
     try:
         return _read_source_bytes(path, limit)
@@ -115,7 +118,7 @@ def read_source_bytes(path, limit=MAX_FILE_BYTES):
                        asset=str(path)) from exc
 
 
-def detect_format(payload):
+def detect_format(payload: bytes) -> tuple[str, str]:
     """Header recognition, not a geometric/semantic format validator."""
     if payload.startswith(b'glTF'): return 'glb', 'model/gltf-binary'
     if payload.startswith(b'\x89PNG\r\n\x1a\n'): return 'png', 'image/png'
@@ -136,7 +139,8 @@ def detect_format(payload):
     return 'binary', 'application/octet-stream'
 
 
-def file_record(source, path, role='source', required=True):
+def file_record(source: str | Path, path: str, role: str = 'source',
+                required: bool = True) -> AssetFile:
     portable_path(path)
     payload = read_source_bytes(source, MAX_FILE_BYTES)
     fmt, mime = detect_format(payload)
@@ -210,7 +214,7 @@ class AssetLibrary:
         finally:
             db.close()
 
-    def register(self, manifest, sources):
+    def register(self, manifest: AssetVersion, sources: dict[str, str | Path]) -> AssetRef:
         """Register all inventoried logical files from explicit source paths.
 
         Files are always re-read and hashed; a supplied manifest never certifies
@@ -298,7 +302,7 @@ class AssetLibrary:
             if not row or len(row[0]) != f['bytes'] or hashlib.sha256(row[0]).hexdigest() != f['sha256']:
                 _fail('CORRUPT', 'Required inventoried content is absent or corrupt.', f['path'])
 
-    def resolve(self, reference):
+    def resolve(self, reference: AssetRef) -> AssetVersion:
         validate(reference, 'AssetRef')
         with self._connect() as db:
             visited, pending = set(), [reference]
@@ -317,7 +321,7 @@ class AssetLibrary:
                 pending.extend(manifest['metadata']['style_refs'])
             return first
 
-    def read_file(self, reference, path):
+    def read_file(self, reference: AssetRef, path: str) -> bytes:
         portable_path(path)
         manifest = self.resolve(reference)
         f = next((x for x in manifest['files'] if x['path'] == path), None)
@@ -328,7 +332,7 @@ class AssetLibrary:
                 _fail('CORRUPT', 'Payload changed during retrieval.', path)
             return row[0]
 
-    def annotations(self, reference):
+    def annotations(self, reference: AssetRef) -> AssetAnnotations:
         with self._connect() as db:
             self._lookup(db, reference)
             row = db.execute('SELECT document FROM annotations WHERE id=? AND version=?',
@@ -338,7 +342,8 @@ class AssetLibrary:
             if result['asset'] != reference: _fail('CORRUPT', 'Annotation identity differs from its asset.')
             return result
 
-    def update_annotations(self, reference, *, expected_revision, tags, favorite, note):
+    def update_annotations(self, reference: AssetRef, *, expected_revision: int | float,
+                           tags: list[str], favorite: bool, note: str) -> AssetAnnotations:
         expected_revision = _bounded_integer(expected_revision, 0, 2**53-1,
                                              code='REVISION', label='Expected revision')
         replacement = dict(schema_version=1, asset=reference, revision=expected_revision + 1,
@@ -353,7 +358,7 @@ class AssetLibrary:
             if count != 1: _fail('CONFLICT', 'Annotation revision is stale; reload before editing.')
         return replacement
 
-    def scene_reference(self, reference, path):
+    def scene_reference(self, reference: AssetRef, path: str) -> SceneAssetReference:
         manifest = self.resolve(reference)
         self.read_file(reference, path)
         return dict(id=reference['id'], version=reference['version'], path=path,
@@ -361,7 +366,7 @@ class AssetLibrary:
                     kind=manifest['identity']['kind'])
 
 
-def legacy_roundtrip(kind, payload):
+def legacy_roundtrip(kind: str, payload: bytes) -> bytes:
     """Validate through native authority and return the *original* source bytes.
 
     This adapter registers preserved native documents; it never upgrades a
