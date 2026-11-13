@@ -78,6 +78,17 @@ class TimelineTests(unittest.TestCase):
         for frame in (dict(numerator=1,denominator=0),24,True):
             with self.subTest(frame=frame),self.assertRaises(RigError):evaluate_timeline(self.repo,{**body,'frame':frame})
 
+    def test_scene_lifecycle_and_shot_deletion_preserve_selected_closure(self):
+        first=self.apply([dict(operation='scene-create',source='example-scene.json',id='new-scene',name='New')])
+        ref=next(r for r in first['project']['scenes'] if r['id']=='new-scene')
+        second=self.apply([dict(operation='scene-rename',document=ref['path'],name='Renamed')])
+        ref=next(r for r in second['project']['scenes'] if r['id']=='new-scene')
+        third=self.apply([dict(operation='scene-delete',document=ref['path'])])
+        self.assertEqual(len(third['project']['scenes']),1)
+        before=self.repo.snapshot()
+        with self.assertRaises(RigError):self.apply([dict(operation='scene-delete',document=before['project']['scenes'][0]['path'])])
+        self.assertEqual(self.repo.snapshot(),before)
+
     def test_prepare_never_mutates_input(self):
         snap=self.repo.snapshot();before=deepcopy(snap)
         prepare_timeline_commands(snap,[self.key(0,[5,0,0])]);self.assertEqual(snap,before)

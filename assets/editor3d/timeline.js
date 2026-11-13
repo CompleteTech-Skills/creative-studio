@@ -1,5 +1,5 @@
 /* Exact saved-revision timeline. All persistent edits receive backend acknowledgement. */
-export function mountTimeline({container,api,getSnapshot,getSelection,preview,clearPreview,reload,onSelect}) {
+export function mountTimeline({container,api,getSnapshot,getSelection,preview,clearPreview,reload,onSelect,registerCommitInterceptor}) {
   let snapshot=null,shotPath='',request=0,disposed=false,playing=false,clock=0,firstFrame=0,raf=0;
   const root=document.createElement('section');root.setAttribute('aria-label','Animation timeline');
   const status=document.createElement('p');status.setAttribute('role','status');
@@ -10,6 +10,16 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   const value=document.createElement('input');value.value='[0,0,0]';value.setAttribute('aria-label','Key value as JSON');
   const interpolation=document.createElement('select');interpolation.setAttribute('aria-label','Track interpolation');
   for(const mode of ['linear','step','slerp']){const o=document.createElement('option');o.value=mode;o.textContent=mode;interpolation.append(o);}
+  const autokey=document.createElement('input');autokey.type='checkbox';autokey.setAttribute('aria-label','Autokey transforms at selected frame');autokey.disabled=typeof registerCommitInterceptor!=='function';
+  const autoLabel=document.createElement('label');autoLabel.append(autokey,document.createTextNode(' Autokey transforms'));
+  const unregister=registerCommitInterceptor?.(({commands,expected_revision,expected_sha256,transaction_id,snapshot:current})=>{
+    if(!autokey.checked||!commands.some(c=>c.operation==='transform'))return null;
+    if(commands.some(c=>c.operation!=='transform'))throw Error('Autokey requires a transform-only transaction.');
+    if(!current.project.shots.some(ref=>ref.path===shotPath))throw Error('Reload and select the current shot before autokey.');
+    const at=Number(frame.value);if(!Number.isSafeInteger(at)||at<0||at>=current.documents[shotPath].duration_frames)throw Error('Autokey frame must be inside the selected shot.');
+    const keys=[];for(const cmd of commands)for(const channel of ['translation','rotation','scale'])keys.push({operation:'key-upsert',document:shotPath,target:cmd.parameters.identifier,property:channel,frame:at,value:structuredClone(cmd.parameters.transform[channel])});
+    return {route:'timeline/edit',body:{expected_revision,expected_sha256,transaction_id,commands:keys}};
+  });
   const tracks=document.createElement('div');tracks.setAttribute('aria-label','Saved tracks and keys');
   function message(text){if(!disposed)status.textContent=text;}
   function button(label,fn){const b=document.createElement('button');b.textContent=label;b.addEventListener('click',()=>Promise.resolve().then(fn).catch(e=>message(e.message)));return b;}
@@ -32,7 +42,7 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   const move=document.createElement('input');move.type='number';move.min='0';move.step='1';move.value='1';move.setAttribute('aria-label','Move selected key to frame');
   const duration=document.createElement('input');duration.type='number';duration.min='1';duration.step='1';duration.setAttribute('aria-label','Shot duration in frames');
   const camera=document.createElement('select');camera.setAttribute('aria-label','Shot camera');
-  root.append(shot,frame,button('Scrub',()=>scrub()),play,button('Return to authored scene',()=>{stop();++request;clearPreview();}),property,value,interpolation,
+  root.append(autoLabel,shot,frame,button('Scrub',()=>scrub()),play,button('Return to authored scene',()=>{stop();++request;clearPreview();}),property,value,interpolation,
     button('Insert or replace key',()=>edit([{...command('key-upsert'),frame:Number(frame.value),value:JSON.parse(value.value),interpolation:interpolation.value}])),
     button('Delete key',()=>edit([{...command('key-delete'),frame:Number(frame.value)}])),move,
     button('Move key',()=>edit([{...command('key-move'),frame:Number(frame.value),to_frame:Number(move.value)}])),
@@ -54,8 +64,8 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   function renderShot(){const doc=snapshot?.documents[shotPath];if(!doc)return;frame.max=String(doc.duration_frames-1);frame.value=String(Math.min(Number(frame.value),doc.duration_frames-1));duration.value=String(doc.duration_frames);
     const scene=snapshot.documents[doc.scene.path];camera.replaceChildren();for(const id of scene.cameras){const o=document.createElement('option');o.value=id;o.textContent=id;camera.append(o);}camera.value=doc.camera;
     tracks.replaceChildren();for(const track of doc.tracks){const line=document.createElement('p');line.textContent=`${track.target} · ${track.property} · ${track.interpolation}: `;
-      for(const key of track.keys){line.append(button(String(key.frame),()=>{frame.value=String(key.frame);if(track.target!=='world')onSelect?.([track.target]);property.value=track.property;interpolation.value=track.interpolation;value.value=JSON.stringify(key.value);return scrub();}));}tracks.append(line);}
+      for(const key of track.keys){line.append(button(String(key.frame),()=>{frame.value=String(key.frame);if(track.target!=='world')onSelect?.(track.target);property.value=track.property;interpolation.value=track.interpolation;value.value=JSON.stringify(key.value);return scrub();}));}tracks.append(line);}
   }
   shot.addEventListener('change',()=>{stop();++request;clearPreview();shotPath=shot.value;renderShot();});
-  return {refresh(next){stop();++request;snapshot=next;clip.replaceChildren();for(const ref of next.project.animations){const option=document.createElement('option');option.value=ref.path;option.textContent=ref.id+' '+ref.version;clip.append(option);}shot.replaceChildren();for(const ref of next.project.shots){const o=document.createElement('option');o.value=ref.path;o.textContent=next.documents[ref.path].name;shot.append(o);}if(!next.documents[shotPath]||!next.project.shots.some(r=>r.path===shotPath))shotPath=next.project.shots[0]?.path||'';shot.value=shotPath;renderShot();},dispose(){disposed=true;stop();++request;root.remove();}};
+  return {refresh(next){stop();++request;snapshot=next;clip.replaceChildren();for(const ref of next.project.animations){const option=document.createElement('option');option.value=ref.path;option.textContent=ref.id+' '+ref.version;clip.append(option);}shot.replaceChildren();for(const ref of next.project.shots){const o=document.createElement('option');o.value=ref.path;o.textContent=next.documents[ref.path].name;shot.append(o);}if(!next.documents[shotPath]||!next.project.shots.some(r=>r.path===shotPath))shotPath=next.project.shots[0]?.path||'';shot.value=shotPath;renderShot();},dispose(){disposed=true;stop();++request;unregister?.();root.remove();}};
 }
