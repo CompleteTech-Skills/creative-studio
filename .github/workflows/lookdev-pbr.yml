@@ -9,8 +9,10 @@ jobs:
   surface-contracts:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-rig-test.txt
@@ -18,8 +20,10 @@ jobs:
   physical-surfaces:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-rig-test.txt
@@ -46,7 +50,7 @@ jobs:
           HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
           HATCH_LOOKDEV_TEXTURE_TEST: '1'
           HATCH_LOOKDEV_TEXTURE_EVIDENCE: /tmp/lookdev-texture-evidence
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: lookdev-pbr-evidence
