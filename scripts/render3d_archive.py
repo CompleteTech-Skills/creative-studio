@@ -51,7 +51,9 @@ def _inventory(root):
                 size=entry.stat(follow_symlinks=False).st_size;total+=size
                 require(size<=MAX_FILE and total<=MAX_TOTAL,'storage-exhaustion','Archive byte budget exceeded.')
                 digest=hashlib.sha256()
-                with open(entry.path,'rb') as stream:
+                fd=os.open(entry.path,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_BINARY',0))
+                with os.fdopen(fd,'rb') as stream:
+                    require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode),'invalid-input','Archive source changed file type.')
                     count=0
                     for block in iter(lambda:stream.read(1024**2),b''):
                         count+=len(block);require(count<=size,'stale-asset','Archive input grew during read.');digest.update(block)
@@ -62,7 +64,7 @@ def _inventory(root):
 
 def _copy_file(source,target,record):
     target.parent.mkdir(parents=True,exist_ok=True)
-    flags=os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_BINARY',0)
+    flags=os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_BINARY',0)
     fd=os.open(source,flags);digest=hashlib.sha256();count=0
     with os.fdopen(fd,'rb') as stream,target.open('xb') as output:
         require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode),'invalid-input','Archive input must be regular.')

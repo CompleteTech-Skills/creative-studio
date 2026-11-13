@@ -61,3 +61,15 @@ class Archives(unittest.TestCase):
             with patch('render3d_archive._rename_no_replace',side_effect=race):
                 with self.assertRaises(Render3DError):restore_render(root/'film.zip',destination)
             self.assertEqual((destination/'user').read_text(),'retain')
+
+    @unittest.skipUnless(hasattr(__import__('os'),'mkfifo'),'FIFO support required')
+    def test_inventoried_file_replaced_with_fifo_rejects_without_blocking(self):
+        import os
+        import render3d_archive as module
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'source';source.mkdir()
+            item=source/'file';item.write_bytes(b'original')
+            inventory=module._inventory(source)
+            item.unlink();os.mkfifo(item)
+            with self.assertRaises(Render3DError):
+                module._copy_file(item,root/'target',inventory[0])
