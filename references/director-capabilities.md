@@ -76,3 +76,18 @@ python scripts/director_capabilities.py --request probe-request.json \
 No Director scheduler, provider, asset generator, browser editor or complete
 film is implemented here. These capabilities unblock explicit downstream
 admission only. Parent Director acceptance remains outstanding.
+
+## Retained validation
+
+The [November 13 execution](../tests/results/director-capabilities-20261113/verification.json)
+contains actual Blender 4.5.3 LTS CPU/GPU render receipts, FFmpeg 9.0.2 H.264,
+VP9 and AV1 movies, exact frame/audio-stream verification, and three native
+imported triangle files. All eight execution probes passed. Scene contracts and
+native acquisition were explicitly untested; the planning provider was
+unavailable. These historical one-hour snapshots are expired after their
+recorded time and cannot authorize new work without fresh probing.
+
+All 16 focused tests passed. The 13 ordinary tests also passed with optional
+3D imports blocked. Three native importer/evidence tests are registered only in
+the optional native schema/math gate, preserving the 2D dependency boundary.
+No provider calls or production film acceptance is claimed.
