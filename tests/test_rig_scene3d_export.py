@@ -72,9 +72,14 @@ class SceneExportTests(unittest.TestCase):
         shot_path=next(r['path'] for r in bundle['project']['shots'] if bundle['documents'][r['path']]['scene']['path']==scene_path)
         with self.assertRaises(RigError):export_scene_frame(self.root/'scaled',scene_path,shot_path,0,self.root/'scaled-output')
         self.assertFalse((self.root/'scaled-output').exists())
-        export_scene_frame(self.source,'example-scene','example-shot',0,self.root/'perspective')
+        graph=SceneGraph.from_bundle(self.bundle,'example-scene.json',source_root=self.source)
+        scene=graph.document();scene['shots'].append('wide-shot');graph.replace_document(scene,expected_revision=graph.revision)
+        wide=deepcopy(self.bundle['documents']['example-shot.json']);wide['id']='wide-shot';wide['render']['width']=192
+        saved=snapshot_project(self.source,self.root/'wide',graph,scene_path='example-scene.json',shot_documents=[wide])
+        bundle=load_project(self.root/'wide');shot_path=next(r['path'] for r in bundle['project']['shots'] if r['id']=='wide-shot')
+        export_scene_frame(self.root/'wide',saved['active_scene']['path'],shot_path,0,self.root/'perspective')
         definition=read_gltf(self.root/'perspective/scene.glb').json['cameras'][0]['perspective']
-        self.assertEqual(definition['aspectRatio'],1.)
+        self.assertEqual(definition['aspectRatio'],1.5)
 
     def test_exact_scalar_lookdev_override_uses_canonical_primitive_mapping(self):
         import hashlib
@@ -104,6 +109,39 @@ class SceneExportTests(unittest.TestCase):
         primitive=doc['meshes'][0]['primitives'][0]
         self.assertEqual(doc['materials'][primitive['material']]['pbrMetallicRoughness']['baseColorFactor'],[1.,0.,0.,1.])
         self.assertIn('paint.json',report['lookdev_closure']['inventory'])
+
+    def test_actual_imported_skinned_animation_exports_distinct_frozen_frames(self):
+        from asset_library import AssetLibrary
+        from rig_gltf import export_gltf
+        from rig_test_helpers import fixture
+        from scene3d_import import import_gltf,add_import
+        rig=fixture(self.root,name='actor');source=self.root/'actor.glb';export_gltf(rig,source)
+        license_path=self.root/'license.txt';license_path.write_text('CC0-1.0 test fixture')
+        library=AssetLibrary(self.root/'library',create=True)
+        imported=import_gltf(source,library,asset_id='actor',attribution='Test author',license_file=license_path)
+        graph=SceneGraph.from_bundle(self.bundle,'example-scene.json',source_root=self.source)
+        add_import(graph,imported,'actor')
+        scene=graph.document();root=next(n for n in scene['nodes'] if n['id']=='actor')
+        bend=next(r for r in imported.asset['animations'] if r['id']==imported.report['native_clip_map']['bend'])
+        root['animation_bindings']=[dict(target='actor',clip=bend,start_frame=0,end_frame=24,speed=1,loop=False)]
+        graph.replace_document(scene,expected_revision=graph.revision)
+        manifest=library.resolve(imported.library_reference)
+        payloads={r['path']:library.read_file(imported.library_reference,r['path']) for r in manifest['files']
+                  if r['path']!=imported.asset_reference['path']}
+        saved=snapshot_project(self.source,self.root/'animated',graph,scene_path='example-scene.json',
+            derived_documents={imported.asset_reference['path']:imported.asset},extra_payloads=payloads)
+        bundle=load_project(self.root/'animated');scene_path=saved['active_scene']['path']
+        shot_path=next(r['path'] for r in bundle['project']['shots'] if bundle['documents'][r['path']]['scene']['path']==scene_path)
+        a=export_scene_frame(self.root/'animated',scene_path,shot_path,0,self.root/'frame0')
+        b=export_scene_frame(self.root/'animated',scene_path,shot_path,12,self.root/'frame12')
+        self.assertNotEqual(a['output']['sha256'],b['output']['sha256'])
+        self.assertEqual((a['meshes'],a['vertices'],a['triangles']),(b['meshes'],b['vertices'],b['triangles']))
+        from rig_import import load_character_model
+        import numpy as np
+        first=load_character_model(self.root/'frame0/scene.glb').geometry.by_id()
+        second=load_character_model(self.root/'frame12/scene.glb').geometry.by_id()
+        self.assertGreater(max(np.max(np.abs(first[k].positions-second[k].positions)) for k in first),.05)
+        self.assertTrue(a['native_reimport']['ok'] and b['native_reimport']['ok'])
 
     def test_new_destination_exclusive_and_frame_rejection(self):
         occupied=self.root/'occupied';occupied.mkdir();(occupied/'mine').write_text('preserve')
