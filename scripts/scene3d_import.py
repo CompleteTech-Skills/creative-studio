@@ -583,26 +583,9 @@ def _load_verified_native(imported, native_root):
     require(len(manifests) == 1, 'Imported asset needs one exact native manifest.')
     prefix = manifests[0]['path'][:-len('rig.json')]
     records = [r for r in imported.asset['dependencies'] if r['path'].startswith(prefix)]
-    require(0 < len(records) <= DEFAULT_LIMITS['archive_files'], 'Native dependency count exceeds its bound.')
-    seen, total = set(), 0
-    # The private closure remains alive until every legacy loader has finished;
-    # no later read can return to a mutable caller-owned package.
-    with tempfile.TemporaryDirectory(prefix='scene3d-native-admission-') as temporary:
-        admitted = Path(temporary)
-        for record in records:
-            relative = record['path'][len(prefix):]
-            portable_path(relative)
-            require(relative not in seen, 'Native dependency inventory repeats a path.')
-            seen.add(relative)
-            remaining = DEFAULT_LIMITS['dependency_bytes'] - total
-            require(remaining > 0, 'Native dependency bytes exceed their aggregate bound.')
-            payload = read_source_bytes(Path(native_root)/relative, min(MAX_FILE_BYTES, remaining))
-            require(hashlib.sha256(payload).hexdigest() == record['sha256'],
-                    'Native dependency differs from registered exact bytes.', 'SCENE3D_SOURCE_CHANGED')
-            total += len(payload)
-            target = admitted/relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(payload)
+    from scene3d_capture import capture_verified_native
+    relative_inventory = [dict(record, path=record['path'][len(prefix):]) for record in records]
+    with capture_verified_native(native_root, 'rig.json', relative_inventory) as admitted:
         return load_rig(admitted)
 
 
