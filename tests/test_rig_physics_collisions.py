@@ -120,6 +120,14 @@ class CollisionNativeTests(unittest.TestCase):
             cache=self.root/name
             self.backend.bake(result,cache)
             self.assertEqual(physics.verify_cache(cache)['status'],'hash-and-contract-verified')
+            from physics_backend_evidence import direct_report, EvidenceError
+            report=physics.parse((cache/'worker-report.json').read_bytes())
+            for observed in report['actual_bodies']:
+                candidate=deepcopy(report)
+                index=report['actual_bodies'].index(observed)
+                candidate['actual_bodies'][index]['margin_semantics']='inherent sphere radius' if observed['margin_semantics']=='explicit proxy margin' else 'explicit proxy margin'
+                with self.assertRaises(EvidenceError):direct_report(candidate,world)
+
             return cache,physics.parse((cache/'states.json').read_bytes()),physics.parse((cache/'contacts.json').read_bytes())
         finally:self.backend.cleanup(prepared)
 

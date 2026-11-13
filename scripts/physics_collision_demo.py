@@ -43,7 +43,7 @@ def demonstrate(destination, *, interpreter=None):
             verification=verification,world_sha256=result.world_sha256,backend=result.backend,usage=result.usage,
             contact_count=len(observed),minimum_contact_distance=min(contact['distance'] for contact in observed),
             excluded_pair_contacts=len(excluded),excluded_final_position=trajectories['excluded'][-1],
-            projectile_trajectory=trajectories['projectile'],high_speed_policy='40 m/s projectile with discrete stepping; observed contacts and tunneling retained without a CCD guarantee',
+            projectile_trajectory=trajectories['projectile'],high_speed_policy='25 m/s projectile with discrete stepping; observed contacts and tunneling retained without a CCD guarantee',
             contact_impulse_policy='instantaneous native normal force multiplied by one effective solver step; not accumulated frame impulse',
             previews=previews,source='actual Bullet rigid-body states rendered at every eighth cached output frame')
         physics._write(stage/'acceptance.json',physics.canonical(report))

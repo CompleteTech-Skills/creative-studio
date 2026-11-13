@@ -147,10 +147,16 @@ def direct_report(value,world):
          all(integer(value[key]) for key in ('sample_count','object_count','actual_solver_steps')) and
          value['cache_storage']=='immutable native transform/contact samples' and value['restart']=='clean-restart-only','Invalid DIRECT observations.')
     need(type(value['actual_bodies']) is list and len(value['actual_bodies'])==len(world['bodies']),'Invalid DIRECT body observations.')
-    for body in value['actual_bodies']:
+    for index,body in enumerate(value['actual_bodies']):
+        semantic_options=('inherent sphere radius','transformed primitive wrapper margin','explicit box collision margin')
+        if world.get('collision_profile')=='explicit-proxies-v1':
+            source=world['bodies'][index]
+            control=value['rigid_controls']['bodies'][index]
+            wrapped=any(control['inertial_position']) or abs(abs(control['inertial_rotation'][3])-1)>1e-10
+            semantic_options=('inherent sphere radius',) if source['colliders'][0]['shape']['type']=='sphere' and not wrapped else ('explicit proxy margin',)
         object_fields(body,('id','mass','friction','inertia','center_of_mass','restitution','native_margin','margin_semantics'),'DIRECT body')
         need(type(body['id']) is str and all(number(body[key]) for key in ('mass','friction','restitution','native_margin')) and
-             vector(body['inertia']) and vector(body['center_of_mass']) and body['margin_semantics'] in (('explicit proxy margin',) if world.get('collision_profile')=='explicit-proxies-v1' else ('inherent sphere radius','transformed primitive wrapper margin','explicit box collision margin')),
+             vector(body['inertia']) and vector(body['center_of_mass']) and body['margin_semantics'] in semantic_options,
              'Invalid DIRECT physical body observations.')
 
 
