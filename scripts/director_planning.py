@@ -320,3 +320,38 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
             _write(stage, 'result.json', result)
             _rename_no_replace(stage, destination)
             return result
+
+
+def main(argv=None):
+    """Explicit configuration entrypoint; paid runs require native ledger integration."""
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest='command', required=True)
+    show = commands.add_parser('template')
+    show.add_argument('role', choices=sorted(ROLES))
+    run = commands.add_parser('generate')
+    run.add_argument('--request', required=True, type=Path)
+    run.add_argument('--configuration', required=True, type=Path)
+    run.add_argument('--project-root', required=True, type=Path)
+    run.add_argument('--store', required=True, type=Path)
+    args = parser.parse_args(argv)
+    if args.command == 'template':
+        print(json.dumps(template(args.role), indent=2))
+        return 0
+    try:
+        request = decode_json(args.request.read_bytes())
+        values = decode_json(args.configuration.read_bytes())
+        if 'allowed_hosts' in values:
+            values['allowed_hosts'] = tuple(values['allowed_hosts'])
+        result = generate_structured(request, args.store, project_root=args.project_root,
+                                     configuration=ProviderConfig(**values))
+        print(json.dumps(result, indent=2, allow_nan=False))
+        return 0 if result['status'] == 'succeeded' else 1
+    except (OSError, ValueError, TypeError):
+        # Configuration or request text may contain credentials; never echo it.
+        print(json.dumps({'status': 'failed', 'code': 'DIRECTOR_PLANNING_CLI_INPUT'}))
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
