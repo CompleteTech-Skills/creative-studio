@@ -27,6 +27,7 @@ MAX_FILES = 4096
 MAX_BYTES = 256 * 1024 * 1024
 MAX_FILE_BYTES = 64 * 1024 * 1024
 MAX_INDEX_BYTES = 4 * 1024 * 1024
+MAX_DIRECTORIES = 16384
 PACKAGE_TYPES = ('asset', 'collection', 'prefab', 'scene', 'project', 'library')
 
 
@@ -53,8 +54,14 @@ def _inventory(root):
     root = Path(root).absolute()
     if root.is_symlink() or not root.is_dir():
         fail('PATH', 'Package root must be an ordinary existing directory.')
-    result = set()
-    for current, directories, files in os.walk(root, followlinks=False):
+    result = set(); seen_directories = set()
+    def scan_failed(error):
+        raise error
+    for current, directories, files in os.walk(root, followlinks=False, onerror=scan_failed):
+        for name in directories:
+            seen_directories.add((Path(current) / name).relative_to(root).as_posix())
+            if len(seen_directories) > MAX_DIRECTORIES:
+                fail('LIMIT', 'Package directory count exceeds its bound.')
         for name in [*directories, *files]:
             path = Path(current) / name
             if path.is_symlink() or getattr(path.lstat(), 'st_file_attributes', 0) & 0x400:
@@ -67,6 +74,12 @@ def _inventory(root):
             result.add((Path(current) / name).relative_to(root).as_posix())
             if len(result) > MAX_FILES:
                 fail('LIMIT', 'Package has too many files.')
+    expected_directories = set()
+    for relative in result:
+        parts = relative.split('/')
+        expected_directories.update('/'.join(parts[:i]) for i in range(1, len(parts)))
+    if seen_directories != expected_directories:
+        fail('INVENTORY', 'Package has unexpected empty directory members.')
     _portable_inventory(result)
     return result
 
@@ -297,6 +310,8 @@ def _verify(root):
     _restorable_identities(manifests)
     graph = DependencyGraph({name: _PackageLibrary(items) for name, items in libraries.items()})
     for lock in locks.values():
+        if lock.get('include_optional') is not True:
+            fail('DEPENDENCY', 'Canonical restoration locks must include optional declared dependencies.')
         graph.verify_lock(lock)
         if lock['graph']['diagnostics']:
             fail('DEPENDENCY', 'Canonical restoration requires every declared dependency.')
@@ -317,13 +332,84 @@ def verify_package(root) -> dict:
     return _verify(root)[2]
 
 
+def _incomplete_diagnostics(root):
+    """Bounded declared inventory diagnostics; never an alternate verifier."""
+    index = decode_json(_read(root, INDEX, MAX_INDEX_BYTES))
+    if (not isinstance(index, dict) or
+        object_hash({k: v for k, v in index.items() if k != 'sha256'}) != index.get('sha256')):
+        fail('HASH', 'Cannot diagnose an unbound package index.')
+    members = index.get('members'); assets = index.get('assets')
+    if (not isinstance(members, dict) or not 1 <= len(members) < MAX_FILES or
+        not isinstance(assets, list) or len(assets) > 4096):
+        fail('LIMIT', 'Diagnostic inventory exceeds its bounds.')
+    actual = _inventory(root); total = 0; problems = {}
+    for path, record in members.items():
+        portable_path(path); _keys(record, ('bytes', 'sha256'), 'Diagnostic member')
+        if type(record['bytes']) is not int or not 1 <= record['bytes'] <= MAX_FILE_BYTES:
+            fail('LIMIT', 'Diagnostic member exceeds byte bounds.')
+        total += record['bytes']
+        if total > MAX_BYTES:
+            fail('LIMIT', 'Diagnostic package exceeds byte bounds.')
+        if path not in actual:
+            problems[path] = dict(code='MISSING_MEMBER', path=path, expected=record, affected_assets=[])
+        else:
+            try:
+                valid = _record(_read(root, path, record['bytes'])) == record
+            except (RigError, OSError):
+                valid = False
+            if not valid:
+                problems[path] = dict(code='CORRUPT_MEMBER', path=path, expected=record, affected_assets=[])
+    for path in sorted(actual - set(members) - {INDEX}):
+        problems[path] = dict(code='EXTRA_MEMBER', path=path, affected_assets=[])
+    for asset in assets:
+        _keys(asset, ('location', 'manifest'), 'Diagnostic asset')
+        # Validate the declared exact locator before exposing it to a caller.
+        from asset_library_dependencies import location
+        locator = location(asset['location'])
+        path = asset['manifest']; portable_path(path)
+        if path in problems:
+            problems[path]['affected_assets'].append(locator)
+            continue
+        if path not in members:
+            continue
+        raw = _read(root, path, MAX_INDEX_BYTES)
+        if _record(raw) != members[path]:
+            continue
+        manifest = load_manifest(raw)
+        if (manifest['identity']['id'], manifest['version'], manifest['manifest_sha256']) != location_key(locator)[1:]:
+            continue
+        for file in manifest['files']:
+            blob = 'blobs/' + file['sha256']
+            if blob in problems:
+                row = problems[blob]
+                if locator not in row['affected_assets']:
+                    row['affected_assets'].append(locator)
+                row.setdefault('logical_files', []).append(dict(asset=locator, path=file['path'],
+                                                               sha256=file['sha256']))
+    ordered = [problems[path] for path in sorted(problems)]
+    # Bound nested fanout as well as the number of diagnostic paths.
+    for row in ordered:
+        row['affected_asset_count'] = len(row['affected_assets'])
+        row['affected_assets'] = row['affected_assets'][:128]
+        if 'logical_files' in row:
+            row['logical_file_count'] = len(row['logical_files'])
+            row['logical_files'] = row['logical_files'][:128]
+    return dict(diagnostics=ordered[:128], diagnostic_count=len(ordered),
+                diagnostics_truncated=len(ordered) > 128)
+
+
 def inspect_package(root) -> dict:
     """Read-only diagnostic; never labels a manifest-only package ready."""
     try:
         return verify_package(root)
     except (RigError, OSError, ValueError, KeyError, TypeError) as exc:
-        return dict(verified=False, state='incomplete', completeness='incomplete',
-                    production_ready=False, public_distribution_authorized=False, error=str(exc))
+        result = dict(verified=False, state='incomplete', completeness='incomplete',
+                      production_ready=False, public_distribution_authorized=False, error=str(exc))
+        try:
+            result.update(_incomplete_diagnostics(root))
+        except (RigError, OSError, ValueError, KeyError, TypeError) as diagnostic_error:
+            result.update(diagnostics=[], diagnostic_count=0, diagnostics_unavailable=str(diagnostic_error))
+        return result
 
 
 def restore_package(root, destination) -> dict:
@@ -375,10 +461,22 @@ def restore_package(root, destination) -> dict:
 def create_transport(root, destination, *, part_size=65535) -> dict:
     """Reuse the existing ordered, hash-verified source-parts transport."""
     index, _, report = _verify(root)
-    result = create_source_bundle(root, sorted(index['members']) + [INDEX], destination,
-        fixture=index['fixture'], origin='Exact asset package ' + index['package_id'],
-        provenance_paths=[INDEX, *index['locks'].values()], part_size=part_size)
-    return {**result, 'package_sha256': report['package_sha256']}
+    destination = _new_destination(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix='.asset-transport-', dir=destination.parent))
+    try:
+        bundle = stage / 'parts'
+        result = create_source_bundle(root, sorted(index['members']) + [INDEX], bundle,
+            fixture=index['fixture'], origin='Exact asset package ' + index['package_id'],
+            provenance_paths=[INDEX, *index['locks'].values()], part_size=part_size)
+        verified = verify_transport(bundle)
+        if verified['package_sha256'] != report['package_sha256']:
+            fail('HASH', 'Source package changed during transport creation.')
+        _publish_stage(bundle, destination)
+        return {**result, 'bundle': str(destination / SOURCE_INDEX),
+                'package_sha256': report['package_sha256']}
+    finally:
+        shutil.rmtree(stage)
 
 
 @contextmanager
@@ -429,7 +527,9 @@ def create_archive(root, destination) -> dict:
             output.writestr('archive-receipt.json', canonical_bytes(receipt))
         if archive.stat().st_size > MAX_FILE_BYTES:
             fail('LIMIT', 'ZIP transport exceeds 64 MiB; use ordered source parts.')
-        verify_archive(archive)
+        verified = verify_package_archive(archive)
+        if verified['package_sha256'] != report['package_sha256']:
+            fail('HASH', 'Source package changed during archive creation.')
         from atomic_publish import _rename_no_replace
         import hatch
         with hatch.ownership(destination, resolve_leaf=False):

@@ -7,6 +7,8 @@ import shutil
 import tempfile
 import unittest
 import zipfile
+from unittest.mock import patch
+import asset_library_packages as packages
 
 from asset_library import AssetLibrary
 from asset_library_contracts import canonical_bytes, seal
@@ -61,7 +63,14 @@ class PackageTests(unittest.TestCase):
         for label in ['missing', 'corrupt']:
             if label == 'missing': blob.unlink()
             else: blob.write_bytes(b'X' * len(original))
-            self.assertEqual(inspect_package(self.package)['state'], 'incomplete')
+            diagnostic = inspect_package(self.package)
+            self.assertEqual(diagnostic['state'], 'incomplete')
+            row = next(d for d in diagnostic['diagnostics'] if d['path'] == blob.relative_to(self.package).as_posix())
+            self.assertEqual(row['expected']['sha256'], self.fixture.files[0]['sha256'])
+            self.assertEqual(row['code'], 'MISSING_MEMBER' if label == 'missing' else 'CORRUPT_MEMBER')
+            self.assertIn(locator('local', self.mesh), row['affected_assets'])
+            self.assertIn(locator('local', self.character), row['affected_assets'])
+            self.assertEqual(row['logical_files'][0]['path'], 'mesh/triangle.obj')
             target = self.root / label
             with self.assertRaises((RigError, FileNotFoundError)):
                 restore_package(self.package, target)
@@ -80,6 +89,11 @@ class PackageTests(unittest.TestCase):
         license_blob.write_bytes(original)
         (self.package / 'unlisted').write_bytes(b'not inventoried')
         with self.assertRaisesRegex(RigError, 'extra'):
+            verify_package(self.package)
+
+    def test_extra_empty_directories_are_rejected(self):
+        (self.package / 'unlisted-directory').mkdir()
+        with self.assertRaisesRegex(RigError, 'empty directory'):
             verify_package(self.package)
 
     def test_lock_asset_identity_and_required_blob_cannot_be_omitted_by_resealed_index(self):
@@ -119,6 +133,25 @@ class PackageTests(unittest.TestCase):
         restored = restore_package(package, self.root / 'optional-restored')
         self.assertEqual(AssetLibrary(restored['library']).resolve(ref), self.library.resolve(ref))
 
+    def test_resealed_lock_cannot_omit_optional_canonical_dependencies(self):
+        doc = deepcopy(self.library.resolve(self.character)); doc['version'] = '2.0.0'
+        doc['dependencies'][0]['required'] = False
+        ref = self.library.register(seal(doc), self.fixture.sources)
+        package = self.root / 'optional-forged'
+        create_package(self.graph, [locator('local', ref)], package, package_id='optional-forged')
+        index = self.read_index(package)
+        lock_path = index['locks']['default']
+        raw = canonical_bytes(self.graph.lock([locator('local', ref)], include_optional=False))
+        (package / lock_path).write_bytes(raw)
+        index['members'][lock_path] = dict(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+        removed = next(asset for asset in index['assets'] if asset['location']['reference'] == self.mesh)
+        index['assets'].remove(removed)
+        del index['members'][removed['manifest']]; (package / removed['manifest']).unlink()
+        self.reseal(index, package)
+        with self.assertRaisesRegex(RigError, 'include optional'):
+            verify_package(package)
+        self.assertFalse(inspect_package(package)['verified'])
+
     def test_scene_project_context_and_all_package_types(self):
         context = self.root / 'scene.json'; context.write_text('{"fixture":true,"scene":"exact"}')
         for kind in ['asset', 'collection', 'prefab', 'scene', 'project', 'library']:
@@ -157,6 +190,32 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(AssetLibrary(restored['library']).resolve(self.character), self.library.resolve(self.character))
         (bundle / 'unexpected').write_text('reject extra transport members')
         with self.assertRaisesRegex(RigError, 'extra'): verify_transport(bundle)
+
+    def test_transport_rechecks_inner_package_before_publication(self):
+        original = packages.create_source_bundle
+        blob = self.package / 'blobs' / self.fixture.files[0]['sha256']
+        def changed_source(*args, **kwargs):
+            blob.write_bytes(b'X' * len(blob.read_bytes()))
+            return original(*args, **kwargs)
+        destination = self.root / 'raced-transport'
+        with patch.object(packages, 'create_source_bundle', changed_source):
+            with self.assertRaises(RigError): create_transport(self.package, destination)
+        self.assertFalse(destination.exists())
+
+    def test_archive_rechecks_package_identity_before_publication(self):
+        original = packages._read; count = 0
+        def changed_index(root, relative, limit=packages.MAX_FILE_BYTES):
+            nonlocal count
+            if Path(root) == self.package and relative == INDEX:
+                count += 1
+                if count == 2:
+                    index = self.read_index(); index['package_id'] = 'changed-after-verification'
+                    self.reseal(index)
+            return original(root, relative, limit)
+        destination = self.root / 'raced-archive.zip'
+        with patch.object(packages, '_read', changed_index):
+            with self.assertRaisesRegex(RigError, 'changed'): create_archive(self.package, destination)
+        self.assertFalse(destination.exists())
 
     def test_archive_roundtrip_and_exact_shared_archive_guard(self):
         archive = self.root / 'package.zip'; create_archive(self.package, archive)
