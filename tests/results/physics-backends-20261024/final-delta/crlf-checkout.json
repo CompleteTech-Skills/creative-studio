@@ -1,0 +1,6 @@
+{
+  "command": "git -c core.autocrlf=true -c core.eol=crlf checkout-index",
+  "files": 175,
+  "byte_mismatches": [],
+  "status": "PASS"
+}
