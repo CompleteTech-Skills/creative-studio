@@ -9,6 +9,7 @@ from copy import deepcopy
 from fractions import Fraction
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from rig_errors import RigError, finite_json
@@ -239,7 +240,9 @@ def select_scene(repository, body):
         for path,record in bundle['inventory'].items():
             payload=read_source_bytes(Path(source)/portable_path(path),record['bytes'])
             _require(len(payload)==record['bytes'] and hashlib.sha256(payload).hexdigest()==record['sha256'],'Native scene source changed while switching.')
-            target=destination/portable_path(path);target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(payload)
+            target=destination/portable_path(path);target.parent.mkdir(parents=True,exist_ok=True)
+            with target.open('xb') as stream:
+                stream.write(payload);stream.flush();os.fsync(stream.fileno())
         return selected
     return repository.transact_native(body['expected_revision'],body['transaction_id'],
         dict(adapter='editor3d-scene-select-v1',scene=selected),build,
