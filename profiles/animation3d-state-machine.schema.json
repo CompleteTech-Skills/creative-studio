@@ -246,7 +246,18 @@
                 "maxLength": 4096
               },
               "clip": {
-                "$ref": "#/$defs/asset"
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/asset"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "clip"
+                      }
+                    }
+                  }
+                ]
               },
               "blend_tree": {
                 "type": "string",

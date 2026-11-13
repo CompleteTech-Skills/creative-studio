@@ -172,7 +172,7 @@ class AnimationReviewRegressions(unittest.TestCase):
             with self.subTest(name=name,record='track'):
                 with self.assertRaises(RigError) as raised:validate_contract(value)
                 self.assertEqual(raised.exception.report['code'],'ANIMATION_INTERPOLATION')
-            value=samples()['project'];asset=deepcopy(ASSET)
+            value=samples()['project'];asset={**ASSET,'kind':'state-machine'}
             value['character_state_bindings']={name:asset}
             validate_contract(value)
             asset['path']='../outside.json'
@@ -207,7 +207,7 @@ class AnimationReviewRegressions(unittest.TestCase):
 
     def test_shot_placements_apply_the_same_interval_rules_as_layers(self):
         from animation3d_test_helpers import ASSET
-        placement=dict(id='placement',clip=deepcopy(ASSET),start_frame=0,duration_frames=12,
+        placement=dict(id='placement',clip={**ASSET,'kind':'clip'},start_frame=0,duration_frames=12,
             source_in_frame=0,source_out_frame=12,playback_rate=dict(numerator=1,denominator=1),
             blend_in_frames=2,blend_out_frames=2,weight=1,layer_id='body',enabled=True)
         sequence=samples()['sequence'];sequence['shots'][0]['clip_placements']=[placement]
@@ -241,3 +241,60 @@ class AnimationReviewRegressions(unittest.TestCase):
             if field=='environment_tracks':other['target']['property']='ambient_intensity'
             else:other['target'][next(k for k in target if k.endswith('_id'))]='another'
             validate_contract(scene)
+
+    def test_wildcard_expansion_is_bounded_before_graph_allocation(self):
+        from unittest.mock import patch
+        import animation3d_contracts as contracts
+        value=samples()['state-machine']
+        value['states']=[dict(value['states'][0],id=f's{i}') for i in range(3)]
+        value['initial_state']='s0';value['parameters']=[dict(name='go',type='bool',default=False)]
+        value['transitions']=[dict(id=f't{i}',from_state='*',to_state=f's{i}',conditions=[dict(parameter='go',operator='eq',value=True)],condition_mode='all',priority=i,duration_frames=1,blend_curve='linear',interruption_policy='none') for i in range(3)]
+        with patch.object(contracts,'MAX_STATE_TRANSITION_EXPANSIONS',8):
+            with self.assertRaises(RigError) as caught:validate_contract(value)
+            self.assertEqual(caught.exception.report['code'],'ANIMATION_LIMIT')
+        with patch.object(contracts,'MAX_STATE_TRANSITION_EXPANSIONS',9):validate_contract(value)
+
+    def test_zero_exit_time_does_not_hide_zero_time_cycle(self):
+        value=samples()['state-machine'];value['parameters']=[dict(name='go',type='bool',default=False)]
+        value['transitions']=[dict(id='loop',from_state='idle',to_state='idle',conditions=[dict(parameter='go',operator='eq',value=True)],condition_mode='all',priority=0,duration_frames=0,exit_time_normalized=0,blend_curve='linear',interruption_policy='none')]
+        with self.assertRaises(RigError):validate_contract(value)
+        value['transitions'][0]['exit_time_normalized']=.1
+        validate_contract(value)
+
+    def test_typed_reference_sites_reject_wrong_asset_kinds(self):
+        for name,field in [('render','project'),('scene','scene_asset'),('retarget','source_rig')]:
+            value=samples()[name];validate_contract(value)
+            value[field]['kind']='wrong-owner'
+            with self.subTest(name=name),self.assertRaises(RigError):validate_contract(value)
+        value=samples()['state-machine'];value['states'][0]['clip']['kind']='rig'
+        with self.assertRaises(RigError):validate_contract(value)
+        value=samples()['sequence'];from animation3d_test_helpers import ASSET
+        value['shots'][0]['clip_placements']=[dict(id='p',clip={**ASSET,'kind':'clip'},start_frame=0,duration_frames=1,source_in_frame=0,playback_rate=dict(numerator=1,denominator=1),blend_in_frames=0,blend_out_frames=0,weight=1,layer_id='body',enabled=True)]*2
+        with self.assertRaises(RigError):validate_contract(value)
+
+    def test_native_morph_range_and_one_resolution_per_sample(self):
+        from unittest.mock import patch
+        from animation3d_registry import TargetRegistry,sample_track
+        from rig_test_helpers import fixture
+        with tempfile.TemporaryDirectory() as directory:
+            rig=fixture(directory,animated=False);registry=TargetRegistry.from_rig(rig.root,'actor')
+            entry=next(e for e in registry.document['entries'] if e['target']['kind']=='morph')
+            self.assertEqual((entry['minimum'],entry['maximum']),(-2,2))
+            track=dict(id='morph',target=entry['target'],value_type='float',default_value=-1,keys=[dict(time=dict(frame=0),value=-2,interpolation='linear'),dict(time=dict(frame=10),value=2,interpolation='linear')],extrapolation_before='hold',extrapolation_after='hold',enabled=True)
+            for enabled,keys in [(True,track['keys']),(False,track['keys']),(True,[])]:
+                candidate={**track,'enabled':enabled,'keys':keys}
+                with patch.object(registry,'resolve',wraps=registry.resolve) as resolve:
+                    sample_track(candidate,dict(frame=5),registry)
+                    self.assertEqual(resolve.call_count,1)
+            track['keys'][0]['value']=-2.1
+            with self.assertRaises(RigError):sample_track(track,dict(frame=5),registry)
+
+    def test_hermite_overshoot_cannot_exceed_numeric_contract(self):
+        from animation3d_registry import TargetRegistry,sample_track
+        from rig_test_helpers import fixture
+        with tempfile.TemporaryDirectory() as directory:
+            rig=fixture(directory,animated=False);registry=TargetRegistry.from_rig(rig.root,'actor')
+            target=next(e['target'] for e in registry.document['entries'] if e['target']['kind']=='bone' and e['target']['property']=='translation')
+            track=dict(id='move',target=target,value_type='vec3',default_value=[0,0,0],keys=[dict(time=dict(frame=0),value=[0,0,0],interpolation='hermite',out_tangent=[1e9,0,0]),dict(time=dict(frame=100),value=[0,0,0],interpolation='linear',in_tangent=[-1e9,0,0])],extrapolation_before='hold',extrapolation_after='hold',enabled=True)
+            registry.validate_track(track)
+            with self.assertRaises(RigError):sample_track(track,dict(frame=50),registry)

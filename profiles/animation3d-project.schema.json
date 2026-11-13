@@ -93,7 +93,18 @@
         "scene_assets": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/asset"
+            "allOf": [
+              {
+                "$ref": "#/$defs/asset"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "scene"
+                  }
+                }
+              }
+            ]
           },
           "minItems": 0,
           "maxItems": 4096
@@ -101,7 +112,18 @@
         "character_assets": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/asset"
+            "allOf": [
+              {
+                "$ref": "#/$defs/asset"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "character"
+                  }
+                }
+              }
+            ]
           },
           "minItems": 0,
           "maxItems": 4096
@@ -109,7 +131,18 @@
         "rig_assets": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/asset"
+            "allOf": [
+              {
+                "$ref": "#/$defs/asset"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "rig"
+                  }
+                }
+              }
+            ]
           },
           "minItems": 0,
           "maxItems": 4096
@@ -117,7 +150,18 @@
         "clips": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/asset"
+            "allOf": [
+              {
+                "$ref": "#/$defs/asset"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "clip"
+                  }
+                }
+              }
+            ]
           },
           "minItems": 0,
           "maxItems": 4096
@@ -125,7 +169,18 @@
         "state_machines": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/asset"
+            "allOf": [
+              {
+                "$ref": "#/$defs/asset"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "state-machine"
+                  }
+                }
+              }
+            ]
           },
           "minItems": 0,
           "maxItems": 4096
@@ -133,7 +188,18 @@
         "retarget_profiles": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/asset"
+            "allOf": [
+              {
+                "$ref": "#/$defs/asset"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "retarget"
+                  }
+                }
+              }
+            ]
           },
           "minItems": 0,
           "maxItems": 4096
@@ -141,7 +207,18 @@
         "sequences": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/asset"
+            "allOf": [
+              {
+                "$ref": "#/$defs/asset"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "sequence"
+                  }
+                }
+              }
+            ]
           },
           "minItems": 0,
           "maxItems": 4096
@@ -149,12 +226,34 @@
         "character_state_bindings": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/$defs/asset"
+            "allOf": [
+              {
+                "$ref": "#/$defs/asset"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "state-machine"
+                  }
+                }
+              }
+            ]
           },
           "maxProperties": 4096
         },
         "default_render_profile": {
-          "$ref": "#/$defs/asset"
+          "allOf": [
+            {
+              "$ref": "#/$defs/asset"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "render-profile"
+                }
+              }
+            }
+          ]
         },
         "budgets": {
           "type": "object",

@@ -7,7 +7,7 @@
     "version": "1.0.0",
     "path": "source.json",
     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "kind": "rig"
+    "kind": "project"
   },
   "sequence_id": "sequence",
   "start_frame": 0,

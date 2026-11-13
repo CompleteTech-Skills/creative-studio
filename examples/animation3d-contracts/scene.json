@@ -8,7 +8,7 @@
     "version": "1.0.0",
     "path": "source.json",
     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "kind": "rig"
+    "kind": "scene"
   },
   "actors": [],
   "object_tracks": [],

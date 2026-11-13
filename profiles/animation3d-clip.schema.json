@@ -91,7 +91,18 @@
           "maximum": 10000000
         },
         "rig_binding": {
-          "$ref": "#/$defs/asset"
+          "allOf": [
+            {
+              "$ref": "#/$defs/asset"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "rig"
+                }
+              }
+            }
+          ]
         },
         "skeleton_signature": {
           "type": "string",

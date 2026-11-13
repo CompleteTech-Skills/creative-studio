@@ -42,7 +42,7 @@ class TargetRegistry:
                 entries.append(dict(target=dict(kind='bone',actor_id=actor_id,bone_id=bone['id'],property=prop),owner='rig',source=source))
         for mesh in rig.geometry.meshes:
             for morph in mesh.morphs:
-                entries.append(dict(target=dict(kind='morph',actor_id=actor_id,mesh_id=mesh.id,morph_id=morph,property='weight'),owner='rig',source=source,minimum=0,maximum=1))
+                entries.append(dict(target=dict(kind='morph',actor_id=actor_id,mesh_id=mesh.id,morph_id=morph,property='weight'),owner='rig',source=source,minimum=-2,maximum=2))
         return cls(root,dict(schema_version=1,kind=KINDS['registry'],id=actor_id+'-targets',version='1.0.0',entries=entries))
 
     def resolve(self, target):
@@ -68,7 +68,7 @@ class TargetRegistry:
             require(False,'ANIMATION_OWNER','Rig adapter resolves only bone and morph properties.',stage='animation3d')
         return deepcopy(entry)
 
-    def validate_track(self, track, duration_frames=None):
+    def _validated_track_entry(self, track, duration_frames=None):
         from animation3d_contracts import validate_track
         validate_contract(dict(schema_version=1,kind=KINDS['track'],value=track))
         validate_track(track,duration_frames)
@@ -77,6 +77,10 @@ class TargetRegistry:
             for value in [track['default_value']]+[key['value'] for key in track['keys']]:
                 require(isinstance(value,(int,float)) and entry['minimum']<=value<=entry['maximum'],
                     'ANIMATION_RANGE','Track value exceeds registered target bounds.',stage='animation3d')
+        return entry
+
+    def validate_track(self, track, duration_frames=None):
+        self._validated_track_entry(track,duration_frames)
         return deepcopy(track)
 
 
@@ -93,8 +97,7 @@ def sample_track(track, time, registry):
         raise RigError('ANIMATION_DEPENDENCY',
             'Install requirements-rig.txt in the optional 3D environment before sampling native targets.',
             stage='animation3d') from exc
-    registry.validate_track(track)
-    entry=registry.resolve(track['target'])
+    entry=registry._validated_track_entry(track)
     position=frame_position(time)
     keys=track['keys']
     if not track['enabled'] or not keys:

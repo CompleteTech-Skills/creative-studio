@@ -16,6 +16,7 @@ from animation3d_time import TICKS_PER_FRAME, frame_position, rate
 ROOTS = ('project', 'clip', 'track', 'target', 'layer', 'state-machine', 'retarget',
          'constraint', 'interaction', 'scene', 'sequence', 'render', 'registry')
 KINDS = {name: 'animation_' + name.replace('-', '_') + '_3d' for name in ROOTS}
+MAX_STATE_TRANSITION_EXPANSIONS = 65536
 SUPPORTED_INTERPOLATION = {'step', 'linear', 'hermite', 'quaternion-slerp'}
 TARGET_PROPERTIES = {
     'node': {'translation':'vec3', 'rotation':'quaternion', 'scale':'vec3', 'visibility':'boolean'},
@@ -54,6 +55,7 @@ def _definitions():
     fps = obj({k:{'type':'integer','minimum':1,'maximum':1_000_000} for k in ('numerator','denominator')})
     time = obj(dict(frame=frame,subframe_ticks={'type':'integer','minimum':0,'maximum':TICKS_PER_FRAME-1}),['frame'])
     asset = obj(dict(id=identifier,version=semver,path={'type':'string','minLength':1,'maxLength':1024},sha256=digest,kind=identifier))
+    asset_ref = lambda kind: {'allOf':[ref('asset'),{'properties':{'kind':{'const':kind}}}]}
     transform = obj(dict(position=vec3,rotation=quat,scale=arr(pos,3,3)))
     provenance = obj(dict(origin=text,kind={'enum':['generated','imported','authored','derived','fixture']},
         fixture=boolean,sources=arr(ref('asset'),0,4096),attribution=text,permissions=text,
@@ -88,14 +90,14 @@ def _definitions():
         coordinate_space={'enum':['world','actor','object']},target_object=identifier,position_tolerance_m=pos,
         orientation_tolerance_rad=pos,solver_weight=unit),['id','kind','start_frame','end_frame','coordinate_space','position_tolerance_m','solver_weight'])
     clip=_doc('clip',dict(id=identifier,version=semver,name=text,description=text,fps=fps,duration_frames=natural,
-        rig_binding=ref('asset'),skeleton_signature=digest,tags=arr(text,0,128),categories=arr(text,0,128),
+        rig_binding=asset_ref('rig'),skeleton_signature=digest,tags=arr(text,0,128),categories=arr(text,0,128),
         loop_mode={'enum':['once','loop','ping_pong','hold']},completion_mode={'enum':['hold','reset','exit','transition']},default_speed=pos,
         tracks=arr(ref('track'),0,4096),events=arr(event,0,4096),contacts=arr(contact,0,4096),root_motion=root,
         entry_pose=identifier,exit_pose=identifier,interruption_policy={'enum':['any_frame','markers_only','on_completion','never']},
         interruption_markers=ids(),constraints=ids(),procedural_modifiers=ids(),provenance=ref('provenance'),dependencies=arr(ref('asset'),0,4096)),
         ['description','rig_binding','skeleton_signature','entry_pose','exit_pose','interruption_markers','constraints','procedural_modifiers'])
     mask=optional_obj(dict(included_bones=ids(),excluded_bones=ids(),include_descendants=boolean,per_bone_weights=mapping(unit,4096)))
-    placement=obj(dict(id=identifier,clip=ref('asset'),actor_id=identifier,start_frame=frame,duration_frames=natural,
+    placement=obj(dict(id=identifier,clip=asset_ref('clip'),actor_id=identifier,start_frame=frame,duration_frames=natural,
         source_in_frame=frame,source_out_frame=natural,playback_rate=fps,reverse=boolean,loop_override={'enum':['inherit','once','loop','ping_pong']},
         blend_in_frames=frame,blend_out_frames=frame,weight=unit,weight_track=ref('track'),layer_id=identifier,time_offset_frames=frame,enabled=boolean),
         ['id','clip','start_frame','duration_frames','source_in_frame','playback_rate','blend_in_frames','blend_out_frames','weight','layer_id','enabled'])
@@ -105,7 +107,7 @@ def _definitions():
     parameter={'oneOf':[obj(dict(name=identifier,type={'const':kind},default=default)) for kind,default in
         [('bool',boolean),('float',num),('int',{'type':'integer','minimum':-1e9,'maximum':1e9}),('trigger',{'const':False})]]}
     condition=obj(dict(parameter=identifier,operator={'enum':['eq','neq','lt','lte','gt','gte','triggered']},value={'type':['boolean','number']}),['parameter','operator'])
-    state=obj(dict(id=identifier,name=text,clip=ref('asset'),blend_tree=identifier,playback_speed=pos,loop_override={'enum':['inherit','loop','once']},enter_events=ids(),exit_events=ids()),['id','name','playback_speed'])
+    state=obj(dict(id=identifier,name=text,clip=asset_ref('clip'),blend_tree=identifier,playback_speed=pos,loop_override={'enum':['inherit','loop','once']},enter_events=ids(),exit_events=ids()),['id','name','playback_speed'])
     transition=obj(dict(id=identifier,from_state=identifier,to_state=identifier,conditions=arr(condition,1,128),condition_mode={'enum':['all','any']},priority={'type':'integer','minimum':-10000,'maximum':10000},
         duration_frames=frame,blend_curve={'enum':['linear','smoothstep','ease_in_out']},exit_time_normalized=unit,exit_marker=identifier,
         interruption_policy={'enum':['source','destination','higher_priority','none']},synchronize_phase=boolean),
@@ -113,7 +115,7 @@ def _definitions():
     transition['properties']['from_state']={'anyOf':[identifier,{'const':'*'}]}
     machine=_doc('state-machine',dict(id=identifier,version=semver,parameters=arr(parameter,0,128),states=arr(state,1,4096),
         transitions=arr(transition,0,4096),initial_state=identifier,transition_limit_per_frame={'type':'integer','minimum':1,'maximum':128},provenance=ref('provenance')))
-    retarget=_doc('retarget',dict(id=identifier,version=semver,source_rig=ref('asset'),target_rig=ref('asset'),source_skeleton_signature=digest,target_skeleton_signature=digest,
+    retarget=_doc('retarget',dict(id=identifier,version=semver,source_rig=asset_ref('rig'),target_rig=asset_ref('rig'),source_skeleton_signature=digest,target_skeleton_signature=digest,
         source_rest_pose=identifier,target_rest_pose=identifier,mappings=arr(obj(dict(source_bone=identifier,target_bone=identifier,rotation_offset=quat,translation_scale=vec3,
         mode={'enum':['rotation','translation','full_transform']},weight=unit),['source_bone','target_bone','rotation_offset','mode']),1,4096),
         root_policy={'enum':['preserve_world','scale_to_target','in_place']},scale_policy={'enum':['height_ratio','leg_length_ratio','explicit']},explicit_scale=pos,
@@ -129,10 +131,10 @@ def _definitions():
     interaction=_doc('interaction',dict(id=identifier,participants=arr(participant,1,128),prop_id=identifier,start_frame=frame,end_frame=natural,
         synchronization_markers=ids(),ownership_changes=arr(transfer,0,4096),constraints=ids(),position_tolerance_m=pos,orientation_tolerance_rad=pos,
         failure_policy={'enum':['error','flag_for_review']}),['prop_id','ownership_changes'])
-    actor=obj(dict(actor_id=identifier,model=ref('asset'),rig=ref('asset'),initial_transform=ref('transform'),animation_layers=arr(ref('layer'),0,128),
-        state_machine=ref('asset'),retarget_profile=ref('asset'),constraints=arr(ref('constraint'),0,128),initial_state_parameters=mapping({'type':['boolean','number']},128)),
+    actor=obj(dict(actor_id=identifier,model=asset_ref('model'),rig=asset_ref('rig'),initial_transform=ref('transform'),animation_layers=arr(ref('layer'),0,128),
+        state_machine=asset_ref('state-machine'),retarget_profile=asset_ref('retarget'),constraints=arr(ref('constraint'),0,128),initial_state_parameters=mapping({'type':['boolean','number']},128)),
         ['actor_id','model','initial_transform','animation_layers','constraints'])
-    scene=_doc('scene',dict(id=identifier,version=semver,scene_asset=ref('asset'),actors=arr(actor,0,4096),object_tracks=arr(ref('track'),0,4096),
+    scene=_doc('scene',dict(id=identifier,version=semver,scene_asset=asset_ref('scene'),actors=arr(actor,0,4096),object_tracks=arr(ref('track'),0,4096),
         environment_tracks=arr(ref('track'),0,4096),camera_tracks=arr(ref('track'),0,4096),lighting_tracks=arr(ref('track'),0,4096),
         interactions=arr(ref('interaction'),0,4096),markers=arr(event,0,4096)))
     shot=obj(dict(id=identifier,scene_id=identifier,start_frame=frame,duration_frames=natural,active_camera_id=identifier,clip_placements=arr(ref('placement'),0,4096),
@@ -141,9 +143,9 @@ def _definitions():
     sequence=_doc('sequence',dict(id=identifier,version=semver,fps=fps,shots=arr(shot,1,4096),markers=arr(event,0,4096),total_frames=natural))
     project=_doc('project',dict(id=identifier,version=semver,name=text,fixture=boolean,fps=fps,
         coordinate_system={'const':{'handedness':'right','up_axis':'Y','unit':'meters'}},
-        **{k:arr(ref('asset'),0,4096) for k in ('scene_assets','character_assets','rig_assets','clips','state_machines','retarget_profiles','sequences')},
-        character_state_bindings=mapping(ref('asset'),4096),default_render_profile=ref('asset'),budgets=limits,provenance=ref('provenance')),['character_state_bindings','default_render_profile'])
-    render=_doc('render',dict(id=identifier,project=ref('asset'),sequence_id=identifier,start_frame=frame,end_frame_exclusive=natural,
+        **{k:arr(asset_ref(kind),0,4096) for k,kind in [('scene_assets','scene'),('character_assets','character'),('rig_assets','rig'),('clips','clip'),('state_machines','state-machine'),('retarget_profiles','retarget'),('sequences','sequence')]},
+        character_state_bindings=mapping(asset_ref('state-machine'),4096),default_render_profile=asset_ref('render-profile'),budgets=limits,provenance=ref('provenance')),['character_state_bindings','default_render_profile'])
+    render=_doc('render',dict(id=identifier,project=asset_ref('project'),sequence_id=identifier,start_frame=frame,end_frame_exclusive=natural,
         width={'type':'integer','minimum':1,'maximum':32768},height={'type':'integer','minimum':1,'maximum':32768},fps=fps,
         output_format={'enum':['png_sequence','exr_sequence','mp4','webm']},renderer={'enum':['blender','supported_plugin']},quality={'enum':['preview','standard','final']},
         transparent_background=boolean,samples={'type':'integer','minimum':1,'maximum':4096},seed={'type':'integer','minimum':0,'maximum':2**32-1},output_directory=text,include_audio={'const':False}),['samples'])
@@ -194,10 +196,15 @@ def _check_value(value,kind,prop):
     elif expected=='float': ok=type(value) in (float,int)
     else: ok=isinstance(value,list) and len(value)==(3 if expected=='vec3' else 4) and all(type(x) in (int,float) for x in value)
     require(ok,'ANIMATION_VALUE','Value does not match target property.',stage='animation3d')
+    if expected!='boolean':
+        require(all(math.isfinite(x) and abs(x)<=1e9 for x in (value if isinstance(value,list) else [value])),
+            'ANIMATION_RANGE','Animated components must remain finite and within [-1e9,1e9].',stage='animation3d')
     if expected=='quaternion':
         require(abs(sum(x*x for x in value)-1)<2e-5,'ANIMATION_QUATERNION','Rotation must be normalized.',stage='animation3d')
     if prop=='scale': require(all(x>1e-10 for x in value),'ANIMATION_SCALE','Scale must be positive.',stage='animation3d')
-    if prop in ('opacity','roughness','metallic','weight'):
+    if kind=='morph' and prop=='weight':
+        require(-2<=value<=2,'ANIMATION_RANGE','Native morph weights must be in [-2,2].',stage='animation3d')
+    elif prop in ('opacity','roughness','metallic','weight'):
         require(0<=value<=1,'ANIMATION_RANGE','Normalized property must be in [0,1].',stage='animation3d')
 
 
@@ -367,6 +374,8 @@ def _semantic(value):
         states=_unique(value['states']); _unique(value['transitions']); _unique(value['parameters'],'name')
         require(value['initial_state'] in states,'ANIMATION_REFERENCE','Missing initial state.',stage='animation3d')
         params={p['name']:p for p in value['parameters']}; priorities=set(); edges={s:set() for s in states}
+        require(sum(len(states) if t['from_state']=='*' else 1 for t in value['transitions'])<=MAX_STATE_TRANSITION_EXPANSIONS,
+            'ANIMATION_LIMIT','State transition expansion exceeds the bounded graph budget.',stage='animation3d')
         for state in value['states']:
             require(('clip' in state)^('blend_tree' in state),'ANIMATION_STATE','State needs exactly one clip or blend tree.',stage='animation3d')
         for transition in value['transitions']:
@@ -401,7 +410,7 @@ def _semantic(value):
         # legitimately form animation loops; the runtime transition limit stays explicit.
         zero={s:set() for s in states}
         for t in value['transitions']:
-            if t['duration_frames']==0 and 'exit_marker' not in t and 'exit_time_normalized' not in t:
+            if t['duration_frames']==0 and 'exit_marker' not in t and t.get('exit_time_normalized',0)==0:
                 for s in states if t['from_state']=='*' else [t['from_state']]: zero[s].add(t['to_state'])
         # Kahn's algorithm is bounded by graph size, not Python recursion depth.
         incoming={s:0 for s in states}
@@ -423,6 +432,7 @@ def _semantic(value):
         _unique(value['shots']); _unique(value['markers'])
         end=0
         for index,shot in enumerate(value['shots']):
+            _unique(shot['clip_placements'])
             for placement in shot['clip_placements']: _check_placement(placement)
             require(shot['start_frame']==end,'ANIMATION_SEQUENCE','Shots must form a contiguous non-overlapping partition.',stage='animation3d')
             require(shot.get('transition_to_next',{'type':'cut'})['type']=='cut','ANIMATION_TRANSITION','Dissolve sampling requires downstream sequencing support.',stage='animation3d')

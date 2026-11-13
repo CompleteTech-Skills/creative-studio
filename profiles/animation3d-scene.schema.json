@@ -733,7 +733,18 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
         },
         "clip": {
-          "$ref": "#/$defs/asset"
+          "allOf": [
+            {
+              "$ref": "#/$defs/asset"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "clip"
+                }
+              }
+            }
+          ]
         },
         "actor_id": {
           "type": "string",
@@ -854,7 +865,18 @@
           "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
         },
         "scene_asset": {
-          "$ref": "#/$defs/asset"
+          "allOf": [
+            {
+              "$ref": "#/$defs/asset"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "scene"
+                }
+              }
+            }
+          ]
         },
         "actors": {
           "type": "array",
@@ -867,10 +889,32 @@
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
               },
               "model": {
-                "$ref": "#/$defs/asset"
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/asset"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "model"
+                      }
+                    }
+                  }
+                ]
               },
               "rig": {
-                "$ref": "#/$defs/asset"
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/asset"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "rig"
+                      }
+                    }
+                  }
+                ]
               },
               "initial_transform": {
                 "$ref": "#/$defs/transform"
@@ -884,10 +928,32 @@
                 "maxItems": 128
               },
               "state_machine": {
-                "$ref": "#/$defs/asset"
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/asset"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "state-machine"
+                      }
+                    }
+                  }
+                ]
               },
               "retarget_profile": {
-                "$ref": "#/$defs/asset"
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/asset"
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "retarget"
+                      }
+                    }
+                  }
+                ]
               },
               "constraints": {
                 "type": "array",

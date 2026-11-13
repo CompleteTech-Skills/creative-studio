@@ -52,7 +52,18 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
         },
         "project": {
-          "$ref": "#/$defs/asset"
+          "allOf": [
+            {
+              "$ref": "#/$defs/asset"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "project"
+                }
+              }
+            }
+          ]
         },
         "sequence_id": {
           "type": "string",

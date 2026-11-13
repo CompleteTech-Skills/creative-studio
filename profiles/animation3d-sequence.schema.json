@@ -310,7 +310,18 @@
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
         },
         "clip": {
-          "$ref": "#/$defs/asset"
+          "allOf": [
+            {
+              "$ref": "#/$defs/asset"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "clip"
+                }
+              }
+            }
+          ]
         },
         "actor_id": {
           "type": "string",
