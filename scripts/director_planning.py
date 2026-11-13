@@ -10,6 +10,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import http.client
 import ipaddress
 import json
 import os
@@ -84,9 +85,14 @@ def _fail(status, code, message):
 def _endpoint(config):
     try:
         parsed = urllib.parse.urlsplit(config.endpoint)
-        local = ipaddress.ip_address(parsed.hostname).is_loopback
+        hostname = parsed.hostname
+        parsed.port  # Validate malformed ports before any network operation.
     except (ValueError, TypeError):
         _fail('blocked_capability', 'ENDPOINT', 'Endpoint URL is invalid.')
+    try:
+        local = ipaddress.ip_address(hostname).is_loopback
+    except (ValueError, TypeError):
+        local = False
     if (parsed.username or parsed.password or parsed.query or parsed.fragment or
             parsed.path != '/v1/responses' or parsed.hostname not in config.allowed_hosts or
             parsed.scheme not in ('https', 'http') or (parsed.scheme == 'http' and not local)):
@@ -130,7 +136,7 @@ def _post(config, body, key, credential):
         if 300 <= exc.code < 400:
             _fail('blocked_capability', 'REDIRECT', 'Provider redirect was refused.')
         _fail('failed', 'HTTP', 'Provider returned HTTP ' + str(exc.code) + '; no automatic retry.')
-    except (TimeoutError, socket.timeout, urllib.error.URLError):
+    except (TimeoutError, socket.timeout, urllib.error.URLError, http.client.HTTPException, ConnectionError):
         _fail('awaiting_external_result', 'OUTCOME_UNKNOWN', 'Network outcome is unknown; original idempotency key is retained and no retry was started.')
 
 
@@ -197,6 +203,7 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
             stage.mkdir()
             artifacts, repairs = [], []
             counts = {'provider_calls': 0, 'input_tokens': None, 'output_tokens': None}
+            complete_usage = {'input_tokens': True, 'output_tokens': True}
             role = STAGES[request['input']['stage']]
             spec = template(role)
             status, value, diagnostics = 'failed', None, []
@@ -266,6 +273,8 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
                         observed = usage.get(field)
                         if type(observed) is int and observed >= 0:
                             counts[field] = (counts[field] or 0) + observed
+                        else:
+                            complete_usage[field] = False
                     try:
                         content = decode_json(_text(response))
                         Draft202012Validator(spec['schema'], format_checker=Draft202012Validator.FORMAT_CHECKER).validate(content)
@@ -298,6 +307,9 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
                 diagnostics.append({'code': 'DIRECTOR_PLANNING_INPUT', 'severity': 'error', 'stage': 'planning', 'entity_id': None,
                     'field_path': 'input', 'expected': 'verified UTF-8 structured input', 'observed': 'Input or response could not be validated.',
                     'retryable': False, 'recommended_action': 'Correct input and verify exact evidence.', 'evidence': deepcopy(artifacts)})
+            for field, complete in complete_usage.items():
+                if not complete:
+                    counts[field] = None
             usage = {name: {'value': counts.get(name), 'explanation': None if counts.get(name) is not None else 'Not reported by the provider.'}
                      for name in ('provider_calls','input_tokens','output_tokens','cpu_seconds','gpu_seconds','storage_bytes','amount')}
             usage.update(classification='actual', currency=None, measurement_source='planning-provider-response')
