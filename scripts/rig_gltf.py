@@ -300,7 +300,7 @@ class GltfBuilder:
             atomic_bytes(destination, struct.pack('<4sII', b'glTF', 2, 12+len(chunks))+chunks)
 
 
-def _export_geometry(builder: GltfBuilder, geometry, *, weights=None, bone_nodes=None, root_node=None):
+def _export_geometry(builder: GltfBuilder, geometry, *, weights=None, bone_nodes=None, root_node=None, joint_inverse_bind=None):
     from rig_geometry import vertex_normals
     from rig_models import validate_geometry
     validate_geometry(geometry)
@@ -337,8 +337,16 @@ def _export_geometry(builder: GltfBuilder, geometry, *, weights=None, bone_nodes
                 indices[skin.weights[:, i*4:(i+1)*4] == 0] = 0
                 attributes['JOINTS_'+str(i)] = builder.accessor(indices, 'VEC4', 5123, target=34962)
                 attributes['WEIGHTS_'+str(i)] = builder.accessor(skin.weights[:, i*4:(i+1)*4], 'VEC4', target=34962)
+            joints=list(skin.joints);inverse_bind=skin.inverse_bind
+            if joint_inverse_bind is not None:
+                # Keep every authored bone a joint, including unweighted controls.
+                # Existing palette indices and their inverse-bind prefix stay exact.
+                additional=[name for name in bone_nodes if name not in joints]
+                if additional:
+                    joints.extend(additional)
+                    inverse_bind=np.concatenate((inverse_bind,np.asarray([joint_inverse_bind[name] for name in additional])))
             builder.json.setdefault('skins', []).append(dict(name=mesh.id+'-skin', skeleton=root_node,
-                joints=[bone_nodes[name] for name in skin.joints], inverseBindMatrices=builder.accessor(skin.inverse_bind, 'MAT4')))
+                joints=[bone_nodes[name] for name in joints], inverseBindMatrices=builder.accessor(inverse_bind, 'MAT4')))
             node['skin'] = len(builder.json['skins'])-1
         mesh_nodes[mesh.id] = len(builder.json['nodes'])
         builder.json['nodes'].append(node)
@@ -363,7 +371,7 @@ def export_gltf(rig, destination: str | Path, *, bake=True) -> dict:
     from rig_models import rig_signature
     from rig_ik import validate_controllers
     from rig_skinning import validate_skin
-    from rig_skeleton import validate_skeleton
+    from rig_skeleton import validate_skeleton,evaluate_fk
     validate_skeleton(rig.skeleton, rig.manifest.get('limits'))
     validate_controllers(rig.skeleton, rig.manifest['controllers'])
     require(set(rig.weights) == set(rig.geometry.by_id()), 'RIG_MISSING_SKIN', 'Cannot export a rig with missing bindings.')
@@ -377,7 +385,9 @@ def export_gltf(rig, destination: str | Path, *, bake=True) -> dict:
         if children:node['children'] = children
         builder.json['nodes'].append(node)
     root_node = bone_nodes[rig.skeleton['root']]
-    mesh_nodes = _export_geometry(builder, rig.geometry, weights=rig.weights, bone_nodes=bone_nodes, root_node=root_node)
+    joint_inverse_bind={name:np.linalg.inv(matrix) for name,matrix in evaluate_fk(rig.skeleton).items()}
+    mesh_nodes = _export_geometry(builder, rig.geometry, weights=rig.weights, bone_nodes=bone_nodes,
+                                  root_node=root_node,joint_inverse_bind=joint_inverse_bind)
     builder.json['scenes'] = [dict(nodes=[root_node, *mesh_nodes.values()])]
     key_count = 0
     for clip in rig.clips.values():

@@ -206,6 +206,10 @@ def definitions() -> dict:
                                compared_vertices=count, tolerance_m=positive,
                                roundtrip_path=text, roundtrip_sha256=digest)
     blender_export = obj({**blender_fields, **verification_fields}, list(blender_fields))
+    # Optional for historical receipts; current native exports verify and retain
+    # the reopened authoring identity and control/deform semantics explicitly.
+    blender_export['properties']['bone_metadata']=mapping(obj(dict(
+        native_id=identifier,role=identifier,deform=boolean,parent=nullable_id)),256)
     blender_export['allOf'] = [{
         'if': {'properties': {'reopened': {'const': True}}},
         'then': {'required': [field for field in verification_fields if field != 'max_socket_transform_error']},

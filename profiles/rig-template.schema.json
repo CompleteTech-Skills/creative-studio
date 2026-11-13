@@ -3275,6 +3275,44 @@
         "roundtrip_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "bone_metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "native_id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+              },
+              "role": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+              },
+              "deform": {
+                "type": "boolean"
+              },
+              "parent": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "native_id",
+              "role",
+              "deform",
+              "parent"
+            ]
+          },
+          "maxProperties": 256
         }
       },
       "required": [

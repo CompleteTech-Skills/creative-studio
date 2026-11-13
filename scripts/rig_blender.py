@@ -58,6 +58,14 @@ def _publish_outputs(outputs):
                        preserved=str(destination), observed=str(exc)) from exc
 
 
+def _require_authoring_bones(report,rig):
+    expected={bone['id']:dict(native_id=bone['id'],role=bone['role'],deform=bone['deform'],parent=bone['parent'])
+              for bone in rig.skeleton['bones']}
+    require(report.get('bone_metadata')==expected,'RIG_BLENDER_BONE_METADATA',
+            'Editable Blender bones must preserve every native ID, role, deform flag and parent.',
+            expected=expected,observed=report.get('bone_metadata'))
+
+
 def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
     from rig_gltf import export_gltf
     from rig_animation import evaluate_animation
@@ -83,17 +91,23 @@ def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
         report=_run(dict(base,mode='create',input=str(source),manifest=str(root/'rig.json'),output=str(staged),report=str(root/'create-report.json')),
                     executable=executable,timeout=timeout)
         require(report['ok'],'RIG_BLENDER_EDITABLE','Blender output lacks armature, skin modifier or weights.')
+        _require_authoring_bones(report,rig)
         if verify:
             exported=root/'roundtrip.glb'
             report=_run(dict(base,mode='reopen',input=str(staged),export=str(exported),report=str(root/'reopen-report.json')),
                         executable=executable,timeout=timeout)
+            _require_authoring_bones(report,rig)
             maximum=0.;joint_max=0.;socket_max=0.;compared=0
             require(len(report['samples']) == len(samples),'RIG_BLENDER_SAMPLES','Independent Blender sample inventory is incomplete.')
             from rig_skeleton import evaluate_fk
             for sample in report['samples']:
                 require(sample['matched'] or not rig.clips,'RIG_BLENDER_ANIMATION','Blender could not activate a named NLA clip.',asset=sample['clip'])
-                require(set(sample['meshes']) == set(indices) and set(sample['bones']) == {b['id'] for b in rig.skeleton['bones']} and set(sample['sockets']) == set(socket_rest),
-                        'RIG_BLENDER_SAMPLES','Independent Blender mesh, bone or socket inventory is incomplete.')
+                expected_inventory=dict(meshes=set(indices),bones={b['id'] for b in rig.skeleton['bones']},sockets=set(socket_rest))
+                differences={kind:dict(missing=sorted(expected-set(sample[kind])),extra=sorted(set(sample[kind])-expected))
+                             for kind,expected in expected_inventory.items()}
+                complete=not any(item['missing'] or item['extra'] for item in differences.values())
+                require(complete,'RIG_BLENDER_SAMPLES',
+                        'Independent Blender mesh, bone or socket inventory is incomplete: '+str(differences),observed=differences)
                 pose=evaluate_animation(rig,rig.clips[sample['clip']],sample['time'])['pose'] if rig.clips else neutral_pose(rig.skeleton);native=evaluate_deformation(rig,pose);world=evaluate_fk(rig.skeleton,pose)
                 for name,points in sample['meshes'].items():
                     require(np.shape(points)==(len(indices[name]),3),'RIG_BLENDER_SAMPLES','Independent Blender vertex sample count differs.')

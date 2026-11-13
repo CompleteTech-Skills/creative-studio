@@ -16,8 +16,95 @@ from rig_interop import compare_imported,validate_gltf
 from rig_models import TextureImage
 
 
+def authoring_control_fixture(rig):
+    from rig_skeleton import skeleton_from_heads
+    from rig_skinning import generate_skin_weights
+    definitions=[{key:deepcopy(bone[key]) for key in ('id','role','parent','head','tail','deform')}
+                 for bone in rig.skeleton['bones']]
+    definitions[0]['deform']=False
+    definitions.append(dict(id='control.tip',role='authoring-control',parent='b2',
+                            head=[0,3,0],tail=[0,3.25,0],deform=False))
+    rig.manifest['skeleton']=skeleton_from_heads(definitions,source='procedural-fixture',
+        reference='Independent unweighted root and leaf control fixture',confidence=1.)
+    rig.weights=generate_skin_weights(rig.geometry,rig.skeleton)
+    return rig
+
+
 class RigInterchangeTests(unittest.TestCase):
     def setUp(self):self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.rig=fixture(self.temp.name)
+    def test_skin_joint_suffix_preserves_unweighted_authoring_bones_and_original_indices(self):
+        rig=authoring_control_fixture(self.rig)
+        palettes={name:(list(skin.joints),skin.inverse_bind.copy(),skin.indices.copy(),skin.weights.copy())
+                  for name,skin in rig.weights.items()}
+        for extension in ('glb','gltf'):
+            output=Path(self.temp.name)/('authoring.'+extension);export_gltf(rig,output)
+            document=read_gltf(output);nodes=document.json['nodes']
+            for exported in document.json['skins']:
+                name=exported['name'].removesuffix('-skin');original,inverse,indices,weights=palettes[name]
+                joints=[nodes[index]['name'] for index in exported['joints']]
+                self.assertEqual(joints[:len(original)],original)
+                self.assertEqual(joints[len(original):],['b0','control.tip'])
+                actual=document.accessor(exported['inverseBindMatrices']).reshape(-1,4,4).transpose(0,2,1)
+                np.testing.assert_allclose(actual[:len(original)],inverse,atol=1e-7)
+                np.testing.assert_allclose(actual[len(original)],np.eye(4),atol=1e-7)
+                expected=np.eye(4);expected[1,3]=-3.
+                np.testing.assert_allclose(actual[len(original)+1],expected,atol=1e-7)
+                primitive=document.json['meshes'][next(i for i,m in enumerate(document.json['meshes']) if m['extras']['hatchMeshId']==name)]['primitives'][0]
+                exported_indices=document.accessor(primitive['attributes']['JOINTS_0'])
+                exported_weights=document.accessor(primitive['attributes']['WEIGHTS_0'])
+                np.testing.assert_array_equal(exported_indices[weights>0],indices[weights>0])
+                np.testing.assert_allclose(exported_weights,weights,atol=1e-7)
+            imported=load_character_model(output)
+            by_id={bone['id']:bone for bone in imported.skeleton['bones']}
+            self.assertFalse(by_id['b0']['deform']);self.assertFalse(by_id['control.tip']['deform'])
+            self.assertEqual(by_id['control.tip']['role'],'authoring-control')
+
+    def test_non_deform_skin_weights_accept_exact_zero_and_reject_any_positive_value(self):
+        from rig_skinning import validate_skin
+        rig=authoring_control_fixture(self.rig);mesh=rig.geometry.meshes[0]
+        skin=deepcopy(rig.weights[mesh.id]);skin.joints.append('b0')
+        skin.inverse_bind=np.concatenate((skin.inverse_bind,np.eye(4)[None,:,:]))
+        skin.indices[0,-1]=len(skin.joints)-1
+        self.assertEqual(skin.weights[0,-1],0.)
+        validate_skin(skin,mesh,rig.skeleton)
+        original=skin.weights.copy();primary=int(np.argmax(original[0]))
+        for amount in (float.fromhex('0x0.0000000000001p-1022'),1/65535,.25):
+            with self.subTest(amount=amount):
+                skin.weights=original.copy();skin.weights[0,primary]-=amount;skin.weights[0,-1]=amount
+                with self.assertRaises(RigError) as caught:validate_skin(skin,mesh,rig.skeleton)
+                self.assertEqual(caught.exception.report['code'],'RIG_SKIN_DEFORM_FLAG')
+                self.assertEqual(caught.exception.report['observed'],['b0'])
+
+    def test_native_deform_metadata_is_strict_and_generic_gltf_keeps_inference(self):
+        import base64
+        rig=authoring_control_fixture(self.rig);output=Path(self.temp.name)/'native-controls.gltf'
+        export_gltf(rig,output);original=json.loads(output.read_text())
+        ordinary=deepcopy(original)
+        for node in ordinary['nodes']:node.get('extras',{}).pop('hatchBone',None)
+        generic=Path(self.temp.name)/'ordinary.gltf';generic.write_text(json.dumps(ordinary))
+        self.assertTrue(all(bone['deform'] for bone in load_character_model(generic).skeleton['bones']))
+        malformed=deepcopy(original);malformed['nodes'][0]['extras']['hatchBone']['deform']='false'
+        invalid=Path(self.temp.name)/'malformed-native.gltf';invalid.write_text(json.dumps(malformed))
+        with self.assertRaises(RigError):load_character_model(invalid)
+        # This remains valid standard glTF: normalized uint8 influences sum to1.
+        # Its explicit native flag contradicts the positive effective influence.
+        contradictory=deepcopy(original);skin=rig.weights[rig.geometry.meshes[0].id]
+        weighted=skin.joints[int(skin.indices[0,0])]
+        next(node for node in contradictory['nodes'] if node.get('name')==weighted)['extras']['hatchBone']['deform']=False
+        primitive=contradictory['meshes'][0]['primitives'][0]
+        accessor=contradictory['accessors'][primitive['attributes']['WEIGHTS_0']]
+        view=contradictory['bufferViews'][accessor['bufferView']]
+        data=bytearray(base64.b64decode(contradictory['buffers'][0]['uri'].split(',',1)[1]))
+        start=view.get('byteOffset',0)+accessor.get('byteOffset',0)
+        integer=np.zeros((accessor['count'],4),dtype=np.uint8);integer[:,0]=255
+        data[start:start+integer.nbytes]=integer.tobytes()
+        accessor['componentType']=5121;accessor['normalized']=True
+        contradictory['buffers'][0]['uri']='data:application/octet-stream;base64,'+base64.b64encode(data).decode()
+        inconsistent=Path(self.temp.name)/'contradictory-native.gltf';inconsistent.write_text(json.dumps(contradictory))
+        with self.assertRaises(RigError) as caught:load_character_model(inconsistent)
+        self.assertEqual(caught.exception.report['code'],'RIG_SKIN_DEFORM_FLAG')
+        self.assertIn(weighted,caught.exception.report['observed'])
+
     def test_glb_and_gltf_preserve_actual_skin_morph_material_animation(self):
         for extension in ('glb','gltf'):
             output=Path(self.temp.name)/('out.'+extension);export_gltf(self.rig,output)
@@ -73,6 +160,25 @@ class RigInterchangeTests(unittest.TestCase):
 
 class RigExternalIntegrationTests(unittest.TestCase):
     def setUp(self):self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.rig=fixture(self.temp.name)
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_preserves_unweighted_root_and_leaf_authoring_controls(self):
+        from rig_blender import export_blender
+        rig=authoring_control_fixture(self.rig)
+        for animated in (False,True):
+            with self.subTest(animated=animated):
+                working=deepcopy(rig)
+                if not animated:working.clips={}
+                report=export_blender(working,Path(self.temp.name)/('authoring-%s.blend'%animated))
+                self.assertTrue(report['ok']);self.assertTrue(report['reopened'])
+                self.assertEqual(set(report['bone_metadata']),{bone['id'] for bone in rig.skeleton['bones']})
+                self.assertEqual(report['bone_metadata']['control.tip'],dict(native_id='control.tip',
+                    role='authoring-control',deform=False,parent='b2'))
+                self.assertFalse(report['bone_metadata']['b0']['deform'])
+                self.assertGreaterEqual(report['constraints'],len(rig.manifest['controllers']['ik']))
+                for sample in report['samples']:
+                    self.assertEqual(set(sample['bones']),set(report['bone_metadata']))
+                    if not animated:np.testing.assert_allclose(sample['bones']['control.tip'],[0,3,0],atol=1e-5)
+
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
     def test_blender_reopen_has_actual_armature_and_deformation(self):
         from rig_blender import export_blender
