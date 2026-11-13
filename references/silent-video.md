@@ -304,3 +304,9 @@ Both modes disclose source/codec/container uncertainty and the enforced output
 cap as a broad range, rather than a statistical confidence claim. No measured
 sample or hardware execution is implied. A target exceeding the cap is flagged;
 the existing encoder still enforces actual output and pass-log byte limits.
+
+Nested exporters share `silent_video.destination_directory(destination,
+destination_dir_fd=None)`, which yields a portable basename and an owned
+pinned/duplicated directory descriptor for the context lifetime. Explicit FD
+callers supply only a basename; ordinary path callers retain strict symlink
+rejection. This does not admit raw procfs aliases or close caller-owned FDs.

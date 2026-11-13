@@ -261,7 +261,7 @@ class SilentMedia(core.SilentContracts):
         fixture_project(project)
         destination = self.root / 'legacy-render'
         result = subprocess.run([sys.executable,
-            str(Path(__file__).resolve().parents[1] / 'scripts' / 'production.py'),
+            str(Path(__file__).resolve().parents[2] / 'scripts' / 'production.py'),
             'render', '--project', str(project), '--shot', 'first',
             '--destination', str(destination), '--video'],
             capture_output=True, text=True, timeout=60)
@@ -423,6 +423,23 @@ class DescriptorPublication(unittest.TestCase):
                     _rename_no_replace('second', 'final', source_dir_fd=oldfd)
             finally:
                 os.close(oldfd); os.close(newfd)
+
+    def test_destination_directory_context_owns_only_its_duplicate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            original = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with video.destination_directory('movie.mp4', destination_dir_fd=original) as (name, owned):
+                    self.assertEqual(name, 'movie.mp4')
+                    self.assertNotEqual(owned, original)
+                    self.assertEqual(os.fstat(owned).st_ino, os.fstat(original).st_ino)
+                    with self.assertRaises(ValueError):
+                        with video.destination_directory('../escape', destination_dir_fd=original):
+                            self.fail('unsafe destination accepted')
+                os.fstat(original)
+                with self.assertRaises(OSError): os.fstat(owned)
+            finally:
+                os.close(original)
 
     def test_source_open_preserves_pinned_root_during_namespace_swap(self):
         with tempfile.TemporaryDirectory() as directory:
