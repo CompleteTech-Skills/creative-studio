@@ -56,9 +56,13 @@ def build():
     from rig_contracts import schemas as rig_schemas
     from model3d_contracts import schemas as model3d_schemas
     from model3d_mesh_contracts import schemas as model3d_mesh_schemas
+    from director_contracts import schemas as director_schemas
+    from director_graph import schemas as director_graph_schemas
+    from director_planner import schemas as director_planner_schemas
     from lookdev_contracts import schemas as lookdev_schemas
     from scene3d_contracts import schemas as scene3d_schemas
     from editor3d_contracts import schemas as editor3d_schemas
+    from render3d_contracts import schemas as render3d_schemas
     from asset_dependency_schemas import schemas as asset_dependency_schemas
     return {ROOT/'profiles/profile.schema.json':profile,ROOT/'profiles/asset-inputs.schema.json':inputs,
             ROOT/'profiles/style-catalog.schema.json':catalog_schema(),
@@ -66,9 +70,13 @@ def build():
             **{ROOT / 'profiles' / name: value for name, value in rig_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in model3d_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in model3d_mesh_schemas().items()},
+            **{ROOT / 'profiles' / name: value for name, value in director_schemas().items()},
+            **{ROOT / 'profiles' / name: value for name, value in director_graph_schemas().items()},
+            **{ROOT / 'profiles' / name: value for name, value in director_planner_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in lookdev_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in scene3d_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in editor3d_schemas().items()},
+            **{ROOT / 'profiles' / name: value for name, value in render3d_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in asset_dependency_schemas().items()}}
 
 

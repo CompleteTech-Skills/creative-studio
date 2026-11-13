@@ -134,12 +134,22 @@ jobs:
       - run: python scripts/verify_rig_demos.py --generate --destination /tmp/rig-blender-gate --blender
       - name: Actual asset import and generation acceptance
         run: PYTHONPATH=scripts:tests python -m unittest tests/test_rig_asset_import.py -v 2>&1 | tee asset-import.log
+      - name: Install isolated schema validator for Blender Python 3.11
+        run: |
+          python -m pip install --target /tmp/camera-blender-site --python-version 3.11 --only-binary=:all: jsonschema==4.25.1
+      - name: Verify actual Camera3D optics and Blender projection
+        run: python -m unittest discover -s tests -p test_rig_camera3d_optics.py -v
+        env:
+          HATCH_CAMERA3D_BLENDER_TEST: '1'
+          HATCH_CAMERA_TEST_SITE: /tmp/camera-blender-site
+          HATCH_CAMERA_EVIDENCE: /tmp/camera-optics-gate
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: blender-evidence
           path: |
             /tmp/rig-blender-gate/**/validation/*.json
+            /tmp/camera-optics-gate/*
             asset-import.log
   browser:
     name: Three.js browser playback and vertex comparison
