@@ -28,17 +28,18 @@ from atomic_publish import _rename_no_replace
 from director_contracts import validate_method_request, validate_method_result, validate_document
 from director_schema import schemas
 from rig_errors import RigError, decode_json, object_hash, require, sha256
+import director_inventory as inventory
 
 ROOT = Path(__file__).resolve().parents[1]
 OPERATIONS = ('blender.cpu', 'blender.gpu', 'codec.h264', 'codec.vp9', 'codec.av1',
               'importer.obj', 'importer.glb', 'importer.gltf', 'importer.blend',
               'native.acquisition', 'planning.provider', 'module.scene3d',
               'module.camera3d', 'module.lookdev3d', 'module.animation3d',
-              'module.render3d', 'module.editor3d')
+              'module.render3d', 'module.editor3d', *inventory.OPERATIONS)
 MODULES = {'module.scene3d':'scene3d_contracts', 'module.camera3d':'camera3d_contracts',
            'module.lookdev3d':'lookdev_contracts', 'module.animation3d':'animation3d_contracts',
            'module.render3d':'render3d_contracts', 'module.editor3d':'editor3d_contracts',
-           'native.acquisition':'hatch'}
+           'native.acquisition':'hatch', **inventory.MODULES}
 LIMITS = dict(max_provider_calls=0, max_cpu_seconds=3600, max_gpu_seconds=3600,
               max_storage_bytes=1024**3, max_memory_bytes=1536*1024**2,
               currency=None, max_amount=None, policy_ref=None)
@@ -71,7 +72,8 @@ def _unknown_usage():
 
 def _config(configuration):
     value = dict(configuration or {})
-    _need(not set(value)-{'blender','ffmpeg','ffprobe','timeout_seconds','planning_provider','production_limits'}, 'CONFIG', 'Unknown configuration field.')
+    _need(not set(value)-{'blender','ffmpeg','ffprobe','timeout_seconds','planning_provider','production_limits',
+                         *inventory.PROVIDERS.values()}, 'CONFIG', 'Unknown configuration field.')
     for name in ('blender','ffmpeg','ffprobe'):
         if name in value:
             _need(value[name] is None or isinstance(value[name],str), 'CONFIG', 'Executable must be a trusted local path or null.')
@@ -81,8 +83,10 @@ def _config(configuration):
     _need(isinstance(limits,dict) and not set(limits)-{'max_cpu_seconds','max_gpu_seconds','max_storage_bytes','max_memory_bytes'},'CONFIG','Unknown production resource limit.')
     for name,amount in limits.items():
         _need(type(amount) is int and 1<=amount<=2_000_000_000,'CONFIG','Production limits must be positive bounded integers.')
-    provider=value.get('planning_provider')
-    if provider is not None:
+    for field in ('planning_provider', *inventory.PROVIDERS.values()):
+        provider=value.get(field)
+        if provider is None:
+            continue
         _need(isinstance(provider,dict) and not set(provider)-{'id','configured','price_per_call','currency'},'CONFIG','Provider descriptor accepts no credentials or endpoints.')
         _need(isinstance(provider.get('id'),str) and provider['id'] and len(provider['id'])<=128,'CONFIG','Provider ID is required.')
         _need(type(provider.get('configured')) is bool,'CONFIG','Provider availability must be explicit.')
@@ -229,6 +233,26 @@ def _import_probe(operation,directory,timeout):
     return outcome
 
 
+def _inventory_probe(operation, executable, directory, timeout):
+    if operation in ('runtime.python', 'resource.memory', 'resource.storage'):
+        return inventory.measure(operation, directory)
+    script = inventory.worker_script(operation)
+    if script is None:
+        return {'success': False, 'reason': 'native-execution-adapter-unavailable'}
+    path = Path(directory)/'probe.py'
+    path.write_text(script, encoding='utf-8')
+    argv = ([executable, '--background', '--factory-startup', '--disable-autoexec',
+             '--threads', '1', '--python', path] if operation == 'blender.engines'
+            else [sys.executable, path])
+    outcome, text = _worker(argv, directory, timeout)
+    if not outcome['success']:
+        return outcome
+    marker = next((line.removeprefix('DIRECTOR_PROBE=') for line in text.splitlines()
+                   if line.startswith('DIRECTOR_PROBE=')), None)
+    _need(marker is not None, 'WORKER', 'Missing inventory probe result.')
+    return {**outcome, **decode_json(marker)}
+
+
 def _reference(path, stage, dependencies=()):
     return dict(artifact_id='probe-'+path.stem,kind='capability-probe-evidence',schema_version=1,
                 semantic_version='1.0.0',path=path.relative_to(stage).as_posix(),sha256=sha256(path),
@@ -258,9 +282,19 @@ def probe(request, evidence_root, *, configuration=None):
             payloads=[]
             record={'schema_version':1,'operation':operation,'discovered':False,'initialized':False,'execution_verified':False,
                     'status':'unavailable','reason':'unsupported-operation','dependencies':{'probe_source':sha256(Path(__file__))},'fallback':None}
+            record.update(inventory.metadata(operation))
+            record['dependencies']['inventory_source'] = sha256(Path(inventory.__file__))
             version=None;executable=None
             try:
-                if operation.startswith('blender.') or operation=='importer.blend':
+                if operation in ('runtime.python', 'resource.memory', 'resource.storage'):
+                    record['discovered'] = True
+                    record['reason'] = 'measurement-not-requested'
+                    record['dependencies']['python'] = sha256(Path(sys.executable).resolve())
+                    record['dependencies']['python_version'] = sys.version
+                elif operation == 'format.image':
+                    record['discovered'] = importlib.util.find_spec('PIL') is not None
+                    record['reason'] = 'execution-not-requested' if record['discovered'] else 'missing-pillow'
+                elif operation.startswith('blender.') or operation=='importer.blend':
                     executable=_executable('blender',config)
                     record['discovered']=executable is not None;record['reason']='missing-blender' if not executable else 'execution-not-requested'
                 elif operation.startswith('codec.'):
@@ -275,17 +309,18 @@ def probe(request, evidence_root, *, configuration=None):
                     module=ROOT/'scripts'/(MODULES[operation]+'.py');record['discovered']=module.is_file()
                     record['reason']='missing-native-module' if not record['discovered'] else 'contract-module-only'
                     if module.is_file():record['dependencies']['native_module']=sha256(module)
-                elif operation=='planning.provider':
-                    provider=config.get('planning_provider')
+                elif operation=='planning.provider' or operation in inventory.PROVIDERS:
+                    provider=config.get(inventory.PROVIDERS.get(operation, 'planning_provider'))
                     record['discovered']=bool(provider and provider['configured'])
-                    record['reason']='missing-planning-credentials' if not record['discovered'] else 'remote-execution-not-probed'
+                    missing = 'missing-planning-credentials' if operation=='planning.provider' else 'provider-not-configured'
+                    record['reason']=missing if not record['discovered'] else 'remote-execution-not-probed'
                     record['price_availability']='known' if provider and provider.get('price_per_call') is not None else 'unknown'
                     if provider:
                         record.update(provider_id=provider['id'],price_per_call=provider.get('price_per_call'),
                                       currency=provider.get('currency'))
-                    record['fallback']='structured-local-plan'  # This changes planning, never substitutes 2D for 3D.
+                    record['fallback']='structured-local-plan' if operation=='planning.provider' else None
                 if executable:record['dependencies']['executable']=sha256(executable)
-                if operation.startswith('importer.'):
+                if operation.startswith('importer.') or operation in inventory.MODULES:
                     record['dependencies'].update({p.name:sha256(p) for p in sorted((ROOT/'scripts').glob('rig_*.py'))})
                     for package in ('numpy','pygltflib'):
                         try:record['dependencies'][package]=importlib.metadata.version(package)
@@ -294,7 +329,8 @@ def probe(request, evidence_root, *, configuration=None):
                     record['status']='untested'
                     if operation in allowed:
                         with tempfile.TemporaryDirectory(prefix='worker-',dir=tmp) as worker:
-                            if operation in ('blender.cpu','blender.gpu'):outcome=_blender_probe(executable,operation,worker,config.get('timeout_seconds',45))
+                            if operation in inventory.OPERATIONS:outcome=_inventory_probe(operation,executable,worker,config.get('timeout_seconds',45))
+                            elif operation in ('blender.cpu','blender.gpu'):outcome=_blender_probe(executable,operation,worker,config.get('timeout_seconds',45))
                             elif operation in ('codec.h264','codec.vp9','codec.av1'):outcome=_codec_probe(executable,verifier,operation,worker,config.get('timeout_seconds',45))
                             elif operation.startswith('importer.'):outcome=_import_probe(operation,worker,config.get('timeout_seconds',45))
                             else:outcome={'success':False,'reason':'native-execution-adapter-unavailable'}
@@ -309,6 +345,8 @@ def probe(request, evidence_root, *, configuration=None):
                         record['status']='available' if outcome['success'] else 'unavailable'
                         record['reason']='executed' if outcome['success'] else outcome['reason'];record['execution']=outcome
                         version=outcome.get('version')
+                        if outcome['success']:
+                            record['supported_formats'] = outcome.get('formats', record['supported_formats'])
             except (OSError,ValueError,ImportError) as error:
                 record.update(status='unavailable',reason='local-probe-failed')
                 record['failure_type']=type(error).__name__ # no raw error/path/credentials
@@ -388,6 +426,13 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                 _need(isinstance(payloads,list) and payloads==reference['dependencies'],
                       'EVIDENCE','Retained receipt payloads differ from the capability dependency references.')
                 for payload in payloads:_read_artifact(evidence_root,payload)
+                if operation in ('resource.memory', 'resource.storage'):
+                    key = 'max_memory_bytes' if operation == 'resource.memory' else 'max_storage_bytes'
+                    observed = evidence.get('execution', {}).get('available_bytes')
+                    _need(type(observed) is int and observed >= 0, 'EVIDENCE', 'Resource measurement is missing.')
+                    amount = (resources or {}).get(key, 0)
+                    _need(type(amount) in (int, float) and 0 <= amount <= observed,
+                          'RESOURCE', 'Resource estimate exceeds the measured available capacity: '+key)
                 if operation=='planning.provider':
                     provider=evidence.get('provider_id')
                     _need(isinstance(provider,str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}',provider) is not None,

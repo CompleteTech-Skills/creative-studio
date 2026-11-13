@@ -11,6 +11,20 @@ from test_director_capabilities import request
 
 
 class NativeCapabilityTests(unittest.TestCase):
+    def test_procedural_robot_probe_retains_real_roundtrip_geometry(self):
+        from rig_import import load_character_model
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()/'proof'
+            result = cap.probe(request(['procedural.native'], ['procedural.native']), root)
+            self.assertTrue(result['value']['capabilities'][0]['execution_verified'], result['diagnostics'])
+            receipt = json.loads((root/result['artifacts'][0]['path']).read_text())
+            self.assertEqual(receipt['execution']['scope'], 'procedural-robotic-fixture-only')
+            self.assertGreater(receipt['execution']['vertices'], 100)
+            self.assertGreater(receipt['execution']['triangles'], 100)
+            geometry = load_character_model(root/receipt['payloads'][0]['path']).geometry
+            self.assertEqual(geometry.vertex_count, receipt['execution']['vertices'])
+            self.assertEqual(geometry.triangle_count, receipt['execution']['triangles'])
+
     def test_three_real_native_importers_and_exact_evidence(self):
         operations=['importer.obj','importer.glb','importer.gltf']
         with tempfile.TemporaryDirectory() as directory:
