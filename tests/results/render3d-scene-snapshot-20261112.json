@@ -71,5 +71,28 @@
     "selection": "exact project/scene/shot versions, shot-to-scene relation, camera, and last sampled time within half-open shot duration",
     "negative": "missing payload, stale identity, camera mismatch, out-of-range time, existing destination, and corrupt frozen content reject",
     "relocation": "snapshot verifies and plans after relocation and source removal"
+  },
+  "review_corrections": {
+    "reviewed_head": "41603f1193c205d049f9e4ddf17e494b3a3ec144",
+    "findings": [
+      "P1: distinct shots sharing source/camera/time produced identical cache identities",
+      "P2: snapshot deletion during selection validation escaped as FileNotFoundError"
+    ],
+    "changes": [
+      "FrameSpec now requires project/scene/shot identities and hashes them",
+      "Request-binding filesystem failures become typed stale-asset errors"
+    ],
+    "tests": [
+      {
+        "log": "render-scene-review-fixes.log",
+        "sha256": "7aec4568e9908764a9557f1df78e6879bc9535c15d9e0b123b9b9c1602d32040",
+        "passed": 55
+      },
+      {
+        "log": "render-scene-review-gate.log",
+        "sha256": "f72bbe629a97c93a740c69d5c0ddaae19af6cb80247a040022e0ebd865e9c512",
+        "passed": 117
+      }
+    ]
   }
 }
