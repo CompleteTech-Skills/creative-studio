@@ -11,7 +11,7 @@ from contextvars import copy_context
 SCRIPTS = Path(__file__).resolve().parents[1]/'scripts'
 sys.path.insert(0,str(SCRIPTS))
 import rig_errors
-from rig_errors import (RigError,directory_capability,normalize_root,open_payload,safe_path)
+from rig_errors import (RigError,directory_capability,normalize_root,open_payload,safe_path,scoped_directory_descriptor)
 
 
 SUPPORTED = (os.name == 'posix' and Path('/proc/self/fd').is_dir()
@@ -97,6 +97,25 @@ class DirectoryCapabilityTests(unittest.TestCase):
             self.assertEqual(self.read(cap.path/'payload')[0],b'original')
             self.assertEqual((self.stage/'payload/data.bin').read_bytes(),b'foreign')
             self.assertEqual(normalize_root(cap.path),cap.path)
+
+    def test_scoped_descendant_directory_fd_requires_active_authority(self):
+        raw=Path('/proc/self/fd')/str(self.fd)
+        with scoped_directory_descriptor(raw/'payload') as fd:self.assertIsNone(fd)
+        with scoped_directory_descriptor(self.stage/'payload') as fd:self.assertIsNone(fd)
+        with directory_capability(self.fd) as cap:
+            with scoped_directory_descriptor(cap.path/'payload') as fd:
+                self.assertNotEqual(fd,cap.fd)
+                self.stage.rename(self.root/'kept');self.stage.mkdir()
+                filefd=os.open('data.bin',os.O_RDONLY,dir_fd=fd)
+                with os.fdopen(filefd,'rb') as stream:self.assertEqual(stream.read(),b'original')
+                owned=fd
+            with self.assertRaises(OSError):os.fstat(owned)
+            (cap.path/'link').symlink_to(self.root,target_is_directory=True)
+            with self.assertRaises(RigError):
+                with scoped_directory_descriptor(cap.path/'link'):self.fail('symlink admitted')
+            with self.assertRaises(RigError):
+                with scoped_directory_descriptor(cap.path/'..'):self.fail('parent admitted')
+            self.assertTrue(os.fstat(cap.fd))
 
     def test_nested_capabilities_keep_outer_active(self):
         other=self.root/'other';other.mkdir();(other/'data.bin').write_bytes(b'other')
