@@ -225,6 +225,16 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
             evaluated[identifier]['native_animation_evaluated'] = bool(sample_geometry)
     geometry = _sample_native_geometry(graph, evaluated, documents, native, source_root,
                                        max_geometry_vertices) if sample_geometry else None
+    if geometry is not None:
+        # Bind-pose asset bounds cannot describe a deformed frame. Publish the
+        # sampled world-space bounds alongside the vertices for spatial users.
+        import numpy as np
+        for identifier, meshes in geometry.items():
+            arrays = [np.asarray(points) for points in meshes.values() if len(points)]
+            if arrays:
+                evaluated[identifier]['world_bounds'] = dict(
+                    minimum=np.min([points.min(axis=0) for points in arrays], axis=0).tolist(),
+                    maximum=np.max([points.max(axis=0) for points in arrays], axis=0).tolist())
     require(authored == before_scene and authored_shot == before_shot, 'Authored scene changed during evaluation.')
     result = {'schema_version': 1, 'coordinate_system': COORDINATES,
               'scene': _reference_identity(authored, scene_path), 'shot': _reference_identity(authored_shot, shot_path),
@@ -263,7 +273,12 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
         clip_payload = read_source_bytes(Path(root)/portable_path(reference['path']), 16*1024*1024)
         require(hashlib.sha256(clip_payload).hexdigest() == reference['sha256'], 'Native clip source changed.')
         time = Fraction(**binding['time'])
-        key = (rig_ref['path'], reference['id'], time, binding['loop'])
+        # Cache only complete immutable references: another instance may carry
+        # the same clip ID/path but an invalid version or hash that still needs
+        # its own admission check before native geometry can be reused.
+        identity = ('kind', 'id', 'version', 'path', 'sha256')
+        key = (tuple(rig_ref[field] for field in identity),
+               tuple(reference[field] for field in identity), time, binding['loop'])
         if key not in cache:
             rig = load_rig(rig_path.parent)
             require(rig.manifest['id'] == rig_ref['id'] and rig.manifest['version'] == rig_ref['version'],
@@ -280,9 +295,6 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
             deformed = evaluate_deformation(rig, pose)
             cache[key] = (rig, deformed)
         rig, deformed = cache[key]
-        projected_count = sum(len(value['positions']) for value in deformed.values())
-        require(count + projected_count <= max_vertices, 'Native output vertex budget exceeded.',
-                'SCENE3D_EVALUATION_LIMIT')
         if 'source_component' in node.get('metadata', {}):
             # Retain the importer ownership of source transforms, component maps
             # and canonical bind-space geometry. Its evaluator avoids applying
@@ -322,7 +334,6 @@ def camera_matrices(evaluation, render):
     inherited camera transforms are rejected by the camera owner.
     """
     from camera3d_math import projection_matrix, world_transform, scene_camera_optics
-    from rig_math import decompose
     state = evaluation['nodes'][evaluation['camera']]
     camera = state['camera']
     require(type(render.get('width')) is int and type(render.get('height')) is int and
@@ -335,8 +346,8 @@ def camera_matrices(evaluation, render):
         transparent=render.get('transparent',False),color_space=render.get('color_space','srgb'),
         output=render.get('output','png'))
     # Validate physical world transform through the existing camera math owner.
-    transform = decompose(state['world_matrix'])
-    world = world_transform(transform)
+    world = world_transform(dict(translation=[0,0,0], rotation=[0,0,0,1], scale=[1,1,1]),
+                            parent=state['world_matrix'])
     projection = projection_matrix(optics,raster)
     return dict(world_matrix=world.tolist(),projection_matrix=projection.tolist(),
                 optics=optics,render=raster)

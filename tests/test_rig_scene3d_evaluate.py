@@ -104,6 +104,8 @@ class SceneEvaluationTests(unittest.TestCase):
         out=self.evaluate(12,source_root=self.root,sample_geometry=True)
         first=np.asarray(next(iter(out['native_geometry']['first'].values())))
         second=np.asarray(next(iter(out['native_geometry']['second'].values())))
+        self.assertEqual(out['nodes']['first']['world_bounds'],
+                         dict(minimum=first.min(axis=0).tolist(),maximum=first.max(axis=0).tolist()))
         self.assertGreater(np.max(np.abs(first-second)),.05)
         self.assertTrue(out['native_geometry_sampled'])
         self.assertTrue(out['nodes']['first']['native_animation_evaluated'])
@@ -113,6 +115,14 @@ class SceneEvaluationTests(unittest.TestCase):
         clips['bend']['version'] = '2.0.0'
         with self.assertRaises(RigError):self.evaluate(12,source_root=self.root,sample_geometry=True)
         clips['bend'].update(original_reference)
+        second_binding=self.shot['bindings'][1]
+        saved_reference=second_binding['clip']
+        bad_reference=deepcopy(clips['bend']);bad_reference['version']='9.9.9'
+        asset['animations'].append(bad_reference)
+        second_binding['clip']=bad_reference
+        with self.assertRaises(RigError):self.evaluate(12,source_root=self.root,sample_geometry=True)
+        second_binding['clip']=saved_reference
+        asset['animations'].remove(bad_reference)
         # Exact current native payload, not a stale source descriptor, is sampled.
         path=self.root/clips['bend']['path'];path.write_bytes(path.read_bytes()+b' ')
         with self.assertRaises(RigError):self.evaluate(12,source_root=self.root,sample_geometry=True)
@@ -152,6 +162,9 @@ class SceneEvaluationTests(unittest.TestCase):
         second=next(out['native_geometry'][i] for i in out['native_geometry'] if i in second_mapping.values())
         a=np.asarray(next(iter(first.values())));b=np.asarray(next(iter(second.values())))
         self.assertGreater(float(np.linalg.norm(a-b)),1.)
+        exact_budget=sum(len(points) for meshes in out['native_geometry'].values() for points in meshes.values())
+        self.assertEqual(self.evaluate(15,source_root=copied,sample_geometry=True,
+                         max_geometry_vertices=exact_budget)['native_geometry'],out['native_geometry'])
         with self.assertRaises(RigError):self.evaluate(15,source_root=copied,sample_geometry=True,max_geometry_vertices=1)
 
     def test_budgets_and_invalid_channel_fail(self):
@@ -206,6 +219,10 @@ class SceneEvaluationTests(unittest.TestCase):
         mapped=camera_matrices(out,dict(width=640,height=480))
         self.assertAlmostEqual(mapped['projection_matrix'][1][1],.25)
         self.assertEqual(mapped['optics']['projection']['type'],'orthographic')
+        self.scene['nodes'][0]['transform']['rotation']=axis_angle([1,2,3],.1).tolist()
+        rotated=self.evaluate()
+        mapped=camera_matrices(rotated,dict(width=640,height=480))
+        np.testing.assert_allclose(mapped['world_matrix'],rotated['nodes']['camera']['world_matrix'])
         out['nodes']['camera']['world_matrix'][0][0]=2
         with self.assertRaises(ValueError):camera_matrices(out,dict(width=640,height=480))
 
