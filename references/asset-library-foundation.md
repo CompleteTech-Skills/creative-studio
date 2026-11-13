@@ -16,6 +16,9 @@ schemas and native manifests are unchanged. Runtime validation uses the same
 JSON Schema definitions, followed by semantic evidence/inventory/reference checks.
 Timestamps are checked with a built-in RFC3339 spelling/calendar validator,
 including standalone identity/provenance contracts, without optional format packages.
+Canonical library encoding rejects unencodable escaped-surrogate text and other
+unserializable dictionaries with a structured `LIBRARY_JSON` diagnostic, including
+registration APIs; these failures leave stored versions and source bytes unchanged.
 Unknown fields/versions, duplicate JSON keys, nonfinite numbers, excessive
 nesting/manifest sizes, unsafe paths and invalid hashes fail with a `RigError`
 containing a machine-readable `LIBRARY_*` diagnostic and affected field/path.
@@ -58,7 +61,8 @@ The registry is the library authority, not a competing native rig or production
 version authority. There is no separate search index in this slice.
 
 - `read_source_bytes(path, limit=64_MiB)` exposes the bounded no-follow source
-  reader for integrations; limits must be positive integers no larger than 64 MiB.
+  reader for integrations; limits must be positive finite integers no larger than 64 MiB. Mathematically
+  whole JSON numbers such as `43.0` are accepted; booleans are rejected.
 - `file_record(source, logical_path, role, required)` reads a bounded regular file,
   hashes its bytes and recognizes its header. Recognition does not decode geometry
   or certify format validity. Unsupported headers remain explicit binary payloads.
@@ -75,6 +79,14 @@ version authority. There is no separate search index in this slice.
 - `annotations(ref)` and `update_annotations(ref, expected_revision=..., tags=...,
   favorite=..., note=...)` use compare-and-swap revisions. A stale writer fails;
   annotations cannot alter a version digest or source/provenance content.
+
+JSON Schema integer values retain their mathematical meaning: finite whole
+floating spellings such as `43.0` are accepted for byte counts and revision
+inputs. Only validated local I/O/CAS bounds are converted to Python integers;
+immutable manifest spelling, canonical bytes, digests and original payloads
+remain unchanged. Schema-version constants and preview dimensions follow the
+same schema semantics without rewriting user records. Boolean, fractional,
+nonfinite, negative and excessive values fail with structured diagnostics.
 
 This initial strict store requires every inventoried file and exact dependency,
 including entries marked optional. Later policy can distinguish optional loading
@@ -147,8 +159,13 @@ Observed manifest digest:
 | Review regressions: strict trailing-newline rejection, nonadjacent ancestor aliases, path schema parity, native configuration/source evidence and immutable creation time | `test_review_regression_trailing_newline_identifiers_and_digests_reject_registration`, `test_review_regression_nonadjacent_file_directory_alias_rejects_registration`, `test_review_regression_portable_paths_have_schema_runtime_parity`, `test_review_source_fields_and_preview_configs_retain_bound_native_data`, `test_original_creation_time_is_stable_across_versions` |
 | Existing native owners and original bytes | `test_native_documents_use_original_owners_and_preserve_ids`, `test_legacy_profile_roundtrip_preserves_exact_bytes_and_2d_contract`; four existing rig compatibility cases |
 
-The local focused result is 21 passes, zero failures/skips; the separate existing
-compatibility suite passes four cases. A separate 60-case profiles, production
+The retained pre-integration focused result is 21 passes, zero failures/skips; the separate existing
+compatibility suite passes four cases. After integrating the shared decoder
+prerequisite (#205), the library consumer adds an escaped-surrogate/dictionary
+encoding regression; all 22 focused cases passed on Python 3.12.15. After current-main integration,
+two further regressions verify integral-float registration/reopen/raw-byte
+preservation and rejected invalid numeric bounds; all 24 focused cases pass. The earlier
+retained receipts remain attributed to their original source versions. A separate 60-case profiles, production
 contracts and schema/legacy example suite passes with zero failures/skips. Exact
 logs, runtime versions, source hashes and the demonstration report are retained in
 [the validation receipt](../tests/results/asset-library-foundation-20261023/validation.json).

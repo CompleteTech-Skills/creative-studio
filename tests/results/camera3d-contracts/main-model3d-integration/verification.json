@@ -1,0 +1,117 @@
+{
+  "issue": 75,
+  "scope": "Camera contract/math integration with verified Model3D main; not parent camera completion",
+  "integrated_main": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+  "tested_merge_commit": "6f5794713a0d765599a11739d7100a0db332a66d",
+  "previous_actual_astra_pass": "5d8bc535fbff7d0fc7055db39b1f320750dc89bf",
+  "camera_runtime_schema_test_example_bytes_unchanged": true,
+  "source_snapshot_entries": 115,
+  "source_hashes_unchanged_during_tests": true,
+  "protected_current_main_input_count": 14,
+  "original_baseline_unchanged_count": 13,
+  "inherited_upstream_changes": [
+    {
+      "path": "scripts/generate_schemas.py",
+      "original_sha256": "c173bf2f05c3679b168e6baf43feb2bd1a28fa0853efff47af1f7a3ebf334d93",
+      "current_main_sha256": "94cf4e72899e883c856f1f511a89e78662fdf7485643bcb485f440b2ec052390",
+      "provenance": "Inherited Model3D hook from verified main dcba912/PR202; camera introduces no change"
+    }
+  ],
+  "validation": [
+    {
+      "command": "TMPDIR=/home/complete/.cache/hatch-camera75-final/tmp /tmp/hatch-restore-venv/bin/python scripts/test_rig_gate.py schema-math",
+      "tests": 53,
+      "seconds": 11.985,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "exit": 0
+    },
+    {
+      "command": "TMPDIR=/home/complete/.cache/hatch-camera75-final/tmp PYTHONPATH=scripts:tests /tmp/hatch-restore-venv/bin/python -m unittest test_model3d_contracts -v",
+      "tests": 54,
+      "seconds": 11.28,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "exit": 0
+    },
+    {
+      "command": "generate_schemas.py --check",
+      "exit": 0
+    },
+    {
+      "command": "camera3d_contracts.py --check",
+      "exit": 0
+    },
+    {
+      "command": "camera3d_contracts.py --validate examples/camera3d/registry.json",
+      "exit": 0
+    },
+    {
+      "command": "model3d.py validate --file examples/model3d-contracts/robotic.json --root .",
+      "exit": 0,
+      "geometry_inspected": true
+    },
+    {
+      "command": "production_sources.py verify-delivery",
+      "exit": 0
+    },
+    {
+      "command": "Actual camera CLI +/-5000-digit JSON integer admission",
+      "cases": 2,
+      "expected_exit": 2,
+      "stderr": ""
+    }
+  ],
+  "legacy_tests_discovered_without_optional_3d": 809,
+  "discovery_not_full_execution": true,
+  "scratch_root": "/home/complete/.cache/hatch-camera75-final",
+  "historical_unrerun_validation": {
+    "commit": "5d8bc535fbff7d0fc7055db39b1f320750dc89bf",
+    "verification": "../verification.json",
+    "legacy_contract_render_tests": 51,
+    "actual_chromium_tests": 4,
+    "note": "Authenticated unchanged camera runtime/schema/test/example bytes. Broad renderer/browser suites intentionally not rerun for additive upstream Model3D/schema-gate integration; prior results remain historical."
+  },
+  "limitations": [
+    "Fresh exact-head independent Astra review pending",
+    "GitHub publication requires root individual lease; exact-head CI and merge authorization remain separate",
+    "No renderer/editor/animation/DOF/production-art approval claims",
+    "No texture dependency introduced"
+  ],
+  "artifacts": {
+    "schema-math.log": {
+      "sha256": "fb4f5626cbd57a519481e5fd9c9aceabbd9acf13c9a6b885d3049572c3d9d607",
+      "bytes": 9227
+    },
+    "model-integration.log": {
+      "sha256": "651295bc761c95f9ac45675acd3e2f99af5d8bad5c70f168eb5be1494b3c2b09",
+      "bytes": 8772
+    },
+    "registry-example.json": {
+      "sha256": "cabda334465c8bbe4766598d987d2b622ecb274743ad629efa6c924b751a80a6",
+      "bytes": 276
+    },
+    "model-robotic.json": {
+      "sha256": "acf118a08a219562c34d0d6cba85874f2df129cca1fe0245f24015257db7166d",
+      "bytes": 24489
+    },
+    "source-delivery.json": {
+      "sha256": "7d59ca4103d32ae90d1ba145e50d0827d9b061616ea1b560bbe3aaba76747ec8",
+      "bytes": 2916
+    },
+    "camera-cli.json": {
+      "sha256": "30de4e847174c73617c8851f3a30b04dafd639e51c5afd4c2a9732ee10bb4b1f",
+      "bytes": 784
+    },
+    "source-snapshot.json": {
+      "sha256": "f4f612af8d5a6d15aa4338c945af70063f6e5928ddc374115e23bcb0f84b2635",
+      "bytes": 11661
+    },
+    "protected-current-main.json": {
+      "sha256": "8531cbfaeff98d683393b579831870751032b67086b74ce6530280721bc7e3d3",
+      "bytes": 4567
+    }
+  }
+}

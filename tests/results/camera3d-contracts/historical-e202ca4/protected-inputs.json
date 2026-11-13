@@ -1,0 +1,16 @@
+{
+  "scripts/production_contracts.py": "7b0c7f873a5b8cd129cf6d550cb5d1ba7ac7a367c399b1a300ccebacb98e2a46",
+  "scripts/production_render.py": "981b6fbafdcd0fcf009dca02b0f695bfb3742b58bd9e9a11068f0e0dd085c9be",
+  "scripts/production_performance.py": "7791cf281a7d718237188b8aec5ed707ae21eb43d0b6874b081fdb04d11866b8",
+  "scripts/production_workflow.py": "4dc71e4819adf0e8a1ea2839687664f8fcef36dd0cff1311f38d293a455b1c40",
+  "scripts/production.py": "8fbed684e75a14d0db2dc97da9978993b3961db4b895942303c7babcaa2c4bd2",
+  "scripts/generate_schemas.py": "c173bf2f05c3679b168e6baf43feb2bd1a28fa0853efff47af1f7a3ebf334d93",
+  "profiles/production-shot.schema.json": "12cc14e67a72da0a022f18ed44df3fd2d5ad3919ab583a225dfaabb9593ea4b3",
+  "profiles/production-scene.schema.json": "1d01d66903b3d730f4670951daf2f30239e05d27b1f50d68be080173585974ad",
+  "profiles/production-project.schema.json": "cd33410c713660e33c6805df19aa94512de5f0cb64f71f6b3db74ce05d2c4c21",
+  "assets/production-preview.js": "423bf472f1f805f61d6907d7d292af168524414934b308df6cd7fd880bea8a11",
+  "assets/production-preview.html": "3d5fce3fa06ad46fcbf0dba48008a001e02a355c751295fd16402ce5f81f3efa",
+  "profiles/codex-v1.json": "f4e0279f8634ea53ef544ecb49b9a71ec2565c61ec5b8e63163ecc5ead478a6b",
+  "state-library/catalog.json": "970139db7291c4233ef75e37ffd6abe0385c8f165dd37b339326a4e8647f3de9",
+  "assets/playback.js": "9aa7d5228de0a57cd443b70c14b160cb22238d21a861a0fb06f6b4bcc6ccbc79"
+}
