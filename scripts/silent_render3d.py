@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 from PIL import Image
-from atomic_publish import _rename_no_replace, private_stage
+from atomic_publish import _rename_no_replace
 import silent_video as video
 
 
@@ -90,7 +90,7 @@ def composite_srgb(image, background):
     return result
 
 
-def prepare(request, result, render_root, destination, *, snapshot_root, expected_backend, background=None, cancel=None):
+def prepare(request, result, render_root, destination, *, snapshot_root, expected_backend, background=None, cancel=None, destination_dir_fd=None):
     """Return an admitted source and retained real-owner verification evidence.
 
     The observed backend identity must come from the renderer caller, rather
@@ -102,25 +102,24 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
     _preflight(request, result)
     if background is not None:
         _background(background)
-    destination = video._destination(destination)
     try:
         from render3d_verify import verify_result
     except ImportError as exc:
         raise ValueError('canonical Render3D verifier is unavailable') from exc
-    request, result = copy.deepcopy(request), copy.deepcopy(result)
-    _preflight(request, result)
-    verification = verify_result(request, result, render_root,
-                                 snapshot_root=snapshot_root, expected_backend=expected_backend)
-    if cancel is not None and cancel():
-        raise ValueError('silent source preparation cancelled')
-    output = request['settings']['output']
-    if output['format'] != 'png' or output['bit_depth'] != 8 or output['color_space'] != 'srgb':
-        raise ValueError('silent SDR adapter requires actual sRGB PNG8; EXR/HDR needs an explicit separate transform')
-    combined = sorted((item for item in result['images'] if item['pass_name'] == 'combined'), key=lambda item: item['frame'])
-    if not combined or len(combined) > video.MAX_FRAMES:
-        raise ValueError('complete bounded combined image inventory required')
-    with video._pin_directory(destination.parent) as parent_fd:
-        with private_stage(parent_fd, prefix='.silent-render3d-') as (private_path, wrapper_fd):
+    with video.destination_directory(destination, destination_dir_fd=destination_dir_fd) as (destination_name, parent_fd):
+        request, result = copy.deepcopy(request), copy.deepcopy(result)
+        _preflight(request, result)
+        verification = verify_result(request, result, render_root,
+                                     snapshot_root=snapshot_root, expected_backend=expected_backend)
+        if cancel is not None and cancel():
+            raise ValueError('silent source preparation cancelled')
+        output = request['settings']['output']
+        if output['format'] != 'png' or output['bit_depth'] != 8 or output['color_space'] != 'srgb':
+            raise ValueError('silent SDR adapter requires actual sRGB PNG8; EXR/HDR needs an explicit separate transform')
+        combined = sorted((item for item in result['images'] if item['pass_name'] == 'combined'), key=lambda item: item['frame'])
+        if not combined or len(combined) > video.MAX_FRAMES:
+            raise ValueError('complete bounded combined image inventory required')
+        with video._private_stage(parent_fd, prefix='.silent-render3d-') as (private_path, wrapper_fd):
             stage = private_path / 'payload'
             stage.mkdir(mode=0o700)
             (stage / 'frames').mkdir()
@@ -162,5 +161,5 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
             (stage / 'source.json').write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
             if cancel is not None and cancel():
                 raise ValueError('silent source preparation cancelled before publication')
-            _rename_no_replace('payload', destination.name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
+            _rename_no_replace('payload', destination_name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
     return report
