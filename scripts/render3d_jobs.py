@@ -116,6 +116,9 @@ class JobStore:
                 'ownership', 'Store host, version or capacities differ; open with its original configuration.')
         safe_path(self.root,'jobs.sqlite3',exists=True)
         self.root=self.root.resolve()
+        with self._transaction() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS storage_reservations('
+                       'stage TEXT PRIMARY KEY, bytes INTEGER NOT NULL, pid INTEGER NOT NULL)')
 
     @contextmanager
     def _transaction(self):
@@ -205,10 +208,10 @@ class JobStore:
             entries.append(dict(key=child.name,bytes=size))
         return entries
 
-    def _retained_cache_bytes(self, *, active_tokens=()):
+    def _retained_cache_bytes(self, *, active_tokens=(), reserved_stages=()):
         """All staging bytes consume capacity, including failed worker evidence."""
         total=0
-        active={'run-'+token for token in active_tokens}
+        active={'run-'+token for token in active_tokens}|set(reserved_stages)
         staging=safe_path(self.root,'staging')
         for path in staging.rglob('*'):
             if path.relative_to(staging).parts[0] in active:continue
@@ -223,8 +226,22 @@ class JobStore:
             if stat.S_ISREG(info.st_mode):total+=info.st_size
         return total
 
-    def _stored_output_bytes(self, *, active_tokens=()):
-        return sum(entry['bytes'] for entry in self._cache_entries())+self._retained_cache_bytes(active_tokens=active_tokens)
+    def _stored_output_bytes(self, *, active_tokens=(), reserved_stages=()):
+        return sum(entry['bytes'] for entry in self._cache_entries())+self._retained_cache_bytes(
+            active_tokens=active_tokens,reserved_stages=reserved_stages)
+
+    def _storage_reserved(self, db, live):
+        reservations=[]
+        for row in db.execute('SELECT * FROM storage_reservations').fetchall():
+            if _alive(row['pid']):reservations.append(row)
+            else:
+                # The bytes remain evidence; only the dead owner's reservation
+                # is released. Physical leftovers are then counted below.
+                db.execute('DELETE FROM storage_reservations WHERE stage=?',(row['stage'],))
+        reserved=sum(json.loads(row['request'])['settings']['resources']['storage_bytes'] for row in live)
+        reserved+=sum(row['bytes'] for row in reservations)
+        return reserved+self._stored_output_bytes(active_tokens=[row['token'] for row in live],
+            reserved_stages=[row['stage'] for row in reservations])
 
     def cache_inventory(self):
         with self._transaction() as db:
@@ -268,7 +285,7 @@ class JobStore:
             live=list(db.execute('SELECT j.request,j.backend,f.token FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'))
             used={name:sum(json.loads(r['request'])['settings']['resources'][name] for r in live)
                   for name in ('workers','memory_bytes','storage_bytes')}
-            used['storage_bytes']+=self._stored_output_bytes(active_tokens=[row['token'] for row in live])
+            used['storage_bytes']=self._storage_reserved(db,live)
             gpu_used=sum(json.loads(r['backend'])['device']!='cpu' for r in live)
             query='SELECT f.*,j.request,j.backend,j.snapshot FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="queued" AND j.cancel=0'
             args=[]
@@ -423,29 +440,47 @@ class JobStore:
         require(result['status']=='complete','incomplete-output','Only complete verified frames can enter cache.')
         require(result['backend']==lease['backend'],'stale-cache','Backend identity changed.')
         request=self.frame_request(lease)
-        verifier(request,result,output_root)
+        report=verifier(request,result,output_root)
+        require(isinstance(report,dict),'verification-failed','Verifier did not return a metadata report.')
         current=make_frame_spec(lease['request'],lease['frame'],Path(lease['snapshot'])/'snapshot.json')
         require(current==lease['spec'],'stale-asset','Source changed before frame publication.')
-        stage=Path(tempfile.mkdtemp(prefix='cache-',dir=safe_path(self.root,'staging')))
+        refs=[i['file'] for i in result['images']]+result['logs']
+        refs += [r for r in (result['manifest'],result['verification']['evidence']) if r is not None]
+        unique={}
+        for ref in refs:
+            require(ref['path'] not in unique or unique[ref['path']]==ref,'invalid-input','Conflicting artifact references.')
+            require(ref['path'].split('/')[0]!='cache.json','invalid-input','cache.json is reserved.')
+            unique[ref['path']]=ref
+        artifact_bytes=sum(ref['bytes'] for ref in unique.values())
+        require(artifact_bytes<=request['settings']['resources']['storage_bytes'],
+                'storage-exhaustion','Artifact inventory exceeds its storage budget.')
+        record=dict(version=1,cache_key=lease['cache_key'],spec=lease['spec'],backend=lease['backend'],request=request,result=result,report=report)
+        payload=(json.dumps(record,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+        require(len(payload)<=32*1024**2,'storage-exhaustion','Cache metadata exceeds its read bound.')
+        reserve=artifact_bytes+len(payload)
+        stage=safe_path(self.root,'staging/cache-'+uuid.uuid4().hex)
+        with self._transaction() as db:
+            self._owned(db,lease)
+            require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
+                    'cancelled','Cancellation requested before cache admission.')
+            live=list(db.execute('SELECT j.request,f.token FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'))
+            require(self._storage_reserved(db,live)+reserve<=self.capacity['storage_bytes'],
+                    'storage-exhaustion','Complete cache stage exceeds unreserved store capacity.')
+            db.execute('INSERT INTO storage_reservations(stage,bytes,pid) VALUES(?,?,?)',
+                       (stage.name,reserve,os.getpid()))
+        created=False
         try:
-            refs=[i['file'] for i in result['images']]+result['logs']
-            refs += [r for r in (result['manifest'],result['verification']['evidence']) if r is not None]
-            unique={}
-            for ref in refs:
-                require(ref['path'] not in unique or unique[ref['path']]==ref,'invalid-input','Conflicting artifact references.')
-                unique[ref['path']]=ref
-            total=0
+            stage.mkdir();created=True
+            copied=0
             for ref in unique.values():
                 source=safe_path(output_root,ref['path'],exists=True)
                 target=safe_path(stage,ref['path']);target.parent.mkdir(parents=True,exist_ok=True)
-                require(ref['path'].split('/')[0]!='cache.json','invalid-input','cache.json is reserved.')
-                size=source.stat().st_size;total+=size
-                require(size==ref['bytes'] and total<=request['settings']['resources']['storage_bytes'],
-                        'storage-exhaustion','Artifact inventory exceeds its storage budget.')
+                require(ref['bytes']<=reserve-len(payload)-copied,'storage-exhaustion','Cache copy exceeds its reservation.')
                 _copy_artifact(source,target,ref)
-            report=verifier(request,result,stage)
-            record=dict(version=1,cache_key=lease['cache_key'],spec=lease['spec'],backend=lease['backend'],request=request,result=result,report=report)
-            atomic_json(stage/'cache.json',record)
+                copied+=ref['bytes']
+            fresh=verifier(request,result,stage)
+            require(fresh==report,'verification-failed','Copied artifact verification differs from admitted source evidence.')
+            atomic_bytes(stage/'cache.json',payload)
             with self._transaction() as db:
                 self._owned(db,lease)
                 require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
@@ -479,7 +514,12 @@ class JobStore:
                            (lease['job'],lease['frame']))
                 self._event(db,lease['job'],'frame-published',{'frame':lease['frame'],'cache_key':lease['cache_key']});self._refresh(db,lease['job'])
         finally:
-            if stage.exists():shutil.rmtree(stage)
+            try:
+                if created and stage.exists():shutil.rmtree(stage)
+            finally:
+                with self._transaction() as db:
+                    db.execute('DELETE FROM storage_reservations WHERE stage=? AND pid=?',
+                               (stage.name,os.getpid()))
         return record
 
     def run_one(self, backend, verifier, *, job=None):

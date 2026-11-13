@@ -289,6 +289,83 @@ finally:case.tearDown()
         self.assertEqual(self.store.status(job)['frames'][0]['state'],'queued')
         self.assertEqual(len(list((self.store.root/'staging').glob('corrupt-*'))),len(malformed))
 
+    def test_publish_rejects_complete_cache_budget_before_any_copy(self):
+        from unittest.mock import patch
+        import render3d_jobs as module
+        self.request['settings']['resources']['storage_bytes']=512
+        self.store=JobStore(self.root/'small-store',storage_bytes=512)
+        job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
+        with patch.object(module,'_copy_artifact',side_effect=AssertionError('Copy happened before admission')):
+            with self.assertRaises(Render3DError) as caught:
+                self.store.publish(lease,output,result,self.verify)
+        self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+        self.assertEqual(list((self.store.root/'staging').iterdir()),[])
+        self.assertEqual((output/'frame.png').stat().st_size,result['images'][0]['file']['bytes'])
+
+    def test_concurrent_publish_reserves_complete_stages(self):
+        import threading
+        from unittest.mock import patch
+        import render3d_jobs as module
+        self.request['settings']['resources']['storage_bytes']=512
+        self.store=JobStore(self.root/'concurrent-store',workers=2,storage_bytes=10000)
+        job=self.submit();first=self.store.claim(job);second=self.store.claim(job)
+        output1,result1=self.output(first);output2,result2=self.output(second)
+        entered=threading.Event();release=threading.Event();errors=[]
+        original=module._copy_artifact
+        def hold(source,target,reference):
+            entered.set()
+            if not release.wait(20):raise AssertionError('Timed out waiting for concurrent admission')
+            return original(source,target,reference)
+        def publish_first():
+            try:self.store.publish(first,output1,result1,self.verify)
+            except Exception as error:errors.append(error)
+        with patch.object(module,'_copy_artifact',side_effect=hold):
+            thread=threading.Thread(target=publish_first);thread.start()
+            try:
+                self.assertTrue(entered.wait(20),'First publication never reserved its stage')
+                with self.assertRaises(Render3DError) as caught:
+                    self.store.publish(second,output2,result2,self.verify)
+                self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+            finally:release.set();thread.join(20)
+        self.assertFalse(thread.is_alive());self.assertEqual(errors,[])
+        self.assertEqual(self.store.status(job)['frames'][0]['state'],'complete')
+        with self.store._transaction() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM storage_reservations').fetchone()[0],0)
+
+    def test_failed_copy_releases_reservation_and_preserves_source(self):
+        from unittest.mock import patch
+        import render3d_jobs as module
+        job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
+        original=module._copy_artifact;changed=[]
+        def grow(source,target,reference):
+            payload=source.read_bytes()+b'x';source.write_bytes(payload);changed.append((source,payload))
+            return original(source,target,reference)
+        with patch.object(module,'_copy_artifact',side_effect=grow):
+            with self.assertRaises(Render3DError) as caught:
+                self.store.publish(lease,output,result,self.verify)
+        self.assertEqual(caught.exception.report['category'],'corrupt-output')
+        self.assertEqual(changed[0][0].read_bytes(),changed[0][1])
+        self.assertEqual(list((self.store.root/'staging').iterdir()),[])
+        with self.store._transaction() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM storage_reservations').fetchone()[0],0)
+
+    def test_dead_stage_reservation_reconciles_without_deleting_evidence(self):
+        self.request['settings']['resources']['storage_bytes']=128
+        self.store=JobStore(self.root/'abandoned-stage',storage_bytes=256)
+        job=self.submit()
+        child=subprocess.run([sys.executable,'-c','import os;print(os.getpid())'],
+                             capture_output=True,text=True,check=True)
+        dead_pid=int(child.stdout)
+        stage=self.store.root/'staging/cache-abandoned';stage.mkdir()
+        (stage/'partial').write_bytes(b'x'*128)
+        with self.store._transaction() as db:
+            db.execute('INSERT INTO storage_reservations(stage,bytes,pid) VALUES(?,?,?)',
+                       (stage.name,10000,dead_pid))
+        self.assertIsNotNone(self.store.claim(job))
+        self.assertEqual((stage/'partial').read_bytes(),b'x'*128)
+        with self.store._transaction() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM storage_reservations').fetchone()[0],0)
+
     def test_pinned_cache_cannot_be_cleaned_and_history_is_paginated(self):
         job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
         self.store.publish(lease,output,result,self.verify)

@@ -43,8 +43,12 @@ queue if attempts remain. A stale expected revision rejects the mutation.
 Outputs are independently verified before and after copying into private cache
 staging, then published through the repository's exclusive native rename.
 Copying is bounded by declared bytes and checks the same bytes written; changed
-or growing input files cannot silently enter the cache. Database completion is
-recorded only after successful publication. A crash between publication and the
+or growing input files cannot silently enter the cache. The complete cache copy and bounded encoded metadata are reserved in SQLite
+before any stage files are written. Concurrent claims and publications account
+for those reservations. Source and copied verification observations must agree.
+Dead reservation owners release their reservation while actual partial bytes
+remain accounted and retained. Database completion is recorded only after
+successful publication. A crash between publication and the
 transaction commit leaves a reusable verified cache entry, not a false completion.
 Corrupt cache bytes are retained in a named quarantine before a newly rendered,
 verified replacement is installed. Both the retained evidence and its replacement
