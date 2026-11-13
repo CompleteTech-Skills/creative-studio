@@ -12,13 +12,12 @@ from rig_errors import require, finite_json, RigError
 def configuration(*, view='AgX', exposure=0., temperature_kelvin=6500., tint=10., output='srgb-png'):
     result={'schema_version':1,'working_space':'linear-srgb','view':view,'exposure_stops':exposure,
             'temperature_kelvin':temperature_kelvin,'tint':tint,'output':output}
+    _validate_content(result)
     result['sha256']=content_hash(result)
     return validate_configuration(result)
 
 
-def validate_configuration(value):
-    require(isinstance(value,dict) and set(value)=={'schema_version','working_space','view','exposure_stops',
-            'temperature_kelvin','tint','output','sha256'},'LOOKDEV_COLOR','Invalid color configuration fields.')
+def _validate_content(value):
     finite_json(value)
     require(type(value['schema_version']) is int and value['schema_version']==1 and value['working_space']=='linear-srgb',
             'LOOKDEV_COLOR','Unsupported color configuration.')
@@ -28,6 +27,12 @@ def validate_configuration(value):
         require(type(number) in (int,float) and low<=number<=high and math.isfinite(number),
                 'LOOKDEV_COLOR','Invalid '+key)
     require(value['output'] in ('srgb-png','scene-linear-exr'),'LOOKDEV_COLOR','Unsupported output encoding.')
+
+
+def validate_configuration(value):
+    require(isinstance(value,dict) and set(value)=={'schema_version','working_space','view','exposure_stops',
+            'temperature_kelvin','tint','output','sha256'},'LOOKDEV_COLOR','Invalid color configuration fields.')
+    _validate_content(value)
     require(value['sha256']==content_hash({k:v for k,v in value.items() if k!='sha256'}),
             'LOOKDEV_COLOR_HASH','Color configuration changed.')
     return deepcopy(value)
