@@ -119,12 +119,17 @@ def export_document(document, destination):
     The caller selects its project or global preset directory. Existing files,
     including previous versions, are never overwritten or deleted here.
     """
+    validate(document)
+    return _publish_document(document, destination)
+
+
+def _publish_document(document, destination):
+    """Publish prevalidated canonical data with the shared exclusive authority."""
     import os
     from pathlib import Path
     import tempfile
     from atomic_publish import _rename_no_replace
     import hatch
-    validate(document)
     data = canonical_bytes(document)
     if len(data) > MAX_BYTES:
         raise ValueError('camera3d document exceeds its native byte budget')

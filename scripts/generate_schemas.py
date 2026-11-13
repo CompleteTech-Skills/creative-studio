@@ -51,6 +51,7 @@ def build():
     inputs={'$schema':'https://json-schema.org/draft/2020-12/schema','title':'Hatch asset input interfaces v1',
         '$defs':{'identity':identity,'source':source,'annotation':annotation},
         'oneOf':[{'$ref':'#/$defs/'+name} for name in ('identity','source','annotation')]}
+    from camera3d_preset_library import schema as camera3d_library_schema
     from style_registry import catalog_schema
     from decomposition_spec import schemas as decomposition_schemas
     from rig_contracts import schemas as rig_schemas
@@ -61,6 +62,7 @@ def build():
     from editor3d_contracts import schemas as editor3d_schemas
     return {ROOT/'profiles/profile.schema.json':profile,ROOT/'profiles/asset-inputs.schema.json':inputs,
             ROOT/'profiles/style-catalog.schema.json':catalog_schema(),
+            ROOT/'profiles/camera3d-library-preset.schema.json':camera3d_library_schema(),
             **{ROOT / 'profiles' / name: value for name, value in decomposition_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in rig_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in model3d_schemas().items()},

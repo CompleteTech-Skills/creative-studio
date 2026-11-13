@@ -195,3 +195,26 @@ authored orientation. An aimed preset without an actual target fails explicitly.
 The returned dependency hash binds the motion sample and aim algorithm/version
 and the resulting pose. Presets do not infer a scene target or resolve arbitrary
 source references; those remain with the authoritative scene/project owners.
+
+
+## Versioned camera, movement and shot library snapshots
+
+`camera3d_preset_library` creates, validates, revises, duplicates, imports and
+exports all three preset families through `camera3d-library-preset` JSON.
+Each snapshot stores actual optical/transform, movement parameters, or combined
+shot framing values with a stable ID, increasing library revision and exact
+built-in algorithm version. Custom camera/shot fields and complete movement
+parameter snapshots are validated before publication. Previous library versions
+remain unchanged; reset recreates the versioned built-in default.
+
+The caller chooses a project or global library directory. Publication uses the
+same exclusive canonical JSON authority as native camera documents and preserves
+existing paths. Imports use bounded no-follow source reads and reject duplicate
+JSON keys, unsupported algorithm versions and malformed parameters. The strict
+schema is generated at `profiles/camera3d-library-preset.schema.json`.
+
+Library snapshots contain reusable parameter values rather than claims that
+external scene/camera/target references were resolved. Instantiate those values
+through the canonical camera/scene owners before production evaluation. Native
+`camera3d-preset` documents continue to carry exact resolved camera/optics
+references where a project requires that source closure.
