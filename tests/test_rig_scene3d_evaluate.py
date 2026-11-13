@@ -305,6 +305,20 @@ class SceneEvaluationTests(unittest.TestCase):
         self.shot['path_bindings'][0]['points']=[[0,0,0],[0,0,0]]
         with self.assertRaises(RigError):self.evaluate()
 
+    def test_underflowing_parent_path_inverse_fails_structurally_without_mutation(self):
+        parent='root'
+        for index in range(48):
+            group=node('tiny-'+str(index),'group',parent)
+            group['transform']['scale']=[1e-7]*3
+            self.scene['nodes'].append(group);parent=group['id']
+        self.scene['nodes'][1]['parent']=parent
+        self.shot['path_bindings']=[dict(schema_version=1,id='travel',target='mesh',
+            points=[[0,0,0],[1,0,0]],start_frame=0,end_frame=20,start_fraction=0,
+            end_fraction=1,space='world',orientation='preserve')]
+        before=deepcopy(self.bundle)
+        with self.assertRaises(RigError):self.evaluate(1)
+        self.assertEqual(self.bundle,before)
+
     def test_canonical_light_binding_uses_explicit_units_and_animated_multiplier(self):
         from lookdev_contracts import Registry,canonical_bytes
         from test_lookdev_contracts import light

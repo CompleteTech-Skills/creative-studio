@@ -211,6 +211,7 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
         import numpy as np
         from scene3d_constraints import sample_path
         from scene3d_math import local_matrix
+        from scene3d_graph import _inverse
         for binding in sorted(paths,key=lambda b:depth(b['target'])):
             samples += 1
             require(samples <= max_track_samples,'Evaluated-track budget exceeded.','SCENE3D_EVALUATION_LIMIT')
@@ -226,7 +227,7 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
                 attachment = node['attachment']
                 world = (np.asarray(SceneGraph(working).evaluate_base(attachment['socket'])['world_matrix']) @
                          local_matrix(attachment['offset']))
-            local_target = (np.linalg.inv(world)@np.r_[desired,1])[:3]
+            local_target = (_inverse(world)@np.r_[desired,1])[:3]
             transform = node['transform']
             pivot_offset = local_matrix(transform)[:3,3]-np.asarray(transform['translation'])
             transform['translation'] = (local_target-pivot_offset).tolist()
