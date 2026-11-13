@@ -21,8 +21,10 @@ class ColorTests(unittest.TestCase):
                        {'tint':501},{'tint':-501},{'exposure':-33},{'exposure':33},
                        {'temperature_kelvin':True},{'exposure':float('nan')},
                        {'view':'aces'},{'output':'linear-png'},
-                       {'temperature_kelvin':10**400},{'tint':-(10**400)},{'exposure':10**400}):
-            with self.subTest(kwargs=kwargs),self.assertRaises(RigError):configuration(**kwargs)
+                       {'temperature_kelvin':10**400},{'tint':-(10**400)},{'exposure':10**400},
+                       {'temperature_kelvin':10**6000},{'tint':-(10**6000)},{'exposure':10**6000},
+                       {'view':object()},{'output':object()}):
+            with self.subTest(field=next(iter(kwargs))),self.assertRaises(RigError):configuration(**kwargs)
 
     def test_authoritative_profile_hash_covers_wb_exposure_and_encoding(self):
         value=configuration();copy=deepcopy(value)
