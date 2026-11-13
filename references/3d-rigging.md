@@ -365,3 +365,17 @@ float64 position-buffer sizes. Missing-animation/capability results add no work.
 These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
+
+The additive top-level `discovery` map, keyed by selected canonical state ID, separates catalog anatomy/archetype/prop
+requirements from a validated recipe's actual dependencies. It lists missing
+capabilities, excluded present capabilities, alternative capability requirements,
+and required props still awaiting explicit approval. Executable recipes expose
+exact bone channels, mesh-qualified morph targets, contact chains, globally evaluated native constraints (including named targets),
+declared skin joints (including zero-weight entries read by native deformation) and their parent dependencies. Incomplete or incompatible recipes leave
+these concrete bone/morph inventories `null`; catalog capability names are not
+invented joint IDs. Prop approval does not establish an accessory socket or
+ownership binding. Requested, present and missing clip IDs remain visible even
+when a recipe is unavailable. `asset_provenance` deduplicates the exact source rig
+manifest hash, retained source inventory and provenance, plus canonical clip hashes
+and provenance; per-state references identify the evidence used by that recipe.
+These reports do not establish semantic suitability or visual approval.
