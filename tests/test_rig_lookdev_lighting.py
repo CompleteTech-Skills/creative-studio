@@ -71,6 +71,28 @@ class LightAdmission(unittest.TestCase):
     def test_eevee_linking_is_explicitly_rejected(self):
         with self.assertRaises(RigError):plan(engine='BLENDER_EEVEE_NEXT',options={'receivers':['actor']})
 
+    def test_eevee_cannot_claim_required_light_linking(self):
+        value = source()
+        value['render_policy']['required_features'] = ['light-linking']
+        with self.assertRaises(RigError):
+            plan(value, engine='BLENDER_EEVEE_NEXT')
+        self.assertIsInstance(plan(value, engine='CYCLES'), dict)
+
+    def test_rehashed_incomplete_reference_rejected_before_execution(self):
+        from lookdev_contracts import content_hash
+        for updates in ({'path': '../source.json'}, {'sha256': 'bad'},
+                        {'sha256': 'A' * 64}):
+            actual = plan()
+            actual['reference'].update(updates)
+            actual['sha256'] = content_hash({k: v for k, v in actual.items() if k != 'sha256'})
+            with self.subTest(updates=updates), self.assertRaises(RigError):
+                _validated(actual)
+        actual = plan()
+        del actual['reference']['sha256']
+        actual['sha256'] = content_hash({k: v for k, v in actual.items() if k != 'sha256'})
+        with self.assertRaises(RigError):
+            _validated(actual)
+
     def test_source_is_not_mutated(self):
         value=source(); saved=copy.deepcopy(value)
         actual=plan(value);actual['light']['color']['value'][0]=0

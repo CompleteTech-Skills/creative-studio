@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 import math
+import re
 
-from lookdev_contracts import canonical_bytes, content_hash, validate_resource
+from lookdev_contracts import canonical_bytes, content_hash, portable_path, validate_resource
 from rig_errors import RigError, finite_json, require
 
 VERSION = '1.0.0'
@@ -19,7 +20,7 @@ ENGINES = ('CYCLES', 'BLENDER_EEVEE_NEXT')
 LUMINOUS_EFFICACY = 683.0
 WEIGHTS = (0.2126, 0.7152, 0.0722)
 LOCAL_FEATURES = frozenset(('light-point', 'light-spot', 'light-directional',
-    'light-area', 'shadows', 'light-linking', 'temperature-color'))
+    'light-area', 'shadows', 'temperature-color'))
 
 
 def _number(value, lo, hi, label):
@@ -138,7 +139,8 @@ def light_plan(registry, reference, *, engine='CYCLES', options=None):
     kind = light['type']
     opts = _options(options, kind)
     from lookdev_contracts import check_compatibility
-    features = LOCAL_FEATURES | ({'light-environment', 'indirect-lighting'} if engine == 'CYCLES' else set())
+    features = LOCAL_FEATURES | ({'light-environment', 'indirect-lighting', 'light-linking'}
+                                 if engine == 'CYCLES' else set())
     compatibility = check_compatibility(light, features)
     require(not compatibility['missing'], 'LIGHT_UNSUPPORTED',
             'Required light features are unsupported: ' + ', '.join(compatibility['missing']))
@@ -200,8 +202,12 @@ def _validated(plan):
                 value = plan['texture']
             validate_resource(value)
             require(isinstance(reference, dict) and
-                    all(reference.get(k) == value[k] for k in ('id', 'version', 'kind')),
-                    'LIGHT_PLAN', 'Plan reference identity disagrees with its resource.')
+                    set(reference) == {'id', 'version', 'kind', 'path', 'sha256'} and
+                    all(reference.get(k) == value[k] for k in ('id', 'version', 'kind')) and
+                    isinstance(reference['sha256'], str) and
+                    re.fullmatch('[0-9a-f]{64}', reference['sha256']) is not None,
+                    'LIGHT_PLAN', 'Plan reference must retain its exact source identity and digest.')
+            portable_path(reference['path'])
             return deepcopy(value)
     expected = light_plan(PlanSources(), plan['reference'], engine=plan['engine'],
                           options=plan['options'])
