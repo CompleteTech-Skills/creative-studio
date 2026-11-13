@@ -7,19 +7,20 @@ matching browser node's local coordinates; it never selects meshes by name.
 from __future__ import annotations
 import base64
 import hashlib
+import json
 import numpy as np
 from pathlib import Path
 
 from rig_errors import decode_json, require, safe_path, RigError
 
 
-def project_components(root, snapshot, *, max_vertices):
+def project_components(root, snapshot, *, max_vertices, max_resource_bytes):
     from scene3d_graph import SceneGraph
     from scene3d_import import ImportedScene, evaluate_imported_vertices
     from rig_models import load_rig
     from rig_math import transform_points
     nodes = [node for node in snapshot['scene']['nodes'] if 'source_component' in node.get('metadata', {})]
-    projections, cache, used = {}, {}, 0
+    projections, cache, used, resource_bytes = {}, {}, 0, 0
     if not nodes:
         return projections, used
     graph = SceneGraph.from_bundle(snapshot, snapshot['scene_path'])
@@ -54,21 +55,25 @@ def project_components(root, snapshot, *, max_vertices):
                 require(rig.geometry.vertex_count <= max_vertices, 'EDITOR3D_VIEW_LIMIT', 'Imported geometry exceeds the viewport budget.')
                 imported = ImportedScene({}, reference, asset, [], hierarchy['nodes'], report)
                 sampled = evaluate_imported_vertices(graph, imported, manifest_path.parent)['nodes']
-                cache[key] = (rig.geometry, sampled)
+                images = []
+                for texture in rig.geometry.textures:
+                    image = rig.geometry.images[texture['source']]
+                    images.append('data:'+image.mime_type+';base64,'+base64.b64encode(image.data).decode('ascii'))
+                encoded_resources = len(json.dumps(dict(materials=rig.geometry.materials, images=images),
+                    separators=(',', ':'), allow_nan=False).encode('utf-8'))
+                cache[key] = (rig.geometry, sampled, images, encoded_resources)
             if isinstance(cache[key], Exception):
                 raise cache[key]
-            geometry, sampled = cache[key]
+            geometry, sampled, images, encoded_resources = cache[key]
             require(node['id'] in sampled and set(sampled[node['id']]) == set(asset['components'][component]),
                     'EDITOR3D_VIEW_COMPONENT', 'Native evaluated component differs from its declared mesh membership.')
+            require(resource_bytes + encoded_resources <= max_resource_bytes, 'EDITOR3D_VIEW_LIMIT',
+                    'Imported component resources exceed the projected payload budget.')
             count = sum(len(points) for points in sampled[node['id']].values())
             require(used + count <= max_vertices, 'EDITOR3D_VIEW_LIMIT', 'Imported instances exceed the viewport budget.')
             matrix = np.asarray(graph.evaluate_base(node['id'])['world_matrix'], dtype=float)
             inverse = np.linalg.inv(matrix)
             require(np.isfinite(inverse).all(), 'EDITOR3D_VIEW_COMPONENT', 'Imported node transform cannot be inverted.')
-            images = []
-            for texture in geometry.textures:
-                image = geometry.images[texture['source']]
-                images.append('data:'+image.mime_type+';base64,'+base64.b64encode(image.data).decode('ascii'))
             meshes = []
             source_meshes = geometry.by_id()
             for identifier, points in sampled[node['id']].items():
@@ -81,6 +86,7 @@ def project_components(root, snapshot, *, max_vertices):
             projections[node['id']] = dict(format='geometry', meshes=meshes, materials=geometry.materials,
                 images=images, asset_reference=dict(reference), source_component=component, mode='authored-bind-pose')
             used += count
+            resource_bytes += encoded_resources
         except (RigError, ValueError, OSError, KeyError, TypeError, UnicodeError) as error:
             if key is not None and key not in cache:
                 cache[key] = error

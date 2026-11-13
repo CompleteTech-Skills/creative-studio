@@ -150,7 +150,9 @@ projection and tags meshes with their native IDs. Original hierarchy transforms
 therefore apply once, and each native component contains only its own meshes.
 
 The projection verifies the immutable asset, native rig, hierarchy and import
-report identities, retains native topology/material/UV data and counts actual
+report identities, caches encoded image/material resources per asset, enforces a
+cumulative resource payload budget before publishing each component, retains
+native topology/material/UV data and counts actual
 component instances against the existing viewport budget. Unknown or unsupported
 component mappings produce a diagnostic and no geometry; they never fall back
 to the full normalized GLB. This is an authored bind-pose projection; canonical

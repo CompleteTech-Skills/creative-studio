@@ -1,5 +1,6 @@
 """Actual canonical two-component import projected through the saved editor."""
 import os
+import json
 from pathlib import Path
 import threading
 import unittest
@@ -49,6 +50,20 @@ class EditorImportedComponentTests(unittest.TestCase):
             for mesh in projection['meshes']:
                 actual = transform_points(np.asarray(world), mesh['positions'])
                 np.testing.assert_allclose(actual, expected_meshes[mesh['id']], atol=1e-6)
+
+    def test_shared_resource_payload_is_bounded_before_component_publication(self):
+        from unittest.mock import patch
+        value = preview_snapshot(self.repository, self.repository.snapshot())
+        first = value['viewport_nodes'][next(iter(self.expected))]
+        one_component = len(json.dumps(dict(materials=first['materials'], images=first['images']),
+            separators=(',', ':'), allow_nan=False).encode('utf-8'))
+        with patch('editor3d_viewer.MAX_COMPONENT_RESOURCE_BYTES', one_component):
+            bounded = preview_snapshot(self.repository, self.repository.snapshot())
+        projections = [bounded['viewport_nodes'][identifier] for identifier in self.expected]
+        self.assertEqual(sum(value['format'] == 'geometry' for value in projections), 1)
+        unavailable = [value for value in projections if value['format'] == 'unavailable']
+        self.assertEqual(len(unavailable), 1)
+        self.assertIn('payload budget', unavailable[0]['message'])
 
     def test_unknown_component_mapping_is_explicitly_unavailable(self):
         snapshot = self.repository.snapshot()

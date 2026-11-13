@@ -26,6 +26,7 @@ from rig_errors import RigError, decode_json, require, safe_path
 MAX_BODY = 4 * 1024 * 1024
 MAX_PREVIEW_BYTES = 64 * 1024 * 1024
 MAX_PREVIEW_VERTICES = 500_000
+MAX_COMPONENT_RESOURCE_BYTES = 64 * 1024 * 1024
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -107,7 +108,8 @@ def preview_snapshot(repository, snapshot):
             except (RigError, ValueError, OSError) as error:
                 assets[identifier] = dict(format='unavailable', message=str(error))
         from editor3d_components import project_components
-        components, component_vertices = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices)
+        components, component_vertices = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices,
+            max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES)
     result['viewport_nodes'] = components
     result['viewport_assets'] = assets
     result['preview'] = dict(backend='three-0.180.0', offline_render=False,
