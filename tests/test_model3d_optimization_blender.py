@@ -97,6 +97,9 @@ class BlenderOptimizationTests(unittest.TestCase):
                     executable=os.environ.get('HATCH_BLENDER'))
             except RigError as error:
                 print(json.dumps(error.report,indent=2),flush=True);raise
+            self.assertEqual(report['policy'],dict(max_distance_m=.001,min_silhouette_iou=.99,uv_tolerance=1e-4,
+                point_tolerance_m=1e-5,recompute_normals=True,protected_vertices={'box':[40]}))
+            self.assertEqual(read_json(output/'optimization.json')['policy'],report['policy'])
             self.assertTrue(report['save_reopen']);self.assertEqual(len(report['parts']),2)
             self.assertLess(report['triangles'],g.triangle_count);self.assertTrue((output/'editable.blend').is_file())
             imported=load_character_model(output/'optimized.glb')
