@@ -102,7 +102,8 @@ call as locally verified and does not authenticate model-supplied metadata.
 The identical request returns the existing job. After a successful call,
 `decompose-analysis-run` reuses the validated immutable response. A crash after
 worker completion ingests that output; a running job without output becomes
-`interrupted` and is never automatically redispatched. This prevents an unknown
+`interrupted` and is never automatically redispatched. If the surviving worker
+finishes later, another run recovers its validated response without dispatching again. This prevents an unknown
 remote/local outcome from silently causing duplicated work. Applying a response
 is also idempotent after a crash between the annotation transaction and its job
 acknowledgement.
@@ -117,6 +118,9 @@ python scripts/decomposition_analysis.py cancel --root output/person --job JOB_S
 Cancellation kills a running fixed worker, waits for its exit and prevents
 proposal publication. Failed, cancelled or interrupted work requires explicit
 `decompose-analysis-retry`; it archives the earlier state, response and log.
+Retry records a journal after preserving the complete prior attempt and before
+removing live files. Status/resume completes an interrupted retry from that
+verified history, including crashes before or after the final state write.
 Retry means authorizing a new attempt when the earlier outcome is known or
 uncertain. It is never implicit in resume. An interrupted job with a valid completed worker
 response must recover it before retrying. Explicit retry of a failed or cancelled
