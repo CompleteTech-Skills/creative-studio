@@ -53,7 +53,7 @@ class MeshImportTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name).resolve()
     def geometry(self):
         return Geometry([Mesh('left',np.array([[0.,0,0],[1,0,0],[0,2,0]]),np.array([[0,1,2]]),name='Left hand')],[{}])
     def test_real_glb_gltf_snapshot_bounds_and_original_hash(self):
