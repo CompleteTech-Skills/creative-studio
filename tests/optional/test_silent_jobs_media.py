@@ -57,6 +57,21 @@ class ActualMediaJobs(unittest.TestCase):
             receipt=json.loads((self.root/(label+'-delivery')/'receipt.json').read_text())
             self.assertEqual(receipt['media']['audio_stream_count'],0)
 
+    def test_mixed_video_sequence_batch_reuses_exact_source_pngs(self):
+        import silent_sequence_jobs as sequence_jobs
+        self.create('video')
+        paths=[frame['path'] for frame in self.manifest['frames']]
+        source=sequence_jobs.sequence.build_source(self.source,paths,fps=self.manifest['fps'],
+            output={'format':'png','bit_depth':8,'passes':['combined'],'alpha':'opaque','color_space':'srgb'},
+            identity={'fixture':'same actual imported PNG timeline as video request; no render claim'})
+        sequence_jobs.create(source,self.source,self.root/'sequence',self.root/'sequence-delivery',
+            provenance={'video_source_sha256':media._digest(self.manifest)})
+        result=jobs.run_batch([self.root/'video',self.root/'sequence'])
+        self.assertEqual([item['state']['phase'] for item in result['jobs']],['completed','completed'],result)
+        report=sequence_jobs.sequence.verify_sequence(self.root/'sequence-delivery')
+        self.assertEqual([frame['sha256'] for frame in report['source']['frames']],
+                         [frame['sha256'] for frame in self.manifest['frames']])
+
     def _crash_worker_after(self,phase,cancel_before_resume=False,expected_attempts=1):
         self.create()
         with jobs._locked(self.root/'job') as (fd,lock,plan):

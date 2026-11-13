@@ -644,17 +644,28 @@ def run_batch(job_roots,*,retry_failed=False,progress=None):
     if not isinstance(job_roots,list) or not 1<=len(job_roots)<=MAX_BATCH:raise ValueError('batch requires1..16 independent jobs')
     roots=[str(Path(p).absolute()) for p in job_roots]
     if len(set(roots))!=len(roots):raise ValueError('batch jobs must be distinct')
-    inventories=[status(root) for root in roots]
+    authorities=[]
+    for root in roots:
+        with pinned_directory(root) as descriptor:
+            plan=_json(descriptor,'plan.json',MAX_PLAN_BYTES)
+        if not isinstance(plan,dict):raise ValueError('batch job plan must be an object')
+        if plan.get('kind')=='silent-video-job-plan':authority=sys.modules[__name__]
+        elif plan.get('kind')=='silent-sequence-job':
+            try:import silent_sequence_jobs as authority
+            except ImportError as exc:raise ValueError('canonical sequence job authority unavailable') from exc
+        else:raise ValueError('unsupported batch job kind')
+        authorities.append(authority)
+    inventories=[authority.status(root) for root,authority in zip(roots,authorities)]
     destinations=[x['plan']['destination'] for x in inventories]
     if len(set(destinations))!=len(destinations):raise ValueError('batch destinations must be independently owned')
     results=[]
-    for root,inventory in zip(roots,inventories):
+    for root,inventory,authority in zip(roots,inventories,authorities):
         phase=inventory['state']['phase']
         if phase=='completed':results.append(inventory);continue
         try:
-            results.append(run(root,resume=phase=='interrupted',retry=retry_failed and phase in ('failed','cancelled','blocked'),progress=progress))
+            results.append(authority.run(root,resume=phase=='interrupted',retry=retry_failed and phase in ('failed','cancelled','blocked'),progress=progress))
         except (ValueError,OSError) as exc:results.append({'job_root':root,'phase':'blocked','error':str(exc)[:4096]})
-    return {'schema_version':1,'kind':'silent-video-batch-result','concurrency':1,'jobs':results}
+    return {'schema_version':1,'kind':'silent-export-batch-result','concurrency':1,'jobs':results}
 
 
 def schemas():
