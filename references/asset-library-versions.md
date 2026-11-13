@@ -68,3 +68,21 @@ Validation: `PYTHONPATH=scripts:tests python -m unittest discover -s tests -p
  test_asset_library_versions.py -v` exercises real immutable payloads, concurrent
 promotion, rollback, restrictions, deterministic scope, relocated stores and
 migration. Storage publication and recovery remain covered by the storage suite.
+
+### Removing a project pin
+
+`ScopedResolver.unbind(project_id, slot, expected_revision=revision,
+expected_binding=None)` removes only that exact slot using the same append-only
+project stream and library CAS as `bind`. It returns the canonical `event`,
+`removed` binding, `slot`, `project_id`, recomputed per-slot dependency `locks`
+and scoped `invalidated` list. No immutable asset, prior event or unrelated pin
+is deleted. A missing slot, stale revision or mismatched explicit binding fails.
+An empty project pin collection is valid.
+
+`undo_unbind(project_id, slot, expected_revision=current_revision,
+unbind_revision=removal_revision)` derives the old exact binding from retained
+canonical history. It rejects occupied slots and slots rebound after that
+removal, and appends restoration through `bind`; it does not rewrite history.
+Management CLI/HTTP adapters can delegate to these methods without introducing
+another project registry. Scene document removal uses the existing separate
+SceneLibraryAdapter/ProjectStore authority and its own explicit CAS.

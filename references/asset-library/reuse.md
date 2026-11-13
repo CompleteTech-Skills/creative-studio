@@ -65,3 +65,30 @@ Limits: 32 scenes, 128 instances, four MiB document, 256 history events,
 one million evaluated vertices and two million triangles per snapshot. Native
 importers retain their own bounds. A failed load preserves existing destinations.
 Tests use procedural engineering fixtures; numerical checks are not artwork approval.
+
+## Scoped unbind and repair
+
+`adapter.unbind(project, scene, instance, expected_revision=revision)` removes
+one whole instance. Supply `role='rig'`, `'animation'` or `'material'` to remove
+only an optional binding and optionally `expected_binding=exact_binding` to
+check the selected pin. Primary-asset removal requires explicit whole-instance
+removal. An active rig or animation source cannot be removed: clear its state explicitly
+with `set_animation(..., None)` first. Other instance fields are never silently
+cleared. All operations retain immutable assets, scene receipts and history.
+
+The result contains the new project, exact removal `receipt`, recomputed `locks`
+and scoped `invalidated` instance. Historical locks keep removed source versions
+available for undo. `adapter.undo_unbind(project, receipt,
+expected_revision=current_revision)` restores only an empty target; a newly
+occupied slot fails closed. Unrelated scenes and subsequent local edits survive.
+Old replacement/undo history remains readable with the same lock names.
+
+For durable mutations use the existing `ProjectStore` wrappers:
+`store.unbind(adapter, scene, instance, expected_sha256=hash,
+expected_revision=revision, role=None, expected_binding=None)`;
+`store.set_animation(adapter, scene, instance, None, expected_sha256=hash,
+expected_revision=revision)`; and
+`store.undo_unbind(adapter, receipt, expected_sha256=hash,
+expected_revision=revision)`. Each uses the existing locked CAS publication and
+retains content-addressed revisions. Racing calls with one snapshot admit one
+winner; stale writers preserve the winning saved document.
