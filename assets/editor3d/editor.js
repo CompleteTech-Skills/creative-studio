@@ -119,7 +119,7 @@ function nodeSelectable(id) { return evaluatedStates.get(id)?.selectable === tru
 function transformReason(id) {
   if (nodeLocked(id)) return "Object is locked by native scene state.";
   if (!nodeSelectable(id)) return "Object is not selectable in native scene state.";
-  return nativeTransformReadonly[id] || null;
+  return Object.hasOwn(nativeTransformReadonly, id) ? nativeTransformReadonly[id] : null;
 }
 function transformSelectionAllowed() { return roots().length > 0 && roots().every(id => !transformReason(id)); }
 function applyNativeState(value) {
@@ -306,7 +306,7 @@ function select(id, add = false, toggle = false) {
 }
 function selectBone(id) {
   const bone = boneObjects.get(id);
-  if (!bone) return;
+  if (!bone || !nodeSelectable(bone.userData.ownerId)) return;
   select(bone.userData.ownerId);
   selectedBone = id;
   refreshSelection();
@@ -322,6 +322,7 @@ function boneSelection() {
     : null;
 }
 function refreshSelection() {
+  selection = new Set([...selection].filter(id => objects.has(id) && nodeSelectable(id)));
   for (const row of $("outliner").querySelectorAll("[data-bone]"))
     row.setAttribute(
       "aria-selected",
@@ -644,6 +645,7 @@ async function reload(frame = false) {
   const snapshot = await api("snapshot");
   const displayed = await install(snapshot);
   if (frame && displayed !== false) frameScene();
+  return displayed;
 }
 function buildOutliner() {
   const root = $("outliner");
@@ -1031,19 +1033,19 @@ $("invert").onclick = () => {
 };
 $("children").onclick = () => {
   for (const id of [...selection])
-    for (const n of doc.nodes) if (n.parent === id) selection.add(n.id);
+    for (const n of doc.nodes) if (n.parent === id && nodeSelectable(n.id)) selection.add(n.id);
   refreshSelection();
 };
 $("parent-select").onclick = () => {
   selection = new Set(
-    [...selection].map((id) => nodes.get(id).parent).filter(Boolean),
+    [...selection].map((id) => nodes.get(id).parent).filter(id => id && nodeSelectable(id)),
   );
   refreshSelection();
 };
 $("same-type").onclick = () => {
   const types = new Set([...selection].map((id) => nodes.get(id).type));
   selection = new Set(
-    doc.nodes.filter((n) => types.has(n.type)).map((n) => n.id),
+    doc.nodes.filter((n) => types.has(n.type) && nodeSelectable(n.id)).map((n) => n.id),
   );
   refreshSelection();
 };
@@ -1224,14 +1226,14 @@ async function historyCommand(name) {
   if (rejectPendingEdit()) return;
   setBusy(true);
   try {
-    await install(
+    const displayed = await install(
       await api(name, {
         expected_revision: revision,
         expected_sha256: sha256,
         transaction_id: crypto.randomUUID(),
       }),
     );
-    clearDiagnostic();
+    if (displayed !== false) clearDiagnostic();
   } catch (e) {
     diagnostic(e);
   } finally {
@@ -1389,7 +1391,8 @@ function initialize() {
     renderer.domElement.addEventListener("webglcontextrestored", () => {
       lost = false;
       reload()
-        .then(() => {
+        .then((displayed) => {
+          if (displayed === false) return;
           clearDiagnostic();
           $("status").textContent = "WebGL restored; saved scene reloaded.";
         })

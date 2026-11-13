@@ -14,13 +14,14 @@ from pathlib import Path
 from rig_errors import decode_json, require, safe_path, RigError
 
 
-def project_components(root, snapshot, *, max_vertices, max_resource_bytes):
+def project_components(root, snapshot, *, max_vertices, max_resource_bytes, max_decoded_vertices):
     from scene3d_graph import SceneGraph
     from scene3d_import import ImportedScene, evaluate_imported_vertices
     from rig_models import load_rig
     from rig_math import transform_points
     nodes = [node for node in snapshot['scene']['nodes'] if 'source_component' in node.get('metadata', {})]
     projections, cache, used, resource_bytes = {}, {}, 0, 0
+    decoded_vertices, sampled_vertices = 0, 0
     if not nodes:
         return projections, used
     graph = SceneGraph.from_bundle(snapshot, snapshot['scene_path'])
@@ -50,11 +51,31 @@ def project_components(root, snapshot, *, max_vertices, max_resource_bytes):
                 manifest_path, manifest = evidence('/native/rig.json')
                 _, hierarchy = evidence('/hierarchy.json')
                 _, report = evidence('/import-report.json')
+                require(decoded_vertices < max_decoded_vertices, 'EDITOR3D_VIEW_LIMIT', 'Imported decoded-vertex budget exceeded.')
                 rig = load_rig(manifest_path.parent)
                 require(rig.manifest == manifest, 'EDITOR3D_VIEW_COMPONENT', 'Native manifest interpretation differs.')
-                require(rig.geometry.vertex_count <= max_vertices, 'EDITOR3D_VIEW_LIMIT', 'Imported geometry exceeds the viewport budget.')
+                require(decoded_vertices + rig.geometry.vertex_count <= max_decoded_vertices,
+                        'EDITOR3D_VIEW_LIMIT', 'Imported decoded-vertex budget exceeded.')
+                decoded_vertices += rig.geometry.vertex_count
+                by_id = rig.geometry.by_id()
+                planned = 0
+                for member in nodes:
+                    if member.get('asset') == reference:
+                        binding = member['metadata']['source_component']
+                        require(binding in asset['components'], 'EDITOR3D_VIEW_COMPONENT', 'Imported node has no exact native component mapping.')
+                        planned += sum(len(by_id[mesh].positions) for mesh in asset['components'][binding])
+                require(sampled_vertices + planned <= max_vertices, 'EDITOR3D_VIEW_LIMIT', 'Imported instances exceed the sampled vertex budget.')
                 imported = ImportedScene({}, reference, asset, [], hierarchy['nodes'], report)
-                sampled = evaluate_imported_vertices(graph, imported, manifest_path.parent)['nodes']
+                # The native importer evaluates imported components, not an
+                # independent whole-asset instance sharing the same version.
+                members = [member for member in nodes if member.get('asset') == reference]
+                class ComponentView:
+                    def document(self):
+                        return {'nodes': members}
+                    def evaluate_base(self, identifier=None):
+                        return graph.evaluate_base(identifier)
+                sampled = evaluate_imported_vertices(ComponentView(), imported, manifest_path.parent)['nodes']
+                sampled_vertices += planned
                 images = []
                 for texture in rig.geometry.textures:
                     image = rig.geometry.images[texture['source']]
@@ -62,8 +83,8 @@ def project_components(root, snapshot, *, max_vertices, max_resource_bytes):
                 encoded_resources = len(json.dumps(dict(materials=rig.geometry.materials, images=images),
                     separators=(',', ':'), allow_nan=False).encode('utf-8'))
                 cache[key] = (rig.geometry, sampled, images, encoded_resources)
-            if isinstance(cache[key], Exception):
-                raise cache[key]
+            if isinstance(cache[key], dict):
+                raise RigError('EDITOR3D_VIEW_COMPONENT', cache[key]['error'])
             geometry, sampled, images, encoded_resources = cache[key]
             require(node['id'] in sampled and set(sampled[node['id']]) == set(asset['components'][component]),
                     'EDITOR3D_VIEW_COMPONENT', 'Native evaluated component differs from its declared mesh membership.')
@@ -89,6 +110,6 @@ def project_components(root, snapshot, *, max_vertices, max_resource_bytes):
             resource_bytes += encoded_resources
         except (RigError, ValueError, OSError, KeyError, TypeError, UnicodeError) as error:
             if key is not None and key not in cache:
-                cache[key] = error
+                cache[key] = {'error': str(error)}
             projections[node['id']] = dict(format='unavailable', message=str(error))
     return projections, used

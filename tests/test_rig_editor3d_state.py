@@ -33,6 +33,11 @@ class EditorNativeStateTests(unittest.TestCase):
             document['collections'] = [dict(id='actors', name='Actors', visible=mode != 'collection-hidden',
                 editor_visible=mode != 'collection-editor-hidden', locked=mode == 'inherited-lock')]
             (root if mode == 'inherited-lock' else mesh)['collections'] = ['actors']
+        elif mode == 'constructor':
+            extra=deepcopy(mesh);extra.update(id='constructor',name='Constructor node')
+            extra['transform']['translation']=[-2,0,0];document['nodes'].append(extra)
+        elif mode == 'locked-parent':
+            root['locked']=True
         elif mode == 'layer-hidden':
             document['layers'] = [dict(id='actors', name='Actors layer', visible=False)]
             root['layers'] = ['actors']
@@ -50,6 +55,9 @@ class EditorNativeStateTests(unittest.TestCase):
             root['transform'].update(translation=[3,4,5], scale=[2,1,.5], rotation=[0,0,math.sin(.2),math.cos(.2)])
             mesh['transform']['rotation'] = [math.sin(.1),0,0,math.cos(.1)]
             document['nodes'].reverse()
+        if mode == 'collection-hidden':
+            peer=deepcopy(mesh);peer.update(id='peer',name='Visible peer',collections=[])
+            peer['transform']['translation']=[-2,0,0];document['nodes'].append(peer)
         graph.replace_document(document, expected_revision=graph.revision)
         saved = snapshot_project(source, work/'portable', graph, scene_path='example-scene.json')
         repository = EditorRepository.create(work/'portable', work/'repo', scene_path=saved['active_scene']['path'])
@@ -57,7 +65,7 @@ class EditorNativeStateTests(unittest.TestCase):
         return repository, vertices
 
     def test_projection_uses_native_world_matrices_effective_flags_and_readonly_state(self):
-        for mode in ('plain','collection-hidden','collection-editor-hidden','layer-hidden','inherited-lock','pivot','constraint','attachment','parent-order'):
+        for mode in ('plain','constructor','locked-parent','collection-hidden','collection-editor-hidden','layer-hidden','inherited-lock','pivot','constraint','attachment','parent-order'):
             with self.subTest(mode=mode):
                 repository, _ = self.fixture(mode)
                 snapshot = repository.snapshot(); value = preview_snapshot(repository, snapshot)
@@ -87,6 +95,15 @@ class EditorNativeStateTests(unittest.TestCase):
         self.assertEqual(value['viewport_state']['error']['code'],'SCENE3D_PREFAB')
         self.assertEqual(repository.snapshot(),before)
 
+    def test_unused_generic_assets_are_not_decoded(self):
+        from unittest.mock import patch
+        repository,_=self.fixture('plain')
+        repository.apply(0,dict(schema_version=1,commands=[dict(operation='delete',parameters=dict(identifier='mesh',policy='subtree'))]),'remove-mesh')
+        with patch('rig_import.load_character_model',side_effect=AssertionError('Unused asset was decoded')):
+            value=preview_snapshot(repository,repository.snapshot())
+        self.assertEqual(value['viewport_assets'],{})
+        self.assertTrue(value['viewport_state']['available'])
+
     @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
     def test_actual_browser_native_vertices_visibility_locks_and_mixed_readonly_selection(self):
         from playwright.sync_api import sync_playwright
@@ -94,7 +111,7 @@ class EditorNativeStateTests(unittest.TestCase):
         with sync_playwright() as runtime:
             browser = launch_chromium(runtime)
             try:
-                for mode in ('plain','collection-hidden','collection-editor-hidden','layer-hidden','inherited-lock','pivot','constraint','attachment','parent-order'):
+                for mode in ('plain','constructor','locked-parent','collection-hidden','collection-editor-hidden','layer-hidden','inherited-lock','pivot','constraint','attachment','parent-order'):
                     with self.subTest(mode=mode):
                         repository, vertices = self.fixture(mode)
                         server = EditorServer(repository); thread = threading.Thread(target=server.serve_forever,daemon=True); thread.start()
@@ -128,6 +145,21 @@ class EditorNativeStateTests(unittest.TestCase):
                                 self.assertTrue(page.evaluate('!window.hatchEditor.gizmo.object'))
                                 page.locator('#viewport').focus(); page.keyboard.press('ArrowRight')
                                 self.assertEqual(repository.snapshot()['revision'],0)
+                            if mode == 'collection-hidden':
+                                page.locator('[data-id="peer"]').click();page.click('#same-type')
+                                self.assertEqual(page.evaluate('window.hatchEditor.selection'),['peer'])
+                                page.locator('[data-id="root"]').click();page.click('#children')
+                                self.assertNotIn('mesh',page.evaluate('window.hatchEditor.selection'))
+                            elif mode == 'locked-parent':
+                                page.click('#parent-select')
+                                self.assertEqual(page.evaluate('window.hatchEditor.selection'),[])
+                            elif mode == 'constructor':
+                                page.locator('[data-id="constructor"]').click()
+                                self.assertFalse(page.get_by_label('translation X',exact=True).is_disabled())
+                                page.get_by_label('translation X',exact=True).fill('-3')
+                                page.get_by_label('translation X',exact=True).press('Tab')
+                                page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1')
+                                self.assertEqual(next(n for n in repository.snapshot()['scene']['nodes'] if n['id']=='constructor')['transform']['translation'][0],-3)
                             self.assertEqual(page.evaluate('window.hatchEditor.errors'),[])
                             page.close()
                         finally:server.shutdown();server.server_close();thread.join(timeout=5)
@@ -210,5 +242,69 @@ class EditorNativeStateTests(unittest.TestCase):
                     self.assertEqual(page.evaluate('window.hatchEditor.objects.size'),0)
                     self.assertEqual(page.evaluate('window.hatchEditor.snapshot.revision'),before['revision'])
                     self.assertEqual(repository.snapshot(),before)
+                finally:browser.close()
+        finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
+    @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
+    def test_imported_component_pivot_matches_canonical_imported_world_vertices(self):
+        import test_rig_editor3d_components as component_tests
+        from scene3d_import import evaluate_imported_vertices
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        imported_case=component_tests.EditorImportedComponentTests();imported_case.setUp();self.addCleanup(imported_case.doCleanups)
+        original=imported_case.repository;before=original.snapshot();source=original.native_snapshot(before['revision'],before['sha256'])['root']
+        graph=SceneGraph.from_bundle(before,before['scene_path'],source_root=source)
+        document=graph.document();component=next(node for node in document['nodes'] if 'source_component' in node.get('metadata',{}))
+        component['transform'].update(rotation=[0,0,math.sqrt(.5),math.sqrt(.5)],pivot=[.5,0,0])
+        graph.replace_document(document,expected_revision=graph.revision)
+        expected=evaluate_imported_vertices(graph,imported_case.imported,imported_case.native_root)['nodes']
+        saved=snapshot_project(source,self.root/'pivot-import-portable',graph,scene_path=before['scene_path'])
+        repository=EditorRepository.create(self.root/'pivot-import-portable',self.root/'pivot-import-repo',scene_path=saved['active_scene']['path'])
+        server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            with sync_playwright() as runtime:
+                browser=launch_chromium(runtime)
+                try:
+                    page=browser.new_page();page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
+                    actual=page.evaluate('''ids => Object.fromEntries(ids.map(id => {
+                        const root=window.hatchEditor.objects.get(id);root.updateWorldMatrix(true,true);const meshes=[];
+                        root.traverse(mesh=>{if(mesh.isMesh){const p=mesh.geometry.attributes.position,vertices=[];
+                            for(let i=0;i<p.count;i++)vertices.push(mesh.localToWorld(mesh.position.clone().set(p.getX(i),p.getY(i),p.getZ(i))).toArray());
+                            meshes.push({id:mesh.userData.nativeMeshId,vertices});}});return [id,meshes];}))''',list(expected))
+                    for identifier,meshes in expected.items():
+                        self.assertEqual(len(actual[identifier]),len(meshes))
+                        for observed in actual[identifier]:np.testing.assert_allclose(observed['vertices'],meshes[observed['id']],atol=1e-6)
+                    page.evaluate('id => window.hatchEditor.select(id)',component['id'])
+                    self.assertTrue(page.get_by_label('translation X',exact=True).is_disabled())
+                    self.assertTrue(page.evaluate('!window.hatchEditor.gizmo.object'))
+                    self.assertEqual(page.evaluate('window.hatchEditor.errors'),[])
+                finally:browser.close()
+        finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
+    @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
+    def test_history_preserves_unavailable_prefab_diagnostic_and_redo_recovers_view(self):
+        from scene3d_contracts import load_project
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        repository=self.prefab_fixture();original=repository.snapshot()
+        def remove_prefab(source,destination,scene_path):
+            bundle=load_project(source);graph=SceneGraph.from_bundle(bundle,scene_path,source_root=source)
+            document=graph.document();document['nodes']=[node for node in document['nodes'] if node['id']!='prefab-instance']
+            graph.replace_document(document,expected_revision=graph.revision)
+            return snapshot_project(source,destination,graph,scene_path=scene_path)['active_scene']['path']
+        repository.transact_native(0,'remove-prefab',{'operation':'remove-prefab'},remove_prefab,expected_sha256=original['sha256'])
+        server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            with sync_playwright() as runtime:
+                browser=launch_chromium(runtime)
+                try:
+                    page=browser.new_page();page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
+                    page.click('#undo')
+                    page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2 && document.querySelector("#status").textContent.includes("viewport unavailable")')
+                    self.assertFalse(page.locator('#diagnostic').is_hidden())
+                    self.assertIn('Expand prefab',page.locator('#diagnostic').inner_text())
+                    self.assertIsNot(page.evaluate('window.editorReady'),True)
+                    page.click('#redo');page.wait_for_function('() => window.editorReady === true && window.hatchEditor.snapshot.revision === 3')
+                    self.assertTrue(page.locator('#diagnostic').is_hidden())
                 finally:browser.close()
         finally:server.shutdown();server.server_close();thread.join(timeout=5)

@@ -182,3 +182,11 @@ and no ready/render-success state. A saved revision can be acknowledged while
 its viewport capability is explicitly unavailable; this does not claim rendering
 or animation evaluation. Canonical prefab expansion remains its native owner's
 separate integration.
+
+Read-only lookup uses exact native node IDs, including valid IDs such as
+`constructor`; all direct and bulk selection routes honor native selectability.
+History and WebGL restoration preserve an unavailable viewport diagnostic rather
+than clearing it as a successful display. Unused/component-only asset documents
+skip the generic geometry adapter. Cached native geometry and sampled component
+vertices each have aggregate bounds, in addition to instance and resource-byte
+limits; failed cache entries retain only diagnostic text, not exception frames.
