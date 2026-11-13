@@ -24,7 +24,7 @@ MAX_PACKAGE_FILES = 10000
 MAX_RECEIPT_BYTES = 8 * 1024 * 1024
 _HASH = re.compile(r'[0-9a-f]{64}')
 # Preserve the established transport helper import/API.
-from portable_paths import existing_relative as _relative
+from portable_paths import _RESERVED, existing_relative as _relative
 
 
 def _inside(root, name):
