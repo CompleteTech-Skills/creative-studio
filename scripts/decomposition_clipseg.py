@@ -56,8 +56,10 @@ def identity():
     model_directory()
     return {'provider':'local-transformers','name':'CIDAS/clipseg-rd64-refined',
             'version':REVISION+'; '+', '.join(k+' '+v for k,v in versions.items()),
-            'files':[{'name':name,'sha256':digest} for name,digest in sorted(FILES.items())],
-            'identity_evidence':'Pinned local model/tokenizer bytes and builtin Transformers/Torch versions; no remote code or network dispatch.'}
+            'files':([{'name':name,'sha256':digest} for name,digest in sorted(FILES.items())] +
+                     [{'name':'adapter/'+name,'sha256':_hash(Path(__file__).parent/name)}
+                      for name in ('decomposition_clipseg.py','decomposition_analysis.py')]),
+            'identity_evidence':'Pinned local model/tokenizer and adapter/controller bytes, builtin Transformers/Torch versions; no remote code or network dispatch.'}
 
 
 def validate_options(request):

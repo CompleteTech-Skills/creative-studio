@@ -22,7 +22,9 @@ The accepted file digests live in `scripts/decomposition_clipseg.py`. The full
 checkpoint digest is
 `d00ca85d6b859f9d07b7cfb8ef26fe9771cb275b34c9368f2ecf603139307f55`.
 Discovery and execution use the local files only; a missing dependency or changed
-snapshot leaves the manual annotation route available.
+snapshot leaves the manual annotation route available. Requests also bind the
+exact adapter/controller source hashes, so changed preprocessing or execution
+code receives a different job identity instead of silently reusing old calls.
 
 ```bash
 python -m pip install -r requirements-clipseg.txt
