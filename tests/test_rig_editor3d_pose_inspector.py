@@ -106,6 +106,29 @@ class PoseInspectorTests(unittest.TestCase):
         with self.assertRaises(RigError):apply_pose_edit(self.repository,stale)
         self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
 
+    def test_canonical_collection_and_inherited_layer_locks_disable_authoring(self):
+        snapshot=self.repository.snapshot()
+        commands=[dict(operation='collection',parameters=dict(identifier='locked-actors',name='Locked actors')),
+                  dict(operation='memberships',parameters=dict(identifier='actor',collections=['locked-actors'],layers=[])),
+                  dict(operation='collection',parameters=dict(identifier='locked-actors',locked=True))]
+        saved=self.repository.apply(snapshot['revision'],dict(schema_version=1,commands=commands),'lock-actors',expected_sha256=snapshot['sha256'])
+        child=next(n['id'] for n in saved['scene']['nodes'] if n['parent']=='actor' and n.get('asset'))
+        for identifier in ['actor',child]:
+            descriptor=describe_pose(self.repository,saved,identifier)
+            self.assertFalse(descriptor['editable']);self.assertIn('locked',descriptor['read_only_reason'])
+            request=self.request('reset','locked-'+identifier);request['node_id']=identifier
+            with self.assertRaises(RigError):apply_pose_edit(self.repository,request)
+            self.assertEqual(self.repository.snapshot()['sha256'],saved['sha256'])
+        commands=[dict(operation='collection',parameters=dict(identifier='locked-actors',locked=False)),
+                  dict(operation='collection',parameters=dict(identifier='locked-layer',name='Locked layer',layer=True)),
+                  dict(operation='memberships',parameters=dict(identifier='actor',collections=[],layers=['locked-layer'])),
+                  dict(operation='collection',parameters=dict(identifier='locked-layer',layer=True,locked=True))]
+        layered=self.repository.apply(saved['revision'],dict(schema_version=1,commands=commands),'lock-layer',expected_sha256=saved['sha256'])
+        self.assertFalse(describe_pose(self.repository,layered,child)['editable'])
+        request=self.request('reset','locked-child-layer');request['node_id']=child
+        with self.assertRaises(RigError):apply_pose_edit(self.repository,request)
+        self.assertEqual(self.repository.snapshot()['sha256'],layered['sha256'])
+
     def test_pose_requires_selected_shot_and_rejects_native_clip_overlap_before_commit(self):
         request=self.request('reset','missing-shot');request['timeline']['shot_path']='missing.json'
         before=self.repository.snapshot()

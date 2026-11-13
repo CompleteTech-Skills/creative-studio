@@ -76,14 +76,18 @@ def _authoring_context(repository,snapshot,identifier):
             if pose['id']!=binding['pose']['id'] or pose['rig_version']!=binding['pose']['rig_version']:
                 _fail('Saved pose identity differs from its binding.')
         if pose['rig_version']!=rig.skeleton['version']:_fail('Pose targets another native skeleton version.')
-        yield dict(owner=nodes[owner],rig=rig,rig_reference=deepcopy(rig_reference),pose=deepcopy(pose))
+        from scene3d_graph import SceneGraph
+        graph=SceneGraph.from_bundle(captured['bundle'],snapshot['scene_path'],source_root=captured['root'])
+        editable=not graph.evaluate_base(owner)['locked']
+        yield dict(owner=nodes[owner],rig=rig,rig_reference=deepcopy(rig_reference),pose=deepcopy(pose),
+                   editable=editable)
 
 
 def describe_pose(repository,snapshot,node_id):
     """Copy-only native authoring state, with no absolute filesystem locations."""
     with _authoring_context(repository,snapshot,node_id) as context:
         rig=context['rig']
-        return dict(owner_id=context['owner']['id'],editable=not context['owner']['locked'],
+        return dict(owner_id=context['owner']['id'],editable=context['editable'],read_only_reason=None if context['editable'] else 'Node or inherited collection/layer membership is locked.',
             rig_reference=context['rig_reference'],skeleton=deepcopy(rig.skeleton),
             authored_pose=context['pose'],
             morph_targets={mesh.id:sorted(mesh.morphs) for mesh in rig.geometry.meshes if mesh.morphs},
@@ -120,7 +124,7 @@ def apply_pose_edit(repository,request):
         previous_evaluation=evaluate_timeline(repository,dict(revision=snapshot['revision'],sha256=snapshot['sha256'],
             shot=timeline['shot_path'],frame=timeline['frame']))
         with _authoring_context(repository,snapshot,request['node_id']) as context:
-            if context['owner']['locked']:_fail('Unlock the pose owner before editing it.')
+            if not context['editable']:_fail('Unlock the pose owner or its inherited collection/layer membership before editing it.')
             rig=context['rig'];pose=deepcopy(context['pose'])
             if operation=='reset':pose=neutral_pose(rig.skeleton,pose['id'])
             elif operation=='mirror':
