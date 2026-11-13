@@ -103,7 +103,7 @@ def _array(value, dimensions, label):
     try:array=np.asarray(value)
     except (ValueError,TypeError,OverflowError) as exc:raise RigError('RECON_PARAMETER',label+' is not a regular numeric array.') from exc
     require(array.shape==dimensions and array.dtype.kind in 'fiu' and np.isfinite(array).all()
-            and np.max(np.abs(array),initial=0)<=1e6,'RECON_PARAMETER',label+' has invalid shape/range.')
+            and np.all(array>=-1e6) and np.all(array<=1e6),'RECON_PARAMETER',label+' has invalid shape/range.')
     return array.astype(float)
 
 

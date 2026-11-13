@@ -138,6 +138,12 @@ class ReconstructionTests(unittest.TestCase):
                     self.assertEqual(json.loads((destination/'reconstruction.json').read_text())['review'],'pending')
                     with self.assertRaises(RigError):publish(result,destination)
 
+    def test_signed_integer_minimum_cannot_bypass_metric_bounds(self):
+        minimum=np.iinfo(np.int64).min
+        with self.assertRaises(RigError):extrude_contour(np.array([[minimum,0],[0,0],[0,1]],dtype=np.int64),thickness=.2)
+        with self.assertRaises(RigError):heightfield([[0,1],[1,0]],spacing=np.array([minimum,1],dtype=np.int64),base_thickness=.2)
+        with self.assertRaises(RigError):extrude_mask(np.ones((2,2),dtype=bool),pixel_size=.1,thickness=.2,origin=np.array([minimum,0],dtype=np.int64))
+
     def test_ragged_arrays_and_cyclic_evidence_reject_structurally(self):
         with self.assertRaises(RigError):extrude_contour([[0,0],[1],[0,1]],thickness=.1)
         with self.assertRaises(RigError):heightfield([[0,1],[0]],spacing=[1,1],base_thickness=.1)
