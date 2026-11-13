@@ -27,9 +27,13 @@ class NativeLiquidTests(unittest.TestCase):
     def test_real_bake_reopen_and_corruption(self):
         with self.workspace('pouring') as root:
             world,payloads,settings=build_liquid_inputs()
+            world['components'][0]['resolution']=[float(v) for v in world['components'][0]['resolution']]
+            original_world=core.canonical(world)
             original=dict(payloads)
             report=simulate(world,payloads,root,settings=settings)
             self.assertEqual(payloads,original)
+            self.assertEqual(core.canonical(world),original_world)
+            self.assertEqual((root/'world.json').read_bytes(),original_world)
             self.assertEqual(report['status'],'verified')
             self.assertTrue(report['geometry']['reopened_geometry_verified'])
             self.assertLessEqual(report['geometry']['maximum_native_vertex_error'],2e-5)

@@ -10,6 +10,15 @@ from physics_liquid_settings import admit,validate_settings,schemas
 
 
 class LiquidSettingsTests(unittest.TestCase):
+    def test_integer_valued_domain_resolution_preserves_source_bytes(self):
+        world,_,settings=build_liquid_inputs()
+        world['components'][0]['resolution']=[24.,24.,24.]
+        original=core.canonical(world)
+        checked,_=admit(world,settings)
+        self.assertEqual(core.canonical(world),original)
+        self.assertEqual(core.canonical(checked),original)
+        self.assertTrue(all(type(v) is float for v in checked['components'][0]['resolution']))
+
     def test_static_and_authored_obstacle_reuse_real_native_source_owner(self):
         for moving in [False,True]:
             world,payloads,settings=build_liquid_inputs(moving=moving)

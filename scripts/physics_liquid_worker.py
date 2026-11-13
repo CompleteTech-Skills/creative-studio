@@ -109,7 +109,7 @@ def main():
     center=BASIS.to_3x3()@Vector(d['transform']['translation']);size=d['size'][0]
     bpy.ops.mesh.primitive_cube_add(size=size,location=center);domain=bpy.context.object;domain.name=d['id']
     mod=domain.modifiers.new('Native liquid domain','FLUID');mod.fluid_type='DOMAIN';bpy.context.view_layer.update();ds=mod.domain_settings
-    ds.domain_type='LIQUID';ds.resolution_max=d['resolution'][0]
+    ds.domain_type='LIQUID';ds.resolution_max=int(d['resolution'][0])
     ds.cache_frame_start=1;ds.cache_frame_end=frames;ds.cache_type='ALL';ds.cache_data_format='OPENVDB';ds.cache_mesh_format='BOBJECT';ds.cache_directory=str(root/'cache')
     ds.use_mesh=True;ds.mesh_scale=settings['mesh_scale'];ds.particle_radius=settings['particle_radius']
     ds.use_spray_particles=False;ds.use_foam_particles=False;ds.use_bubble_particles=False
