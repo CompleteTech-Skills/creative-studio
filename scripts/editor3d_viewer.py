@@ -153,12 +153,13 @@ class EditorServer(HTTPServer):
 
     def snapshot(self):
         snapshot = self.repository.snapshot()
+        key = (snapshot['revision'], snapshot['sha256'])
         with self.cache_lock:
-            if snapshot['sha256'] not in self.cache:
-                self.cache[snapshot['sha256']] = preview_snapshot(self.repository, snapshot)
+            if key not in self.cache:
+                self.cache[key] = preview_snapshot(self.repository, snapshot)
                 while len(self.cache) > 2:
                     self.cache.popitem(last=False)
-            return self.cache[snapshot['sha256']]
+            return self.cache[key]
 
     def upload_path(self, identifier):
         """Resolve a live service upload by opaque identity, never a caller path."""
