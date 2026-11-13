@@ -341,6 +341,7 @@ class AssetLibrary:
     def resolve(self, reference):
         validate(reference, 'AssetRef')
         with self._connect() as db:
+            self._begin_writer(db)
             visited, pending = set(), [reference]
             first = None
             while pending:
@@ -362,6 +363,7 @@ class AssetLibrary:
         if type(verify_payloads) is not bool:
             _fail('REQUEST', 'verify_payloads must be boolean.')
         with self._connect() as db:
+            self._begin_writer(db)
             manifest = self._lookup(db, reference)
             if verify_payloads:
                 self._verify_payloads(db, manifest)
@@ -379,6 +381,8 @@ class AssetLibrary:
         f = next((x for x in manifest['files'] if x['path'] == path), None)
         if not f: _fail('MISSING', 'Logical file is not in this exact version.', path)
         with self._connect() as db:
+            self._begin_writer(db)
+            self._verify_payloads(db, manifest)
             row = db.execute('SELECT payload FROM blobs WHERE sha256=? AND length(payload)=?', (f['sha256'], f['bytes'])).fetchone()
             if not row or len(row[0]) != f['bytes'] or hashlib.sha256(row[0]).hexdigest() != f['sha256']:
                 _fail('CORRUPT', 'Payload changed during retrieval.', path)
@@ -388,6 +392,7 @@ class AssetLibrary:
         """Read verified own bytes; dependency admission stays with the caller."""
         portable_path(path)
         with self._connect() as db:
+            self._begin_writer(db)
             manifest = self._lookup(db, reference)
             self._verify_payloads(db, manifest)
             file = next((x for x in manifest['files'] if x['path'] == path), None)
