@@ -31,6 +31,34 @@ class Supervision(unittest.TestCase):
             self.assertEqual(caught.exception.report['category'],'cancelled')
             self.assertTrue((root/'blender.log').exists())
 
+    def test_timeout_terminates_child_and_retains_diagnostics(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            with self.assertRaises(Render3DError) as caught:
+                _supervise([sys.executable,'-c',"import time;print('waiting',flush=True);time.sleep(30)"],
+                           cwd=root,timeout=.25,memory_bytes=1024**3,storage_bytes=16*1024**2)
+            self.assertEqual(caught.exception.report['category'],'timeout')
+            self.assertIn('waiting',(root/'blender.log').read_text())
+
+    def test_storage_budget_terminates_child(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            with self.assertRaises(Render3DError) as caught:
+                _supervise([sys.executable,'-c',"from pathlib import Path;import time;Path('output').write_bytes(b'x'*4096);time.sleep(30)"],
+                           cwd=root,timeout=10,memory_bytes=1024**3,storage_bytes=1024)
+            self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+            self.assertTrue((root/'blender.log').exists())
+
+    @unittest.skipUnless(Path('/proc').is_dir(),'Process-tree RSS measurement requires procfs')
+    def test_memory_budget_terminates_child(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            with self.assertRaises(Render3DError) as caught:
+                _supervise([sys.executable,'-c',"import time;payload=bytearray(32*1024**2);time.sleep(30)"],
+                           cwd=root,timeout=10,memory_bytes=8*1024**2,storage_bytes=1024**2)
+            self.assertEqual(caught.exception.report['category'],'system-memory')
+            self.assertTrue((root/'blender.log').exists())
+
     def test_failed_child_never_reports_success(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
