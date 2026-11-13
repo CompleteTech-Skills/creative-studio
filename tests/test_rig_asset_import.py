@@ -134,6 +134,25 @@ class ImportTests(unittest.TestCase):
         self.assertFalse(escaped.exists())
 
     @unittest.skipUnless(os.environ.get('HATCH_BLENDER'),'Pinned Blender optional integration not configured')
+    def test_absolute_native_shape_keys_reject_before_publication(self):
+        source=self.root/'absolute-shapes.blend'
+        script=self.root/'make_absolute_shapes.py'
+        script.write_text('import bpy\nbpy.ops.object.select_all(action="SELECT");bpy.ops.object.delete(use_global=False)\n'
+            'bpy.ops.mesh.primitive_cube_add()\no=bpy.context.object\no.shape_key_add(name="Basis")\n'
+            'tall=o.shape_key_add(name="Tall")\nfor p in tall.data:p.co.z*=3\n'
+            'o.data.shape_keys.use_relative=False\no.data.shape_keys.eval_time=100\n'
+            'bpy.ops.wm.save_as_mainfile(filepath='+repr(str(source))+')\n')
+        workspace=self.root/'absolute-shapes-fixture';workspace.mkdir()
+        self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup',
+            '--disable-autoexec','--python',str(script)],workspace)
+        before=source.read_bytes()
+        with self.assertRaisesRegex(RigError,'Absolute shape keys'):
+            self.pipeline.import_asset(source,**self.request(trusted_packed_blend=True))
+        self.assertEqual(source.read_bytes(),before)
+        with sqlite3.connect(self.library.database) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],0)
+
+    @unittest.skipUnless(os.environ.get('HATCH_BLENDER'),'Pinned Blender optional integration not configured')
     def test_actual_eight_weight_blender_associations(self):
         import numpy as np
         from rig_gltf import GltfBuilder

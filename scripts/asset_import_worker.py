@@ -104,7 +104,10 @@ def enforce_conversion_profile():
         if obj.instance_type!='NONE':fail('Native collection/particle instancing requires a verified realization adapter.')
         owner_animation(obj,'object')
         if obj.data:owner_animation(obj.data,'unsupported-data')
-        if obj.type=='MESH' and obj.data.shape_keys:owner_animation(obj.data.shape_keys,'shape')
+        if obj.type=='MESH' and obj.data.shape_keys:
+            if not obj.data.shape_keys.use_relative:
+                fail('Absolute shape keys require a verified evaluated-geometry baking adapter.')
+            owner_animation(obj.data.shape_keys,'shape')
         if obj.rigid_body or obj.rigid_body_constraint or (obj.type=='ARMATURE' and any(b.constraints for b in obj.pose.bones)):
             fail('Native physics/pose constraints require a separately verified baking adapter.')
         if obj.constraints or any(m.type!='ARMATURE' for m in obj.modifiers):

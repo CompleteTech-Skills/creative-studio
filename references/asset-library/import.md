@@ -14,6 +14,8 @@ MESH/ARMATURE/EMPTY; collection/particle instances, physics and pose constraints
 are unsupported. Positive animation admission covers object transforms, bound
 pose transforms and shape-key values, including actual layered action bags and
 NLA action bindings; non-finite values and out-of-range bound components fail.
+Absolute shape keys are refused because the interchange exporter cannot preserve
+their evaluated time-based deformation; a future verified baking adapter is required.
 Armature modifiers require local, unmasked linear vertex-group binding; envelopes,
 dual-quaternion preserve-volume, segmented Bendy Bones, envelope multiplication,
 nonstandard inheritance, weighted non-deforming bones and multiple modifier
