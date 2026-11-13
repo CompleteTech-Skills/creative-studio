@@ -7,11 +7,26 @@ from lookdev_texture_cache import DerivedTextureCache
 from lookdev_textures import DecodedTexture, create_blender_image
 from rig_errors import require
 
-# Capture owned source modules at import, alongside the implementations used by
-# this process. Frozen validation checkouts must remain unchanged during a job.
-_MODULE_SHA256 = {name: hashlib.sha256((Path(__file__).parent / name).read_bytes()).hexdigest()
-                  for name in ('lookdev_texture_blender.py', 'lookdev_texture_cache.py',
-                               'lookdev_textures.py', 'lookdev_contracts.py', 'rig_errors.py')}
+# Capture the actual imported helper origins. Reject mixed checkouts rather than
+# certify sibling source bytes while executing a previously imported module.
+import lookdev_texture_cache as _cache_module
+import lookdev_textures as _textures_module
+import lookdev_contracts as _contracts_module
+import rig_errors as _errors_module
+
+
+def _source_hashes():
+    own=Path(__file__).resolve()
+    modules={own.name: own}
+    for module in (_cache_module,_textures_module,_contracts_module,_errors_module):
+        path=Path(module.__file__).resolve()
+        require(path.suffix=='.py' and path.parent==own.parent,
+                'TEXTURE_MODULE_ORIGIN','Texture helpers must execute from the same frozen source checkout.')
+        modules[path.name]=path
+    return {name:hashlib.sha256(path.read_bytes()).hexdigest() for name,path in modules.items()}
+
+
+_MODULE_SHA256=_source_hashes()
 
 
 def create_cached_blender_image(cache, texture, *, name, profile='browser', mip_level=0):

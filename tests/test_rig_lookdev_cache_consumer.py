@@ -21,6 +21,17 @@ class ConsumerAdmissionTests(unittest.TestCase):
         for name,digest in _MODULE_SHA256.items():
             self.assertEqual(hashlib.sha256((root/name).read_bytes()).hexdigest(),digest)
 
+    def test_preloaded_helper_from_other_checkout_cannot_claim_local_source(self):
+        root=Path(__file__).resolve().parents[1]/'scripts'
+        with tempfile.TemporaryDirectory() as temporary:
+            alternate=Path(temporary)
+            (alternate/'rig_errors.py').write_bytes((root/'rig_errors.py').read_bytes()+b'\n# alternate source\n')
+            command=("import sys;sys.path.insert(0,"+repr(str(alternate))+");import rig_errors;"
+                     "sys.path.insert(0,"+repr(str(root))+");import lookdev_texture_blender")
+            result=subprocess.run([sys.executable,'-c',command],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('same frozen source checkout',result.stdout)
+
     def test_invalid_requests_reject_without_blender_import(self):
         for kwargs in ({'mip_level':True},{'mip_level':-1},{'name':''}):
             values=dict(name='probe');values.update(kwargs)
