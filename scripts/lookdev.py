@@ -13,9 +13,9 @@ import json
 import os
 from pathlib import Path
 import stat
-import tempfile
+import secrets
 
-from atomic_publish import _rename_no_replace
+from atomic_publish import rename_no_replace_at
 from lookdev_contracts import Registry, canonical_bytes, content_hash, portable_path
 from rig_errors import RigError, decode_json, require
 
@@ -23,6 +23,42 @@ INDEX = 'lookdev-project.json'
 MATERIALS = frozenset(('material3d', 'material-instance3d', 'material-variant3d'))
 GROUPS = {'materials': MATERIALS, 'textures': frozenset(('texture3d',)),
           'lighting': frozenset(('light3d', 'lighting-rig3d'))}
+
+
+def _directory_fd(path):
+    """Open an absolute directory without following any path component links."""
+    path = Path(os.path.abspath(path))
+    descriptor = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in path.parts[1:]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _write_at(root_fd, name, payload):
+    portable_path(name)
+    descriptor = os.dup(root_fd)
+    try:
+        parts = name.split('/')
+        for part in parts[:-1]:
+            try:
+                os.mkdir(part, mode=0o700, dir_fd=descriptor)
+            except FileExistsError:
+                pass
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        file_fd = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                          0o600, dir_fd=descriptor)
+        with os.fdopen(file_fd, 'wb') as stream:
+            stream.write(payload)
+    finally:
+        os.close(descriptor)
 
 
 def _read_at(root_fd, name, maximum):
@@ -54,7 +90,7 @@ class Project:
     """A bounded captured source closure; later operations use captured bytes."""
     def __init__(self, root):
         self.root = Path(root).absolute()
-        descriptor = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        descriptor = _directory_fd(self.root)
         try:
             raw_index = _read_at(descriptor, INDEX, 128 * 1024)
             index = decode_json(raw_index)
@@ -115,26 +151,33 @@ class Project:
                 'LOOKDEV_PROJECT_EXISTS', 'Export destination must be new.')
         require(not destination.resolve().is_relative_to(self.root.resolve()),
                 'LOOKDEV_PROJECT_DESTINATION', 'Export outside the source project.')
-        require(destination.parent.is_dir() and not destination.parent.is_symlink(),
-                'LOOKDEV_PROJECT_DESTINATION', 'Export parent must be an existing real directory.')
-        stage = Path(tempfile.mkdtemp(prefix='.lookdev-export-', dir=destination.parent))
+        parent_fd = _directory_fd(destination.parent)
+        stage_fd = None
+        stage_name = '.lookdev-export-' + secrets.token_hex(16)
         try:
+            os.mkdir(stage_name, mode=0o700, dir_fd=parent_fd)
+            stage_fd = os.open(stage_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
             for name, payload in self.sources.items():
-                path = stage / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                with path.open('xb') as stream:
-                    stream.write(payload)
-            captured = Project(stage)
-            require(captured.inventory == self.inventory, 'LOOKDEV_PROJECT_EXPORT', 'Export failed exact-byte verification.')
+                _write_at(stage_fd, name, payload)
+            # Independent disk reads bind the delivered bytes rather than the
+            # success of write() or existence of file names.
+            inventory = {}
+            for name, payload in self.sources.items():
+                captured = _read_at(stage_fd, name, len(payload))
+                inventory[name] = dict(bytes=len(captured), sha256=hashlib.sha256(captured).hexdigest())
+            require(inventory == self.inventory, 'LOOKDEV_PROJECT_EXPORT', 'Export failed exact-byte verification.')
             manifest = dict(schema_version=1, kind='lookdev-native-export', project_sha256=self.sha256,
                             inventory=deepcopy(self.inventory), loss_report=dict(format='native', lost=[], approximated=[]),
                             rendered=False, aesthetic_review='not-run')
-            (stage/'export-manifest.json').write_bytes(canonical_bytes(manifest))
-            _rename_no_replace(stage, destination)
+            _write_at(stage_fd, 'export-manifest.json', canonical_bytes(manifest))
+            rename_no_replace_at(parent_fd, stage_name, parent_fd, destination.name)
             return manifest
-        except Exception:
-            # Retain failed staging with source bytes for caller-owned recovery.
-            raise
+        finally:
+            # Failed staging remains anchored under the owned output parent for
+            # diagnosis; no unverified directory is published as the destination.
+            if stage_fd is not None:
+                os.close(stage_fd)
+            os.close(parent_fd)
 
 
 def main(argv=None):

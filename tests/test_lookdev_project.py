@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from lookdev import Project, INDEX
@@ -100,3 +101,36 @@ class ProjectTests(unittest.TestCase):
         inspected=project.inspect('materials','ceramic')
         inspected['effective']['surface']['metallic']=1
         self.assertEqual(project.inspect('materials','ceramic')['effective']['surface']['metallic'],0)
+
+    def test_export_parent_swap_cannot_redirect_writes(self):
+        import lookdev
+        output_parent=self.parent/'output-parent';output_parent.mkdir()
+        foreign=self.parent/'foreign';foreign.mkdir()
+        relocated=self.parent/'relocated'
+        original=lookdev._write_at
+        swapped=False
+        def swap_parent(*args):
+            nonlocal swapped
+            if not swapped:
+                swapped=True
+                output_parent.rename(relocated)
+                output_parent.symlink_to(foreign,target_is_directory=True)
+            return original(*args)
+        with patch.object(lookdev,'_write_at',side_effect=swap_parent):
+            Project(self.root).export_native(output_parent/'delivery')
+        self.assertEqual(list(foreign.iterdir()),[])
+        self.assertEqual(Project(relocated/'delivery').sha256,Project(self.root).sha256)
+
+    def test_racing_destination_never_replaced(self):
+        import lookdev
+        destination=self.parent/'delivery'
+        original=lookdev.rename_no_replace_at
+        def race(*args):
+            destination.mkdir()
+            (destination/'sentinel').write_text('user work')
+            return original(*args)
+        with patch.object(lookdev,'rename_no_replace_at',side_effect=race):
+            with self.assertRaises(FileExistsError):
+                Project(self.root).export_native(destination)
+        self.assertEqual((destination/'sentinel').read_text(),'user work')
+        self.assertEqual(list(destination.iterdir()),[destination/'sentinel'])
