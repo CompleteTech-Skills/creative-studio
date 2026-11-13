@@ -1,6 +1,7 @@
 from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
 from pathlib import Path
+import os
 import tempfile
 import unittest
 
@@ -237,13 +238,26 @@ class BudgetTests(unittest.TestCase):
             media_type='application/json',provenance_ref=None,fixture=True,dependencies=[])
         request=self.adapter_request()
         request['input']['rate_evidence']=[reference]
+        before=self.ledger.snapshot()
         with patch.object(tempfile,'tempdir',str(alias)):
+            if not (hasattr(os,'O_NOFOLLOW') and os.open in os.supports_dir_fd):
+                with self.assertRaises(RigError) as caught:
+                    execute(self.ledger,request,evidence_root=self.root)
+                self.assertEqual(caught.exception.report['code'],'DIRECTOR_PLATFORM')
+                self.assertEqual(self.ledger.snapshot(),before)
+                self.assertEqual(list(target.iterdir()),[])
+                return
             result=execute(self.ledger,request,evidence_root=self.root)
         self.assertEqual(result['value']['state'],'reserved')
         retained=result['value']['evidence'][0]
         self.assertEqual(retained['sha256'],proof['sha256'])
         self.assertEqual((self.root/retained['path']).read_bytes(),original)
         self.assertEqual(list(target.iterdir()),[])
+
+    def test_adapter_owned_staging_unsupported_secure_reads_fail_closed(self):
+        from unittest.mock import patch
+        with patch.object(os,'supports_dir_fd',set()):
+            self.test_adapter_owned_staging_handles_symlinked_system_temp()
 
     def test_adapter_large_storage_and_call_limits_have_valid_result(self):
         from director_budget import execute
