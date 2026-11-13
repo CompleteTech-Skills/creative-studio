@@ -9,6 +9,7 @@ import base64
 from copy import deepcopy
 from dataclasses import dataclass, field
 import json
+import hashlib
 from pathlib import Path
 import struct
 from urllib.parse import unquote, urlsplit
@@ -45,6 +46,8 @@ class GltfDocument:
     limits: dict
     dependencies: list[Path] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    source_reader: object = None
+    source_sha256: str | None = None
 
     def uri(self, uri: str, maximum: int | None = None) -> bytes:
         maximum = maximum or self.limits['source_bytes']
@@ -59,6 +62,10 @@ class GltfDocument:
         require(not parts.scheme and not parts.netloc and not parts.query and not parts.fragment,
                 'RIG_GLTF_URI', 'Only local relative glTF dependencies are supported.')
         target = safe_path(self.path.parent, unquote(parts.path, errors='strict'), exists=True)
+        if self.source_reader is not None:
+            payload = self.source_reader(target, maximum)
+            if target not in self.dependencies:self.dependencies.append(target)
+            return payload
         require(target.stat().st_size <= maximum, 'RIG_LIMIT_SOURCE', 'glTF dependency exceeds its byte budget.')
         if target not in self.dependencies:self.dependencies.append(target)
         require(sum(p.stat().st_size for p in self.dependencies) <= self.limits['dependency_bytes'],
@@ -119,13 +126,17 @@ class GltfDocument:
         return data
 
 
-def read_gltf(path: str | Path, limits=None) -> GltfDocument:
+def read_gltf(path: str | Path, limits=None, *, source_reader=None) -> GltfDocument:
     limits = dict(limits or DEFAULT_LIMITS)
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'RIG_SOURCE', 'Model must be a regular local file.')
-    path = path.resolve()
-    require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'Encoded model exceeds the source byte limit.')
-    raw = path.read_bytes();binary = None
+    path = path.absolute() if source_reader is not None else path.resolve()
+    if source_reader is None:
+        require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'Encoded model exceeds the source byte limit.')
+        raw = path.read_bytes()
+    else:
+        raw = source_reader(path, limits['source_bytes'])
+    binary = None
     if path.suffix.lower() == '.glb':
         require(len(raw) >= 20, 'RIG_GLB_HEADER', 'GLB is truncated.')
         magic, version, length = struct.unpack_from('<4sII', raw)
@@ -148,7 +159,8 @@ def read_gltf(path: str | Path, limits=None) -> GltfDocument:
             'RIG_GLTF_VERSION', 'Only glTF 2.0 is supported.')
     missing = set(document.get('extensionsRequired', []))-MATERIAL_EXTENSIONS
     require(not missing, 'RIG_GLTF_EXTENSION', 'Decode required unsupported extensions before import.', observed=sorted(missing))
-    result = GltfDocument(path, document, [], limits, [path])
+    result = GltfDocument(path, document, [], limits, [path], source_reader=source_reader,
+                          source_sha256=hashlib.sha256(raw).hexdigest())
     buffers = document.get('buffers', [])
     require(len(buffers) <= 1024, 'RIG_GLTF_BUFFER', 'Too many buffers.')
     total = sum(_count(b.get('byteLength'), 'buffer byte length', limits['dependency_bytes']) for b in buffers)
