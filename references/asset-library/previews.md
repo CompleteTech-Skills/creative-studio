@@ -30,7 +30,8 @@ still apply; unavailable Blender never becomes a simulated success.
 
 Motion takes exact rational strings, for example `"times": ["0", "1/2", "1"]`,
 and an existing native clip identifier. All samples share one framing box and
-camera scale. At most 32 samples, 1024-by-1024 pixels, 64 samples per pixel and
+camera scale, with both projected axes fitted to the output aspect ratio. At
+most 32 samples, 1024-by-1024 pixels, 64 samples per pixel and
 4096 inspection edges are admitted. The initial backend is CPU Cycles. Its actual
 version, code hash, measured wall time, sampled memory and output sizes accompany
 every preview; GPU execution is not claimed.

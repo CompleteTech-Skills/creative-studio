@@ -9,6 +9,7 @@ from copy import deepcopy
 from fractions import Fraction
 import hashlib
 import io
+from itertools import product
 import json
 import math
 import os
@@ -51,12 +52,12 @@ def _cache_bytes(path):
 
 def _cache_path(value):
     from asset_library_contracts import portable_path
-    # Native run creation leaves its owned sibling lock in the cache. Keep the
-    # ordinary portable-name rules, allowing only that specific hidden basename.
+    # Native locks and Blender's private extension cache use hidden names. Keep
+    # the portable character/reserved-name rules while admitting one leading dot
+    # on a component; dot/parent components still fail unchanged.
     require(isinstance(value, str), 'PATH', 'Cache paths must be strings.')
     parts=value.split('/')
-    if parts[-1]=='.native.rig.lock':
-        parts[-1]='native.rig.lock'
+    parts=[part[1:] if part.startswith('.') and part not in ('.','..') else part for part in parts]
     portable_path('/'.join(parts))
     return value
 
@@ -210,12 +211,19 @@ def _scene(root, geometry, config, provenance, framing_bounds=None):
     camera=node('camera','camera','root')
     direction='front' if config['mode']=='uv' else config['direction']
     offset=np.asarray({'front':[0,0,1],'back':[0,0,-1],'side':[1,0,0],'three-quarter':[2.3,1.1,3.8]}[direction],float)
-    offset=offset/np.linalg.norm(offset);location=center+offset*span*2
-    forward=(center-location)/np.linalg.norm(center-location);right=np.cross(forward,[0,1,0]);right/=np.linalg.norm(right)
+    offset=offset/np.linalg.norm(offset)
+    forward=-offset;right=np.cross(forward,[0,1,0]);right/=np.linalg.norm(right)
     up=np.cross(right,forward);rotation=np.column_stack((right,up,-forward))
+    corners=np.asarray(list(product(*zip(frame_low,frame_high))))-center
+    x=corners@right;y=corners@up;z=corners@offset
+    aspect=config['width']/config['height'];vertical_fov=.8
+    tan_vertical=math.tan(vertical_fov/2);tan_horizontal=tan_vertical*aspect
+    distance=max(span*2,float(np.max(z+np.maximum(np.abs(x)/tan_horizontal,np.abs(y)/tan_vertical)))*1.2)
+    location=center+offset*distance
+    orthographic_height=max(float(np.ptp(y)),float(np.ptp(x))/aspect,.1)*1.2
     camera['transform'].update(translation=location.tolist(),rotation=matrix_quaternion(rotation).tolist())
     camera['camera']=dict(projection='perspective' if config['mode']=='perspective' else 'orthographic',
-        near=max(.001,span*.001),far=max(100,span*20),vertical_fov=.8,orthographic_height=span*1.2)
+        near=max(.001,span*.001),far=max(100,distance+span*20),vertical_fov=vertical_fov,orthographic_height=orthographic_height)
     nodes=[node('root'),mesh,camera];lights=[]
     for name,position,intensity in [('key',[-1,2,3],500),('fill',[2,1,-1],150)]:
         light=node(name,'light','root');light['transform']['translation']=(center+np.asarray(position)*span).tolist()

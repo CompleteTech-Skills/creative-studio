@@ -1,6 +1,7 @@
 """Actual owner geometry and optional Blender asset-preview integration."""
 from copy import deepcopy
 from fractions import Fraction
+from itertools import product
 import json
 import os
 from pathlib import Path
@@ -50,9 +51,10 @@ class Preview(unittest.TestCase):
                       {'background':[float('nan'),0,0]},{'material':{}}):
             with self.subTest(value=value),self.assertRaises(RigError):settings(value)
 
-    def test_cache_paths_admit_only_the_owned_hidden_lock(self):
+    def test_cache_paths_admit_owned_hidden_artifacts_without_traversal(self):
         self.assertEqual(_cache_path('.native.rig.lock'),'.native.rig.lock')
-        for value in ('../escape','.other','.native.rig.lock/escape','a/../b','/absolute','a\\b'):
+        self.assertEqual(_cache_path('.config/blender/4.5/extensions/.cache/compat.dat'),'.config/blender/4.5/extensions/.cache/compat.dat')
+        for value in ('../escape','.', '..double','.hidden/../escape','a/../b','/absolute','a\\b'):
             with self.subTest(value=value),self.assertRaises(RigError):_cache_path(value)
 
     def test_sample_memory_and_inspection_edges_are_bounded(self):
@@ -88,6 +90,26 @@ class Preview(unittest.TestCase):
             scene=json.loads((target/'scene.json').read_text())
             camera=next(n for n in scene['nodes'] if n['id']=='camera')
             self.assertEqual(camera['camera']['projection'],'perspective' if mode=='perspective' else 'orthographic')
+
+    def test_camera_fits_portrait_landscape_and_shared_motion_bounds(self):
+        from rig_math import qmatrix
+        bounds=(np.array([-3,-2,-1]),np.array([3,2,1]))
+        corners=np.array(list(product(*zip(*bounds))))
+        for mode in ('perspective','orthographic'):
+            for width,height in ((64,1024),(1024,64),(256,256)):
+                config=settings(dict(mode=mode,width=width,height=height))
+                target=self.root/f'{mode}-{width}-{height}'
+                _scene(target,self.geometry,config,dict(origin='procedural-fixture',fixture=True,tool='test',inputs=[],attribution='fixture',license='CC0-1.0'),bounds)
+                camera=next(n for n in json.loads((target/'scene.json').read_text())['nodes'] if n['id']=='camera')
+                rotation=qmatrix(camera['transform']['rotation'])[:3,:3]
+                local=(corners-np.array(camera['transform']['translation']))@rotation
+                info=camera['camera'];aspect=width/height
+                if mode=='perspective':
+                    halfheight=-local[:,2]*np.tan(info['vertical_fov']/2)
+                else:
+                    halfheight=np.full(len(corners),info['orthographic_height']/2)
+                self.assertTrue(np.all(np.abs(local[:,0])<halfheight*aspect))
+                self.assertTrue(np.all(np.abs(local[:,1])<halfheight))
 
     def test_material_override_is_explicit_and_does_not_modify_source(self):
         before=deepcopy(self.rig.geometry.materials)
