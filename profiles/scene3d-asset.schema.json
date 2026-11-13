@@ -62,7 +62,8 @@
             "texture",
             "catalog",
             "evidence",
-            "collision"
+            "collision",
+            "light3d"
           ]
         }
       },
@@ -325,6 +326,8 @@
             "visible",
             "material",
             "light_intensity",
+            "light_intensity_scale",
+            "light_color_multiplier",
             "world_exposure"
           ]
         },
@@ -948,6 +951,104 @@
             "color",
             "intensity"
           ]
+        },
+        "light_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "light": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "light3d"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "intensity_scale": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000.0
+            },
+            "color_multiplier": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "minItems": 3,
+              "maxItems": 3
+            }
+          },
+          "required": [
+            "schema_version",
+            "light",
+            "intensity_scale",
+            "color_multiplier"
+          ]
+        },
+        "pose_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "rig": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "hatch-3d-rig"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "pose": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}(?![\\s\\S])"
+                },
+                "rig_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "file": {
+                  "$ref": "#/$defs/file"
+                }
+              },
+              "required": [
+                "id",
+                "rig_version",
+                "file"
+              ]
+            }
+          },
+          "required": [
+            "schema_version",
+            "rig",
+            "pose"
+          ]
         }
       },
       "required": [
@@ -1194,6 +1295,47 @@
                 "maxLength": 4096
               },
               "maxProperties": 64
+            },
+            "light_binding": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "schema_version": {
+                  "const": 1
+                },
+                "light": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "enum": [
+                            "light3d"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "intensity_scale": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000.0
+                },
+                "exposure_stops": {
+                  "type": "number",
+                  "minimum": -32,
+                  "maximum": 32
+                }
+              },
+              "required": [
+                "schema_version",
+                "light",
+                "intensity_scale",
+                "exposure_stops"
+              ]
             }
           },
           "required": [
@@ -2407,6 +2549,146 @@
             "maxLength": 4096
           },
           "maxProperties": 64
+        },
+        "path_bindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "schema_version": {
+                "const": 1
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": -1000000000.0,
+                    "maximum": 1000000000.0
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "minItems": 2,
+                "maxItems": 10000
+              },
+              "start_frame": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000000
+              },
+              "end_frame": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000000
+              },
+              "start_fraction": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "end_fraction": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "space": {
+                "const": "world"
+              },
+              "orientation": {
+                "const": "preserve"
+              }
+            },
+            "required": [
+              "schema_version",
+              "id",
+              "target",
+              "points",
+              "start_frame",
+              "end_frame",
+              "start_fraction",
+              "end_fraction",
+              "space",
+              "orientation"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "light_overrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "target": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "binding": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "schema_version": {
+                    "const": 1
+                  },
+                  "light": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/reference"
+                      },
+                      {
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "light3d"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "intensity_scale": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000.0
+                  },
+                  "color_multiplier": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "schema_version",
+                  "light",
+                  "intensity_scale",
+                  "color_multiplier"
+                ]
+              }
+            },
+            "required": [
+              "target",
+              "binding"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256
         }
       },
       "required": [
