@@ -53,6 +53,10 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(self.library.annotations(self.reference)['revision'],1)
         self.assertEqual(self.request('/api/annotations',update)[0],409)
         self.assertEqual(self.request('/api/search',{'filters':{'tags':['repair']}})[1]['total'],1)
+        collection=dict(location=self.location,expected_revision=0,collections=['favorites'])
+        self.assertEqual(self.request('/api/collections',collection)[0],200)
+        self.assertEqual(self.request('/api/collections',collection)[0],409)
+        self.assertEqual(self.request('/api/search',{'filters':{'collections':['favorites']}})[1]['total'],1)
 
     def test_auth_origins_routes_payload_and_path_boundaries(self):
         self.assertEqual(self.request('/api/search',auth=False)[0],401)
@@ -121,12 +125,12 @@ class BrowserTests(unittest.TestCase):
         self.native_rig=rig
         self.index.rebuild();return ref
 
-    @unittest.skipUnless(os.environ.get('HATCH_ASSET_BROWSER_TEST')=='1','Enable real Chromium/WebGL asset acceptance.')
+    @unittest.skipUnless(os.environ.get('HATCH_ASSET_BROWSER_TEST')=='1' or os.environ.get('HATCH_RIG_BROWSER_TEST')=='1','Enable real Chromium/WebGL asset acceptance.')
     def test_real_browser_model_animation_metadata_keyboard_and_webgl_fallback(self):
         from playwright.sync_api import sync_playwright
         ref=self.animated_asset(); location=dict(library='local',reference=ref)
         with sync_playwright() as p:
-            browser=p.chromium.launch(headless=True,args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+            browser=p.chromium.launch(headless=True,executable_path=os.environ.get('HATCH_CHROMIUM'),args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
             self.addCleanup(browser.close)
             page=browser.new_page(viewport={'width':1200,'height':1100})
             external=[]; page.on('request',lambda r: external.append(r.url) if not r.url.startswith(f'http://127.0.0.1:{self.server.server_port}/') and not r.url.startswith(('blob:','data:')) else None)
@@ -135,6 +139,10 @@ class BrowserTests(unittest.TestCase):
             page.wait_for_function('window.assetBrowserReady === true')
             page.get_by_role('button',name='Animated fixture · 1.0.0',exact=True).click()
             page.get_by_role('button',name='Load model',exact=True).click();page.wait_for_function('window.assetBrowserModelReady === true')
+            page.evaluate("const b=document.querySelector('#load-model');b.dispatchEvent(new Event('click'));b.dispatchEvent(new Event('click'))")
+            page.wait_for_function("!document.querySelector('#load-model').disabled")
+            page.wait_for_timeout(100)
+            self.assertEqual(page.evaluate("assetBrowser.scene.children.filter(o=>o.type==='Group').length"),1)
             before=page.evaluate('assetBrowser.sample(0);assetBrowser.snapshot()')
             after=page.evaluate('assetBrowser.sample(.5);assetBrowser.snapshot()')
             self.assertNotEqual(before,after)
@@ -152,6 +160,16 @@ class BrowserTests(unittest.TestCase):
             page.locator('#note').fill('Real browser annotation');page.get_by_role('button',name='Save annotations').click();page.wait_for_function("document.querySelector('#error').textContent==='Annotations saved.'")
             self.assertEqual(self.library.annotations(ref)['note'],'Real browser annotation')
             self.assertEqual(external,[])
+            evidence=os.environ.get('HATCH_ASSET_BROWSER_EVIDENCE')
+            if evidence:
+                destination=Path(evidence);destination.mkdir(parents=True,exist_ok=True)
+                page.screenshot(path=str(destination/'browser.png'),full_page=True)
+                (destination/'rendered-inspection.json').write_text(json.dumps(dict(
+                    schema_version=1,fixture=True,location=location,
+                    model_sha256=hashlib.sha256(self.library.read_file(ref,'runtime/asset.glb')).hexdigest(),
+                    browser=browser.version,vertex_max_error=float(np.max(np.abs(np.asarray(after)-points))),
+                    source_vertices=points.tolist(),browser_vertices=after,external_requests=external,
+                    screenshot_sha256=hashlib.sha256((destination/'browser.png').read_bytes()).hexdigest()),indent=2)+'\n')
             # Hold a completed A-save response while the user selects B. Its
             # annotation revision and note must never be attached to B's form.
             pending=[]

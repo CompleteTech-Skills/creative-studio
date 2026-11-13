@@ -23,7 +23,7 @@ from rig_errors import RigError, decode_json
 
 MAX_BODY = 65536
 MAX_MODEL = 32 * 1024**2
-ACTIONS = frozenset(('import', 'version', 'export', 'replace', 'repair'))
+ACTIONS = frozenset(('import', 'preview', 'thumbnail', 'turntable', 'export', 'index', 'bundle.create', 'bundle.restore', 'version', 'replace', 'repair'))
 UI = Path(__file__).resolve().parents[1] / 'assets' / 'asset-browser'
 VENDOR = Path(__file__).resolve().parents[1] / 'assets' / 'rig-viewer' / 'vendor'
 IMPORTMAP = '{"imports":{"three":"/vendor/build/three.module.min.js"}}'
@@ -103,10 +103,13 @@ class AssetBrowserServer(ThreadingHTTPServer):
         library, reference = self.location(location)
         manifest = library.resolve(reference)
         versions = [r for r in library.list_references() if r['id'] == reference['id']]
-        return dict(schema_version=1, location=location, manifest=manifest,
+        versions_owner=self.index.versions.get(location['library'])
+        collections=versions_owner.collections(reference) if versions_owner else None
+        actions=sorted(set(getattr(self.operations,'supported_operations',ACTIONS)) & ACTIONS) if self.operations else []
+        return dict(schema_version=1, location=location, manifest=manifest, collections=collections,
                     annotations=library.annotations(reference), versions=versions,
                     completeness='payload-verified', visual_review='not-granted-by-browser',
-                    managed_operations=sorted(ACTIONS) if self.operations else [])
+                    managed_operations=actions)
 
     def model(self, location, logical_path):
         library, reference = self.location(location)
@@ -230,6 +233,19 @@ class AssetBrowserHandler(BaseHTTPRequestHandler):
         if path == '/api/model':
             fields(body, ('location', 'path'), ('location','path'))
             self.respond(200, self.server.model(body['location'], body['path']), 'model/gltf-binary'); return
+        if path == '/api/collections':
+            fields(body, ('location','expected_revision','collections'), ('location','expected_revision','collections'))
+            _, reference=self.server.location(body['location'])
+            owner=self.server.index.versions.get(body['location']['library'])
+            if owner is None:
+                fail('UNAVAILABLE','Connect the native lifecycle authority for collections.')
+            result=owner.set_collections(reference,expected_revision=body['expected_revision'],collections=body['collections'])
+            try:
+                self.server.index.rebuild()
+                indexed=True
+            except RigError:
+                indexed=False
+            self.respond(200,dict(collections=result,index_current=indexed));return
         if path == '/api/annotations':
             fields(body, ('location', 'expected_revision', 'tags', 'favorite', 'note'),
                    ('location', 'expected_revision', 'tags', 'favorite', 'note'))

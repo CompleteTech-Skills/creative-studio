@@ -5,7 +5,17 @@ canonical `AssetLibrary` handles and their existing `SearchIndex`. It stores no
 second authoritative asset catalog. Search results, selected versions, inventory,
 provenance, dependencies and mutable annotations come from those owners.
 
-Create/rebuild the search index with the native search API, then run:
+Create/rebuild the search index with the native search and lifecycle APIs, then run:
+
+```python
+from asset_library import AssetLibrary
+from asset_library_search import SearchIndex
+from asset_library_versions import AssetVersions
+library = AssetLibrary("/private/library")
+index = SearchIndex("/private/search-index", {"local": library}, create=True,
+                    versions={"local": AssetVersions(library)})
+index.rebuild()
+```
 
 ```bash
 python scripts/asset_library_browser.py --library /private/library --index /private/search-index --port 8768
@@ -41,11 +51,13 @@ This browser does not modify geometry or grant visual/distribution approval.
 ```python
 server = AssetBrowserServer(
     {"local": library}, search_index, port=0, token=token,
-    operations=native_asset_operations,  # optional AssetOperations authority
+    operations=scoped_native_operations,  # optional ScopedAssetOperations bridge
 )
 ```
 
-`operations` implements the native managed-operation protocol, rather than a new
+`operations` must be the native `ScopedAssetOperations` HTTP bridge with explicit
+intake/output roots. The unrestricted CLI authority must not be used. It implements
+the native managed-operation protocol, rather than a new
 browser scheduler: `submit(operation, request)`, `list_jobs()`, `job_status(id)`
 and `cancel_job(id)`. Native job submitters validate their own operation schema,
 revision checks, resource budgets, staging and recovery. Without this authority,
@@ -63,6 +75,7 @@ unexpected fields or stale annotation revision fails with a structured error.
 | `/api/search` | query, filters, sort, limit, cursor | native SearchIndex |
 | `/api/inspect` | library, exact reference | AssetLibrary |
 | `/api/model` | location, inventoried path | exact read + native import preflight |
+| `/api/collections` | location, expected_revision, collections | AssetVersions CAS |
 | `/api/annotations` | location, expected_revision, tags, favorite, note | AssetLibrary CAS |
 | `/api/actions/{operation}` | native operation request | injected AssetOperations |
 | `/api/jobs/list` | empty object | injected native jobs |
