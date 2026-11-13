@@ -3,6 +3,8 @@ from pathlib import Path
 from copy import deepcopy
 import hashlib
 import os
+import signal
+import time
 import sys
 import tempfile
 import unittest
@@ -61,6 +63,29 @@ class Supervision(unittest.TestCase):
                            cwd=root,timeout=10,memory_bytes=8*1024**2,storage_bytes=1024**2)
             self.assertEqual(caught.exception.report['category'],'system-memory')
             self.assertTrue((root/'blender.log').exists())
+
+    @unittest.skipUnless(os.name == 'posix' and Path('/proc').is_dir(),
+                         'Owned process-group observation requires Linux procfs')
+    def test_exited_leader_cannot_leave_descendant_or_output_pipe(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);pid_path=root/'child.pid'
+            code=("import subprocess,sys;from pathlib import Path;"
+                  "p=subprocess.Popen([sys.executable,'-c','import time;time.sleep(30)']);"
+                  "Path('child.pid').write_text(str(p.pid));print('leader finished',flush=True)")
+            started=time.monotonic()
+            try:
+                payload,_=self.run_child(code,root)
+                self.assertIn(b'leader finished',payload)
+                self.assertLess(time.monotonic()-started,5,
+                                'A descendant-held stdout pipe must not stall completed workers')
+                pid=int(pid_path.read_text())
+                status=Path('/proc',str(pid),'stat')
+                # A killed orphan can briefly remain a zombie pending reaping.
+                if status.exists():self.assertEqual(status.read_text().split()[2],'Z')
+            finally:
+                if pid_path.exists():
+                    try:os.kill(int(pid_path.read_text()),signal.SIGKILL)
+                    except ProcessLookupError:pass
 
     def test_failed_child_never_reports_success(self):
         with tempfile.TemporaryDirectory() as temporary:
