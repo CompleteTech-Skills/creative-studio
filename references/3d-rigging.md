@@ -258,3 +258,50 @@ python scripts/generate_rig_templates.py --check
 Generation requires a new destination. Verification can be rerun without `--generate` on an existing set. The retained fixtures, source GLBs, real animation channels, pose sheets, transparent frame sequences, browser screenshots, editable Blender files, independent reports and archive receipts are indexed by `examples/rig-3d/acceptance.json`. Consult [acceptance and limitations](3d-rigging-acceptance.md) before treating any engineering fixture or gate as a production-art approval.
 
 The public production delivery command remains scoped to all existing 2D tests by default (`--tests --test-scope 2d`), so its pinned environment does not need NumPy, pygltflib or Blender. It filters only the new `test_rig_*.py` modules before import and retains strict skip accounting. Use the focused 3D command above and the nine named CI jobs for 3D acceptance. The delivery runner also accepts `--test-scope all` when the complete 3D environment and test flags are enabled; unexpected integration skips still fail that gate.
+
+## Native texture admission
+
+GLB/glTF and OBJ/MTL texture admission verifies the encoded PNG/JPEG container
+and then fully decodes its pixels before publishing imported geometry. A valid
+header or `Pillow.verify()` alone is insufficient: a JPEG missing its final EOI
+marker or a PNG with invalid compressed scanlines is rejected with
+`RIG_TEXTURE_DECODE`. The imported `TextureImage` retains the exact original
+encoded bytes; validation neither repairs nor re-encodes damaged sources.
+The Model3D consumer retains its public boundary: native texture rejection is
+`MODEL3D_MODEL`, while an unavailable strict JPEG verifier is
+`MODEL3D_DEPENDENCY`. The nested native diagnostic and corrective instruction
+remain available; unrelated resource-limit codes retain their existing behavior.
+OBJ source inventories contain the exact canonical source paths, including when
+the caller uses a directory alias, and preserve every source byte digest.
+
+PNG admission additionally checks every chunk CRC (including IEND), a complete
+zlib stream/footer, and the exact filtered raster size for ordinary and Adam7
+interlaced data. This prevents Pillow's silent black-row padding from admitting
+an incomplete PNG. Compressed bytes are processed in bounded chunks without
+retaining a complete inflated raster.
+
+Only static PNG/JPEG images remain supported. The existing per-image 16,777,216
+pixel cap and aggregate decoded-memory estimate apply before pixel allocation
+in both native source adapters, as does the encoded byte budget. Pillow bomb
+warnings/errors become `RIG_LIMIT_TEXTURE` rather than unstructured exceptions.
+The importer never changes Pillow's process-wide safety settings. If a host has
+enabled `ImageFile.LOAD_TRUNCATED_IMAGES`, texture import fails closed with
+`RIG_TEXTURE_POLICY`; restore the strict host policy before importing textures.
+This is structural/source integrity validation, not visual or production-art
+approval. Other import, fitting and source-interoperability requirements in
+#52/#44/#139 remain separate.
+
+JPEG admission also invokes the pinned warning-aware verifier from
+`requirements-rig.txt`, using the remaining aggregate memory allowance. It
+rejects the demonstrated Huffman entropy damage that Pillow silently recovers;
+missing or untested verifier installations fail with actionable
+`RIG_TEXTURE_VERIFIER_UNAVAILABLE`, never a permissive fallback. Ordinary 2D
+setup does not install or import this optional dependency. See
+[strict JPEG validation](strict-jpeg-validation.md) for limits and codec evidence.
+
+Successful format decoding cannot authenticate original intended pixels. In
+particular, arithmetic JPEG permits marker padding that can make a changed
+bitstream valid without a decoder warning. Exact preserved bytes and an
+independently supplied original SHA-256 remain the separate authenticity gate;
+neither codec success nor numerical checks create visual approval or close the
+broader #52/#44/#139 packages.

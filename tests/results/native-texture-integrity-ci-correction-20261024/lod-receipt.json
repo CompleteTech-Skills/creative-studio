@@ -1,0 +1,17 @@
+{
+  "source_commit": "98a9496ada9ebe57edf42e39f91c0a95e19ad194",
+  "tests": 134,
+  "skips": 0,
+  "failures": 0,
+  "seconds": 42.413,
+  "source_hashes_captured_before_entire_run": true,
+  "source_hashes_unchanged_after": true,
+  "external_consumers_enabled": [
+    "Blender4.5.3",
+    "Khronos",
+    "Chromium"
+  ],
+  "supersedes": "16c8cea snapshot-timing ambiguity and secondaryLOD CHANGES_REQUIRED; source98a9496 shares consumer boundary for primary and allLOD imports",
+  "review": "Fresh exacthead Astra pending",
+  "github_writes": "None for correction"
+}
