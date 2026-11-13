@@ -29,6 +29,8 @@ class JointAdmissionTests(unittest.TestCase):
         for patch in [dict(motor_velocity=1,motor_max_force=1),dict(damping=.5),dict(break_force=10),dict(axis=[0,0,0]),dict(body_b='missing'),dict(limits=[1,-1])]:
             world,_=fixture();world['joints'][0].update(patch)
             with self.assertRaises(Exception):physics.BlenderBackend('/missing').validate_scene(world)
+        world,_=fixture('spring');world['joints'][0]['damping']=.5
+        with self.assertRaises(physics.BackendError):physics.BlenderBackend('/missing').validate_scene(world)
         world,_=fixture();world['joints'][0]['anchor_b']['translation']=[0,0,0]
         with self.assertRaises(physics.BackendError):physics.BlenderBackend('/missing').validate_scene(world)
         world,_=fixture();world['solver']['backend']='pybullet'
