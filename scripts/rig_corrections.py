@@ -43,6 +43,8 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                     result.manifest['controllers']['constraints']=[c for c in result.manifest['controllers']['constraints'] if c['bone']!=target and c.get('target')!=target]
                     result.manifest['attachments']=[s for s in result.manifest['attachments'] if s['bone']!=target]
                     result.manifest['facial']['eyes']=[x for x in result.manifest['facial']['eyes'] if x!=target]
+                    if 'eyelids' in result.manifest['facial']:
+                        result.manifest['facial']['eyelids']=[binding for binding in result.manifest['facial']['eyelids'] if binding['eye']!=target]
                     for expression in result.manifest['facial']['expressions'].values():expression['bones'].pop(target,None)
                 else:
                     require(isinstance(value,dict) and set(value) <= {'id','role','parent','head','tail','deform','mirror','roll'},
@@ -61,6 +63,8 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                         for s in result.manifest['attachments']:
                             if s['bone']==target:s['bone']=renamed
                         result.manifest['facial']['eyes']=[renamed if x==target else x for x in result.manifest['facial']['eyes']]
+                        for binding in result.manifest['facial'].get('eyelids', []):
+                            if binding['eye']==target:binding['eye']=renamed
                         for expression in result.manifest['facial']['expressions'].values():
                             if target in expression['bones']:expression['bones'][renamed]=expression['bones'].pop(target)
                         target=renamed
@@ -121,6 +125,9 @@ def apply_rig_corrections(rig, correction, *, persist=True):
                 for key in stale:result.clips.pop(key)
                 invalidated.extend('clip:'+key for key in stale);result.manifest['state_mapping']={}
             if action=='remove':
+                if 'eyelids' in result.manifest['facial']:
+                    result.manifest['facial']['eyelids']=[binding for binding in result.manifest['facial']['eyelids']
+                        if (binding['mesh'],binding['morph'])!=(target,name)]
                 for expression in result.manifest['facial']['expressions'].values():
                     expression['morphs'].pop(target+'::'+name,None)
                     if not any(name in m.morphs for m in result.geometry.meshes):expression['morphs'].pop(name,None)
@@ -143,6 +150,8 @@ def apply_rig_corrections(rig, correction, *, persist=True):
     bone_ids={b['id'] for b in result.skeleton['bones']}
     require(all(s['bone'] in bone_ids for s in result.manifest['attachments']),'RIG_ATTACHMENT_REFERENCE','Attachment bone is missing.')
     require(set(result.manifest['facial']['eyes']) <= bone_ids,'RIG_EYE_REFERENCE','Eye control bone is missing.')
+    from rig_facial import validate_eyelid_bindings
+    validate_eyelid_bindings(result)
     if persist:
         digest=object_hash(correction);atomic_json(safe_path(result.root,'rig/corrections/'+digest+'.json'),correction)
         save_rig(result,operation='manual-correction')
