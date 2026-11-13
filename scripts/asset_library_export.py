@@ -127,7 +127,9 @@ def _surface_signature(model):
             return {k:(texture_signature(v) if k=='index' and texture else normalized(v,k.endswith('Texture')))
                     for k,v in value.items() if k not in ('name','extras')}
         if isinstance(value,list): return [normalized(x) for x in value]
-        if isinstance(value,(int,float)) and not isinstance(value,bool):return round(float(value),6)
+        if isinstance(value,(int,float)) and not isinstance(value,bool):
+            number=round(float(value),6)
+            return 0.0 if number==0 else number
         return value
     materials=[]
     for material in geometry.materials:
@@ -141,16 +143,19 @@ def _surface_signature(model):
             if extension=={field:default}:item['extensions'].pop(name)
         if not item.get('extensions'):item.pop('extensions',None)
         materials.append(object_hash(normalized(item)))
+    def rounded(array,precision):
+        value=np.round(array,precision)
+        return np.where(value==0,0.,value).tolist()
     rows=[]
     for mesh in geometry.meshes:
         material=materials[mesh.material] if materials else None
         def corner(index):
             index=int(index)
-            values=dict(position=np.round(mesh.positions[index],5).tolist(),
-                morphs={name:{key:np.round(array[index],5).tolist() for key,array in target.items()}
+            values=dict(position=rounded(mesh.positions[index],5),
+                morphs={name:{key:rounded(array[index],5) for key,array in target.items() if np.any(np.round(array[index],5))}
                         for name,target in sorted(mesh.morphs.items())},
-                defaults={k:round(float(v),6) for k,v in sorted(mesh.morph_defaults.items())},
-                attributes={key:np.round(array[index],6).tolist() for key,array in sorted(mesh.attributes.items())})
+                defaults={k:(round(float(v),6) or 0.0) for k,v in sorted(mesh.morph_defaults.items())},
+                attributes={key:rounded(array[index],6) for key,array in sorted(mesh.attributes.items())})
             return canonical_bytes(values).decode('utf-8')
         for triangle in mesh.triangles:
             points=[corner(index) for index in triangle]
