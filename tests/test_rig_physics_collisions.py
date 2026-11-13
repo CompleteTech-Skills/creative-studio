@@ -167,6 +167,15 @@ class CollisionNativeTests(unittest.TestCase):
         self.assertTrue(query['results'][0]['hit'])
         self.assertFalse(query['results'][1]['hit'])
 
+    def test_real_sphere_offsets_and_centers_preserve_native_margin(self):
+        for offset,center in [(0,0),(.2,0),(0,.2),(.2,.2)]:
+            with self.subTest(offset=offset,center=center):
+                world,payloads=self.base()
+                body=world['bodies'][0]
+                body['colliders'][0]['transform']['translation']=[offset,0,0]
+                body['mass']['center_of_mass']=[center,0,0]
+                self.run_world(world,payloads,'offset-'+str(offset)+'-center-'+str(center))
+
     def test_real_masks_and_pair_exclusions_remove_response(self):
         heights={}
         for mode in ['colliding','mask','pair']:

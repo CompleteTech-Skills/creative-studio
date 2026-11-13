@@ -152,7 +152,8 @@ def direct_report(value,world):
         if world.get('collision_profile')=='explicit-proxies-v1':
             source=world['bodies'][index]
             control=value['rigid_controls']['bodies'][index]
-            wrapped=any(control['inertial_position']) or abs(abs(control['inertial_rotation'][3])-1)>1e-10
+            child=control['collision_children'][0]
+            wrapped=any(abs(x)>1e-10 for x in child['translation']) or abs(abs(child['rotation'][3])-1)>1e-10
             semantic_options=('inherent sphere radius',) if source['colliders'][0]['shape']['type']=='sphere' and not wrapped else ('explicit proxy margin',)
         object_fields(body,('id','mass','friction','inertia','center_of_mass','restitution','native_margin','margin_semantics'),'DIRECT body')
         need(type(body['id']) is str and all(number(body[key]) for key in ('mass','friction','restitution','native_margin')) and

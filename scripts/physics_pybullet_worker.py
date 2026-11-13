@@ -144,10 +144,11 @@ def main():
         for body in world['bodies']:
             observed=p.getDynamicsInfo(identifiers[body['id']],-1,physicsClientId=client)
             native_shape=p.getCollisionShapeData(identifiers[body['id']],-1,physicsClientId=client)
+            proxy_wrapped=any(abs(x)>1e-10 for x in native_shape[0][5]) or abs(abs(native_shape[0][6][3])-1)>1e-10
             if not explicit_proxies and (len(native_shape)!=1 or native_shape[0][2] not in (p.GEOM_SPHERE,p.GEOM_BOX)):raise ValueError('Native primitive collision child disappeared.')
             effective.append(dict(id=body['id'],mass=observed[0],friction=observed[1],
                 inertia=list(observed[2]),center_of_mass=list(observed[3]),restitution=observed[5],
-                native_margin=observed[11],margin_semantics=('inherent sphere radius' if body['colliders'][0]['shape']['type']=='sphere' and not (any(observed[3]) or abs(abs(observed[4][3])-1)>1e-10) else 'explicit proxy margin') if explicit_proxies else (('transformed primitive wrapper margin' if any(observed[3]) or abs(abs(observed[4][3])-1)>1e-10 else 'inherent sphere radius') if body['colliders'][0]['shape']['type']=='sphere' else 'explicit box collision margin')))
+                native_margin=observed[11],margin_semantics=('inherent sphere radius' if body['colliders'][0]['shape']['type']=='sphere' and not proxy_wrapped else 'explicit proxy margin') if explicit_proxies else (('transformed primitive wrapper margin' if any(observed[3]) or abs(abs(observed[4][3])-1)>1e-10 else 'inherent sphere radius') if body['colliders'][0]['shape']['type']=='sphere' else 'explicit box collision margin')))
         control_observations=[]
         for body in world['bodies']:
             value=identifiers[body['id']]
