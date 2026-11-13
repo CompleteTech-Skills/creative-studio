@@ -196,7 +196,7 @@ def definitions():
     material_primitive = obj(dict(mesh=ID, encoding=enum('normalized-glb', 'obj'),
         source_mesh=nullable(integer(0, 1000000)), source_primitive=integer(0, 1000000),
         source_material_index=nullable(integer(0, 65535)),
-        normalized_mesh=nullable(integer(0, 1000000)), normalized_primitive=nullable({'const': 0})))
+        normalized_mesh=nullable(integer(0, 1000000)), normalized_primitive=nullable({'type': 'integer', 'const': 0})))
     asset['properties']['material_bindings'] = arr(obj(dict(
         slot=ID, material_index=nullable(integer(0, 65535)),
         primitives=arr(material_primitive, minimum=1, maximum=10000))), minimum=1, maximum=65536)
