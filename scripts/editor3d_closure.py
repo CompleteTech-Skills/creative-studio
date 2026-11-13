@@ -123,6 +123,7 @@ class _Closure:
         self.values = {}
         self.active = set()
         self.expanded = set()
+        self.heights = {}
 
     def capture(self, record, prefix='', depth=0, *, manifest=False):
         if depth > MAX_DEPTH:
@@ -146,11 +147,19 @@ class _Closure:
             self.values[name] = decode_json(target.read_bytes())
         value = self.values[name]
         key = name, prefix
+        if key in self.expanded and depth + self.heights[key] > MAX_DEPTH:
+            _error('DEPTH', 'Cached native dependency closure exceeds 32 levels.')
         if key not in self.expanded:
             self.active.add(name)
+            height = 0
             documents = _manifest_references(value)
             for child in _document_files(value):
                 self.capture(child, prefix, depth + 1, manifest=child in documents)
+                child_key = (_joined(prefix, child['path']), prefix)
+                height = max(height, 1 + self.heights.get(child_key, 0))
+            if depth + height > MAX_DEPTH:
+                _error('DEPTH', 'Native dependency subtree exceeds 32 levels.')
+            self.heights[key] = height
             self.active.remove(name)
             self.expanded.add(key)
         return value
@@ -348,5 +357,5 @@ def verify_editor_bundle(project, scenes, nodes, assets, animations, root):
         raise
     except ImportError as exc:
         raise RigError('EDITOR3D_DEPENDENCY', 'Install the native owner requirements: ' + str(exc), stage='editor3d') from exc
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, KeyError, TypeError, IndexError) as exc:
         raise RigError('EDITOR3D_NATIVE', 'Native closure verification failed: ' + str(exc), stage='editor3d') from exc

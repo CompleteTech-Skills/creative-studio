@@ -302,6 +302,36 @@ class EditorNativeClosureTests(unittest.TestCase):
         self.assertTrue(result['native_resources_verified'])
         self.assertEqual(observed,[])
 
+    def test_cached_dependencies_cannot_bypass_depth_limit(self):
+        folder=self.root/'materials';folder.mkdir()
+        value=json.loads((ROOT/'examples/lookdev-contracts/ceramic.json').read_bytes())
+        value['id']='m0';(folder/'m0.json').write_text(json.dumps(value))
+        refs=[reference(self.root,'materials/m0.json','lookdev')]
+        for n in range(1,35):
+            value=json.loads((ROOT/'examples/lookdev-contracts/blue-coat.json').read_bytes())
+            prior=refs[-1]
+            pointer=dict(path=f'm{n-1}.json',id=prior['id'],version=prior['version'],
+                         kind=prior['native_kind'],sha256=prior['file']['sha256'])
+            value.update(id=f'm{n}',base_material=pointer,dependencies=[pointer])
+            (folder/f'm{n}.json').write_text(json.dumps(value))
+            refs.append(reference(self.root,f'materials/m{n}.json','lookdev'))
+        for selected in ([refs[-1]],refs):
+            project=deepcopy(self.bundle[0]);project['dependency_manifest'].extend(selected)
+            with self.subTest(cached=len(selected)>1),self.assertRaises(RigError) as caught:
+                verify_editor_bundle(project,*self.bundle[1:],self.root)
+            self.assertEqual(caught.exception.report['code'],'EDITOR3D_DEPTH')
+
+    def test_malformed_bound_rig_identity_returns_structured_failure(self):
+        shutil.copytree(ROOT/'examples/rig-3d/robotic',self.root/'rig')
+        payload=b'{}';(self.root/'rig/identity.json').write_bytes(payload)
+        path=self.root/'rig/rig.json';value=json.loads(path.read_bytes())
+        value['character']['identity_sha256']=hashlib.sha256(payload).hexdigest()
+        path.write_text(json.dumps(value))
+        native=reference(self.root,'rig/rig.json','rig');native['native_kind']='Rig'
+        project=deepcopy(self.bundle[0]);project['dependency_manifest'].append(native)
+        with self.assertRaises(RigError) as caught:verify_editor_bundle(project,*self.bundle[1:],self.root)
+        self.assertEqual(caught.exception.report['code'],'EDITOR3D_NATIVE')
+
 
 if __name__ == '__main__':
     unittest.main()
