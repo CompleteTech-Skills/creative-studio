@@ -55,6 +55,11 @@ class EditorNativeStateTests(unittest.TestCase):
             root['transform'].update(translation=[3,4,5], scale=[2,1,.5], rotation=[0,0,math.sin(.2),math.cos(.2)])
             mesh['transform']['rotation'] = [math.sin(.1),0,0,math.cos(.1)]
             document['nodes'].reverse()
+        if mode == 'removable-camera':
+            extra=deepcopy(next(n for n in document['nodes'] if n['id']=='camera'))
+            extra.update(id='preview-camera',name='Unreferenced preview camera')
+            document['nodes'].insert(0,extra)
+            document['cameras'].insert(0,'preview-camera')
         if mode == 'collection-hidden':
             peer=deepcopy(mesh);peer.update(id='peer',name='Visible peer',collections=[])
             peer['transform']['translation']=[-2,0,0];document['nodes'].append(peer)
@@ -354,7 +359,7 @@ class EditorNativeStateTests(unittest.TestCase):
     def test_active_native_camera_rebinds_after_save_refresh_history_and_reopen(self):
         from playwright.sync_api import sync_playwright
         from browser_runtime import launch_chromium
-        repository,_=self.fixture('plain')
+        repository,_=self.fixture('removable-camera')
         server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         try:
             with sync_playwright() as runtime:
@@ -364,17 +369,17 @@ class EditorNativeStateTests(unittest.TestCase):
                     page.select_option('#view','camera')
                     def assert_camera(expected_x):
                         actual=page.evaluate('''() => {
-                            const current=window.hatchEditor.objects.get('camera').children.find(object=>object.isCamera);
+                            const current=window.hatchEditor.objects.get('preview-camera').children.find(object=>object.isCamera);
                             window.hatchEditor.camera.updateWorldMatrix(true,false);
                             return {same:current===window.hatchEditor.camera,matrix:window.hatchEditor.camera.matrixWorld.elements,
-                                native:window.hatchEditor.snapshot.viewport_state.nodes.camera.world_matrix,
+                                native:window.hatchEditor.snapshot.viewport_state.nodes['preview-camera'].world_matrix,
                                 mode:document.querySelector('#view').value};
                         }''')
                         self.assertTrue(actual['same']);self.assertEqual(actual['mode'],'camera')
                         np.testing.assert_allclose(np.asarray(actual['matrix']).reshape(4,4).T,actual['native'],atol=1e-7)
                         self.assertAlmostEqual(actual['matrix'][12],expected_x)
                     assert_camera(0)
-                    page.locator('[data-id="camera"]').click()
+                    page.locator('[data-id="preview-camera"]').click()
                     page.get_by_label('translation X',exact=True).fill('10');page.get_by_label('translation X',exact=True).press('Tab')
                     page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1 && document.querySelector("#status").textContent.includes("Saved revision")')
                     assert_camera(10)
@@ -385,9 +390,9 @@ class EditorNativeStateTests(unittest.TestCase):
                     assert_camera(0)
                     page.click('#redo');page.wait_for_function('() => window.hatchEditor.snapshot.revision === 3')
                     assert_camera(10)
-                    page.reload();page.wait_for_function('() => window.editorReady === true')
+                    page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
                     page.select_option('#view','camera');assert_camera(10)
-                    page.locator('[data-id="camera"]').click();page.click('#delete')
+                    page.locator('[data-id="preview-camera"]').click();page.click('#delete')
                     page.wait_for_function('() => window.hatchEditor.snapshot.revision === 4')
                     self.assertEqual(page.locator('#view').input_value(),'perspective')
                     self.assertEqual(page.locator('#view-label').inner_text(),'perspective')
