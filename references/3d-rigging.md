@@ -373,7 +373,7 @@ the orientation. Contact and grasp reports retain this angular residual.
 Retargeting transforms an authored contact orientation using the endpoint's
 calibrated rest-orientation offset. It does not replace that goal with the target
 rest pose. Position-only contacts remain position-only; their orientation is not
-silently pinned. These numerical checks do not establish visual or anatomical
+silently pinned. Native rig validation measures the final evaluated endpoint for every explicitly oriented current contact and rejects angular residuals above `1e-5` radians, matching the IK solver criterion. The angular diagnostic is separate from positional error/drift; contacts without an orientation keep their existing positional checks. This checks current executable contacts, not historical IK reports. These numerical checks do not establish visual or anatomical
 approval. Likewise, a neutral-only or zero-effect expression catalog does not
 admit states requiring an expressive face: a nonzero authored morph deformation
 or a changed weighted-bone transform must exist.
