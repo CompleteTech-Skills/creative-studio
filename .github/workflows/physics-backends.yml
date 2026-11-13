@@ -75,7 +75,7 @@ jobs:
         env:
           HATCH_COLLISION_EVIDENCE: physics-evidence/collisions
         run: |
-          python -B -m unittest discover -s tests -p test_rig_physics_collisions.py -v 2>&1 | tee physics-evidence/collision-tests.log
+          python -B -m unittest discover -s tests -p 'test_rig_physics_collision*.py' -v 2>&1 | tee physics-evidence/collision-tests.log
       - name: Actual category/shape/headless probes
         run: |
           python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json
