@@ -31,7 +31,9 @@ Resource ceilings apply before geometry copies/native work; protected-point and
 metric comparisons have explicit finite work budgets. The source must be clean,
 static nonflat geometry within 10,000 canonical meters with stable triangles.
 UV interpolation samples are source vertices projected onto output triangles;
-this profile can reject curved or numerically unstable surfaces instead of
+only the closest geometric surface can authenticate a sample, with ties bounded
+by 128 float64 epsilons at the coordinate magnitude (no absolute matching-distance
+floor). This profile can reject curved or numerically unstable surfaces instead of
 inventing texture fidelity. Metric samples and three raster views are not global
 continuous bounds or aesthetic approval. Rich shaders, custom samplers, JPEG
 re-encoding, other UV sets, tangents, colors, morphs and rigs reject explicitly.

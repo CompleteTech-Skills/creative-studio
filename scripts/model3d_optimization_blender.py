@@ -73,7 +73,8 @@ def _uv_error(source,target,*,samples=512,pair_budget=2_000_000,distance_toleran
     den=d00*d11-d01*d01
     require(np.all(den>1e-24),'MODEL3D_DECIMATE_NUMERIC','UV metric requires stable target triangles.')
     uv=target.attributes['TEXCOORD_0'][target.triangles];errors=[];surface_distances=[]
-    tie_tolerance=max(1e-9,float(np.max(np.abs(target.positions)))*np.finfo(float).eps*64)
+    coordinate_scale=max(1e-12,float(np.max(np.abs(target.positions))),float(np.max(np.abs(source.positions))))
+    tie_tolerance=coordinate_scale*np.finfo(np.float64).eps*128
     for i in indices:
         point=source.positions[i];ap=point-a
         d20=np.einsum('ij,ij->i',ap,ab);d21=np.einsum('ij,ij->i',ap,ac)

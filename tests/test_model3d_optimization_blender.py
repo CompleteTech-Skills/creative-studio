@@ -61,10 +61,11 @@ class BlenderOptimizationTests(unittest.TestCase):
     def test_adjacent_shell_cannot_authenticate_wrong_uv_chart(self):
         positions=np.array([[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]])
         uv=np.array([[0.,0.],[1.,0.],[0.,1.]])
-        source=Mesh('shells',np.concatenate([positions,positions+[0.,0.,.0001]]),
-                    np.array([[0,1,2],[3,4,5]]),attributes={'TEXCOORD_0':np.concatenate([uv,uv+2])})
-        target=copy.deepcopy(source);target.attributes['TEXCOORD_0']=np.concatenate([uv+2,uv])
-        self.assertGreater(_uv_error(source,target,distance_tolerance=.001)['max_error'],2.8)
+        for separation in [.0001,1e-10]:
+            source=Mesh('shells',np.concatenate([positions,positions+[0.,0.,separation]]),
+                        np.array([[0,1,2],[3,4,5]]),attributes={'TEXCOORD_0':np.concatenate([uv,uv+2])})
+            target=copy.deepcopy(source);target.attributes['TEXCOORD_0']=np.concatenate([uv+2,uv])
+            self.assertGreater(_uv_error(source,target,distance_tolerance=.001)['max_error'],2.8)
     def test_unsigned_positions_have_identical_geometric_hard_edges(self):
         positions=np.array([[10,10,10],[20,10,10],[10,20,11],[10,0,11]],dtype=np.uint32)
         triangles=np.array([[0,1,2],[1,0,3]])
