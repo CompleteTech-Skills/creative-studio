@@ -443,8 +443,13 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                         self.assertTrue(result['rejected']); self.assertTrue(result['projectionRejected'])
                         self.assertTrue(result['exposureRejected']); self.assertTrue(result['shadingRejected'])
                         context_checks = page.evaluate('''() => {
-                            if (window.hatchEditor.getTimelineContext() !== null) throw Error('Unexpected provider');
                             const s = window.hatchEditor.snapshot;
+                            // In the integrated app, temporarily make the native selector
+                            // invalid so this registry test can own the one active claim.
+                            const nativeFrame = document.querySelector('[aria-label=\"Exact frame\"]');
+                            const originalFrame = nativeFrame?.value;
+                            if (nativeFrame) { nativeFrame.value = String(s.documents[s.project.shots[0].path].duration_frames); nativeFrame.dispatchEvent(new Event('input')); }
+                            if (window.hatchEditor.getTimelineContext() !== null) throw Error('Unexpected active provider');
                             const context = {revision:s.revision,sha256:s.sha256,scene_path:s.scene_path,
                                 shot_path:s.project.shots[0].path,frame:{numerator:0,denominator:1}};
                             const stop = window.hatchEditor.registerTimelineProvider(() => context);
@@ -452,7 +457,9 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                             const isolated = window.hatchEditor.getTimelineContext().frame.numerator === 0;
                             context.revision++; let stale = false;
                             try { window.hatchEditor.getTimelineContext(); } catch { stale = true; }
-                            stop(); return [isolated,stale,window.hatchEditor.getTimelineContext() === null];
+                            stop(); const absent = window.hatchEditor.getTimelineContext() === null;
+                            if (nativeFrame) { nativeFrame.value = originalFrame; nativeFrame.dispatchEvent(new Event('input')); }
+                            return [isolated,stale,absent];
                         }''')
                         self.assertEqual(context_checks, [True, True, True])
                         self.assertEqual(result['revision'], 0)
