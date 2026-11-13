@@ -60,6 +60,11 @@ def compile_environment_description(graph, text):
             recipe = _recipe(statement)
             require(all(existing['id'] != recipe['id'] for existing in recipes), 'Recipe IDs must be unique.')
             objects = geometry_plan(recipe)
+            triangles = sum(len(item['mesh'].triangles) for item in objects)
+            require(sum(item['triangles'] for item in counts) + triangles <= 200000,
+                    'Aggregate generator batch triangle budget exceeded.', 'SCENE3D_LAYOUT')
+            require(sum(item['nodes'] for item in counts) + len(objects) + len(graph.document()['nodes']) <= 10000,
+                    'Aggregate generator batch node budget exceeded.', 'SCENE3D_LAYOUT')
             recipes.append(recipe)
             counts.append({'id': recipe['id'], 'nodes': len(objects),
                            'triangles': sum(len(item['mesh'].triangles) for item in objects)})

@@ -77,6 +77,11 @@ def execute(args):
             require(all(recipe.get('generator') in generators[args.command] for recipe in recipes),
                     'Recipe generator does not match the requested CLI category.')
         geometry = [plan(recipe) for recipe in recipes]
+        require(len({recipe['id'] for recipe in recipes}) == len(recipes), 'Duplicate recipe IDs in one batch.')
+        require(sum(len(item['mesh'].triangles) for group in geometry for item in group) <= 200000,
+                'Aggregate generator batch triangle budget exceeded.')
+        require(sum(map(len, geometry)) + len(graph.document()['nodes']) <= 10000,
+                'Aggregate generator batch node budget exceeded.')
         if args.dry_run:
             return {'dry_run': True, 'recipes': recipes, 'generated_nodes': sum(map(len, geometry)),
                     'triangles': sum(len(item['mesh'].triangles) for group in geometry for item in group),

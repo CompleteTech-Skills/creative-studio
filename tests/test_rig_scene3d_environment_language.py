@@ -54,6 +54,15 @@ class EnvironmentLanguageTests(unittest.TestCase):
                     apply_environment_plan(self.source, self.directory / 'bad', 'example-scene.json', plan)
                 self.assertFalse((self.directory / 'bad').exists())
 
+    def test_aggregate_triangle_budget_is_unresolved_before_publication(self):
+        text = '; '.join('create terrain named land' + str(index) +
+            ' with width 10 meters, depth 10 meters, elevation 0 meters, resolution 99, seed 1'
+            for index in range(11))
+        plan = compile_environment_description(self.graph, text)
+        self.assertEqual(plan['status'], 'unresolved')
+        self.assertIn('Aggregate', plan['diagnostics'][0]['message'])
+        self.assertLessEqual(sum(item['triangles'] for item in plan['geometry']), 200000)
+
     def test_modified_and_stale_plans_cannot_authorize_different_geometry(self):
         plan = compile_environment_description(self.graph, self.text)
         changed = deepcopy(plan)
