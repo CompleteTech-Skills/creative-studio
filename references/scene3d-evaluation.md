@@ -81,3 +81,39 @@ It returns camera/framing output without changing authored documents. Evaluated
 `state.channels` retains local input translation/quaternion/scale (and optional
 pivot), after channel/path evaluation and before ordinary graph constraints; curve
 editors can consume these values without decomposing matrices or resampling tracks.
+
+## Immutable native poses
+
+Optional node `pose_binding` has `schema_version:1`, an exact `rig` reference of
+kind `hatch-3d-rig`, and `pose:{id,rig_version,file:{path,sha256}}`. The pose pin's
+`rig_version` identifies the canonical skeleton version, independently of the rig
+manifest version. Pose JSON must satisfy the rig owner's `Pose` contract. Its
+file is a real project dependency, copied by snapshots and checked on reopening.
+
+Bindings on group roots propagate only to descendant assets whose exact
+`asset.skeleton` equals the rig pin. Multiple pose bindings or an active native
+clip on the same affected component are rejected because no blend policy exists.
+The evaluator checks exact rig/pose bytes, IDs and versions, then delegates pose
+constraints to `rig_operations.pose_operation`. It never changes the rest pose,
+asset, other instances or authored documents. Mesh-qualified morph names and
+bone references must exist in the admitted native rig.
+
+With a binding, evaluation needs `source_root` even without geometry sampling.
+Each affected component exposes `native_pose` (the exact binding),
+`native_pose_evaluated:true`, and `native_state` containing `pose`, `skeleton`,
+`bone_matrices`, `bone_matrix_space:'rig-bind'`, `world_from_rig`, and
+`morph_targets:{mesh_id:[names]}`. Bone matrices remain in canonical rig space;
+`world_from_rig` explicitly maps the instance or imported component into scene
+world space. Authored roots expose `native_pose_components` identifying affected
+components. `sample_geometry=True` returns actual deformed world vertices and
+updated component/ancestor bounds through the existing importer and rig owners.
+Exposed bone/morph state is capped at 250000 total entries across components;
+posed and animated vertices share the evaluator's output vertex budget.
+
+Consumers must use this state or reject pose-bound scenes; a binding is not
+permission to render the rig's rest pose. Renderer/browser consumption and native
+private source capture remain integration gates owned by the lifecycle adapter.
+The Pose suite exercises real two-instance bone/morph deformation, imported
+components, snapshot/reopen equivalence, exact-source rejection, active-clip
+conflicts and vertex budgets. These tests are included in the hosted native
+Scene3D workflow and interoperability gate.

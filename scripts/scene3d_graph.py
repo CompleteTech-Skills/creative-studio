@@ -420,7 +420,7 @@ class SceneGraph:
         """
         self._editable(identifier)
         require(isinstance(properties, dict) and properties and
-                set(properties) <= {'name', 'camera', 'light', 'light_binding', 'material_overrides', 'metadata'},
+                set(properties) <= {'name', 'camera', 'light', 'light_binding', 'pose_binding', 'material_overrides', 'metadata'},
                 'Unsupported node property update.', 'SCENE3D_COMMAND')
         finite_json(properties)
         candidate = self.document()

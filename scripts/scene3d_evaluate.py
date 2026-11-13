@@ -268,6 +268,13 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
             evaluated[identifier]['native_animation_evaluated'] = bool(sample_geometry)
     geometry = _sample_native_geometry(graph, evaluated, documents, native, source_root,
                                        max_geometry_vertices) if sample_geometry else None
+    from scene3d_pose import evaluate_poses
+    pose_geometry = evaluate_poses(graph,evaluated,documents,native,source_root,
+        sample_geometry=sample_geometry,max_vertices=max_geometry_vertices)
+    if geometry is not None:
+        geometry.update(pose_geometry)
+        require(sum(len(points) for meshes in geometry.values() for points in meshes.values()) <=
+                max_geometry_vertices, 'Native output vertex budget exceeded.','SCENE3D_EVALUATION_LIMIT')
     if geometry is not None:
         # Bind-pose asset bounds cannot describe a deformed frame. Publish the
         # sampled world-space bounds alongside the vertices for spatial users.

@@ -997,6 +997,58 @@
             "intensity_scale",
             "color_multiplier"
           ]
+        },
+        "pose_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "rig": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "hatch-3d-rig"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "pose": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}(?![\\s\\S])"
+                },
+                "rig_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "file": {
+                  "$ref": "#/$defs/file"
+                }
+              },
+              "required": [
+                "id",
+                "rig_version",
+                "file"
+              ]
+            }
+          },
+          "required": [
+            "schema_version",
+            "rig",
+            "pose"
+          ]
         }
       },
       "required": [
