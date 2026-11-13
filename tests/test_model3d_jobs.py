@@ -160,7 +160,8 @@ j.run_job(sys.argv[1],handler,handler_version='v1')
         self.create(); result=jobs.run_job(self.job,self.handler,handler_version='v1')
         manifest=read_json(self.job/'job.json')
         for patch_ in ({'schema_version':True},{'status':{}},{'budgets':{}},
-                       {'current_revision':{}},{'active_attempt':{}},{'revisions':[{}]}):
+                       {'current_revision':{}},{'active_attempt':{}},{'revisions':[{}]},
+                       {'current_revision':None},{'attempts':0}):
             atomic_json(self.job/'job.json',{**manifest,**patch_})
             with self.subTest(patch=patch_):
                 with self.assertRaises(RigError):jobs.status(self.job)

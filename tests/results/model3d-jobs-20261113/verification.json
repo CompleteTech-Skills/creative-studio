@@ -6,7 +6,7 @@
   "tests": 12,
   "result": "pass",
   "demonstration": {
-    "durable_root": "/home/complete/.cache/hatch-coordination-20261112/model50-demo",
+    "durable_root": "/home/complete/.cache/hatch-coordination-20261112/model50-demo-final",
     "command": "python scripts/demonstrate_model3d_jobs.py --destination NEW_DIR",
     "assets": [
       {
@@ -14,7 +14,7 @@
         "vertices": 8,
         "triangles": 12,
         "geometry_sha256": "7e6755acd9e4c9cfc09bc18fd51eef45ef31b33695f04c4e4ca00c085eae7ef3",
-        "archive_sha256": "e511efa7b8803a9e04be2a1512de22c95cd8817d5c90d7357f6ffffd09fa5fc2",
+        "archive_sha256": "883948cf419003e9f2bb7b90452649a0f0b375d0dd43797b77bf023d1be1f5b5",
         "attempts": 1,
         "restored": true,
         "cached_without_reexecution": true
@@ -24,7 +24,7 @@
         "vertices": 482,
         "triangles": 960,
         "geometry_sha256": "dc7caee2886cdb7ad392c8e40a7b03eec148bcb19132a31c6e49cf4fb2642990",
-        "archive_sha256": "2e0fdba9f3a17dca78fdda79d76e855aeb632eda70d67bcd3115da5e962a9f39",
+        "archive_sha256": "b803406f3921885db6919c01c842a0f1beff7850e3c57a981f17094047e1b728",
         "attempts": 1,
         "restored": true,
         "cached_without_reexecution": true
@@ -34,7 +34,7 @@
         "vertices": 512,
         "triangles": 1024,
         "geometry_sha256": "af42be4d21c861ccf9752c52416e6cfba8e142ae5739347614110c29c7973761",
-        "archive_sha256": "c43418183fd9ab76d98a5c3ca79f24d3b6b37a5912b5cfdbc549081f841c91e0",
+        "archive_sha256": "7b7ae3079cd8065dff2e5c263af2d27a3ea98940c9c03e0c9f0bec75d159778e",
         "attempts": 1,
         "restored": true,
         "cached_without_reexecution": true

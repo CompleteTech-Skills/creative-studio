@@ -129,6 +129,8 @@ def _load(root):
     require((value['status'] == 'running' and isinstance(value['active_attempt'], dict))
             or (value['status'] != 'running' and value['active_attempt'] is None),
             'MODEL3D_JOB_SCHEMA', 'Active attempt must match the job state.')
+    require(value['status'] != 'completed' or (value['current_revision'] is not None and value['attempts'] > 0),
+            'MODEL3D_JOB_SCHEMA', 'Completed jobs require an output revision and an execution attempt.')
     return value
 
 
