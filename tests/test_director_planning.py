@@ -187,6 +187,21 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(self.run_request(config),result)
         self.assertEqual(len(self.calls),1)
 
+    def test_interrupted_repair_keeps_total_usage_unknown(self):
+        config=self.server([(200,self.response({})),(200,'truncated-chunk')])
+        result=self.run_request(config)
+        self.assertEqual(result['status'],'awaiting_external_result')
+        self.assertEqual(result['usage']['provider_calls']['value'],2)
+        self.assertIsNone(result['usage']['input_tokens']['value'])
+        self.assertIsNone(result['usage']['output_tokens']['value'])
+
+    def test_frozen_constraints_are_included_in_context_bound(self):
+        self.request['input']['locked_constraints']=['x'*4000]*20
+        config=self.server([(200,self.response(self.brief))])
+        result=self.run_request(config)
+        self.assertEqual(result['status'],'failed')
+        self.assertEqual(self.calls,[])
+
     def test_all_role_templates_have_valid_schema_and_distinct_hashes(self):
         values=[dp.template(role) for role in dp.ROLES]
         self.assertEqual(len({s['sha256'] for s in values}),9)
