@@ -1,0 +1,24 @@
+{
+  "status": "hash-and-contract-verified",
+  "world_sha256": "1174afd8aa90cc3565fc7dfcde62022304cb937366755d9e9c0e515120fef692",
+  "cache_files": 23,
+  "output_bytes": 481512,
+  "sample_count": 49,
+  "backend": {
+    "adapter_version": "1.0.0",
+    "application_version": "Blender 4.5.3 LTS",
+    "device": "cpu",
+    "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+    "id": "blender",
+    "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+    "precision": "mixed",
+    "solver_name": "Blender Bullet rigid-body world",
+    "solver_version": "not exposed separately by Blender"
+  },
+  "fixture": true,
+  "review_status": "unreviewed",
+  "native_outdated_flag": true,
+  "evidence_authentication": "unsigned retained execution receipts, not a cryptographic identity attestation",
+  "native_continuation": "unsupported; clean restart only",
+  "numerical_recompute_guarantee": "not-established"
+}

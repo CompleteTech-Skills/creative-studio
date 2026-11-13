@@ -82,7 +82,7 @@ def build_regression_suite(scope='2d'):
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     for path in sorted(directory.glob('test_*.py')):
-        if scope == '2d' and path.name.startswith(('test_rig_', 'test_model3d_')):
+        if scope == '2d' and path.name.startswith(('test_rig_', 'test_model3d_', 'test_render3d_')):
             continue
         suite.addTests(loader.discover(str(directory), pattern=path.name))
     return suite
