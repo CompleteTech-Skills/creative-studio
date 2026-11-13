@@ -263,7 +263,7 @@ class DirectorGraphTests(unittest.TestCase):
         receipt=self.write('provider-pricing', dict(operation='planning.provider',
                    status='available',execution_verified=True,fixture=True,version='fixture',
                    policy_limits=limits,payloads=[],price_availability='known',
-                   price_per_call=.25,currency='USD'),kind='evidence')
+                   price_per_call=.25,currency='USD',provider_id='fixture-provider'),kind='evidence')
         self.snapshot['capabilities']=[dict(operation='planning.provider',version='fixture',
                    status='available',execution_verified=True,limits=limits,probe_evidence=[receipt])]
         self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
@@ -272,11 +272,26 @@ class DirectorGraphTests(unittest.TestCase):
                         output_schema='planning-artifact',resource_class='provider',
                         required_capabilities=['planning.provider'])
         self.request['input']['budget']=deepcopy(limits)
-        self.request['context']['policy'].update(network='allow-configured',paid='bounded',
+        self.request['context']['policy'].update(network='allow-configured',paid='bounded',providers=['fixture-provider'],
                     policy_ref=self.write('paid-policy',{'fixture':True},kind='policy'))
         self.request['context']['budget_reservation_id']='fixture-reservation'
         self.refresh()
         self.assertEqual(self.compile()['status'],'succeeded')
+        for providers in ([],['other-provider']):
+            self.request['context']['policy']['providers']=providers
+            with self.assertRaisesRegex(ValueError,'not permitted'):
+                self.compile()
+        self.request['context']['policy']['providers']=['fixture-provider']
+        payload=json.loads((self.root/receipt['path']).read_text())
+        payload.pop('provider_id')
+        self.snapshot['capabilities'][0]['probe_evidence']=[self.write('missing-provider',payload,kind='evidence')]
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        self.refresh()
+        with self.assertRaisesRegex(ValueError,'provider identity'):
+            self.compile()
+        self.snapshot['capabilities'][0]['probe_evidence']=[receipt]
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        self.refresh()
         self.request['context']['policy']['paid']='deny'
         with self.assertRaisesRegex(ValueError,'paid authority'):
             self.compile()
