@@ -59,8 +59,8 @@ def _validated_plan(value):
     require(type(value['samples']) is int and 1<=value['samples']<=65536
             and type(value['seed']) is int and 0<=value['seed']<=2**31-1
             and type(value['denoise']) is bool, 'invalid-input','Invalid output plan sampling.')
-    require(type(value['exposure']) in (int,float) and math.isfinite(value['exposure'])
-            and -32<=value['exposure']<=32 and value['view_transform'] in ('standard','agx'),
+    require(type(value['exposure']) in (int,float) and -32<=value['exposure']<=32
+            and math.isfinite(value['exposure']) and value['view_transform'] in ('standard','agx'),
             'invalid-input','Invalid output plan display transform.')
     if value['format']=='png':
         require(value['bit_depth'] in (8,16) and value['color_space']=='srgb'
@@ -108,7 +108,7 @@ def render_frame(scene, settings, output_root, index, *, pass_sockets=None):
     explicit socket map so their intended effects are never silently bypassed.
     """
     import bpy
-    require(type(index) is int and index >= 0, 'invalid-input', 'Frame index must be nonnegative.')
+    require(type(index) is int and 0 <= index <= 2**31-1, 'invalid-input', 'Frame index lies outside its supported range.')
     root = Path(output_root).absolute()
     require(root.is_dir() and all(not p.is_symlink() and not getattr(p,'is_junction',lambda:False)()
                                 for p in (root,*root.parents)),
