@@ -27,8 +27,8 @@
     }
   ],
   "source_sha256": {
-    "scripts/rig_templates.py": "625b066d44fd0dbb7144f3408259e74f25c4554d534a9497015d22dc0a727fd8",
-    "tests/test_rig_landmarks.py": "dbf232edf6bc69eb0f5acd1f19be01eb40327dd7b927ad0a43238b9f09beb2c9"
+    "scripts/rig_templates.py": "23375def53d4c8fdd9535acce1c02a0f0ee67b90d5ce3ed1a73e3ce3de2bc596",
+    "tests/test_rig_landmarks.py": "69efd64a613b479c3beca2c10ef098e7686a467ebcca0483f2a8339b44751f06"
   },
   "review_findings": [
     {
@@ -39,6 +39,13 @@
   "review_fix_checks": {
     "focused": 13,
     "schema_math": 75,
+    "legacy_discovery": 952
+  },
+  "controller_socket_followup": {
+    "finding": "A template with absent IK/constraint/socket bone targets could return skeleton-generated",
+    "fix": "Validate fitted controllers and socket bone references before returning",
+    "focused_tests": 14,
+    "schema_math_tests": 76,
     "legacy_discovery": 952
   }
 }

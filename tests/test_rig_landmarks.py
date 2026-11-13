@@ -215,3 +215,11 @@ class TemplateAdmissionTests(unittest.TestCase):
             with self.assertRaises(RigError) as caught:
                 load_rig_template('a8', directory=Path(directory))
             self.assertEqual(caught.exception.report['code'], 'RIG_TEMPLATE_WORK')
+
+    def test_fitted_templates_reject_missing_controller_and_socket_targets(self):
+        for category in ('ik', 'constraints', 'sockets'):
+            template=deepcopy(self.base_template)
+            if category == 'ik':template[category][0]['bones'][1]='missing-bone'
+            else:template[category][0]['bone']='missing-bone'
+            with self.subTest(category=category), self.assertRaises(RigError):
+                generate_skeleton(self.geometry,template)

@@ -153,7 +153,12 @@ def generate_skeleton(geometry: Geometry, template: dict | str, *, landmarks=Non
     for chain in controllers['ik']:
         chain['pole'] = (np.asarray(chain['pole'])*factor+offset).tolist()
         chain['tolerance'] = max(1e-6, min(.001, analysis['dimensions_m'][1]*1e-5))
+    from rig_ik import validate_controllers
+    validate_controllers(skeleton, controllers)
     attachments = deepcopy(template['sockets'])
+    bone_ids = {bone['id'] for bone in skeleton['bones']}
+    require(all(socket['bone'] in bone_ids for socket in attachments),
+            'RIG_ATTACHMENT_REFERENCE', 'Template socket references a missing bone.')
     for socket in attachments:
         socket['owner'] = character_id
         socket['transform']['translation'] = (np.asarray(socket['transform']['translation'])*float(factor[1])).tolist()
