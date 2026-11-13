@@ -77,7 +77,9 @@ def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
             samples=[dict(clip='rest',time=0.,rest=True,vertices=indices,bones=[b['id'] for b in rig.skeleton['bones']],
                           sockets=[s['id'] for s in rig.manifest['attachments']])]
         socket_rest={s['id']:socket_world(rig,neutral_pose(rig.skeleton),s['id']).tolist() for s in rig.manifest['attachments']}
-        base=dict(fps=24,duration=max((c['duration'] for c in rig.clips.values()),default=2.),samples=samples,socket_rest=socket_rest)
+        base=dict(fps=24,duration=max((c['duration'] for c in rig.clips.values()),default=2.),samples=samples,socket_rest=socket_rest,
+                  morph_defaults={mesh.id:{name:mesh.morph_defaults.get(name,0.) for name in mesh.morphs}
+                                  for mesh in rig.geometry.meshes})
         report=_run(dict(base,mode='create',input=str(source),manifest=str(root/'rig.json'),output=str(staged),report=str(root/'create-report.json')),
                     executable=executable,timeout=timeout)
         require(report['ok'],'RIG_BLENDER_EDITABLE','Blender output lacks armature, skin modifier or weights.')
