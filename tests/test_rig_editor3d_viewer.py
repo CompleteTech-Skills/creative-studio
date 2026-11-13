@@ -12,7 +12,7 @@ import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from editor3d_viewer import EditorServer, asset_identity, preview_snapshot
+from editor3d_viewer import BinaryResponse, EditorServer, asset_identity, preview_snapshot
 from rig_errors import RigError
 from scene3d_contracts import load_project
 
@@ -193,6 +193,21 @@ class EditorHttpTests(unittest.TestCase):
                 self.assertIn("object-src 'none'", response.headers['Content-Security-Policy'])
                 self.assertEqual(response.headers['X-Content-Type-Options'], 'nosniff')
 
+    def test_binary_artifacts_require_auth_and_reject_unsafe_response_headers(self):
+        payload = b'\x89PNG\r\n\x1a\nverified-native-artifact'
+        self.server.routes['render/artifact'] = lambda server, body: BinaryResponse(payload, 'image/png', 'frame-0.png')
+        options = dict(data=b'{}', headers={'Content-Type': 'application/json'})
+        with self.assertRaises(HTTPError):
+            self.fetch('/api/render/artifact', token=False, **options)
+        with self.fetch('/api/render/artifact', **options) as response:
+            self.assertEqual(response.read(), payload)
+            self.assertEqual(response.headers['Content-Type'], 'image/png')
+            self.assertEqual(response.headers['Content-Disposition'], 'attachment; filename="frame-0.png"')
+        for media, name in [('text/html', 'frame.html'), ('image/png', '../frame.png'), ('image/png', 'x\r\nInjected:true')]:
+            self.server.routes['render/artifact'] = lambda server, body: BinaryResponse(payload, media, name)
+            with self.subTest(media=media, name=name), self.assertRaises(HTTPError):
+                self.fetch('/api/render/artifact', **options)
+
     def test_auth_origin_and_static_path_boundaries(self):
         for route, options in (
             ('/api/snapshot', dict(token=False)),
@@ -229,6 +244,34 @@ class EditorHttpTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual editor browser acceptance explicitly.')
 class EditorBrowserTests(EditorHttpTests):
+    def test_refresh_preserves_tab_auth_and_fresh_context_has_no_bearer(self):
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with sync_playwright() as runtime:
+            browser = launch_chromium(runtime)
+            try:
+                page = browser.new_page()
+                page.goto(self.server.url)
+                page.wait_for_function('() => window.editorReady === true')
+                self.assertNotIn(self.server.token, page.url)
+                page.reload()
+                page.wait_for_function('() => window.editorReady === true')
+                self.assertEqual(page.evaluate('location.hash + location.search'), '')
+                context = browser.new_context()
+                anonymous = context.new_page()
+                anonymous.goto(self.base)
+                anonymous.wait_for_function('() => document.querySelector("#diagnostic").hidden === false')
+                self.assertIsNot(anonymous.evaluate('window.editorReady'), True)
+                self.assertIsNone(anonymous.evaluate('sessionStorage.getItem("hatch-editor-bearer-v1")'))
+                # A supplied invalid fragment must not inherit an existing tab token.
+                page.goto(self.base + '/#invalid')
+                page.reload()
+                page.wait_for_function('() => document.querySelector("#diagnostic").hidden === false')
+                self.assertIsNot(page.evaluate('window.editorReady'), True)
+                context.close()
+            finally:
+                browser.close()
+
     def test_two_native_asset_versions_render_distinct_meshes(self):
         from tempfile import TemporaryDirectory
         from playwright.sync_api import sync_playwright
@@ -288,6 +331,125 @@ class EditorBrowserTests(EditorHttpTests):
 
 @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual editor browser acceptance explicitly.')
 class EditorPersistentBrowserTests(unittest.TestCase):
+    def test_extension_transactions_lifecycle_and_bound_camera_capture(self):
+        from tempfile import TemporaryDirectory
+        from fractions import Fraction
+        from editor3d_repository import EditorRepository
+        from scene3d_graph import SceneGraph
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        import base64
+        with TemporaryDirectory() as directory:
+            from scene3d_example import build_example
+            from scene3d_contracts import all_refs
+            import math
+            source = Path(directory) / 'source'
+            build_example(source)
+            document = json.loads((source / 'example-scene.json').read_text())
+            native_camera = next(n for n in document['nodes'] if n['id'] == 'camera')
+            # Aim the saved native camera at the triangle's actual front face.
+            native_camera['transform'].update(translation=[2.5, -3, 0.5], rotation=[math.sqrt(0.5), 0, 0, math.sqrt(0.5)])
+            (source / 'example-scene.json').write_text(json.dumps(document))
+            for _ in range(6):
+                for path in source.glob('*.json'):
+                    document = json.loads(path.read_text())
+                    for ref in all_refs(document):
+                        if (source / ref['path']).is_file():
+                            ref['sha256'] = hashlib.sha256((source / ref['path']).read_bytes()).hexdigest()
+                    path.write_text(json.dumps(document))
+            repository = EditorRepository.create(source, Path(directory) / 'saved')
+            calls = []
+            def edit(server, body):
+                calls.append(body)
+                return repository.apply(body['expected_revision'], dict(schema_version=1, commands=body['commands']),
+                    body['transaction_id'], expected_sha256=body['expected_sha256'])
+            def evaluate(server, body):
+                current = repository.snapshot()
+                self.assertEqual((body['revision'], body['sha256']), (current['revision'], current['sha256']))
+                shot = current['documents'][body['shot']]
+                rate = Fraction(**shot['fps'])
+                graph = SceneGraph(current['scene'])
+                sampled = graph.evaluate_base()
+                for identifier, state in sampled.items():
+                    authored = next(n for n in current['scene']['nodes'] if n['id'] == identifier)
+                    state.update(visible=state['render_visible'], material_overrides=authored['material_overrides'])
+                    for name in ('camera', 'light'):
+                        if name in authored: state[name] = authored[name]
+                time = Fraction(body['frame']) / rate
+                return dict(revision=current['revision'], snapshot_sha256=current['sha256'],
+                    scene=shot['scene'], shot=next(r for r in current['project']['shots'] if r['path'] == body['shot']),
+                    camera=shot['camera'], frame=dict(numerator=body['frame'], denominator=1),
+                    time=dict(numerator=time.numerator, denominator=time.denominator), nodes=sampled, world=current['scene']['world'])
+            server = EditorServer(repository, routes={'support/edit': edit, 'timeline/evaluate': evaluate})
+            thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser = launch_chromium(runtime)
+                    try:
+                        page = browser.new_page()
+                        page.goto(server.url)
+                        page.wait_for_function('() => window.editorReady === true')
+                        page.evaluate('''() => {
+                            window.supportCleanup = 0; window.supportInstall = 0;
+                            window.unregister = window.hatchEditor.registerCommitInterceptor(envelope => ({route:'support/edit',
+                                body:{expected_revision:envelope.expected_revision, expected_sha256:envelope.expected_sha256,
+                                    transaction_id:envelope.transaction_id,commands:envelope.commands}}));
+                            window.hatchEditor.registerExtension(({subscribeInstalled,getRenderer,getScene,getCamera}) => {
+                                if (!getRenderer().isWebGLRenderer || !getScene().isScene || !getCamera().isCamera) throw Error('Missing viewer context');
+                                const stop = subscribeInstalled(async ({isCurrent,snapshot}) => {
+                                    if (!isCurrent() || snapshot.revision !== window.hatchEditor.snapshot.revision) throw Error('Stale install');
+                                    window.supportInstall++; return () => {window.supportCleanup++;};
+                                }); return {dispose:stop};
+                            }, document.createElement('div'));
+                        }''')
+                        result = page.evaluate('''async () => {
+                            const s = window.hatchEditor.snapshot, ref = s.project.shots[0], shot = s.documents[ref.path];
+                            const metadata = {revision:s.revision,sha256:s.sha256,shot:{id:ref.id,version:ref.version},camera:shot.camera,
+                                frame:0,source_time:{numerator:0,denominator:1},color_space:'srgb',view_transform:'standard',resolution:[320,240]};
+                            const captured = await window.hatchEditor.capturePreview(metadata);
+                            let rejected = false;
+                            try { await window.hatchEditor.capturePreview({...metadata,sha256:'0'.repeat(64)}); } catch { rejected = true; }
+                            return {captured,rejected,revision:window.hatchEditor.snapshot.revision};
+                        }''')
+                        self.assertTrue(result['rejected']); self.assertEqual(result['revision'], 0)
+                        captured = result['captured']
+                        self.assertEqual(captured['resolution'], [320, 240])
+                        from PIL import Image
+                        from io import BytesIO
+                        image = Image.open(BytesIO(base64.b64decode(captured['image'].split(',', 1)[1])))
+                        self.assertEqual(image.size, (320, 240))
+                        self.assertGreater(len(image.getcolors(320*240)), 1)
+                        png = base64.b64decode(captured['image'].split(',', 1)[1])
+                        server.routes['render/artifact'] = lambda server, body: BinaryResponse(png, 'image/png', 'captured-frame.png')
+                        with page.expect_download() as downloaded:
+                            receipt = page.evaluate("window.hatchEditor.downloadArtifact({job:'fixture',format:'image',frame:0})")
+                        self.assertEqual(Path(downloaded.value.path()).read_bytes(), png)
+                        self.assertEqual(receipt['bytes'], len(png))
+                        page.locator('[data-id="mesh"]').click()
+                        page.get_by_label('translation X', exact=True).fill('5')
+                        page.get_by_label('translation X', exact=True).press('Tab')
+                        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1')
+                        self.assertEqual(len(calls), 1)
+                        self.assertEqual(repository.snapshot()['revision'], 1)
+                        self.assertEqual(calls[0]['commands'][0]['operation'], 'transform')
+                        page.wait_for_function('() => window.supportInstall === 2 && window.supportCleanup === 1')
+                        self.assertEqual(page.evaluate('() => window.hatchEditor.errors'), [])
+                        page.evaluate('window.unregister()')
+                        lifecycle = page.evaluate('''async () => {
+                            let first = true; window.delayedCleanups = 0;
+                            const stop = window.hatchEditor.subscribeInstalled(async () => {
+                                if (first) { first = false; await new Promise(resolve => {window.finishPending = resolve;}); }
+                                return () => {window.delayedCleanups++;};
+                            });
+                            await window.hatchEditor.reload(); window.finishPending();
+                            await new Promise(resolve => setTimeout(resolve, 10));
+                            const stale = window.delayedCleanups; stop();
+                            return [stale, window.delayedCleanups];
+                        }''')
+                        self.assertEqual(lifecycle, [1, 2])
+                    finally: browser.close()
+            finally: server.shutdown(); server.server_close(); thread.join(timeout=5)
+
     def test_numeric_group_undo_redo_and_reopen_are_real_native_edits(self):
         from tempfile import TemporaryDirectory
         from editor3d_repository import EditorRepository

@@ -7,6 +7,8 @@ bounded preview. WebGL output is not represented as an offline render.
 from __future__ import annotations
 import base64
 from collections import OrderedDict
+from dataclasses import dataclass
+import re
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import hmac
@@ -27,6 +29,23 @@ MAX_BODY = 4 * 1024 * 1024
 MAX_PREVIEW_BYTES = 64 * 1024 * 1024
 MAX_PREVIEW_VERTICES = 500_000
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@dataclass(frozen=True)
+class BinaryResponse:
+    """Trusted fixed-route artifact bytes; never a caller-selected file path."""
+    payload: bytes
+    content_type: str
+    filename: str
+
+    def validate(self):
+        require(isinstance(self.payload, bytes) and len(self.payload) <= 512 * 1024 * 1024,
+                'EDITOR3D_VIEW_ARTIFACT', 'Artifact exceeds its binary response budget.')
+        require(self.content_type in ('image/png', 'image/x-exr', 'video/mp4', 'video/webm'),
+                'EDITOR3D_VIEW_ARTIFACT', 'Unsupported artifact media type.')
+        require(isinstance(self.filename, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', self.filename),
+                'EDITOR3D_VIEW_ARTIFACT', 'Artifact download name must be a safe basename.')
+        return self
 
 
 def asset_identity(reference):
@@ -194,11 +213,13 @@ class EditorHandler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
-    def respond(self, status, payload, media='application/json'):
+    def respond(self, status, payload, media='application/json', filename=None):
         if not isinstance(payload, bytes):
             payload = json.dumps(payload, allow_nan=False).encode()
         self.send_response(status)
         self.send_header('Content-Type', media)
+        if filename is not None:
+            self.send_header('Content-Disposition', 'attachment; filename="' + filename + '"')
         self.send_header('Content-Length', str(len(payload)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
@@ -311,7 +332,11 @@ class EditorHandler(BaseHTTPRequestHandler):
         if self.command == 'POST' and route == 'uploads':
             return self.upload()
         if self.command == 'POST' and route in self.server.routes:
-            return self.respond(200, self.server.routes[route](self.server, self.body()))
+            result = self.server.routes[route](self.server, self.body())
+            if isinstance(result, BinaryResponse):
+                result.validate()
+                return self.respond(200, result.payload, result.content_type, result.filename)
+            return self.respond(200, result)
         if self.command == 'GET' and route == 'snapshot':
             return self.respond(200, self.server.snapshot())
         require(self.command == 'POST' and route in ('commands', 'undo', 'redo'),
