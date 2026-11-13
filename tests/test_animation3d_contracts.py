@@ -298,3 +298,84 @@ class AnimationReviewRegressions(unittest.TestCase):
             track=dict(id='move',target=target,value_type='vec3',default_value=[0,0,0],keys=[dict(time=dict(frame=0),value=[0,0,0],interpolation='hermite',out_tangent=[1e9,0,0]),dict(time=dict(frame=100),value=[0,0,0],interpolation='linear',in_tangent=[-1e9,0,0])],extrapolation_before='hold',extrapolation_after='hold',enabled=True)
             registry.validate_track(track)
             with self.assertRaises(RigError):sample_track(track,dict(frame=50),registry)
+
+class AnimationClosureTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def write(self, name, value):
+        import hashlib
+        payload = (json.dumps(value) + '\n').encode()
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+        return dict(id=value['id'], version=value['version'], path=name,
+                    kind=value['kind'], sha256=hashlib.sha256(payload).hexdigest())
+
+    def test_complete_clip_closure_and_missing_payload(self):
+        from animation3d_assets import load_project
+        from animation3d_test_helpers import samples
+        values=samples(); clip=values['clip']; clip['tracks']=[]
+        reference=self.write('clip.json',clip); reference['kind']='clip'
+        project=values['project']; project['clips']=[reference]
+        project['budgets']['max_work_bytes']=1000000
+        self.write('animation-project.json',project)
+        result=load_project(self.root)
+        self.assertTrue(result['source_ready'])
+        self.assertEqual(set(result['inventory']), {'animation-project.json','clip.json'})
+        (self.root/'clip.json').unlink()
+        with self.assertRaises(RigError): load_project(self.root)
+
+    def test_closure_rejects_hash_identity_cycles_and_budget(self):
+        from animation3d_assets import load_project
+        from animation3d_test_helpers import samples
+        values=samples(); clip=values['clip']; clip['tracks']=[]
+        reference=self.write('clip.json',clip); reference['kind']='clip'
+        project=values['project']; project['clips']=[reference]
+        project['budgets']['max_work_bytes']=1000000
+        self.write('animation-project.json',project)
+        reference['id']='wrong'; self.write('animation-project.json',project)
+        with self.assertRaisesRegex(RigError,'identity'): load_project(self.root)
+        reference['id']=clip['id']; reference['sha256']='0'*64
+        self.write('animation-project.json',project)
+        with self.assertRaisesRegex(RigError,'hash'): load_project(self.root)
+        reference.update(self.write('clip.json',clip)); reference['kind']='clip'
+        project['budgets']['max_work_bytes']=100
+        self.write('animation-project.json',project)
+        with self.assertRaises(RigError): load_project(self.root)
+
+    def test_native_camera_and_lookdev_targets(self):
+        import shutil
+        from animation3d_registry import TargetRegistry
+        from animation3d_contracts import KINDS
+        base=Path(__file__).resolve().parents[1]
+        shutil.copytree(base/'examples/camera3d',self.root/'camera')
+        camera=json.loads((self.root/'camera/registry.json').read_text())
+        camera_ref=self.write('camera/registry.json',camera)
+        material=json.loads((base/'examples/lookdev-contracts/ceramic.json').read_text())
+        material_ref=self.write('material.json',material)
+        entries=[dict(owner='camera3d',source=camera_ref,target=dict(kind='camera',camera_id='camera',property='focal_length')),
+                 dict(owner='lookdev',source=material_ref,target=dict(kind='material',material_id='ceramic',property='roughness'))]
+        registry=TargetRegistry(self.root,dict(schema_version=1,kind=KINDS['registry'],id='targets',version='1.0.0',entries=entries))
+        for entry in entries: self.assertEqual(registry.resolve(entry['target']),entry)
+        material['surface']['roughness']=0.7;self.write('material.json',material)
+        with self.assertRaises(RigError): registry.resolve(entries[1]['target'])
+        (self.root/'camera/optics.json').write_text('{}')
+        with self.assertRaises(RigError): registry.resolve(entries[0]['target'])
+
+    def test_native_scene_target_and_unknown_node(self):
+        import shutil
+        from animation3d_registry import TargetRegistry
+        from animation3d_contracts import KINDS
+        base=Path(__file__).resolve().parents[1]
+        shutil.copytree(base/'examples/scene3d-contracts',self.root/'scene')
+        value=json.loads((self.root/'scene/project.json').read_text())
+        reference=self.write('scene/project.json',value)
+        scene=json.loads((self.root/'scene/example-scene.json').read_text())
+        target=dict(kind='node',node_id=scene['nodes'][0]['id'],property='translation')
+        entry=dict(owner='scene3d',source=reference,target=target)
+        registry=TargetRegistry(self.root,dict(schema_version=1,kind=KINDS['registry'],id='targets',version='1.0.0',entries=[entry]))
+        self.assertEqual(registry.resolve(target),entry)

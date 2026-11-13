@@ -48,8 +48,12 @@ class TargetRegistry:
     def resolve(self, target):
         entry=self._entries.get(target_key(target))
         require(entry is not None,'ANIMATION_TARGET','Target is not registered.',stage='animation3d')
-        require(entry['owner']=='rig' and entry['source']['kind']=='rig','ANIMATION_OWNER',
-            'This owner needs its explicit validated adapter.',stage='animation3d')
+        if entry['owner'] != 'rig':
+            from animation3d_owners import resolve_property
+            resolve_property(self.root, entry)
+            return deepcopy(entry)
+        require(entry['source']['kind']=='rig','ANIMATION_OWNER',
+            'Rig entry needs a native rig source.',stage='animation3d')
         load_rig=_load_rig()
         source=entry['source']; path=safe_path(self.root,source['path'],exists=True)
         require(path.name=='rig.json','ANIMATION_OWNER','Rig source must be a native rig.json.',stage='animation3d')
