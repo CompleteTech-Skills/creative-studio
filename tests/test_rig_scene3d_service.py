@@ -738,6 +738,47 @@ class SceneServiceTests(unittest.TestCase):
         self.assertEqual(result['revision'], graph.revision)
         self.assertEqual(graph.query(tag='authored'), ['new'])
 
+    def test_typed_node_and_world_edits_preserve_identity_and_reopen(self):
+        graph = self.graph()
+        library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+        before = graph.document()
+        camera = deepcopy(next(n for n in before['nodes'] if n['id'] == 'camera')['camera'])
+        camera['vertical_fov'] = 1.0
+        edits = dict(schema_version=1, commands=[
+            dict(operation='rename', parameters=dict(identifier='mesh', name='Renamed triangle')),
+            dict(operation='configure-node', parameters=dict(identifier='camera', properties={'camera':camera})),
+            dict(operation='configure-world', parameters=dict(properties={'exposure':1.5}))])
+        apply_commands(graph, library, edits)
+        self.assertEqual(graph.revision, before['revision']+1)
+        self.assertEqual(graph.query(name='Renamed triangle'), ['mesh'])
+        self.assertEqual(graph.transform('mesh'), next(n for n in before['nodes'] if n['id'] == 'mesh')['transform'])
+        snapshot = snapshot_project(self.root/'source', self.root/'configured', graph, scene_path='example-scene.json')
+        reopened = load_project(self.root/'configured')['documents'][snapshot['active_scene']['path']]
+        self.assertEqual(reopened['world']['exposure'], 1.5)
+        self.assertEqual(next(n for n in reopened['nodes'] if n['id'] == 'camera')['camera'], camera)
+
+    def test_typed_property_updates_reject_invalid_stale_locked_and_atomic_batches(self):
+        graph = self.graph()
+        library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+        before = graph.document()
+        for props in ({'id':'replacement'}, {'parent':None}, {'name':''}, {'light':{'intensity':2}}, {'metadata':{'x':{}}}):
+            with self.subTest(props=props), self.assertRaises(RigError):
+                graph.configure_node('mesh', props)
+            self.assertEqual(graph.document(), before)
+        with self.assertRaises(RigError): graph.rename('mesh','stale',expected_revision=99)
+        for props in ({'coordinate_system':'other'}, {'exposure':float('inf')}, {'environment':'bad'}):
+            with self.subTest(props=props), self.assertRaises(RigError): graph.configure_world(props)
+            self.assertEqual(graph.document(), before)
+        with self.assertRaises(RigError):
+            apply_commands(graph, library, dict(schema_version=1,commands=[
+                dict(operation='rename',parameters=dict(identifier='mesh',name='temporary')),
+                dict(operation='configure-world',parameters=dict(properties={'exposure':'bad'}))]))
+        self.assertEqual(graph.document(), before)
+        graph.set_node_flags('mesh',locked=True)
+        locked = graph.document()
+        with self.assertRaises(RigError): graph.rename('mesh','locked')
+        self.assertEqual(graph.document(), locked)
+
     def test_noncanonical_foreign_prefab_bytes_are_preserved_in_portable_snapshot(self):
         library = PrefabLibrary.from_files(self.root/'source', self.bundle)
         value = deepcopy(self.bundle['documents']['example-prefab.json'])
