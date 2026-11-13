@@ -273,6 +273,15 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
     from scene3d_pose import evaluate_poses
     pose_geometry = evaluate_poses(graph,evaluated,documents,native,source_root,
         verified_inventory=bundle['inventory'],sample_geometry=sample_geometry,max_vertices=max_geometry_vertices)
+    for state in evaluated.values():
+        state['native_bounds_evaluated'] = True
+    if not sample_geometry:
+        for identifier,state in evaluated.items():
+            if 'native_pose' in state or 'native_clip' in state:
+                cursor = identifier
+                while cursor is not None:
+                    evaluated[cursor]['native_bounds_evaluated'] = False
+                    cursor = nodes[cursor]['parent']
     if geometry is not None:
         geometry.update(pose_geometry)
         require(sum(len(points) for meshes in geometry.values() for points in meshes.values()) <=
@@ -464,6 +473,9 @@ def frame_camera(evaluation, render, targets, **options):
     require(isinstance(targets,(list,tuple)) and 1 <= len(targets) <= 128 and
             all(isinstance(target,str) and target in evaluation['nodes'] for target in targets),
             'Framing requires 1..128 evaluated node IDs.')
+    require(all(evaluation['nodes'][target].get('native_bounds_evaluated', False) for target in targets),
+            'Framing native deformation requires sample_geometry=True for the evaluated frame.',
+            'SCENE3D_EVALUATION_GEOMETRY')
     from camera3d_constraints import frame_subject
     mapped = camera_matrices(evaluation,render)
     resolved = [dict(position=[evaluation['nodes'][target]['world_matrix'][axis][3] for axis in range(3)],

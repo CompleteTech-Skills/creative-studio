@@ -66,6 +66,16 @@ class PoseBindingTests(unittest.TestCase):
         two['pose_binding']=self.bind(rig,neutral_pose(rig.skeleton,'rest'),'rest-pose.json')
         return rig,asset,one,two
 
+    def test_framing_requires_sampled_native_bounds_including_ancestors(self):
+        from scene3d_evaluate import frame_camera
+        self.actors()
+        cheap=self.evaluate(source_root=self.root)
+        for target in ('one','root'):
+            with self.assertRaises(RigError):frame_camera(cheap,dict(width=640,height=480),[target])
+        self.assertTrue(frame_camera(cheap,dict(width=640,height=480),['mesh'])['framing']['satisfied'])
+        sampled=self.evaluate(source_root=self.root,sample_geometry=True)
+        self.assertTrue(frame_camera(sampled,dict(width=640,height=480),['one'])['framing']['satisfied'])
+
     def test_actual_two_instance_pose_and_mesh_qualified_state_without_rest_mutation(self):
         rig,asset,one,two=self.actors()
         before=deepcopy(self.bundle);manifest=(self.root/'actor/rig.json').read_bytes()

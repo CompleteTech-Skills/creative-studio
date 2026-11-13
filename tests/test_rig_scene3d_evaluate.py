@@ -115,6 +115,10 @@ class SceneEvaluationTests(unittest.TestCase):
         with patch('rig_models.load_rig',wraps=load_rig) as loader:
             out=self.evaluate(12,source_root=self.root,sample_geometry=True)
         self.assertEqual(loader.call_count,1)
+        from scene3d_evaluate import frame_camera
+        cheap=self.evaluate(12)
+        for target in ('first','root'):
+            with self.assertRaises(RigError):frame_camera(cheap,dict(width=640,height=480),[target])
         from rig_skinning import evaluate_deformation
         with patch('scene3d_evaluate.MAX_NATIVE_CACHE_VERTICES',1), \
                 patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deformer:

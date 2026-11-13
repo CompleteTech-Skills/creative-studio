@@ -143,3 +143,9 @@ aggregate caps of 2000000 vertices bound loaded rig inputs and retained deformat
 arrays; deformation capacity is checked before the native evaluator allocates the
 next sample. These input/cache caps are independent of the selected output vertex
 budget, so selecting a small imported component cannot hide large retained rigs.
+
+Each evaluated node also reports `native_bounds_evaluated`. Cheap native Pose/clip
+state leaves this false on the deformed node and its transform ancestors, because
+bind bounds do not describe the current deformation. `frame_camera` requires true
+for every selected target and asks for `sample_geometry=True` otherwise; unrelated
+static targets can still be framed from a cheap evaluation.
