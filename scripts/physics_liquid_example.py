@@ -9,7 +9,7 @@ from scene3d_contracts import validate_document
 from scene3d_example import node,SETTINGS,PROVENANCE
 
 
-def build_liquid_inputs(*,frames=48,resolution=24,viscosity=0.,moving=False,container=True):
+def build_liquid_inputs(*,frames=48,resolution=24,viscosity=0.,moving=False,stationary_paddle=False,container=True):
     world,_=build_inputs(frames=max(25,frames))
     world.update(id='pouring-water-fixture',assets=[],bodies=[],components=[])
     world['frame_range']['end']=frames
@@ -23,7 +23,7 @@ def build_liquid_inputs(*,frames=48,resolution=24,viscosity=0.,moving=False,cont
     if container:
         boxes += [('floor',[1.8,.1,1.8],[0,.05,0]),('left',[.1,1.,1.8],[-.85,.55,0]),
             ('right',[.1,1.,1.8],[.85,.55,0]),('front',[1.8,1.,.1],[0,.55,-.85]),('back',[1.8,1.,.1],[0,.55,.85])]
-    if moving:boxes.append(('paddle',[.2,.6,1.2],[-.5,.45,0]))
+    if moving or stationary_paddle:boxes.append(('paddle',[.2,.6,1.2],[-.5,.45,0]))
     for identifier,size,translation in boxes:
         vertices,triangles=_box(size)
         obj=('# Procedural engineering fixture, not production artwork.\n'+''.join('v %.9g %.9g %.9g\n'%v for v in vertices)+

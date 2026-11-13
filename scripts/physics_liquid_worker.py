@@ -1,5 +1,7 @@
 """Package-owned Blender liquid worker; only opens its own hash-bound output."""
 import hashlib
+import gzip
+import struct
 import json
 import math
 from pathlib import Path
@@ -27,6 +29,13 @@ def sample(scene,domain,frames,max_vertices,max_triangles):
                 raise ValueError('Evaluated liquid mesh exceeded admitted geometry limit.')
             vertices=[list(BASIS.inverted()@(domain.matrix_world@v.co)) for v in mesh.vertices]
             triangles=[list(t.vertices) for t in mesh.loop_triangles]
+            # Blender exposes the domain cage after the fluid has entirely left an
+            # open boundary. An explicitly empty native mesh has no liquid surface.
+            cache=Path(bpy.path.abspath(domain.modifiers['Native liquid domain'].domain_settings.cache_directory))
+            with gzip.open(cache/'mesh'/f'fluid_mesh_{frame+1:04d}.bobj.gz','rb') as stream:
+                native_count=struct.unpack('<i',stream.read(4))[0]
+            if native_count==0:
+                vertices=[];triangles=[]
             if any(not math.isfinite(x) for p in vertices for x in p):raise ValueError('Nonfinite liquid geometry.')
             result.append(dict(frame=frame,vertices=vertices,triangles=triangles))
         finally:evaluated.to_mesh_clear()
