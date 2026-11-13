@@ -39,15 +39,24 @@ class AssetSecurityTests(unittest.TestCase):
         self.library = AssetLibrary(self.root / 'library', create=True)
         self.pipeline = ImportPipeline(self.library)
 
-    def reject(self, document):
+    def reject(self, document, expected_codes):
         source = self.root / 'hostile.gltf'
         source.write_text(json.dumps(document))
         originals = {p: hashlib.sha256(p.read_bytes()).hexdigest()
                      for p in (source, self.buffer, self.license)}
-        with self.assertRaises(RigError):
+        with self.assertRaises(RigError) as raised:
             self.pipeline.import_asset(source, **self.request)
+        self.assertIn(raised.exception.report['code'], expected_codes)
         self.assertEqual(self.library.list_references(), [])
         self.assertEqual(originals, {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in originals})
+
+    def test_valid_fixture_import_decodes_and_reopens_real_geometry(self):
+        source = self.root / 'valid.gltf'
+        source.write_text(json.dumps(self.document))
+        result = self.pipeline.import_asset(source, **self.request)
+        self.assertEqual(result['report']['native_observation']['vertices'], 4)
+        self.assertEqual(self.library.list_references(), [result['reference']])
+        self.assertEqual(self.library.resolve(result['reference'])['publication']['verification'], 'payload-verified')
 
     def test_malformed_accessor_offsets_counts_and_ranges_never_publish(self):
         mutations = [
@@ -58,11 +67,13 @@ class AssetSecurityTests(unittest.TestCase):
             lambda d: d['bufferViews'][0].update(byteOffset=2**40),
             lambda d: d['bufferViews'][0].update(byteLength=2**40),
         ]
+        expected = ['LIBRARY_IMPORT_LIMIT', 'LIBRARY_IMPORT_LIMIT', 'RIG_GLTF_REFERENCE',
+                    'RIG_GLTF_ACCESSOR', 'LIBRARY_IMPORT_LIMIT', 'LIBRARY_IMPORT_LIMIT']
         for number, mutate in enumerate(mutations):
             with self.subTest(mutation=number):
                 document = deepcopy(self.document)
                 mutate(document)
-                self.reject(document)
+                self.reject(document, {expected[number]})
 
     def test_remote_encoded_and_platform_escape_uris_never_publish(self):
         for uri in ('//server/share.bin', 'https://invalid.example/geometry.bin',
@@ -72,7 +83,7 @@ class AssetSecurityTests(unittest.TestCase):
             with self.subTest(uri=uri):
                 document = deepcopy(self.document)
                 document['buffers'][0]['uri'] = uri
-                self.reject(document)
+                self.reject(document, {'LIBRARY_IMPORT_URI', 'LIBRARY_IMPORT_PATH'})
 
     def test_actual_symlinked_dependency_never_discloses_or_publishes(self):
         secret = self.root / 'outside-secret.bin'
@@ -84,7 +95,7 @@ class AssetSecurityTests(unittest.TestCase):
             if os.name != 'nt':
                 raise
             self.skipTest('OS symlink creation unavailable: ' + str(exc))
-        self.reject(self.document)
+        self.reject(self.document, {'LIBRARY_SYMLINK'})
         self.assertEqual(secret.read_bytes(), self.buffer.read_bytes())
 
     @unittest.skipUnless(os.name == 'nt', 'Actual Windows junction test runs on Windows CI.')
@@ -101,5 +112,5 @@ class AssetSecurityTests(unittest.TestCase):
         document = deepcopy(self.document)
         document['buffers'][0]['uri'] = 'junction/geometry.bin'
         before = hashlib.sha256(secret.read_bytes()).hexdigest()
-        self.reject(document)
+        self.reject(document, {'LIBRARY_SYMLINK'})
         self.assertEqual(hashlib.sha256(secret.read_bytes()).hexdigest(), before)

@@ -42,10 +42,16 @@ hashes and commands. Never replace revision-bound logs with later source claims.
 `tests/test_rig_asset_security.py` sends six malformed accessor/buffer-range
 variants and ten remote, encoded and platform-specific resource URI variants
 through the real import pipeline, then verifies an empty canonical registry and
-unchanged original SHA-256 values. An actual symlinked dependency control also
-fails before publication. The initial Linux run passed all three test methods
-without skips (`asset/security152-first.log`); exact final-head and hosted runs
-remain required. A Windows account unable to create a symlink reports that
+unchanged original SHA-256 values and the expected security error category.
+An actual symlinked dependency control also fails before publication. A valid
+external glTF control successfully imports and reopens four actual vertices, so
+missing tooling cannot make all negative tests pass. The corrected Linux run
+passed four methods with one explicit Windows-only junction skip in 3.447s
+(`asset/security152/security-provisioned.log`). The earlier positive-control
+failure due to uninstalled worktree-local validator is retained in
+`asset/security152/security-positive-controls.log`; Node 22.16.0 and lockfile npm
+provisioning are now required by the new workflow. Exact final-head and hosted
+runs remain required. A Windows account unable to create a symlink reports that
 specific platform limit; POSIX symlink failures cannot skip.
 
 `.github/workflows/asset-security.yml` adds Python 3.12 Linux/macOS/Windows
