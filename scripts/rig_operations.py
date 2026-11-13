@@ -1,6 +1,8 @@
 """Reusable operation dispatcher shared by the CLI and loopback HTTP API."""
 from copy import deepcopy
 from pathlib import Path
+import math
+import re
 import numpy as np
 from rig_errors import atomic_json, read_json, require, safe_path, sha256
 from rig_jobs import run_step, save_rig, configure_limits, next_version, write_rig_manifest, retain_artifact
@@ -92,30 +94,112 @@ def mutate(root,operation,parameters=None):
     return run_step(root,operation,parameters,action,status=STATUSES[operation])
 
 
-def pose_operation(rig,parameters):
+POSE_FIELDS = {'pose', 'clip', 'time', 'expressions', 'gaze', 'head_follow', 'fingers', 'appendages'}
+SOLVE_FIELDS = {'chain', 'target', 'pole', 'orientation'}
+
+
+def _number(value, lower, upper, field):
+    require(type(value) in (int, float) and lower <= value <= upper and math.isfinite(value),
+            'RIG_OPERATION_SCHEMA', 'Expected a finite bounded number for '+field, asset=field)
+
+
+def _vector(value, size, field):
+    require(isinstance(value, (list, tuple)) and len(value) == size,
+            'RIG_OPERATION_SCHEMA', 'Expected a numeric vector for '+field, asset=field)
+    for number in value:_number(number, -1e9, 1e9, field)
+
+
+def _object(value, allowed, field, required=()):
+    require(isinstance(value, dict) and set(required) <= set(value) <= allowed,
+            'RIG_OPERATION_SCHEMA', 'Expected a closed object for '+field, asset=field)
+
+
+def _pose_parameters(parameters, *, solve=False):
+    _object(parameters, POSE_FIELDS | (SOLVE_FIELDS if solve else set()), 'parameters')
+    if 'pose' in parameters:require(isinstance(parameters['pose'], dict), 'RIG_OPERATION_SCHEMA', 'pose must be a Pose object.')
+    if parameters.get('clip') is not None:
+        require(isinstance(parameters['clip'], str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', parameters['clip']),
+                'RIG_OPERATION_SCHEMA', 'clip must be an existing clip identifier or null.')
+    if 'time' in parameters:_number(parameters['time'], 0, 1e9, 'time')
+    if 'head_follow' in parameters:_number(parameters['head_follow'], 0, 1, 'head_follow')
+    if 'gaze' in parameters and parameters['gaze'] is not None:_vector(parameters['gaze'], 3, 'gaze')
+    if 'expressions' in parameters:
+        expressions=parameters['expressions']
+        require(isinstance(expressions, dict) and len(expressions) <= 128,
+                'RIG_OPERATION_SCHEMA', 'expressions must be an object with at most 128 entries.')
+        for name, amount in expressions.items():
+            require(isinstance(name, str) and 0 < len(name) <= 4096, 'RIG_OPERATION_SCHEMA', 'Expression names must be bounded strings.')
+            _number(amount, 0, 1, 'expressions.'+name)
+    if 'fingers' in parameters:
+        fingers=parameters['fingers'];_object(fingers, {'side','curl','spread','fingers'}, 'fingers', {'side'})
+        require(fingers['side'] in ('left','right'), 'RIG_OPERATION_SCHEMA', 'Finger side must be left or right.')
+        if 'curl' in fingers:_number(fingers['curl'], 0, 1, 'fingers.curl')
+        if 'spread' in fingers:_number(fingers['spread'], -1, 1, 'fingers.spread')
+        names=fingers.get('fingers')
+        if names is not None:
+            require(isinstance(names, list) and 1 <= len(names) <= 32
+                    and all(isinstance(name, str) and 0 < len(name) <= 128 for name in names)
+                    and len(set(names)) == len(names), 'RIG_OPERATION_SCHEMA', 'Finger names must be a bounded, nonempty unique list.')
+    if 'appendages' in parameters:
+        values=parameters['appendages'];_object(values, {'time','tail_curl','tail_wag','wing_flap','wing_fold','wing_twist','wing_side','seed','secondary'}, 'appendages')
+        for name in ('tail_curl','tail_wag','wing_flap','wing_fold','wing_twist','secondary'):
+            if name in values:_number(values[name], -1, 1, 'appendages.'+name)
+        if 'time' in values:_number(values['time'], 0, 120, 'appendages.time')
+        if 'seed' in values:require(type(values['seed']) is int and -(2**31) <= values['seed'] < 2**31,
+                                   'RIG_OPERATION_SCHEMA', 'Appendage seed must be a bounded integer.')
+        if 'wing_side' in values:require(values['wing_side'] in ('both','left','right'), 'RIG_OPERATION_SCHEMA', 'Wing side must be both, left or right.')
+    if solve:
+        require('chain' in parameters and isinstance(parameters['chain'], str) and 0 < len(parameters['chain']) <= 128,
+                'RIG_OPERATION_SCHEMA', 'A bounded chain identifier is required.')
+        require('target' in parameters, 'RIG_OPERATION_SCHEMA', 'A target vector is required.')
+        _vector(parameters['target'], 3, 'target')
+        if parameters.get('pole') is not None:_vector(parameters['pole'], 3, 'pole')
+        if parameters.get('orientation') is not None:
+            from rig_math import quaternion
+            _vector(parameters['orientation'], 4, 'orientation');quaternion(parameters['orientation'], strict=True)
+
+
+def _check_pose(rig, pose):
     from rig_contracts import validate_contract
+    from rig_skeleton import evaluate_fk
+    validate_contract(pose, 'Pose')
+    require(pose['rig_version'] == rig.skeleton['version'], 'RIG_POSE_VERSION', 'Pose targets a different skeleton version.')
+    evaluate_fk(rig.skeleton, pose)
+    meshes=rig.geometry.by_id()
+    require(set(pose['morphs']) <= set(meshes), 'RIG_MORPH_REFERENCE', 'Pose references a missing mesh.')
+    for mesh, weights in pose['morphs'].items():
+        require(set(weights) <= set(meshes[mesh].morphs), 'RIG_MORPH_REFERENCE', 'Pose references a missing morph.')
+        for amount in weights.values():_number(amount, -2, 2, 'pose.morphs')
+
+
+def pose_operation(rig,parameters):
     from rig_skeleton import neutral_pose
-    from rig_animation import evaluate_animation,save_pose
+    from rig_animation import evaluate_animation
     from rig_facial import apply_expressions,gaze_at,finger_controls,appendage_controls
     from rig_constraints import apply_constraints
-    pose=deepcopy(parameters['pose']) if isinstance(parameters.get('pose'),dict) else evaluate_animation(rig,parameters['clip'],parameters.get('time',0.))['pose'] if parameters.get('clip') else neutral_pose(rig.skeleton)
-    validate_contract(pose,'Pose')
-    require(pose['rig_version']==rig.skeleton['version'],'RIG_POSE_VERSION','Pose targets a different skeleton version.')
+    _pose_parameters(parameters)
+    if parameters.get('clip') is not None:require(parameters['clip'] in rig.clips, 'RIG_CLIP', 'Requested clip does not exist.')
+    pose=deepcopy(parameters['pose']) if 'pose' in parameters else evaluate_animation(rig,parameters['clip'],parameters.get('time',0.))['pose'] if parameters.get('clip') else neutral_pose(rig.skeleton)
+    _check_pose(rig, pose)
     if parameters.get('expressions'):pose=apply_expressions(rig,pose,parameters['expressions'])
-    if parameters.get('gaze'):pose=gaze_at(rig,pose,parameters['gaze'],head_follow=parameters.get('head_follow',0.))
+    if 'gaze' in parameters:pose=gaze_at(rig,pose,parameters['gaze'],head_follow=parameters.get('head_follow',0.))
     if parameters.get('fingers'):pose=finger_controls(rig,pose,**parameters['fingers'])
     if parameters.get('appendages'):pose=appendage_controls(rig,pose,**parameters['appendages'])
     pose,_=apply_constraints(rig.skeleton,pose,rig.manifest['controllers']['constraints'])
-    validate_contract(pose,'Pose')
+    _check_pose(rig, pose)
     return pose
 
 
 def solve_operation(rig,parameters):
     from rig_ik import solve_ik
+    _pose_parameters(parameters, solve=True)
     chain=next((c for c in rig.manifest['controllers']['ik'] if c['id']==parameters['chain']),None)
     require(chain is not None,'RIG_IK_CHAIN','Requested IK chain does not exist.')
-    result=solve_ik(rig.skeleton,pose_operation(rig,parameters),chain,parameters['target'],
-                    constraints=rig.manifest['controllers']['constraints'],orientation=parameters.get('orientation'))
+    pose_parameters={name:value for name,value in parameters.items() if name in POSE_FIELDS}
+    result=solve_ik(rig.skeleton,pose_operation(rig,pose_parameters),chain,parameters['target'],
+                    constraints=rig.manifest['controllers']['constraints'],pole=parameters.get('pole'),
+                    orientation=parameters.get('orientation'))
+    _check_pose(rig, result.pose)
     return dict(pose=result.pose,report=result.report())
 
 
