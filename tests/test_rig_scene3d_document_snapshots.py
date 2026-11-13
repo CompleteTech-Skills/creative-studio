@@ -79,6 +79,16 @@ class SceneDocumentSnapshots(unittest.TestCase):
         self.assertEqual(reopened['documents'][edited['path']]['scene'],receipt['active_scene'])
         self.assertEqual(reopened['documents'][edited['path']]['tracks'],shot['tracks'])
 
+    def test_graph_rejects_other_document_replacements_before_publication(self):
+        from scene3d_graph import SceneGraph
+        graph=SceneGraph(self.bundle['documents']['example-scene.json'])
+        for path in ('triangle.json','example-animation.json','example-scene.json'):
+            with self.subTest(path=path),self.assertRaises(RigError) as caught:
+                snapshot_project(self.source,self.root/'out',graph,scene_path='example-scene.json',
+                    document_replacements={path:deepcopy(self.bundle['documents'][path])})
+            self.assertIn('supports only shots',str(caught.exception))
+            self.assertFalse((self.root/'out').exists())
+
     def test_invalid_identity_and_unknown_project_fields_preserve_destination(self):
         shot=deepcopy(self.bundle['documents']['example-shot.json']);shot['id']='other'
         for kwargs in ({'document_replacements':{'example-shot.json':shot}},

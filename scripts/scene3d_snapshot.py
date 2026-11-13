@@ -54,6 +54,15 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     require(type(max_bytes) is int and 0 < max_bytes <= 1024**3, 'Invalid snapshot byte budget.')
     destination = _new_destination(destination)
     bundle = load_project(source_root)
+    replacements = {} if document_replacements is None else document_replacements
+    require(isinstance(replacements, dict) and len(replacements) <= 4096,
+            'Document replacements must be a bounded path/document mapping.')
+    if graph is not None:
+        for path in replacements:
+            original=bundle['documents'].get(path)
+            require(original is not None and original['kind']=='scene3d-shot' and
+                    original['scene']['path']==scene_path,
+                    'Combined graph/document editing supports only shots on the edited scene.')
     source_root = Path(source_root).resolve(strict=True)
     files, total = {}, 0
     for path, record in bundle['inventory'].items():
@@ -183,10 +192,7 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             shot = deepcopy(old_shot)
             shot['version'] = version_patch(shot['version'])
             shot['scene'] = deepcopy(active_scene)
-            project['shots'].append(add_document(shot))
-    replacements = {} if document_replacements is None else document_replacements
-    require(isinstance(replacements, dict) and len(replacements) <= 4096,
-            'Document replacements must be a bounded path/document mapping.')
+            add_document(shot)
     require(project_selection is None or isinstance(project_selection, dict),
             'Project selection must be a mapping.')
     requested = {}
