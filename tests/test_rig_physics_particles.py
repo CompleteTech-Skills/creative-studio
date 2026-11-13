@@ -106,6 +106,40 @@ class ParticleTests(unittest.TestCase):
         acceleration,_=_acceleration(world,component,settings['emitters'][0],Fraction(0),Fraction(1,120))
         self.assertEqual(acceleration,[1.,-9.81,0.])
 
+    def test_small_drag_continuously_approaches_ballistic_motion(self):
+        from decimal import Decimal, localcontext
+        from physics_particle_worker import _integrate
+        for rate in (1e-20, 1e-12, .001999, .002001, .5):
+            with self.subTest(rate=rate), localcontext() as context:
+                context.prec=70
+                k=Decimal(str(rate));dt=Decimal('.5');decay=(-k*dt).exp()
+                c1=(1-decay)/k;c2=(dt-c1)/k
+                expected_position=Decimal(3)+Decimal(4)*c1-Decimal('9.81')*c2
+                expected_velocity=Decimal(4)*decay-Decimal('9.81')*c1
+                particle=dict(position=[0.,3.,0.],velocity=[0.,4.,0.])
+                _integrate(particle,[0.,-9.81,0.],rate,Fraction(1,2))
+                self.assertAlmostEqual(particle['position'][1],float(expected_position),places=11)
+                self.assertAlmostEqual(particle['velocity'][1],float(expected_velocity),places=11)
+        world,settings,payloads=fixture();settings['emitters'][0]['drag']=1e-20
+        backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
+        try:
+            backend.simulate(prepared)
+            particle=core.parse((prepared.root/'particles.json').read_bytes())['samples'][12]['particles'][0]
+            self.assertAlmostEqual(particle['position'][1],3+4*.5-9.81*.5*.5/2,places=11)
+            self.assertAlmostEqual(particle['velocity'][1],4-9.81*.5,places=11)
+        finally:backend.cleanup(prepared)
+
+    def test_integer_valued_json_numbers_keep_source_identity_through_bake(self):
+        world,settings,payloads=fixture();world['components'][0].update(count=24.,seed=91.)
+        settings['world_sha256']=core.digest(core.canonical(world))
+        original=core.canonical(world);backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
+        try:
+            result=backend.simulate(prepared);destination=self.root/'integer-valued-cache'
+            backend.bake(result,destination);verify(destination)
+            self.assertEqual((destination/'world.json').read_bytes(),original)
+            self.assertEqual(core.canonical(world),original)
+        finally:backend.cleanup(prepared)
+
     def test_cancel_and_step_budget_fail(self):
         import threading
         world,settings,payloads=fixture();backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)

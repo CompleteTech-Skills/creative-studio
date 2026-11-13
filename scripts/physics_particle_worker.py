@@ -68,9 +68,10 @@ def _positive(value, name, *, zero=False):
 
 
 def _integer(value, name, maximum, *, zero=False):
-    require(type(value) is int and (value >= 0 if zero else value > 0) and value <= maximum,
+    require((type(value) is int or type(value) is float and math.isfinite(value)) and value == int(value) and
+            (value >= 0 if zero else value > 0) and value <= maximum,
             'PARTICLE_RESOURCE_LIMIT', 'Invalid or excessive ' + name + '.')
-    return value
+    return int(value)
 
 
 def _sample_position(rng, shape, mesh):
@@ -183,11 +184,18 @@ def _integrate(particle, acceleration, drag_rate, elapsed):
         particle['position'] = [position[i]+velocity[i]*dt+.5*acceleration[i]*dt*dt for i in range(3)]
         particle['velocity'] = [velocity[i]+acceleration[i]*dt for i in range(3)]
     else:
-        decay = math.exp(-drag_rate*dt)
-        integral = -math.expm1(-drag_rate*dt)/drag_rate
-        terminal = [a/drag_rate for a in acceleration]
-        particle['position'] = [position[i]+terminal[i]*dt+(velocity[i]-terminal[i])*integral for i in range(3)]
-        particle['velocity'] = [terminal[i]+(velocity[i]-terminal[i])*decay for i in range(3)]
+        scaled = drag_rate*dt
+        decay = math.exp(-scaled)
+        if scaled < 1e-3:
+            # Integrate the exponential without subtracting large terminal
+            # velocities or nearly equal times as drag tends to zero.
+            integral = dt*(1+scaled*(-.5+scaled*(1/6+scaled*(-1/24+scaled/120))))
+            acceleration_integral = dt*dt*(.5+scaled*(-1/6+scaled*(1/24+scaled*(-1/120+scaled/720))))
+        else:
+            integral = -math.expm1(-scaled)/drag_rate
+            acceleration_integral = (dt-integral)/drag_rate
+        particle['position'] = [position[i]+velocity[i]*integral+acceleration[i]*acceleration_integral for i in range(3)]
+        particle['velocity'] = [velocity[i]*decay+acceleration[i]*integral for i in range(3)]
     require(all(math.isfinite(x) and abs(x) <= 1e8 for x in particle['position']+particle['velocity']),
             'PARTICLE_NUMERICAL_INSTABILITY', 'Particle position or velocity exceeded the finite solver bound.')
 
@@ -347,7 +355,8 @@ def run(job, *, cancel=None):
     """
     require(type(job) is dict, 'PARTICLE_JOB', 'Expected a worker job object.')
     world, settings = job['world'], job['settings']
-    components = {c['id']: dict(c) for c in world['components']}
+    components = {c['id']: dict(c, count=_integer(c['count'], 'component count', MAX_PARTICLES),
+        seed=_integer(c['seed'], 'emitter seed', 2**31-1, zero=True)) for c in world['components']}
     require(1 <= len(components) <= 64 and len(components) == len(world['components']),
             'PARTICLE_RESOURCE_LIMIT', 'Invalid component inventory.')
     fps = ratio(world['fps'])

@@ -66,7 +66,6 @@ def admit(world,settings):
     core.require(len(settings['emitters'])==len(components) and {e['component'] for e in settings['emitters']}==set(components),
         'PARTICLE_SETTINGS','Exactly one emitter setting is required per component.')
     for c in components.values():
-        c['count']=int(c['count']);c['seed']=int(c['seed'])
         core.require(c['radius']<=100 and c['mass']<=1e6 and max(map(abs,c['initial_velocity']))<=10000,
             'PARTICLE_LIMIT','Particle radius, mass or velocity exceeds the admitted bound.')
         core.require(set(c['colliders'])<= {b['id'] for b in world['bodies']},'PARTICLE_COLLISION_UNSUPPORTED','Collider reference is outside the admitted bodies.')
