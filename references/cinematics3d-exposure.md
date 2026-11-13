@@ -15,3 +15,5 @@ Run the optional collector explicitly with the pinned color environment:
 ```bash
 python -m unittest discover -s tests/optional -p test_cinematics3d_exposure.py -v
 ```
+
+Versioned meter/advice JSON Schemas live under `schemas/cinematics-exposure-v1` and are exported by `schemas()`. Dedicated optional CI executes the actual OCIO collector on Linux, Windows and macOS; it does not add color packages or skips to the legacy 2D gate. Runtime measurement and history hash verification remain required in addition to structural schema validation.

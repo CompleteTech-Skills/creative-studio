@@ -186,3 +186,50 @@ def advise(measurement, source_time, *, authored_stops=0., settings=None, previo
                  pixel_transform_executed=False, exposure_applications=0)
     value['state_sha256'] = object_hash(value)
     return value
+
+
+def schemas():
+    """Return versioned exported receipt schemas; behavioral hashes remain verified by the API."""
+    sha = {'type': 'string', 'pattern': '^[0-9a-f]{64}$'}
+    def number(low, high):
+        return {'type': 'number', 'minimum': low, 'maximum': high}
+    def integer(low, high):
+        return {'type': 'integer', 'minimum': low, 'maximum': high}
+    def document(name, properties):
+        return {'$schema': 'https://json-schema.org/draft/2020-12/schema',
+                '$id': 'https://creative-studio.invalid/cinematics-exposure-v1/'+name+'.schema.json',
+                'type': 'object', 'additionalProperties': False,
+                'required': list(properties), 'properties': properties}
+    meter = document('meter', {
+        'kind': {'const': 'cinematics-exposure-meter'}, 'schema_version': {'const': 1, 'type': 'integer'},
+        'pixels': integer(1, MAX_PIXELS), 'transparent_pixels': integer(0, MAX_PIXELS),
+        'nonpositive_visible_pixels': integer(0, MAX_PIXELS),
+        'histogram_log2_min': {'const': -40}, 'histogram_log2_max': {'const': 24},
+        'histogram_alpha_weights': {'type': 'array', 'minItems': HISTOGRAM_BINS, 'maxItems': HISTOGRAM_BINS,
+                                    'items': number(0, MAX_PIXELS)},
+        'below_histogram': integer(0, MAX_PIXELS), 'above_histogram': integer(0, MAX_PIXELS),
+        'visible_over_one_pixels': integer(0, MAX_PIXELS), 'alpha_coverage': number(0, MAX_PIXELS),
+        'log2_mean_luminance': {'anyOf': [number(-40, 128), {'type': 'null'}]},
+        'xyz_luminance_weights': {'type': 'array', 'minItems': 3, 'maxItems': 3, 'items': number(0, 1.0005)},
+        'color_execution': color.schemas()['execution.schema.json'],
+        'source_render_verified': {'const': False}, 'meter_sha256': sha})
+    meter['allOf'] = [{'if': {'properties': {'alpha_coverage': {'const': 0}}},
+                       'then': {'properties': {'log2_mean_luminance': {'type': 'null'}}},
+                       'else': {'properties': {'log2_mean_luminance': number(-40, 128)}}}]
+    settings = {'type': 'object', 'additionalProperties': False,
+                'required': list(policy()), 'properties': {
+                    'target_gray': number(1e-6, 1), 'minimum_stops': number(-24, 0),
+                    'maximum_stops': number(0, 24), 'adaptation_seconds': number(.001, 3600)}}
+    advice = document('advice', {
+        'kind': {'const': 'cinematics-exposure-advice'}, 'schema_version': {'const': 1, 'type': 'integer'},
+        'source_time': {'type': 'object', 'additionalProperties': False,
+                        'required': ['numerator', 'denominator'], 'properties': {
+                            'numerator': integer(0, 2**53), 'denominator': integer(1, 2**53)}},
+        'sequence_id': {'type': 'string', 'minLength': 1, 'maxLength': 128, 'pattern': '^[ -~]+$'},
+        'enabled': {'type': 'boolean'}, 'policy': settings, 'policy_sha256': sha,
+        'authored_stops': number(-24,24), 'desired_correction_stops': number(-24,24),
+        'correction_stops': number(-24,24), 'total_stops': number(-24,24), 'meter_sha256': sha,
+        'previous_state_sha256': {'anyOf': [sha, {'type': 'null'}]},
+        'pixel_transform_executed': {'const': False}, 'exposure_applications': {'const': 0, 'type': 'integer'},
+        'state_sha256': sha})
+    return {'meter.schema.json': meter, 'advice.schema.json': advice}

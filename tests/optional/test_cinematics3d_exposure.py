@@ -1,6 +1,7 @@
 from copy import deepcopy
 from fractions import Fraction
 import math
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -139,6 +140,22 @@ class ExposureTests(unittest.TestCase):
         forged = deepcopy(meter); forged['histogram_alpha_weights'] = [0.]*257
         with self.assertRaises(ValueError):
             exposure.advise(forged, Fraction(0))
+
+    def test_versioned_schema_parity_and_actual_record_shapes(self):
+        import jsonschema
+        schemas = exposure.schemas()
+        directory = ROOT/'schemas/cinematics-exposure-v1'
+        self.assertEqual({path.name for path in directory.glob('*.json')}, set(schemas))
+        for name, schema in schemas.items():
+            jsonschema.Draft202012Validator.check_schema(schema)
+            self.assertEqual(schema, json.loads((directory/name).read_text()))
+        for meter in (self.meter(), self.meter(1., alpha=0.)):
+            advice = exposure.advise(meter, Fraction(0), enabled=True)
+            for name, value in [('meter', meter), ('advice', advice)]:
+                jsonschema.Draft202012Validator(schemas[name+'.schema.json']).validate(value)
+            invalid = deepcopy(advice); invalid['unregistered_field'] = 1
+            with self.assertRaises(jsonschema.ValidationError):
+                jsonschema.Draft202012Validator(schemas['advice.schema.json']).validate(invalid)
 
     def test_meter_preflight_precedes_optional_ocio_processing(self):
         pixels = np.ones((1,4), dtype=np.float32)
