@@ -44,6 +44,8 @@ class RigStateReadinessTests(unittest.TestCase):
         # Deliberately stale lifecycle labels, not fabricated visual receipts.
         # The source remains an explicitly unapproved engineering fixture.
         self.rig.manifest['state_mapping']['idle']=dict(status='supported',clips=['neutral'],reason='fixture prior mapping')
+        self.rig.manifest['state_mapping']['static-positive']=dict(status='supported-with-adaptation',clips=['neutral'],
+            reason='Fixture adaptation: use an authored body pose rather than an absent facial controller.')
         write_rig_manifest(self.rig.root,self.rig.manifest)
         for index, prior in enumerate(('exported','review-approved')):
             job=read_json(self.rig.root/'job.json');job['status']=prior;atomic_json(self.rig.root/'job.json',job)
@@ -53,6 +55,9 @@ class RigStateReadinessTests(unittest.TestCase):
             self.assertEqual(response['job_status'],'animation-ready');self.assertEqual(self.status(),'animation-ready')
             self.assertEqual(response['mapping']['static-neutral']['status'],'needs-review')
             self.assertEqual(loaded.manifest['state_mapping']['idle']['status'],'needs-review')
+            adapted=loaded.manifest['state_mapping']['static-positive']
+            self.assertEqual(adapted['status'],'needs-review');self.assertEqual(adapted['clips'],['neutral'])
+            self.assertIn('Fixture adaptation:',adapted['reason'])
             self.assertEqual(loaded.manifest['review']['status'],'pending')
             self.assertEqual(loaded.manifest['revision'],before+1)
             self.assertLess(response['readiness']['report']['metrics']['max_vertex_displacement_m'],1e-12)

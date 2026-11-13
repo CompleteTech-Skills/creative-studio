@@ -94,8 +94,8 @@ def mutate(root,operation,parameters=None):
             rig.manifest['review']=dict(status='pending', receipts=[])
             result=map_states(rig,recipes=parameters.get('recipes'),selected=parameters.get('selected'),pack=parameters.get('pack'),approved_props=parameters.get('approved_props',[]))
             for previous in rig.manifest['state_mapping'].values():
-                if previous['status']=='supported':
-                    previous.update(status='needs-review', reason='A new rig revision requires renewed visual review.')
+                if previous['status'] in ('supported','supported-with-adaptation'):
+                    previous.update(status='needs-review', reason=('A new rig revision requires renewed visual review. '+previous['reason'])[:4096])
             rig.manifest['state_mapping'].update(result['mapping']);save_rig(rig,operation='map-selected-states')
             clip_ids=sorted({clip for recipe in result['recipes'].values() for clip in recipe['clips']})
             # Share immutable arrays, skeleton and bindings; validate only the
