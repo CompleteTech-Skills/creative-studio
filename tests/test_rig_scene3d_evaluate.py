@@ -37,6 +37,7 @@ class SceneEvaluationTests(unittest.TestCase):
         self.assertEqual(self.bundle,before)
         self.assertEqual(self.evaluate(1)['nodes']['mesh']['world_matrix'][0][3],3.)
         self.assertEqual(self.evaluate(0)['nodes']['mesh']['world_matrix'][0][3],2.)
+        self.assertEqual(out['nodes']['mesh']['channels']['translation'],[3.5,0,0])
 
     def test_half_open_interval_and_exact_input_types(self):
         for value in [-1,24,24.0,True,Fraction(49,2)]:
@@ -106,6 +107,11 @@ class SceneEvaluationTests(unittest.TestCase):
         second=np.asarray(next(iter(out['native_geometry']['second'].values())))
         self.assertEqual(out['nodes']['first']['world_bounds'],
                          dict(minimum=first.min(axis=0).tolist(),maximum=first.max(axis=0).tolist()))
+        owned=[state['own_world_bounds'] for ident,state in out['nodes'].items()
+               if ident != 'root' and state['own_world_bounds'] is not None]
+        self.assertEqual(out['nodes']['root']['world_bounds'],dict(
+            minimum=np.min([box['minimum'] for box in owned],axis=0).tolist(),
+            maximum=np.max([box['maximum'] for box in owned],axis=0).tolist()))
         self.assertGreater(np.max(np.abs(first-second)),.05)
         self.assertTrue(out['native_geometry_sampled'])
         self.assertTrue(out['nodes']['first']['native_animation_evaluated'])
@@ -226,6 +232,14 @@ class SceneEvaluationTests(unittest.TestCase):
         out['nodes']['camera']['world_matrix'][0][0]=2
         with self.assertRaises(ValueError):camera_matrices(out,dict(width=640,height=480))
 
+    def test_bounds_framing_delegates_to_camera_owner_without_mutation(self):
+        from scene3d_evaluate import frame_camera
+        out=self.evaluate(12);before=deepcopy(out)
+        framed=frame_camera(out,dict(width=640,height=480),['mesh'])
+        self.assertTrue(framed['framing']['satisfied'])
+        self.assertEqual(out,before)
+        with self.assertRaises(RigError):frame_camera(out,dict(width=640,height=480),['missing'])
+
     def test_scenes_share_asset_identity_but_not_instance_animation(self):
         other=deepcopy(self.scene);other['id']='other-scene'
         other['nodes'][1]['transform']['translation']=[10,0,0]
@@ -239,6 +253,87 @@ class SceneEvaluationTests(unittest.TestCase):
         self.assertEqual(first['nodes']['mesh']['asset'],second['nodes']['mesh']['asset'])
         self.assertNotEqual(first['nodes']['mesh']['world_matrix'],second['nodes']['mesh']['world_matrix'])
         self.assertEqual(self.bundle,before)
+
+    def test_persisted_path_is_exact_world_motion_after_parent_and_pivot(self):
+        self.scene['nodes'][0]['transform']['translation']=[3,4,5]
+        self.scene['nodes'][0]['transform']['rotation']=axis_angle([0,1,0],.3).tolist()
+        mesh=self.scene['nodes'][1]
+        mesh['transform']['pivot']=[.5,0,0]
+        mesh['transform']['rotation']=axis_angle([0,1,0],.5).tolist()
+        self.shot['path_bindings']=[dict(schema_version=1,id='travel',target='mesh',
+            points=[[0,1,0],[0,1,4],[4,1,4]],start_frame=0,end_frame=20,
+            start_fraction=0,end_fraction=1,space='world',orientation='preserve')]
+        before=deepcopy(self.bundle)
+        out=self.evaluate(10)
+        np.testing.assert_allclose(np.asarray(out['nodes']['mesh']['world_matrix'])[:3,3],[0,1,4],atol=1e-12)
+        np.testing.assert_allclose(np.asarray(self.evaluate(Fraction(5,2))['nodes']['mesh']['world_matrix'])[:3,3],
+                                   [0,1,1],atol=1e-12)
+        self.assertEqual(self.bundle,before)
+        self.assertNotEqual(self.evaluate(20)['nodes']['mesh']['world_matrix'],out['nodes']['mesh']['world_matrix'])
+        self.shot['path_bindings'][0]['points']=[[0,0,0],[0,0,0]]
+        with self.assertRaises(RigError):self.evaluate()
+
+    def test_canonical_light_binding_uses_explicit_units_and_animated_multiplier(self):
+        from lookdev_contracts import Registry,canonical_bytes
+        from test_lookdev_contracts import light
+        from scene3d_evaluate import light_instances
+        source=light();registry=Registry([('key.json',canonical_bytes(source))])
+        binding=dict(schema_version=1,light=registry.reference(source['id'],source['version']),
+                     intensity_scale=1,color_multiplier=[1,1,1])
+        lamp=node('key','light','root');lamp['light']=dict(type='point',color=[1,1,1],intensity=999)
+        lamp['light_binding']=binding
+        self.scene['nodes'].append(lamp);self.scene['lights'].append('key')
+        self.shot['tracks']=[dict(target='key',property='light_intensity_scale',interpolation='linear',
+            keys=[dict(frame=0,value=1),dict(frame=24,value=3)])]
+        out=self.evaluate(12);before=deepcopy(out)
+        resolved=light_instances(out,registry)
+        self.assertEqual(resolved['lights']['key']['intensity_scale'],2)
+        self.assertEqual(registry.get(binding['light'])['intensity'],source['intensity'])
+        self.assertEqual(out['nodes']['key']['light']['intensity'],999)
+        self.assertEqual(out,before)
+        out['nodes']['key']['light_binding']['light']['sha256']='0'*64
+        with self.assertRaises(RigError):light_instances(out,registry)
+
+    def test_world_path_uses_attachment_socket_and_offset_basis(self):
+        socket=node('socket','socket','root')
+        socket['transform']['translation']=[10,0,0]
+        socket['transform']['rotation']=axis_angle([0,1,0],.3).tolist()
+        self.scene['nodes'].append(socket)
+        mesh=self.scene['nodes'][1]
+        mesh['attachment']=dict(owner='root',socket='socket',offset=dict(
+            translation=[2,0,0],rotation=[0,0,0,1],scale=[1,1,1]))
+        self.shot['path_bindings']=[dict(schema_version=1,id='travel',target='mesh',
+            points=[[0,0,0],[0,0,4]],start_frame=0,end_frame=20,
+            start_fraction=0,end_fraction=1,space='world',orientation='preserve')]
+        before=deepcopy(self.bundle)
+        for frame,expected in [(0,[0,0,0]),(10,[0,0,2]),(Fraction(5,2),[0,0,.5])]:
+            with self.subTest(frame=frame):
+                actual=np.asarray(self.evaluate(frame)['nodes']['mesh']['world_matrix'])[:3,3]
+                np.testing.assert_allclose(actual,expected,atol=1e-12)
+        self.assertEqual(self.bundle,before)
+
+    def test_world_paths_order_constraint_dependencies_before_dependent_parent(self):
+        a=node('a','group','root');b=node('b','group','a')
+        moving=node('moving','locator','b');moving['transform']['translation']=[10,0,0]
+        holder=node('holder','group','root')
+        holder['constraints']=[dict(id='follow',type='copy-transform',target='moving',influence=1)]
+        self.scene['nodes'].extend([holder,a,b,moving])
+        self.scene['nodes'][1]['parent']='holder'
+        def path(identifier,target,points):
+            return dict(schema_version=1,id=identifier,target=target,points=points,
+                start_frame=0,end_frame=20,start_fraction=0,end_fraction=1,
+                space='world',orientation='preserve')
+        paths=[path('child-path','mesh',[[0,0,0],[0,0,4]]),
+               path('moving-path','moving',[[0,0,0],[20,0,0]])]
+        for ordered in [paths,list(reversed(paths))]:
+            self.shot['path_bindings']=ordered
+            before=deepcopy(self.bundle)
+            out=self.evaluate(5)
+            np.testing.assert_allclose(np.asarray(out['nodes']['mesh']['world_matrix'])[:3,3],
+                                       [0,0,1],atol=1e-12)
+            np.testing.assert_allclose(np.asarray(out['nodes']['moving']['world_matrix'])[:3,3],
+                                       [5,0,0],atol=1e-12)
+            self.assertEqual(self.bundle,before)
 
 
 if __name__=='__main__':unittest.main()
