@@ -266,6 +266,40 @@ class ReferencePass:
         return self.verify(list(self.refs.values()),force=True)
 
 
+def _peak_memory_bytes():
+    """Native lifetime process peak, conservatively including prior work.
+
+    Owners execute in this process, so a reservation covers its whole resident
+    working set. This is an admission/result gate, not an OS allocation sandbox.
+    """
+    try:
+        import resource
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return int(rss if sys.platform == 'darwin' else rss * 1024)
+    except ImportError:
+        if sys.platform != 'win32':
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+            class Counters(ctypes.Structure):
+                _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD)] + [
+                    (name, ctypes.c_size_t) for name in ('PeakWorkingSetSize', 'WorkingSetSize',
+                    'QuotaPeakPagedPoolUsage', 'QuotaPagedPoolUsage', 'QuotaPeakNonPagedPoolUsage',
+                    'QuotaNonPagedPoolUsage', 'PagefileUsage', 'PeakPagefileUsage')]
+            counters = Counters(); counters.cb = ctypes.sizeof(counters)
+            kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel.GetCurrentProcess.restype = wintypes.HANDLE
+            query = ctypes.WinDLL('psapi', use_last_error=True).GetProcessMemoryInfo
+            query.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+            query.restype = wintypes.BOOL
+            if query(kernel.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+                return int(counters.PeakWorkingSetSize)
+        except (OSError, AttributeError):
+            pass
+        return None
+
+
 class Admission:
     def __init__(self, root, *, policy, owners=(), clock=None):
         self.root = Path(root).resolve(strict=True)
@@ -457,6 +491,11 @@ class Admission:
             if gates:
                 item.update(outcome='failed', unsatisfied_gates=sorted(set(gates)))
                 return item  # A fallback never waives a hard gate.
+            peak = _peak_memory_bytes()
+            if peak is None or peak > check['resources']['memory_bytes']:
+                item.update(outcome='failed', error='CONTINUITY_CAPABILITY_LIMIT: process peak memory unavailable or exceeds reservation',
+                    unsatisfied_gates=['resource-memory_bytes'])
+                return item
             try:
                 references.verify(snap['evidence'])
                 if exhausted():return item
@@ -470,6 +509,11 @@ class Admission:
                         return item
                     if canceled():
                         item.update(outcome='canceled', unsatisfied_gates=['cancellation'])
+                        return item
+                    peak = _peak_memory_bytes()
+                    if peak is None or peak > check['resources']['memory_bytes']:
+                        item.update(outcome='failed', error='CONTINUITY_CAPABILITY_LIMIT: reservation exceeded process memory budget',
+                            unsatisfied_gates=['resource-memory_bytes'])
                         return item
                     result = adapter.execute(deepcopy(check))
                     # Exact source hashes are checked again before declaring any
@@ -518,14 +562,12 @@ class Admission:
                     if 'visual-approval' not in missing: missing.append('visual-approval')
                     item['unsatisfied_gates'].append('visual-approval')
                 measurements = deepcopy(result['measurements']) or {}
-                try:
-                    import resource
-                    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                    peak = int(rss if sys.platform == 'darwin' else rss*1024)
-                except ImportError:
-                    peak = None
+                peak = _peak_memory_bytes()
+                if peak is None or peak > check['resources']['memory_bytes']:
+                    status = 'failed'
+                    item['unsatisfied_gates'].append('resource-memory_bytes')
                 measurements['admission_resources'] = dict(wall_seconds=elapsed, process_cpu_seconds=cpu_used,
-                    process_peak_rss_bytes=peak, rss_scope='whole-process lifetime peak; not per-operation allocation',
+                    process_peak_rss_bytes=peak, rss_scope='whole-process lifetime peak; enforced conservatively against reservation; not an OS allocation sandbox',
                     rss_status='unavailable' if peak is None else 'measured')
                 item.update(outcome=status, evidence=result['evidence'], measurements=measurements,
                     missing_fields=missing, limitations=[*item['limitations'], *result['limitations']], elapsed_seconds=elapsed)

@@ -44,7 +44,13 @@ Complete admission CPU/wall accounting includes request validation, integrity
 hashing, native operations, schema checks and bounded report preparation. Budget
 is enforced again after final digest emission; the timing measurement itself is
 taken before that digest to avoid a self-referential hash. CPU and disk reservations are summed over the complete request; peak memory/GPU
-ceilings apply to serial checks. Native evidence emission enforces its disk
+ceilings apply to serial checks. Each selected owner is gated before reservation,
+after reservation and after execution against the native whole-process lifetime
+peak resident memory (including previous work in that process). An unavailable
+measurement or an exceeded reservation fails closed; historical process peaks
+can therefore reject a check conservatively. This prevents a successful result
+from waiving its measured memory ceiling, but does not prevent an in-flight
+allocation or provide hard memory isolation. Native evidence emission enforces its disk
 reservation before writing. Working-memory estimates are admission bounds, not
 OS allocation enforcement. The host must authorize the explicit owner probe before registering it. Creating
 a `RigOwner` or `ImageMastersOwner` is an explicit real probe, not passive discovery.
