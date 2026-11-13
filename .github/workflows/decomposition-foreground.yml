@@ -30,7 +30,8 @@ jobs:
       - name: Strict contracts and actual model masks
         run: |
           set -o pipefail
-          python -m unittest discover -s tests -p 'test_decomposition_foreground*.py' -v 2>&1 | tee foreground-tests.log
+          python -m unittest discover -s tests -p test_decomposition_foreground.py -v 2>&1 | tee foreground-tests.log
+          python -m unittest discover -s tests/optional -p test_decomposition_foreground_backend.py -v 2>&1 | tee foreground-native-tests.log
         env:
           HATCH_FOREGROUND_BACKEND_TEST: '1'
           HATCH_FOREGROUND_WEIGHTS: ${{ github.workspace }}/foreground-inputs/model.pth
@@ -42,6 +43,7 @@ jobs:
           name: foreground-instance-${{ github.sha }}
           path: |
             foreground-tests.log
+            foreground-native-tests.log
             foreground-evidence
           if-no-files-found: error
           retention-days: 30

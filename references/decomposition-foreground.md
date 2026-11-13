@@ -79,7 +79,9 @@ later does not turn these whole-object masks into anatomical parts. Use existing
 
 `tests/test_decomposition_foreground.py` uses explicitly synthetic fixture
 receipts to test validation, overlap, malicious paths and alpha preservation; it
-is not model-quality evidence. Optional real-model tests use the retained NASA
+is not model-quality evidence. Optional real-model tests in `tests/optional/` run through their dedicated CI
+job, keeping optional dependencies outside the strict core delivery suite. They
+use the retained NASA
 astronaut photograph and explicitly provided Penn-Fudan photographs. Dataset
 masks are used only after inference to measure output quality, never as inputs.
 Even accurate foreground segmentation is insufficient to close automatic
