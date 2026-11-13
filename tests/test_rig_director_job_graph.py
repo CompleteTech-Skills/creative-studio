@@ -77,6 +77,35 @@ class GraphBindingsTests(unittest.TestCase):
             graph_sha256=registered['graph_sha256'],job_revision=before['revision'])
         self.assertEqual(self.store.status(self.job),before)
 
+    def test_event_view_uses_native_bounded_history(self):
+        self.adapter.register('mvp',self.graph,self.binding,self.root)
+        with self.store._transaction() as db:
+            for index in range(1005):self.store._event(db,self.job,'history-regression',{'index':index})
+        native=self.store.status(self.job)
+        derived=self.adapter.status('mvp')['nodes']['render']
+        self.assertEqual(derived['events'],native['events'])
+        self.assertEqual(len(derived['events']),1000)
+
+    def test_aggregate_input_budget_rejected_before_any_file_read(self):
+        # A small cap exercises admission without allocating oversized payloads.
+        from unittest.mock import patch
+        import director_contracts as dc
+        graph=deepcopy(self.graph)
+        extra=deepcopy(graph['nodes'][0]['inputs'][0])
+        extra.update(artifact_id='other',path='other.json')
+        graph['nodes'][0]['inputs'].append(extra)
+        with patch.object(dc,'MAX_TOTAL_BYTES',extra['byte_size']),patch.object(dc,'_read_artifact') as read:
+            with self.assertRaises(RigError):self.adapter.register('too-large',graph,self.binding,self.root)
+            read.assert_not_called()
+
+    def test_tampered_native_payload_rejects_resume_before_native_state_change(self):
+        registered=self.adapter.register('mvp',self.graph,self.binding,self.root)
+        before=self.store.status(self.job)
+        (self.root/'snapshot/triangle.obj').write_bytes(b'changed payload')
+        with self.assertRaises(RigError):self.adapter.resume_node('mvp','render',None,graph_revision=1,
+            graph_sha256=registered['graph_sha256'],job_revision=before['revision'])
+        self.assertEqual(self.store.status(self.job),before)
+
     def test_graph_cannot_substitute_unrelated_valid_input_for_native_snapshot(self):
         graph=deepcopy(self.graph)
         original=graph['nodes'][0]['inputs'][0]

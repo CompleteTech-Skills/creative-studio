@@ -36,13 +36,20 @@ class RenderGraphBindings:
     def _validate(self, graph, bindings, root):
         from jsonschema import Draft202012Validator
         import director_contracts as dc
+        pending=[(graph,0)];count=0
+        while pending:
+            value,depth=pending.pop();count+=1
+            _require(count<=65536 and depth<=64, 'Graph exceeds object/depth bounds.')
+            if isinstance(value,dict):pending.extend((item,depth+1) for item in value.values())
+            elif isinstance(value,list):pending.extend((item,depth+1) for item in value)
+        _require(len(_json(graph).encode())<=dc.MAX_BYTES, 'Graph exceeds the native document byte bound.')
         schema = dc.schemas()['director.schema.json']
         Draft202012Validator({'$defs':schema['$defs'], '$ref':'#/$defs/output-execution-graph'}).validate(graph)
         _require(not graph['edges'], 'MVP graph bindings support independent render nodes; materialize dependencies before binding.')
         nodes = {node['id']:node for node in graph['nodes']}
         _require(len(nodes) == len(graph['nodes']) and isinstance(bindings,dict) and set(bindings)==set(nodes),
                  'Bind every unique render node exactly once.')
-        jobs = []
+        jobs = [];files={};identities={};total=0
         for identifier,node in nodes.items():
             _require(node['operation']=='RenderAdapter.submit', 'Only native render nodes are supported by this MVP adapter.')
             binding = bindings[identifier]
@@ -53,8 +60,18 @@ class RenderGraphBindings:
             jobs.append(binding['job'])
             _require(node['inputs'], 'Render node must retain exact native inputs.')
             for artifact in dc.artifact_references(node['inputs']):
-                dc._read_artifact(root,artifact)
+                path=artifact['path']
+                identity=(artifact['artifact_id'],artifact['semantic_version'])
+                _require(identity not in identities or identities[identity]==artifact, 'Conflicting exact graph input identity.')
+                identities[identity]=artifact
+                if path in files:
+                    _require(files[path]==artifact, 'Conflicting exact graph input path.')
+                    continue
+                files[path]=artifact;total+=artifact['byte_size']
+                _require(len(files)<=dc.MAX_FILES and total<=dc.MAX_TOTAL_BYTES, 'Graph input closure exceeds native file/byte bounds.')
         _require(len(jobs)==len(set(jobs)), 'A native job cannot implement multiple graph nodes.')
+        # Admit the complete unique closure before opening any artifact.
+        for artifact in files.values():dc._read_artifact(root,artifact)
 
     def _native(self, db, bindings, graph):
         records = {}
@@ -71,7 +88,7 @@ class RenderGraphBindings:
             from render3d_contracts import make_frame_spec
             make_frame_spec(request,request['frame_range']['start'],Path(row['snapshot'])/'snapshot.json')
             frames = [dict(frame) for frame in db.execute('SELECT frame,state,attempts,pid,token,heartbeat,error FROM frames WHERE job=? ORDER BY frame',(binding['job'],))]
-            events = [dict(event) for event in db.execute('SELECT seq,at,event,detail FROM events WHERE job=? ORDER BY seq',(binding['job'],))]
+            events = [dict(event) for event in db.execute('SELECT seq,at,event,detail FROM (SELECT seq,at,event,detail FROM events WHERE job=? ORDER BY seq DESC LIMIT 1000) ORDER BY seq',(binding['job'],))]
             records[identifier] = dict(job=row['id'],revision=row['revision'],state=row['state'],frames=frames,events=events)
         return records
 
@@ -88,7 +105,7 @@ class RenderGraphBindings:
             _require(revision==expected_revision, 'Graph revision is stale.')
             self._native(db,bindings,graph)
             db.execute('INSERT INTO director_graphs VALUES(?,?,?,?,?,?)',
-                       (identifier,revision+1,_json(graph),object_hash(graph),_json(bindings),root))
+                       (identifier,revision+1,_json(graph),object_hash(dict(graph=graph,bindings=bindings)),_json(bindings),root))
         return self.status(identifier,revision=revision+1)
 
     def status(self, identifier, *, revision=None, expected_sha256=None):
@@ -100,7 +117,7 @@ class RenderGraphBindings:
                 row = db.execute('SELECT * FROM director_graphs WHERE id=? AND revision=?',(identifier,revision)).fetchone()
             _require(row is not None, 'Unknown graph revision.')
             graph,bindings = json.loads(row['definition']),json.loads(row['bindings'])
-            _require(object_hash(graph)==row['graph_hash'] and
+            _require(object_hash(dict(graph=graph,bindings=bindings))==row['graph_hash'] and
                      (expected_sha256 is None or expected_sha256==row['graph_hash']), 'Graph hash differs from the pinned revision.')
             self._validate(graph,bindings,row['input_root'])
             nodes = self._native(db,bindings,graph)
@@ -108,12 +125,19 @@ class RenderGraphBindings:
             # This is a derived view, never a second scheduler or stored state.
             state = 'complete' if all(value=='complete' for value in states) else 'running' if 'running' in states else 'failed' if 'failed' in states else 'cancelled' if 'cancelled' in states else 'queued'
             return dict(id=identifier,revision=row['revision'],graph_sha256=row['graph_hash'],
-                        graph=graph,bindings=bindings,state=state,nodes=nodes)
+                        graph=graph,definition_sha256=object_hash(graph),bindings=bindings,state=state,nodes=nodes)
 
     def resume_node(self, identifier, node, verifier, *, graph_revision, graph_sha256, job_revision):
         pinned = self.status(identifier,revision=graph_revision,expected_sha256=graph_sha256)
         _require(node in pinned['bindings'], 'Unknown graph node.')
         from director_reliability import resume_verified_job
+        from render3d_snapshot import Scene3DAdapter, NativeRigAdapter, verify_snapshot
+        from rig_errors import read_json
+        native = self.store.status(pinned['bindings'][node]['job'],event_limit=0)
+        metadata = read_json(Path(native['snapshot'])/'snapshot.json')
+        scope = metadata.get('scope')
+        _require(scope in ('scene3d','native-rig-preview'), 'Unsupported native snapshot scope.')
+        verify_snapshot(native['snapshot'],Scene3DAdapter() if scope=='scene3d' else NativeRigAdapter())
         receipt = resume_verified_job(self.store,pinned['bindings'][node]['job'],verifier,expected_revision=job_revision)
         receipt['graph'] = dict(id=identifier,revision=graph_revision,sha256=graph_sha256,node=node)
         return receipt

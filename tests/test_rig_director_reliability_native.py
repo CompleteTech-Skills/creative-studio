@@ -90,6 +90,27 @@ class NativeReliabilityTests(unittest.TestCase):
         store = JobStore(root/'jobs')
         job = store.submit(req, root/'snapshot', identity)
         graph, bindings = graph_for_job(store,job)
+        discovery_job = discovery_request = None
+        if source:
+            discovery_request = deepcopy(req)
+            discovery_ref = next(item for item in project['shots'] if item['id']=='discovery')
+            discovery = bundle['documents'][discovery_ref['path']]
+            discovery_request.update(id='director-reliability-discovery',
+                shot={key:discovery[key] for key in ('id','version')},camera=discovery['camera'],
+                frame_range=dict(start=count,end=count*2))
+            discovery_request['destination']['path']='render/discovery'
+            discovery_job=store.submit(discovery_request,root/'snapshot',identity)
+            other_graph,other_bindings=graph_for_job(store,discovery_job)
+            other_graph['nodes'][0]['id']='render-discovery'
+            graph['nodes'].extend(other_graph['nodes'])
+            bindings['render-discovery']=other_bindings['render']
+        if source:
+            project_path=root/'snapshot/project.json'
+            from rig_errors import sha256
+            project_input=dict(artifact_id='director-project-revision',kind='scene3d-project',schema_version=1,
+                semantic_version=project['version'],path='snapshot/project.json',sha256=sha256(project_path),
+                byte_size=project_path.stat().st_size,media_type='application/json',provenance_ref=None,fixture=True,dependencies=[])
+            for node in graph['nodes']:node['inputs'].append(deepcopy(project_input))
         graphs = RenderGraphBindings(store)
         graph_receipt = graphs.register('director-mvp',graph,bindings,root)
         self.assertEqual(RenderGraphBindings(JobStore(root/'jobs')).status('director-mvp')['state'],'queued')
@@ -150,21 +171,35 @@ raise AssertionError('Actual worker completed before cancellation')
         cache = root/'jobs/cache'/frame['cache_key']
         record = json.loads((cache/'cache.json').read_text())
         (cache/record['result']['images'][0]['file']['path']).write_bytes(b'corrupt cached frame')
+        missing_frame = store.status(job)['frames'][1]
+        missing_cache = root/'jobs/cache'/missing_frame['cache_key']
+        missing_record = json.loads((missing_cache/'cache.json').read_text())
+        (missing_cache/missing_record['result']['images'][0]['file']['path']).unlink()
         state = store.status(job)
         repaired = graphs.resume_node('director-mvp','render',verify,graph_revision=graph_receipt['revision'],
             graph_sha256=graph_receipt['graph_sha256'],job_revision=state['revision'])
-        self.assertEqual(repaired['verified_preserved_frames'],list(range(1,count)))
-        self.assertEqual(repaired['pending_frames'],[0])
+        self.assertEqual(repaired['verified_preserved_frames'],list(range(2,count)))
+        self.assertEqual(repaired['pending_frames'],[0,1])
         rerendered = []
         while (run := store.run_one(backend,verify,job=job)) is not None:
             rerendered.append(run['lease']['frame'])
-        self.assertEqual(rerendered,[0])
+        self.assertEqual(rerendered,[0,1])
         delivered = store.materialize(job,root/'delivery',verify)
         decoded = verify(req,delivered,root/'delivery')
         self.assertEqual(decoded['decoded_frames'],count)
+        discovery_verification = None
+        if discovery_job:
+            while store.run_one(backend,verify,job=discovery_job) is not None:
+                pass
+            discovery_result=store.materialize(discovery_job,root/'discovery-delivery',verify)
+            discovery_verification=verify(discovery_request,discovery_result,root/'discovery-delivery')
+            self.assertEqual(discovery_verification['decoded_frames'],count)
+            self.assertEqual(graphs.status('director-mvp')['state'],'complete')
+            self.assertEqual(len(graphs.status('director-mvp')['nodes']),2)
         atomic_json(root/'director-reliability-evidence.json', dict(schema_version=1,
             kind='director-native-reliability-proof',job=job,native_worker_pids=native_pids,
-            source_scene_project=source,frame_count=count,graph=graphs.status('director-mvp'),
+            source_scene_project=source,frame_count=count+(count if discovery_job else 0),graph=graphs.status('director-mvp'),
+            discovery_verification=discovery_verification,
             interrupted_graph=running_graph,
             cancellation_log='cancel-worker.log',resume=receipt,tamper_repair=repaired,
-            rerendered_frames=rerendered,verification=decoded,fixture=True,visual_review='not-performed'))
+            rerendered_frames=rerendered,corrupt_frames=[0],missing_frames=[1],verification=decoded,fixture=True,visual_review='not-performed'))

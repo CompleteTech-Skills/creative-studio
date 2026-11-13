@@ -49,3 +49,19 @@ implementation of the broader execution service or compiler. The native proof
 reopens this same graph mapping, observes the native controller lease while an
 actual Blender worker exists, cancels and resumes through the pinned graph
 revision, and checks the final state derived from native jobs/events.
+
+Graph input admission checks the complete unique closure and canonical file/byte
+bounds before reading payloads; duplicate exact references are read once and
+conflicting path/identity references fail. Graph responses retain at most the
+latest 1000 native events per job, matching the native owner's default bounded
+history. `graph_sha256` commits both the definition and exact native bindings;
+`definition_sha256` identifies the canonical graph definition separately. Resume
+also verifies the complete native source snapshot before changing queued state.
+
+The full MVP integration mode binds both 60-frame shots as two independent native
+jobs in one durable graph. It interrupts the first job after a valid frame,
+resumes that same identity, then corrupts one cached PNG and removes another.
+Only those two frames return to rendering; the other verified frames survive.
+The second actual shot runs through its own canonical native job. This is a
+separate durability acceptance run and preserves the issue #30 batch render
+artifacts unchanged. Both resulting 60-frame deliveries are independently decoded.
