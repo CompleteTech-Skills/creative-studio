@@ -389,6 +389,10 @@ def slug(text: str) -> str:
 @contextmanager
 def job_lock(root: str | Path) -> Iterator[None]:
     """OS locks release on process exit; the lock inode is never replaced."""
+    capability,_,suffix = _directory_anchor(root)
+    require(capability is None or bool(suffix), 'RIG_DIRECTORY_LOCK',
+            'A writer needs a descendant root so its sibling lock stays inside directory authority. '
+            'Activate the parent directory capability when writing an existing rig root.')
     root = normalize_root(root)
     root.parent.mkdir(parents=True, exist_ok=True)
     lock = root.parent / ('.' + root.name + '.rig.lock')

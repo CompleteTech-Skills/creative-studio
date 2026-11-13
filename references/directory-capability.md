@@ -56,3 +56,10 @@ with directory-relative nofollow flags and closes all owned FDs on exit. It yiel
 `None` for ordinary or unregistered roots; callers must then apply their ordinary
 strict directory-opening policy rather than granting procfd authority. This is
 intended for nested publishers that need a parent FD inside an existing stage.
+
+Writers retain the ordinary sibling lock convention. A descriptor capability
+for the rig's **parent** directory supports `job_lock(capability.path / 'rig')`,
+including the same exclusive lock inode as other writers. `job_lock` on the
+capability root itself fails with `RIG_DIRECTORY_LOCK`: that root descriptor does
+not authorize a sibling lock outside its directory. Activate the parent authority
+for such writes. Read-only `load_rig(capability.path)` remains supported.
