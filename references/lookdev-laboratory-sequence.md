@@ -23,7 +23,9 @@ The fixed fixture exercises these parts of mandatory demonstrations B, H and I:
   differences must exceed .01 average RGB for illumination and rotation.
 - H: one versioned engineering character with body and eyes semantic slots,
   rendered in three shots across a studio and warm scene. Exact material
-  references, actual object assignments and character digest stay identical.
+  references, actual polygon-selected material slots and character digest stay
+  identical. Every selected datablock must match the separately resolved plan
+  and effective material digest; object labels alone cannot pass the check.
   Shots 1/2 share an exact light reference; shot 3 explicitly changes the light.
   Camera changes never rewrite canonical material data.
 - I: eight numbered frames at four fps. Absolute frame evaluation translates an

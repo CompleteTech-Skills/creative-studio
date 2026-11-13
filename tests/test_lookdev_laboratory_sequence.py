@@ -2,8 +2,9 @@
 import sys
 from pathlib import Path
 import unittest
+from types import SimpleNamespace
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from lookdev_laboratory_sequence import frame_parameters,frame_documents,light_document,material_document
+from lookdev_laboratory_sequence import frame_parameters,frame_documents,light_document,material_document,inspect_mesh_assignment
 from lookdev_contracts import Registry,canonical_bytes
 from lookdev_blender import material_plan
 from lookdev_lighting import light_plan
@@ -28,6 +29,18 @@ class SequenceTests(unittest.TestCase):
             self.assertEqual(plan['energy'],state['watts'])
             document_hashes.add(plan['sha256']);references.add((light['id'],light['version']))
         self.assertEqual(len(document_hashes),8);self.assertEqual(len(references),8)
+
+    def test_actual_face_binding_rejects_labels_without_correct_material(self):
+        expected={'sha256':'correct-plan','effective_sha256':'correct-effective'}
+        material={'hatch_plan_sha256':'wrong-plan','hatch_effective_sha256':'correct-effective'}
+        obj=SimpleNamespace(type='MESH',data=SimpleNamespace(
+            polygons=[SimpleNamespace(material_index=0)],materials=[material]))
+        with self.assertRaises(RigError):inspect_mesh_assignment(obj,expected)
+        material['hatch_plan_sha256']='correct-plan'
+        obj.data.polygons[0].material_index=1
+        with self.assertRaises(RigError):inspect_mesh_assignment(obj,expected)
+        obj.data.polygons=[]
+        with self.assertRaises(RigError):inspect_mesh_assignment(obj,expected)
 
     def test_documents_do_not_alias_shared_palette_or_transform(self):
         value=material_document('body');other=material_document('body')

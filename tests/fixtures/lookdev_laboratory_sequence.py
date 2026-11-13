@@ -9,7 +9,7 @@ job=json.loads(Path(sys.argv[sys.argv.index('--')+1]).read_text());sys.path.inse
 from lookdev_contracts import Registry,canonical_bytes,content_hash
 from lookdev_blender import material_plan,build_material,assign_material
 from lookdev_lighting import light_plan,build_light,build_environment
-from lookdev_laboratory_sequence import material_document,light_document,frame_documents
+from lookdev_laboratory_sequence import material_document,light_document,frame_documents,inspect_mesh_assignment
 from verify_lookdev_lighting import reset,render,radiance_fixture
 root=Path(job['destination']);outputs=[]
 
@@ -91,7 +91,10 @@ for index in range(3):
         scene.camera.location=(-2.5,-4,1.7)
         scene.camera.rotation_euler=(Vector((0,0,.7))-scene.camera.location).to_track_quat('-Z','Y').to_euler()
     pixels=capture('shot-'+str(index+1))
-    assignments={obj.name:{'slot':obj['hatch_semantic_slot'],'reference':json.loads(obj['hatch_material_reference'])}
+    expected_plans={'body':plan_material(material_document('canonical-body')),
+        'eyes':plan_material(material_document('canonical-eye',base_color=[.005,.005,.005,1],roughness=.2))}
+    assignments={obj.name:{'slot':obj['hatch_semantic_slot'],'reference':json.loads(obj['hatch_material_reference']),
+                 'actual_mesh':inspect_mesh_assignment(obj,expected_plans[obj['hatch_semantic_slot']])}
                  for obj in bpy.data.objects if obj.name.startswith('character-')}
     assert len(assignments)==3
     assert all(v['reference']==refs[v['slot']] for v in assignments.values())

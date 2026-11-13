@@ -56,6 +56,25 @@ def frame_documents(frame):
     return state,body,light
 
 
+def inspect_mesh_assignment(obj,expected_plan):
+    """Inspect actual polygon-selected material datablocks, not object labels."""
+    require(obj.type=='MESH' and len(obj.data.polygons)>0,'LOOKDEV_LAB_ASSIGNMENT','Expected a nonempty actual mesh.')
+    counts={}
+    for face in obj.data.polygons:
+        index=face.material_index
+        require(type(index) is int and 0<=index<len(obj.data.materials),
+                'LOOKDEV_LAB_ASSIGNMENT','Polygon references a missing material slot.')
+        material=obj.data.materials[index]
+        require(material is not None and material.get('hatch_plan_sha256')==expected_plan['sha256']
+                and material.get('hatch_effective_sha256')==expected_plan['effective_sha256'],
+                'LOOKDEV_LAB_ASSIGNMENT','Actual polygon material differs from the expected canonical plan.')
+        counts[index]=counts.get(index,0)+1
+    return {'polygons':len(obj.data.polygons),'actual_slots':[
+        {'index':index,'faces':count,'material':obj.data.materials[index].name,
+         'plan_sha256':obj.data.materials[index]['hatch_plan_sha256'],
+         'effective_sha256':obj.data.materials[index]['hatch_effective_sha256']} for index,count in sorted(counts.items())]}
+
+
 def run(destination,blender,python_site=None,temporary_root=None):
     destination=Path(destination).resolve();destination.mkdir(parents=True,exist_ok=False)
     inputs=sorted((ROOT/'scripts').glob('*.py'))+sorted((ROOT/'profiles').glob('*.json'))+[
