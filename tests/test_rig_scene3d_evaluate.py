@@ -193,5 +193,35 @@ class SceneEvaluationTests(unittest.TestCase):
         out['nodes']['mesh']['material_overrides'][0]['material']['sha256']='0'*64
         with self.assertRaises(RigError):resolve_materials(out,registry)
 
+    def test_camera_owner_projects_both_native_models_and_rejects_inherited_scale(self):
+        from scene3d_evaluate import camera_matrices
+        out=self.evaluate()
+        before=deepcopy(out)
+        mapped=camera_matrices(out,dict(width=640,height=480))
+        self.assertAlmostEqual(mapped['projection_matrix'][1][1],
+                               1/np.tan(out['nodes']['camera']['camera']['vertical_fov']/2))
+        self.assertEqual(out,before)
+        out['nodes']['camera']['camera']['projection']='orthographic'
+        out['nodes']['camera']['camera']['orthographic_height']=8
+        mapped=camera_matrices(out,dict(width=640,height=480))
+        self.assertAlmostEqual(mapped['projection_matrix'][1][1],.25)
+        self.assertEqual(mapped['optics']['projection']['type'],'orthographic')
+        out['nodes']['camera']['world_matrix'][0][0]=2
+        with self.assertRaises(ValueError):camera_matrices(out,dict(width=640,height=480))
+
+    def test_scenes_share_asset_identity_but_not_instance_animation(self):
+        other=deepcopy(self.scene);other['id']='other-scene'
+        other['nodes'][1]['transform']['translation']=[10,0,0]
+        other_shot=deepcopy(self.shot);other_shot['id']='other-shot'
+        other_shot['scene']=dict(other_shot['scene'],id='other-scene',path='other-scene.json')
+        other_shot['tracks']=[];other_shot['bindings']=[]
+        self.bundle['documents'].update({'other-scene.json':other,'other-shot.json':other_shot})
+        before=deepcopy(self.bundle)
+        first=self.evaluate(12)
+        second=evaluate_scene(self.bundle,'other-scene','other-shot',12)
+        self.assertEqual(first['nodes']['mesh']['asset'],second['nodes']['mesh']['asset'])
+        self.assertNotEqual(first['nodes']['mesh']['world_matrix'],second['nodes']['mesh']['world_matrix'])
+        self.assertEqual(self.bundle,before)
+
 
 if __name__=='__main__':unittest.main()
