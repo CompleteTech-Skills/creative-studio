@@ -45,4 +45,22 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'generate',record['parameters
             from asset_library_import import _gltf_json
             document,_=_gltf_json(self.fixture.library.read_file(reference,'runtime/asset.glb'),'glb')
             self.assertTrue(document.get('animations'))
+            from rig_gltf import read_gltf
+            import numpy as np
+            measured=self.fixture.root/(primitive+'-measured.glb')
+            measured.write_bytes(self.fixture.library.read_file(reference,'runtime/asset.glb'))
+            decoded=read_gltf(measured);movement=[]
+            for animation in decoded.json['animations']:
+                for channel in animation['channels']:
+                    target=channel['target'];node=decoded.json['nodes'][target['node']]
+                    if target['path']!='translation' or 'mesh' not in node:continue
+                    sampler=animation['samplers'][channel['sampler']]
+                    translations=decoded.accessor(sampler['output'])
+                    primitive_data=decoded.json['meshes'][node['mesh']]['primitives'][0]
+                    points=decoded.accessor(primitive_data['attributes']['POSITION'])
+                    first=points+translations[0];last=points+translations[-1]
+                    movement.append(float(np.max(np.linalg.norm(last-first,axis=1))))
+            self.assertTrue(movement)
+            self.assertGreater(max(movement),.9)
+
         self.assertEqual(len(self.fixture.library.list_references()),2)
