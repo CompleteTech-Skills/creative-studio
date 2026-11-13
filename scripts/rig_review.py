@@ -2,6 +2,7 @@
 from rig_contracts import validate_contract
 from rig_errors import atomic_json, object_hash, require, safe_path, sha256
 from rig_models import rig_signature
+from rig_jobs import write_rig_manifest, retain_artifact
 from rig_validation import REVIEW_DIMENSIONS, validate_rig
 
 
@@ -20,9 +21,9 @@ def apply_review(rig, receipt):
         require(validate_rig(rig,require_animation=True)['ok'],'RIG_REVIEW_VALIDATION','Resolve failed numerical checks before visual approval.')
         require(not any(u['resolution']=='pending' for u in rig.manifest['uncertainties']),
                 'RIG_REVIEW_UNCERTAINTY','Resolve anatomical uncertainties before approval.')
-    name='review/'+object_hash(receipt)+'.json';target=safe_path(rig.root,name);atomic_json(target,receipt)
+    name=retain_artifact(rig.root, 'review', receipt);target=safe_path(rig.root,name)
     rig.manifest['review']['receipts'].append(dict(path=name,sha256=sha256(target)))
     rig.manifest['review']['status']='approved' if approved else 'rejected' if 'rejected' in verdicts else 'pending'
-    atomic_json(rig.root/'rig.json',validate_contract(rig.manifest,'Rig'))
+    write_rig_manifest(rig.root, rig.manifest)
     return dict(status=rig.manifest['review']['status'],fixture=receipt['fixture'],production_artwork_approved=False,
                 note='Visual approval applies only to this rig and its declared source classification.')

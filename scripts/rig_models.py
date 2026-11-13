@@ -403,9 +403,9 @@ def rig_signature(manifest: dict) -> str:
     return object_hash({k: v for k, v in manifest.items() if k not in ('review', 'validation')})
 
 
-def load_rig(root: str | Path, verify_source: bool = True) -> RigAsset:
+def load_rig(root: str | Path, verify_source: bool = True, *, manifest_override: dict | None = None) -> RigAsset:
     root = Path(root).resolve()
-    manifest = validate_contract(read_json(root/'rig.json'), 'Rig')
+    manifest = validate_contract(read_json(root/'rig.json') if manifest_override is None else manifest_override, 'Rig')
     limits = manifest['limits']
     require(sha256(safe_path(root, 'identity.json', exists=True)) == manifest['character']['identity_sha256'],
             'RIG_IDENTITY_CHANGED', 'Character identity bytes differ from the manifest.')
