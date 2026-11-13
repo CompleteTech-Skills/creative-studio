@@ -154,10 +154,10 @@ class EditorBrowserTests(EditorHttpTests):
                 errors = []
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 page.goto(self.server.url)
-                page.wait_for_function('window.editorReady === true')
-                self.assertGreater(page.evaluate('window.hatchEditor.renderer.info.render.calls'), 0)
+                page.wait_for_function('() => window.editorReady === true')
+                self.assertGreater(page.evaluate('() => window.hatchEditor.renderer.info.render.calls'), 0)
                 page.locator('[data-id="mesh"]').click()
-                self.assertEqual(page.evaluate('window.hatchEditor.selection'), ['mesh'])
+                self.assertEqual(page.evaluate('() => window.hatchEditor.selection'), ['mesh'])
                 self.assertEqual(page.get_by_label('translation X', exact=True).input_value(), '2')
                 for view in ('top', 'left', 'front', 'perspective'):
                     page.select_option('#view', view)
@@ -168,6 +168,6 @@ class EditorBrowserTests(EditorHttpTests):
                 page.get_by_label('Filter scene objects').fill('mesh')
                 self.assertEqual(page.locator('#outliner button').count(), 1)
                 self.assertEqual(errors, [])
-                self.assertEqual(page.evaluate('window.hatchEditor.errors'), [])
+                self.assertEqual(page.evaluate('() => window.hatchEditor.errors'), [])
             finally:
                 browser.close()
