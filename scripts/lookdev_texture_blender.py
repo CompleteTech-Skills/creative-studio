@@ -43,7 +43,7 @@ def create_cached_blender_image(cache, texture, *, name, profile='browser', mip_
     receipt, levels = cache.prepare(texture, profile=profile)
     require(mip_level < len(levels), 'TEXTURE_MIP', 'Requested mip level is outside the admitted pyramid.')
     selected = levels[mip_level]
-    digest = hashlib.sha256(selected.tobytes(order='C')).hexdigest()
+    digest = hashlib.sha256(selected.astype('<f4', copy=False).tobytes(order='C')).hexdigest()
     derived = DecodedTexture(selected, 'DERIVED-FLOAT32', texture.source_sha256,
                              texture.role, texture.encoding, 4, 32)
     image = create_blender_image(derived, name=name)
@@ -52,7 +52,8 @@ def create_cached_blender_image(cache, texture, *, name, profile='browser', mip_
                       selected_float32_rgba_sha256=digest,
                       selected_bytes=selected.nbytes,
                       actual_decoded_encoding='linear-srgb' if texture.role in COLOR_ROLES else 'data',
-                      pixel_layout='float32-rgba', decoded_row_order='top-down',
+                      pixel_layout='float32-rgba', decoded_byte_order='little-endian',
+                      decoded_row_order='top-down',
                       native_row_order='bottom-up',
                       backend='Blender-float-image', adapter_version='1.0.0',
                       module_sha256=dict(_MODULE_SHA256))

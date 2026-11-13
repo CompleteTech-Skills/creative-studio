@@ -35,6 +35,7 @@ for color in ('red','blue'):
     assert receipt['selected_dimensions']==[2,2]
     assert receipt['actual_decoded_encoding']=='linear-srgb'
     assert receipt['pixel_layout']=='float32-rgba'
+    assert receipt['decoded_byte_order']=='little-endian'
     assert receipt['decoded_row_order']=='top-down'
     assert receipt['native_row_order']=='bottom-up'
     assert image.colorspace_settings.name=='Non-Color'
@@ -57,5 +58,5 @@ for receipt in reports:
         recovered=bpy.data.images[name]
         assert json.loads(recovered['texture_derivation'])==receipt
         rgba=np.array(recovered.pixels[:],np.float32).reshape(2,2,4)[::-1].copy()
-        assert hashlib.sha256(rgba.tobytes()).hexdigest()==receipt['selected_float32_rgba_sha256']
+        assert hashlib.sha256(rgba.astype('<f4',copy=False).tobytes()).hexdigest()==receipt['selected_float32_rgba_sha256']
 (out/'report.json').write_text(json.dumps({'blender':bpy.app.version_string,'receipts':reports,'render_sha256':render_hashes,'reopen':'exact-blue-image-and-derivation'},indent=2))
