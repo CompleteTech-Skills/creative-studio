@@ -62,6 +62,8 @@ class AssetBrowserServer(ThreadingHTTPServer):
             fail('LIBRARIES', 'Search and browser must share the same explicit libraries.')
         self.libraries = dict(libraries)
         self.index = index
+        from asset_browser_details import BrowserDetails
+        self.details=BrowserDetails(self.libraries,index)
         self.operations = operations
         self.token = token or secrets.token_urlsafe(32)
         if not isinstance(self.token, str) or not 24 <= len(self.token) <= 256 or not self.token.isascii() or not self.token.isprintable():
@@ -208,6 +210,7 @@ class AssetBrowserHandler(BaseHTTPRequestHandler):
                 static = {'/':(UI/'index.html','text/html; charset=utf-8'),
                           '/app.js':(UI/'app.js','text/javascript'),
                           '/inspector-tools.js':(UI/'inspector-tools.js','text/javascript'),
+                          '/details-view.js':(UI/'details-view.js','text/javascript'),
                           '/style.css':(UI/'style.css','text/css')}
                 if parsed.path in static:
                     path, mime = static[parsed.path]
@@ -239,6 +242,24 @@ class AssetBrowserHandler(BaseHTTPRequestHandler):
         if self.command != 'POST':
             fail('ROUTE', 'JSON endpoints support POST only.')
         body = self.body()
+        if path == '/api/report':
+            fields(body,('location','report'),('location','report'))
+            self.server.location(body['location'])
+            name=body['report']
+            if name not in ('dependency_graph','usage','validation','exports','diagnose','cleanup_analysis'):
+                fail('SCHEMA','Unknown read-only native report.')
+            value=body['location']['library'] if name=='cleanup_analysis' else body['location']
+            self.respond(200,getattr(self.server.details,name)(value));return
+        if path == '/api/compare':
+            fields(body,('location','other'),('location','other'))
+            self.server.location(body['location'])
+            self.respond(200,self.server.details.compare(body['location'],body['other']));return
+        if path == '/api/thumbnail':
+            self.server.location(body)
+            result=self.server.details.thumbnail(body)
+            if result is None:self.respond(204,b'','application/octet-stream')
+            else:self.respond(200,result[0],result[1])
+            return
         if path == '/api/capabilities':
             fields(body,())
             self.respond(200,self.server.capabilities());return
@@ -307,15 +328,18 @@ def main(argv=None):
     parser.add_argument('--library', required=True)
     parser.add_argument('--index', required=True)
     parser.add_argument('--port', type=int, default=8768)
+    parser.add_argument('--project', action='append',default=[],help='Explicit native project-binding ID for usage reports.')
     parser.add_argument('--jobs-root', help='Enable managed jobs in this explicit output directory.')
     parser.add_argument('--intake-root', help='Existing authorized import/package intake directory.')
     parser.add_argument('--output-root', help='Existing authorized managed output directory.')
     args=parser.parse_args(argv)
     from asset_library import AssetLibrary
     from asset_library_search import SearchIndex
-    from asset_library_versions import AssetVersions
+    from asset_library_versions import AssetVersions, ScopedResolver
     libraries={'local': AssetLibrary(args.library)}
-    index=SearchIndex(args.index,libraries,versions={"local":AssetVersions(libraries["local"])})
+    index=SearchIndex(args.index,libraries,versions={"local":AssetVersions(libraries["local"])},
+                      usage_resolver=ScopedResolver(list(libraries.items()),project_library="local") if args.project else None,
+                      project_ids=args.project)
     roots=(args.jobs_root,args.intake_root,args.output_root)
     if any(roots) and not all(roots):
         parser.error('Managed jobs require --jobs-root, --intake-root and --output-root together.')

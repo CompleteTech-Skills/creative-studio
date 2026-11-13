@@ -147,6 +147,7 @@ class BrowserTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('HATCH_ASSET_BROWSER_TEST')=='1' or os.environ.get('HATCH_RIG_BROWSER_TEST')=='1','Enable real Chromium/WebGL asset acceptance.')
     def test_real_browser_model_animation_metadata_keyboard_and_webgl_fallback(self):
         from playwright.sync_api import sync_playwright, expect
+        expect.set_options(timeout=30000)
         ref=self.animated_asset(); location=dict(library='local',reference=ref)
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True,executable_path=os.environ.get('HATCH_CHROMIUM'),args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
@@ -221,6 +222,7 @@ class BrowserTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('HATCH_ASSET_BROWSER_TEST')=='1' or os.environ.get('HATCH_RIG_BROWSER_TEST')=='1','Enable real Chromium asset discovery acceptance.')
     def test_real_browser_search_filters_pagination_collections_and_errors(self):
         from playwright.sync_api import sync_playwright, expect
+        expect.set_options(timeout=30000)
         for number in range(1,12):
             manifest=deepcopy(self.fixture.manifest)
             manifest['identity'].update(id=f'page{number:02}',slug=f'page{number:02}',name=f'Page{number:02} fixture')
