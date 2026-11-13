@@ -90,8 +90,8 @@ def apply_hand_control(rig, pose: dict, control_id: str, **parameters) -> dict:
     values = {name:parameters.get(name, 0.) for name in control['parameters']}
     for name,value in values.items():
         low,high = control['parameters'][name]
-        require(isinstance(value, Real) and not isinstance(value, (bool,np.bool_)) and math.isfinite(value)
-                and low <= value <= high, 'RIG_HAND_PARAMETERS', 'Hand actuator parameters must be finite and within their declared ranges.', asset=name)
+        require(isinstance(value, Real) and not isinstance(value, (bool,np.bool_)) and low <= value <= high
+                and math.isfinite(value), 'RIG_HAND_PARAMETERS', 'Hand actuator parameters must be finite and within their declared ranges.', asset=name)
     if control['kind'] == 'articulated-fingers':
         result = finger_controls(rig, pose, side=control['side'], fingers=control['fingers'], **values)
     else:

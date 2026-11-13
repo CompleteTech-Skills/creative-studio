@@ -94,7 +94,7 @@ class HandControlTests(unittest.TestCase):
 
     def test_invalid_parameters_pose_and_missing_bindings_fail_without_mutation(self):
         rig = self.robot;pose = neutral_pose(rig.skeleton);original = deepcopy(pose)
-        for value in (float('nan'),float('inf'),True,-.1,1.1,'one'):
+        for value in (float('nan'),float('inf'),True,-.1,1.1,'one',10**1000,-10**1000):
             with self.subTest(value=value),self.assertRaises(RigError):apply_hand_control(rig,pose,'slide:gripper-slide',amount=value)
         with self.assertRaises(RigError):apply_hand_control(rig,pose,'slide:gripper-slide',unknown=1.)
         bad = deepcopy(pose);bad['bones']['missing'] = {'translation':[0,0,0]}
