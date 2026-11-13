@@ -8,7 +8,23 @@ from rig_errors import decode_json
 from scene3d_contracts import portable_path, require, validate_document
 
 
-def evaluate_poses(graph, evaluated, documents, native_clips, root, *, sample_geometry, max_vertices):
+def evaluate_poses(graph, evaluated, documents, native_clips, root, *, verified_inventory,
+                   sample_geometry, max_vertices):
+    """Capture the trusted project closure before any native decoder runs.
+
+    This is an internal stage of ``evaluate_scene``: callers must supply its
+    evaluated active clip map, not manufacture an empty map for viewport use.
+    """
+    if not any('pose_binding' in node for node in graph.document()['nodes']):
+        return {}
+    require(root is not None, 'Pose evaluation requires the exact source root.')
+    from scene3d_capture import capture_verified_files
+    with capture_verified_files(root,verified_inventory) as admitted:
+        return _evaluate_private_poses(graph,evaluated,documents,native_clips,admitted,
+            sample_geometry=sample_geometry,max_vertices=max_vertices)
+
+
+def _evaluate_private_poses(graph, evaluated, documents, native_clips, root, *, sample_geometry, max_vertices):
     """Resolve explicit authored poses without mutating rig rest state.
 
     Native state exposes canonical pose, bone hierarchy and mesh-qualified morphs.

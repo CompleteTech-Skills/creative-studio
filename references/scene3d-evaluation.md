@@ -111,8 +111,12 @@ Exposed bone/morph state is capped at 250000 total entries across components;
 posed and animated vertices share the evaluator's output vertex budget.
 
 Consumers must use this state or reject pose-bound scenes; a binding is not
-permission to render the rig's rest pose. Renderer/browser consumption and native
-private source capture remain integration gates owned by the lifecycle adapter.
+permission to render the rig's rest pose. Before any native pose decoder runs,
+`scene3d_capture.capture_verified_files` admits the trusted bundle inventory into
+an owned private project tree. Rig, Pose, import report and hierarchy reads stay
+inside that context until native evaluation finishes. No sampler scans mutable
+sources to manufacture a trusted inventory. Renderer/browser consumption remains
+an integration gate owned by the lifecycle adapter.
 The Pose suite exercises real two-instance bone/morph deformation, imported
 components, snapshot/reopen equivalence, exact-source rejection, active-clip
 conflicts and vertex budgets. These tests are included in the hosted native
