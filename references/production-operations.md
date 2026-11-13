@@ -326,3 +326,9 @@ its immutable transform identity. `preview(...)` additionally encodes and fully
 verifies a zero-audio H.264 derivative. `review_assets(..., indices=[0,72,192])`
 publishes exact source-pixel poster bytes, bounded thumbnails and a contact sheet
 with source and output hashes; all derivatives remain visually unreviewed.
+
+Silent command `--output` reports use shared pinned exclusive publication and
+reject artifact/workspace aliases before execution. A concurrently created report
+is preserved and produces a failure. This secure file-report adapter currently
+requires Linux procfs/dirfd support; stdout JSON remains available on other
+platforms. Legacy production report behavior is unchanged.

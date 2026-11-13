@@ -56,6 +56,12 @@ class SilentCLI(unittest.TestCase):
             dispatch.assert_not_called()
             self.assertFalse(artifact.exists())
 
+    def test_legacy_error_report_shape_is_preserved(self):
+        errors=io.StringIO()
+        with tempfile.TemporaryDirectory() as temp, contextlib.redirect_stderr(errors):
+            self.assertEqual(production.main(['validate','--project',temp]),2)
+        self.assertEqual(set(json.loads(errors.getvalue())),{'error','command','provider_called'})
+
     def test_output_receipt_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp)/'receipt.json'; path.write_bytes(b'keep')

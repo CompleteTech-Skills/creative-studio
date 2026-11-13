@@ -49,14 +49,19 @@ def publish_report(output, result):
     """Use the shared exclusive authority; never replace a racing report."""
     import json
     from atomic_publish import pinned_directory, private_stage, _rename_no_replace
-    payload = (json.dumps(result, indent=2, sort_keys=True, allow_nan=False)+'\n').encode('utf-8')
-    if len(payload) > 64*1024**2:
-        raise ValueError('export report exceeds 64 MiB')
     with pinned_directory(output.parent) as parent_fd:
         with private_stage(parent_fd, prefix='.silent-report-') as (stage, stage_fd):
             temporary = stage/'report.json'
             with temporary.open('xb') as stream:
-                stream.write(payload)
+                total = 0
+                encoder = json.JSONEncoder(indent=2, sort_keys=True, allow_nan=False)
+                for chunk in encoder.iterencode(result):
+                    data = chunk.encode('utf-8')
+                    total += len(data)
+                    if total + 1 > 64*1024**2:
+                        raise ValueError('export report exceeds 64 MiB')
+                    stream.write(data)
+                stream.write(b'\n')
                 stream.flush()
                 import os
                 os.fsync(stream.fileno())
