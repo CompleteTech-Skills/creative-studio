@@ -401,6 +401,34 @@ class NormalizationPrecisionTests(unittest.TestCase):
         self.assertEqual((restored/source.name).read_bytes(),original)
         return self.bounds(self.library.read_file(result['reference'],'runtime/asset.glb')),result
 
+    def test_invalid_numeric_scales_reject_without_publication_or_source_changes(self):
+        source=self.source([[.25,.125,-.5],[2.,.125,-.5],[.25,1.5,.75]])
+        original=source.read_bytes();license_bytes=self.license.read_bytes()
+        huge=json.loads('1'+'0'*400)
+        for scale in (huge,-huge,True,False,float('nan'),float('inf'),float('-inf'),
+                      0,-1,1e-7,1e6+1.,'1'):
+            with self.subTest(scale=repr(scale)):
+                with self.assertRaises(RigError) as caught:
+                    self.pipeline.import_asset(source,identity=self.base['identity'],version='1.0.0',
+                        metadata=self.base['metadata'],license_file=self.license,fixture=True,
+                        blender_roundtrip=False,unit_scale=scale)
+                self.assertEqual(caught.exception.report['code'],'LIBRARY_IMPORT_NORMALIZATION')
+                self.assertEqual(source.read_bytes(),original)
+                self.assertEqual(self.license.read_bytes(),license_bytes)
+                with sqlite3.connect(self.library.database) as db:
+                    self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],0)
+                    self.assertEqual(db.execute('SELECT COUNT(*) FROM blobs').fetchone()[0],0)
+
+    def test_finite_integer_and_float_scales_preserve_explicit_world_bounds(self):
+        import numpy as np
+        source=self.source([[.25,.125,-.5],[2.,.125,-.5],[.25,1.5,.75]])
+        _,before=self.bounds(source.read_bytes())
+        for index,scale in enumerate((1,2,2.,.5),1):
+            with self.subTest(scale=scale,numeric_type=type(scale).__name__):
+                (_,after),result=self.imported(source,str(index)+'.0.0',unit_scale=scale)
+                self.assertEqual(result['report']['normalization']['source_unit_scale'],float(scale))
+                np.testing.assert_allclose(after,before*scale,rtol=0,atol=1e-14)
+
     def test_near_unit_scales_retain_explicit_world_bounds(self):
         import numpy as np
         source=self.source([[.25,.125,-.5],[2.,.125,-.5],[.25,1.5,.75]])
