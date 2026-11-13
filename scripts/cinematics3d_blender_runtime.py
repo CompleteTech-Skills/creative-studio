@@ -65,6 +65,17 @@ def inspect_scene(scene):
                       'aperture_blades','aperture_rotation','aperture_ratio'))
     finally:
         bpy.data.cameras.remove(camera)
+    devices=[dict(id='CPU',name='CPU',type='CPU',initialized=False)]
+    preferences=bpy.context.preferences.addons.get('cycles')
+    if preferences is not None:
+        try:
+            preferences.preferences.refresh_devices()
+            devices=[dict(id=d.id,name=d.name,type=d.type,initialized=False)
+                     for d in preferences.preferences.devices]
+            if not any(d['type']=='CPU' for d in devices):
+                devices.insert(0,dict(id='CPU',name='CPU',type='CPU',initialized=False))
+        except (RuntimeError,TypeError):
+            pass
     mappings = {
         'depth-of-field': (dof, 'Native camera DOF RNA'),
         'volumetric-fog': ('ShaderNodeVolumePrincipled' in nodes, 'Native world volume shader'),
@@ -77,7 +88,7 @@ def inspect_scene(scene):
                 transparency=hasattr(scene.render,'film_transparent'),
                 effects={key:dict(available=available,method=method,pixel_verified=False)
                          for key,(available,method) in mappings.items()},
-                rendered=False)
+                devices=devices,rendered=False)
 
 
 def _finite(value,low,high,label):
@@ -89,7 +100,7 @@ def validate_plan(plan):
     """Strict small worker protocol; host also validates original owner documents."""
     keys={'schema_version','kind','request_sha256','configuration_sha256','probe_sha256',
           'sources','camera','dof','fog','disabled','effective_settings'}
-    _require(isinstance(plan,dict) and set(plan)==keys and plan['schema_version']==1
+    _require(isinstance(plan,dict) and set(plan)==keys and type(plan['schema_version']) is int and plan['schema_version']==1
              and plan['kind']=='cinematics3d-native-plan', 'Invalid cinematic plan')
     for key in ('request_sha256','configuration_sha256','probe_sha256'):
         value=plan[key]
@@ -110,11 +121,15 @@ def validate_plan(plan):
     if plan['dof'] is not None:
         d=plan['dof']
         _require(isinstance(d,dict) and set(d)=={'enabled','focus_distance_m','f_stop','aperture_blades',
-                   'aperture_rotation_rad','anamorphic_ratio','focal_length_mm','sensor_width_mm','sensor_height_mm'},
+                   'aperture_rotation_rad','anamorphic_ratio','focal_length_mm','sensor_width_mm','sensor_height_mm',
+                   'sensor_fit','shift_x','shift_y','near_clip_m','far_clip_m'},
                  'Invalid DOF plan')
         _require(type(d['enabled']) is bool,'Invalid DOF enabled')
         for key in ('focus_distance_m','f_stop','anamorphic_ratio','focal_length_mm','sensor_width_mm','sensor_height_mm'):
             _finite(d[key],1e-9,1e9,key)
+        _require(d['sensor_fit'] in ('horizontal','vertical','auto'),'Invalid sensor fit')
+        _finite(d['shift_x'],-100,100,'shift x');_finite(d['shift_y'],-100,100,'shift y')
+        _finite(d['near_clip_m'],1e-9,1e9,'near clip');_finite(d['far_clip_m'],d['near_clip_m'],1e9,'far clip')
         _finite(d['aperture_rotation_rad'],-1e9,1e9,'aperture rotation')
         _require(type(d['aperture_blades']) is int and (d['aperture_blades']==0 or 3<=d['aperture_blades']<=32),
                  'Invalid aperture blades')
@@ -122,6 +137,10 @@ def validate_plan(plan):
         fog=plan['fog']
         _require(isinstance(fog,dict) and set(fog)=={'density_per_meter','anisotropy'},'Invalid volume plan')
         _finite(fog['density_per_meter'],0,100,'density');_finite(fog['anisotropy'],-.99,.99,'anisotropy')
+    for reference in plan['sources']:
+        _require(all(isinstance(reference[k],str) and 0<len(reference[k])<=4096 for k in reference), 'Invalid cinematic reference')
+        _require(reference['kind']=='cinematics3d-effect' and len(reference['sha256'])==64
+                 and all(c in '0123456789abcdef' for c in reference['sha256']), 'Invalid cinematic effect reference')
     return plan
 
 
@@ -133,11 +152,20 @@ def apply_frame(scene, plan):
     if plan['dof'] is not None:
         camera=scene.camera.data;d=plan['dof']
         _require(camera.type=='PERSP','Native optical DOF requires a perspective camera')
+        camera.sensor_fit=d['sensor_fit'].upper();camera.shift_x=d['shift_x'];camera.shift_y=d['shift_y']
+        camera.clip_start=d['near_clip_m'];camera.clip_end=d['far_clip_m'];camera.dof.focus_object=None
         camera.lens=d['focal_length_mm'];camera.sensor_width=d['sensor_width_mm'];camera.sensor_height=d['sensor_height_mm']
         camera.dof.use_dof=d['enabled'];camera.dof.focus_distance=d['focus_distance_m'];camera.dof.aperture_fstop=d['f_stop']
         camera.dof.aperture_blades=d['aperture_blades'];camera.dof.aperture_rotation=d['aperture_rotation_rad'];camera.dof.aperture_ratio=d['anamorphic_ratio']
-        for key,wanted in [('focus_distance',d['focus_distance_m']),('aperture_fstop',d['f_stop']),('aperture_ratio',d['anamorphic_ratio'])]:
-            _require(math.isclose(getattr(camera.dof,key),wanted,rel_tol=1e-6,abs_tol=1e-8),'Blender clamped cinematic '+key)
+        for owner,key,wanted in [(camera.dof,'focus_distance',d['focus_distance_m']),
+                (camera.dof,'aperture_fstop',d['f_stop']),(camera.dof,'aperture_ratio',d['anamorphic_ratio']),
+                (camera.dof,'aperture_rotation',d['aperture_rotation_rad']),(camera,'lens',d['focal_length_mm']),
+                (camera,'sensor_width',d['sensor_width_mm']),(camera,'sensor_height',d['sensor_height_mm']),
+                (camera,'shift_x',d['shift_x']),(camera,'shift_y',d['shift_y']),
+                (camera,'clip_start',d['near_clip_m']),(camera,'clip_end',d['far_clip_m'])]:
+            _require(math.isclose(getattr(owner,key),wanted,rel_tol=1e-6,abs_tol=1e-8),'Blender clamped cinematic '+key)
+        _require(camera.dof.aperture_blades==d['aperture_blades'] and camera.dof.use_dof==d['enabled'],
+                 'Blender changed cinematic DOF settings')
     if plan['fog'] is not None:
         _require(scene.world is not None,'Cinematic volume needs the owner world')
         scene.world.use_nodes=True;tree=scene.world.node_tree
@@ -152,8 +180,9 @@ def apply_frame(scene, plan):
         _require(node.bl_idname=='ShaderNodeVolumePrincipled','Cinematic volume name collision')
         node.inputs['Density'].default_value=plan['fog']['density_per_meter']
         node.inputs['Anisotropy'].default_value=plan['fog']['anisotropy']
-        _require(math.isclose(node.inputs['Density'].default_value,plan['fog']['density_per_meter'],rel_tol=1e-6,abs_tol=1e-8),
-                 'Blender clamped cinematic density')
+        for socket,key in [('Density','density_per_meter'),('Anisotropy','anisotropy')]:
+            _require(math.isclose(node.inputs[socket].default_value,plan['fog'][key],rel_tol=1e-6,abs_tol=1e-8),
+                     'Blender clamped cinematic '+key)
     return inspect_effective(scene,plan)
 
 
@@ -166,7 +195,10 @@ def inspect_effective(scene,plan):
         d=scene.camera.data.dof
         result['dof']=dict(enabled=d.use_dof,focus_distance_m=d.focus_distance,f_stop=d.aperture_fstop,
                            aperture_blades=d.aperture_blades,aperture_rotation_rad=d.aperture_rotation,anamorphic_ratio=d.aperture_ratio,
-                           focal_length_mm=scene.camera.data.lens)
+                           focal_length_mm=scene.camera.data.lens,sensor_width_mm=scene.camera.data.sensor_width,
+                           sensor_height_mm=scene.camera.data.sensor_height,sensor_fit=scene.camera.data.sensor_fit,
+                           shift_x=scene.camera.data.shift_x,shift_y=scene.camera.data.shift_y,
+                           near_clip_m=scene.camera.data.clip_start,far_clip_m=scene.camera.data.clip_end)
     if plan['fog'] is not None:
         node=scene.world.node_tree.nodes['hatch-cinematics-world-volume']
         result['fog']=dict(density_per_meter=node.inputs['Density'].default_value,anisotropy=node.inputs['Anisotropy'].default_value)

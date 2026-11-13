@@ -9,7 +9,7 @@ from copy import deepcopy
 import hashlib
 
 from camera3d_contracts import validate as validate_camera
-from cinematics3d_contracts import Registry, canonical_bytes, effect_registry, validate_document
+from cinematics3d_contracts import Registry, canonical_bytes, effect_registry, validate_document, portable_path
 from cinematics3d_blender_runtime import validate_plan
 from rig_errors import decode_json, finite_json, object_hash, require, RigError
 from render3d_contracts import validate as validate_render
@@ -20,7 +20,7 @@ MAPPED_EFFECTS={'exposure','tone-map','depth-of-field','volumetric-fog'}
 
 def validate_probe(value):
     finite_json(value)
-    keys={'schema_version','kind','application_version','engines','view_transforms','nodes','passes','transparency','effects','rendered'}
+    keys={'schema_version','kind','application_version','engines','view_transforms','nodes','passes','transparency','effects','rendered','devices'}
     require(isinstance(value,dict) and set(value)==keys and type(value['schema_version']) is int
             and value['schema_version']==1 and value['kind']=='cinematics3d-blender-probe',
             'CINEMATICS_PROBE','Invalid cinematic probe shape.')
@@ -30,6 +30,11 @@ def validate_probe(value):
         items=value[name]
         require(isinstance(items,list) and len(items)<=limit and all(isinstance(x,str) and 0<len(x)<=128 for x in items)
                 and len(items)==len(set(items)),'CINEMATICS_PROBE','Invalid '+name+' inventory.')
+    require(isinstance(value['devices'],list) and len(value['devices'])<=64
+            and all(isinstance(v,dict) and set(v)=={'id','name','type','initialized'}
+                    and all(isinstance(v[k],str) and 0<len(v[k])<=256 for k in ('id','name','type'))
+                    and v['initialized'] is False for v in value['devices']),
+            'CINEMATICS_PROBE','Invalid device inventory.')
     require(value['rendered'] is False and type(value['transparency']) is bool,'CINEMATICS_PROBE','Probe is not pixel evidence.')
     require(isinstance(value['passes'],dict) and set(value['passes'])=={'depth','normal','vector','cryptomatte','albedo'}
             and all(type(v) is bool for v in value['passes'].values()),'CINEMATICS_PROBE','Invalid pass inventory.')
@@ -55,12 +60,20 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
     require(request['settings']['engine']=='cycles' and request['settings']['device_policy']=='cpu',
             'CINEMATICS_BACKEND','Cinematic integration currently uses the verified Cycles CPU backend.')
     require('CYCLES' in probe['engines'],'CINEMATICS_BACKEND','Installed Blender does not expose Cycles.')
+    require(registry.get(stack_reference)['scope']!='object','CINEMATICS_UNSUPPORTED',
+            'Object-local settings require an object-aware native adapter.')
     effective=deepcopy(request);effects=registry.effective_stack(stack_reference)
     require(len(effects)<=128,'CINEMATICS_LIMIT','Too many effective effects.')
     supplied={} if input_bytes is None else input_bytes
     require(isinstance(supplied,dict) and len(supplied)<=128,'CINEMATICS_INPUT','Invalid input byte inventory.')
+    configuration={'documents/'+path:data for path,data in registry.bytes().items()}
+    for path,data in supplied.items():
+        portable_path(path)
+        require(isinstance(data,bytes) and len(data)<=2*1024**2,'CINEMATICS_INPUT','Expected bounded native input bytes.')
+        configuration['inputs/'+path]=data
+    require(sum(map(len,configuration.values()))<=16*1024**2,'CINEMATICS_LIMIT','Native configuration exceeds 16 MiB.')
     plan=dict(schema_version=1,kind='cinematics3d-native-plan',request_sha256='0'*64,
-              configuration_sha256=object_hash({path:hashlib.sha256(data).hexdigest() for path,data in registry.bytes().items()}),
+              configuration_sha256=object_hash({path:hashlib.sha256(data).hexdigest() for path,data in configuration.items()}),
               probe_sha256=object_hash(probe),sources=[],camera=request['camera'],dof=None,fog=None,disabled=[],
               effective_settings={})
     for effect in effects:
@@ -81,7 +94,10 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
             reference=effect['inputs'][0];payload=supplied.get(reference['path'])
             require(isinstance(payload,bytes) and len(payload)<=2*1024**2,'CINEMATICS_INPUT','Missing bounded optics bytes.')
             require(hashlib.sha256(payload).hexdigest()==reference['sha256'],'CINEMATICS_HASH','Changed native optics bytes.')
-            optics=validate_camera(decode_json(payload),'optics')
+            try:
+                optics=validate_camera(decode_json(payload),'optics')
+            except ValueError as exc:
+                raise RigError('CINEMATICS_INPUT',str(exc)) from exc
             require((optics['id'],optics['version'],optics['kind'])==(reference['id'],reference['version'],reference['kind']),
                     'CINEMATICS_REFERENCE','Optics identity mismatch.')
             projection=optics['projection'];dof=optics['depth_of_field']
@@ -90,7 +106,9 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
             plan['dof']=dict(enabled=params['enabled'] and dof['enabled'],focus_distance_m=dof['focus_distance_m'],
                 f_stop=dof['f_stop'],aperture_blades=dof['aperture_blades'],aperture_rotation_rad=dof['aperture_rotation_rad'],
                 anamorphic_ratio=dof['anamorphic_ratio'],focal_length_mm=projection['focal_length_mm'],
-                sensor_width_mm=projection['sensor_width_mm'],sensor_height_mm=projection['sensor_height_mm'])
+                sensor_width_mm=projection['sensor_width_mm'],sensor_height_mm=projection['sensor_height_mm'],
+                sensor_fit=projection['sensor_fit'],shift_x=projection['shift_x'],shift_y=projection['shift_y'],
+                near_clip_m=projection['near_clip_m'],far_clip_m=projection['far_clip_m'])
         elif name=='volumetric-fog':
             require(effect['scope']!='object','CINEMATICS_UNSUPPORTED','Object-local fog requires the LookDev volume owner.')
             require(plan['fog'] is None,'CINEMATICS_CONFLICT','Multiple world volume controls are ambiguous.')
@@ -104,8 +122,11 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
     plan['request_sha256']=object_hash(effective)
     plan['effective_settings']={key:deepcopy(effective['settings'][key]) for key in ('exposure','view_transform')}
     plan['effective_settings']['alpha']=effective['settings']['output']['alpha']
-    validate_plan(plan)
-    return dict(request=effective,plan=plan,executed=False)
+    try:
+        validate_plan(plan)
+    except ValueError as exc:
+        raise RigError('CINEMATICS_PLAN',str(exc)) from exc
+    return dict(request=effective,plan=plan,configuration=configuration,executed=False)
 
 
 def validate_bound_plan(plan,request):
@@ -119,3 +140,31 @@ def validate_bound_plan(plan,request):
     expected['alpha']=request['settings']['output']['alpha']
     require(plan['effective_settings']==expected,'CINEMATICS_STALE','Native effective settings differ from the render request.')
     return deepcopy(plan)
+
+
+def validate_configuration(plan, configuration):
+    require(isinstance(configuration,dict) and len(configuration)<=1152,
+            'CINEMATICS_INPUT','Invalid native configuration files.')
+    aliases=set(); total=0
+    for path,data in configuration.items():
+        portable_path(path)
+        require(path.startswith(('documents/','inputs/')) and path.casefold() not in aliases,
+                'CINEMATICS_INPUT','Invalid configuration path or alias.')
+        aliases.add(path.casefold())
+        require(isinstance(data,bytes) and len(data)<=2*1024**2,'CINEMATICS_INPUT','Invalid configuration bytes.')
+        total+=len(data)
+    require(total<=16*1024**2,'CINEMATICS_LIMIT','Native configuration exceeds 16 MiB.')
+    require(object_hash({path:hashlib.sha256(data).hexdigest() for path,data in configuration.items()})==plan['configuration_sha256'],
+            'CINEMATICS_HASH','Configuration bytes differ from the compiled plan.')
+    return dict(configuration)
+
+
+def render(registry, stack_reference, request, snapshot_root, destination, *, backend=None, input_bytes=None, cancelled=None):
+    """Compile against an actual probe and execute through the canonical owner."""
+    if backend is None:
+        from render3d_blender import BlenderBackend
+        backend=BlenderBackend()
+    probe=backend.cinematics_probe()
+    compiled=compile_plan(registry,stack_reference,request,probe,input_bytes=input_bytes)
+    return backend.render_frames(compiled['request'],snapshot_root,destination,cancelled=cancelled,
+                                 cinematics=compiled)

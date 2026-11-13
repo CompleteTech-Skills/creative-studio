@@ -1,0 +1,68 @@
+# Cinematic Blender execution adapter
+
+The optional `cinematics3d_blender` adapter compiles immutable cinematic stacks
+into the existing `render3d_blender.BlenderBackend`. It creates no geometry,
+subprocess manager, coordinate system, timeline or image verifier. The canonical
+renderer captures native Scene3D/rig sources, imports owner-sanitized GLB,
+executes its fixed Blender worker and independently decodes output before
+publishing. The adapter requires Blender 4.5 LTS and optional Render3D packages;
+ordinary 2D workflows import neither Blender nor this adapter.
+
+`BlenderBackend.cinematics_probe()` starts that worker with factory defaults,
+autoexecution disabled and bounded time, memory, storage and logs. It queries
+actual engine enums, Cycles device inventory, compositor/shader node creation,
+view transforms, camera DOF properties, transparency and auxiliary pass
+properties. Devices are discovered, not initialized or benchmarked; the only
+executable policy is currently Cycles CPU. A property/node inventory is never
+pixel evidence. Reports retain `rendered: false`, `pixel_verified: false` and
+`initialized: false`; unavailable mappings have explicit reasons.
+
+`compile_plan(registry, stack_ref, request, probe, input_bytes=...)` validates the
+native RenderRequest and cinematic registry, resolves an effective scene/shot
+stack, binds exact original configuration/optics bytes, and returns a new request
+plus a worker plan. It does not mutate caller data or render. Current mappings
+are display exposure, Standard/AgX transform, physical perspective-camera DOF
+with the referenced native Camera3D optics, and world volumetric fog. The worker
+reads back mapped properties and fails on clamping. Object-local global effects,
+multiple competing optical/volume controls, unsupported engines, motion blur
+and other unmapped effects reject explicitly. Disabled effects remain in the
+retained source configuration and produce no native operation.
+
+The probe may list an auxiliary pass as present in Blender. This does not admit
+its canonical semantics: the current renderer accepts combined output only.
+Pass conversion and motion shutter/subframe evaluation remain their existing
+owners' work. No preview is substituted when requested production behavior is
+unavailable. GPU discovery does not authorize GPU rendering.
+
+Use `render(registry, stack_ref, request, snapshot_root, destination,
+backend=..., input_bytes=...)` to probe, compile and invoke the canonical backend.
+For an already obtained probe, pass the compiler result as the optional
+`cinematics=` keyword to `BlenderBackend.render_frames`. The backend validates
+the plan/request/configuration binding before creating output directories. Its
+normal staging, supervision, cancellation, verification and exclusive
+publication continue to apply. Failed work remains unpublished diagnostic
+staging. Successful outputs include exact original files under `cinematics/`,
+the compiled plan, adapter hashes, actual worker settings, source snapshot,
+request binding and independent PNG/EXR verification. The optional editable
+`.blend` output is not implemented or claimed.
+
+Run the pure compiler/protocol tests:
+
+```sh
+PYTHONPATH=scripts:tests python -m unittest test_cinematics3d_blender -v
+```
+
+Run actual procedural geometry, PNG/EXR decoding, retained-config reopening and
+measured exposure/DOF/fog pixel comparisons in a new directory:
+
+```sh
+python scripts/cinematics3d_backend_example.py NEW_DIRECTORY --blender /path/to/blender
+```
+
+The example renders 96×96 engineering fixtures. It retains source geometry,
+camera/scene configuration, every output, original effect configuration and
+worker report. Its numerical before/after evidence is not visual approval,
+production artwork, motion-blur validation or the final three-shot film. Parent
+#238 and downstream #244–#258 remain open until their complete acceptance runs.
+For shared development hosts, acquire the coordination native-validation flock
+for the entire example invocation.

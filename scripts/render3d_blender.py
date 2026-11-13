@@ -247,6 +247,23 @@ class BlenderBackend:
                     executable_sha256=sha256(self.executable),worker_sha256=sha256(WORKER),
                     platform=platform.platform(),engine='cycles',device='cpu')
 
+    def cinematics_probe(self):
+        """Query actual native properties in a bounded, factory-startup worker."""
+        from cinematics3d_blender import validate_probe
+        from cinematics3d_blender_runtime import __file__ as runtime_file
+        runtime=Path(runtime_file); backend=self.inspect_version(); runtime_hash=sha256(runtime)
+        with tempfile.TemporaryDirectory(prefix='render3d-cinematic-probe-') as temporary:
+            root=Path(temporary); atomic_json(root/'job.json',dict(schema_version=1,mode='cinematics-probe'))
+            command=[self.executable,'--background','--factory-startup','--disable-autoexec',
+                     '--python-exit-code','1','--python',str(WORKER),'--',str(root/'job.json')]
+            _supervise(command,cwd=root,timeout=60,memory_bytes=2*1024**3,storage_bytes=16*1024**2)
+            require(sha256(self.executable)==backend['executable_sha256'] and sha256(WORKER)==backend['worker_sha256']
+                    and sha256(runtime)==runtime_hash,'stale-asset','Probe code changed during execution.')
+            probe=validate_probe(read_json(root/'cinematics-probe.json'))
+            require(probe['application_version']==backend['application_version'],
+                    'verification-failed','Probe version differs from admitted executable.')
+            return probe
+
     def capabilities(self):
         return dict(schema_version=1,kind='render3d-capabilities',adapter=dict(id='blender',version=VERSION),
                     backend=self.inspect_version(),discovery='available',initialization='not-run',execution='not-run',
@@ -265,8 +282,18 @@ class BlenderBackend:
         require(snapshot['scope'] in ('scene3d','native-rig-preview'),'unsupported-feature','Unsupported source snapshot scope.')
         return dict(valid=True)
 
-    def render_frames(self,request,snapshot_root,destination,*,cancelled=None,progress=None):
+    def render_frames(self,request,snapshot_root,destination,*,cancelled=None,progress=None,cinematics=None):
         validate(request,'RenderRequest')
+        cinematic_plan=None; cinematic_files={}; cinematic_code={}
+        if cinematics is not None:
+            from cinematics3d_blender import validate_bound_plan, validate_configuration, __file__ as compiler_file
+            from cinematics3d_blender_runtime import __file__ as runtime_file
+            require(isinstance(cinematics,dict) and set(cinematics)=={'request','plan','configuration','executed'}
+                    and cinematics['executed'] is False and cinematics['request']==request,
+                    'invalid-input','Invalid compiled cinematic request.')
+            cinematic_plan=validate_bound_plan(cinematics['plan'],request)
+            cinematic_files=validate_configuration(cinematic_plan,cinematics['configuration'])
+            cinematic_code={str(Path(p).name):sha256(p) for p in (compiler_file,runtime_file)}
         root=Path(snapshot_root).absolute();target=Path(destination).absolute()
         require(not target.exists() and not target.is_symlink(),'ownership','Render destination already exists.')
         require(not target.parent.resolve().joinpath(target.name).is_relative_to(root.resolve()),'ownership','Output cannot be nested in source snapshot.')
@@ -296,12 +323,21 @@ class BlenderBackend:
             require(scene['geometry_vertices']>0 and scene['geometry_triangles']>0,'missing-asset','Rendering requires actual nonempty geometry.')
             backend=self.inspect_version()
             job=dict(schema_version=1,mode='render',settings=settings,scene=scene,output='../frames',report='../worker-report.json')
+            if cinematic_plan is not None:
+                job['cinematics']=cinematic_plan
+                for name,payload in cinematic_files.items():
+                    path=safe_path(stage/'cinematics',name); path.parent.mkdir(parents=True,exist_ok=True)
+                    atomic_bytes(path,payload)
+                atomic_json(stage/'cinematics'/'plan.json',cinematic_plan)
             atomic_json(source/'job.json',job)
             command=[self.executable,'--background','--factory-startup','--disable-autoexec','--python-exit-code','1','--python',str(WORKER),'--',str(source/'job.json')]
             log,usage=_supervise(command,cwd=stage,timeout=resources['timeout_seconds'],memory_bytes=resources['memory_bytes'],storage_bytes=resources['storage_bytes'],cancelled=cancelled)
             (stage/'blender.log').write_bytes(log)
             require(sha256(self.executable)==backend['executable_sha256'] and sha256(WORKER)==backend['worker_sha256'],
                     'stale-asset','Executed backend code changed during rendering.')
+            if cinematic_plan is not None:
+                require(all(sha256(Path(__file__).with_name(name))==digest for name,digest in cinematic_code.items()),
+                        'stale-asset','Cinematic adapter changed during rendering.')
             report=read_json(stage/'worker-report.json')
             require(report['version']==backend['application_version'],'verification-failed','Worker version changed after admission.')
             require(report['rendered']==[f['index'] for f in scene['frames']],'incomplete-output','Worker did not report every requested frame.')
@@ -314,6 +350,12 @@ class BlenderBackend:
                 if progress:progress(frame['index'])
             manifest=dict(schema_version=1,request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],backend=backend,
                           frames=[frame['spec'] for frame in scene['frames']],worker=report,fixture=snapshot['fixture'])
+            if cinematic_plan is not None:
+                require(report.get('cinematics',{}).get('plan')==cinematic_plan,
+                        'verification-failed','Worker cinematic plan differs from admitted settings.')
+                manifest['cinematics']=dict(plan=cinematic_plan,code=cinematic_code,
+                    files={name:dict(sha256=hashlib.sha256(payload).hexdigest(),bytes=len(payload))
+                           for name,payload in cinematic_files.items()})
             atomic_json(stage/'manifest.json',manifest)
             artifact=lambda name:dict(path=name,sha256=sha256(stage/name),bytes=(stage/name).stat().st_size)
             indices=[frame['index'] for frame in scene['frames']]

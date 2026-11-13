@@ -124,7 +124,15 @@ def main():
     path=Path(sys.argv[sys.argv.index('--')+1]).resolve();root=path.parent
     require(path.stat().st_size<=32*1024**2,'Worker job exceeds32MiB')
     job=json.loads(path.read_text())
-    require(set(job)=={'schema_version','mode','settings','scene','output','report'} and job['schema_version']==1 and job['mode']=='render','Unexpected worker job shape')
+    if job.get('mode')=='cinematics-probe':
+        require(set(job)=={'schema_version','mode'} and type(job['schema_version']) is int and job['schema_version']==1,
+                'Unexpected probe job shape')
+        require(bpy.app.version[:2]==(4,5),'Supported Blender is4.5LTS')
+        from cinematics3d_blender_runtime import inspect_scene
+        (root/'cinematics-probe.json').write_text(json.dumps(inspect_scene(bpy.context.scene),allow_nan=False))
+        return
+    required={'schema_version','mode','settings','scene','output','report'}
+    require(set(job) in (required,required|{'cinematics'}) and job['schema_version']==1 and job['mode']=='render','Unexpected worker job shape')
     require(bpy.app.version[:2]==(4,5),'Supported Blender is4.5LTS')
     require(job['output']=='../frames' and job['report']=='../worker-report.json','Unexpected worker output paths')
     output=root.parent/'frames';output.mkdir(exist_ok=False)
@@ -154,7 +162,10 @@ def main():
     else:
         require(description['camera'] in objects and objects[description['camera']].type=='CAMERA','Requested camera is unavailable')
         scene.camera=objects[description['camera']]
-    rendered=[];measurements=[]
+    rendered=[];measurements=[];cinematic_settings=[]
+    if 'cinematics' in job:
+        from cinematics3d_blender_runtime import apply_frame, inspect_scene
+        cinematic_probe=inspect_scene(scene)
     for position,frame in enumerate(description['frames']):
         for entry in description['nodes']:
             state=entry['frames'][position];obj=objects[entry['id']]
@@ -170,6 +181,8 @@ def main():
         background.inputs['Color'].default_value=(*frame['world']['background'],1)
         background.inputs['Strength'].default_value=2**frame['world']['exposure']
         scene.frame_set(1);bpy.context.view_layer.update()
+        if 'cinematics' in job:
+            cinematic_settings.append(dict(frame=frame['index'],settings=apply_frame(scene,job['cinematics'])))
         scene.render.filepath=str(output/f'{frame["index"]:06d}.{settings["output"]["format"]}')
         bpy.ops.render.render(write_still=True)
         rendered.append(frame['index'])
@@ -184,6 +197,8 @@ def main():
         geometry_vertices=sum(len(o.data.vertices) for o in all_imported if o.type=='MESH'),
         geometry_triangles=sum(len(o.data.polygons) for o in all_imported if o.type=='MESH'),
         armatures=sum(o.type=='ARMATURE' for o in all_imported),samples=measurements)
+    if 'cinematics' in job:
+        report['cinematics']=dict(plan=job['cinematics'],probe=cinematic_probe,effective=cinematic_settings)
     (root.parent/'worker-report.json').write_text(json.dumps(report,allow_nan=False,indent=2))
 
 
