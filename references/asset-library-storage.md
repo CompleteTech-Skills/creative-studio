@@ -98,3 +98,5 @@ PYTHONPATH=scripts:tests python -m unittest discover -s tests -p 'test_asset_lib
 Local Linux tests are implementation evidence, not hosted cross-platform results.
 The broader job scheduler, library search, lifecycle policy and importer remain
 their respective owners' responsibilities.
+
+Existing handles refresh the canonical-storage mode after acquiring the SQLite writer lock. A legacy handle that waits for another handle to migrate therefore publishes its subsequent versions and annotation changes to canonical history. Successful migration is idempotent across handles. Staged recovered SQLite indexes are synchronized through a writable descriptor, as required on Windows.
