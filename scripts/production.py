@@ -290,13 +290,20 @@ def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
         output = Path(args.output).resolve() if args.output else None
+        from silent_cli import COMMANDS, preflight_report, publish_report
+        is_export = args.command in COMMANDS
+        if is_export:
+            preflight_report(args, output)
         if output is not None and output.exists():
             raise ValueError('--output must be a new file; preserve the existing receipt')
         if output is not None:
             output.parent.mkdir(parents=True, exist_ok=True)
         result = dispatch(args)
         if output is not None:
-            hatch.atomic(output, result)
+            if is_export:
+                publish_report(output, result)
+            else:
+                hatch.atomic(output, result)
             print(json.dumps({'output': str(output)}))
         else:
             print(json.dumps(result, sort_keys=True, indent=2))

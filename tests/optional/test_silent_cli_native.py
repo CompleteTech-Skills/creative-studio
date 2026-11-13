@@ -47,6 +47,18 @@ class NativeCLI(unittest.TestCase):
             self.assertEqual(result['preparation']['source']['width'],32)
             self.assertEqual(result['verification']['fps'],{'numerator':30,'denominator':1})
 
+    def test_concurrent_report_creator_is_preserved(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            output=Path(temp).resolve()/'report.json'
+            def concurrent_writer(args):
+                output.write_bytes(b'unrelated concurrent report')
+                return {'status':'available'}
+            errors=io.StringIO()
+            with patch.object(production,'dispatch',side_effect=concurrent_writer), contextlib.redirect_stderr(errors):
+                self.assertEqual(production.main(['export-capabilities','--output',str(output)]),2)
+            self.assertEqual(output.read_bytes(),b'unrelated concurrent report')
+
     def test_request_encode_and_independent_verify(self):
         self.assertTrue(media.secure_publication_supported())
         self.assertTrue(shutil.which('ffmpeg'))

@@ -28,6 +28,41 @@ def _read(path):
     return read_json(path)
 
 
+
+
+def preflight_report(args, output):
+    """Reject aliases before an export or any report-parent creation."""
+    if output is None:
+        return
+    raw = Path(args.output).absolute()
+    if any(part.is_symlink() for part in (raw, *raw.parents)):
+        raise ValueError('export report must not traverse symbolic links')
+    for field in ('destination', 'prepared_dir', 'job_root'):
+        value = getattr(args, field, None)
+        if value is not None:
+            target = Path(value).resolve()
+            if output == target or output.is_relative_to(target):
+                raise ValueError('export report must be outside export destinations and job workspaces')
+
+
+def publish_report(output, result):
+    """Use the shared exclusive authority; never replace a racing report."""
+    import json
+    from atomic_publish import pinned_directory, private_stage, _rename_no_replace
+    payload = (json.dumps(result, indent=2, sort_keys=True, allow_nan=False)+'\n').encode('utf-8')
+    if len(payload) > 64*1024**2:
+        raise ValueError('export report exceeds 64 MiB')
+    with pinned_directory(output.parent) as parent_fd:
+        with private_stage(parent_fd, prefix='.silent-report-') as (stage, stage_fd):
+            temporary = stage/'report.json'
+            with temporary.open('xb') as stream:
+                stream.write(payload)
+                stream.flush()
+                import os
+                os.fsync(stream.fileno())
+            _rename_no_replace('report.json', output.name, source_dir_fd=stage_fd, destination_dir_fd=parent_fd)
+
+
 def add_parsers(command):
     for name in COMMANDS:
         child = command(name, False)

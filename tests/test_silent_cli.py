@@ -44,6 +44,18 @@ class SilentCLI(unittest.TestCase):
             path=Path(temp)/'batch.json'; path.write_text(json.dumps(['same','same']))
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(production.main(['export-batch','--jobs',str(path)]),2)
+    def test_report_cannot_alias_or_create_export_destination(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp).resolve(); artifact=root/'film.mp4'
+            output=io.StringIO()
+            with patch.object(production, 'dispatch') as dispatch, contextlib.redirect_stderr(output):
+                status=production.main(['export-video','--request','request.json','--root',str(root),
+                    '--destination',str(artifact),'--silent','--output',str(artifact)])
+            self.assertEqual(status,2)
+            self.assertIn('outside export destinations',json.loads(output.getvalue())['error'])
+            dispatch.assert_not_called()
+            self.assertFalse(artifact.exists())
+
     def test_output_receipt_is_never_overwritten(self):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp)/'receipt.json'; path.write_bytes(b'keep')
