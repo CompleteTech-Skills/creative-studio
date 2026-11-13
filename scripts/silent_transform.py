@@ -9,9 +9,8 @@ from pathlib import Path
 import shutil
 
 from PIL import Image, __version__ as PILLOW_VERSION
-from atomic_publish import _rename_no_replace
+from atomic_publish import _rename_no_replace, private_stage
 from production_contracts import MAX_MANIFEST_BYTES, read_json
-from silent_staging import payload_stage
 import silent_video as video
 
 
@@ -111,7 +110,9 @@ def transform(source, root, settings, destination, *, cancel=None):
         raise ValueError('insufficient free storage for bounded transform')
     video._snapshot(video.make_request(source), root, None)
     with video._pin_directory(destination.parent) as parent_fd:
-        with payload_stage(parent_fd, '.silent-transform-') as (stage, wrapper_fd):
+        with private_stage(parent_fd, prefix='.silent-transform-') as (private_path, wrapper_fd):
+            stage = private_path / 'payload'
+            stage.mkdir(mode=0o700)
             (stage / 'frames').mkdir()
             inventory, total = [], 0
             for record in mapping:

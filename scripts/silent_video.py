@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-from contextlib import contextmanager
 from fractions import Fraction
 import hashlib
 import json
@@ -23,7 +22,8 @@ import tempfile
 import time
 
 from PIL import Image
-from atomic_publish import _rename_no_replace
+from atomic_publish import (_rename_no_replace, pinned_directory as _pin_directory,
+                            private_stage as _private_stage, private_stage_supported)
 from production_contracts import _structural, safe_path, read_json
 from production_render import fps_fraction, file_hash
 from silent_profiles import encoding_schema, validate_encoding, arguments as encoding_arguments
@@ -127,9 +127,10 @@ def _path(root, relative):
 
 def _open_source(root, relative):
     """Walk directory descriptors without following replaceable symlinks."""
+    root = Path(root).absolute()
     path = _path(root, relative)
     if os.name == 'posix' and hasattr(os, 'O_NOFOLLOW'):
-        fd = os.open(Path(root).resolve(), os.O_RDONLY | os.O_DIRECTORY)
+        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
         try:
             parts = relative.split('/')
             for part in parts[:-1]:
@@ -689,55 +690,7 @@ def secure_publication_supported():
     # The current subprocess path adapter uses Linux procfs and inherited FDs.
     # The shared primitive also supports macOS dirfds, but no untested fdescfs
     # subprocess adapter is advertised as working.
-    return sys.platform.startswith('linux') and Path('/proc/self/fd').is_dir()
-
-
-@contextmanager
-def _pin_directory(path):
-    if not secure_publication_supported():
-        raise ValueError('secure silent encoding currently requires Linux procfs; verification remains portable')
-    path = Path(path).absolute()
-    descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        for part in path.parts[1:]:
-            current = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = current
-        yield descriptor
-    finally:
-        os.close(descriptor)
-
-
-
-@contextmanager
-def _private_stage(parent_fd):
-    """Keep staging I/O and publication bound to its original directory."""
-    name = Path(tempfile.mkdtemp(prefix='.silent-export-',
-                                dir=Path('/proc/self/fd') / str(parent_fd))).name
-    descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                         dir_fd=parent_fd)
-    try:
-        yield Path('/proc/self/fd') / str(descriptor), descriptor
-    finally:
-        try:
-            # Do not recurse through a stage basename a callback can replace.
-            # A fresh directory stream avoids reusing a borrowed descriptor's
-            # directory offset; procfs still resolves to the pinned inode.
-            for child in os.listdir(Path('/proc/self/fd') / str(descriptor)):
-                mode = os.stat(child, dir_fd=descriptor, follow_symlinks=False).st_mode
-                if stat.S_ISDIR(mode):
-                    shutil.rmtree(child, dir_fd=descriptor)
-                else:
-                    os.unlink(child, dir_fd=descriptor)
-            try:
-                current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-            except FileNotFoundError:
-                current = None
-            original = os.fstat(descriptor)
-            if current is not None and (current.st_dev, current.st_ino) == (original.st_dev, original.st_ino):
-                os.rmdir(name, dir_fd=parent_fd)
-        finally:
-            os.close(descriptor)
+    return private_stage_supported()
 
 
 def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
@@ -754,7 +707,7 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         raise ValueError('requested media profile unavailable/unsupported; no fallback')
     if shutil.disk_usage(destination.parent).free < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
         raise ValueError('insufficient free storage for bounded snapshot and output')
-    with _private_stage(parent_fd) as (stage, source_fd):
+    with _private_stage(parent_fd, prefix='.silent-export-') as (stage, source_fd):
         inputs = stage/'frames'; inputs.mkdir()
         _snapshot(request, root, inputs)
         output = stage/('output.partial'+profile['extension'])

@@ -12,8 +12,7 @@ import os
 from pathlib import Path
 
 from PIL import Image
-from atomic_publish import _rename_no_replace
-from silent_staging import payload_stage
+from atomic_publish import _rename_no_replace, private_stage
 import silent_video as video
 
 
@@ -121,7 +120,9 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
     if not combined or len(combined) > video.MAX_FRAMES:
         raise ValueError('complete bounded combined image inventory required')
     with video._pin_directory(destination.parent) as parent_fd:
-        with payload_stage(parent_fd, '.silent-render3d-') as (stage, wrapper_fd):
+        with private_stage(parent_fd, prefix='.silent-render3d-') as (private_path, wrapper_fd):
+            stage = private_path / 'payload'
+            stage.mkdir(mode=0o700)
             (stage / 'frames').mkdir()
             mapping, paths, total = [], [], 0
             for index, item in enumerate(combined):
