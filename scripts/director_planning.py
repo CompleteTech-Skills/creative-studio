@@ -83,6 +83,12 @@ def _fail(status, code, message):
 
 
 def _endpoint(config):
+    if (not isinstance(config.endpoint, str) or
+            type(config.paid) is not bool or type(config.fixture_transport) is not bool or
+            not isinstance(config.allowed_hosts, tuple) or
+            not all(isinstance(host, str) and host for host in config.allowed_hosts) or
+            (config.credential_env is not None and not isinstance(config.credential_env, str))):
+        _fail('blocked_capability', 'CONFIGURATION', 'Provider configuration has invalid field types.')
     try:
         parsed = urllib.parse.urlsplit(config.endpoint)
         hostname = parsed.hostname
