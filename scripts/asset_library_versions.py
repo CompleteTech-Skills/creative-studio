@@ -236,9 +236,10 @@ class AssetVersions:
         # retained closure and performs expected-identity CAS inside its writer
         # transaction. Staging contains exact bytes and is never a second store.
         with tempfile.TemporaryDirectory(prefix='asset-duplicate-') as directory:
+            staging = Path(directory).resolve(strict=True)
             sources = {}
             for index, record in enumerate(source['files']):
-                path = Path(directory) / str(index)
+                path = staging / str(index)
                 path.write_bytes(self.library.read_file(reference, record['path']))
                 sources[record['path']] = path
             return self.create(candidate, sources)

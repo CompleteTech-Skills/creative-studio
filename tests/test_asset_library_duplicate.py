@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -71,6 +72,17 @@ class DuplicateTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(copied).hexdigest(), record['sha256'])
         self.assertEqual(self.library.resolve(target), dependency)
         self.assertEqual(self.library.resolve(reference), source)
+
+    @unittest.skipUnless(os.name == 'posix', 'Symlink temp-root alias is a POSIX regression.')
+    def test_owned_staging_uses_canonical_path_through_temporary_root_alias(self):
+        target = self.fixture.root / 'physical-temp'; target.mkdir()
+        alias = self.fixture.root / 'alias-temp'; alias.symlink_to(target, target_is_directory=True)
+        factory = tempfile.TemporaryDirectory
+        with patch('asset_library_versions.tempfile.TemporaryDirectory',
+                   side_effect=lambda **kwargs: factory(dir=alias, **kwargs)):
+            copied = self.versions.duplicate(self.source, identity=self.identity())
+        self.assertEqual(self.library.read_file(copied, 'mesh/triangle.obj'),
+                         self.library.read_file(self.source, 'mesh/triangle.obj'))
 
     def test_new_identity_cannot_change_native_kind_or_attribution(self):
         for identity in [self.fixture.manifest['identity'], self.identity() | {'kind': 'rig'},
