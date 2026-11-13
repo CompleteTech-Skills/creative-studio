@@ -10,7 +10,7 @@ from copy import deepcopy
 import math
 import re
 
-from lookdev_contracts import canonical_bytes, content_hash, default_surface, validate_resource, definitions
+from lookdev_contracts import canonical_bytes, content_hash, default_surface, validate_resource, definitions, portable_path
 from rig_errors import require, finite_json, RigError
 from style_registry import resolve_style, validate_snapshot
 
@@ -49,6 +49,13 @@ def _identifier(value):
 
 def _digest(value):
     require(isinstance(value, str) and _HASH.fullmatch(value), 'LOOKDEV_STYLE_HASH', 'Expected SHA-256.')
+    return value
+
+
+def _version(value):
+    pattern=definitions()['ResourceRef']['properties']['version']['pattern']
+    require(isinstance(value,str) and re.fullmatch(pattern,value),
+            'LOOKDEV_IDENTITY','Invalid semantic version.')
     return value
 
 
@@ -129,8 +136,7 @@ def bind_identity(registry, *, character, identity_sha256, slots):
     """
     _keys(character, {'id','version','sha256'}, 'LOOKDEV_IDENTITY')
     _identifier(character['id']); _digest(character['sha256']); _digest(identity_sha256)
-    require(isinstance(character['version'],str) and re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', character['version']),
-            'LOOKDEV_IDENTITY','Invalid character version.')
+    _version(character['version'])
     require(isinstance(slots,dict) and 0 < len(slots) <= 256,'LOOKDEV_IDENTITY','Expected bounded semantic slots.')
     output = {}
     occupied = set()
@@ -161,14 +167,19 @@ def validate_binding(binding):
     require(binding['schema_version']==1 and type(binding['schema_version']) is int,
             'LOOKDEV_IDENTITY','Unsupported binding version.')
     _keys(binding['character'], {'id','version','sha256'}, 'LOOKDEV_IDENTITY')
-    _identifier(binding['character']['id']);_digest(binding['character']['sha256']);_digest(binding['identity_sha256'])
+    _identifier(binding['character']['id']);_version(binding['character']['version'])
+    _digest(binding['character']['sha256']);_digest(binding['identity_sha256'])
     require(isinstance(binding['slots'],dict) and 0 < len(binding['slots']) <= 256,'LOOKDEV_IDENTITY','Invalid slot collection.')
     occupied=set()
     for name,slot in binding['slots'].items():
         _identifier(name)
         _keys(slot, {'material','targets','protected','effective_sha256'}, 'LOOKDEV_IDENTITY')
         _keys(slot['material'], {'id','version','sha256','kind','path'}, 'LOOKDEV_IDENTITY')
-        _identifier(slot['material']['id']);_digest(slot['material']['sha256']);_digest(slot['effective_sha256'])
+        _identifier(slot['material']['id']);_version(slot['material']['version'])
+        portable_path(slot['material']['path'])
+        require(slot['material']['kind'] in ('material3d','material-instance3d','material-variant3d'),
+                'LOOKDEV_IDENTITY','Expected an exact material resource reference.')
+        _digest(slot['material']['sha256']);_digest(slot['effective_sha256'])
         require(isinstance(slot['protected'],dict) and len(slot['protected'])<=32 and set(slot['protected'])<=set(definitions()['Surface']['properties']),'LOOKDEV_IDENTITY','Invalid protected fields.')
         require(isinstance(slot['targets'],list) and 0<len(slot['targets'])<=4096,'LOOKDEV_IDENTITY','Invalid targets.')
         for target in slot['targets']:
