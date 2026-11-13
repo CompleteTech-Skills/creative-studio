@@ -15,12 +15,13 @@ export function installDetailsView({element,api,error,inspect}){
     const cols=4,rows=Math.max(1,Math.ceil(nodes.length/cols)),positions=new Map();
     svg.setAttribute('viewBox',`0 0 800 ${rows*82}`);svg.setAttribute('class','dependency-graph');svg.setAttribute('role','img');svg.setAttribute('aria-label','Exact native asset dependency graph');
     const node=(tag,attrs)=>{const el=doc.createElementNS(svg.namespaceURI,tag);for(const [k,v]of Object.entries(attrs))el.setAttribute(k,String(v));return el;};
+    const defs=node('defs',{}),marker=node('marker',{id:'native-dependency-arrow',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'});marker.append(node('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#91aabd'}));defs.append(marker);svg.append(defs);
     nodes.forEach((v,i)=>positions.set(key(v),{x:(i%cols)*200+100,y:Math.floor(i/cols)*82+40}));
-    for(const edge of (data.edges||[]).slice(0,1024)){const a=positions.get(key(edge.source)),b=positions.get(key(edge.target));if(!a||!b)continue;svg.append(node('line',{x1:a.x,y1:a.y,x2:b.x,y2:b.y,class:'dependency-edge'}));}
+    for(const edge of (data.edges||[]).slice(0,1024)){const a=positions.get(key(edge.source)),b=positions.get(key(edge.target));if(!a||!b)continue;const dx=b.x-a.x,dy=b.y-a.y,scale=Math.max(Math.abs(dx)/95,Math.abs(dy)/28,1),end={x:b.x-dx/scale,y:b.y-dy/scale};svg.append(node('line',{x1:a.x,y1:a.y,x2:end.x,y2:end.y,class:'dependency-edge','marker-end':'url(#native-dependency-arrow)'}));}
     for(const v of nodes){const p=positions.get(key(v)),group=node('g',{class:'dependency-node',tabindex:'0',role:'button','aria-label':'Inspect '+v.reference.id+' '+v.reference.version});
       group.append(node('rect',{x:p.x-91,y:p.y-24,width:182,height:48,rx:4}));
       const text=node('text',{x:p.x-82,y:p.y-3});text.textContent=v.reference.id.slice(0,22);group.append(text);
-      const version=node('text',{x:p.x-82,y:p.y+13});version.textContent=v.library+' · '+v.reference.version;group.append(version);
+      const version=node('text',{x:p.x-82,y:p.y+13});version.textContent=(v.library+' · '+v.reference.version).slice(0,28);group.append(version);
       const title=node('title',{});title.textContent=key(v);group.append(title);
       const open=()=>inspect({library:v.library,reference:v.reference}).catch(error);group.addEventListener('click',open);group.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}});svg.append(group);}
     graph.append(svg);

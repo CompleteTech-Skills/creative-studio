@@ -156,7 +156,7 @@ jobs:
       - run: python -m playwright install --with-deps chromium
       - run: python scripts/verify_rig_demos.py --generate --destination /tmp/rig-browser-gate --browser
       - name: Actual authenticated asset browser and WebGL fallback
-        run: PYTHONPATH=scripts:tests python -m unittest test_asset_library_browser.BrowserTests -v 2>&1 | tee asset-browser.log
+        run: PYTHONPATH=scripts:tests python -m unittest test_asset_library_browser.BrowserTests test_asset_browser_inspector.InspectorBrowserTests test_asset_browser_details.BrowserDetailTests -v 2>&1 | tee asset-browser.log
         env:
           HATCH_ASSET_BROWSER_TEST: '1'
           HATCH_ASSET_BROWSER_EVIDENCE: /tmp/asset-browser-gate
