@@ -78,27 +78,31 @@
         <div id="diagnostic" role="alert" hidden></div>
       </section>
       <aside id="inspector" aria-label="Object inspector">
-        <h2 id="selected-name">Select an object</h2>
-        <p id="selected-type"></p>
-        <label>Name <input id="name" maxlength="4096" /></label
-        ><label
-          >Parent
-          <select id="parent"></select
-        ></label>
-        <div id="transform-fields"></div>
-        <label><input id="visible" type="checkbox" />Visible in editor</label
-        ><label
-          ><input id="render-visible" type="checkbox" />Visible in render</label
-        ><label><input id="locked" type="checkbox" />Locked</label
-        ><button id="reset">Reset transform</button
-        ><button id="copy">Copy transform</button
-        ><button id="paste">Paste transform</button
-        ><button id="ground">Align to ground</button
-        ><button id="hide">Hide selection</button
-        ><button id="isolate">Isolate selection</button
-        ><button id="show-all">Show all</button>
-        <pre id="details"></pre>
+        <div id="base-inspector">
+          <h2 id="selected-name">Select an object</h2>
+          <p id="selected-type"></p>
+          <label>Name <input id="name" maxlength="4096" /></label
+          ><label
+            >Parent
+            <select id="parent"></select
+          ></label>
+          <div id="transform-fields"></div>
+          <label><input id="visible" type="checkbox" />Visible in editor</label
+          ><label
+            ><input id="render-visible" type="checkbox" />Visible in
+            render</label
+          ><label><input id="locked" type="checkbox" />Locked</label
+          ><button id="reset">Reset transform</button
+          ><button id="copy">Copy transform</button
+          ><button id="paste">Paste transform</button
+          ><button id="ground">Align to ground</button
+          ><button id="hide">Hide selection</button
+          ><button id="isolate">Isolate selection</button
+          ><button id="show-all">Show all</button>
+          <pre id="details"></pre>
+        </div>
         <div id="native-inspectors"></div>
+        <div id="timeline"></div>
         <h2>Overlays</h2>
         <div id="overlay-controls"></div>
         <h2>Playback</h2>

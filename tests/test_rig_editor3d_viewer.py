@@ -63,6 +63,14 @@ class EditorViewportTests(unittest.TestCase):
         with self.assertRaises(RigError):
             preview_snapshot(self.repository, value)
 
+    def test_unrepresentable_exposure_is_rejected_before_read(self):
+        value = self.repository.snapshot()
+        value['scene']['world']['exposure'] = 1000
+        self.repository.read_file = lambda *args: self.fail('Unsupported exposure read bytes')
+        with self.assertRaises(RigError) as error:
+            preview_snapshot(self.repository, value)
+        self.assertEqual(error.exception.report['code'], 'EDITOR3D_VIEW_EXPOSURE')
+
     def test_upstream_transform_controls_is_pinned(self):
         manifest = json.loads((ROOT / 'assets/editor3d/vendor.json').read_text())
         for item in manifest['files']:
@@ -111,6 +119,20 @@ class EditorHttpTests(unittest.TestCase):
         ):
             with self.subTest(route=route, options=options), self.assertRaises(HTTPError):
                 self.fetch(route, **options)
+
+    def test_uploads_are_opaque_bound_and_preserve_original_bytes(self):
+        payload = b'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n'
+        with self.fetch('/api/uploads', data=payload, headers={
+            'Content-Type':'application/octet-stream', 'X-Filename':'triangle.obj'}) as response:
+            receipt=json.load(response)
+        self.assertEqual(receipt['sha256'],hashlib.sha256(payload).hexdigest())
+        path=self.server.upload_path(receipt['upload_id'])
+        self.assertEqual(path.read_bytes(),payload)
+        path.write_bytes(payload+b'changed')
+        with self.assertRaises(RigError):self.server.upload_path(receipt['upload_id'])
+        for name in ('../source.obj','%2e%2e%2fsource.obj','C:%5csource.obj'):
+            with self.subTest(name=name),self.assertRaises(HTTPError):
+                self.fetch('/api/uploads',data=payload,headers={'Content-Type':'application/octet-stream','X-Filename':name})
 
     def test_body_encoding_and_unexpected_fields_fail_before_mutation(self):
         for data, headers in ((b'{}', {'Content-Type': 'text/plain'}),

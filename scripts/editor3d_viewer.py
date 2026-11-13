@@ -15,9 +15,11 @@ import json
 import mimetypes
 from pathlib import Path
 import secrets
+import stat
+import uuid
 import tempfile
 import threading
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, unquote
 
 from rig_errors import RigError, decode_json, require, safe_path
 
@@ -36,6 +38,8 @@ def preview_snapshot(repository, snapshot):
     result.pop('root', None)
     assets = {}
     scene = snapshot['scene']
+    require(-20 <= scene['world']['exposure'] <= 20, 'EDITOR3D_VIEW_EXPOSURE',
+            'WebGL preview exposure is supported from -20 to +20 stops.')
     require(len(scene['nodes']) <= 1000, 'EDITOR3D_VIEW_LIMIT',
             'The interactive preview supports at most 1,000 scene nodes.')
     projected_vertices = 0
@@ -103,9 +107,13 @@ def preview_snapshot(repository, snapshot):
 
 class EditorServer(HTTPServer):
     """Bounded loopback HTTP service; the supplied repository owns transactions."""
-    def __init__(self, repository, *, port=0, token=None, workers=4):
+    def __init__(self, repository, *, port=0, token=None, workers=4, routes=None):
         require(isinstance(workers, int) and 1 <= workers <= 8, 'EDITOR3D_VIEW_WORKERS', 'Use 1–8 workers.')
         self.repository = repository
+        self.routes = dict(routes or {})
+        self.upload_directory = tempfile.TemporaryDirectory(prefix="hatch-editor-uploads-")
+        self.uploads = {}
+        self.upload_lock = threading.Lock()
         self.token = token or secrets.token_urlsafe(32)
         require(isinstance(self.token, str) and len(self.token) >= 24,
                 'EDITOR3D_VIEW_TOKEN', 'Use a bearer token of at least 24 characters.')
@@ -144,6 +152,19 @@ class EditorServer(HTTPServer):
                     self.cache.popitem(last=False)
             return self.cache[snapshot['sha256']]
 
+    def upload_path(self, identifier):
+        """Resolve a live service upload by opaque identity, never a caller path."""
+        with self.upload_lock:
+            require(identifier in self.uploads, 'EDITOR3D_VIEW_UPLOAD', 'Unknown upload token.')
+            record = self.uploads[identifier]
+        path = record['path']
+        require(not path.is_symlink() and stat.S_ISREG(path.stat().st_mode),
+                'EDITOR3D_VIEW_UPLOAD', 'Uploaded source is no longer a regular file.')
+        payload = path.read_bytes()
+        require(len(payload) == record['bytes'] and hashlib.sha256(payload).hexdigest() == record['sha256'],
+                'EDITOR3D_VIEW_UPLOAD', 'Uploaded source bytes changed.')
+        return path
+
     @property
     def url(self):
         return f'http://127.0.0.1:{self.server_port}/#{self.token}'
@@ -151,6 +172,7 @@ class EditorServer(HTTPServer):
     def server_close(self):
         super().server_close()
         self.executor.shutdown(wait=True, cancel_futures=True)
+        self.upload_directory.cleanup()
 
 
 class EditorHandler(BaseHTTPRequestHandler):
@@ -217,7 +239,7 @@ class EditorHandler(BaseHTTPRequestHandler):
                 path = ROOT / 'assets/editor3d/index.html'
             elif route.path.startswith('/editor/'):
                 relative = route.path.removeprefix('/editor/')
-                require(relative in ('editor.js', 'editor.css', 'TransformControls.js'), 'EDITOR3D_VIEW_PATH', 'Unknown editor asset.')
+                require(relative in ('editor.js', 'editor.css', 'TransformControls.js', 'asset-browser.js', 'inspectors.js', 'timeline.js'), 'EDITOR3D_VIEW_PATH', 'Unknown editor asset.')
                 path = ROOT / 'assets/editor3d' / relative
             elif route.path.startswith('/vendor/'):
                 path = safe_path(ROOT / 'assets/rig-viewer/vendor', route.path.removeprefix('/vendor/'), exists=True)
@@ -230,7 +252,46 @@ class EditorHandler(BaseHTTPRequestHandler):
             status = 401 if report['code'] == 'EDITOR3D_VIEW_AUTH' else 409 if any(word in report['code'] for word in ('STALE', 'CONFLICT')) else 400
             self.respond(status, dict(error=report))
 
+    def upload(self):
+        require(self.checked_header('Content-Type') == 'application/octet-stream',
+                'EDITOR3D_VIEW_CONTENT_TYPE', 'Upload raw bytes as application/octet-stream.')
+        require(self.headers.get('Transfer-Encoding') is None, 'EDITOR3D_VIEW_BODY', 'Chunked bodies are unsupported.')
+        name = unquote(self.checked_header('X-Filename'), errors='strict')
+        require(name and '/' not in name and '\\' not in name,
+                'EDITOR3D_VIEW_UPLOAD', 'Upload name must be a portable basename.')
+        safe_path(Path(self.server.upload_directory.name), name)
+        length = self.checked_header('Content-Length')
+        require(length.isascii() and length.isdigit() and 0 < int(length) <= MAX_PREVIEW_BYTES,
+                'EDITOR3D_VIEW_UPLOAD', 'Upload must contain 1 byte to 64 MiB.')
+        identifier = uuid.uuid4().hex
+        folder = Path(self.server.upload_directory.name) / identifier
+        folder.mkdir(mode=0o700)
+        path = folder / name
+        digest = hashlib.sha256()
+        remaining = int(length)
+        try:
+            with path.open('xb') as stream:
+                while remaining:
+                    payload = self.rfile.read(min(remaining, 1024 * 1024))
+                    require(payload, 'EDITOR3D_VIEW_UPLOAD', 'Upload ended before Content-Length.')
+                    stream.write(payload); digest.update(payload); remaining -= len(payload)
+            record = dict(path=path, name=name, bytes=int(length), sha256=digest.hexdigest())
+            with self.server.upload_lock:
+                require(len(self.server.uploads) < 64, 'EDITOR3D_VIEW_UPLOAD', 'Upload count limit reached; restart the service.')
+                require(sum(item['bytes'] for item in self.server.uploads.values()) + record['bytes'] <= 256*1024*1024,
+                        'EDITOR3D_VIEW_UPLOAD', 'Upload storage budget reached; restart the service.')
+                self.server.uploads[identifier] = record
+        except BaseException:
+            path.unlink(missing_ok=True)
+            folder.rmdir()
+            raise
+        return self.respond(200, dict(upload_id=identifier, **{key:record[key] for key in ('name', 'bytes', 'sha256')}))
+
     def api(self, route):
+        if self.command == 'POST' and route == 'uploads':
+            return self.upload()
+        if self.command == 'POST' and route in self.server.routes:
+            return self.respond(200, self.server.routes[route](self.server, self.body()))
         if self.command == 'GET' and route == 'snapshot':
             return self.respond(200, self.server.snapshot())
         require(self.command == 'POST' and route in ('commands', 'undo', 'redo'),
@@ -248,3 +309,24 @@ class EditorHandler(BaseHTTPRequestHandler):
 
     do_GET = run
     do_POST = run
+
+
+def main(argv=None):
+    import argparse
+    from editor3d_repository import EditorRepository
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('repository', type=Path)
+    parser.add_argument('--port', type=int, default=8767)
+    args = parser.parse_args(argv)
+    server = EditorServer(EditorRepository(args.repository), port=args.port)
+    print(json.dumps(dict(status='listening', url=server.url, host='127.0.0.1')), flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == '__main__':
+    main()

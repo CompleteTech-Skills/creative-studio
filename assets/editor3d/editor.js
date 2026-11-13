@@ -19,6 +19,7 @@ let renderer,
   sha256,
   selection = new Set(),
   objects = new Map(),
+  selectedBone = null,
   nodes = new Map(),
   boneObjects = new Map(),
   busy = false,
@@ -32,8 +33,11 @@ let renderer,
   animationTime = 0,
   clipDuration = 0,
   loadEpoch = 0,
-  currentSnapshot = null;
+  currentSnapshot = null,
+  previewActive = false;
+const collapsed = new Set();
 const extensions = [];
+const editorNode = Symbol("native-scene-node");
 const errors = [],
   nativeMaterials = new Map(),
   helpers = [],
@@ -93,6 +97,64 @@ async function api(path, body) {
     throw Error(result.error?.message || result.message || "Request rejected.");
   return result;
 }
+async function upload(file) {
+  if (file.size <= 0 || file.size > 64 * 1024 * 1024)
+    throw Error("Choose a file between 1 byte and 64 MiB.");
+  const response = await fetch("/api/uploads", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + token,
+      "Content-Type": "application/octet-stream",
+      "X-Filename": encodeURIComponent(file.name),
+    },
+    body: file,
+  });
+  const result = await response.json();
+  if (!response.ok) throw Error(result.error?.message || "Upload rejected.");
+  return result;
+}
+function preview(scene) {
+  playing = false;
+  previewActive = true;
+  gizmo.detach();
+  const evaluated = Array.isArray(scene.nodes)
+    ? new Map(scene.nodes.map((node) => [node.id, node]))
+    : new Map(Object.entries(scene.nodes));
+  content.updateMatrixWorld(true);
+  for (const [id, node] of evaluated) {
+    const object = objects.get(id);
+    if (!object) continue;
+    if (node.world_matrix) {
+      const worldMatrix = new THREE.Matrix4().set(...node.world_matrix.flat());
+      const parentId = nodes.get(id)?.parent,
+        parent = evaluated.get(parentId);
+      const parentWorld = parent?.world_matrix
+        ? new THREE.Matrix4().set(...parent.world_matrix.flat())
+        : object.parent.matrixWorld;
+      object.matrix.copy(parentWorld.clone().invert().multiply(worldMatrix));
+      object.matrixAutoUpdate = false;
+      object.matrix.decompose(object.position, object.quaternion, object.scale);
+    } else if (node.transform) {
+      object.matrixAutoUpdate = true;
+      setTransform(object, node.transform);
+    }
+    if (typeof node.visible === "boolean") object.visible = node.visible;
+  }
+  content.updateMatrixWorld(true);
+  inspect();
+}
+function clearPreview() {
+  previewActive = false;
+  for (const node of doc.nodes) {
+    const object = objects.get(node.id);
+    object.matrixAutoUpdate = true;
+    setTransform(object, node.transform);
+    object.visible = node.visible;
+  }
+  content.updateMatrixWorld(true);
+  attach();
+  inspect();
+}
 function roots(ids = selection) {
   return [...ids].filter((id) => {
     let parent = nodes.get(id)?.parent;
@@ -116,6 +178,64 @@ function setTransform(object, value) {
   object.scale.fromArray(value.scale);
   object.updateMatrix();
 }
+function nativeCommands(commands) {
+  return commands.flatMap((command) => {
+    if (command.operation) return [command];
+    const identifier = command.id;
+    if (command.op === "set-transform")
+      return [
+        {
+          operation: "transform",
+          parameters: {
+            identifier,
+            transform: command.transform,
+            space: "local",
+          },
+        },
+      ];
+    if (command.op === "reparent")
+      return [
+        {
+          operation: "reparent",
+          parameters: {
+            identifier,
+            parent: command.parent,
+            preserve_world: command.keep_world !== false,
+          },
+        },
+      ];
+    if (command.op === "set-node") {
+      const patch = command.patch,
+        result = [],
+        flags = { identifier };
+      for (const field of ["visible", "selectable", "locked"])
+        if (field in patch) flags[field] = patch[field];
+      if (patch.render)
+        for (const [source, target] of [
+          ["visible", "render_visible"],
+          ["cast_shadow", "cast_shadow"],
+          ["receive_shadow", "receive_shadow"],
+        ])
+          if (source in patch.render) flags[target] = patch.render[source];
+      if (Object.keys(flags).length > 1)
+        result.push({ operation: "node-flags", parameters: flags });
+      if ("name" in patch)
+        result.push({
+          operation: "rename",
+          parameters: { identifier, name: patch.name },
+        });
+      return result;
+    }
+    if (command.op === "set-collection")
+      return [
+        {
+          operation: "collection",
+          parameters: { identifier, visible: command.visible },
+        },
+      ];
+    throw Error("Unsupported editor command.");
+  });
+}
 async function commit(commands) {
   if (busy || !commands.length) return;
   busy = true;
@@ -126,7 +246,7 @@ async function commit(commands) {
       expected_revision: revision,
       expected_sha256: sha256,
       transaction_id: crypto.randomUUID(),
-      commands,
+      commands: { schema_version: 1, commands: nativeCommands(commands) },
     });
     await install(result);
     clearDiagnostic();
@@ -140,13 +260,36 @@ async function commit(commands) {
   }
 }
 function select(id, add = false, toggle = false) {
+  selectedBone = null;
   if (!add && !toggle) selection.clear();
   if (toggle && selection.has(id)) selection.delete(id);
   else if (objects.has(id) && nodes.get(id)?.selectable !== false)
     selection.add(id);
   refreshSelection();
 }
+function selectBone(id) {
+  const bone = boneObjects.get(id);
+  if (!bone) return;
+  select(bone.userData.ownerId);
+  selectedBone = id;
+  refreshSelection();
+}
+function boneSelection() {
+  const bone = boneObjects.get(selectedBone);
+  return bone
+    ? {
+        owner_id: bone.userData.ownerId,
+        bone_name: bone.name,
+        transform: localTransform(bone),
+      }
+    : null;
+}
 function refreshSelection() {
+  for (const row of $("outliner").querySelectorAll("[data-bone]"))
+    row.setAttribute(
+      "aria-selected",
+      String(row.dataset.bone === selectedBone),
+    );
   for (const extension of extensions)
     extension.refresh?.(currentSnapshot, [...selection]);
   for (const button of $("outliner").querySelectorAll("[data-id]"))
@@ -171,7 +314,10 @@ function refreshSelection() {
   inspect();
 }
 function attach() {
-  if (!gizmo || busy || lost) return;
+  if (!gizmo || busy || lost || previewActive || selectedBone) {
+    gizmo?.detach();
+    return;
+  }
   const id = roots().find((id) => !nodes.get(id).locked),
     object = objects.get(id);
   if (object) {
@@ -284,7 +430,10 @@ async function assetObject(asset) {
   throw Error(asset.message || "Unsupported geometry format.");
 }
 async function install(snapshot) {
+  previewActive = false;
   currentSnapshot = snapshot;
+  $("undo").disabled = !snapshot.undo_available;
+  $("redo").disabled = !snapshot.redo_available;
   const epoch = ++loadEpoch,
     assets = snapshot.viewport_assets || {};
   doc = snapshot.scene;
@@ -303,7 +452,7 @@ async function install(snapshot) {
     nodes.set(node.id, node);
     const object = new THREE.Group();
     object.name = node.name;
-    object.userData.nodeId = node.id;
+    object[editorNode] = node.id;
     objects.set(node.id, object);
     setTransform(object, node.transform);
     object.visible = node.visible;
@@ -361,9 +510,19 @@ async function install(snapshot) {
           point: THREE.PointLight,
           directional: THREE.DirectionalLight,
           spot: THREE.SpotLight,
-          area: THREE.PointLight,
         }[l.type];
+      if (!ctor) {
+        diagnostic(
+          "Area-light preview is unavailable: the native scene light has no area dimensions. No point-light substitute was rendered.",
+        );
+        continue;
+      }
       const actual = new ctor(new THREE.Color(...l.color), l.intensity);
+      actual.position.set(0, 0, 0);
+      if (actual.target) {
+        actual.target.position.set(0, 0, -1);
+        object.add(actual.target);
+      }
       object.add(actual);
       const helper = new THREE.PointLightHelper(actual, 0.1);
       helper.userData.overlay = "lights";
@@ -374,7 +533,8 @@ async function install(snapshot) {
   for (const node of doc.nodes) {
     const object = objects.get(node.id);
     if (node.parent) objects.get(node.parent).add(object);
-    object.traverse((child) => {
+    function visit(child) {
+      if (child !== object && child[editorNode]) return;
       if (child.isMesh) {
         nativeMaterials.set(child, child.material);
         child.castShadow = node.render.cast_shadow;
@@ -385,7 +545,9 @@ async function install(snapshot) {
         boneObjects.set(id, child);
         child.userData.ownerId = node.id;
       }
-    });
+      child.children.forEach(visit);
+    }
+    visit(object);
   }
   content.updateMatrixWorld(true);
   for (const [id, object] of objects) {
@@ -396,6 +558,7 @@ async function install(snapshot) {
       helpers.push(helper);
     }
   }
+  selectedBone = null;
   selection = new Set([...selection].filter((id) => objects.has(id)));
   buildOutliner();
   buildCollections();
@@ -456,6 +619,19 @@ function buildOutliner() {
           commit([{ op: "reparent", id, parent: node.id, keep_world: true }]);
       };
       root.append(button);
+      if (overlayState.bones)
+        for (const [boneId, bone] of boneObjects) {
+          if (bone.userData.ownerId !== node.id) continue;
+          const row = document.createElement("button");
+          row.textContent = "Bone · " + bone.name;
+          row.style.paddingLeft = 22 + depth * 14 + "px";
+          row.dataset.bone = boneId;
+          row.setAttribute("role", "treeitem");
+          row.setAttribute("aria-level", String(depth + 2));
+          row.setAttribute("aria-selected", String(selectedBone === boneId));
+          row.onclick = () => selectBone(boneId);
+          root.append(row);
+        }
     }
     for (const child of doc.nodes.filter((n) => n.parent === node.id))
       add(child, depth + 1);
@@ -504,16 +680,16 @@ function inspect() {
   const id = [...selection][0],
     node = nodes.get(id),
     object = objects.get(id);
-  $("inspector")
+  $("base-inspector")
     .querySelectorAll("input,select,button")
     .forEach((e) => {
       if (
         !e.closest("#overlay-controls") &&
         !["clip", "play", "time", "show-all"].includes(e.id)
       )
-        e.disabled = !node || busy || node.locked;
+        e.disabled = !node || busy || node.locked || previewActive;
     });
-  $("locked").disabled = !node || busy;
+  $("locked").disabled = !node || busy || previewActive;
   if (!node) {
     $("selected-name").textContent = "Select an object";
     $("selected-type").textContent = "";
@@ -527,6 +703,18 @@ function inspect() {
   $("visible").checked = node.visible;
   $("render-visible").checked = node.render.visible;
   $("locked").checked = node.locked;
+  if (selectedBone) {
+    const bone = boneObjects.get(selectedBone);
+    $("selected-name").textContent = bone.name;
+    $("selected-type").textContent = "Native GLB bone · inspectable pose";
+    $("inspector")
+      .querySelectorAll(
+        "#base-inspector input,#base-inspector select,#base-inspector button",
+      )
+      .forEach((input) => (input.disabled = true));
+    $("details").textContent = JSON.stringify(boneSelection(), null, 2);
+    return;
+  }
   const euler = new THREE.Euler().setFromQuaternion(object.quaternion, "XYZ");
   const values = {
     translation: object.position.toArray(),
@@ -586,6 +774,83 @@ function selectedPatch(patch) {
     .filter((id) => !nodes.get(id).locked)
     .map((id) => ({ op: "set-node", id, patch }));
 }
+$("group").onclick = () => {
+  const ids = roots();
+  if (!ids.length) return;
+  const parent = nodes.get(ids[0]).parent;
+  const sameParent = ids.every((id) => nodes.get(id).parent === parent)
+    ? parent
+    : null;
+  const id = "group-" + crypto.randomUUID().replaceAll("-", "").slice(0, 12);
+  const node = {
+    id,
+    name: "Group",
+    type: "group",
+    parent: sameParent,
+    transform: {
+      translation: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+    },
+    visible: true,
+    collections: [],
+    layers: [],
+    material_overrides: [],
+    animation_bindings: [],
+    constraints: [],
+    bounds: null,
+    locked: false,
+    selectable: true,
+    render: { visible: true, cast_shadow: true, receive_shadow: true },
+    source: null,
+    metadata: {},
+  };
+  commit([
+    { operation: "create", parameters: { node } },
+    ...ids.map((identifier) => ({
+      operation: "reparent",
+      parameters: { identifier, parent: id, preserve_world: true },
+    })),
+  ]);
+};
+$("ungroup").onclick = () => {
+  const commands = [];
+  for (const id of roots()) {
+    const node = nodes.get(id);
+    if (node.type !== "group") continue;
+    for (const child of doc.nodes.filter((n) => n.parent === id))
+      commands.push({
+        operation: "reparent",
+        parameters: {
+          identifier: child.id,
+          parent: node.parent,
+          preserve_world: true,
+        },
+      });
+    commands.push({
+      operation: "delete",
+      parameters: { identifier: id, policy: "reject" },
+    });
+  }
+  commit(commands);
+};
+$("duplicate").onclick = () =>
+  commit(
+    roots().map((identifier) => ({
+      operation: "duplicate",
+      parameters: {
+        identifier,
+        new_id: "copy-" + crypto.randomUUID().replaceAll("-", "").slice(0, 12),
+      },
+    })),
+  );
+$("delete").onclick = () =>
+  commit(
+    roots().map((identifier) => ({
+      operation: "delete",
+      parameters: { identifier, policy: "subtree" },
+    })),
+  );
 $("name").onchange = () => commit(selectedPatch({ name: $("name").value }));
 $("visible").onchange = () =>
   commit(selectedPatch({ visible: $("visible").checked }));
@@ -954,7 +1219,7 @@ function initialize() {
       if (e.value) {
         content.updateMatrixWorld(true);
         drag = {
-          primary: gizmo.object.userData.nodeId,
+          primary: gizmo.object[editorNode],
           records: new Map(
             roots().map((id) => [
               id,
@@ -1033,9 +1298,9 @@ function initialize() {
       });
       if (hit) {
         let object = hit.object;
-        while (object && !object.userData.nodeId) object = object.parent;
-        if (object && nodes.get(object.userData.nodeId).selectable)
-          select(object.userData.nodeId, e.shiftKey, e.ctrlKey || e.metaKey);
+        while (object && !object[editorNode]) object = object.parent;
+        if (object && nodes.get(object[editorNode]).selectable)
+          select(object[editorNode], e.shiftKey, e.ctrlKey || e.metaKey);
       } else if (!e.shiftKey) select(null);
     });
     renderer.domElement.addEventListener("webglcontextlost", (e) => {
@@ -1077,6 +1342,7 @@ window.addEventListener("keydown", (e) => {
     ];
     gizmo.setMode($("tool").value);
   } else if (
+    !previewActive &&
     ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
   ) {
     e.preventDefault();
@@ -1113,6 +1379,7 @@ function frame() {
 }
 window.addEventListener("pagehide", () => {
   disposed = true;
+  for (const extension of extensions) extension.dispose?.();
   disposeContent();
   gizmo?.dispose();
   orbit?.dispose();
@@ -1135,12 +1402,22 @@ window.hatchEditor = {
     return [...errors];
   },
   select,
+  selectBone,
+  get boneSelection() {
+    return boneSelection();
+  },
   registerExtension(factory, container) {
     const extension = factory({
       container,
       api,
+      upload,
+      reload,
+      preview,
+      clearPreview,
       getSnapshot: () => structuredClone(currentSnapshot),
       getSelection: () => [...selection],
+      getBoneSelection: boneSelection,
+      onBoneSelect: selectBone,
       commit,
       onSelect: select,
     });
@@ -1149,6 +1426,8 @@ window.hatchEditor = {
     return extension;
   },
   commit,
+  preview,
+  clearPreview,
   reload,
   objects,
   get renderer() {
