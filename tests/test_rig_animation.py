@@ -89,6 +89,43 @@ class RigAnimationTests(unittest.TestCase):
         self.assertAlmostEqual(report['orientation_residual_rad'],1.)
         self.assertFalse(report['converged'])
 
+    def test_validation_rejects_current_unsatisfied_contact_orientation(self):
+        from rig_validation import validate_rig
+        rig=self.rig
+        rig.manifest['controllers']['constraints']=[dict(schema_version=1,id='hand-limit',
+            bone='b2',type='hinge',axis=[1,0,0],minimum=0.,maximum=.2)]
+        clip=deepcopy(rig.clips['neutral'])
+        clip['contacts']=[dict(schema_version=1,id='hold',chain='arm',start=0.,end=1.,
+            target=[0.,2.,0.],orientation=axis_angle([1,0,0],1.2).tolist(),kind='hand')]
+        rig.clips={'neutral':clip}
+        report=validate_rig(rig)
+        self.assertFalse(report['ok'])
+        checks={check['name']:check for check in report['checks']}
+        self.assertEqual(checks['contacts']['status'],'passed')
+        self.assertEqual(checks['contact-orientations']['status'],'failed')
+        self.assertAlmostEqual(report['metrics']['max_contact_orientation_error_rad'],1.)
+        self.assertEqual(report['metrics']['contact_orientation_tolerance_rad'],1e-5)
+
+    def test_validation_accepts_reached_antipodal_orientation_and_position_only_contacts(self):
+        from rig_validation import validate_rig, contact_metrics
+        rig=self.rig
+        rig.manifest['controllers']['constraints']=[dict(schema_version=1,id='hand-limit',
+            bone='b2',type='hinge',axis=[1,0,0],minimum=0.,maximum=.2)]
+        clip=deepcopy(rig.clips['neutral'])
+        clip['contacts']=[dict(schema_version=1,id='hold',chain='arm',start=0.,end=1.,
+            target=[0.,2.,0.],orientation=(-axis_angle([1,0,0],.15)).tolist(),kind='hand')]
+        rig.clips={'neutral':clip}
+        report=validate_rig(rig)
+        self.assertTrue(report['ok'])
+        self.assertLess(report['metrics']['max_contact_orientation_error_rad'],1e-7)
+        self.assertEqual(contact_metrics(rig,clip)['oriented_contacts'],1)
+        del clip['contacts'][0]['orientation']
+        report=validate_rig(rig)
+        self.assertTrue(report['ok'])
+        self.assertNotIn('contact-orientations',{check['name'] for check in report['checks']})
+        self.assertNotIn('max_contact_orientation_error_rad',report['metrics'])
+        self.assertEqual(contact_metrics(rig,clip)['oriented_contacts'],0)
+
     def test_retarget_keeps_independent_same_named_morphs_on_their_meshes(self):
         source=self.rig;target=fixture(self.temp.name,name='morph-target')
         for rig in (source,target):
