@@ -89,6 +89,33 @@ def _preflight_project(graph, recipes):
                      extra_payloads=payloads, dry_run=True)
 
 
+def _preflight_edit(graph, candidate):
+    """Check a persisted ordinary edit with the same complete snapshot engine."""
+    from scene3d_contracts import load_project
+    from scene3d_graph import SceneGraph
+    from scene3d_snapshot import snapshot_project
+    from pathlib import Path
+    from uuid import uuid4
+    context = graph.planning_source()
+    if context is None:
+        # A standalone graph has no project limits or closure to authenticate.
+        # Its plan remains an explicitly scene-only in-memory operation.
+        return 'scene-only'
+    source, scene_path = context
+    bundle = load_project(source)
+    selected = SceneGraph.from_bundle(bundle, scene_path, source_root=source)
+    require(selected.digest == graph.digest, 'Scene changed before language planning.', 'SCENE3D_LANGUAGE_STALE')
+    document = candidate.document()
+    document['revision'] = graph.revision + 1  # The actual batch commits once.
+    prepared = SceneGraph(document, external_references=candidate._references,
+                          asset_bounds=candidate._asset_bounds,
+                          animation_documents=candidate._animation_documents,
+                          animation_payloads=candidate._animation_payloads)
+    snapshot_project(source, Path(source).absolute().parent / ('.scene3d-language-preflight-' + uuid4().hex),
+                     prepared, scene_path=scene_path, derived_documents=candidate.derived_documents(), dry_run=True)
+    return 'project-closure'
+
+
 def compile_environment_description(graph, text):
     from scene3d_environment import plan as geometry_plan
     statements = _text(text)

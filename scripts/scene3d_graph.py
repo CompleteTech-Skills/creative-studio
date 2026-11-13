@@ -267,7 +267,7 @@ class SceneGraph:
                     payloads[path] = raw
         graph = cls(scene, external_references=references, asset_bounds=bounds, animation_payloads=payloads)
         if source_root is not None:
-            graph._planning_source = (str(source_root), scene_path)
+            graph._planning_source = (str(Path(source_root).absolute()), scene_path)
         return graph
 
     def planning_source(self):

@@ -169,9 +169,18 @@ def compile_description(graph, text):
             diagnostics.append({"statement": index, "text": statement, "code": exc.report["code"], "message": exc.report["message"]})
             # Stop simulation after failure: later targets may depend on it.
             break
+    verification_scope = 'scene-only'
+    if not diagnostics:
+        try:
+            from scene3d_language_environment import _preflight_edit
+            verification_scope = _preflight_edit(graph, working)
+        except RigError as exc:
+            diagnostics.append({"statement": len(statements) - 1, "text": statements[-1],
+                                "code": exc.report["code"], "message": exc.report["message"]})
     plan = {"schema_version": 1, "kind": "scene3d-language-plan", "planner": "offline-grammar-v1",
             "original_text": text, "base_revision": graph.revision, "base_sha256": graph.digest,
             "commands": commands, "diagnostics": diagnostics, "substitutions": [],
+            "verification_scope": verification_scope,
             "status": "ready" if not diagnostics else "unresolved"}
     plan["sha256"] = _digest(plan)
     return plan
@@ -183,7 +192,7 @@ compile_revision = compile_description
 def apply_plan(graph, library, plan):
     """Apply only an intact ready plan against its exact source scene."""
     keys = {"schema_version", "kind", "planner", "original_text", "base_revision", "base_sha256",
-            "commands", "diagnostics", "substitutions", "status", "sha256"}
+            "commands", "diagnostics", "substitutions", "status", "sha256", "verification_scope"}
     _require(isinstance(plan, dict) and set(plan) == keys and type(plan["schema_version"]) is int and
              plan["schema_version"] == 1 and plan["kind"] == "scene3d-language-plan" and
              plan["planner"] == "offline-grammar-v1", "Unsupported language plan.")

@@ -133,6 +133,26 @@ class LanguagePlanTests(unittest.TestCase):
         self.assertEqual(plan["status"], "unresolved")
         self.assertEqual(self.graph.revision, 0)
 
+    def test_project_budget_prevents_ready_plan_and_successful_cli_dry_run(self):
+        from scene3d_contracts import canonical_bytes
+        project = json.loads((self.source / 'project.json').read_bytes())
+        project['budgets']['max_nodes'] = 3
+        (self.source / 'project.json').write_bytes(canonical_bytes(project))
+        self.graph = SceneGraph.from_bundle(load_project(self.source), 'example-scene.json', source_root=self.source)
+        before = load_project(self.source)['inventory']
+        plan = compile_description(self.graph, 'duplicate mesh as copy')
+        self.assertEqual(plan['status'], 'unresolved')
+        self.assertIn('node budget', plan['diagnostics'][0]['message'])
+        target = self.directory / 'not-created'
+        command = [sys.executable, str(Path(__file__).resolve().parents[1] / 'scripts/scene3d.py')]
+        for dry_run in ([], ['--dry-run']):
+            result = subprocess.run(command + ['revise', '--project', str(self.source), '--scene', 'example-scene.json',
+                '--text', 'duplicate mesh as copy', '--destination', str(target)] + dry_run,
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertFalse(target.exists())
+        self.assertEqual(load_project(self.source)['inventory'], before)
+
     def test_cli_actual_plan_apply_snapshot_and_failure(self):
         root = Path(__file__).resolve().parents[1]
         command = [sys.executable, str(root / "scripts/scene3d.py")]

@@ -170,8 +170,12 @@ and exact snapshot file/byte budgets, including retained history and promoted
 scene/shot documents. Regeneration uses the canonical recipe preparation logic,
 so preserved manual edits and existing generated nodes are counted correctly.
 Standalone in-memory graphs without a verified project source remain unresolved.
-The snapshot owner's resource-only dry run returns `status: planned`; it does not
-publish a destination or claim independent artifact verification.
+The snapshot owner's dry run prepares the exact byte closure and runs the same
+path/hash/identity/schema/semantic validator used for real project files. It
+returns `status: planned`; it does not publish a destination or claim independent
+artifact verification. Persisted ordinary edit plans use this same preflight.
+In-memory ordinary plans without a project context explicitly declare
+`verification_scope: scene-only`; persisted plans declare `project-closure`.
 Generated meshes are editable persisted native nodes with hash-bound OBJ bytes.
 Existing authored nodes, source bytes and manual generator overrides retain their
 native owner protections. No material, camera, character or asset substitution is

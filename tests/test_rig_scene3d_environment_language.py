@@ -103,6 +103,40 @@ class EnvironmentLanguageTests(unittest.TestCase):
         self.assertIn('node budget', plan['diagnostics'][0]['message'])
         self.assertGreater(sum(item['nodes'] for item in plan['geometry']) + len(self.graph.document()['nodes']), 100)
 
+    def test_regeneration_cannot_remove_a_promoted_shot_target(self):
+        import hashlib
+        from scene3d_contracts import canonical_bytes
+        initial = compile_environment_description(self.graph, self.text)
+        target = self.directory / 'with-workshop'
+        receipt = apply_environment_plan(self.source, target, 'example-scene.json', initial)
+        scene_path = receipt['snapshot']['active_scene']['path']
+        bundle = load_project(target)
+        project = json.loads((target / 'project.json').read_bytes())
+        shot_ref = next(ref for ref in project['shots']
+                        if bundle['documents'][ref['path']]['scene']['path'] == scene_path)
+        path = shot_ref['path']
+        shot = deepcopy(bundle['documents'][path])
+        shot['tracks'] = [dict(target='shop-floor-1', property='translation', interpolation='linear',
+                              keys=[dict(frame=0, value=[5, 0, 0]), dict(frame=24, value=[6, 0, 0])])]
+        raw = canonical_bytes(shot)
+        (target / path).write_bytes(raw)
+        for references in (project['shots'], project['dependency_lock']):
+            for reference in references:
+                if reference['path'] == path:
+                    reference['sha256'] = hashlib.sha256(raw).hexdigest()
+        (target / 'project.json').write_bytes(canonical_bytes(project))
+        before = load_project(target)
+        graph = SceneGraph.from_bundle(before, scene_path, source_root=target)
+        plan = compile_environment_description(graph, self.text.replace('two rooms', 'one room'))
+        self.assertEqual(plan['status'], 'unresolved')
+        self.assertIn('missing node', plan['diagnostics'][0]['message'])
+        output = self.directory / 'invalid-regeneration'
+        for dry_run in (True, False):
+            with self.assertRaises(RigError):
+                apply_environment_plan(target, output, scene_path, plan, dry_run=dry_run)
+        self.assertFalse(output.exists())
+        self.assertEqual(load_project(target)['inventory'], before['inventory'])
+
     def test_named_generator_cli_dry_run_rejects_project_node_overflow(self):
         recipe = self.directory / 'large-recipe.json'
         recipe.write_text(json.dumps({'id': 'shop', 'version': 1, 'seed': 42, 'generator': 'workshop',

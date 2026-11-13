@@ -698,15 +698,41 @@ def read_document(path):
 
 
 def load_project(root, name='project.json'):
-    """Read-only closure verification. Files must remain stable during this call.
+    """Verify real project files through canonical no-follow source admission.
 
-    This is not a transaction or a sandbox against a malicious concurrent writer.
-    Later workers must revalidate input hashes at their own admission boundary.
-    Explicit internal directory capabilities retain their descriptor authority;
-    dependency reads never resolve that authority into a replaceable pathname.
+    Internal directory capabilities retain their descriptor authority. Callers
+    must still revalidate bytes at later worker admission boundaries.
     """
     root = normalize_root(root)
     require(root.is_dir(), 'Project root must be a directory.')
+    return _load_project(root, name)
+
+
+def validate_project_files(files, name='project.json'):
+    """Verify a private immutable byte closure with the identical project engine.
+
+    No filesystem locations, symlinks or deferred reads are represented here.
+    The real-filesystem entry point continues to enforce all source admission
+    checks; both sources share paths, hashes, identities, budgets and semantics.
+    Unreferenced retained bytes are bounded and path-checked too.
+    """
+    require(type(files) is dict and 0 < len(files) <= MAX_FILES,
+            'Expected a bounded private project byte mapping.')
+    files = dict(files)
+    aliases, total = set(), 0
+    for path, raw in files.items():
+        portable_path(path)
+        folded = unicodedata.normalize('NFC', path).casefold()
+        require(folded not in aliases, 'Portable path alias collision.')
+        aliases.add(folded)
+        require(type(raw) is bytes, 'Project byte mapping values must be immutable bytes.')
+        total += len(raw)
+        require(total <= MAX_TOTAL_BYTES, 'Project byte mapping exceeds the global byte budget.')
+    return _load_project(None, name, byte_files=files)
+
+
+def _load_project(root, name, *, byte_files=None):
+    """One schema, identity, hash and semantic validator for both trusted sources."""
     documents, inventory, identities, edges, aliases, payloads = {}, {}, {}, {}, {}, {}
     total = 0
     budgets = dict(max_files=MAX_FILES, max_bytes=MAX_TOTAL_BYTES, max_nodes=MAX_NODES, max_frames=1_000_000)
@@ -717,28 +743,16 @@ def load_project(root, name='project.json'):
         folded = unicodedata.normalize('NFC', path).casefold()
         require(folded not in aliases or aliases[folded] == path, 'Portable path alias collision.')
         aliases[folded] = path
-        target = root
-        for part in path.split('/'):
-            target = target / part
-            require(not target.is_symlink(), 'Dependency path traverses a symlink.')
-            require(not getattr(target, 'is_junction', lambda: False)(), 'Dependency path traverses a junction.')
-            # Resolve only this containment comparison, never the authority used
-            # for opening files below. Registered descriptor roots stay pinned.
-            require(target.resolve().is_relative_to(root.resolve()), 'Dependency resolves outside the project root.')
-        require(target.is_file(), 'Missing regular dependency: ' + path)
-        target = safe_path(root, path, exists=True)
-        size = target.stat().st_size
-        require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
-        require(len(inventory) < budgets['max_files'], 'Project file budget exceeded.')
-        digest = hashlib.sha256()
-        observed = 0
-        chunks = []
-        with open_payload(root, path) as (stream, opened):
-            require(opened.st_size == size, 'Dependency changed size while opening: ' + path)
+        def consume(stream, size):
+            nonlocal total
+            digest = hashlib.sha256()
+            observed = 0
+            chunks = []
             while True:
                 chunk = stream.read(min(1024*1024, budgets['max_bytes'] - total + 1))
                 if not chunk:
                     break
+                # The outer count is shared by all dependency reads.
                 total += len(chunk)
                 observed += len(chunk)
                 require(total <= budgets['max_bytes'], 'Project byte budget exceeded during read.')
@@ -746,10 +760,39 @@ def load_project(root, name='project.json'):
                 if path.endswith('.json'):
                     require(sum(map(len, chunks)) + len(chunk) <= MAX_DOCUMENT_BYTES, 'Document exceeds 16 MiB.')
                     chunks.append(chunk)
-        require(observed == size, 'Dependency changed size while reading: ' + path)
-        inventory[path] = dict(sha256=digest.hexdigest(), bytes=observed)
-        payloads[path] = b''.join(chunks)
-        return payloads[path]
+            require(observed == size, 'Dependency changed size while reading: ' + path)
+            inventory[path] = dict(sha256=digest.hexdigest(), bytes=observed)
+            payloads[path] = b''.join(chunks)
+            return payloads[path]
+
+        if byte_files is not None:
+            require(path in byte_files, 'Missing regular dependency: ' + path)
+            raw = byte_files[path]
+            size = len(raw)
+            require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
+            require(len(inventory) < budgets['max_files'], 'Project file budget exceeded.')
+            class ByteReader:
+                offset = 0
+                def read(self, maximum):
+                    chunk = raw[self.offset:self.offset + maximum]
+                    self.offset += len(chunk)
+                    return chunk
+            return consume(ByteReader(), size)
+        target = root
+        for part in path.split('/'):
+            target = target / part
+            require(not target.is_symlink(), 'Dependency path traverses a symlink.')
+            require(not getattr(target, 'is_junction', lambda: False)(), 'Dependency path traverses a junction.')
+            # Resolve only containment, preserving descriptor authority for reads.
+            require(target.resolve().is_relative_to(root.resolve()), 'Dependency resolves outside the project root.')
+        require(target.is_file(), 'Missing regular dependency: ' + path)
+        target = safe_path(root, path, exists=True)
+        size = target.stat().st_size
+        require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
+        require(len(inventory) < budgets['max_files'], 'Project file budget exceeded.')
+        with open_payload(root, path) as (stream, opened):
+            require(opened.st_size == size, 'Dependency changed size while opening: ' + path)
+            return consume(stream, size)
 
     def visit(path, expected=None, depth=0):
         require(depth <= MAX_DEPTH, 'Dependency closure exceeds 128 levels.')

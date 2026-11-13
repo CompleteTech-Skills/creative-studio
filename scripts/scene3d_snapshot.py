@@ -17,7 +17,7 @@ from asset_library import read_source_bytes
 from atomic_publish import _rename_no_replace
 from rig_errors import timestamp, decode_json
 from scene3d_contracts import (all_refs, canonical_bytes, load_project,
-                               portable_path, validate_document)
+                               portable_path, validate_document, validate_project_files)
 from scene3d_graph import require
 
 
@@ -211,6 +211,7 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     require(total <= min(max_bytes, project['budgets']['max_bytes']) and len(files) <= project['budgets']['max_files'],
             'Snapshot exceeds project file/byte budgets.', 'SCENE3D_SNAPSHOT_LIMIT')
     if dry_run:
+        validate_project_files(files)
         return {'status': 'planned', 'dry_run': True, 'files': len(files), 'bytes': total,
                 'active_scene': active_scene}
     # All writes are inside an attempt-owned private directory. The destination
