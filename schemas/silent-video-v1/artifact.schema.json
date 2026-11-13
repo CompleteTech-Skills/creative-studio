@@ -107,7 +107,8 @@
     "profile": {
       "enum": [
         "h264-mp4",
-        "vp9-webm"
+        "vp9-webm",
+        "av1-webm"
       ]
     },
     "source_pixel_comparison": {

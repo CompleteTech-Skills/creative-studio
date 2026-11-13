@@ -25,6 +25,18 @@
       "precision": 8,
       "crf": 30,
       "preset": "good"
+    },
+    {
+      "container": "webm",
+      "codec": "av1",
+      "encoder": "libaom-av1",
+      "extension": ".webm",
+      "pixel_format": "yuv420p",
+      "alpha": "opaque",
+      "color": "untagged-sdr",
+      "precision": 8,
+      "crf": 32,
+      "preset": "6"
     }
   ]
 }

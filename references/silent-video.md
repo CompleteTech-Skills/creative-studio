@@ -187,3 +187,16 @@ an explicit three-integer sRGB background, using sRGB decoding, linear-light
 over and sRGB encoding; 50% white over black yields approximately188 rather
 than128. This optional adapter uses NumPy and does not belong to 2D-only import
 paths. EXR/HDR inputs are rejected until a separate verified transform is selected.
+
+## Capability-gated AV1 baseline
+
+`av1-webm` selects `libaom-av1` explicitly, with 8-bit opaque `yuv420p`, CRF32,
+CPU speed6, row multithreading and a zero average-bitrate target. Capability
+reporting checks the actual encoder, a matching decoder, WebM muxer, pixel
+format and secure publication support. It reports unsupported if this baseline
+is unavailable; it never substitutes VP9, H.264, hardware encoding or a different
+AV1 implementation. Codec speed and CRF are specific to this encoder. Independent
+stream enumeration, full strict decode, rational timestamps and actual pixel
+checks apply to AV1 just as they do to the established profiles. This baseline
+does not claim HDR, 10-bit, transparent WebM, configurable bitrate or two-pass
+support; those require explicit validated profile work.

@@ -255,6 +255,27 @@ class SilentMedia(SilentContracts):
         self.assert_receipt(video.verify_export(output, request, root=self.root), output)
         self.independent_decode(output)
 
+    def test_actual_optional_av1_all_required_rational_rates(self):
+        capability = video.capabilities()['profiles']['av1-webm']
+        if capability['status'] != 'supported':
+            self.skipTest('installed FFmpeg lacks libaom AV1 encoding/decoding/WebM support')
+        for numerator, denominator in ((24, 1), (25, 1), (30, 1), (60, 1),
+                                       (24000, 1001), (30000, 1001), (60000, 1001)):
+            with self.subTest(fps=(numerator, denominator)):
+                source = video.build_source(self.root, self.paths,
+                    fps={'numerator': numerator, 'denominator': denominator})
+                request = video.make_request(source, 'av1-webm')
+                output = self.root / ('av1-%d-%d.webm' % (numerator, denominator))
+                receipt = video.encode(request, self.root, output)
+                self.assert_receipt(receipt, output)
+                probe = self.independent_probe(output)
+                self.assertEqual([stream['codec_type'] for stream in probe['streams']], ['video'])
+                self.assertEqual(probe['streams'][0]['codec_name'], 'av1')
+                self.assertEqual(receipt['frame_count'], len(self.paths))
+                self.independent_decode(output)
+        with self.assertRaises(ValueError):
+            video.verify_export(output, video.make_request(source, 'vp9-webm'))
+
     def test_zero_valued_aac_track_is_not_silent_delivery(self):
         silent = self.root / 'video.mp4'
         video.encode(self.request, self.root, silent)

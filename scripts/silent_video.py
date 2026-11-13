@@ -40,6 +40,9 @@ PROFILES = {
     'vp9-webm': {'container': 'webm', 'codec': 'vp9', 'encoder': 'libvpx-vp9',
                  'extension': '.webm', 'pixel_format': 'yuv420p', 'alpha': 'opaque',
                  'color': 'untagged-sdr', 'precision': 8, 'crf': 30, 'preset': 'good'},
+    'av1-webm': {'container': 'webm', 'codec': 'av1', 'encoder': 'libaom-av1',
+                 'extension': '.webm', 'pixel_format': 'yuv420p', 'alpha': 'opaque',
+                 'color': 'untagged-sdr', 'precision': 8, 'crf': 32, 'preset': '6'},
 }
 
 
@@ -326,13 +329,14 @@ def capabilities(*, ffmpeg=None, ffprobe=None):
         evidence = {name: _run([binary, '-version'], DEFAULT_LIMITS)
                     for name, binary in [('ffmpeg', encoder), ('ffprobe', probe)]}
         lists = {flag: _run([encoder, '-hide_banner', flag], DEFAULT_LIMITS)['stdout']
-                 for flag in ['-encoders', '-muxers', '-pix_fmts']}
+                 for flag in ['-encoders', '-decoders', '-muxers', '-pix_fmts']}
     except (ValueError, OSError) as exc:
         result.update(status='unavailable', reason=str(exc))
         return result
     publication_supported = secure_publication_supported()
     for name, profile in PROFILES.items():
         supported = (publication_supported and re.search(r'\b'+re.escape(profile['encoder'])+r'\b', lists['-encoders']) and
+                     re.search(r'\b'+re.escape(profile['codec'])+r'\b', lists['-decoders'], re.IGNORECASE) and
                      re.search(r'\b'+profile['container']+r'\b', lists['-muxers']) and
                      re.search(r'\byuv420p\b', lists['-pix_fmts']))
         result['profiles'][name] = {**profile, 'status': 'supported' if supported else 'unsupported'}
@@ -597,8 +601,10 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
                    '-threads', '1']
         if request['profile'] == 'h264-mp4':
             command += ['-preset', profile['preset'], '-g', str(max(1, round(fps*2))), '-movflags', '+faststart']
-        else:
+        elif request['profile'] == 'vp9-webm':
             command += ['-deadline', 'good', '-b:v', '0']
+        else:
+            command += ['-cpu-used', profile['preset'], '-row-mt', '1', '-b:v', '0']
         command += [str(output)]
         if progress is not None:
             progress({'phase': 'encode', 'total_frames': len(request['source']['frames'])})
