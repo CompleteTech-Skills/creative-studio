@@ -112,13 +112,17 @@ def validate_project(value):
             _transform(instance['transform']);_overrides(instance['material_overrides']);_state(instance['animation_state'])
     require(isinstance(value['history'],list) and len(value['history'])<=256,'HISTORY','Bounded project history required.')
     for event in value['history']:
-        require(isinstance(event,dict) and set(event)=={'operation','scene','instance','role','before','after','sha256'},'HISTORY','Invalid replacement receipt.')
+        require(isinstance(event,dict),'HISTORY','Invalid consumer receipt.')
+        event_keys={'operation','scene','instance','role','before','after','sha256'}
+        if event.get('operation') in ('unbind','undo-unbind'):event_keys.add('revision')
+        require(set(event)==event_keys,'HISTORY','Invalid consumer receipt fields.')
         require(event['operation'] in ('replace','undo','unbind','undo-unbind'),'HISTORY','Unknown consumer edit.')
         identifier(event['scene']);identifier(event['instance'])
         require(event['role'] in ROLES or event['role']=='instance' and event['operation'] in ('unbind','undo-unbind'),'HISTORY','Unknown binding role.')
         if event['operation'] in ('replace','undo'):
             binding(event['before']);binding(event['after'])
         else:
+            require(type(event['revision']) is int and 1<=event['revision']<=value['revision'],'HISTORY','Invalid removal revision.')
             removed,empty=(event['before'],event['after']) if event['operation']=='unbind' else (event['after'],event['before'])
             require(empty is None,'HISTORY','Unbind history requires an absent side.')
             if event['role']=='instance':
@@ -297,7 +301,7 @@ class SceneLibraryAdapter:
             removed=instance['bindings'][role]
             require(expected_binding is None or binding(expected_binding)==removed,'STALE','Selected exact binding changed.')
             del instance['bindings'][role];self._evaluate(instance);event_role=role
-        event=dict(operation='unbind',scene=scene_id,instance=instance_id,role=event_role,before=removed,after=None)
+        event=dict(operation='unbind',scene=scene_id,instance=instance_id,role=event_role,before=removed,after=None,revision=result['revision']+1)
         event['sha256']=object_hash(event);result['history'].append(event);result['revision']+=1
         verified=self.verify(result)
         return dict(project=verified['project'],receipt=deepcopy(event),locks=verified['locks'],
@@ -307,6 +311,11 @@ class SceneLibraryAdapter:
         result=validate_project(project)
         require(type(expected_revision) is int and expected_revision==result['revision'],'STALE','Project revision changed.')
         require(receipt in result['history'] and receipt['operation']=='unbind','UNDO','Use a retained unbind receipt.')
+        position=result['history'].index(receipt)
+        for later in result['history'][position+1:]:
+            same_target=later['scene']==receipt['scene'] and later['instance']==receipt['instance']
+            overlaps=receipt['role']=='instance' or later['role']=='instance' or later['role']==receipt['role']
+            require(not(same_target and overlaps),'STALE','Binding history changed after this removal; preserving newer intent.')
         try:instances=result['scenes'][receipt['scene']]['instances']
         except KeyError as exc:raise RigError('LIBRARY_REUSE_UNDO','Selected scene was removed.') from exc
         if receipt['role']=='instance':
@@ -317,7 +326,7 @@ class SceneLibraryAdapter:
             instance=instances[receipt['instance']]
             require(receipt['role'] not in instance['bindings'],'STALE','Binding slot is occupied; preserving newer content.')
             instance['bindings'][receipt['role']]=deepcopy(receipt['before']);self._evaluate(instance)
-        event=dict(operation='undo-unbind',scene=receipt['scene'],instance=receipt['instance'],role=receipt['role'],before=None,after=deepcopy(receipt['before']))
+        event=dict(operation='undo-unbind',scene=receipt['scene'],instance=receipt['instance'],role=receipt['role'],before=None,after=deepcopy(receipt['before']),revision=result['revision']+1)
         event['sha256']=object_hash(event);result['history'].append(event);result['revision']+=1
         return self.verify(result)['project']
 

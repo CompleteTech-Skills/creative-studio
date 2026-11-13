@@ -79,6 +79,10 @@ class SceneUnbind(unittest.TestCase):
         self.assertEqual(self.library.list_references(),old_assets)
         with self.assertRaises(RigError):self.adapter.undo_unbind(restored,changed['receipt'],expected_revision=restored['revision'])
         with self.assertRaises(RigError):self.adapter.unbind(project,'scene-a','robot',expected_revision=project['revision']-1)
+        removed_again=self.adapter.unbind(restored,'scene-a','robot',expected_revision=restored['revision'])
+        with self.assertRaises(RigError):self.adapter.undo_unbind(removed_again['project'],changed['receipt'],expected_revision=removed_again['project']['revision'])
+        latest=self.adapter.undo_unbind(removed_again['project'],removed_again['receipt'],expected_revision=removed_again['project']['revision'])
+        self.assertEqual(latest['scenes'],restored['scenes'])
 
     def test_optional_binding_exact_selection_and_active_animation(self):
         project=self.instance(self.project,'scene-a')
