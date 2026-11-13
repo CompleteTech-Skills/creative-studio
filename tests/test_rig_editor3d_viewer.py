@@ -113,6 +113,27 @@ class EditorViewportTests(unittest.TestCase):
                 limited = preview_snapshot(repository, repository.snapshot())
             self.assertTrue(all(asset['format'] == 'geometry' for asset in limited['viewport_assets'].values()))
 
+    def test_restoring_same_content_retains_new_revision_and_redo_state(self):
+        from tempfile import TemporaryDirectory
+        from editor3d_repository import EditorRepository
+        with TemporaryDirectory() as directory:
+            repository = EditorRepository.create(ROOT / 'examples/scene3d-contracts', Path(directory) / 'saved')
+            server = EditorServer(repository)
+            try:
+                initial = server.snapshot()
+                commands = dict(schema_version=1, commands=[dict(operation='transform', parameters=dict(
+                    identifier='mesh', transform=dict(translation=[3, 0, 0], rotation=[0, 0, 0, 1], scale=[1, 1, 1])))])
+                repository.apply(0, commands, 'move-1', expected_sha256=initial['sha256'])
+                edited = server.snapshot()
+                repository.undo(1, 'undo-1', expected_sha256=edited['sha256'])
+                restored = server.snapshot()
+                self.assertEqual(restored['sha256'], initial['sha256'])
+                self.assertEqual(restored['revision'], 2)
+                self.assertTrue(restored['redo_available'])
+                self.assertFalse(restored['undo_available'])
+            finally:
+                server.server_close()
+
     def test_corrupt_native_bytes_fail_before_preview(self):
         original = self.repository.read_file
         self.repository.read_file = lambda path, sha: original(path, sha) + b' '
