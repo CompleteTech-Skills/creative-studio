@@ -103,8 +103,8 @@ def _material_source(snapshot, node_id, slot):
         if item['slot'] == slot:
             return item['material']
     asset = next((item for item in snapshot.get('documents', {}).values()
-                  if item.get('kind') == 'scene3d-asset' and item['id'] == node['asset']['id']
-                  and item['version'] == node['asset']['version']), None)
+                  if item.get('kind') == 'scene3d-asset' and item['id'] == (node.get('asset') or {}).get('id')
+                  and item['version'] == (node.get('asset') or {}).get('version')), None)
     if asset is not None:
         for item in asset['materials']:
             if item['id'] == slot:
@@ -151,7 +151,7 @@ def describe_materials(repository, snapshot, node_id):
     if node is None: _fail('Unknown node.')
     slots = {item['slot'] for item in node['material_overrides']}
     for asset in snapshot.get('documents', {}).values():
-        if asset.get('kind') == 'scene3d-asset' and asset['id'] == node.get('asset', {}).get('id') and asset['version'] == node.get('asset', {}).get('version'):
+        if asset.get('kind') == 'scene3d-asset' and asset['id'] == (node.get('asset') or {}).get('id') and asset['version'] == (node.get('asset') or {}).get('version'):
             slots.update(item['id'] for item in asset['materials'])
     results = []
     for slot in sorted(slots):

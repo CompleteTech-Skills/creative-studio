@@ -81,6 +81,12 @@ class InspectorTests(unittest.TestCase):
         self.assertEqual(describe_inspector(self.snapshot)['kind'],'world')
         with self.assertRaises(RigError):describe_inspector(self.snapshot,'missing')
 
+    def test_material_inspection_of_non_geometry_nodes_is_empty(self):
+        from editor3d_inspectors import describe_materials
+        snapshot=dict(self.snapshot,documents=self.bundle['documents'])
+        self.assertEqual(describe_materials(None,snapshot,'camera'),[])
+        self.assertEqual(describe_materials(None,snapshot,'root'),[])
+
     def test_material_edit_publishes_new_native_version_and_preserves_source(self):
         import hashlib
         from editor3d_repository import EditorRepository
