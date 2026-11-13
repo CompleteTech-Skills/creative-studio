@@ -37,7 +37,7 @@ let renderer,
   previewActive = false;
 const collapsed = new Set();
 const extensions = [];
-let pendingCommit = null, lastCommitResult = true, guardedAction = false, lifecycleGeneration = 0;
+let pendingCommit = null, lastCommitResult = true, guardedAction = false, actionAuthority = null, lifecycleGeneration = 0;
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
 const editorNode = Symbol("native-scene-node");
 const errors = [],
@@ -80,7 +80,8 @@ function diagnostic(error) {
 function clearDiagnostic() {
   $("diagnostic").hidden = true;
 }
-async function api(path, body) {
+async function api(path, body, authority = null) {
+  if (guardedAction && authority !== actionAuthority) throw Error("Another editor action is in progress.");
   const response = await fetch("/api/" + path, {
     method: body === undefined ? "GET" : "POST",
     headers: {
@@ -100,6 +101,7 @@ async function api(path, body) {
   return result;
 }
 async function upload(file) {
+  if (guardedAction) throw Error("Another editor action is in progress.");
   if (file.size <= 0 || file.size > 64 * 1024 * 1024)
     throw Error("Choose a file between 1 byte and 64 MiB.");
   const response = await fetch("/api/uploads", {
@@ -161,6 +163,7 @@ function applyNativeState(value) {
   content.updateMatrixWorld(true);
 }
 function preview(scene) {
+  if (guardedAction) throw Error("Another editor action is in progress.");
   playing = false;
   gizmo.detach();
   applyNativeState(scene.nodes);
@@ -168,6 +171,7 @@ function preview(scene) {
   refreshSelection();
 }
 function clearPreview() {
+  if (guardedAction) throw Error("Another editor action is in progress.");
   applyNativeState(savedNativeState.nodes);
   previewActive = false;
   refreshSelection();
@@ -302,7 +306,7 @@ async function performCommit(commands) {
   } catch (error) {
     lastCommitResult = false;
     diagnostic(error);
-    await reload(false);
+    await reload(false, actionAuthority);
     return false;
   } finally {
     setBusy(false);
@@ -324,6 +328,7 @@ async function runGuardedAction(callback) {
   if (!pending && !lastCommitResult) throw Error("The last edit was not saved; retry the edit before this action.");
   if (busy && !pending) throw Error("The editor is busy.");
   guardedAction = true;
+  const authority = Symbol("saved-editor-action"); actionAuthority = authority;
   let ownsBusy = false;
   try {
     if (pending && await pending !== true) throw Error("The pending edit was not saved.");
@@ -334,14 +339,14 @@ async function runGuardedAction(callback) {
     };
     const value = await callback({
       snapshot: structuredClone(currentSnapshot),
-      api: async (...args) => { assertCurrent(); const result = await api(...args); assertCurrent(); return result; },
-      reload: async (...args) => { assertCurrent(); const result = await reload(...args); assertCurrent(); return result; },
+      api: async (...args) => { assertCurrent(); const result = await api(args[0], args[1], authority); assertCurrent(); return result; },
+      reload: async (...args) => { assertCurrent(); const result = await reload(args[0], authority); assertCurrent(); return result; },
       isCurrent: () => usable() && lifecycleGeneration === generation,
     });
     assertCurrent();
     return value;
   } finally {
-    guardedAction = false;
+    guardedAction = false; actionAuthority = null;
     if (ownsBusy) setBusy(false);
   }
 }
@@ -690,8 +695,8 @@ async function install(snapshot) {
   if ($("diagnostic").hidden)
     $("status").textContent = "Loaded saved revision " + revision;
 }
-async function reload(frame = false) {
-  const snapshot = await api("snapshot");
+async function reload(frame = false, authority = null) {
+  const snapshot = await api("snapshot", undefined, authority);
   const displayed = await install(snapshot);
   if (frame && displayed !== false) frameScene();
   return displayed;
@@ -1439,7 +1444,7 @@ function initialize() {
     });
     renderer.domElement.addEventListener("webglcontextrestored", () => {
       lost = false;
-      reload()
+      reload(false, actionAuthority)
         .then((displayed) => {
           if (displayed === false) return;
           clearDiagnostic();
