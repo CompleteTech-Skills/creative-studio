@@ -163,3 +163,14 @@ class ImageVerification(unittest.TestCase):
             image.unlink();target.rename(image)
             (snapshot/'triangle.obj').write_bytes(b'changed')
             with self.assertRaises(Render3DError):verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+
+    def test_unexpected_directory_and_nonregular_inventory_reject(self):
+        import os
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            extra=root/'frames'/'unexpected';extra.mkdir()
+            with self.assertRaises(Render3DError):verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            extra.rmdir()
+            if hasattr(os,'mkfifo'):
+                os.mkfifo(extra)
+                with self.assertRaises(Render3DError):verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
