@@ -49,3 +49,10 @@ nofollow support and fails with `RIG_DIRECTORY_UNAVAILABLE` elsewhere. Ordinary
 path APIs and their platform behavior remain available and unchanged. No arbitrary
 code sandbox, hostile same-process FD manipulation protection, concurrent metadata
 authorization or power-loss guarantee is claimed.
+
+`scoped_directory_descriptor(root)` borrows a context-owned duplicate for an
+existing descendant directory of an active capability. It opens each descendant
+with directory-relative nofollow flags and closes all owned FDs on exit. It yields
+`None` for ordinary or unregistered roots; callers must then apply their ordinary
+strict directory-opening policy rather than granting procfd authority. This is
+intended for nested publishers that need a parent FD inside an existing stage.
