@@ -69,6 +69,15 @@ class StyleTests(unittest.TestCase):
             identity_sha256='b'*64,slots={'skin':{'material':reference,
                 'targets':[{'object_id':'mesh','slot_id':'skin'}],'protected_fields':['subsurface']}})
         self.assertEqual(validate_binding(binding),binding)
+        for path,value in [(('character','version'),'invalid-version'),
+                           (('slots','skin','material','version'),['1.0.0']),
+                           (('slots','skin','material','path'),'../outside.json'),
+                           (('slots','skin','material','kind'),'light3d')]:
+            altered=deepcopy(binding);target=altered
+            for part in path[:-1]:target=target[part]
+            target[path[-1]]=value
+            altered['sha256']=content_hash({k:v for k,v in altered.items() if k!='sha256'})
+            with self.subTest(path=path),self.assertRaises(RigError):validate_binding(altered)
         self.assertEqual(validate_identity_material(binding,'skin',registry,reference)['surface']['subsurface']['weight'],.5)
 
     def test_slot_ownership_is_unique_and_bounded(self):
