@@ -18,7 +18,11 @@ from scene3d_contracts import ID
 MAX_TEXT = 16384
 MAX_STATEMENTS = 128
 MAX_COMMANDS = 256
-NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)"
+WORD_NUMBERS = {name: value for value, name in enumerate((
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+    "eighteen", "nineteen", "twenty"))}
+NUMBER = r"(?:[+-]?(?:\d+(?:\.\d*)?|\.\d+)|" + "|".join(WORD_NUMBERS) + ")"
 LABEL = r'(?P<target>"[^"\n]{1,256}"|[a-zA-Z][a-zA-Z0-9 _-]{0,255}?)'
 
 
@@ -48,21 +52,25 @@ def _text(value):
 
 
 def _target(scene, label):
-    label = label.strip().strip('"')
-    if label.lower().startswith("the "):
-        label = label[4:]
+    label = label.strip()
+    quoted = label.startswith('"') and label.endswith('"')
+    label = label.strip('"')
     nodes = scene["nodes"]
-    # Exact IDs take precedence; display names must be uniquely matched.
-    matches = [n for n in nodes if n["id"] == label]
-    if not matches:
-        matches = [n for n in nodes if n["name"].casefold() == label.casefold()]
+    # Exact IDs take precedence; display names must be uniquely matched. Articles
+    # are optional grammar only when the complete unquoted name did not match.
+    def matches_for(candidate):
+        exact = [n for n in nodes if n["id"] == candidate]
+        return exact or [n for n in nodes if n["name"].casefold() == candidate.casefold()]
+    matches = matches_for(label)
+    if not matches and not quoted and label.lower().startswith("the "):
+        matches = matches_for(label[4:])
     _require(len(matches) == 1,
              "Target is missing or ambiguous: " + label, "SCENE3D_LANGUAGE_TARGET")
     return matches[0]
 
 
 def _number(text, *, positive=False):
-    value = float(text)
+    value = float(WORD_NUMBERS[text.lower()]) if text.lower() in WORD_NUMBERS else float(text)
     _require(math.isfinite(value) and abs(value) <= 1e6 and (not positive or value > 1e-8),
              "Numeric parameter exceeds supported bounds.")
     return value
@@ -111,7 +119,7 @@ def _compile_statement(statement, scene):
         verb = match["verb"].lower()
         key, value = ("locked", verb == "lock") if verb in ("lock", "unlock") else ("visible", verb == "show")
         return {"operation": "node-flags", "parameters": {"identifier": node["id"], key: value}}
-    match = re.fullmatch(r"delete\s+" + LABEL, statement, flags)
+    match = re.fullmatch(r"(?:delete|remove)\s+" + LABEL, statement, flags)
     if match:
         node = _target(scene, match["target"])
         return {"operation": "delete", "parameters": {"identifier": node["id"], "policy": "reject"}}

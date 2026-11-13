@@ -42,7 +42,8 @@ names. Quote names containing spaces. Supported statements are:
 - `hide TARGET`, `show TARGET`, `lock TARGET`, `unlock TARGET`.
 - `duplicate TARGET as new-id`, `reparent TARGET under PARENT`, `delete TARGET`.
 
-Separate statements with semicolons or newlines. Later statements see earlier
+Numeric literals and the whole-number words zero through twenty are supported.
+`remove` is an alias for `delete`. Separate statements with semicolons or newlines. Later statements see earlier
 planned commands, including newly duplicated objects. Directions are world
 +X east, +Y up and +Z north, including for rotated parents. Reparenting preserves
 world pose and fails for unrepresentable transforms. Deletion uses the native

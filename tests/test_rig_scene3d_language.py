@@ -33,7 +33,7 @@ class LanguagePlanTests(unittest.TestCase):
 
     def test_compilation_is_pure_deterministic_and_preserves_words(self):
         original = self.graph.document()
-        text = "Move the camera 2 meters north; scale mesh by 2"
+        text = "Move the camera two meters north; scale mesh by 2"
         plan = compile_description(self.graph, text)
         self.assertEqual(plan, compile_description(self.graph, text))
         self.assertEqual(plan["original_text"], text)
@@ -82,6 +82,16 @@ class LanguagePlanTests(unittest.TestCase):
         self.assertEqual(plan["status"], "unresolved")
         self.assertEqual(plan["diagnostics"][0]["code"], "SCENE3D_LANGUAGE_TARGET")
         self.assertEqual(compile_description(graph, "hide mesh")["status"], "ready")
+
+    def test_article_in_display_name_is_preserved_and_word_numbers_compile(self):
+        document = self.graph.document()
+        next(n for n in document["nodes"] if n["id"] == "mesh")["name"] = "The Well"
+        graph = SceneGraph(document, external_references={})
+        for text in ('move "The Well" two meters east', 'move the well two meters east'):
+            plan = compile_description(graph, text)
+            self.assertEqual(plan["status"], "ready", plan)
+            self.assertEqual(plan["commands"][0]["parameters"]["identifier"], "mesh")
+        self.assertEqual(compile_description(graph, 'hide "well"')["status"], "unresolved")
 
     def test_unresolved_statement_prevents_partial_application(self):
         before = self.graph.document()
