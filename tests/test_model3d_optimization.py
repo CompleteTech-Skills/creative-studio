@@ -91,5 +91,7 @@ class OptimizationTests(unittest.TestCase):
             with self.assertRaises(RigError):compare_meshes(self.mesh,self.mesh,**kwargs)
         with self.assertRaises(RigError):repair_mesh(self.mesh,policy={'orient':'yes'})
         with self.assertRaises(RigError):self.generate(budgets={'bogus':4})
+        for options in [dict(cell_sizes=[1,10**1000]),dict(cell_sizes=[.08,.16],max_distance=10**1000)]:
+            with self.assertRaises(RigError):generate_lods(self.geometry,source_version='v',**options)
 
 if __name__=='__main__':unittest.main()
