@@ -165,7 +165,7 @@ class CollisionNativeTests(unittest.TestCase):
         for mask in [2,0xffffffff]:
             with self.assertRaises(BackendError) as raised:
                 raycast_cache(cache,0,[dict(start=[0,5,0],end=[0,1,0],mask=mask)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'])
-            self.assertEqual(raised.exception.code,'PHYSICS_QUERY_UNSUPPORTED')
+            self.assertEqual(raised.exception.report['code'],'PHYSICS_QUERY_UNSUPPORTED')
         query=raycast_cache(cache,0,[dict(start=[0,5,0],end=[0,-1,0],mask=1)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'])
         self.assertTrue(query['results'][0]['hit'])
         self.assertEqual(query['results'][0]['body'],'floor')
