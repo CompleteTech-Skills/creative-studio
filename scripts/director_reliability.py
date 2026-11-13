@@ -60,7 +60,8 @@ def apply_camera_or_light_patch(repository, expected_revision, expected_sha256,
     # Reopen the committed revision through the public owner before reporting it.
     from editor3d_repository import EditorRepository
     reopened = EditorRepository(repository.root).snapshot(after['revision'])
-    _require(reopened == after, 'Reopened project differs from committed component edit.')
+    immutable = lambda snapshot: {key: value for key, value in snapshot.items() if key not in ('undo_available', 'redo_available')}
+    _require(immutable(reopened) == immutable(after), 'Reopened project differs from committed component edit.')
     return dict(schema_version=1, kind='director-component-revision',
                 before=dict(revision=before['revision'], sha256=before['sha256']),
                 after=dict(revision=after['revision'], sha256=after['sha256']),

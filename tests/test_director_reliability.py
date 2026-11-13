@@ -54,6 +54,21 @@ class ComponentRevisionTests(unittest.TestCase):
         self.assertEqual(repository.snapshot()['revision'],2)
         self.assertEqual(next(n for n in repository.snapshot(1)['scene']['nodes'] if n['id']=='camera')['camera']['vertical_fov'],.9)
 
+    def test_followup_undo_preserves_committed_revision_receipt(self):
+        repository = self.repository
+        original_apply = repository.apply
+        def followup(*args, **kwargs):
+            result = original_apply(*args, **kwargs)
+            repository.undo(result['revision'],'concurrent-undo',expected_sha256=result['sha256'])
+            return result
+        repository.apply = followup
+        before = repository.snapshot()
+        receipt = self.patch(0,before['sha256'])
+        self.assertEqual(receipt['after']['revision'],1)
+        self.assertEqual(repository.snapshot()['revision'],2)
+        self.assertTrue(repository.snapshot()['redo_available'])
+        self.assertEqual(next(n for n in repository.snapshot(1)['scene']['nodes'] if n['id']=='camera')['camera']['vertical_fov'],.9)
+
     def test_stale_and_invalid_patch_preserve_last_valid_project(self):
         before = self.repository.snapshot()
         self.patch(0, before['sha256'])
