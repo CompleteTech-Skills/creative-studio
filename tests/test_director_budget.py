@@ -224,6 +224,27 @@ class BudgetTests(unittest.TestCase):
         row=next(iter(self.ledger.snapshot()['state']['reservations'].values()))
         self.assertEqual(row['reserved']['amount'],'1')
 
+    def test_adapter_owned_staging_handles_symlinked_system_temp(self):
+        from unittest.mock import patch
+        from director_budget import execute
+        target=self.directory/'private-temp';target.mkdir()
+        alias=self.directory/'system-temp'
+        alias.symlink_to(target,target_is_directory=True)
+        proof=self.proof[0]
+        original=(self.root/proof['path']).read_bytes()
+        reference=dict(artifact_id='rate-proof',kind='accounting-proof',schema_version=1,semantic_version='1.0.0',
+            path=proof['path'],sha256=proof['sha256'],byte_size=len(original),
+            media_type='application/json',provenance_ref=None,fixture=True,dependencies=[])
+        request=self.adapter_request()
+        request['input']['rate_evidence']=[reference]
+        with patch.object(tempfile,'tempdir',str(alias)):
+            result=execute(self.ledger,request,evidence_root=self.root)
+        self.assertEqual(result['value']['state'],'reserved')
+        retained=result['value']['evidence'][0]
+        self.assertEqual(retained['sha256'],proof['sha256'])
+        self.assertEqual((self.root/retained['path']).read_bytes(),original)
+        self.assertEqual(list(target.iterdir()),[])
+
     def test_adapter_large_storage_and_call_limits_have_valid_result(self):
         from director_budget import execute
         self.ledger=BudgetLedger.create(self.directory/'large',quantities(3_000_000_000),
