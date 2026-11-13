@@ -158,7 +158,9 @@ class EditorServer(HTTPServer):
     def __init__(self, repository, *, port=0, token=None, workers=4, routes=None):
         require(isinstance(workers, int) and 1 <= workers <= 8, 'EDITOR3D_VIEW_WORKERS', 'Use 1–8 workers.')
         self.repository = repository
-        self.routes = {}
+        self.routes = {'render/capabilities': lambda server,body: dict(
+            available=False,rendering='unavailable',executed=False,
+            diagnostic='Rendering is unavailable for this session. Open a session with a configured native renderer.')}
         # Installed extensions select fixed trusted handlers; explicit handlers
         # remain an in-process override chosen by the local application owner.
         if (ROOT / "scripts/editor3d_inspectors.py").is_file():

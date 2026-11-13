@@ -1,6 +1,8 @@
 """Actual authenticated browser autokey and cross-scene preview regressions."""
 from copy import deepcopy
 import hashlib
+import json
+import subprocess
 import os
 from pathlib import Path
 import tempfile
@@ -21,6 +23,12 @@ class TimelineBrowserTests(unittest.TestCase):
     def test_autokey_second_shot_is_one_durable_transaction_and_foreign_scene_rejected(self):
         from playwright.sync_api import sync_playwright
         from browser_runtime import launch_chromium
+        project_root=Path(__file__).resolve().parents[1]
+        metadata=dict(head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=project_root,text=True).strip(),
+            tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],cwd=project_root,text=True).strip(),
+            files={name:hashlib.sha256((project_root/name).read_bytes()).hexdigest() for name in
+                ('assets/editor3d/editor.js','assets/editor3d/timeline.js','scripts/editor3d_timeline.py','scripts/editor3d_viewer.py','tests/test_rig_editor3d_timeline_browser.py')})
+        print('TIMELINE_BROWSER_SOURCE '+json.dumps(metadata,sort_keys=True),flush=True)
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);source=root/'source';bundle=build_example(source)
             scene=deepcopy(bundle['documents']['example-scene.json']);scene.update(id='foreign-scene',name='Foreign scene',shots=['foreign-shot'])
@@ -71,6 +79,21 @@ class TimelineBrowserTests(unittest.TestCase):
                         tracks=saved['documents'][selected['path']]['tracks']
                         self.assertEqual(next(t for t in tracks if t['property']=='translation')['keys'],[dict(frame=12,value=[7,0,0]),dict(frame=13,value=[9,0,0])])
                         self.assertEqual(next(node for node in saved['scene']['nodes'] if node['id']=='mesh')['transform']['translation'],[2,0,0])
+                        context=page.evaluate('()=>window.hatchEditor.getTimelineContext()')
+                        self.assertEqual(context['revision'],baseline+2);self.assertEqual(context['sha256'],saved['sha256'])
+                        self.assertEqual(context['shot_path'],selected['path']);self.assertEqual(context['frame'],dict(numerator=13,denominator=1))
+                        # An independent async extension cannot move a pending edit to another frame.
+                        page.evaluate('''()=>{window.__removeTimelineRace=window.hatchEditor.registerCommitInterceptor(async()=>{
+                          await new Promise(resolve=>setTimeout(resolve,100));
+                          const input=document.querySelector('[aria-label="Exact frame"]');input.value='14';
+                          input.dispatchEvent(new Event('input',{bubbles:true}));return null;
+                        });}''')
+                        page.get_by_label('translation X',exact=True).fill('11');page.get_by_label('translation X',exact=True).press('Tab')
+                        page.wait_for_function("()=>window.hatchEditor.errors.some(text=>text.includes('selected timeline or evaluated preview changed'))&&window.hatchEditor.objects.get('mesh').position.x===9")
+                        page.evaluate('()=>{window.__removeTimelineRace();delete window.__removeTimelineRace;}')
+                        page.wait_for_function("()=>!document.querySelector('[aria-label=\"translation X\"]').disabled")
+                        self.assertEqual(repo.snapshot()['revision'],baseline+2)
+                        self.assertEqual(repo.snapshot()['documents'][selected['path']]['tracks'],tracks)
                         with page.expect_response('**/api/timeline/curve'):
                             page.get_by_role('button',name='Evaluate channel curve',exact=True).click()
                             page.get_by_label('Animated property',exact=True).select_option('rotation')
@@ -81,6 +104,7 @@ class TimelineBrowserTests(unittest.TestCase):
                         page.wait_for_function("()=>document.querySelectorAll('[aria-label=\"Evaluated channel curve\"] polyline').length===3")
 
                         page.get_by_label('Timeline shot',exact=True).select_option(label='Foreign')
+                        self.assertIsNone(page.evaluate('()=>window.hatchEditor.getTimelineContext()'))
                         page.get_by_role('button',name='Scrub',exact=True).click()
                         page.wait_for_function("()=>document.querySelector('[aria-label=\"Animation timeline\"] [role=status]').textContent.includes('Switch to the shot scene')")
                         self.assertEqual(page.evaluate("()=>window.hatchEditor.objects.get('mesh').position.x"),2)
@@ -106,6 +130,8 @@ class TimelineBrowserTests(unittest.TestCase):
                         self.assertEqual(EditorRepository(repo.root).snapshot()['scene']['id'],'foreign-scene')
                         page.click('#undo');page.wait_for_function('(revision)=>window.hatchEditor.snapshot.revision===revision',arg=baseline+5)
                         self.assertEqual(page.evaluate('()=>window.hatchEditor.snapshot.scene.id'),'example-scene')
+                        page.wait_for_function("()=>!document.querySelector('[aria-label=\"translation X\"]').disabled&&window.hatchEditor.objects.get('mesh').position.x===2")
+                        print('TIMELINE_BROWSER_ACCEPTANCE '+json.dumps(dict(head=metadata['head'],status='passed',revision=repo.snapshot()['revision'],snapshot_sha256=repo.snapshot()['sha256']),sort_keys=True),flush=True)
 
 
                     finally:browser.close()

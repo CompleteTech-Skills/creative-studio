@@ -28,16 +28,18 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   });
   autokey.addEventListener('change',()=>refreshPreviewEditState?.());
   frame.addEventListener('input',()=>{stop();++request;refreshPreviewEditState?.();});
-  const unregister=registerCommitInterceptor?.(({commands,expected_revision,expected_sha256,transaction_id,snapshot:current})=>{
+  const unregister=registerCommitInterceptor?.(({commands,expected_revision,expected_sha256,transaction_id,snapshot:current,timeline_context:frozen})=>{
     if(!autokey.checked||!commands.some(c=>c.operation==='transform'))return null;
     if(playing)throw Error('Pause timeline playback before autokey editing.');
     if(commands.some(c=>c.operation!=='transform'))throw Error('Autokey requires a transform-only transaction.');
-    if(!current.project.shots.some(ref=>ref.path===shotPath))throw Error('Reload and select the current shot before autokey.');
-    if(current.documents[shotPath].scene.path!==current.scene_path)throw Error('Switch to the shot scene before autokey.');
-    const chosen=current.documents[shotPath],overrides=chosen.camera_overrides;
+    const selectedShot=frozen?.shot_path??shotPath;
+    if(frozen&&(frozen.revision!==expected_revision||frozen.sha256!==expected_sha256||frozen.scene_path!==current.scene_path||frozen.frame.denominator!==1))throw Error('Autokey requires the frozen saved frame context.');
+    if(!current.project.shots.some(ref=>ref.path===selectedShot))throw Error('Reload and select the current shot before autokey.');
+    if(current.documents[selectedShot].scene.path!==current.scene_path)throw Error('Switch to the shot scene before autokey.');
+    const chosen=current.documents[selectedShot],overrides=chosen.camera_overrides;
     if(commands.some(cmd=>cmd.parameters.identifier===chosen.camera)&&(overrides?.transform||overrides?.[chosen.camera]?.transform))throw Error('Remove the shot camera transform override before autokey.');
-    const at=Number(frame.value);if(!Number.isSafeInteger(at)||at<0||at>=current.documents[shotPath].duration_frames)throw Error('Autokey frame must be inside the selected shot.');
-    const keys=[];for(const cmd of commands)for(const channel of ['translation','rotation','scale'])keys.push({operation:'key-upsert',document:shotPath,target:cmd.parameters.identifier,property:channel,frame:at,value:structuredClone(cmd.parameters.transform[channel])});
+    const at=frozen?frozen.frame.numerator:Number(frame.value);if(!Number.isSafeInteger(at)||at<0||at>=current.documents[selectedShot].duration_frames)throw Error('Autokey frame must be inside the selected shot.');
+    const keys=[];for(const cmd of commands)for(const channel of ['translation','rotation','scale'])keys.push({operation:'key-upsert',document:selectedShot,target:cmd.parameters.identifier,property:channel,frame:at,value:structuredClone(cmd.parameters.transform[channel])});
     return {route:'timeline/edit',body:{expected_revision,expected_sha256,transaction_id,commands:keys}};
   });
   const curve=document.createElementNS('http://www.w3.org/2000/svg','svg');curve.setAttribute('viewBox','0 0 500 180');curve.setAttribute('role','img');curve.setAttribute('aria-label','Evaluated channel curve');curve.style.width='100%';curve.style.maxHeight='180px';
@@ -61,7 +63,7 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   async function scrub(at=Number(frame.value)){
     if(!snapshot||!shotPath)return;const serial=++request;const s=getSnapshot();
     if(s.documents[shotPath]?.scene.path!==s.scene_path)throw Error('Switch to the shot scene before preview.');
-    const result=await api('timeline/evaluate',{revision:s.revision,sha256:s.sha256,shot:shotPath,frame:at});
+    const result=await api('timeline/evaluate',{revision:s.revision,sha256:s.sha256,shot:shotPath,frame:at,sample_geometry:true});
     if(disposed||serial!==request)return;if(result.scene.path!==getSnapshot().scene_path)throw Error('Preview scene changed; reload before scrubbing.');preview(result);refreshPreviewEditState?.();message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
   }
   function stop(){playing=false;cancelAnimationFrame(raf);play.textContent='Play';refreshPreviewEditState?.();}

@@ -265,7 +265,7 @@ def sample_curve(repository, body):
     samples=[]
     for index in range(count):
         frame=Fraction(index*(shot['duration_frames']-1),count-1)
-        evaluated=evaluate_scene(bundle,shot['scene']['path'],body['shot'],frame,source_root=native['root'],max_track_samples=8192)
+        evaluated=evaluate_scene(bundle,shot['scene']['path'],body['shot'],frame,source_root=native['root'],max_track_samples=8192,sample_geometry=True,max_geometry_vertices=100000)
         if prop=='world_exposure':
             _require(target=='world','World exposure requires world target.');value=evaluated['world']['exposure']
         else:

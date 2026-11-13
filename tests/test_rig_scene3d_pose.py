@@ -257,6 +257,29 @@ class PoseBindingTests(unittest.TestCase):
             self.assertEqual(out['native_geometry'][identifier],expected[identifier])
             self.assertEqual(out['nodes'][identifier]['native_state']['pose']['id'],pose['id'])
         self.assertNotIn('native_pose',out['nodes']['other'])
+        # Shared immutable imports/poses must reuse admitted geometry and actual
+        # deformation; component projection must not invoke another native load.
+        from rig_skinning import evaluate_deformation
+        expanded=SceneGraph(scene)
+        last_mapping=None
+        for index in range(1,8):
+            target='actor-'+str(index)
+            last_mapping=add_import(expanded,imported,target)['mapping']
+            expanded.configure_node(target,{'pose_binding':binding})
+        self.bundle['documents']['example-scene.json']=expanded.document()
+        with patch('rig_models.load_rig',wraps=load_rig) as loader, \
+             patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deform:
+            shared=self.evaluate(source_root=copied,sample_geometry=True)
+        self.assertEqual(loader.call_count,1)
+        self.assertEqual(deform.call_count,1)
+        self.assertEqual(len(shared['native_geometry']),8*len(out['native_geometry']))
+        # Reusing admitted arrays cannot bypass any component's source pin.
+        corrupt=expanded.document()
+        component=next(n for n in corrupt['nodes'] if n['id'] in last_mapping.values() and 'asset' in n)
+        component['metadata']['source_asset_sha256']='0'*64
+        self.bundle['documents']['example-scene.json']=corrupt
+        with self.assertRaises(RigError):self.evaluate(source_root=copied,sample_geometry=True)
+        self.bundle['documents']['example-scene.json']=scene
         from scene3d_snapshot import snapshot_project
         from scene3d_contracts import load_project
         from scene3d_evaluate import evaluate_scene
