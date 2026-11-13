@@ -1,0 +1,12 @@
+{
+  "rejected": true,
+  "error": {
+    "code": "RENDER3D_CORRUPT_OUTPUT",
+    "category": "corrupt-output",
+    "message": "Retained images differ from the trusted supervisor checkpoint.",
+    "path": "",
+    "remediation": "Correct the indicated input and retry."
+  },
+  "original_preserved": true,
+  "checkpoint_sha256": "d71e39c9aa1a20cedd02e11031e5a279db5bc0f34b0bdc3dea74aa7e0abc2532"
+}

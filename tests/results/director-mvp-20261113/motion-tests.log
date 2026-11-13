@@ -1,0 +1,8 @@
+test_native_geometry_moves_for_both_robots_and_prop (test_rig_director_delivery.DirectorDeliveryTests.test_native_geometry_moves_for_both_robots_and_prop) ... ok
+test_rendered_static_shot_cannot_inherit_moving_full_clip (test_rig_director_delivery.DirectorDeliveryTests.test_rendered_static_shot_cannot_inherit_moving_full_clip) ... ok
+test_valid_static_native_animation_is_rejected_without_mutation (test_rig_director_delivery.DirectorDeliveryTests.test_valid_static_native_animation_is_rejected_without_mutation) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 12.819s
+
+OK
