@@ -23,7 +23,7 @@ class TimelineBrowserTests(unittest.TestCase):
         from browser_runtime import launch_chromium
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);source=root/'source';bundle=build_example(source)
-            scene=deepcopy(bundle['documents']['example-scene.json']);scene.update(id='foreign-scene',shots=['foreign-shot'])
+            scene=deepcopy(bundle['documents']['example-scene.json']);scene.update(id='foreign-scene',name='Foreign scene',shots=['foreign-shot'])
             scene_path='foreign-scene.json';scene_ref=dict(kind=scene['kind'],id=scene['id'],version=scene['version'],path=scene_path,sha256=hashlib.sha256(canonical_bytes(scene)).hexdigest())
             shot=deepcopy(bundle['documents']['example-shot.json']);shot.update(id='foreign-shot',name='Foreign',scene=scene_ref)
             snapshot_project(source,root/'with-foreign',derived_documents={scene_path:scene,'foreign-shot.json':shot})
@@ -58,6 +58,19 @@ class TimelineBrowserTests(unittest.TestCase):
                         page.get_by_role('button',name='Scrub',exact=True).click()
                         page.wait_for_function("()=>document.querySelector('[aria-label=\"Animation timeline\"] [role=status]').textContent.includes('Saved revision')")
                         self.assertEqual(page.evaluate("()=>window.hatchEditor.objects.get('mesh').position.x"),7)
+                        # Edit the evaluated pose through a real enabled numeric control.
+                        self.assertTrue(page.get_by_label('translation X',exact=True).is_enabled())
+                        page.get_by_label('Exact frame',exact=True).fill('13')
+                        self.assertFalse(page.get_by_label('translation X',exact=True).is_enabled())
+                        page.get_by_role('button',name='Scrub',exact=True).click()
+                        page.wait_for_function("()=>!document.querySelector('[aria-label=\"translation X\"]').disabled")
+                        page.get_by_label('translation X',exact=True).fill('9');page.get_by_label('translation X',exact=True).press('Tab')
+                        page.wait_for_function('(revision)=>window.hatchEditor.snapshot.revision===revision',arg=baseline+2)
+                        page.wait_for_function("()=>window.hatchEditor.objects.get('mesh').position.x===9")
+                        saved=repo.snapshot();selected=next(ref for ref in saved['project']['shots'] if ref['id']=='second')
+                        tracks=saved['documents'][selected['path']]['tracks']
+                        self.assertEqual(next(t for t in tracks if t['property']=='translation')['keys'],[dict(frame=12,value=[7,0,0]),dict(frame=13,value=[9,0,0])])
+                        self.assertEqual(next(node for node in saved['scene']['nodes'] if node['id']=='mesh')['transform']['translation'],[2,0,0])
                         with page.expect_response('**/api/timeline/curve'):
                             page.get_by_role('button',name='Evaluate channel curve',exact=True).click()
                             page.get_by_label('Animated property',exact=True).select_option('rotation')
@@ -71,7 +84,7 @@ class TimelineBrowserTests(unittest.TestCase):
                         page.get_by_role('button',name='Scrub',exact=True).click()
                         page.wait_for_function("()=>document.querySelector('[aria-label=\"Animation timeline\"] [role=status]').textContent.includes('Switch to the shot scene')")
                         self.assertEqual(page.evaluate("()=>window.hatchEditor.objects.get('mesh').position.x"),2)
-                        self.assertEqual(repo.snapshot()['revision'],baseline+1)
+                        self.assertEqual(repo.snapshot()['revision'],baseline+2)
                         self.assertEqual(errors,[])
                         # Reopening the persisted repository retains only the selected second-shot keys.
                         reopened=EditorRepository(repo.root).snapshot()
@@ -80,10 +93,20 @@ class TimelineBrowserTests(unittest.TestCase):
                         page.get_by_label('Animated property',exact=True).select_option('world_exposure')
                         page.get_by_label('Key value as JSON',exact=True).fill('1024')
                         page.get_by_role('button',name='Insert or replace key',exact=True).click()
-                        page.wait_for_function('(revision)=>window.hatchEditor.snapshot.revision===revision',arg=baseline+2)
+                        page.wait_for_function('(revision)=>window.hatchEditor.snapshot.revision===revision',arg=baseline+3)
                         page.get_by_role('button',name='Scrub',exact=True).click()
                         page.wait_for_function("()=>document.querySelector('[aria-label=\"Animation timeline\"] [role=status]').textContent.includes('-20 to +20 stops')")
                         self.assertEqual(page.evaluate('()=>window.hatchEditor.renderer.toneMappingExposure'),1)
+                        before_open=repo.snapshot()
+                        page.get_by_label('Project scene',exact=True).select_option(label='Foreign scene')
+                        page.get_by_role('button',name='Open scene',exact=True).click()
+                        page.wait_for_function('(revision)=>window.hatchEditor.snapshot.revision===revision',arg=baseline+4)
+                        self.assertEqual(page.evaluate('()=>window.hatchEditor.snapshot.scene.id'),'foreign-scene')
+                        self.assertEqual(repo.snapshot()['sha256'],before_open['sha256'])
+                        self.assertEqual(EditorRepository(repo.root).snapshot()['scene']['id'],'foreign-scene')
+                        page.click('#undo');page.wait_for_function('(revision)=>window.hatchEditor.snapshot.revision===revision',arg=baseline+5)
+                        self.assertEqual(page.evaluate('()=>window.hatchEditor.snapshot.scene.id'),'example-scene')
+
 
                     finally:browser.close()
             finally:server.shutdown();server.server_close();thread.join(timeout=5)
