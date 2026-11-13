@@ -26,11 +26,12 @@ BUDGET=sequence.media._obj({'wall_seconds':sequence.media._int(1,3600),
 
 
 def _implementation():
+    decoder=importlib.import_module(sequence._decoder().__module__)
     identities={name:hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest()
         for name,module in [('sequence',sequence),('jobs',jobs),('controller',__import__(__name__)),
                             ('path_boundary',__import__('rig_errors')),
                             ('publication',__import__('atomic_publish')),
-                            ('decoder',__import__('render3d_verify'))]}
+                            ('decoder',decoder)]}
     for package in ('numpy','Pillow','OpenEXR'):
         try:identities['package:'+package]=importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError:identities['package:'+package]='unavailable'
