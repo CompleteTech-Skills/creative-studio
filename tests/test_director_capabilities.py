@@ -29,7 +29,7 @@ class CapabilityTests(unittest.TestCase):
                              configuration={'blender':None,'ffmpeg':None,'ffprobe':None})
             self.assertEqual({x['status'] for x in result['value']['capabilities']},{'unavailable'})
             self.assertEqual({x['code'] for x in result['diagnostics']},
-                             {'CAPABILITY_MISSING_BLENDER','CAPABILITY_MISSING_FFMPEG_OR_FFPROBE','CAPABILITY_MISSING_PLANNING_CREDENTIALS'})
+                             {'CAPABILITY_MISSING_BLENDER','CAPABILITY_MISSING_FFMPEG_OR_FFPROBE','CAPABILITY_MISSING_PLANNING_CREDENTIALS','CAPABILITY_PRICE_UNKNOWN'})
             validate_method_result('CapabilityRegistry.probe',result)
             self.assertTrue((Path(directory)/'proof/result.json').is_file())
 
@@ -122,3 +122,16 @@ class CapabilityTests(unittest.TestCase):
             record=json.loads((Path(directory)/'proof'/result['artifacts'][0]['path']).read_text())
             self.assertEqual(record['fallback'],'blender.cpu-requires-separate-probe-and-explicit-policy')
             with self.assertRaises(RigError):cap.assert_admission(result,['blender.gpu'])
+
+    def test_production_policy_is_separate_from_probe_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            value=cap.probe(request(['module.scene3d']),Path(directory)/'proof',
+                configuration={'timeout_seconds':1,'production_limits':{'max_cpu_seconds':7200}})
+            self.assertEqual(value['value']['capabilities'][0]['limits']['max_cpu_seconds'],7200)
+        for limits in ({'max_provider_calls':1},{'max_cpu_seconds':True},{'max_memory_bytes':-1}):
+            with tempfile.TemporaryDirectory() as directory,self.assertRaises(RigError):
+                cap.probe(request([]),Path(directory)/'proof',configuration={'production_limits':limits})
+
+    def test_bare_malformed_snapshot_is_typed_failure(self):
+        for value in (None,{},[],{'capabilities':[]}):
+            with self.subTest(value=value),self.assertRaises(RigError):cap.assert_admission(value,[])
