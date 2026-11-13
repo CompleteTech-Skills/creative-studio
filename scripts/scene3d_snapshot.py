@@ -56,6 +56,15 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     require(not shot_documents or graph is not None, 'New shots require an explicit edited scene.')
     destination = _new_destination(destination)
     bundle = load_project(source_root)
+    replacements = {} if document_replacements is None else document_replacements
+    require(isinstance(replacements, dict) and len(replacements) <= 4096,
+            'Document replacements must be a bounded path/document mapping.')
+    if graph is not None:
+        for path in replacements:
+            original=bundle['documents'].get(path)
+            require(original is not None and original['kind']=='scene3d-shot' and
+                    original['scene']['path']==scene_path,
+                    'Combined graph/document editing supports only shots on the edited scene.')
     source_root = Path(source_root).resolve(strict=True)
     files, total = {}, 0
     for path, record in bundle['inventory'].items():
@@ -190,9 +199,6 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             require(shot['id'] in replacement['shots'], 'New shot must be associated with the edited scene.')
             shot['scene'] = deepcopy(active_scene)
             add_document(shot)
-    replacements = {} if document_replacements is None else document_replacements
-    require(isinstance(replacements, dict) and len(replacements) <= 4096,
-            'Document replacements must be a bounded path/document mapping.')
     require(project_selection is None or isinstance(project_selection, dict),
             'Project selection must be a mapping.')
     requested = {}
