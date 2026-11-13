@@ -64,7 +64,7 @@
       "origin": "https://github.com/googlefonts/noto-emoji/tree/99701e07d3d1fe1bdbcdb14964547f0fd592966f",
       "evaluation_role": "development-only-already-observed",
       "held_out": false,
-      "rights_status": "unresolved publisher README says most image resources Apache-2.0 but root LICENSE at same revision is OFL-1.1; retain both statements, obtain applicable image grant before promoting to accepted corpus",
+      "rights_status": "publisher README says most image resources Apache-2.0; root LICENSE records font OFL-1.1. No contrary license for these exact PNGs has been established. Record the applicable image-resource notice and source attribution before promoting these already-observed development candidates; no external blocker is asserted.",
       "categories": [
         "flat-art",
         "nonhuman",
