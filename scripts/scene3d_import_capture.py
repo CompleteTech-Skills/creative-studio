@@ -86,6 +86,13 @@ def resolve_captured_import(bundle, asset_reference, source_root, *, verified_in
                 'Imported asset skeleton capability differs from its native rig.')
         require(report.get('source_sha256')==rig.manifest['source']['sha256'],
                 'Imported provenance source differs from the actual native rig.')
+        aliases=report.get('native_clip_map')
+        require(isinstance(aliases,dict) and len(aliases)<=1024,
+                'Imported native clip aliases must be a bounded map.')
+        for alias,target in aliases.items():
+            require(isinstance(alias,str) and 0<len(alias)<=4096 and
+                    isinstance(target,str) and 0<len(target)<=128 and target in rig.clips,
+                    'Imported native clip alias must name an existing bounded native clip.')
         require(all(set(meshes)<=set(rig.geometry.by_id()) for meshes in asset['components'].values()),
                 'Imported component names an absent native mesh.')
         imported=ImportedScene({},deepcopy(asset_reference),asset,[],hierarchy['nodes'],report)

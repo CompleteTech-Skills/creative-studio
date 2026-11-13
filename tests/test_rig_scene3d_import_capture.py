@@ -89,6 +89,38 @@ class CapturedImportTests(unittest.TestCase):
         with self.assertRaises(RigError):
             with resolve_captured_import(bundle,dict(self.imported.asset_reference,sha256='0'*64),root):pass
 
+    def test_fully_rehashed_invalid_native_clip_aliases_reject_before_yield(self):
+        from copy import deepcopy
+        import hashlib,json
+        root,bundle,graph=self.project()
+        record=next(item for item in self.imported.asset['dependencies'] if item['path'].endswith('/import-report.json'))
+        report_path=root/record['path'];original=json.loads(report_path.read_bytes())
+        def encoded(value):return (json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False)+'\n').encode()
+        def reseal(value,hashes):
+            if isinstance(value,dict):
+                for child in value.values():reseal(child,hashes)
+                if isinstance(value.get('path'),str) and 'sha256' in value and value['path'] in hashes:
+                    value['sha256']=hashes[value['path']]
+                if isinstance(value.get('asset'),dict) and isinstance(value.get('metadata'),dict) and 'source_asset_sha256' in value['metadata']:
+                    value['metadata']['source_asset_sha256']=value['asset']['sha256']
+            elif isinstance(value,list):
+                for child in value:reseal(child,hashes)
+        for aliases in ([],False,{'alias':'missing'},{'alias':[]},{'':'missing'},{'x'*4097:'missing'}):
+            with self.subTest(aliases_type=type(aliases).__name__):
+                report=deepcopy(original);report['native_clip_map']=aliases;report_path.write_bytes(encoded(report))
+                for _ in range(30):
+                    hashes={path.relative_to(root).as_posix():hashlib.sha256(path.read_bytes()).hexdigest() for path in root.rglob('*') if path.is_file()}
+                    changed=False
+                    for path in root.rglob('*.json'):
+                        value=json.loads(path.read_bytes());before=deepcopy(value);reseal(value,hashes)
+                        if value!=before:path.write_bytes(encoded(value));changed=True
+                    if not changed:break
+                admitted=load_project(root)
+                reference=dict(self.imported.asset_reference,sha256=hashlib.sha256((root/self.imported.asset_reference['path']).read_bytes()).hexdigest())
+                with self.assertRaises(RigError):
+                    with resolve_captured_import(admitted,reference,root):
+                        self.fail('Malformed report reached the native consumer.')
+
     def test_actual_skinned_import_retains_exact_native_skeleton_pin(self):
         from rig_test_helpers import fixture
         from rig_gltf import export_gltf
