@@ -13,7 +13,7 @@ from director_reliability import resume_verified_job
 from render3d_jobs import JobStore
 from render3d_blender import BlenderBackend
 from render3d_verify import RenderArtifactVerifier
-from render3d_snapshot import NativeRigAdapter, create_snapshot
+from render3d_snapshot import NativeRigAdapter, Scene3DAdapter, create_snapshot
 from rig_errors import atomic_json
 from rig_test_helpers import fixture
 from rig_jobs import save_rig
@@ -45,22 +45,39 @@ class NativeReliabilityTests(unittest.TestCase):
         self.addCleanup(lambda: temporary.cleanup() if temporary else None)
         root = Path(evidence or temporary.name)
         root.mkdir(parents=True, exist_ok=True)
-        (root/'native').mkdir()
-        rig = fixture(root/'native')
-        del rig.clips['neutral']
-        save_rig(rig, operation='director-reliability-native-evidence')
-        create_snapshot(rig.root, root/'snapshot', NativeRigAdapter())
+        source = os.environ.get('HATCH_DIRECTOR31_SCENE_PROJECT')
+        count = int(os.environ.get('HATCH_DIRECTOR31_FRAMES', '3'))
+        self.assertGreaterEqual(count, 3)
+        self.assertLessEqual(count, 60)
+        if source:
+            from scene3d_contracts import load_project
+            bundle = load_project(source)
+            project = bundle['project']
+            shot_ref = next(item for item in project['shots'] if item['id']=='establish')
+            shot = bundle['documents'][shot_ref['path']]
+            create_snapshot(source, root/'snapshot', Scene3DAdapter())
+        else:
+            (root/'native').mkdir()
+            rig = fixture(root/'native')
+            del rig.clips['neutral']
+            save_rig(rig, operation='director-reliability-native-evidence')
+            create_snapshot(rig.root, root/'snapshot', NativeRigAdapter())
         req = request()
         req['snapshot'] = file(payload=(root/'snapshot/snapshot.json').read_bytes())
         req['id'] = 'director-reliability'
-        req['frame_range'] = dict(start=0,end=3)
+        req['frame_range'] = dict(start=0,end=count)
+        if source:
+            req['project'] = dict(id=project['id'],version=project['version'])
+            req['scene'] = {key:shot['scene'][key] for key in ('id','version')}
+            req['shot'] = {key:shot[key] for key in ('id','version')}
         req['source_start'] = dict(numerator=0,denominator=1)
         req['fps'] = dict(numerator=24,denominator=1)
         req['playback_rate'] = dict(numerator=1,denominator=1)
-        req['camera'] = 'front'
+        req['camera'] = shot['camera'] if source else 'front'
         req['max_attempts'] = 4
-        req['settings']['resolution'] = [64,64]
-        req['settings']['samples'] = 64
+        req['settings']['resolution'] = [640,360] if source else [64,64]
+        req['settings']['samples'] = 16 if source else 64
+        req['settings']['resources']['max_frames'] = count
         req['settings']['resources']['memory_bytes'] = 2*1024**3
         backend = BlenderBackend()
         identity = backend.inspect_version()
@@ -113,7 +130,7 @@ raise AssertionError('Actual worker completed before cancellation')
         self.assertEqual(state['state'],'cancelled')
         receipt = resume_verified_job(store, job, verify, expected_revision=state['revision'])
         self.assertEqual(receipt['verified_preserved_frames'],[0])
-        self.assertEqual(receipt['pending_frames'],[1,2])
+        self.assertEqual(receipt['pending_frames'],list(range(1,count)))
         while store.run_one(backend,verify,job=job) is not None:
             pass
         frame = store.status(job)['frames'][0]
@@ -122,7 +139,7 @@ raise AssertionError('Actual worker completed before cancellation')
         (cache/record['result']['images'][0]['file']['path']).write_bytes(b'corrupt cached frame')
         state = store.status(job)
         repaired = resume_verified_job(store,job,verify,expected_revision=state['revision'])
-        self.assertEqual(repaired['verified_preserved_frames'],[1,2])
+        self.assertEqual(repaired['verified_preserved_frames'],list(range(1,count)))
         self.assertEqual(repaired['pending_frames'],[0])
         rerendered = []
         while (run := store.run_one(backend,verify,job=job)) is not None:
@@ -130,8 +147,9 @@ raise AssertionError('Actual worker completed before cancellation')
         self.assertEqual(rerendered,[0])
         delivered = store.materialize(job,root/'delivery',verify)
         decoded = verify(req,delivered,root/'delivery')
-        self.assertEqual(decoded['decoded_frames'],3)
+        self.assertEqual(decoded['decoded_frames'],count)
         atomic_json(root/'director-reliability-evidence.json', dict(schema_version=1,
             kind='director-native-reliability-proof',job=job,native_worker_pids=native_pids,
+            source_scene_project=source,frame_count=count,
             cancellation_log='cancel-worker.log',resume=receipt,tamper_repair=repaired,
             rerendered_frames=rerendered,verification=decoded,fixture=True,visual_review='not-performed'))
