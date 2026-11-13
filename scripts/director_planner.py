@@ -147,13 +147,13 @@ def admit_intent(plan, snapshot, *, evidence_root, resources, budget_snapshot):
     assert_admission(snapshot, operations, evidence_root=evidence_root, resources=resources)
     admitted = deepcopy(plan)
     admitted['state'] = 'admitted'
-    admitted['admission'] = {'input_sha256': object_hash(plan), 'capability_sha256': object_hash(snapshot),
+    admitted['admission'] = {'input_sha256': object_hash({'intent': plan, 'budget_snapshot': budget_snapshot, 'resources': resources, 'capability_sha256': object_hash(snapshot)}), 'capability_sha256': object_hash(snapshot),
                              'required_operations': operations, 'resources': deepcopy(resources), 'budget_snapshot': deepcopy(budget_snapshot)}
     validate_intent(admitted)
     return admitted
 
 
-def validate_admitted(plan, snapshot, *, evidence_root):
+def validate_admitted(plan, snapshot, *, evidence_root, budget_snapshot, resources):
     """Admission does not confer execution: recheck evidence immediately before use."""
     from director_capabilities import assert_admission
     validate_intent(plan)
@@ -163,7 +163,11 @@ def validate_admitted(plan, snapshot, *, evidence_root):
     proof = plan['admission']
     validate_budget(proof['budget_snapshot'])
     _require(all(amount <= proof['budget_snapshot']['limits'][name] for name, amount in proof['resources'].items()), 'BUDGET', 'Resources exceed the project budget.')
-    _require(proof['input_sha256'] == object_hash(unsigned) and
+    validate_budget(budget_snapshot)
+    _require(proof['budget_snapshot'] == budget_snapshot and proof['resources'] == resources,
+             'ADMISSION', 'Budget or resource estimates differ from the current execution inputs.')
+    expected = {'intent': unsigned, 'budget_snapshot': budget_snapshot, 'resources': resources, 'capability_sha256': object_hash(snapshot)}
+    _require(proof['input_sha256'] == object_hash(expected) and
              proof['capability_sha256'] == object_hash(snapshot), 'ADMISSION', 'Stale or rebound plan admission.')
     assert_admission(snapshot, proof['required_operations'], evidence_root=evidence_root, resources=proof['resources'])
     return plan

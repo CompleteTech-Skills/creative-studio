@@ -78,7 +78,7 @@ class DirectorPlannerTests(unittest.TestCase):
         import director_capabilities
         from test_director_capabilities import request
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)/'probe'
+            root=Path(directory).resolve()/'probe'
             snapshot=director_capabilities.probe(request(['blender.cpu']),root,configuration={'blender':None})
             with self.assertRaisesRegex(ValueError,'unverified'):
                 dp.admit_intent(dp.build_intent(),snapshot,evidence_root=root,
@@ -99,3 +99,21 @@ class DirectorPlannerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'exceed the project budget'):
             dp.admit_intent(dp.build_intent(),{},evidence_root='unused',
                 resources={**limits,'max_cpu_seconds':3601},budget_snapshot=budget)
+
+    def test_admission_requires_current_external_budget_and_resource_inputs(self):
+        # A replaced, self-consistently rehashed budget is not the approved
+        # execution policy. Reject before invoking any backend capability.
+        from rig_errors import object_hash
+        resources={'max_cpu_seconds':100,'max_memory_bytes':1000,'max_storage_bytes':1000,'max_provider_calls':0}
+        budget=dp.create_budget(resources)
+        intent=dp.build_intent()
+        plan=deepcopy(intent)
+        plan['state']='admitted'
+        plan['admission']={'input_sha256':object_hash({'intent':intent,'budget_snapshot':budget,'resources':resources,'capability_sha256':object_hash({})}),
+                           'capability_sha256':object_hash({}),'required_operations':['blender.cpu','codec.h264','importer.glb'],
+                           'resources':deepcopy(resources),'budget_snapshot':deepcopy(budget)}
+        replacement={**resources,'max_cpu_seconds':200}
+        plan['admission']['resources']=replacement
+        plan['admission']['budget_snapshot']=dp.create_budget(replacement)
+        with self.assertRaisesRegex(ValueError,'current execution inputs'):
+            dp.validate_admitted(plan,{},evidence_root='unused',budget_snapshot=budget,resources=resources)
