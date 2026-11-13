@@ -14,7 +14,7 @@ from render3d_quality import output_plan
 
 ADAPTER_SOURCES = ('render3d_quality_binding.py', 'render3d_quality.py',
                    'atomic_publish.py', 'render3d_contracts.py', 'rig_contracts.py', 'rig_errors.py',
-                   'cinematics3d_color.py', 'render3d_color_context.py')
+                   'cinematics3d_color.py', 'render3d_color_context.py', 'render3d_quality_jobs.py')
 
 
 def adapter_hash():

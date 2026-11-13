@@ -44,3 +44,23 @@ class ColorContext(unittest.TestCase):
             self.assertEqual(receipt['alpha_association'],'unverified')
         with patch.dict(os.environ,OCIO='/different/config.ocio'):
             with self.assertRaises(Render3DError):color_context(scene,'/owned/profile',inventory,{'alpha':'straight'})
+
+
+class CompletedCacheBinding(unittest.TestCase):
+    def test_complete_cache_rejects_changed_profile_or_backend_before_return(self):
+        from render3d_quality_jobs import BoundQualityJob
+        from test_render3d_contracts import backend as backend_identity
+        inventory=dict(closure_sha256='a'*64,files=[])
+        with patch('render3d_quality_binding.color_profile',return_value=(Path('/unused'),inventory)):
+            value=bind_quality_request(request())
+            current=backend_identity()
+            store=NS(status=lambda job:dict(state='complete',request=value,backend=deepcopy(current),snapshot='/owned/snapshot'))
+            backend=NS(executable='/owned/blender',inspect_version=lambda:deepcopy(current))
+            client=BoundQualityJob(store,backend,value,'/owned/snapshot',lambda *args:None)
+            self.assertEqual(client.status('job')['state'],'complete')
+            changed=deepcopy(current);changed['worker_sha256']='c'*64
+            client.identity_provider=lambda:changed
+            with self.assertRaises(Render3DError):client.status('job')
+            client.identity_provider=lambda:deepcopy(current)
+            with patch('render3d_quality_binding.adapter_hash',return_value='f'*64):
+                with self.assertRaises(Render3DError):client.run_one('job')
