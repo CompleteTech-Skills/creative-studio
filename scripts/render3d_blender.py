@@ -22,7 +22,7 @@ import threading
 import time
 
 from atomic_publish import _rename_no_replace, pinned_directory, private_stage, private_stage_supported
-from rig_errors import RigError, atomic_json, atomic_bytes, read_json, safe_path, sha256, object_hash, directory_capability, normalize_root
+from rig_errors import RigError, atomic_json, atomic_bytes, read_json, safe_path, sha256, object_hash, directory_capability, normalize_root, scoped_directory_descriptor
 from render3d_contracts import (Render3DError, require, validate, make_frame_spec,
                                 frame_times, VERSION, load, open_regular)
 from render3d_snapshot import NativeRigAdapter, Scene3DAdapter, verify_snapshot, create_snapshot
@@ -322,6 +322,9 @@ class BlenderBackend:
 
     def render_frames(self,request,snapshot_root,destination,*,cancelled=None,progress=None,cinematics=None):
         validate(request,'RenderRequest')
+        with scoped_directory_descriptor(snapshot_root) as descriptor:
+            require(descriptor is not None or not Path(snapshot_root).is_symlink(),
+                    'invalid-input','Snapshot root cannot be an unregistered symlink.')
         cinematic_plan=None; cinematic_files={}; cinematic_code={}; cinematic_payloads={}
         if cinematics is not None:
             from cinematics3d_blender import validate_compiled, validate_probe, ADAPTER_SOURCES, __file__ as compiler_file
@@ -336,6 +339,7 @@ class BlenderBackend:
         helper_bytes=sum(map(len,cinematic_payloads.values()))
         require(('cinematics_sha256' in request['settings'])==(cinematic_plan is not None),
                 'unsupported-feature','Cinematic settings require their matching compiled native plan.')
+
         root=normalize_root(snapshot_root);target=Path(destination).absolute()
 
         require(not target.exists() and not target.is_symlink(),'ownership','Render destination already exists.')
