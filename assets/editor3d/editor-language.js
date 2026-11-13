@@ -26,6 +26,7 @@ export function mountSceneLanguage(context) {
   report.setAttribute('aria-label', 'Language plan details');
   container.append(title, label, modeLabel, planButton, applyButton, status, report);
   let plan = null;
+  let transactionId = null;
   let busy = false;
   let disposed = false;
   let generation = 0;
@@ -39,6 +40,7 @@ export function mountSceneLanguage(context) {
   function invalidate() {
     generation += 1;
     plan = null;
+    transactionId = null;
     report.textContent = '';
     update();
   }
@@ -70,6 +72,7 @@ export function mountSceneLanguage(context) {
       throw Error('The plan belongs to a different saved scene. Review a new plan.');
     }
     plan = result;
+    transactionId = `language-${crypto.randomUUID()}`;
     report.textContent = JSON.stringify(result.scene_plan, null, 2);
     status.textContent = result.scene_plan?.status === 'ready'
       ? 'Review the commands before applying. Original sources remain preserved.'
@@ -83,7 +86,7 @@ export function mountSceneLanguage(context) {
       throw Error('The saved scene changed. Review a new language plan.');
     }
     status.textContent = 'Applying the reviewed language plan…';
-    await guardedApi('language/apply', {plan: selected, transaction_id: `language-${crypto.randomUUID()}`});
+    await guardedApi('language/apply', {plan: selected, transaction_id: transactionId});
     invalidate();
     await guardedReload();
     status.textContent = 'Language edit saved. Review the updated scene.';
