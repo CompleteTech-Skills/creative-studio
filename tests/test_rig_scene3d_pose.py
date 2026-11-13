@@ -153,6 +153,65 @@ class PoseBindingTests(unittest.TestCase):
         finally:
             geometry.write_bytes(original)
 
+    def test_distinct_poses_share_one_exact_loaded_rig_and_keep_independent_state(self):
+        from rig_models import load_rig
+        from rig_operations import pose_operation
+        rig,asset,one,two=self.actors()
+        actors=[one,two]
+        for index in range(2,8):
+            actor=deepcopy(one);actor['id']='actor-'+str(index)
+            self.scene['nodes'].append(actor);actors.append(actor)
+        for index,actor in enumerate(actors):
+            pose=rotate_bone(rig.skeleton,neutral_pose(rig.skeleton,'pose-'+str(index)),
+                'b1',axis_angle([0,0,1],index/10))
+            actor['pose_binding']=self.bind(rig,pose,'pose-'+str(index)+'.json')
+        before=deepcopy(self.bundle)
+        with patch('rig_models.load_rig',wraps=load_rig) as loader, \
+             patch('rig_operations.pose_operation',wraps=pose_operation) as poser:
+            out=self.evaluate(source_root=self.root)
+        self.assertEqual(loader.call_count,1)
+        self.assertEqual(poser.call_count,8)
+        self.assertEqual(len({id(call.args[0].geometry) for call in poser.call_args_list}),1)
+        states=[out['nodes'][actor['id']]['native_state'] for actor in actors]
+        self.assertEqual(len({state['pose']['id'] for state in states}),8)
+        self.assertFalse(np.allclose(states[0]['bone_matrices']['b1'],states[-1]['bone_matrices']['b1']))
+        states[0]['pose']['bones'].clear()
+        self.assertTrue(states[-1]['pose']['bones'])
+        self.assertEqual(self.bundle,before)
+
+    def test_distinct_rig_input_budget_applies_without_geometry_sampling(self):
+        from rig_models import load_rig
+        first,asset,one,two=self.actors()
+        second=fixture(self.root,name='second')
+        second_ref=dict(kind='hatch-3d-rig',id=second.manifest['id'],version=second.manifest['version'],
+                        **self.file('second/rig.json'))
+        other_asset=deepcopy(asset);other_asset.update(id='second-asset',skeleton=second_ref,animations=[])
+        self.bundle['documents']['second-asset.json']=other_asset
+        actor=deepcopy(one);actor['id']='third'
+        actor['asset']=dict(kind='scene3d-asset',id=other_asset['id'],version=other_asset['version'],
+            path='second-asset.json',sha256=hashlib.sha256(canonical_bytes(other_asset)).hexdigest())
+        actor['pose_binding']=self.bind(second,neutral_pose(second.skeleton),'second-pose.json',second_ref)
+        self.scene['nodes'].append(actor)
+        self.register_authored_files(self.root,[p for p in (self.root/'second').rglob('*') if p.is_file()])
+        vertices=sum(len(mesh.positions) for mesh in first.geometry.meshes)
+        with patch('scene3d_pose.MAX_NATIVE_INPUT_VERTICES',vertices):
+            with self.assertRaisesRegex(RigError,'input vertex budget'):
+                self.evaluate(source_root=self.root)
+        with patch('scene3d_pose.MAX_NATIVE_INPUT_VERTICES',vertices*2), \
+             patch('rig_models.load_rig',wraps=load_rig) as loader:
+            self.evaluate(source_root=self.root)
+            self.assertEqual(loader.call_count,2)
+
+    def test_pose_deformation_cache_charged_before_native_allocation(self):
+        from rig_skinning import evaluate_deformation
+        rig,asset,one,two=self.actors()
+        vertices=sum(len(mesh.positions) for mesh in rig.geometry.meshes)
+        with patch('scene3d_pose.MAX_NATIVE_DEFORMED_VERTICES',vertices), \
+             patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deform:
+            with self.assertRaisesRegex(RigError,'deformation cache vertex budget'):
+                self.evaluate(source_root=self.root,sample_geometry=True)
+            self.assertEqual(deform.call_count,1)
+
     def test_imported_root_pose_matches_canonical_importer_and_keeps_other_instance(self):
         from asset_library import AssetLibrary
         from rig_gltf import export_gltf

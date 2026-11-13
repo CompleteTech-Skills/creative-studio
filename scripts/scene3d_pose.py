@@ -7,6 +7,9 @@ from asset_library import read_source_bytes
 from rig_errors import decode_json
 from scene3d_contracts import portable_path, require, validate_document
 
+MAX_NATIVE_INPUT_VERTICES = 2000000
+MAX_NATIVE_DEFORMED_VERTICES = 2000000
+
 
 def evaluate_poses(graph, evaluated, documents, native_clips, root, *, verified_inventory,
                    sample_geometry, max_vertices):
@@ -63,7 +66,8 @@ def _evaluate_private_poses(graph, evaluated, documents, native_clips, root, *, 
             assignments[identifier] = binding
         evaluated[target]['native_pose'] = deepcopy(binding)
         evaluated[target]['native_pose_components'] = matches
-    geometry, cache, count, state_entries = {}, {}, 0, 0
+    geometry, rig_cache, pose_cache = {}, {}, {}
+    count, state_entries, input_vertices, deformed_vertices = 0, 0, 0, 0
     for identifier,binding in assignments.items():
         node = nodes[identifier]
         asset = validate_document(documents[node['asset']['path']], 'asset')
@@ -77,17 +81,26 @@ def _evaluate_private_poses(graph, evaluated, documents, native_clips, root, *, 
         rig_path,_ = read(rig_ref)
         require(rig_path.name == 'rig.json', 'Pose rig pin must name the canonical rig manifest.')
         _,payload = read(pose_ref['file'])
-        key = (tuple(rig_ref[k] for k in ('kind','id','version','path','sha256')),
+        rig_key = tuple(rig_ref[k] for k in ('kind','id','version','path','sha256'))
+        key = (rig_key,
                pose_ref['id'],pose_ref['rig_version'],pose_ref['file']['path'],pose_ref['file']['sha256'])
-        if key not in cache:
+        if rig_key not in rig_cache:
             rig = load_rig(rig_path.parent)
-            require(rig.manifest['id'] == rig_ref['id'] and rig.manifest['version'] == rig_ref['version'],
-                    'Pose rig identity/version differs from actual source.')
-            require(rig.manifest['skeleton'] is not None, 'Pose requires an actual native skeleton.')
-            source_pose = validate_contract(decode_json(payload),'Pose')
-            require(source_pose.get('id') == pose_ref['id'] and
-                    source_pose.get('rig_version') == pose_ref['rig_version'] == rig.skeleton['version'],
-                    'Pose identity or skeleton version differs from its pin.')
+            input_vertices += sum(len(mesh.positions) for mesh in rig.geometry.meshes)
+            require(input_vertices <= MAX_NATIVE_INPUT_VERTICES,
+                    'Native pose input vertex budget exceeded.','SCENE3D_EVALUATION_LIMIT')
+            rig_cache[rig_key] = rig
+        rig = rig_cache[rig_key]
+        # Admission is independent of pose-cache reuse: exact source bytes and
+        # all rig/Pose identity pins are checked for every instance binding.
+        require(rig.manifest['id'] == rig_ref['id'] and rig.manifest['version'] == rig_ref['version'],
+                'Pose rig identity/version differs from actual source.')
+        require(rig.manifest['skeleton'] is not None, 'Pose requires an actual native skeleton.')
+        source_pose = validate_contract(decode_json(payload),'Pose')
+        require(source_pose.get('id') == pose_ref['id'] and
+                source_pose.get('rig_version') == pose_ref['rig_version'] == rig.skeleton['version'],
+                'Pose identity or skeleton version differs from its pin.')
+        if key not in pose_cache:
             pose = pose_operation(rig, {'pose':source_pose})
             # Always validate mesh-qualified morph targets, even when geometry is
             # not requested by an inspector or browser state consumer.
@@ -98,9 +111,14 @@ def _evaluate_private_poses(graph, evaluated, documents, native_clips, root, *, 
             bones = {bone:matrix.tolist() for bone,matrix in evaluate_fk(rig.skeleton,pose).items()}
             sockets = {socket['id']:socket_world(rig,pose,socket['id']).tolist()
                        for socket in rig.manifest['attachments']}
-            deformed = evaluate_deformation(rig,pose) if sample_geometry else None
-            cache[key] = rig,pose,bones,sockets,deformed
-        rig,pose,bones,sockets,deformed = cache[key]
+            deformed = None
+            if sample_geometry:
+                deformed_vertices += sum(len(mesh.positions) for mesh in rig.geometry.meshes)
+                require(deformed_vertices <= MAX_NATIVE_DEFORMED_VERTICES,
+                        'Native pose deformation cache vertex budget exceeded.','SCENE3D_EVALUATION_LIMIT')
+                deformed = evaluate_deformation(rig,pose)
+            pose_cache[key] = pose,bones,sockets,deformed
+        pose,bones,sockets,deformed = pose_cache[key]
         state_entries += len(bones) + len(sockets) + sum(len(mesh.morphs) for mesh in rig.geometry.meshes)
         require(state_entries <= 250000, 'Native pose state budget exceeded.','SCENE3D_EVALUATION_LIMIT')
         world_from_rig = np.asarray(evaluated[identifier]['world_matrix'])

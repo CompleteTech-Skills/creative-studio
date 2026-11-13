@@ -118,6 +118,12 @@ the same canonical pose. Consumers obtain scene matrices by multiplying
 `world_from_rig @ socket_matrices[socket_id]`. Only manifest-declared sockets are
 returned; rigs without sockets expose an empty mapping. Socket entries share the
 existing 250000-entry native state budget.
+Each exact rig pin is loaded once per evaluation and shared across its distinct
+poses. Every instance still revalidates its rig/Pose source and identity pins.
+Distinct retained native rigs share a fixed 2000000-input-vertex budget even when
+geometry sampling is disabled. Distinct pose deformation cache entries share a
+separate fixed 2000000-vertex budget, charged before native deformation allocates
+arrays. These limits are independent of the selected component output budget.
 
 Consumers must use this state or reject pose-bound scenes; a binding is not
 permission to render the rig's rest pose. Before any native pose decoder runs,
