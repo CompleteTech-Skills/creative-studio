@@ -104,3 +104,19 @@ class SceneMaterialProjectionTests(unittest.TestCase):
         with self.assertRaises(RigError): validate_document(asset,'asset')
         with self.assertRaises(RigError):
             project_material_slots(asset,overrides=[dict(slot='default',material=self.pin)])
+
+    def test_integral_json_indexes_are_normalized_without_mutating_authored_descriptor(self):
+        asset=deepcopy(self.imported.asset)
+        for binding in asset['material_bindings']:
+            binding['material_index']=float(binding['material_index'])
+            for primitive in binding['primitives']:
+                for key in ('source_mesh','source_primitive','source_material_index','normalized_mesh','normalized_primitive'):
+                    if primitive[key] is not None: primitive[key]=float(primitive[key])
+        before=deepcopy(asset)
+        projected=project_material_slots(asset)
+        for primitive in projected:
+            self.assertIs(type(primitive['material_index']),int)
+            self.assertIs(type(primitive['normalized_mesh']),int)
+            self.assertIs(type(primitive['normalized_primitive']),int)
+        self.assertEqual(asset,before)
+        self.assertIs(type(asset['material_bindings'][0]['primitives'][0]['normalized_mesh']),float)
