@@ -154,7 +154,10 @@ def _copy_verified(root, stage, path, expected):
         source = safe_path(root, path, exists=True)
         target = safe_path(stage, path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
+        # The source can change after safe_path. Never block opening a FIFO
+        # substituted at that boundary; fstat below rejects nonregular files.
+        flags = (os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+                 | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
         fd = os.open(source, flags)
         digest, count = hashlib.sha256(), 0
         with os.fdopen(fd, 'rb') as stream, target.open('xb') as output:

@@ -7,6 +7,7 @@ from copy import deepcopy
 from fractions import Fraction
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -83,6 +84,28 @@ class SyntheticFileAdapter:
 
 
 class Render3DIndependentTests(unittest.TestCase):
+    @unittest.skipUnless(hasattr(os, 'mkfifo') and hasattr(os, 'O_NONBLOCK'),
+                         'FIFO and nonblocking file descriptors required')
+    def test_source_replaced_with_fifo_does_not_block_snapshot_copy(self):
+        from unittest.mock import patch
+        import render3d_snapshot as snapshot
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source, stage = root / 'source', root / 'stage'
+            source.mkdir(); stage.mkdir()
+            item = source / 'data.bin'
+            item.write_bytes(b'original')
+            real_open = os.open
+            def replace_before_open(path, flags, *args, **kwargs):
+                # Check before opening so regression failure cannot hang CI.
+                self.assertTrue(flags & os.O_NONBLOCK)
+                item.unlink(); os.mkfifo(item)
+                return real_open(path, flags, *args, **kwargs)
+            with patch.object(snapshot.os, 'open', side_effect=replace_before_open):
+                with self.assertRaises(Render3DError) as caught:
+                    snapshot._copy_verified(source, stage, 'data.bin', hashlib.sha256(b'original').hexdigest())
+            self.assertEqual(caught.exception.report['category'], 'missing-asset')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
