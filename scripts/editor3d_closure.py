@@ -65,7 +65,7 @@ class _Closure:
         self.active = set()
         self.expanded = set()
 
-    def capture(self, record, prefix='', depth=0):
+    def capture(self, record, prefix='', depth=0, *, manifest=False):
         if depth > MAX_DEPTH:
             _error('DEPTH', 'Native dependency closure exceeds 32 levels.')
         name = _joined(prefix, record['path'])
@@ -79,7 +79,10 @@ class _Closure:
         bound = dict(path=name, sha256=record['sha256'], bytes=size,
                      media_type='application/octet-stream')
         target = self.snapshot.capture(bound)
-        if not name.endswith('.json'):
+        is_json = (manifest or record.get('media_type') == 'application/json'
+                   or isinstance(record.get('kind'), str)
+                   or name.lower().endswith('.json'))
+        if not is_json:
             return None
         if name not in self.values:
             if size > 16 * 1024**2:
@@ -162,12 +165,12 @@ def _verify_editor_bundle(project, scenes, nodes, assets, animations, root):
             source_record = dict(source['file'])
             if prefix:
                 source_record['path'] = PurePosixPath(source_record['path']).relative_to(prefix).as_posix()
-            snapshot.capture(source_record, prefix)
-            value = snapshot.capture(reference['file'], '') if not prefix else snapshot.capture(
-                dict(reference['file'], path=PurePosixPath(reference['file']['path']).relative_to(prefix).as_posix()), prefix)
+            snapshot.capture(source_record, prefix, manifest=True)
+            value = snapshot.capture(reference['file'], '', manifest=True) if not prefix else snapshot.capture(
+                dict(reference['file'], path=PurePosixPath(reference['file']['path']).relative_to(prefix).as_posix()), prefix, manifest=True)
             verify_native_reference(reference, temporary)
             if reference['owner'] == 'rig' and reference['native_kind'] == 'Rig':
-                snapshot.capture(dict(path='identity.json', sha256=value['character']['identity_sha256']), prefix)
+                snapshot.capture(dict(path='identity.json', sha256=value['character']['identity_sha256']), prefix, manifest=True)
             native_documents[key] = value
             contexts[(reference['owner'], source['file']['path'])] = prefix, source
         for (owner, source_path), (prefix, source) in contexts.items():
@@ -200,7 +203,7 @@ def _verify_editor_bundle(project, scenes, nodes, assets, animations, root):
                 from lookdev_contracts import Registry
                 entries, payloads = [], {}
                 for name, candidate in snapshot.values.items():
-                    if name == source_path or prefix and name.startswith(prefix + '/'):
+                    if not prefix or name == source_path or name.startswith(prefix + '/'):
                         if isinstance(candidate, dict) and candidate.get('kind') in __import__('lookdev_contracts').KINDS:
                             relative = PurePosixPath(name).relative_to(prefix).as_posix() if prefix else name
                             entries.append((relative, (Path(temporary) / name).read_bytes()))
@@ -250,9 +253,16 @@ def _verify_editor_bundle(project, scenes, nodes, assets, animations, root):
                 if node['native_node_id'] not in native_nodes:
                     _error('NODE', 'Editor node is absent from the exact native scene.')
                 native = native_nodes[node['native_node_id']]
-                types = {'group': 'group', 'mesh_instance': 'mesh', 'skinned_character': 'character',
-                         'camera': 'camera', 'instance': 'instance'}
-                if native['type'] in types and node['node_type'] != types[native['type']]:
+                types = {'root': 'group', 'group': 'group', 'mesh_instance': 'mesh',
+                         'static_prop': 'mesh', 'animated_prop': 'mesh', 'terrain': 'mesh',
+                         'procedural_geometry': 'primitive', 'skinned_character': 'character',
+                         'camera': 'camera', 'prefab_instance': 'instance', 'socket': 'group',
+                         'constraint_target': 'group', 'locator': 'group'}
+                expected = (native['light']['type'] + '-light' if native['type'] == 'light'
+                            else types.get(native['type']))
+                if expected is None:
+                    _error('UNAVAILABLE', 'This native node kind has no editor binding: ' + native['type'])
+                if node['node_type'] != expected:
                     _error('NODE', 'Editor node kind differs from native scene node kind.')
                 parent = next((item['native_node_id'] for item in nodes if item['id'] == node['parent']), None)
                 if parent != native['parent']:

@@ -180,6 +180,55 @@ class EditorNativeClosureTests(unittest.TestCase):
         report=verify_editor_bundle(project,*self.bundle[1:],self.root)
         self.assertGreater(report['native_reports']['production2d:production/project.json']['resources']['assets'],0)
 
+    def test_manifest_media_type_controls_parsing_after_rename(self):
+        shutil.copyfile(ROOT/'examples/lookdev-contracts/ceramic.json',self.root/'ceramic.data')
+        material=reference(self.root,'ceramic.data','lookdev')
+        project=deepcopy(self.bundle[0]);project['dependency_manifest'].append(material)
+        report=verify_editor_bundle(project,*self.bundle[1:],self.root)
+        self.assertIn('lookdev:ceramic.data',report['native_reports'])
+
+    def test_root_level_material_dependency_uses_same_registry_scope(self):
+        for name in ('blue-coat.json','ceramic.json'):
+            shutil.copyfile(ROOT/'examples/lookdev-contracts'/name,self.root/name)
+        material=reference(self.root,'blue-coat.json','lookdev')
+        project=deepcopy(self.bundle[0]);project['dependency_manifest'].append(material)
+        report=verify_editor_bundle(project,*self.bundle[1:],self.root)
+        self.assertEqual(report['native_reports']['lookdev:blue-coat.json']['resources'],2)
+
+    def test_native_light_cannot_be_misrepresented_as_mesh(self):
+        scene_path=self.root/'native/example-scene.json'
+        native=json.loads(scene_path.read_bytes());native['lights']=['mesh']
+        node=native['nodes'][1];node['type']='light';node.pop('asset')
+        node['light']=dict(type='point',color=[1,1,1],intensity=100)
+        payload=json.dumps(native).encode();scene_path.write_bytes(payload)
+        digest=hashlib.sha256(payload).hexdigest()
+        project_path=self.root/'native/project.json'
+        native_project=json.loads(project_path.read_bytes())
+        for key in ('scenes','dependency_lock'):
+            for ref in native_project[key]:
+                if ref['path']=='example-scene.json':ref['sha256']=digest
+        project_path.write_text(json.dumps(native_project))
+        # Rebind the real shot/render/project dependency DAG after this native edit.
+        def rebind(value):
+            if isinstance(value,dict):
+                if 'path' in value and 'sha256' in value:
+                    target=self.root/'native'/value['path']
+                    if target.is_file():value['sha256']=hashlib.sha256(target.read_bytes()).hexdigest()
+                for child in value.values():rebind(child)
+            elif isinstance(value,list):
+                for child in value:rebind(child)
+        for _ in range(5):
+            for path in (self.root/'native').glob('*.json'):
+                value=json.loads(path.read_bytes());rebind(value);path.write_text(json.dumps(value))
+        edited=bundle(self.root)
+        with self.assertRaises(RigError) as raised:
+            verify_editor_bundle(*edited,self.root)
+        self.assertEqual(raised.exception.report['code'],'EDITOR3D_NODE')
+        edited[2][1]['node_type']='point-light'
+        edited[1][0]['nodes']=[dict(id=n['id'],sha256=contract_hash(n)) for n in edited[2]]
+        edited[0]['scenes']=[dict(id=edited[1][0]['id'],sha256=contract_hash(edited[1][0]))]
+        self.assertTrue(verify_editor_bundle(*edited,self.root)['native_resources_verified'])
+
 
 if __name__ == '__main__':
     unittest.main()
