@@ -86,7 +86,7 @@ def _totals(state, provider=None):
 @_exact
 def _validate_state(state):
     _need(isinstance(state, dict) and set(state) == {'schema_version', 'kind', 'revision', 'parent', 'limits', 'provider_limits', 'reservations', 'events', 'currency'}, 'CORRUPT', 'Unknown ledger fields.')
-    _need(state['schema_version'] == 1 and state['kind'] == 'director-budget-ledger', 'CORRUPT', 'Unsupported ledger version.')
+    _need(state['schema_version'] in (1, 2) and state['kind'] == 'director-budget-ledger', 'CORRUPT', 'Unsupported ledger version.')
     _need(type(state['revision']) is int and 0 <= state['revision'] < MAX_REVISIONS, 'CORRUPT', 'Invalid ledger revision.')
     _quantities(state['limits'])
     _need(state['currency'] is None or (isinstance(state['currency'], str) and re.fullmatch(r'[A-Z]{3}', state['currency'])), 'CORRUPT', 'Invalid ledger currency.')
@@ -97,7 +97,17 @@ def _validate_state(state):
     _need(isinstance(state['reservations'], dict) and len(state['reservations']) <= MAX_RESERVATIONS, 'CORRUPT', 'Too many reservations.')
     for identifier, row in state['reservations'].items():
         _id(identifier)
-        _need(set(row) == {'id', 'operation_id', 'provider', 'reserved', 'spent', 'held', 'state', 'unknown_price', 'attempts'}, 'CORRUPT', 'Invalid reservation fields.')
+        _need(set(row) in ({'id', 'operation_id', 'provider', 'reserved', 'spent', 'held', 'state', 'unknown_price', 'attempts'}, {'id', 'operation_id', 'provider', 'reserved', 'spent', 'held', 'state', 'unknown_price', 'attempts', 'dispatches'}), 'CORRUPT', 'Invalid reservation fields.')
+        dispatches = row.get('dispatches', [])
+        _need(not dispatches or state['schema_version'] == 2, 'CORRUPT', 'Dispatch records require explicit ledger version two.')
+        _need(isinstance(dispatches, list) and len(dispatches) <= 17, 'CORRUPT', 'Invalid dispatch history.')
+        for dispatch in dispatches:
+            _need(isinstance(dispatch, dict) and set(dispatch) == {'id', 'native_owner', 'operation_sha256', 'state', 'native_evidence', 'usage_accounted'}, 'CORRUPT', 'Invalid dispatch record.')
+            _id(dispatch['id']); _id(dispatch['native_owner'])
+            _need(isinstance(dispatch['operation_sha256'], str) and re.fullmatch('[0-9a-f]{64}', dispatch['operation_sha256']) and dispatch['state'] in ('pending', 'claimed', 'uncertain', 'complete', 'failed'), 'CORRUPT', 'Invalid dispatch identity/state.')
+            _evidence(dispatch['native_evidence'])
+            _need(type(dispatch['usage_accounted']) is bool and (not dispatch['usage_accounted'] or dispatch['state'] in ('complete', 'failed')), 'CORRUPT', 'Invalid dispatch usage accounting.')
+        _need(len({entry['id'] for entry in dispatches}) == len(dispatches), 'CORRUPT', 'Duplicate dispatch identity.')
         _need(row['id'] == identifier and row['state'] in ('reserved', 'uncertain', 'settled', 'released'), 'CORRUPT', 'Invalid reservation identity/state.')
         _id(row['operation_id']); _id(row['provider'])
         for field in ('reserved', 'spent', 'held'):
@@ -111,7 +121,7 @@ def _validate_state(state):
     for index,event in enumerate(state['events']):
         _need(isinstance(event,dict) and set(event)=={'idempotency_key','action','input_digest','payload','receipt'}, 'CORRUPT', 'Invalid event record.')
         _id(event['idempotency_key'])
-        _need(event['action'] in ('reserve','settle','release') and isinstance(event['payload'],dict) and isinstance(event['receipt'],dict), 'CORRUPT', 'Invalid event action.')
+        _need(event['action'] in ('reserve','settle','release','dispatch','dispatch-outcome') and isinstance(event['payload'],dict) and isinstance(event['receipt'],dict), 'CORRUPT', 'Invalid event action.')
         _need(event['input_digest']==object_hash({'action':event['action'],'payload':event['payload']}), 'CORRUPT', 'Event inputs changed.')
         _need(event['receipt'].get('revision')==index+1 and event['receipt'].get('idempotency_key')==event['idempotency_key'], 'CORRUPT', 'Event receipt changed.')
         _evidence(event['payload'].get('evidence'))
@@ -215,7 +225,7 @@ class BudgetLedger:
         _verify_evidence(self.root, list(proofs.values()))
         return {'sha256': prior, 'state': deepcopy(latest)}
 
-    def _change(self, expected_revision, key, action, payload, mutate):
+    def _change(self, expected_revision, key, action, payload, mutate, *, replay_indicator=False):
         _id(key)
         with job_lock(self.root):
             snapshot = self.snapshot(); state = snapshot['state']
@@ -224,7 +234,7 @@ class BudgetLedger:
             existing = [event for event in state['events'] if event['idempotency_key'] == key]
             if existing:
                 _need(len(existing) == 1 and existing[0]['input_digest'] == digest, 'IDEMPOTENCY', 'Idempotency key reused for different work.')
-                return deepcopy(existing[0]['receipt'])
+                return dict(deepcopy(existing[0]['receipt']), replayed=True) if replay_indicator else deepcopy(existing[0]['receipt'])
             _need(snapshot['sha256'] == expected_revision, 'STALE', 'Ledger revision changed; read current state before retrying.')
             _need(state['revision'] + 1 < MAX_REVISIONS, 'LIMIT', 'Ledger history is full.')
             receipt = mutate(state)
@@ -232,7 +242,7 @@ class BudgetLedger:
             receipt.update(revision=state['revision'], idempotency_key=key)
             state['events'].append({'idempotency_key': key, 'action': action, 'input_digest': digest, 'payload': payload, 'receipt': deepcopy(receipt)})
             self._publish(state)
-            return receipt
+            return dict(receipt, replayed=False) if replay_indicator else receipt
 
     @_exact
     def reserve(self, *, operation_id, provider, estimate, retry_allowance, expected_revision, idempotency_key,
@@ -268,17 +278,32 @@ class BudgetLedger:
         return self._change(expected_revision,idempotency_key,'reserve',payload,mutate)
 
     @_exact
-    def settle(self, reservation_id, *, usage, outcome, expected_revision, idempotency_key, evidence):
+    def settle(self, reservation_id, *, usage, outcome, expected_revision, idempotency_key, evidence, dispatch_id=None):
         _id(reservation_id)
         _need(outcome in ('complete','failed','uncertain','retry'), 'INPUT', 'Unsupported settlement outcome.')
         amounts = _quantities(usage, unknown=True)
         proof = _evidence(evidence); _need(bool(proof), 'EVIDENCE', 'Settlement requires retained usage evidence.')
         _need(outcome == 'uncertain' or all(value is not None for value in amounts.values()), 'USAGE', 'Unknown usage must retain uncertain accounting.')
         payload = dict(reservation_id=reservation_id,usage=amounts,outcome=outcome,evidence=proof)
+        if dispatch_id is not None:
+            _id(dispatch_id); payload['dispatch_id'] = dispatch_id
         def mutate(state):
             _need(reservation_id in state['reservations'], 'MISSING', 'Reservation does not exist.')
             row = state['reservations'][reservation_id]
             _need(row['state'] in ('reserved','uncertain'), 'STATE', 'Reservation is already final.')
+            _need(outcome not in ('complete', 'failed') or not any(d['state'] in ('pending', 'claimed', 'uncertain') for d in row.get('dispatches', [])), 'DISPATCH', 'An active or uncertain native dispatch must be reconciled before final settlement.')
+            if row.get('dispatches'):
+                pending = [d for d in row['dispatches'] if not d['usage_accounted'] and
+                           (dispatch_id is None or d['id'] == dispatch_id)]
+                _need(len(pending) == 1 and pending[0]['state'] in ('complete', 'failed'),
+                      'DISPATCH', 'Settlement needs one original known native outcome.')
+                _need(outcome != 'uncertain' and all(value is not None for value in amounts.values()),
+                      'DISPATCH', 'Unknown native usage keeps the original dispatch and reservation held.')
+                _need((outcome == 'complete') == (pending[0]['state'] == 'complete'),
+                      'DISPATCH', 'Settlement outcome must preserve the actual native outcome.')
+                _need(outcome not in ('complete', 'failed') or all(d is pending[0] or d['usage_accounted'] for d in row['dispatches']),
+                      'DISPATCH', 'Every native attempt must have actual usage before final settlement.')
+                pending[0]['usage_accounted'] = True
             _need(len(row['attempts']) < 128, 'LIMIT', 'Too many usage attempts.')
             for key in METRICS:
                 if amounts[key] is not None:
@@ -302,10 +327,78 @@ class BudgetLedger:
             _need(reservation_id in state['reservations'], 'MISSING', 'Reservation does not exist.')
             row=state['reservations'][reservation_id]
             _need(row['state']=='reserved', 'UNCERTAIN', 'Uncertain/final reservations cannot be released.')
+            _need(not any(d['state'] in ('pending', 'claimed', 'uncertain') or not d['usage_accounted'] for d in row.get('dispatches', [])), 'DISPATCH', 'An admitted or unaccounted native dispatch still owns this reservation.')
             _need(outcome!='unstarted' or not row['attempts'], 'STATE', 'Started work cannot be released as unstarted.')
             row['state']='released';row['held']={key:'0' for key in METRICS}
             return {'reservation_id':reservation_id,'state':'released','spent':deepcopy(row['spent'])}
         return self._change(expected_revision,idempotency_key,'release',payload,mutate)
+
+
+    def begin_dispatch(self, reservation_id, *, native_owner, operation_sha256,
+                       expected_revision, idempotency_key, evidence):
+        """Durably consume one dispatch allowance BEFORE asking a native owner.
+
+        Only ``replayed=False`` grants a new native handoff. Replays and crashes
+        reconcile the original native owner; they never authorize a repeat paid
+        call. This is a budget fence, not an execution lease or generation claim.
+        """
+        _id(reservation_id); _id(native_owner)
+        _need(isinstance(operation_sha256, str) and re.fullmatch('[0-9a-f]{64}', operation_sha256),
+              'INPUT', 'Dispatch must pin its exact operation digest.')
+        proof = _evidence(evidence)
+        _need(bool(proof), 'EVIDENCE', 'Dispatch requires retained native input evidence.')
+        payload = dict(reservation_id=reservation_id, native_owner=native_owner,
+                       operation_sha256=operation_sha256, evidence=proof)
+        def mutate(state):
+            _need(reservation_id in state['reservations'], 'MISSING', 'Reservation does not exist.')
+            row = state['reservations'][reservation_id]
+            _need(row['state'] == 'reserved', 'STATE', 'Only an active known reservation may dispatch.')
+            prior = row.get('dispatches', [])
+            _need(not any(d['state'] in ('pending', 'claimed', 'uncertain') or not d['usage_accounted'] for d in prior),
+                  'DISPATCH', 'Reconcile the existing native dispatch before another attempt.')
+            reservation = next(event for event in state['events'] if event['action'] == 'reserve'
+                               and event['receipt']['reservation_id'] == reservation_id)
+            _need(len(prior) < reservation['payload']['retry_allowance'] + 1,
+                  'ATTEMPTS', 'The reserved bounded attempt allowance is exhausted.')
+            identifier = 'dispatch-' + object_hash(dict(reservation=reservation_id, key=idempotency_key))[:24]
+            state['schema_version'] = 2
+            row.setdefault('dispatches', []).append(dict(id=identifier, native_owner=native_owner,
+                operation_sha256=operation_sha256, state='pending', native_evidence=[], usage_accounted=False))
+            return dict(reservation_id=reservation_id, dispatch_id=identifier, state='pending',
+                        native_owner=native_owner, operation_sha256=operation_sha256)
+        return self._change(expected_revision, idempotency_key, 'dispatch', payload, mutate,
+                            replay_indicator=True)
+
+    def record_dispatch_outcome(self, reservation_id, dispatch_id, *, outcome,
+                                expected_revision, idempotency_key, evidence):
+        """Attach exact native owner evidence without releasing budget capacity.
+
+        Unknown outcomes retain the original dispatch and reservation. Native
+        claim/job identities live in their owning evidence; this ledger does not
+        invent or supersede them. Usage is settled separately from actual data.
+        """
+        _id(reservation_id); _id(dispatch_id)
+        _need(outcome in ('claimed', 'uncertain', 'complete', 'failed'), 'INPUT', 'Invalid native dispatch outcome.')
+        proof = _evidence(evidence)
+        _need(bool(proof), 'EVIDENCE', 'Native dispatch outcome requires retained exact evidence.')
+        payload = dict(reservation_id=reservation_id, dispatch_id=dispatch_id, outcome=outcome, evidence=proof)
+        def mutate(state):
+            _need(reservation_id in state['reservations'], 'MISSING', 'Reservation does not exist.')
+            row = state['reservations'][reservation_id]
+            _need(row['state'] in ('reserved', 'uncertain'), 'STATE', 'Reservation is already final.')
+            records = [d for d in row.get('dispatches', []) if d['id'] == dispatch_id]
+            _need(len(records) == 1, 'MISSING', 'Original native dispatch is absent.')
+            record = records[0]
+            allowed = {'pending': {'claimed', 'uncertain', 'complete', 'failed'},
+                       'claimed': {'uncertain', 'complete', 'failed'},
+                       'uncertain': {'claimed', 'complete', 'failed'},
+                       'complete': set(), 'failed': set()}
+            _need(outcome in allowed[record['state']], 'STATE', 'Illegal native dispatch transition.')
+            record['state'] = outcome
+            record['native_evidence'] = deepcopy(proof)
+            return dict(reservation_id=reservation_id, dispatch_id=dispatch_id, state=outcome,
+                        native_owner=record['native_owner'], operation_sha256=record['operation_sha256'])
+        return self._change(expected_revision, idempotency_key, 'dispatch-outcome', payload, mutate)
 
 
 def _evidence(evidence):
