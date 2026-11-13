@@ -86,6 +86,8 @@ def resolve_captured_import(bundle, asset_reference, source_root, *, verified_in
                 'Imported asset skeleton capability differs from its native rig.')
         require(report.get('source_sha256')==rig.manifest['source']['sha256'],
                 'Imported provenance source differs from the actual native rig.')
+        require(asset['source']['sha256']==rig.manifest['source']['sha256'],
+                'Imported original source pin differs from the actual native source.')
         require(rig.manifest['source']['fixture']==asset['provenance']['fixture']==report['fixture'],
                 'Imported fixture provenance differs from the actual native source.')
         aliases=report.get('native_clip_map')

@@ -29,6 +29,29 @@ class CapturedImportTests(unittest.TestCase):
         graph=SceneGraph.from_bundle(bundle,output['active_scene']['path'],source_root=root)
         return root,bundle,graph
 
+    def resealed(self,root):
+        from copy import deepcopy
+        import hashlib,json
+        def encoded(value):return (json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False)+'\n').encode()
+        def refresh(value,hashes):
+            if isinstance(value,dict):
+                for child in value.values():refresh(child,hashes)
+                if isinstance(value.get('path'),str) and 'sha256' in value and value['path'] in hashes:value['sha256']=hashes[value['path']]
+                if isinstance(value.get('asset'),dict) and isinstance(value.get('metadata'),dict) and 'source_asset_sha256' in value['metadata']:
+                    value['metadata']['source_asset_sha256']=value['asset']['sha256']
+            elif isinstance(value,list):
+                for child in value:refresh(child,hashes)
+        for _ in range(30):
+            hashes={path.relative_to(root).as_posix():hashlib.sha256(path.read_bytes()).hexdigest() for path in root.rglob('*') if path.is_file()}
+            changed=False
+            for path in root.rglob('*.json'):
+                value=json.loads(path.read_bytes());before=deepcopy(value);refresh(value,hashes)
+                if value!=before:path.write_bytes(encoded(value));changed=True
+            if not changed:break
+        bundle=load_project(root)
+        reference=dict(self.imported.asset_reference,sha256=hashlib.sha256((root/self.imported.asset_reference['path']).read_bytes()).hexdigest())
+        return bundle,reference
+
     def test_actual_static_import_resolves_exact_topology_in_private_lifetime(self):
         root,bundle,graph=self.project()
         with resolve_captured_import(bundle,self.imported.asset_reference,root) as resolved:
@@ -150,6 +173,28 @@ class CapturedImportTests(unittest.TestCase):
         reference=dict(self.imported.asset_reference,sha256=hashlib.sha256(asset_path.read_bytes()).hexdigest())
         with self.assertRaisesRegex(RigError,'fixture provenance'):
             with resolve_captured_import(admitted,reference,root):self.fail('Native fixture was relabelled as nonfixture.')
+
+    def test_rehashed_source_pin_cannot_substitute_normalized_geometry_for_original_bytes(self):
+        import json
+        from copy import deepcopy
+        root,bundle,graph=self.project()
+        asset_path=root/self.imported.asset_reference['path'];asset=json.loads(asset_path.read_bytes())
+        self.assertNotEqual(asset['source']['sha256'],asset['content']['sha256'])
+        asset['source']=deepcopy(asset['content']);asset_path.write_text(json.dumps(asset))
+        admitted,reference=self.resealed(root)
+        with self.assertRaisesRegex(RigError,'original source pin'):
+            with resolve_captured_import(admitted,reference,root):self.fail('Normalized output replaced original source identity.')
+
+    def test_identical_original_source_bytes_may_use_a_portable_path_alias(self):
+        import json
+        root,bundle,graph=self.project()
+        asset_path=root/self.imported.asset_reference['path'];asset=json.loads(asset_path.read_bytes())
+        (root/'original-source-alias.glb').write_bytes((root/asset['source']['path']).read_bytes())
+        asset['source']['path']='original-source-alias.glb';asset_path.write_text(json.dumps(asset))
+        admitted,reference=self.resealed(root)
+        with resolve_captured_import(admitted,reference,root) as resolved:
+            self.assertEqual(resolved['imported'].asset['source']['sha256'],resolved['rig'].manifest['source']['sha256'])
+            self.assertEqual(resolved['imported'].asset['source']['path'],'original-source-alias.glb')
 
     def test_actual_skinned_import_retains_exact_native_skeleton_pin(self):
         from rig_test_helpers import fixture
