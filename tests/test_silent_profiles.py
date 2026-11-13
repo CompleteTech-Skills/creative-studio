@@ -42,7 +42,6 @@ class ProfileControlTests(unittest.TestCase):
             self.assertNotIn('-crf', profiles.arguments(profile, controls))
 
 
-if __name__ == '__main__': unittest.main()
 
 
 import os
@@ -90,3 +89,6 @@ class ActualEncoderControls(unittest.TestCase):
                             self.assertEqual(len(receipt['passes']), 2)
                             self.assertTrue(any(event['phase'] == 'encode-pass-1' for event in events))
                         video.validate_receipt(receipt, output, request, root)
+
+
+if __name__ == '__main__': unittest.main()

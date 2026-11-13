@@ -26,7 +26,7 @@ import silent_video as video
 
 MEDIA_AVAILABLE = bool(shutil.which('ffmpeg') and shutil.which('ffprobe') and video.secure_publication_supported())
 if os.environ.get('HATCH_SILENT_MEDIA_TEST') == '1' and not MEDIA_AVAILABLE:
-    raise RuntimeError('HATCH_SILENT_MEDIA_TEST requires real FFmpeg and ffprobe')
+    raise RuntimeError('HATCH_SILENT_MEDIA_TEST requires real FFmpeg/ffprobe and tested secure publication support')
 
 
 class SilentContracts(unittest.TestCase):
@@ -190,7 +190,7 @@ class SilentContracts(unittest.TestCase):
                     video.validate_request(request)
 
 
-@unittest.skipUnless(MEDIA_AVAILABLE, 'FFmpeg/ffprobe integration tools unavailable')
+@unittest.skipUnless(MEDIA_AVAILABLE, 'FFmpeg/ffprobe or tested secure publication adapter unavailable')
 class SilentMedia(SilentContracts):
     def ffmpeg(self, *arguments):
         result = subprocess.run([shutil.which('ffmpeg'), '-hide_banner',
@@ -520,7 +520,7 @@ class DescriptorPublication(unittest.TestCase):
             sentinel = outside/'original.txt'
             sentinel.write_bytes(b'unrelated original bytes')
             with video._pin_directory(root) as parent_fd:
-                with video._private_stage(parent_fd) as (stage, descriptor):
+                with video._private_stage(parent_fd, prefix='.silent-export-') as (stage, descriptor):
                     (stage/'owned.txt').write_bytes(b'owned temporary bytes')
                     name = next(root.glob('.silent-export-*'))
                     name.rename(root/'moved-owned-stage')
