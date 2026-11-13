@@ -220,7 +220,7 @@ def _import_probe(operation,directory,timeout):
 def _reference(path, stage, dependencies=()):
     return dict(artifact_id='probe-'+path.stem,kind='capability-probe-evidence',schema_version=1,
                 semantic_version='1.0.0',path=path.relative_to(stage).as_posix(),sha256=sha256(path),
-                byte_size=path.stat().st_size,media_type='application/json',provenance_ref=None,fixture=True,dependencies=list(dependencies))
+                byte_size=path.stat().st_size,media_type={'.png':'image/png','.mp4':'video/mp4','.webm':'video/webm','.obj':'text/plain','.glb':'model/gltf-binary','.gltf':'model/gltf+json'}.get(path.suffix,'application/json'),provenance_ref=None,fixture=True,dependencies=list(dependencies))
 
 
 def probe(request, evidence_root, *, configuration=None):
@@ -346,13 +346,14 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
     for operation in required_operations:
         item=by_op.get(operation)
         _need(item is not None and item['status']=='available' and item['execution_verified'],'UNAVAILABLE','Required capability is unverified: '+operation)
+        _need(bool(item['probe_evidence']),'EVIDENCE','Execution verification requires nonempty retained evidence.')
         _need(evidence_root is not None,'EVIDENCE_ROOT','Admission requires the exact retained evidence root.')
         if evidence_root is not None:
             from director_contracts import _read_artifact
             for reference in item['probe_evidence']:
                 evidence=decode_json(_read_artifact(evidence_root,reference))
-                _need(evidence['operation']==operation and evidence['execution_verified'] and evidence['status']=='available','EVIDENCE','Probe evidence does not verify capability.')
-                _need(evidence['policy_limits']==item['limits'] and evidence['version']==item['version'],'EVIDENCE','Capability policy/version differs from execution receipt.')
+                _need(isinstance(evidence,dict) and evidence.get('operation')==operation and evidence.get('execution_verified') is True and evidence.get('status')=='available','EVIDENCE','Probe evidence does not verify capability.')
+                _need(evidence.get('policy_limits')==item['limits'] and evidence.get('version')==item['version'],'EVIDENCE','Capability policy/version differs from execution receipt.')
                 for payload in reference['dependencies']:_read_artifact(evidence_root,payload)
         for resource,amount in (resources or {}).items():
             _need(resource in LIMITS and type(amount) in (int,float) and amount>=0,'RESOURCE','Unknown or invalid resource estimate.')
