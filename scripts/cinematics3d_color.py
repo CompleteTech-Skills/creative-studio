@@ -14,7 +14,7 @@ import re
 import stat
 import tempfile
 
-from rig_errors import finite_json, object_hash, open_payload, portable_name
+from rig_errors import finite_json, object_hash
 
 VERSION = 1
 OCIO_VERSION = '2.5.2'
@@ -27,6 +27,8 @@ MAX_WORK_BYTES = 512 * 1024**2
 REC709_D65 = {'r': [0.64, 0.33], 'g': [0.30, 0.60], 'b': [0.15, 0.06], 'w': [0.3127, 0.3290]}
 _ALLOWED_SUFFIXES = {'.ocio', '.cube', '.spi1d', '.spi3d', '.spimtx'}
 _SHA = re.compile(r'^[0-9a-f]{64}$')
+_PORTABLE = re.compile(r'^[A-Za-z0-9._/-]+$')
+_RESERVED = {'con', 'prn', 'aux', 'nul', *('com'+str(i) for i in range(1, 10)), *('lpt'+str(i) for i in range(1, 10))}
 
 
 def _need(ok, message):
@@ -52,18 +54,48 @@ def _number(value, low, high):
 
 
 def _path(value):
-    _need(type(value) is str and len(value) <= 512 and portable_name(value) == value, 'invalid relative color path')
-    _need(not any(c in value for c in '$%:'), 'environment or URI color paths are unsupported')
+    # A deliberately restricted profile subset keeps the worker independent
+    # of optional artwork libraries and excludes device names and aliases.
+    _need(type(value) is str and 0 < len(value) <= 512 and bool(_PORTABLE.fullmatch(value)), 'invalid relative color path')
+    _need(not value.startswith('/') and all(part not in ('', '.', '..') and not part.endswith('.')
+          and part.split('.', 1)[0].casefold() not in _RESERVED for part in value.split('/')), 'unsafe color path')
     return value
 
 
 def _bytes(root, name, limit):
     _path(name)
-    with open_payload(root, name) as (stream, info):
-        _need(info.st_size <= limit, 'color file exceeds byte budget')
-        payload = stream.read(limit+1)
-        _need(len(payload) <= limit, 'color file grew beyond byte budget')
-        return payload
+    root = Path(root).absolute()
+    target = root/name
+    _need(root.resolve() == root and target.resolve().is_relative_to(root), 'redirected color path')
+    for ancestor in [target, *target.parents]:
+        _need(not ancestor.is_symlink(), 'color symlink is unsupported')
+    before = target.lstat()
+    _need(stat.S_ISREG(before.st_mode) and before.st_size <= limit, 'color payload must be a bounded regular file')
+    descriptors = []
+    flags = os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0)
+    def identity(info):
+        return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+    try:
+        if os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW'):
+            directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            descriptors.append(os.open(root.anchor, directory_flags))
+            for part in [*root.parts[1:], *PurePosixPath(name).parts[:-1]]:
+                descriptors.append(os.open(part, directory_flags, dir_fd=descriptors[-1]))
+            descriptor = os.open(PurePosixPath(name).name, flags, dir_fd=descriptors[-1])
+        else:
+            descriptor = os.open(target, flags)
+        with os.fdopen(descriptor, 'rb') as stream:
+            opened = os.fstat(stream.fileno())
+            _need(stat.S_ISREG(opened.st_mode) and identity(opened) == identity(before), 'color file changed while opening')
+            payload = stream.read(limit+1)
+            _need(len(payload) <= limit and identity(os.fstat(stream.fileno())) == identity(before)
+                  and identity(target.lstat()) == identity(before), 'color file changed while reading')
+            return payload
+    except OSError as exc:
+        raise ValueError('unsafe/unavailable color payload: '+str(exc)) from exc
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
 def _hash(payload):
@@ -236,6 +268,9 @@ def verify_config(root, inventory):
         payload = _bytes(root, row['path'], MAX_FILE_BYTES)
         _need(len(payload) == row['bytes'] and _hash(payload) == row['sha256'], 'color profile bytes changed')
     return inventory['closure_sha256']
+
+
+verify_config_bytes = verify_config
 
 
 @contextmanager
