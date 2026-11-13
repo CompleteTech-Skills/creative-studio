@@ -99,7 +99,9 @@ class CameraOptics(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'scene-parent'):
             camera_world(self.camera)
         for kwargs in [dict(exposure=float('nan')), dict(exposure=33), dict(motion_blur=1),
-                       dict(shutter_frames=-1), dict(shutter_frames=True)]:
+                       dict(shutter_frames=-1), dict(shutter_frames=True),
+                       dict(exposure=10**400), dict(exposure=-(10**400)),
+                       dict(shutter_frames=10**400), dict(shutter_frames=-(10**400))]:
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 optical_plan(self.optics, self.render, **kwargs)
         self.optics['depth_of_field']['aperture_blades'] = 2
