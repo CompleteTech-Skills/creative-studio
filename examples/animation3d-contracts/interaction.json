@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "kind": "animation_interaction_3d",
+  "id": "handoff",
+  "participants": [
+    {
+      "actor_id": "a",
+      "role": "giver"
+    },
+    {
+      "actor_id": "b",
+      "role": "receiver"
+    }
+  ],
+  "start_frame": 0,
+  "end_frame": 24,
+  "synchronization_markers": [],
+  "constraints": [],
+  "position_tolerance_m": 0.01,
+  "orientation_tolerance_rad": 0.01,
+  "failure_policy": "error"
+}

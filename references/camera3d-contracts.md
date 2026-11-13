@@ -1,5 +1,10 @@
 # Camera3D contract foundation
 
+The additive [camera sequencing guide](camera3d-sequencing.md) covers executable
+editorial sampling, real PNG transitions, immutable camera catalogs, presets and
+spatial storyboard planning. Its `camera3d-catalog` family leaves all original
+sixteen document families unchanged.
+
 This additive foundation implements issue #75. The camera system's rendering,
 interactive authoring, motion, tracking, and production demonstration requirements
 remain in #76–#82. A structurally admitted path or constraint is authoring intent;

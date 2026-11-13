@@ -23,7 +23,7 @@ from rig_errors import decode_json, finite_json
 ROOT = Path(__file__).resolve().parents[1]
 MAX_BYTES = 8 * 1024 * 1024
 KINDS = ('camera', 'optics', 'transform', 'animation', 'constraint', 'target', 'path',
-         'rig', 'preset', 'binding', 'shot', 'transition', 'storyboard', 'evaluated', 'render', 'registry')
+         'rig', 'preset', 'binding', 'shot', 'transition', 'storyboard', 'evaluated', 'render', 'registry', 'catalog')
 ID = {'type': 'string', 'pattern': r'^[a-z][a-z0-9_-]{0,63}(?![\s\S])'}
 VERSION = {'type': 'string', 'pattern': r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?![\s\S])'}
 TEXT = {'type': 'string', 'minLength': 1, 'maxLength': 4096}
@@ -152,6 +152,8 @@ def definitions():
         projection_matrix=ref('matrix'), projection=ref('projection'), depth_of_field=ref('dof'),
         render=render_ref, dependencies=arr(ref('reference'), maximum=1024)))
     d['registry'] = base('registry', dict(resources=arr(ref('reference'), 1, 4096), metadata=ref('metadata')))
+    d['catalog'] = base('catalog', dict(cameras=arr(camera_ref, maximum=4096),
+        enabled=arr(camera_ref, maximum=4096), active=nullable(camera_ref), metadata=ref('metadata')))
     return d
 
 
@@ -291,6 +293,16 @@ def validate(value, kind=None):
             raise ValueError('camera3d cut has zero duration and no overlap')
         if value['type'] != 'cut' and (value['duration_frames'] == 0 or value['overlap'] != 'tail-head'):
             raise ValueError('camera3d transition requires positive overlap')
+    if kind == 'catalog':
+        cameras = [canonical_bytes(reference) for reference in value['cameras']]
+        enabled = [canonical_bytes(reference) for reference in value['enabled']]
+        identities = [(reference['id'], reference['version']) for reference in value['cameras']]
+        if len(set(identities)) != len(identities) or len(set(enabled)) != len(enabled):
+            raise ValueError('camera3d catalog repeats a camera version')
+        if any(reference not in cameras for reference in enabled):
+            raise ValueError('camera3d enabled camera must be an exact catalog reference')
+        if value['active'] is not None and canonical_bytes(value['active']) not in enabled:
+            raise ValueError('camera3d active camera must be explicitly enabled')
     if kind == 'evaluated':
         frame = Fraction(int(value['time']['frame'])) + Fraction(int(value['time']['subframe_ticks']), 1_000_000)
         if frame > value['duration_frames'] or (frame == value['duration_frames']) != value['terminal']:

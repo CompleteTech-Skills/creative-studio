@@ -55,6 +55,8 @@ def fixtures():
           fps=dict(numerator=24,denominator=1),transition=pointer('transition'),start_frame=0),metadata=metadata),
       'storyboard':base('storyboard',shots=[pointer('shot')],total_frames=24,fps=dict(numerator=24,denominator=1),source=None,metadata=metadata),
       'registry':base('registry',resources=[pointer('camera')],metadata=metadata),
+      'catalog':base('catalog',cameras=[pointer('camera')],enabled=[pointer('camera')],
+                     active=pointer('camera'),metadata=metadata),
     }
     identity=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]
     # Independent closed-form 50 mm /36x24 mm projection, near .1, far100.

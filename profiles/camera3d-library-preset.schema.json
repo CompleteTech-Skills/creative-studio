@@ -1,0 +1,3129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://creative-studio.local/schemas/camera3d-library-preset.schema.json",
+  "$defs": {
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/) )(?!.*[\\\\:\\x00-\\x1f*?\"<>|])(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|(?![\\s\\S])))(?!.*[. ](?:/|(?![\\s\\S])))(?!(?:[^/]+/)*(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[cC][oO][mM][1-9\u00b9\u00b2\u00b3]|[lL][pP][tT][1-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/]+(?:/[^/]+)*(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ]
+    },
+    "time": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "frame": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "subframe_ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999999
+        }
+      },
+      "required": [
+        "frame",
+        "subframe_ticks"
+      ]
+    },
+    "trs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "translation": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000.0,
+            "maximum": 1000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "rotation": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "scale": {
+          "type": "array",
+          "items": {
+            "const": 1
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "translation",
+        "rotation",
+        "scale"
+      ]
+    },
+    "matrix": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "minimum": -1000000000.0,
+          "maximum": 1000000000.0
+        },
+        "minItems": 4,
+        "maxItems": 4
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "enum": [
+            "authored",
+            "import",
+            "derived",
+            "procedural-fixture"
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "origin",
+        "fixture",
+        "attribution",
+        "license",
+        "inputs"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "provenance"
+      ]
+    },
+    "projection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "perspective"
+            },
+            "focal_length_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "sensor_width_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "sensor_height_mm": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "sensor_fit": {
+              "enum": [
+                "horizontal",
+                "vertical",
+                "auto"
+              ]
+            },
+            "shift_x": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "shift_y": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "near_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "far_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            }
+          },
+          "required": [
+            "type",
+            "focal_length_mm",
+            "sensor_width_mm",
+            "sensor_height_mm",
+            "sensor_fit",
+            "shift_x",
+            "shift_y",
+            "near_clip_m",
+            "far_clip_m"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "orthographic"
+            },
+            "orthographic_height_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "shift_x": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "shift_y": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "near_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            },
+            "far_clip_m": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000000.0
+            }
+          },
+          "required": [
+            "type",
+            "orthographic_height_m",
+            "shift_x",
+            "shift_y",
+            "near_clip_m",
+            "far_clip_m"
+          ]
+        }
+      ]
+    },
+    "dof": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "focus_distance_m": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        },
+        "f_stop": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        },
+        "aperture_blades": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "aperture_rotation_rad": {
+          "type": "number",
+          "minimum": -1000000000.0,
+          "maximum": 1000000000.0
+        },
+        "anamorphic_ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        }
+      },
+      "required": [
+        "enabled",
+        "focus_distance_m",
+        "f_stop",
+        "aperture_blades",
+        "aperture_rotation_rad",
+        "anamorphic_ratio"
+      ]
+    },
+    "parent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scene": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "scene3d-scene"
+                }
+              }
+            }
+          ]
+        },
+        "node": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "scene",
+        "node"
+      ]
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-transform"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "local": {
+          "$ref": "#/$defs/trs"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/parent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "local",
+        "parent"
+      ]
+    },
+    "optics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-optics"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "projection": {
+          "$ref": "#/$defs/projection"
+        },
+        "depth_of_field": {
+          "$ref": "#/$defs/dof"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "projection",
+        "depth_of_field"
+      ]
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-camera"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "transform": {
+          "$ref": "#/$defs/trs"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/parent"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "optics": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-optics"
+                }
+              }
+            }
+          ]
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "camera3d-constraint"
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "animation": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "camera3d-animation"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "transform",
+        "parent",
+        "optics",
+        "constraints",
+        "animation",
+        "metadata"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-target"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "scene": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "scene3d-scene"
+                }
+              }
+            }
+          ]
+        },
+        "node": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "attachment": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset_m": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000.0,
+            "maximum": 1000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "space": {
+          "enum": [
+            "world",
+            "node",
+            "bone",
+            "socket"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "scene",
+        "node",
+        "attachment",
+        "offset_m",
+        "space"
+      ]
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-constraint"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "type": {
+          "enum": [
+            "look-at",
+            "frame",
+            "focus",
+            "collision",
+            "horizon"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "camera3d-target"
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "weight": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "up": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": -1000000000.0,
+            "maximum": 1000000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "safe_rect": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "distance_range_m": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1000000000.0
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "collision_radius_m": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000.0
+        },
+        "failure": {
+          "enum": [
+            "reject",
+            "warn"
+          ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "type",
+        "targets",
+        "priority",
+        "enabled",
+        "weight",
+        "up",
+        "safe_rect",
+        "distance_range_m",
+        "collision_radius_m",
+        "failure",
+        "metadata"
+      ]
+    },
+    "path": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-path"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "space": {
+          "enum": [
+            "world",
+            "parent"
+          ]
+        },
+        "interpolation": {
+          "enum": [
+            "linear",
+            "bezier",
+            "catmull-rom"
+          ]
+        },
+        "closed": {
+          "type": "boolean"
+        },
+        "control_points_m": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "minimum": -1000000000.0,
+              "maximum": 1000000000.0
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "minItems": 2,
+          "maxItems": 4096
+        },
+        "duration_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "fps": {
+          "$ref": "#/$defs/rate"
+        },
+        "orientation": {
+          "enum": [
+            "authored",
+            "tangent",
+            "target"
+          ]
+        },
+        "target": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "camera3d-target"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "speed": {
+          "enum": [
+            "parameter",
+            "arc-length"
+          ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "space",
+        "interpolation",
+        "closed",
+        "control_points_m",
+        "duration_frames",
+        "fps",
+        "orientation",
+        "target",
+        "speed",
+        "metadata"
+      ]
+    },
+    "animation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-animation"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "duration_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "fps": {
+          "$ref": "#/$defs/rate"
+        },
+        "timeline": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "animation_project_3d",
+                        "animation_sequence_3d",
+                        "animation_clip_3d"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "path": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "camera3d-path"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terminal_pose": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "time": {
+                  "$ref": "#/$defs/time"
+                },
+                "translation": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": -1000000000.0,
+                    "maximum": 1000000000.0
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "rotation": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": -1,
+                    "maximum": 1
+                  },
+                  "minItems": 4,
+                  "maxItems": 4
+                }
+              },
+              "required": [
+                "time",
+                "translation",
+                "rotation"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "duration_frames",
+        "fps",
+        "timeline",
+        "path",
+        "terminal_pose",
+        "metadata"
+      ]
+    },
+    "rig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-rig"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "parent": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "transform": {
+                "$ref": "#/$defs/trs"
+              },
+              "camera": {
+                "anyOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/reference"
+                      },
+                      {
+                        "properties": {
+                          "kind": {
+                            "const": "camera3d-camera"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "parent",
+              "transform",
+              "camera"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "nodes",
+        "metadata"
+      ]
+    },
+    "preset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-preset"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "camera": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-camera"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transform": {
+              "$ref": "#/$defs/trs"
+            },
+            "optics": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "camera3d-optics"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "required": []
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "camera",
+        "overrides",
+        "metadata"
+      ]
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-render"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "pixel_aspect": {
+          "$ref": "#/$defs/rate"
+        },
+        "overscan": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "gate_fit": {
+          "enum": [
+            "crop",
+            "expand"
+          ]
+        },
+        "output": {
+          "enum": [
+            "png",
+            "exr"
+          ]
+        },
+        "color_space": {
+          "enum": [
+            "linear-srgb",
+            "srgb"
+          ]
+        },
+        "transparent": {
+          "type": "boolean"
+        },
+        "max_pixels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 268435456
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "width",
+        "height",
+        "pixel_aspect",
+        "overscan",
+        "gate_fit",
+        "output",
+        "color_space",
+        "transparent",
+        "max_pixels"
+      ]
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-binding"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "scene": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "scene3d-scene"
+                }
+              }
+            }
+          ]
+        },
+        "camera": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-camera"
+                }
+              }
+            }
+          ]
+        },
+        "rig": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "camera3d-rig"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "animation": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "camera3d-animation"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "overrides": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transform": {
+              "$ref": "#/$defs/trs"
+            },
+            "optics": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "camera3d-optics"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "required": []
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "camera3d-target"
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "camera3d-constraint"
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "render": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-render"
+                }
+              }
+            }
+          ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "scene",
+        "camera",
+        "rig",
+        "animation",
+        "overrides",
+        "targets",
+        "constraints",
+        "render",
+        "metadata"
+      ]
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-transition"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "type": {
+          "enum": [
+            "cut",
+            "dissolve",
+            "fade",
+            "wipe"
+          ]
+        },
+        "duration_frames": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "overlap": {
+          "enum": [
+            "none",
+            "tail-head"
+          ]
+        },
+        "color_rgba": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "direction": {
+          "enum": [
+            "left",
+            "right",
+            "up",
+            "down"
+          ]
+        },
+        "curve": {
+          "enum": [
+            "linear",
+            "smoothstep"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "type",
+        "duration_frames",
+        "overlap",
+        "color_rgba",
+        "direction",
+        "curve"
+      ]
+    },
+    "shot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-shot"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "shot": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "render_mode": {
+                  "const": "3d"
+                },
+                "scene": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "scene3d-scene"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "binding": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "camera3d-binding"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "duration_frames": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000000
+                },
+                "fps": {
+                  "$ref": "#/$defs/rate"
+                },
+                "transition": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "camera3d-transition"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "start_frame": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000000
+                }
+              },
+              "required": [
+                "render_mode",
+                "scene",
+                "binding",
+                "duration_frames",
+                "fps",
+                "transition",
+                "start_frame"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "render_mode": {
+                  "const": "2d"
+                },
+                "legacy_shot": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "hatch-production-shot"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "duration_frames": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000000
+                },
+                "fps": {
+                  "$ref": "#/$defs/rate"
+                },
+                "transition": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/reference"
+                    },
+                    {
+                      "properties": {
+                        "kind": {
+                          "const": "camera3d-transition"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "start_frame": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10000000
+                }
+              },
+              "required": [
+                "render_mode",
+                "legacy_shot",
+                "duration_frames",
+                "fps",
+                "transition",
+                "start_frame"
+              ]
+            }
+          ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "shot",
+        "metadata"
+      ]
+    },
+    "storyboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-storyboard"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "shots": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "camera3d-shot"
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "total_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "fps": {
+          "$ref": "#/$defs/rate"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "shots",
+        "total_frames",
+        "fps",
+        "source",
+        "metadata"
+      ]
+    },
+    "evaluated": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-evaluated"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "camera": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-camera"
+                }
+              }
+            }
+          ]
+        },
+        "scene": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "scene3d-scene"
+                }
+              }
+            }
+          ]
+        },
+        "shot": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-shot"
+                }
+              }
+            }
+          ]
+        },
+        "time": {
+          "$ref": "#/$defs/time"
+        },
+        "fps": {
+          "$ref": "#/$defs/rate"
+        },
+        "terminal": {
+          "type": "boolean"
+        },
+        "duration_frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "world_matrix": {
+          "$ref": "#/$defs/matrix"
+        },
+        "view_matrix": {
+          "$ref": "#/$defs/matrix"
+        },
+        "projection_matrix": {
+          "$ref": "#/$defs/matrix"
+        },
+        "projection": {
+          "$ref": "#/$defs/projection"
+        },
+        "depth_of_field": {
+          "$ref": "#/$defs/dof"
+        },
+        "render": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/reference"
+            },
+            {
+              "properties": {
+                "kind": {
+                  "const": "camera3d-render"
+                }
+              }
+            }
+          ]
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 0,
+          "maxItems": 1024
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "camera",
+        "scene",
+        "shot",
+        "time",
+        "fps",
+        "terminal",
+        "duration_frames",
+        "world_matrix",
+        "view_matrix",
+        "projection_matrix",
+        "projection",
+        "depth_of_field",
+        "render",
+        "dependencies"
+      ]
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-registry"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "resources",
+        "metadata"
+      ]
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-catalog"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "cameras": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "camera3d-camera"
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "enabled": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/reference"
+              },
+              {
+                "properties": {
+                  "kind": {
+                    "const": "camera3d-camera"
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "active": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/reference"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "camera3d-camera"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "cameras",
+        "enabled",
+        "active",
+        "metadata"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-library-preset"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "family": {
+          "const": "camera"
+        },
+        "content": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "optics": {
+              "$ref": "#/$defs/optics"
+            },
+            "transform": {
+              "$ref": "#/$defs/trs"
+            },
+            "preset": {
+              "type": "string",
+              "enum": [
+                "standard-50mm",
+                "wide-24mm",
+                "cinematic-35mm",
+                "portrait-85mm",
+                "telephoto-135mm",
+                "shallow-depth-portrait",
+                "deep-focus-environment",
+                "orthographic-technical",
+                "isometric",
+                "top-down"
+              ]
+            },
+            "preset_version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "optics",
+            "transform",
+            "preset",
+            "preset_version"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "family",
+        "content"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-library-preset"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "family": {
+          "const": "movement"
+        },
+        "content": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "slow-dolly-in"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "dolly"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "distance_m": {
+                      "type": "number",
+                      "minimum": -1000000.0,
+                      "maximum": 1000000.0
+                    }
+                  },
+                  "required": [
+                    "distance_m"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "slow-dolly-out"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "dolly"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "distance_m": {
+                      "type": "number",
+                      "minimum": -1000000.0,
+                      "maximum": 1000000.0
+                    }
+                  },
+                  "required": [
+                    "distance_m"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "horizontal-tracking"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "truck"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "distance_m": {
+                      "type": "number",
+                      "minimum": -1000000.0,
+                      "maximum": 1000000.0
+                    }
+                  },
+                  "required": [
+                    "distance_m"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "vertical-pedestal"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "pedestal"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "distance_m": {
+                      "type": "number",
+                      "minimum": -1000000.0,
+                      "maximum": 1000000.0
+                    }
+                  },
+                  "required": [
+                    "distance_m"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "crane-reveal"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "crane"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "delta_m": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "minimum": -1000000.0,
+                        "maximum": 1000000.0
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    }
+                  },
+                  "required": [
+                    "delta_m"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "half-orbit"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "orbit"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "angle_rad": {
+                      "type": "number",
+                      "minimum": -1000000.0,
+                      "maximum": 1000000.0
+                    }
+                  },
+                  "required": [
+                    "angle_rad"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "full-orbit"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "orbit"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "angle_rad": {
+                      "type": "number",
+                      "minimum": -1000000.0,
+                      "maximum": 1000000.0
+                    }
+                  },
+                  "required": [
+                    "angle_rad"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "character-follow"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "follow"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "offset_m": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "minimum": -1000000.0,
+                        "maximum": 1000000.0
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    }
+                  },
+                  "required": [
+                    "offset_m"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "over-the-shoulder-tracking"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "follow"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "offset_m": {
+                      "type": "array",
+                      "items": {
+                        "type": "number",
+                        "minimum": -1000000.0,
+                        "maximum": 1000000.0
+                      },
+                      "minItems": 3,
+                      "maxItems": 3
+                    }
+                  },
+                  "required": [
+                    "offset_m"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "handheld"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "shake"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "amplitude_m": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000
+                    },
+                    "frequency_hz": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000
+                    },
+                    "seed": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4294967295
+                    }
+                  },
+                  "required": [
+                    "amplitude_m",
+                    "frequency_hz",
+                    "seed"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "static-tripod"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "static"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {},
+                  "required": []
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "preset": {
+                  "const": "dolly-zoom"
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                },
+                "motion": {
+                  "const": "dolly-zoom"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "distance_m": {
+                      "type": "number",
+                      "minimum": -1000000.0,
+                      "maximum": 1000000.0
+                    }
+                  },
+                  "required": [
+                    "distance_m"
+                  ]
+                }
+              },
+              "required": [
+                "preset",
+                "preset_version",
+                "motion",
+                "parameters"
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "family",
+        "content"
+      ]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-library-preset"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "family": {
+          "const": "shot"
+        },
+        "content": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "preset": {
+              "type": "string",
+              "enum": [
+                "establishing-shot",
+                "two-shot",
+                "close-up",
+                "medium-shot",
+                "full-body-shot",
+                "over-the-shoulder",
+                "hero-shot",
+                "product-showcase",
+                "character-entrance",
+                "character-exit",
+                "action-tracking",
+                "cinematic-reveal"
+              ]
+            },
+            "preset_version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+            },
+            "camera": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "optics": {
+                  "$ref": "#/$defs/optics"
+                },
+                "transform": {
+                  "$ref": "#/$defs/trs"
+                },
+                "preset": {
+                  "type": "string",
+                  "enum": [
+                    "standard-50mm",
+                    "wide-24mm",
+                    "cinematic-35mm",
+                    "portrait-85mm",
+                    "telephoto-135mm",
+                    "shallow-depth-portrait",
+                    "deep-focus-environment",
+                    "orthographic-technical",
+                    "isometric",
+                    "top-down"
+                  ]
+                },
+                "preset_version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                }
+              },
+              "required": [
+                "optics",
+                "transform",
+                "preset",
+                "preset_version"
+              ]
+            },
+            "movement": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "slow-dolly-in"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "dolly"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "distance_m": {
+                          "type": "number",
+                          "minimum": -1000000.0,
+                          "maximum": 1000000.0
+                        }
+                      },
+                      "required": [
+                        "distance_m"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "slow-dolly-out"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "dolly"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "distance_m": {
+                          "type": "number",
+                          "minimum": -1000000.0,
+                          "maximum": 1000000.0
+                        }
+                      },
+                      "required": [
+                        "distance_m"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "horizontal-tracking"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "truck"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "distance_m": {
+                          "type": "number",
+                          "minimum": -1000000.0,
+                          "maximum": 1000000.0
+                        }
+                      },
+                      "required": [
+                        "distance_m"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "vertical-pedestal"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "pedestal"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "distance_m": {
+                          "type": "number",
+                          "minimum": -1000000.0,
+                          "maximum": 1000000.0
+                        }
+                      },
+                      "required": [
+                        "distance_m"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "crane-reveal"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "crane"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "delta_m": {
+                          "type": "array",
+                          "items": {
+                            "type": "number",
+                            "minimum": -1000000.0,
+                            "maximum": 1000000.0
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        }
+                      },
+                      "required": [
+                        "delta_m"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "half-orbit"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "orbit"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "angle_rad": {
+                          "type": "number",
+                          "minimum": -1000000.0,
+                          "maximum": 1000000.0
+                        }
+                      },
+                      "required": [
+                        "angle_rad"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "full-orbit"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "orbit"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "angle_rad": {
+                          "type": "number",
+                          "minimum": -1000000.0,
+                          "maximum": 1000000.0
+                        }
+                      },
+                      "required": [
+                        "angle_rad"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "character-follow"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "follow"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "offset_m": {
+                          "type": "array",
+                          "items": {
+                            "type": "number",
+                            "minimum": -1000000.0,
+                            "maximum": 1000000.0
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        }
+                      },
+                      "required": [
+                        "offset_m"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "over-the-shoulder-tracking"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "follow"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "offset_m": {
+                          "type": "array",
+                          "items": {
+                            "type": "number",
+                            "minimum": -1000000.0,
+                            "maximum": 1000000.0
+                          },
+                          "minItems": 3,
+                          "maxItems": 3
+                        }
+                      },
+                      "required": [
+                        "offset_m"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "handheld"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "shake"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "amplitude_m": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1000
+                        },
+                        "frequency_hz": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1000
+                        },
+                        "seed": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 4294967295
+                        }
+                      },
+                      "required": [
+                        "amplitude_m",
+                        "frequency_hz",
+                        "seed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "static-tripod"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "static"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {},
+                      "required": []
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "preset": {
+                      "const": "dolly-zoom"
+                    },
+                    "preset_version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+                    },
+                    "motion": {
+                      "const": "dolly-zoom"
+                    },
+                    "parameters": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "distance_m": {
+                          "type": "number",
+                          "minimum": -1000000.0,
+                          "maximum": 1000000.0
+                        }
+                      },
+                      "required": [
+                        "distance_m"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "preset",
+                    "preset_version",
+                    "motion",
+                    "parameters"
+                  ]
+                }
+              ]
+            },
+            "subject_frame_fraction": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "preset",
+            "preset_version",
+            "camera",
+            "movement",
+            "subject_frame_fraction"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "family",
+        "content"
+      ]
+    }
+  ]
+}
