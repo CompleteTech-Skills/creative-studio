@@ -149,7 +149,9 @@ profile='browser', mip_level=0)` prepares the bounded CPU pyramid, selects an
 explicit level and installs those exact pixels through `create_blender_image`.
 It returns the packed native image and a derivation receipt containing original
 source hash, cache key, selected dimensions, bytes and float32 pixel hash. The
-same receipt is stored on the native image and survives a saved project when the
+receipt also captures SHA-256 of the actual binder, cache, texture, contract and
+error helper source modules when imported. Validation checkouts must stay frozen
+through a job. The same receipt is stored on the native image and survives a saved project when the
 image remains assigned to a shader. Clearing CPU cache buffers does not remove
 native shader images. Callers own image assignment and rollback/removal.
 

@@ -8,12 +8,19 @@ import tempfile
 import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from lookdev_texture_blender import create_cached_blender_image
+from lookdev_texture_blender import create_cached_blender_image, _MODULE_SHA256
 from lookdev_texture_cache import DerivedTextureCache
 from rig_errors import RigError
 
 
 class ConsumerAdmissionTests(unittest.TestCase):
+    def test_import_snapshot_binds_actual_helper_module_sources(self):
+        root=Path(__file__).resolve().parents[1]/'scripts'
+        self.assertEqual(set(_MODULE_SHA256),{'lookdev_texture_blender.py','lookdev_texture_cache.py',
+            'lookdev_textures.py','lookdev_contracts.py','rig_errors.py'})
+        for name,digest in _MODULE_SHA256.items():
+            self.assertEqual(hashlib.sha256((root/name).read_bytes()).hexdigest(),digest)
+
     def test_invalid_requests_reject_without_blender_import(self):
         for kwargs in ({'mip_level':True},{'mip_level':-1},{'name':''}):
             values=dict(name='probe');values.update(kwargs)

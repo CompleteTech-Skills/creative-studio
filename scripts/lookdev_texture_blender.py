@@ -1,10 +1,17 @@
 """Consume disposable CPU texture pyramids through the canonical Blender image owner."""
 import hashlib
 import json
+from pathlib import Path
 
 from lookdev_texture_cache import DerivedTextureCache
 from lookdev_textures import DecodedTexture, create_blender_image
 from rig_errors import require
+
+# Capture owned source modules at import, alongside the implementations used by
+# this process. Frozen validation checkouts must remain unchanged during a job.
+_MODULE_SHA256 = {name: hashlib.sha256((Path(__file__).parent / name).read_bytes()).hexdigest()
+                  for name in ('lookdev_texture_blender.py', 'lookdev_texture_cache.py',
+                               'lookdev_textures.py', 'lookdev_contracts.py', 'rig_errors.py')}
 
 
 def create_cached_blender_image(cache, texture, *, name, profile='browser', mip_level=0):
@@ -29,7 +36,8 @@ def create_cached_blender_image(cache, texture, *, name, profile='browser', mip_
                       selected_dimensions=[derived.width, derived.height],
                       selected_float32_rgba_sha256=digest,
                       selected_bytes=selected.nbytes,
-                      backend='Blender-float-image', adapter_version='1.0.0')
+                      backend='Blender-float-image', adapter_version='1.0.0',
+                      module_sha256=dict(_MODULE_SHA256))
     try:
         image['texture_derivation'] = json.dumps(provenance, sort_keys=True, separators=(',', ':'))
     except Exception:
