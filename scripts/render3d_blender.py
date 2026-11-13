@@ -121,9 +121,10 @@ def _output_storage_estimate(request):
     return width*height*16*count
 
 
-def _source_storage_budget(request, snapshot):
+def _source_storage_budget(request, snapshot, *, reserved_bytes=0):
     # Capture validation overlaps a frozen closure and one private owner copy.
-    available=request['settings']['resources']['storage_bytes']-request['snapshot']['bytes']-_output_storage_estimate(request)
+    require(type(reserved_bytes) is int and 0<=reserved_bytes<=2**40,'invalid-input','Invalid helper storage reservation.')
+    available=request['settings']['resources']['storage_bytes']-request['snapshot']['bytes']-_output_storage_estimate(request)-reserved_bytes
     return min(snapshot['total_bytes'],available//2)
 
 
@@ -185,13 +186,13 @@ def _static_state(bundle,scene,shot):
     return dict(nodes=nodes,world=scene['world'],camera=shot['camera'])
 
 
-def _prepare_scene(request,snapshot_root,workspace):
+def _prepare_scene(request,snapshot_root,workspace,*,reserved_bytes=0):
     """Convert source geometry and reuse existing canonical evaluation owners."""
     from scene3d_math import to_blender
     from rig_math import BLENDER_FROM_CANONICAL
     import numpy as np
     snapshot=load(Path(snapshot_root)/'snapshot.json','RenderSnapshot')
-    snapshot=verify_snapshot(snapshot_root,Scene3DAdapter(),max_total_bytes=_source_storage_budget(request,snapshot))
+    snapshot=verify_snapshot(snapshot_root,Scene3DAdapter(),max_total_bytes=_source_storage_budget(request,snapshot,reserved_bytes=reserved_bytes))
     from scene3d_contracts import load_project
     bundle=load_project(snapshot_root); project=bundle['project']
     scene_ref=next(r for r in project['scenes'] if r['id']==request['scene']['id'] and r['version']==request['scene']['version'])
@@ -202,7 +203,7 @@ def _prepare_scene(request,snapshot_root,workspace):
             'system-memory','Evaluated frame plan exceeds memory budget.')
     require(not scene['world']['environment'],'unsupported-feature','HDRI environment maps require the look-development adapter.')
     require(not any(node['material_overrides'] for node in scene['nodes']),'unsupported-feature','Material overrides require the look-development adapter.')
-    preparation_budget=request['settings']['resources']['storage_bytes']-snapshot['total_bytes']-_output_storage_estimate(request)
+    preparation_budget=request['settings']['resources']['storage_bytes']-snapshot['total_bytes']-_output_storage_estimate(request)-reserved_bytes
     assets={};nodes=[]
     allowed={'root','group','mesh_instance','skinned_character','static_prop','animated_prop','terrain','camera','light','socket','constraint_target','locator'}
     for node in scene['nodes']:
@@ -218,7 +219,7 @@ def _prepare_scene(request,snapshot_root,workspace):
         nodes.append(entry)
     frames=[]
     for index in range(request['frame_range']['start'],request['frame_range']['end']):
-        spec=make_frame_spec(request,index,Path(snapshot_root)/'snapshot.json',max_total_bytes=_source_storage_budget(request,snapshot))
+        spec=make_frame_spec(request,index,Path(snapshot_root)/'snapshot.json',max_total_bytes=_source_storage_budget(request,snapshot,reserved_bytes=reserved_bytes))
         _,source=frame_times(request,index)
         shot_frame=source*Fraction(**shot['fps'])
         try:
@@ -243,12 +244,12 @@ def _prepare_scene(request,snapshot_root,workspace):
                 geometry_triangles=sum(a['triangles'] for a in assets.values()))
 
 
-def _prepare_native(request,snapshot_root,workspace):
+def _prepare_native(request,snapshot_root,workspace,*,reserved_bytes=0):
     from rig_models import load_rig
     from rig_math import BLENDER_FROM_CANONICAL
     import numpy as np
     snapshot=load(Path(snapshot_root)/'snapshot.json','RenderSnapshot')
-    preparation_budget=request['settings']['resources']['storage_bytes']-snapshot['total_bytes']-_output_storage_estimate(request)
+    preparation_budget=request['settings']['resources']['storage_bytes']-snapshot['total_bytes']-_output_storage_estimate(request)-reserved_bytes
     asset=_prepare_asset(snapshot_root,{},workspace,0,native=True,storage_bytes=preparation_budget)
     require(request['camera'] in ('front','side','back','three-quarter'),'unsupported-feature','Native preview camera must name a supported rig preview direction.')
     rig=load_rig(snapshot_root)
@@ -256,7 +257,7 @@ def _prepare_native(request,snapshot_root,workspace):
     require(not rig.clips or clip is not None,'unsupported-feature','Native preview shot must name an available clip.')
     frames=[];node_frames=[]
     for index in range(request['frame_range']['start'],request['frame_range']['end']):
-        spec=make_frame_spec(request,index,Path(snapshot_root)/'snapshot.json',max_total_bytes=_source_storage_budget(request,snapshot))
+        spec=make_frame_spec(request,index,Path(snapshot_root)/'snapshot.json',max_total_bytes=_source_storage_budget(request,snapshot,reserved_bytes=reserved_bytes))
         _,source=frame_times(request,index)
         if clip:require(source<=Fraction(str(rig.clips[clip]['duration'])),'invalid-input','Native clip sample exceeds its duration.')
         frames.append(dict(index=index,source_time=dict(numerator=source.numerator,denominator=source.denominator),
@@ -320,12 +321,18 @@ class BlenderBackend:
 
     def render_frames(self,request,snapshot_root,destination,*,cancelled=None,progress=None,cinematics=None):
         validate(request,'RenderRequest')
-        cinematic_plan=None; cinematic_files={}; cinematic_code={}
+        cinematic_plan=None; cinematic_files={}; cinematic_code={}; cinematic_payloads={}
         if cinematics is not None:
-            from cinematics3d_blender import validate_compiled, ADAPTER_SOURCES, __file__ as compiler_file
+            from cinematics3d_blender import validate_compiled, validate_probe, ADAPTER_SOURCES, __file__ as compiler_file
             from cinematics3d_blender_runtime import __file__ as runtime_file
             cinematic_plan,cinematic_files=validate_compiled(cinematics,request)
             cinematic_code={name:sha256(Path(compiler_file).with_name(name)) for name in ADAPTER_SOURCES}
+            probe=validate_probe(cinematics['probe'])
+            require(object_hash(probe)==cinematic_plan['probe_sha256'],'stale-asset','Probe changed after cinematic admission.')
+            cinematic_payloads=dict(cinematic_files)
+            for name,value in [('plan.json',cinematic_plan),('probe.json',probe)]:
+                cinematic_payloads[name]=(json.dumps(value,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+        helper_bytes=sum(map(len,cinematic_payloads.values()))
         require(('cinematics_sha256' in request['settings'])==(cinematic_plan is not None),
                 'unsupported-feature','Cinematic settings require their matching compiled native plan.')
         root=Path(snapshot_root).absolute();target=Path(destination).absolute()
@@ -337,12 +344,12 @@ class BlenderBackend:
         # owner decodes full geometry while verifying the source closure.
         settings=request['settings'];resources=settings['resources'];width,height=settings['resolution']
         frame_count=request['frame_range']['end']-request['frame_range']['start']
-        estimate=width*height*64+snapshot['total_bytes']*8+frame_count*16384
+        estimate=width*height*64+snapshot['total_bytes']*8+frame_count*16384+helper_bytes*8
         require(estimate<=resources['memory_bytes'],'system-memory','Scene/image admission exceeds memory budget.')
         source_bytes=2*snapshot['total_bytes']+request['snapshot']['bytes']
-        require(source_bytes+width*height*16*frame_count<=resources['storage_bytes'],
+        require(source_bytes+width*height*16*frame_count+helper_bytes<=resources['storage_bytes'],
                 'storage-exhaustion','Overlapping source copies, metadata and output estimate exceed storage budget.')
-        source_budget=_source_storage_budget(request,snapshot)
+        source_budget=_source_storage_budget(request,snapshot,reserved_bytes=helper_bytes)
         verify_snapshot(root,adapter,max_total_bytes=source_budget)
         make_frame_spec(request,request['frame_range']['start'],root/'snapshot.json',max_total_bytes=source_budget)
         target.parent.mkdir(parents=True,exist_ok=True)
@@ -360,19 +367,22 @@ class BlenderBackend:
             require(len(original)==request['snapshot']['bytes'] and hashlib.sha256(original).hexdigest()==request['snapshot']['sha256'],
                     'stale-asset','Snapshot metadata differs from request-bound bytes.')
             atomic_bytes(frozen/'snapshot.json',original)
-            _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes']+width*height*16*frame_count)
+            _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes']+width*height*16*frame_count+helper_bytes)
             source=stage/'source';source.mkdir()
-            scene=(_prepare_scene if snapshot['scope']=='scene3d' else _prepare_native)(request,frozen,source)
+            prepare=_prepare_scene if snapshot['scope']=='scene3d' else _prepare_native
+            scene=prepare(request,frozen,source,**({'reserved_bytes':helper_bytes} if helper_bytes else {}))
             require(scene['geometry_vertices']>0 and scene['geometry_triangles']>0,'missing-asset','Rendering requires actual nonempty geometry.')
             backend=self.inspect_version()
             job=dict(schema_version=1,mode='render',settings=settings,scene=scene,output='../frames',report='../worker-report.json')
             if cinematic_plan is not None:
                 job['cinematics']=cinematic_plan
-                for name,payload in cinematic_files.items():
+                pending=helper_bytes
+                for name,payload in cinematic_payloads.items():
+                    _check_storage(stage,resources['storage_bytes'],reserve=pending+snapshot['total_bytes']+_output_storage_estimate(request))
+                    # The canonical path owner retains any active directory
+                    # capability while checking admitted portable names.
                     path=safe_path(stage/'cinematics',name); path.parent.mkdir(parents=True,exist_ok=True)
-                    atomic_bytes(path,payload)
-                atomic_json(stage/'cinematics'/'plan.json',cinematic_plan)
-                atomic_json(stage/'cinematics'/'probe.json',cinematics['probe'])
+                    atomic_bytes(path,payload);pending-=len(payload)
             job_payload=(json.dumps(job,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
             _check_storage(stage,resources['storage_bytes'],reserve=len(job_payload)+snapshot['total_bytes']+width*height*16*frame_count)
             atomic_bytes(source/'job.json',job_payload)
