@@ -54,3 +54,138 @@ def _rename_no_replace(stage, destination, *, source_dir_fd=None, destination_di
     if result != 0:
         error = ctypes.get_errno()
         raise OSError(error, os.strerror(error), str(destination))
+
+
+def rename_no_replace_at(source_fd, source_name, destination_fd, destination_name):
+    """Compatibility entry point for existing lookdev descriptor publishers."""
+    return _rename_no_replace(source_name, destination_name,
+                              source_dir_fd=source_fd, destination_dir_fd=destination_fd)
+
+
+# New staging capabilities intentionally have a narrower platform contract than
+# the legacy path-based exclusive rename above. Never silently fall back to an
+# unpinned temporary pathname on an unsupported host.
+from contextlib import contextmanager
+from pathlib import Path
+import re
+import shutil
+import tempfile
+
+
+def private_stage_supported():
+    """Whether the tested Linux procfs + descriptor-relative adapter exists."""
+    return (sys.platform.startswith('linux') and Path('/proc/self/fd').is_dir()
+            and all(hasattr(os, name) for name in ('O_DIRECTORY','O_NOFOLLOW','O_NONBLOCK'))
+            and os.open in os.supports_dir_fd and os.unlink in os.supports_dir_fd
+            and bool(getattr(shutil.rmtree, 'avoids_symlink_attacks', False)))
+
+
+def _private_support():
+    if not private_stage_supported():
+        raise OSError(errno.ENOTSUP, 'pinned private staging requires the tested Linux procfs/dirfd adapter')
+
+
+def _validate_directory_descriptor(descriptor):
+    if type(descriptor) is not int or descriptor < 0 or not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+        raise ValueError('parent descriptor must identify an open directory')
+
+
+@contextmanager
+def pinned_directory(path):
+    """Open every existing path component without following symbolic links.
+
+    The borrowed descriptor is valid only inside this context. Do not call
+    resolve()/realpath() on a subsequent procfd capability: that discards its
+    protection against namespace replacement.
+    """
+    _private_support()
+    path = Path(path).absolute()
+    if any(part == '..' for part in path.parts):
+        raise ValueError('pinned directory path must not contain parent traversal')
+    descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.parts[1:]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _clear_private_directory(descriptor):
+    # Use a new procfd directory stream on every cleanup. os.listdir(fd) may
+    # share/consume a borrowed descriptor's directory offset on some filesystems.
+    # Each destructive operation remains relative to this exact pinned parent.
+    for child in os.listdir(Path('/proc/self/fd') / str(descriptor)):
+        try:
+            mode = os.stat(child, dir_fd=descriptor, follow_symlinks=False).st_mode
+            if stat.S_ISDIR(mode):
+                # The fd-aware stdlib implementation verifies opened directory
+                # identity and refuses symlink substitution during recursion.
+                shutil.rmtree(child, dir_fd=descriptor)
+            else:
+                os.unlink(child, dir_fd=descriptor)
+        except FileNotFoundError:
+            pass
+
+
+@contextmanager
+def private_stage(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_error=True):
+    """Yield ``(Path('/proc/self/fd/N'), N)`` for a new pinned private directory.
+
+    Open N immediately after creating the unpredictable mode-0700 directory,
+    before any caller I/O. All caller paths must derive from the yielded procfd
+    path and must retain that spelling, rather than resolve it back to a mutable
+    pathname. Subprocesses using /proc/self/fd/N must inherit N explicitly through
+    pass_fds and finish before context exit.
+
+    File publishers rename a basename from N. Directory publishers create a
+    fresh inner payload, verify it, then rename that payload basename from N;
+    they must never rename the public outer wrapper basename. No untrusted
+    callback may run between final byte verification and publication.
+
+    Cleanup clears only contents reached through N and never removes the outer
+    public basename, even after an inode comparison: stat-then-rmdir has a race
+    that can delete a foreign empty replacement. The tiny empty wrapper remains
+    for explicit owned maintenance. cleanup=False retains all stage contents;
+    cleanup_on_error=False retains diagnostic contents only when the body raises.
+    The descriptor always closes. This capability owns all private contents;
+    unrelated user data must not be placed inside it and writers must finish
+    before cleanup. Existing exclusive-rename default behavior is unchanged.
+    """
+    _private_support()
+    _validate_directory_descriptor(parent_fd)
+    if not isinstance(prefix, str) or not re.fullmatch(r'[A-Za-z0-9._-]{1,64}', prefix):
+        raise ValueError('private-stage prefix must be one bounded portable filename component')
+    if type(cleanup) is not bool or type(cleanup_on_error) is not bool:
+        raise ValueError('private-stage cleanup policies must be booleans')
+    parent = os.dup(parent_fd)
+    descriptor = None
+    body_error = None
+    try:
+        parent_path = Path('/proc/self/fd') / str(parent)
+        name = Path(tempfile.mkdtemp(prefix=prefix, dir=parent_path)).name
+        descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        _validate_directory_descriptor(descriptor)
+        identity = os.fstat(descriptor)
+        if identity.st_uid != os.geteuid() or stat.S_IMODE(identity.st_mode) & 0o077:
+            raise OSError(errno.EPERM, 'created private stage must be owned by this user with no group/other permissions')
+        try:
+            yield Path('/proc/self/fd') / str(descriptor), descriptor
+        except BaseException as exc:
+            body_error = exc
+            raise
+        finally:
+            if cleanup and (body_error is None or cleanup_on_error):
+                try:
+                    _clear_private_directory(descriptor)
+                except BaseException as cleanup_error:
+                    if body_error is None:
+                        raise
+                    if hasattr(body_error, 'add_note'):
+                        body_error.add_note('Pinned staging cleanup also failed: ' + str(cleanup_error))
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(parent)
