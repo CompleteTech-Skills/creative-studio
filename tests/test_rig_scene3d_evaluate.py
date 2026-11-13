@@ -112,6 +112,43 @@ class SceneEvaluationTests(unittest.TestCase):
         path=self.root/clips['bend']['path'];path.write_bytes(path.read_bytes()+b' ')
         with self.assertRaises(RigError):self.evaluate(12,source_root=self.root,sample_geometry=True)
 
+    def test_actual_imported_subtree_loop_parent_transform_and_other_instance(self):
+        from asset_library import AssetLibrary
+        from rig_gltf import export_gltf
+        from rig_test_helpers import fixture
+        from scene3d_graph import SceneGraph
+        from scene3d_import import import_gltf,materialize,add_import,evaluate_imported_vertices
+        rig=fixture(self.root,name='original')
+        source=self.root/'original.glb';export_gltf(rig,source)
+        license_path=self.root/'license.txt';license_path.write_text('CC0-1.0 procedural test fixture')
+        library=AssetLibrary(self.root/'library',create=True)
+        imported=import_gltf(source,library,asset_id='imported',attribution='test fixture',license_file=license_path)
+        copied=self.root/'copied';materialize(library,imported.library_reference,copied)
+        graph=SceneGraph(self.scene,external_references={})
+        first_mapping=add_import(graph,imported,'one')['mapping']
+        second_mapping=add_import(graph,imported,'two')['mapping']
+        transform=graph.transform('one');transform['translation']=[7,0,0];graph.set_transform('one',transform)
+        self.bundle['documents']['example-scene.json']=graph.document()
+        self.bundle['documents'][imported.asset_reference['path']]=imported.asset
+        self.shot['fps']=dict(numerator=6,denominator=1)
+        clips={r['id']:r for r in imported.asset['animations']}
+        bend=clips[imported.report['native_clip_map']['bend']]
+        neutral=clips[imported.report['native_clip_map']['neutral']]
+        self.shot['bindings']=[dict(target=target,clip=ref,start_frame=0,end_frame=24,speed=1,loop=True)
+                              for target,ref in [('one',bend),('two',neutral)]]
+        out=self.evaluate(15,source_root=copied,sample_geometry=True)
+        expected=evaluate_imported_vertices(graph,imported,copied/'imports/imported/1.0.0/native',
+                                          clip=bend['id'],time=2.5,loop=True)['nodes']
+        selected=[i for i in out['native_geometry'] if i in first_mapping.values()]
+        self.assertTrue(selected)
+        for identifier in selected:
+            self.assertEqual(out['native_geometry'][identifier],expected[identifier])
+        first=next(out['native_geometry'][i] for i in out['native_geometry'] if i in first_mapping.values())
+        second=next(out['native_geometry'][i] for i in out['native_geometry'] if i in second_mapping.values())
+        a=np.asarray(next(iter(first.values())));b=np.asarray(next(iter(second.values())))
+        self.assertGreater(float(np.linalg.norm(a-b)),1.)
+        with self.assertRaises(RigError):self.evaluate(15,source_root=copied,sample_geometry=True,max_geometry_vertices=1)
+
     def test_budgets_and_invalid_channel_fail(self):
         self.shot['tracks']=[dict(target='mesh',property='light_intensity',interpolation='step',keys=[dict(frame=0,value=2)])]
         with self.assertRaises(RigError):self.evaluate()

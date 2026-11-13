@@ -306,3 +306,64 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
         require(count <= max_vertices, 'Native output vertex budget exceeded.', 'SCENE3D_EVALUATION_LIMIT')
         result[identifier] = positions
     return result
+
+
+def camera_matrices(evaluation, render):
+    """Map Scene3D camera optics into the canonical Camera3D projection owner.
+
+    A vertical sensor gate of 24 mm represents the native vertical field of view
+    exactly; no physical sensor size is inferred from imported pixels. Nonrigid
+    inherited camera transforms are rejected by the camera owner.
+    """
+    import math
+    from camera3d_math import projection_matrix, world_transform
+    from rig_math import decompose
+    state = evaluation['nodes'][evaluation['camera']]
+    camera = state['camera']
+    require(type(render.get('width')) is int and type(render.get('height')) is int and
+            0 < render['width'] <= 8192 and 0 < render['height'] <= 8192,
+            'Camera raster must be bounded integer dimensions.')
+    projection = dict(type=camera['projection'], near_clip_m=camera['near'], far_clip_m=camera['far'],
+                      sensor_width_mm=36, sensor_height_mm=24, sensor_fit='vertical',
+                      shift_x=0, shift_y=0)
+    if camera['projection'] == 'perspective':
+        projection['focal_length_mm'] = 12 / math.tan(camera['vertical_fov']/2)
+    else:
+        projection['orthographic_height_m'] = camera['orthographic_height']
+    optics = dict(schema_version=1,kind='camera3d-optics',id='scene-camera-optics',version='1.0.0',
+        projection=projection, depth_of_field=dict(enabled=False,focus_distance_m=1,
+            f_stop=2.8,aperture_blades=7,aperture_rotation_rad=0,anamorphic_ratio=1))
+    raster = dict(schema_version=1,kind='camera3d-render',id='scene-camera-render',version='1.0.0',
+        width=render['width'],height=render['height'],pixel_aspect=dict(numerator=1,denominator=1),
+        gate_fit='crop',overscan=1,max_pixels=render['width']*render['height'],
+        transparent=render.get('transparent',False),color_space=render.get('color_space','srgb'),
+        output=render.get('output','png'))
+    # Validate physical world transform through the existing camera math owner.
+    transform = decompose(state['world_matrix'])
+    world = world_transform(transform)
+    projection = projection_matrix(optics,raster)
+    return dict(world_matrix=world.tolist(),projection_matrix=projection.tolist(),
+                optics=optics,render=raster)
+
+
+def resolve_materials(evaluation, registry):
+    """Resolve generic Scene3D material pins through the LookDev registry owner.
+
+    Only the kind name changes at the boundary. Identity/version/path and exact
+    source SHA must match before native inheritance is evaluated. This does not
+    manufacture a new material, shader graph, texture or visual approval.
+    """
+    result = {}
+    for identifier,state in evaluation['nodes'].items():
+        materials = {}
+        for override in state['material_overrides']:
+            reference = override['material']
+            require(reference['kind'] == 'material', 'Scene material reference has wrong kind.')
+            native = registry.reference(reference['id'],reference['version'])
+            require(native['kind'] in ('material3d','material-instance3d','material-variant3d') and
+                    all(native[key] == reference[key] for key in ('id','version','path','sha256')),
+                    'Scene material pin differs from the canonical LookDev resource.')
+            materials[override['slot']] = registry.effective_material(native)
+        if materials:
+            result[identifier] = materials
+    return result
