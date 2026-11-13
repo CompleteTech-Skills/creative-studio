@@ -1,0 +1,2928 @@
+{
+  "actual_geometry_triangles": 1368,
+  "actual_geometry_vertices": 706,
+  "actual_native_clip": "neutral",
+  "fixture": true,
+  "imported": {
+    "asset": {
+      "animations": [
+        {
+          "id": "a-49baa5a55b6a5f5e9e93cf54118078065a26e2caf03ca306",
+          "kind": "hatch-3d-animation",
+          "path": "imports/robot/1.0.0/native/animations/a-49baa5a55b6a5f5e9e93cf54118078065a26e2caf03ca306-243cdc87abb37629a9766a332632d010dd0008726449fb975ebe7ebfd641d3dc.json",
+          "sha256": "2133f07a92b60ab998a80b8cc621e50e53c46c0d0361506d01e5075978774b61",
+          "version": "1.0.0"
+        },
+        {
+          "id": "a-68982481555c98695cab8a8b3bc01c92b45353f1cb820b03",
+          "kind": "hatch-3d-animation",
+          "path": "imports/robot/1.0.0/native/animations/a-68982481555c98695cab8a8b3bc01c92b45353f1cb820b03-a7847084f03e6b0bc1eb390aef203ce7abdd7acd4856eef5b0e4b259ae446950.json",
+          "sha256": "03c6d90136f732f9074e69cd8a6dedb1889f84634c2c8fb742ec184dad489286",
+          "version": "1.0.0"
+        },
+        {
+          "id": "a-bc3e800bf801ada68c1d8947e0d006c208268ea93456c027",
+          "kind": "hatch-3d-animation",
+          "path": "imports/robot/1.0.0/native/animations/a-bc3e800bf801ada68c1d8947e0d006c208268ea93456c027-cab443d6c68bc0b0e5eacff0f798df9bc94809ef8d742ad4557be09506b7d8c4.json",
+          "sha256": "7f31bb904ef22db927d760f656add832937f75500faa964939c1c165d577bea3",
+          "version": "1.0.0"
+        }
+      ],
+      "asset_type": "character",
+      "bounds": {
+        "maximum": [
+          0.7300000190734863,
+          0.8899999842047691,
+          0.25
+        ],
+        "minimum": [
+          -0.2800000011920929,
+          -1.4901161138336505e-09,
+          -0.25
+        ]
+      },
+      "collision": null,
+      "components": {
+        "node-10": [
+          "elbow-shell"
+        ],
+        "node-11": [
+          "elbow-joint"
+        ],
+        "node-12": [
+          "gripper-shell"
+        ],
+        "node-13": [
+          "gripper-joint"
+        ],
+        "node-14": [
+          "jaw.left-shell"
+        ],
+        "node-15": [
+          "jaw.left-joint"
+        ],
+        "node-16": [
+          "jaw.right-shell"
+        ],
+        "node-17": [
+          "jaw.right-joint"
+        ],
+        "node-7": [
+          "base-shell"
+        ],
+        "node-8": [
+          "shoulder-shell"
+        ],
+        "node-9": [
+          "shoulder-joint"
+        ]
+      },
+      "content": {
+        "path": "imports/robot/1.0.0/normalized.glb",
+        "sha256": "e141077c05f1c08852c29b474befbb1e58237620cc251ea4dd0b6b0c25fcbc0c"
+      },
+      "coordinate_system": {
+        "angles": "radian",
+        "forward": "+Z",
+        "handedness": "right",
+        "matrices": "column-vectors",
+        "quaternion": "XYZW",
+        "right": "+X",
+        "time": "second",
+        "unit": "meter",
+        "up": "+Y"
+      },
+      "dependencies": [
+        {
+          "id": "file-f91c178d2789b41f544c499b5ebb7f882806ee3911a772ef",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/hierarchy.json",
+          "sha256": "4943a5b334ff2c5311780d74fb6af8d9c61071c3a7e74edd1edf1e52eb1838a3",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-753476e01c1b3e73ac5f1f0059f8cb8b8acd0ff9e1a96429",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/import-report.json",
+          "sha256": "ebe902baf8761d66a3ac38fc590bbe95a5f69c051f0922ca62779c6134696821",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-2351ff16286cf553c32e4a973d546543299d831ff72ae311",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/khronos.json",
+          "sha256": "1d485c8cbac4b7bb0792ddbce52c0268138c97a2961ccad0a0146762061a45e0",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-1c1f3701fd7154cbff88fb85617b1e0c4e7dea8c2886472d",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/license.txt",
+          "sha256": "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-2d0ab85606d1be0c5bda6dd544075b123f7a97c2a7fd90df",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/animations/a-49baa5a55b6a5f5e9e93cf54118078065a26e2caf03ca306-243cdc87abb37629a9766a332632d010dd0008726449fb975ebe7ebfd641d3dc.json",
+          "sha256": "2133f07a92b60ab998a80b8cc621e50e53c46c0d0361506d01e5075978774b61",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-46d7ab699402f1e9e880ca9cf240381a95cf57465f53cad1",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/animations/a-68982481555c98695cab8a8b3bc01c92b45353f1cb820b03-a7847084f03e6b0bc1eb390aef203ce7abdd7acd4856eef5b0e4b259ae446950.json",
+          "sha256": "03c6d90136f732f9074e69cd8a6dedb1889f84634c2c8fb742ec184dad489286",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-e6141b5d8308ca422aca50e49e6fe1fd064a7321532a7d2b",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/animations/a-bc3e800bf801ada68c1d8947e0d006c208268ea93456c027-cab443d6c68bc0b0e5eacff0f798df9bc94809ef8d742ad4557be09506b7d8c4.json",
+          "sha256": "7f31bb904ef22db927d760f656add832937f75500faa964939c1c165d577bea3",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-acc2e3957a7c88162100c7080dd1f064fd4fc885265a12e3",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/animations/gripper-slide-8cf8044a9317a09cce02929ad79072c14351141a7d6a3048d842844f4feff24b.json",
+          "sha256": "f553c2b99275c79cea899630efda3d19abd7bd088973814420f5870991d128d5",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-fa3da97bd3c9a9b4c63b119ba9044616652f721a3803c811",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/animations/hinge-sweep-2f949a764ac681f816cea1f4fdc2e21da9bb709dd598858639cc8c7c20f8607f.json",
+          "sha256": "995b39f310b44149c1c492a8dc281b6e252bb202291f909e7288035488bfa2c9",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-283680e4a2ae216ed39daab05ea033a6d585d2f9c86c820f",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/animations/neutral-e2d34fb3386c34e8b7d912b95ef8e0a1327e5352f62a497e5e4424ddc90c7772.json",
+          "sha256": "f171d38c66234e3264e758b08c207642c44f9d218953ac059b7c0e44dd5a64e1",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-3a51cbcacbc69e1dbf6032f3f99b22e0e405b04bd3f52f18",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/geometry/bbc56bd047a36f5b58c6372b6124bab6d6f9bbfa01414f25bd698acfc9b6c78b.npz",
+          "sha256": "bbc56bd047a36f5b58c6372b6124bab6d6f9bbfa01414f25bd698acfc9b6c78b",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-9f9ea19d99c5d54246b56994e955368b9da974ff2c865856",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/identity.json",
+          "sha256": "d34b190646d5dc34f3a109319e75378b822a87c8b1d517d4a28c406fedb2b6e2",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-e9f879867a129d34c9fbac0e0fe0f33cacd8f2303db2f1cb",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/job.json",
+          "sha256": "946f0e7617ef3c529e0e939d26e7c63c9fb7df2c06816f19548efb57754cd874",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-27a3f32f4feca615223c66cade67b7199309eb612de36c26",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/revisions/000000-82680e923df2d27705182689f0179e9ca09750415b062f2319dc70a7300bbd21.json",
+          "sha256": "54bc4efa5a16c3b611a0b60c3139b6b21d6bfd6703a83db29781949fabb14c51",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-0c758449158c891a66101071b853ae366c0ab7f855eb4474",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/0309c8054d11566d15066f5f58a2ba1a2747ec6c82e1547e9903185e395de895.npz",
+          "sha256": "0309c8054d11566d15066f5f58a2ba1a2747ec6c82e1547e9903185e395de895",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-45160d737c76f4334ebbbbfcd6d7c0060b663a5be61215d5",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/10a23eeda4cdbc274d42f19dd7d7737c7502c662f7b75faab3c773ab0cf4874c.npz",
+          "sha256": "10a23eeda4cdbc274d42f19dd7d7737c7502c662f7b75faab3c773ab0cf4874c",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-3fa4eb357c1a668b5252921b8791c1d5d56607afc38462df",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/3e6bf34816c05c38debc87c4af37ae6e090c0f58b21bcd7f7587f46c5d0708b2.npz",
+          "sha256": "3e6bf34816c05c38debc87c4af37ae6e090c0f58b21bcd7f7587f46c5d0708b2",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-46a942556c2ccd460601530b22e51dc883d0c01dc1a279f3",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/6af8a4999420b3c576f8b03e03655a2792cd82b407b80415ed24bb98c1f8a4be.npz",
+          "sha256": "6af8a4999420b3c576f8b03e03655a2792cd82b407b80415ed24bb98c1f8a4be",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-b937604f964b54c889ebb6fbe58a7e186c2623bd02242ca6",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/91a171024f6b666382e684a78771f08ea94f2b6b3868f75cbb73e67834aeeddc.npz",
+          "sha256": "91a171024f6b666382e684a78771f08ea94f2b6b3868f75cbb73e67834aeeddc",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-b56a1b3e5d9178dac20e7ae4cf04a6fae5485792eb2ae978",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/91ea12ef27e6119b46039f33045c5748eb41b9dcf906777eb6ab5a9bfb91e2f0.npz",
+          "sha256": "91ea12ef27e6119b46039f33045c5748eb41b9dcf906777eb6ab5a9bfb91e2f0",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-ffee475378ae613ee2ee7038f44791717d2e71ec4709628d",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/9338e4b7346f264a74822f53e57073e4a9ea93d0ce54aaab684b0249b349b083.npz",
+          "sha256": "9338e4b7346f264a74822f53e57073e4a9ea93d0ce54aaab684b0249b349b083",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-2e218ac844e333448398f4e2cae1ac1523c9b8b1e820a579",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/a6e5733f3ac22f0263a0c5771f8693e672e42c58d6381bfa6a606e6f29d4c289.npz",
+          "sha256": "a6e5733f3ac22f0263a0c5771f8693e672e42c58d6381bfa6a606e6f29d4c289",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-7fd132c3403c64e38239b7d8a92dcc77a4a4ba63410cb679",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/bdf04a876d9f7520a4c942cb5fda41b030de51b556cdb9805f90d1d7f8b7710f.npz",
+          "sha256": "bdf04a876d9f7520a4c942cb5fda41b030de51b556cdb9805f90d1d7f8b7710f",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-9a2aec1e212d52724fb64c3d7eb4224f9f9aad227aa64e1f",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/f1417b16204919d64c401860e0ce85e6b4e36cef2a8ad8395dee6ecd6c0fbaed.npz",
+          "sha256": "f1417b16204919d64c401860e0ce85e6b4e36cef2a8ad8395dee6ecd6c0fbaed",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-c1daf44f0e3f5e427d4b37466bbe9e03f61d00aa9f85796f",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig/weights/f3a5f2bef26f7ac4b7d07a00b7725609307c39f4b513c244277669bc98aa57d2.npz",
+          "sha256": "f3a5f2bef26f7ac4b7d07a00b7725609307c39f4b513c244277669bc98aa57d2",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-e834717dacdb000093ee75817666a41e6fb399fc14275840",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/rig.json",
+          "sha256": "c422351ffe80c3f5724b1b9d5458615aea7313562704c963e0c4e79e4490a248",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-6c596ce1b0845744f311ff7cdb966cc53be3e925914a5bbe",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/source/model.glb",
+          "sha256": "7ded3787ea0535f45e83df76feef3d20eaf5d2e48935fcc8518d2eb8039008b2",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-a7bbfe0500d686f1097a60cc009d7f3345536f5bc27b66f1",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/native/validation/import.json",
+          "sha256": "218ea3084a72147ca65a50f1bf998722775dc9d8edc3a04cfe31b86797e1188a",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-e6697e6e6cf7be0c7f46e670dbc1a4edc63fb99381018410",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/normalized.glb",
+          "sha256": "e141077c05f1c08852c29b474befbb1e58237620cc251ea4dd0b6b0c25fcbc0c",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-f169f1b787d9f665144ae7085e858b688fbeae1defd548e5",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/preview-camera.json",
+          "sha256": "b29a7fbc61325aff44440debbdafae12efc69a2ffccb27494edde547e56440d0",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-276296071b44487fedfa0172ac27394b6e35d87e2635c89f",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/preview-lighting.json",
+          "sha256": "0b82205f7f74590adc4b0df12ff4aedcc1619e1f015376dd95b72348852e9be1",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-25896a2a219a604c5996d669c1bbeab1c9337315b77104a9",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/preview-settings.json",
+          "sha256": "1b11facb39cffc265ddf1087de8ef1122644e7ba5c6b0f35f375b9d341fc114c",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-8a2ad3c93e20c3a6899dbf92cc2f4aca5ddd8424b23d5145",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/preview.png",
+          "sha256": "b9d9bde5e3ceb14146f09fa9b81b50bb2937b74c6147593cf0c48083b4e18c7c",
+          "version": "1.0.0"
+        },
+        {
+          "id": "file-0ebc3aa562e990429e7b205367f473951d56bf8a8e81ed09",
+          "kind": "evidence",
+          "path": "imports/robot/1.0.0/source-identity.json",
+          "sha256": "408378cd1736100409dc4a0cda529a136508f779206b342df4192c06d2b9bd5f",
+          "version": "1.0.0"
+        }
+      ],
+      "id": "robot",
+      "kind": "scene3d-asset",
+      "lods": [],
+      "materials": [],
+      "meshes": [
+        {
+          "path": "imports/robot/1.0.0/normalized.glb",
+          "sha256": "e141077c05f1c08852c29b474befbb1e58237620cc251ea4dd0b6b0c25fcbc0c"
+        }
+      ],
+      "name": "character",
+      "original_coordinate_system": "glTF 2.0 right-handed Y-up meters",
+      "pivot": [
+        0,
+        0,
+        0
+      ],
+      "provenance": {
+        "attribution": "Hatch Pet procedural engineering fixture",
+        "fixture": true,
+        "inputs": [
+          {
+            "path": "imports/robot/1.0.0/native/source/model.glb",
+            "sha256": "7ded3787ea0535f45e83df76feef3d20eaf5d2e48935fcc8518d2eb8039008b2"
+          }
+        ],
+        "license": "Evidence retained; distribution restricted pending rights evaluation",
+        "origin": "procedural-fixture",
+        "tool": "scene3d-native-import-v1"
+      },
+      "resources": {
+        "bytes": 76040,
+        "triangles": 1368,
+        "vertices": 706
+      },
+      "review": {
+        "receipts": [],
+        "status": "unreviewed"
+      },
+      "schema_version": 1,
+      "skeleton": {
+        "id": "robot-v1-0-0",
+        "kind": "hatch-3d-rig",
+        "path": "imports/robot/1.0.0/native/rig.json",
+        "sha256": "c422351ffe80c3f5724b1b9d5458615aea7313562704c963e0c4e79e4490a248",
+        "version": "1.0.0"
+      },
+      "sockets": [],
+      "source": {
+        "path": "imports/robot/1.0.0/native/source/model.glb",
+        "sha256": "7ded3787ea0535f45e83df76feef3d20eaf5d2e48935fcc8518d2eb8039008b2"
+      },
+      "validation": [
+        {
+          "path": "imports/robot/1.0.0/khronos.json",
+          "sha256": "1d485c8cbac4b7bb0792ddbce52c0268138c97a2961ccad0a0146762061a45e0"
+        }
+      ],
+      "version": "1.0.0"
+    },
+    "asset_reference": {
+      "id": "robot",
+      "kind": "scene3d-asset",
+      "path": "imports/robot/1.0.0/asset.json",
+      "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+      "version": "1.0.0"
+    },
+    "hierarchy": [
+      {
+        "camera": null,
+        "extras": {
+          "hatchBone": {
+            "deform": false,
+            "id": "root",
+            "mirror": null,
+            "role": "root",
+            "roll": 0.0,
+            "tail": [
+              0.0,
+              0.1,
+              0.0
+            ]
+          }
+        },
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": null,
+        "mesh_components": [],
+        "name": "root",
+        "parent": null,
+        "semantic_path": "root",
+        "skin": null,
+        "source_node": 0,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {
+          "hatchBone": {
+            "deform": true,
+            "id": "base",
+            "mirror": null,
+            "role": "base",
+            "roll": 0.0,
+            "tail": [
+              0.0,
+              0.3,
+              0.0
+            ]
+          }
+        },
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.1
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": null,
+        "mesh_components": [],
+        "name": "base",
+        "parent": 0,
+        "semantic_path": "root/base",
+        "skin": null,
+        "source_node": 1,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.1
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {
+          "hatchBone": {
+            "deform": true,
+            "id": "shoulder",
+            "mirror": null,
+            "role": "shoulder",
+            "roll": 0.0,
+            "tail": [
+              0.0,
+              0.8,
+              0.0
+            ]
+          }
+        },
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.19999999999999998
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": null,
+        "mesh_components": [],
+        "name": "shoulder",
+        "parent": 1,
+        "semantic_path": "root/base/shoulder",
+        "skin": null,
+        "source_node": 2,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.3
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {
+          "hatchBone": {
+            "deform": true,
+            "id": "elbow",
+            "mirror": null,
+            "role": "elbow",
+            "roll": 0.0,
+            "tail": [
+              0.45,
+              0.8,
+              0.0
+            ]
+          }
+        },
+        "local_matrix": [
+          [
+            -2.2204460492503136e-16,
+            1.0000000000000002,
+            0.0,
+            0.0
+          ],
+          [
+            -1.0000000000000002,
+            -2.2204460492503136e-16,
+            0.0,
+            0.5
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": null,
+        "mesh_components": [],
+        "name": "elbow",
+        "parent": 2,
+        "semantic_path": "root/base/shoulder/elbow",
+        "skin": null,
+        "source_node": 3,
+        "world_matrix": [
+          [
+            -2.2204460492503136e-16,
+            1.0000000000000002,
+            0.0,
+            0.0
+          ],
+          [
+            -1.0000000000000002,
+            -2.2204460492503136e-16,
+            0.0,
+            0.8
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {
+          "hatchBone": {
+            "deform": true,
+            "id": "gripper",
+            "mirror": null,
+            "role": "gripper",
+            "roll": 0.0,
+            "tail": [
+              0.6,
+              0.8,
+              0.0
+            ]
+          }
+        },
+        "local_matrix": [
+          [
+            1.0,
+            1.0947644252537633e-47,
+            0.0,
+            -1.1102230246251565e-16
+          ],
+          [
+            -1.0947644252537633e-47,
+            1.0,
+            0.0,
+            0.4499999999999999
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": null,
+        "mesh_components": [],
+        "name": "gripper",
+        "parent": 3,
+        "semantic_path": "root/base/shoulder/elbow/gripper",
+        "skin": null,
+        "source_node": 4,
+        "world_matrix": [
+          [
+            -2.2204460492503136e-16,
+            1.0000000000000002,
+            0.0,
+            0.45
+          ],
+          [
+            -1.0000000000000002,
+            -2.2204460492503136e-16,
+            0.0,
+            0.8
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {
+          "hatchBone": {
+            "deform": true,
+            "id": "jaw.left",
+            "mirror": null,
+            "role": "jaw.left",
+            "roll": 0.0,
+            "tail": [
+              0.73,
+              0.8,
+              -0.09
+            ]
+          }
+        },
+        "local_matrix": [
+          [
+            1.0,
+            1.0947644252537633e-47,
+            0.0,
+            -1.1102230246251565e-16
+          ],
+          [
+            -1.0947644252537633e-47,
+            1.0,
+            0.0,
+            0.1299999999999999
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -0.09
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": null,
+        "mesh_components": [],
+        "name": "jaw.left",
+        "parent": 4,
+        "semantic_path": "root/base/shoulder/elbow/gripper/jaw.left",
+        "skin": null,
+        "source_node": 5,
+        "world_matrix": [
+          [
+            -2.2204460492503136e-16,
+            1.0000000000000002,
+            0.0,
+            0.58
+          ],
+          [
+            -1.0000000000000002,
+            -2.2204460492503136e-16,
+            0.0,
+            0.8000000000000002
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -0.09
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {
+          "hatchBone": {
+            "deform": true,
+            "id": "jaw.right",
+            "mirror": null,
+            "role": "jaw.right",
+            "roll": 0.0,
+            "tail": [
+              0.73,
+              0.8,
+              0.09
+            ]
+          }
+        },
+        "local_matrix": [
+          [
+            1.0,
+            1.0947644252537633e-47,
+            0.0,
+            -1.1102230246251565e-16
+          ],
+          [
+            -1.0947644252537633e-47,
+            1.0,
+            0.0,
+            0.1299999999999999
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.09
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": null,
+        "mesh_components": [],
+        "name": "jaw.right",
+        "parent": 4,
+        "semantic_path": "root/base/shoulder/elbow/gripper/jaw.right",
+        "skin": null,
+        "source_node": 6,
+        "world_matrix": [
+          [
+            -2.2204460492503136e-16,
+            1.0000000000000002,
+            0.0,
+            0.58
+          ],
+          [
+            -1.0000000000000002,
+            -2.2204460492503136e-16,
+            0.0,
+            0.8000000000000002
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.09
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 0,
+        "mesh_components": [
+          "base-shell"
+        ],
+        "name": "base-shell",
+        "parent": null,
+        "semantic_path": "base-shell",
+        "skin": 0,
+        "source_node": 7,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 1,
+        "mesh_components": [
+          "shoulder-shell"
+        ],
+        "name": "shoulder-shell",
+        "parent": null,
+        "semantic_path": "shoulder-shell",
+        "skin": 1,
+        "source_node": 8,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 2,
+        "mesh_components": [
+          "shoulder-joint"
+        ],
+        "name": "shoulder-joint",
+        "parent": null,
+        "semantic_path": "shoulder-joint",
+        "skin": 2,
+        "source_node": 9,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 3,
+        "mesh_components": [
+          "elbow-shell"
+        ],
+        "name": "elbow-shell",
+        "parent": null,
+        "semantic_path": "elbow-shell",
+        "skin": 3,
+        "source_node": 10,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 4,
+        "mesh_components": [
+          "elbow-joint"
+        ],
+        "name": "elbow-joint",
+        "parent": null,
+        "semantic_path": "elbow-joint",
+        "skin": 4,
+        "source_node": 11,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 5,
+        "mesh_components": [
+          "gripper-shell"
+        ],
+        "name": "gripper-shell",
+        "parent": null,
+        "semantic_path": "gripper-shell",
+        "skin": 5,
+        "source_node": 12,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 6,
+        "mesh_components": [
+          "gripper-joint"
+        ],
+        "name": "gripper-joint",
+        "parent": null,
+        "semantic_path": "gripper-joint",
+        "skin": 6,
+        "source_node": 13,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 7,
+        "mesh_components": [
+          "jaw.left-shell"
+        ],
+        "name": "jaw.left-shell",
+        "parent": null,
+        "semantic_path": "jaw.left-shell",
+        "skin": 7,
+        "source_node": 14,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 8,
+        "mesh_components": [
+          "jaw.left-joint"
+        ],
+        "name": "jaw.left-joint",
+        "parent": null,
+        "semantic_path": "jaw.left-joint",
+        "skin": 8,
+        "source_node": 15,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 9,
+        "mesh_components": [
+          "jaw.right-shell"
+        ],
+        "name": "jaw.right-shell",
+        "parent": null,
+        "semantic_path": "jaw.right-shell",
+        "skin": 9,
+        "source_node": 16,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      },
+      {
+        "camera": null,
+        "extras": {},
+        "local_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "mesh": 10,
+        "mesh_components": [
+          "jaw.right-joint"
+        ],
+        "name": "jaw.right-joint",
+        "parent": null,
+        "semantic_path": "jaw.right-joint",
+        "skin": 10,
+        "source_node": 17,
+        "world_matrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ]
+      }
+    ],
+    "library_reference": {
+      "id": "robot",
+      "sha256": "47f80c2d35f19c99cb5e025ecb5b1aff66868b03a6a1e2528fbb7a0dae78a967",
+      "version": "1.0.0"
+    },
+    "nodes": [
+      {
+        "animation_bindings": [],
+        "bounds": null,
+        "collections": [],
+        "constraints": [],
+        "id": "node-0",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_node": 0
+        },
+        "name": "root",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "group",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "bounds": null,
+        "collections": [],
+        "constraints": [],
+        "id": "node-1",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_node": 1
+        },
+        "name": "base",
+        "parent": "node-0",
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.1,
+            0.0
+          ]
+        },
+        "type": "group",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "bounds": null,
+        "collections": [],
+        "constraints": [],
+        "id": "node-2",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_node": 2
+        },
+        "name": "shoulder",
+        "parent": "node-1",
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.19999999999999998,
+            0.0
+          ]
+        },
+        "type": "group",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "bounds": null,
+        "collections": [],
+        "constraints": [],
+        "id": "node-3",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_node": 3
+        },
+        "name": "elbow",
+        "parent": "node-2",
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            -0.7071067811865476,
+            0.7071067811865475
+          ],
+          "scale": [
+            1.0000000000000002,
+            1.0000000000000002,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.5,
+            0.0
+          ]
+        },
+        "type": "group",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "bounds": null,
+        "collections": [],
+        "constraints": [],
+        "id": "node-4",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_node": 4
+        },
+        "name": "gripper",
+        "parent": "node-3",
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            -5.473822126268817e-48,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            -1.1102230246251565e-16,
+            0.4499999999999999,
+            0.0
+          ]
+        },
+        "type": "group",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "bounds": null,
+        "collections": [],
+        "constraints": [],
+        "id": "node-5",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_node": 5
+        },
+        "name": "jaw.left",
+        "parent": "node-4",
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            -5.473822126268817e-48,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            -1.1102230246251565e-16,
+            0.1299999999999999,
+            -0.09
+          ]
+        },
+        "type": "group",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "bounds": null,
+        "collections": [],
+        "constraints": [],
+        "id": "node-6",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_node": 6
+        },
+        "name": "jaw.right",
+        "parent": "node-4",
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            -5.473822126268817e-48,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            -1.1102230246251565e-16,
+            0.1299999999999999,
+            0.09
+          ]
+        },
+        "type": "group",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.2800000011920929,
+            0.27999999970197675,
+            0.25
+          ],
+          "minimum": [
+            -0.2800000011920929,
+            -1.4901161138336505e-09,
+            -0.25
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-7",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-7",
+          "source_node": 7
+        },
+        "name": "base-shell",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.07000000029802322,
+            0.8000000104308128,
+            0.07000000029802322
+          ],
+          "minimum": [
+            -0.07000000029802322,
+            0.3000000104308128,
+            -0.07000000029802322
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-8",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-8",
+          "source_node": 8
+        },
+        "name": "shoulder-shell",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.09000000357627869,
+            0.3899999842047691,
+            0.09000000357627869
+          ],
+          "minimum": [
+            -0.09000000357627869,
+            0.20999999195337296,
+            -0.09000000357627869
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-9",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-9",
+          "source_node": 9
+        },
+        "name": "shoulder-joint",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.44999998807907104,
+            0.8700000032782554,
+            0.07000000029802322
+          ],
+          "minimum": [
+            0.0,
+            0.7300000175833702,
+            -0.07000000029802322
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-10",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-10",
+          "source_node": 10
+        },
+        "name": "elbow-shell",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.09000000357627869,
+            0.8899999842047691,
+            0.09000000357627869
+          ],
+          "minimum": [
+            -0.09000000357627869,
+            0.7099999770522117,
+            -0.09000000357627869
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-11",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-11",
+          "source_node": 11
+        },
+        "name": "elbow-joint",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.6000000238418579,
+            0.8349999770522117,
+            0.03500000014901161
+          ],
+          "minimum": [
+            0.44999998807907104,
+            0.7649999842047691,
+            -0.03500000014901161
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-12",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-12",
+          "source_node": 12
+        },
+        "name": "gripper-shell",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.5400000214576721,
+            0.8899999842047691,
+            0.09000000357627869
+          ],
+          "minimum": [
+            0.36000001430511475,
+            0.7099999770522117,
+            -0.09000000357627869
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-13",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-13",
+          "source_node": 13
+        },
+        "name": "gripper-joint",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.7300000190734863,
+            0.8349999770522117,
+            -0.054999999701976776
+          ],
+          "minimum": [
+            0.5799999833106995,
+            0.7649999842047691,
+            -0.125
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-14",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-14",
+          "source_node": 14
+        },
+        "name": "jaw.left-shell",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.6700000166893005,
+            0.8899999842047691,
+            0.0
+          ],
+          "minimum": [
+            0.49000000953674316,
+            0.7099999770522117,
+            -0.18000000715255737
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-15",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-15",
+          "source_node": 15
+        },
+        "name": "jaw.left-joint",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.7300000190734863,
+            0.8349999770522117,
+            0.125
+          ],
+          "minimum": [
+            0.5799999833106995,
+            0.7649999842047691,
+            0.054999999701976776
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-16",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-16",
+          "source_node": 16
+        },
+        "name": "jaw.right-shell",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      },
+      {
+        "animation_bindings": [],
+        "asset": {
+          "id": "robot",
+          "kind": "scene3d-asset",
+          "path": "imports/robot/1.0.0/asset.json",
+          "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb",
+          "version": "1.0.0"
+        },
+        "bounds": {
+          "maximum": [
+            0.6700000166893005,
+            0.8899999842047691,
+            0.18000000715255737
+          ],
+          "minimum": [
+            0.49000000953674316,
+            0.7099999770522117,
+            0.0
+          ]
+        },
+        "collections": [],
+        "constraints": [],
+        "id": "node-17",
+        "layers": [],
+        "locked": false,
+        "material_overrides": [],
+        "metadata": {
+          "source_component": "node-17",
+          "source_node": 17
+        },
+        "name": "jaw.right-joint",
+        "parent": null,
+        "render": {
+          "cast_shadow": true,
+          "receive_shadow": true,
+          "visible": true
+        },
+        "selectable": true,
+        "source": null,
+        "transform": {
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "skinned_character",
+        "visible": true
+      }
+    ],
+    "report": {
+      "fixture": true,
+      "geometry": {
+        "clips": 3,
+        "meshes": 11,
+        "morph_targets": 0,
+        "skins": 11,
+        "triangles": 1368,
+        "vertices": 706
+      },
+      "hierarchy_preserved": true,
+      "independent_validator": {
+        "errors": 0,
+        "ok": true,
+        "warnings": 0
+      },
+      "losses": [],
+      "material_preview": {
+        "animation": "native-rest-pose",
+        "backend": "hatch-native-cpu-triangle-zbuffer",
+        "bounds": [
+          [
+            -0.2800000011920929,
+            -1.4901161138336505e-09,
+            -0.25
+          ],
+          [
+            0.7300000190734863,
+            0.8899999842047692,
+            0.25
+          ]
+        ],
+        "depth_test": true,
+        "textures": "base-color-only"
+      },
+      "native_clip_map": {
+        "gripper-slide": "a-bc3e800bf801ada68c1d8947e0d006c208268ea93456c027",
+        "hinge-sweep": "a-68982481555c98695cab8a8b3bc01c92b45353f1cb820b03",
+        "neutral": "a-49baa5a55b6a5f5e9e93cf54118078065a26e2caf03ca306"
+      },
+      "native_clip_rates": {
+        "a-49baa5a55b6a5f5e9e93cf54118078065a26e2caf03ca306": 24,
+        "a-68982481555c98695cab8a8b3bc01c92b45353f1cb820b03": 24,
+        "a-bc3e800bf801ada68c1d8947e0d006c208268ea93456c027": 24
+      },
+      "native_warnings": [],
+      "normalized_export": {
+        "animations": [
+          "a-49baa5a55b6a5f5e9e93cf54118078065a26e2caf03ca306",
+          "a-68982481555c98695cab8a8b3bc01c92b45353f1cb820b03",
+          "a-bc3e800bf801ada68c1d8947e0d006c208268ea93456c027"
+        ],
+        "format": "glb",
+        "independently_verified": false,
+        "joints": 7,
+        "keyframes": 127,
+        "path": "/tmp/scene3d-import-bi45gs_m/package/imports/robot/1.0.0/normalized.glb",
+        "rig_sha256": "01c9e881df23979ec9068bebe593fa709de28929da6f73cac58f6a09d1aa70d2",
+        "schema_version": 1,
+        "sha256": "e141077c05f1c08852c29b474befbb1e58237620cc251ea4dd0b6b0c25fcbc0c",
+        "skins": 11,
+        "vertices": 706
+      },
+      "original_bytes_preserved": true,
+      "original_filename": "character.glb",
+      "production_approved": false,
+      "scene_motion_evaluator": false,
+      "schema_version": 1,
+      "skin_animation_owner": "native-rig",
+      "source_animation_time_unit": "seconds; native fps is sampling metadata, not inferred source cadence",
+      "source_files": {
+        "model.glb": {
+          "bytes": 75960,
+          "sha256": "7ded3787ea0535f45e83df76feef3d20eaf5d2e48935fcc8518d2eb8039008b2"
+        }
+      },
+      "source_sha256": "7ded3787ea0535f45e83df76feef3d20eaf5d2e48935fcc8518d2eb8039008b2",
+      "unit_scale": 1.0,
+      "visual_approval": false
+    }
+  },
+  "limitations": [
+    "Native CPU preview is base-color-only.",
+    "Source fixtures are not production artwork.",
+    "This proves graph/import/prefab/snapshot integration, not a scene renderer or timeline UI."
+  ],
+  "native_numeric_validation": true,
+  "original_source_sha256": "7ded3787ea0535f45e83df76feef3d20eaf5d2e48935fcc8518d2eb8039008b2",
+  "portable": {
+    "active_scene": {
+      "id": "example-scene",
+      "kind": "scene3d-scene",
+      "path": "versions/example-scene/1.0.1.json",
+      "sha256": "05bfa56bb917b0359cba55c7f79dd5df8edd13da0b9ab9478bf2310090ed14b4",
+      "version": "1.0.1"
+    },
+    "destination": "/tmp/hatch-scene60-merged-demo/portable",
+    "inventory": {
+      "example-animation.json": {
+        "bytes": 503,
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2"
+      },
+      "example-prefab.json": {
+        "bytes": 1532,
+        "sha256": "e452d881f4a170d480bc294871c8dfa2178642d22796d55cb03340cb5af1111b"
+      },
+      "example-render.json": {
+        "bytes": 663,
+        "sha256": "59aeda2f2ae64e5f1992515a6bc32cd36f375f78c02f13189fdba3c67b8d3283"
+      },
+      "example-scene.json": {
+        "bytes": 2556,
+        "sha256": "df11cf88234842c81cb0eb82c89678c88a163a7489da6d27e482031e09a46570"
+      },
+      "example-shot.json": {
+        "bytes": 819,
+        "sha256": "d10873c61f63117a6dfd4ba58b43a118ef28962b597e2347d1bb0683e26fdbab"
+      },
+      "history/project-aa5efe4af869642d4c5169f130574664af19ae1b0e122b75b4b7d99ce2ce1875.json": {
+        "bytes": 2833,
+        "sha256": "aa5efe4af869642d4c5169f130574664af19ae1b0e122b75b4b7d99ce2ce1875"
+      },
+      "imports/robot/1.0.0/asset.json": {
+        "bytes": 12259,
+        "sha256": "b5c07dba4da2fdc25a2928a216803b64ce4694938341d469c5be84c4bf633feb"
+      },
+      "imports/robot/1.0.0/authoring-nodes.json": {
+        "bytes": 20869,
+        "sha256": "308831518987062d9623398e59aefbda9db1ec4bd2af55a63ac89c5712cf2db0"
+      },
+      "imports/robot/1.0.0/hierarchy.json": {
+        "bytes": 20453,
+        "sha256": "4943a5b334ff2c5311780d74fb6af8d9c61071c3a7e74edd1edf1e52eb1838a3"
+      },
+      "imports/robot/1.0.0/import-report.json": {
+        "bytes": 2406,
+        "sha256": "ebe902baf8761d66a3ac38fc590bbe95a5f69c051f0922ca62779c6134696821"
+      },
+      "imports/robot/1.0.0/khronos.json": {
+        "bytes": 1150,
+        "sha256": "1d485c8cbac4b7bb0792ddbce52c0268138c97a2961ccad0a0146762061a45e0"
+      },
+      "imports/robot/1.0.0/license.txt": {
+        "bytes": 10776,
+        "sha256": "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9"
+      },
+      "imports/robot/1.0.0/native/animations/a-49baa5a55b6a5f5e9e93cf54118078065a26e2caf03ca306-243cdc87abb37629a9766a332632d010dd0008726449fb975ebe7ebfd641d3dc.json": {
+        "bytes": 1064,
+        "sha256": "2133f07a92b60ab998a80b8cc621e50e53c46c0d0361506d01e5075978774b61"
+      },
+      "imports/robot/1.0.0/native/animations/a-68982481555c98695cab8a8b3bc01c92b45353f1cb820b03-a7847084f03e6b0bc1eb390aef203ce7abdd7acd4856eef5b0e4b259ae446950.json": {
+        "bytes": 7666,
+        "sha256": "03c6d90136f732f9074e69cd8a6dedb1889f84634c2c8fb742ec184dad489286"
+      },
+      "imports/robot/1.0.0/native/animations/a-bc3e800bf801ada68c1d8947e0d006c208268ea93456c027-cab443d6c68bc0b0e5eacff0f798df9bc94809ef8d742ad4557be09506b7d8c4.json": {
+        "bytes": 10924,
+        "sha256": "7f31bb904ef22db927d760f656add832937f75500faa964939c1c165d577bea3"
+      },
+      "imports/robot/1.0.0/native/animations/gripper-slide-8cf8044a9317a09cce02929ad79072c14351141a7d6a3048d842844f4feff24b.json": {
+        "bytes": 10871,
+        "sha256": "f553c2b99275c79cea899630efda3d19abd7bd088973814420f5870991d128d5"
+      },
+      "imports/robot/1.0.0/native/animations/hinge-sweep-2f949a764ac681f816cea1f4fdc2e21da9bb709dd598858639cc8c7c20f8607f.json": {
+        "bytes": 7613,
+        "sha256": "995b39f310b44149c1c492a8dc281b6e252bb202291f909e7288035488bfa2c9"
+      },
+      "imports/robot/1.0.0/native/animations/neutral-e2d34fb3386c34e8b7d912b95ef8e0a1327e5352f62a497e5e4424ddc90c7772.json": {
+        "bytes": 1011,
+        "sha256": "f171d38c66234e3264e758b08c207642c44f9d218953ac059b7c0e44dd5a64e1"
+      },
+      "imports/robot/1.0.0/native/geometry/bbc56bd047a36f5b58c6372b6124bab6d6f9bbfa01414f25bd698acfc9b6c78b.npz": {
+        "bytes": 19915,
+        "sha256": "bbc56bd047a36f5b58c6372b6124bab6d6f9bbfa01414f25bd698acfc9b6c78b"
+      },
+      "imports/robot/1.0.0/native/identity.json": {
+        "bytes": 542,
+        "sha256": "d34b190646d5dc34f3a109319e75378b822a87c8b1d517d4a28c406fedb2b6e2"
+      },
+      "imports/robot/1.0.0/native/job.json": {
+        "bytes": 1023,
+        "sha256": "946f0e7617ef3c529e0e939d26e7c63c9fb7df2c06816f19548efb57754cd874"
+      },
+      "imports/robot/1.0.0/native/rig.json": {
+        "bytes": 15969,
+        "sha256": "c422351ffe80c3f5724b1b9d5458615aea7313562704c963e0c4e79e4490a248"
+      },
+      "imports/robot/1.0.0/native/rig/revisions/000000-82680e923df2d27705182689f0179e9ca09750415b062f2319dc70a7300bbd21.json": {
+        "bytes": 15731,
+        "sha256": "54bc4efa5a16c3b611a0b60c3139b6b21d6bfd6703a83db29781949fabb14c51"
+      },
+      "imports/robot/1.0.0/native/rig/weights/0309c8054d11566d15066f5f58a2ba1a2747ec6c82e1547e9903185e395de895.npz": {
+        "bytes": 1026,
+        "sha256": "0309c8054d11566d15066f5f58a2ba1a2747ec6c82e1547e9903185e395de895"
+      },
+      "imports/robot/1.0.0/native/rig/weights/10a23eeda4cdbc274d42f19dd7d7737c7502c662f7b75faab3c773ab0cf4874c.npz": {
+        "bytes": 1027,
+        "sha256": "10a23eeda4cdbc274d42f19dd7d7737c7502c662f7b75faab3c773ab0cf4874c"
+      },
+      "imports/robot/1.0.0/native/rig/weights/3e6bf34816c05c38debc87c4af37ae6e090c0f58b21bcd7f7587f46c5d0708b2.npz": {
+        "bytes": 1029,
+        "sha256": "3e6bf34816c05c38debc87c4af37ae6e090c0f58b21bcd7f7587f46c5d0708b2"
+      },
+      "imports/robot/1.0.0/native/rig/weights/6af8a4999420b3c576f8b03e03655a2792cd82b407b80415ed24bb98c1f8a4be.npz": {
+        "bytes": 1029,
+        "sha256": "6af8a4999420b3c576f8b03e03655a2792cd82b407b80415ed24bb98c1f8a4be"
+      },
+      "imports/robot/1.0.0/native/rig/weights/91a171024f6b666382e684a78771f08ea94f2b6b3868f75cbb73e67834aeeddc.npz": {
+        "bytes": 1029,
+        "sha256": "91a171024f6b666382e684a78771f08ea94f2b6b3868f75cbb73e67834aeeddc"
+      },
+      "imports/robot/1.0.0/native/rig/weights/91ea12ef27e6119b46039f33045c5748eb41b9dcf906777eb6ab5a9bfb91e2f0.npz": {
+        "bytes": 1027,
+        "sha256": "91ea12ef27e6119b46039f33045c5748eb41b9dcf906777eb6ab5a9bfb91e2f0"
+      },
+      "imports/robot/1.0.0/native/rig/weights/9338e4b7346f264a74822f53e57073e4a9ea93d0ce54aaab684b0249b349b083.npz": {
+        "bytes": 1026,
+        "sha256": "9338e4b7346f264a74822f53e57073e4a9ea93d0ce54aaab684b0249b349b083"
+      },
+      "imports/robot/1.0.0/native/rig/weights/a6e5733f3ac22f0263a0c5771f8693e672e42c58d6381bfa6a606e6f29d4c289.npz": {
+        "bytes": 1027,
+        "sha256": "a6e5733f3ac22f0263a0c5771f8693e672e42c58d6381bfa6a606e6f29d4c289"
+      },
+      "imports/robot/1.0.0/native/rig/weights/bdf04a876d9f7520a4c942cb5fda41b030de51b556cdb9805f90d1d7f8b7710f.npz": {
+        "bytes": 1029,
+        "sha256": "bdf04a876d9f7520a4c942cb5fda41b030de51b556cdb9805f90d1d7f8b7710f"
+      },
+      "imports/robot/1.0.0/native/rig/weights/f1417b16204919d64c401860e0ce85e6b4e36cef2a8ad8395dee6ecd6c0fbaed.npz": {
+        "bytes": 1029,
+        "sha256": "f1417b16204919d64c401860e0ce85e6b4e36cef2a8ad8395dee6ecd6c0fbaed"
+      },
+      "imports/robot/1.0.0/native/rig/weights/f3a5f2bef26f7ac4b7d07a00b7725609307c39f4b513c244277669bc98aa57d2.npz": {
+        "bytes": 1053,
+        "sha256": "f3a5f2bef26f7ac4b7d07a00b7725609307c39f4b513c244277669bc98aa57d2"
+      },
+      "imports/robot/1.0.0/native/source/model.glb": {
+        "bytes": 75960,
+        "sha256": "7ded3787ea0535f45e83df76feef3d20eaf5d2e48935fcc8518d2eb8039008b2"
+      },
+      "imports/robot/1.0.0/native/validation/import.json": {
+        "bytes": 8286,
+        "sha256": "218ea3084a72147ca65a50f1bf998722775dc9d8edc3a04cfe31b86797e1188a"
+      },
+      "imports/robot/1.0.0/normalized.glb": {
+        "bytes": 76040,
+        "sha256": "e141077c05f1c08852c29b474befbb1e58237620cc251ea4dd0b6b0c25fcbc0c"
+      },
+      "imports/robot/1.0.0/preview-camera.json": {
+        "bytes": 446,
+        "sha256": "b29a7fbc61325aff44440debbdafae12efc69a2ffccb27494edde547e56440d0"
+      },
+      "imports/robot/1.0.0/preview-lighting.json": {
+        "bytes": 78,
+        "sha256": "0b82205f7f74590adc4b0df12ff4aedcc1619e1f015376dd95b72348852e9be1"
+      },
+      "imports/robot/1.0.0/preview-settings.json": {
+        "bytes": 353,
+        "sha256": "1b11facb39cffc265ddf1087de8ef1122644e7ba5c6b0f35f375b9d341fc114c"
+      },
+      "imports/robot/1.0.0/preview.png": {
+        "bytes": 10069,
+        "sha256": "b9d9bde5e3ceb14146f09fa9b81b50bb2937b74c6147593cf0c48083b4e18c7c"
+      },
+      "imports/robot/1.0.0/source-identity.json": {
+        "bytes": 268,
+        "sha256": "408378cd1736100409dc4a0cda529a136508f779206b342df4192c06d2b9bd5f"
+      },
+      "prefabs/robot-assembly/1.0.0.json": {
+        "bytes": 15567,
+        "sha256": "483a206e5b411ed2e0b9d475cd48e77dd16ea6bf4d31c0b9a337a70b254aa834"
+      },
+      "project.json": {
+        "bytes": 14930,
+        "sha256": "e0f282f9acf54f79168c507a474b1802de4e632da529b2f090b6fc4ec6ad0376"
+      },
+      "triangle.json": {
+        "bytes": 1162,
+        "sha256": "57d4221ae10d9a583ddff40804a73e19ceb01c3ac242f8e4a095a94a266fd897"
+      },
+      "triangle.obj": {
+        "bytes": 85,
+        "sha256": "f35f79225a9f04bd331d1095628cb1167409357db03405a45be22c8e0478848a"
+      },
+      "versions/example-scene/1.0.1.json": {
+        "bytes": 33835,
+        "sha256": "05bfa56bb917b0359cba55c7f79dd5df8edd13da0b9ab9478bf2310090ed14b4"
+      },
+      "versions/example-shot/1.0.1.json": {
+        "bytes": 834,
+        "sha256": "ad18f5dc548742172b0bb8885219b35412ed3215daa5efafe96f356d27704b06"
+      }
+    },
+    "production_approved": false,
+    "project_sha256": "e0f282f9acf54f79168c507a474b1802de4e632da529b2f090b6fc4ec6ad0376",
+    "project_version": "1.0.1",
+    "status": "complete-byte-and-contract-verified"
+  },
+  "production_approved": false,
+  "reopen_status": "hash-and-contract-verified",
+  "sample_time_seconds": 0.37,
+  "scene_nodes": 42,
+  "schema_version": 1,
+  "shared_instance_max_translation_error_m": 0.0,
+  "source": "procedural-engineering-geometry",
+  "source_unchanged": true,
+  "visual_approved": false
+}
