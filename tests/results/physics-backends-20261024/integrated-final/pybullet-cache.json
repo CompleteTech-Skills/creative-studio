@@ -1,0 +1,24 @@
+{
+  "status": "hash-and-contract-verified",
+  "world_sha256": "d6869d7b6ffdabf1adef6bbd5732ec0b81e51f54d94b1428da2a914de0c918f2",
+  "cache_files": 16,
+  "output_bytes": 43066,
+  "sample_count": 49,
+  "backend": {
+    "adapter_version": "1.0.0",
+    "application_version": "Python 3.11.17",
+    "device": "cpu",
+    "executable_sha256": "ff9b2ac4362b81c68622ffb1730f7138eb269177d9846399c521a44c5daffb0e",
+    "id": "pybullet",
+    "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+    "precision": "mixed",
+    "solver_name": "PyBullet DIRECT (bundled Bullet)",
+    "solver_version": "PyBullet 3.2.7"
+  },
+  "fixture": true,
+  "review_status": "unreviewed",
+  "native_outdated_flag": null,
+  "evidence_authentication": "unsigned retained execution receipts, not a cryptographic identity attestation",
+  "native_continuation": "unsupported; clean restart only",
+  "numerical_recompute_guarantee": "not-established"
+}

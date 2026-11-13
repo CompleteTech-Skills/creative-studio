@@ -1,0 +1,273 @@
+{
+  "backend": "blender",
+  "adapter_version": "1.0.0",
+  "state": "available",
+  "executable": "/home/complete/.cache/hatch-fleet/blender-4.5.3-linux-x64/blender",
+  "application_version": "Blender 4.5.3 LTS",
+  "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+  "discovery_verified": true,
+  "headless_smoke_verified": true,
+  "categories": {
+    "rigid-body": {
+      "state": "available",
+      "smoke_verified": true,
+      "message": "Actual sphere/box gravity/contact bake and independent native reopen passed."
+    },
+    "character": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "cloth": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "soft-body": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "hair": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "particles": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "gas": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "liquid": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "fracture": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    }
+  },
+  "shapes": [
+    "sphere",
+    "box"
+  ],
+  "joints": [],
+  "caches": [
+    "native-sampled-json",
+    "embedded-baked-blend"
+  ],
+  "exports": [
+    "native-transform-json"
+  ],
+  "hardware": {
+    "os": "Linux",
+    "architecture": "x86_64",
+    "cpu_concurrency": 20,
+    "available_memory_bytes": 1556434944,
+    "available_disk_bytes": 5668167680,
+    "gpu_discovery": "executed-device-enumeration-only",
+    "physics_gpu_support": "unsupported",
+    "physics_device": "cpu",
+    "render_gpu_execution": "not-executed",
+    "render_devices": [
+      {
+        "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+        "type": "CUDA"
+      },
+      {
+        "name": "13th Gen Intel Core i7-13700H",
+        "type": "CPU"
+      },
+      {
+        "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+        "type": "OPTIX"
+      }
+    ]
+  },
+  "limitations": [
+    "Only sphere/box OBJ rigid bodies are admitted; all other declared features fail closed.",
+    "CPU Bullet only; GPU rendering hardware does not establish physics acceleration.",
+    "Blender does not expose its embedded Bullet version separately.",
+    "Numerical recomputation is not promised deterministic; verified cache replay is supported.",
+    "POSIX native execution/descriptor cache admission only; Windows is not advertised.",
+    "Blender4.5.3 can mark embedded baked cache outdated on reopen; every retained frame is independently compared.",
+    "RSS/disk monitoring is bounded polling, not an adversarial OS sandbox; no network namespace is claimed."
+  ],
+  "evidence": {
+    "inspection": {
+      "status": "hash-and-contract-verified",
+      "world_sha256": "1174afd8aa90cc3565fc7dfcde62022304cb937366755d9e9c0e515120fef692",
+      "cache_files": 23,
+      "output_bytes": 481512,
+      "sample_count": 49,
+      "backend": {
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "device": "cpu",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "id": "blender",
+        "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+        "precision": "mixed",
+        "solver_name": "Blender Bullet rigid-body world",
+        "solver_version": "not exposed separately by Blender"
+      },
+      "fixture": true,
+      "review_status": "unreviewed",
+      "native_outdated_flag": true,
+      "evidence_authentication": "unsigned retained execution receipts, not a cryptographic identity attestation",
+      "native_continuation": "unsupported; clean restart only",
+      "numerical_recompute_guarantee": "not-established"
+    },
+    "actual_start_height": 3.0,
+    "actual_mid_height": 1.7635310888290405,
+    "actual_end_height": 0.5,
+    "fixture": true,
+    "source": "procedural native mesh engineering fixture",
+    "usage": {
+      "elapsed_seconds": 6.388434265973046,
+      "peak_memory_bytes": 403689472,
+      "output_bytes": 481512,
+      "solver_steps": 480
+    },
+    "native_replay": {
+      "backend": {
+        "application_build": "67807e1800cc",
+        "application_version": "4.5.3 LTS",
+        "device": "cpu",
+        "physics_gpu_support": "unsupported",
+        "platform": "linux",
+        "precision": "mixed",
+        "render_device_discovery": "executed-device-enumeration-only",
+        "render_devices": [
+          {
+            "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+            "type": "CUDA"
+          },
+          {
+            "name": "13th Gen Intel Core i7-13700H",
+            "type": "CPU"
+          },
+          {
+            "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+            "type": "OPTIX"
+          }
+        ],
+        "render_gpu_execution": "not-executed",
+        "solver_name": "Blender Bullet rigid-body world",
+        "solver_version": "not exposed separately by Blender"
+      },
+      "maximum_replay_error": 0.0,
+      "native_bake_completed": true,
+      "native_cache_is_baked": true,
+      "native_cache_is_outdated": true,
+      "ok": true,
+      "operation": "reopen",
+      "replay_tolerance": 1e-05,
+      "reversed_samples": 49
+    },
+    "native_consumption_control": {
+      "after_free_bake_flags": {
+        "is_baked": false,
+        "is_outdated": false
+      },
+      "backend": {
+        "application_build": "67807e1800cc",
+        "application_version": "4.5.3 LTS",
+        "device": "cpu",
+        "physics_gpu_support": "unsupported",
+        "platform": "linux",
+        "precision": "mixed",
+        "render_device_discovery": "executed-device-enumeration-only",
+        "render_devices": [
+          {
+            "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+            "type": "CUDA"
+          },
+          {
+            "name": "13th Gen Intel Core i7-13700H",
+            "type": "CPU"
+          },
+          {
+            "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+            "type": "OPTIX"
+          }
+        ],
+        "render_gpu_execution": "not-executed",
+        "solver_name": "Blender Bullet rigid-body world",
+        "solver_version": "not exposed separately by Blender"
+      },
+      "baked_flags": {
+        "is_baked": true,
+        "is_outdated": true
+      },
+      "baked_pose_error": 0.0,
+      "baked_under_changed_gravity": [
+        0.0,
+        0.5,
+        0.0
+      ],
+      "body": "ball",
+      "changed_gravity_canonical": [
+        -0.0,
+        98.10000610351562,
+        -0.0
+      ],
+      "changed_gravity_displacement": 199.10877601828605,
+      "clean_recompute_under_changed_gravity": [
+        0.0,
+        199.60877990722656,
+        0.0
+      ],
+      "consumption_demonstrated": true,
+      "control_is_separate_in_memory": true,
+      "frame": 48,
+      "ok": true,
+      "operation": "consumption-control",
+      "source_file_modified": false
+    },
+    "additional_shape_smoke": {
+      "dynamic_shape": "box",
+      "static_shape": "sphere",
+      "actual_initial_height": 3.0,
+      "actual_final_height": 0.5,
+      "verification": {
+        "status": "hash-and-contract-verified",
+        "world_sha256": "090dd6f8d36b7d1a7cfef323d5f2bafd37d02a5cd4dec634b020976aa9489b76",
+        "cache_files": 20,
+        "output_bytes": 481242,
+        "sample_count": 49,
+        "backend": {
+          "adapter_version": "1.0.0",
+          "application_version": "Blender 4.5.3 LTS",
+          "device": "cpu",
+          "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+          "id": "blender",
+          "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+          "precision": "mixed",
+          "solver_name": "Blender Bullet rigid-body world",
+          "solver_version": "not exposed separately by Blender"
+        },
+        "fixture": true,
+        "review_status": "unreviewed",
+        "native_outdated_flag": true,
+        "evidence_authentication": "unsigned retained execution receipts, not a cryptographic identity attestation",
+        "native_continuation": "unsupported; clean restart only",
+        "numerical_recompute_guarantee": "not-established"
+      },
+      "usage": {
+        "elapsed_seconds": 4.639420105027966,
+        "peak_memory_bytes": 399532032,
+        "output_bytes": 481242,
+        "solver_steps": 480
+      },
+      "fixture": true
+    }
+  }
+}
