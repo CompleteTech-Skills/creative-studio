@@ -194,6 +194,7 @@ class AssetBrowserHandler(BaseHTTPRequestHandler):
                     fail('ROUTE', 'Static resources support GET only.')
                 static = {'/':(UI/'index.html','text/html; charset=utf-8'),
                           '/app.js':(UI/'app.js','text/javascript'),
+                          '/inspector-tools.js':(UI/'inspector-tools.js','text/javascript'),
                           '/style.css':(UI/'style.css','text/css')}
                 if parsed.path in static:
                     path, mime = static[parsed.path]
