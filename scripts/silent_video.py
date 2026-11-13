@@ -662,7 +662,10 @@ def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=
 
 
 def _destination(path):
-    path = Path(path).absolute()
+    try:
+        path = Path(path).absolute()
+    except TypeError as exc:
+        raise ValueError('destination must be a filesystem path') from exc
     for ancestor in [path, *path.parents]:
         if ancestor.is_symlink():
             raise ValueError('destination must not traverse symlinks')
@@ -672,7 +675,10 @@ def _destination(path):
 
 
 def _destination_name(value):
-    value = os.fspath(value)
+    try:
+        value = os.fspath(value)
+    except TypeError as exc:
+        raise ValueError('descriptor destination requires one portable filename') from exc
     if (not isinstance(value, str) or not 1 <= len(value) <= 255 or value in ('.', '..') or
             any(character in value for character in ('/', '\\', ':')) or value[-1] in (' ', '.') or
             any(ord(character) < 32 for character in value) or
