@@ -660,6 +660,10 @@ def load_project(root, name='project.json'):
             target = target / part
             require(not target.is_symlink(), 'Dependency path traverses a symlink.')
             require(not getattr(target, 'is_junction', lambda: False)(), 'Dependency path traverses a junction.')
+            # Resolve only this containment comparison, never the authority used
+            # for opening files below. Registered descriptor roots stay pinned.
+            require(target.resolve().is_relative_to(root.resolve()), 'Dependency resolves outside the project root.')
+        require(target.is_file(), 'Missing regular dependency: ' + path)
         target = safe_path(root, path, exists=True)
         size = target.stat().st_size
         require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
