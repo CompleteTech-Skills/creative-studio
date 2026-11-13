@@ -15,7 +15,7 @@ import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS, validate_contract
 from rig_errors import (atomic_bytes, decode_json, finite_json, object_hash, read_json, require,
-                        safe_path, sha256)
+                        safe_path, sha256, normalize_root)
 
 
 @dataclass
@@ -404,7 +404,7 @@ def rig_signature(manifest: dict) -> str:
 
 
 def load_rig(root: str | Path, verify_source: bool = True) -> RigAsset:
-    root = Path(root).resolve()
+    root = normalize_root(root)
     manifest = validate_contract(read_json(root/'rig.json'), 'Rig')
     limits = manifest['limits']
     require(sha256(safe_path(root, 'identity.json', exists=True)) == manifest['character']['identity_sha256'],
