@@ -160,6 +160,13 @@ class TextureTests(unittest.TestCase):
         slope=np.tile(np.arange(4,dtype=np.float32),(3,1))/4
         normal=t.normal_from_height(slope,wrap='clamp')
         self.assertLess(normal[1,1,0],.5)
+        # Source raster rows run down; positive tangent Y points up. A height
+        # rising toward later raster rows therefore tilts the normal toward +Y.
+        vertical=np.tile(np.arange(4,dtype=np.float32)[:,None],(1,3))/4
+        vertical_normal=t.normal_from_height(vertical,wrap='clamp')
+        self.assertGreater(vertical_normal[1,1,1],.5)
+        self.assertAlmostEqual(float(vertical_normal[1,1,0]),.5)
+        self.assertLess(t.normal_from_height(vertical[::-1].copy(),wrap='clamp')[1,1,1],.5)
         np.testing.assert_allclose(np.linalg.norm(normal[:,:,:3]*2-1,axis=-1),1,atol=1e-6)
 
     def test_mipmaps_odd_dimension_average_and_normals(self):
