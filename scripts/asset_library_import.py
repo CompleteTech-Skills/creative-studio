@@ -396,7 +396,8 @@ def _pack_glb(document, buffers, image_payloads, *, unit_scale=1., basis='canoni
     if basis == 'right-handed-z-up': matrix[:3,:3]=[[1,0,0],[0,0,1],[0,-1,0]]
     elif basis == 'left-handed-y-up': matrix[:3,:3]=[[1,0,0],[0,1,0],[0,0,-1]]
     matrix[:3,:3] *= unit_scale; matrix[1,3] = ground_offset
-    if not np.allclose(matrix, np.eye(4)):
+    # Explicit small scales/translations are operations, not approximate no-ops.
+    if not np.array_equal(matrix, np.eye(4)):
         nodes=value.setdefault('nodes',[])
         original_count=len(nodes);wrapped={}
         for scene in value.get('scenes', []):

@@ -336,4 +336,97 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(generated['report']['native_observation']['triangles'],12)
         self.assertEqual(self.library.resolve(generated['reference'])['provenance']['method'],'fixture')
 
+
+class NormalizationPrecisionTests(unittest.TestCase):
+    """Decode actual GLB positions/world matrices without the native scene reader."""
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name).resolve()
+        self.library=AssetLibrary(self.root/'library',create=True)
+        self.pipeline=ImportPipeline(self.library)
+        self.license=self.root/'license.txt';self.license.write_text('CC0 engineering fixture.\n')
+        self.base=json.loads((ROOT/'examples/asset-library-foundation/manifest.json').read_text())
+
+    def source(self, points):
+        from rig_gltf import GltfBuilder
+        builder=GltfBuilder()
+        position=builder.accessor(points,'VEC3',bounds=True)
+        builder.json.update(meshes=[dict(primitives=[dict(attributes=dict(POSITION=position))])],
+                            nodes=[dict(mesh=0)],scenes=[dict(nodes=[0])])
+        builder.json['asset']['extras']=dict(hatchAssetSourceFixture=True)
+        source=self.root/'precision.glb';builder.write(source)
+        return source
+
+    def bounds(self, payload):
+        import numpy as np
+        magic,version,size=struct.unpack_from('<4sII',payload)
+        self.assertEqual((magic,version,size),(b'glTF',2,len(payload)))
+        length,kind=struct.unpack_from('<II',payload,12);self.assertEqual(kind,0x4E4F534A)
+        document=json.loads(payload[20:20+length])
+        offset=20+length;binary_length,kind=struct.unpack_from('<II',payload,offset)
+        self.assertEqual(kind,0x004E4942);binary=payload[offset+8:offset+8+binary_length]
+        positions=[]
+        def visit(index,parent):
+            node=document['nodes'][index]
+            if 'matrix' in node:
+                local=np.asarray(node['matrix'],dtype=float).reshape(4,4).T
+            else:
+                self.assertFalse({'rotation','scale'} & node.keys())
+                local=np.eye(4);local[:3,3]=node.get('translation',[0,0,0])
+            world=parent@local
+            if 'mesh' in node:
+                for primitive in document['meshes'][node['mesh']]['primitives']:
+                    accessor=document['accessors'][primitive['attributes']['POSITION']]
+                    self.assertEqual((accessor['componentType'],accessor['type']),(5126,'VEC3'))
+                    view=document['bufferViews'][accessor['bufferView']]
+                    self.assertEqual(view['buffer'],0);self.assertNotIn('byteStride',view)
+                    start=view.get('byteOffset',0)+accessor.get('byteOffset',0)
+                    values=struct.unpack_from('<'+'f'*(accessor['count']*3),binary,start)
+                    points=np.asarray(values,dtype=float).reshape(-1,3)
+                    positions.extend((np.column_stack((points,np.ones(len(points))))@world.T)[:,:3])
+            for child in node.get('children',[]):visit(child,world)
+        for index in document['scenes'][document.get('scene',0)]['nodes']:visit(index,np.eye(4))
+        self.assertTrue(positions)
+        points=np.asarray(positions)
+        return document,np.asarray([points.min(axis=0),points.max(axis=0)])
+
+    def imported(self, source, version='1.0.0', **options):
+        original=source.read_bytes()
+        result=self.pipeline.import_asset(source,identity=self.base['identity'],version=version,
+            metadata=self.base['metadata'],license_file=self.license,fixture=True,
+            blender_roundtrip=False,**options)
+        self.assertEqual(source.read_bytes(),original)
+        restored=self.root/('restored-'+version)
+        self.pipeline.restore_original(result['reference'],restored)
+        self.assertEqual((restored/source.name).read_bytes(),original)
+        return self.bounds(self.library.read_file(result['reference'],'runtime/asset.glb')),result
+
+    def test_near_unit_scales_retain_explicit_world_bounds(self):
+        import numpy as np
+        source=self.source([[.25,.125,-.5],[2.,.125,-.5],[.25,1.5,.75]])
+        _,before=self.bounds(source.read_bytes())
+        for version,scale in [('1.0.0',1.000001),('2.0.0',1.00001)]:
+            with self.subTest(scale=scale):
+                (_,after),_=self.imported(source,version,unit_scale=scale)
+                np.testing.assert_allclose(after,before*scale,rtol=0,atol=1e-14)
+                self.assertNotEqual(after[1,0],before[1,0])
+
+    def test_tiny_nonzero_ground_shift_reaches_actual_zero(self):
+        import numpy as np
+        source=self.source([[0,1e-9,0],[2,1e-9,0],[0,1,1]])
+        _,before=self.bounds(source.read_bytes());self.assertGreater(before[0,1],0.)
+        (_,after),result=self.imported(source,ground=True)
+        expected=before.copy();expected[:,1]-=before[0,1]
+        np.testing.assert_allclose(after,expected,rtol=0,atol=1e-14)
+        self.assertEqual(after[0,1],0.)
+        self.assertLess(result['report']['normalization']['ground_offset'],0.)
+
+    def test_exact_identity_retains_original_nodes_and_geometry(self):
+        import numpy as np
+        source=self.source([[.25,.125,-.5],[2.,.125,-.5],[.25,1.5,.75]])
+        original,before=self.bounds(source.read_bytes())
+        (converted,after),_=self.imported(source,unit_scale=1.,ground=False)
+        self.assertEqual(converted['nodes'],original['nodes'])
+        np.testing.assert_array_equal(after,before)
+
 if __name__=='__main__':unittest.main()
