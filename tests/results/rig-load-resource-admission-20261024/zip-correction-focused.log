@@ -1,0 +1,22 @@
+test_48_real_textures_do_not_bypass_35_mib_with_self_declared_2gib (test_rig_load_limits.NativeLoadLimitTests.test_48_real_textures_do_not_bypass_35_mib_with_self_declared_2gib) ... ok
+test_actual_counts_enforced_before_arrays (test_rig_load_limits.NativeLoadLimitTests.test_actual_counts_enforced_before_arrays) ... ok
+test_all_bundles_and_json_admitted_before_first_array (test_rig_load_limits.NativeLoadLimitTests.test_all_bundles_and_json_admitted_before_first_array) ... ok
+test_array_order_endianness_and_writeability_survive_bounded_materialization (test_rig_load_limits.NativeLoadLimitTests.test_array_order_endianness_and_writeability_survive_bounded_materialization) ... ok
+test_decoded_image_pixels_count_even_for_tiny_compressed_png (test_rig_load_limits.NativeLoadLimitTests.test_decoded_image_pixels_count_even_for_tiny_compressed_png) ... ok
+test_forged_npy_shape_does_not_reach_array_allocator (test_rig_load_limits.NativeLoadLimitTests.test_forged_npy_shape_does_not_reach_array_allocator) ... ok
+test_forged_zip_directory_count_is_rejected_before_zipinfo_allocation (test_rig_load_limits.NativeLoadLimitTests.test_forged_zip_directory_count_is_rejected_before_zipinfo_allocation) ... ok
+test_invalid_and_unknown_caller_caps_are_structured_before_arrays (test_rig_load_limits.NativeLoadLimitTests.test_invalid_and_unknown_caller_caps_are_structured_before_arrays) ... ok
+test_loading_uses_the_same_immutable_snapshot_as_header_admission (test_rig_load_limits.NativeLoadLimitTests.test_loading_uses_the_same_immutable_snapshot_as_header_admission) ... ok
+test_noncanonical_zip_offsets_rejected_before_directory_construction (test_rig_load_limits.NativeLoadLimitTests.test_noncanonical_zip_offsets_rejected_before_directory_construction) ... ok
+test_pickle_traversal_duplicate_and_bomb_members_fail_before_arrays (test_rig_load_limits.NativeLoadLimitTests.test_pickle_traversal_duplicate_and_bomb_members_fail_before_arrays) ... /home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/zipfile/__init__.py:1650: UserWarning: Duplicate name: 'metadata.json'
+  return self._open_to_write(zinfo, force_zip64=force_zip64)
+ok
+test_real_robot_with_caller_cap_preserves_manifest_signature_and_source (test_rig_load_limits.NativeLoadLimitTests.test_real_robot_with_caller_cap_preserves_manifest_signature_and_source) ... ok
+test_requested_limits_cannot_raise_declared_caps_or_mutate_them (test_rig_load_limits.NativeLoadLimitTests.test_requested_limits_cannot_raise_declared_caps_or_mutate_them) ... ok
+test_runtime_bundle_snapshot_hash_is_checked_before_arrays (test_rig_load_limits.NativeLoadLimitTests.test_runtime_bundle_snapshot_hash_is_checked_before_arrays) ... ok
+test_source_and_aggregate_file_caps_before_arrays (test_rig_load_limits.NativeLoadLimitTests.test_source_and_aggregate_file_caps_before_arrays) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 2.506s
+
+OK
