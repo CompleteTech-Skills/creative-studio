@@ -182,3 +182,13 @@ remains with the PBR adapter. A returned plan records exact document and helper
 source hashes. The opt-in HATCH_LOOKDEV_SAMPLING_TEST gate samples an actual
 PNG-derived red/blue texture through Cycles, compares boundary filtering and
 out-of-range repeat/clamp behavior, and retains exact image hashes.
+
+The image derivation explicitly distinguishes original `encoding` provenance from
+`actual_decoded_encoding` (`linear-srgb` for color roles, `data` for data roles).
+`pixel_layout` is `float32-rgba`, `decoded_row_order` is `top-down` and
+`native_row_order` is `bottom-up`. The selected float32 RGBA digest binds the
+top-down buffer bytes before Blender installation. Blender stores these already
+linear/data values with `Non-Color`; graph adapters must not reapply the original
+sRGB transfer function. Consumers must verify the descriptor, pixels and exact
+source hash before admitting a predecoded image, rather than infer interpretation
+from an image merely being float-backed.

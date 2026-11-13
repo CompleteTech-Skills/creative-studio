@@ -33,6 +33,11 @@ for color in ('red','blue'):
     source=DecodedTexture(pixels,'fixture-float32',source_hash,'base-color','linear-srgb')
     image,receipt=create_cached_blender_image(cache,source,name=color,profile=UploadProfile(2,80))
     assert receipt['selected_dimensions']==[2,2]
+    assert receipt['actual_decoded_encoding']=='linear-srgb'
+    assert receipt['pixel_layout']=='float32-rgba'
+    assert receipt['decoded_row_order']=='top-down'
+    assert receipt['native_row_order']=='bottom-up'
+    assert image.colorspace_settings.name=='Non-Color'
     for name,digest in receipt['module_sha256'].items():
         assert hashlib.sha256((Path(job['scripts'])/name).read_bytes()).hexdigest()==digest
     actual=np.array(image.pixels[:],np.float32).reshape(2,2,4)[::-1]

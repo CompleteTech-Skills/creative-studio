@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from lookdev_texture_cache import DerivedTextureCache
-from lookdev_textures import DecodedTexture, create_blender_image
+from lookdev_textures import COLOR_ROLES, DecodedTexture, create_blender_image
 from rig_errors import require
 
 # Capture the actual imported helper origins. Reject mixed checkouts rather than
@@ -51,6 +51,9 @@ def create_cached_blender_image(cache, texture, *, name, profile='browser', mip_
                       selected_dimensions=[derived.width, derived.height],
                       selected_float32_rgba_sha256=digest,
                       selected_bytes=selected.nbytes,
+                      actual_decoded_encoding='linear-srgb' if texture.role in COLOR_ROLES else 'data',
+                      pixel_layout='float32-rgba', decoded_row_order='top-down',
+                      native_row_order='bottom-up',
                       backend='Blender-float-image', adapter_version='1.0.0',
                       module_sha256=dict(_MODULE_SHA256))
     try:
