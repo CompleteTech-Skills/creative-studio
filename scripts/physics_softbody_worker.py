@@ -26,7 +26,7 @@ def load_job():
             result[key]=value
         return result
     job=json.loads(path.read_bytes(),object_pairs_hook=pairs)
-    if set(job)!={'protocol','world','world_sha256','meshes','worker_sha256','mode'} or job['protocol']!=1:
+    if set(job)!={'protocol','world','world_sha256','meshes','worker_sha256','mode','native_time_scale'} or job['protocol']!=2:
         raise ValueError('Invalid worker protocol')
     if hashlib.sha256(canonical(job['world'])).hexdigest()!=job['world_sha256']:
         raise ValueError('Changed world')
@@ -77,6 +77,7 @@ def execute(root,job):
             floor.collision.thickness_outer=.01;floor.collision.thickness_inner=.01
             floor.collision.damping_factor=0.;floor.collision.friction_factor=material['dynamic_friction']
         obj=mesh_object(identity,job['meshes'][identity]);modifier=obj.modifiers.new('soft-body','SOFT_BODY');settings=modifier.settings
+        settings.speed=job['native_time_scale']
         settings.mass=component['mass']/component['vertex_count']
         settings.friction=0.;settings.use_edges=True;settings.pull=component['stiffness'];settings.push=component['stiffness']
         settings.damping=component['damping']*50;settings.bend=1.;settings.use_self_collision=False
