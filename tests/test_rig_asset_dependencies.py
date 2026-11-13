@@ -25,7 +25,7 @@ class NativeDependencyTests(unittest.TestCase):
         self.graph=DependencyGraph({'local':self.library})
         self.template=json.loads((ROOT/'examples/asset-library-foundation/manifest.json').read_text())
 
-    def register(self,name,scale=1.,*,morph=True):
+    def register(self,name,scale=1.,*,morph=True,morph_scale=1.,morph_default=0.,unit_scale=1.):
         rig=fixture(self.root,name=name)
         specs=[dict(id='b'+str(i),role='b'+str(i),parent='b'+str(i-1) if i else None,
                     head=[0,i*scale,0],tail=[0,(i+1)*scale,0],deform=True) for i in range(3)]
@@ -34,6 +34,11 @@ class NativeDependencyTests(unittest.TestCase):
         if not morph:
             for mesh in rig.geometry.meshes:mesh.morphs={};mesh.morph_defaults={}
             rig.manifest['facial']['expressions']={}
+        else:
+            for mesh in rig.geometry.meshes:
+                for target,attributes in mesh.morphs.items():
+                    for semantic,values in attributes.items():attributes[semantic]=values*morph_scale
+                    mesh.morph_defaults[target]=morph_default
         # Existing clips bind names; rest-shape differences must still reject.
         save_rig(rig,operation='compatibility-test')
         source=self.root/(name+'-export.glb');export_gltf(rig,source)
@@ -43,6 +48,7 @@ class NativeDependencyTests(unittest.TestCase):
         doc['files']=files;doc['publication']['inventory']=[f['path'] for f in files]
         doc['provenance']['sources']=[files[0]];doc['provenance']['license_evidence']=[files[1]]
         doc['compatibility']['formats']=['glb']
+        doc['compatibility']['unit_scale']=unit_scale
         ref=self.library.register(seal(doc),{'runtime/model.glb':source,'source/license.txt':license_path})
         return locator('local',ref)
 
@@ -62,6 +68,29 @@ class NativeDependencyTests(unittest.TestCase):
         self.assertFalse(result['compatible'])
         okay=check_compatibility(self.graph,first,{'skin_sha256':expected['skin_sha256'],'root_motion':expected['root_motion']},native_path='runtime/model.glb')
         self.assertTrue(okay['compatible']);self.assertFalse(okay['renderer_execution_verified'])
+
+    def test_same_named_morphs_bind_actual_deltas_and_default_weights(self):
+        first=self.register('first')
+        expected=native_signature(self.graph,first,'runtime/model.glb')
+        for name,options in [('changed-deltas',dict(morph_scale=5.)),
+                             ('changed-default',dict(morph_default=.25))]:
+            changed=self.register(name,**options)
+            actual=native_signature(self.graph,changed,'runtime/model.glb')
+            self.assertNotEqual(expected['morph_sha256'],actual['morph_sha256'])
+            result=check_compatibility(self.graph,changed,
+                {'morph_sha256':expected['morph_sha256']},native_path='runtime/model.glb')
+            self.assertFalse(result['compatible'])
+
+    def test_native_requirements_do_not_override_declared_source_units(self):
+        source=self.register('centimeters',unit_scale=.01)
+        expected=native_signature(self.graph,source,'runtime/model.glb')
+        for requirements in [{'unit_scale':1.},
+                             {'unit_scale':1.,'morph_sha256':expected['morph_sha256']}]:
+            result=check_compatibility(self.graph,source,requirements,
+                                       native_path='runtime/model.glb')
+            self.assertFalse(result['compatible'])
+            self.assertEqual(result['mismatches'][0]['field'],'unit_scale')
+            self.assertEqual(result['mismatches'][0]['actual'],.01)
 
 
 class UnitConversionTests(unittest.TestCase):

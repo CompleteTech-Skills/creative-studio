@@ -7,6 +7,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from asset_library import AssetLibrary
 from asset_library_contracts import seal
@@ -129,6 +130,22 @@ class ReplacementRegressionTests(unittest.TestCase):
     setUp=DependencyTests.setUp
     publish=DependencyTests.publish
     at=DependencyTests.at
+    def test_internal_replacement_snapshot_resolves_temporary_root_alias(self):
+        actual=self.root/'temporary-root';actual.mkdir()
+        alias=self.root/'temporary-alias'
+        try:alias.symlink_to(actual,target_is_directory=True)
+        except OSError as exc:self.skipTest('Directory symlinks unavailable: '+str(exc))
+        old=self.publish('mesh');new=self.publish('mesh',version='2.0.0')
+        consumer=self.publish('character',[(old,'body',True)])
+        plan=replacement_plan(self.graph,self.at(old),self.at(new),
+            consumers=[dict(asset=self.at(consumer),purposes=['body'])])
+        temporary_directory=tempfile.TemporaryDirectory
+        with patch('asset_library_dependencies.tempfile.TemporaryDirectory',
+                   side_effect=lambda **options:temporary_directory(dir=alias,**options)):
+            result=apply_replacement(self.graph,plan,versions={'character':'2.0.0'})
+        current=result['published'][0]['current']['reference']
+        self.assertEqual(self.library.resolve(current)['dependencies'][0]['target'],new)
+
     def test_new_transitive_version_conflict_never_publishes(self):
         old=self.publish('mesh');new=self.publish('mesh',version='2.0.0')
         material=self.publish('material',[(old,'base-mesh',True)])
