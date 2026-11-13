@@ -248,13 +248,20 @@ def _state(fd,plan):
     required={'schema_version','kind','job','phase','attempts','runs','cached_created','cached_reused','progress','error','receipt','artifact','elapsed_seconds'}
     if not isinstance(state,dict) or set(state)!=required or state.get('schema_version')!=1 or state.get('kind')!='silent-video-job-state' or state.get('job')!=plan['id']:
         raise ValueError('invalid job checkpoint identity')
-    if state['phase'] not in STATES:raise ValueError('invalid job checkpoint phase')
+    if not isinstance(state['phase'],str) or state['phase'] not in STATES:raise ValueError('invalid job checkpoint phase')
     for key,maximum in [('attempts',3),('runs',8),('cached_created',media.MAX_FRAMES),('cached_reused',media.MAX_FRAMES)]:
         if type(state[key]) is not int or not 0<=state[key]<=maximum:raise ValueError('job checkpoint counters out of bounds')
     if not isinstance(state['progress'],dict) or state['error'] is not None and (not isinstance(state['error'],str) or len(state['error'])>4096):
         raise ValueError('invalid job checkpoint diagnostic')
     if state['receipt'] is not None and not isinstance(state['receipt'],dict) or state['artifact'] is not None and not isinstance(state['artifact'],dict):
         raise ValueError('invalid job artifact checkpoint')
+    receipt_schema=media._obj({'sha256':media.SHA,'bytes':media._int(1,MAX_RECEIPT_BYTES)})
+    artifact_schema=media._obj({'sha256':media.SHA,'bytes':media._int(1,plan['request']['limits']['max_output_bytes']),
+                               'path':{'const':'video'+media.PROFILES[plan['request']['profile']]['extension']}})
+    if state['receipt'] is not None:media._structural(state['receipt'],receipt_schema,'job receipt checkpoint')
+    if state['artifact'] is not None:media._structural(state['artifact'],artifact_schema,'job artifact checkpoint')
+    if state['phase']=='completed' and (state['receipt'] is None or state['artifact'] is None):
+        raise ValueError('completed job checkpoint requires immutable artifact and receipt references')
     if type(state['elapsed_seconds']) not in (int,float) or not 0<=state['elapsed_seconds']<=86400:raise ValueError('invalid job elapsed time')
     _bytes(state,MAX_STATE_BYTES)
     return state

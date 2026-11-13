@@ -117,6 +117,18 @@ class JobFixtures(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'stale'):jobs.run(self.root/'job')
         self.assertEqual(jobs.status(self.root/'job')['state']['runs'],0)
 
+    def test_malformed_checkpoint_references_fail_before_artifact_access(self):
+        self.create()
+        path=self.root/'job/state.json';original=json.loads(path.read_text())
+        cases=[{'phase':[]},{'phase':'completed'},
+               {'artifact':{}},{'receipt':{'bytes':1,'sha256':'bad'}},
+               {'artifact':{'path':'../foreign','bytes':1,'sha256':'0'*64}}]
+        for change in cases:
+            with self.subTest(change=change):
+                path.write_text(json.dumps({**original,**change}))
+                with self.assertRaises(ValueError):jobs.status(self.root/'job')
+        self.assertFalse((self.root/'job-delivery').exists())
+
     def test_hidden_worker_cannot_signal_an_unowned_process_group(self):
         result=subprocess.run([sys.executable,str(Path(jobs.__file__)),'_worker'],capture_output=True,text=True,timeout=5)
         self.assertEqual(result.returncode,2);self.assertIn('owned session',result.stderr)
