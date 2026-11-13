@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/cinematics3d-graph-v1",
+  "$defs": {
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "cinematics3d-graph"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "registry_version": {
+          "const": "1.0.0"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fixture": {
+              "type": "boolean"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "fixture",
+            "description"
+          ]
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "operation": {
+                "enum": [
+                  "input",
+                  "effect",
+                  "output"
+                ]
+              },
+              "effect": {
+                "anyOf": [
+                  {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/reference"
+                      },
+                      {
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "cinematics3d-effect"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+                    },
+                    "type": {
+                      "enum": [
+                        "rgba",
+                        "scalar",
+                        "depth",
+                        "vector",
+                        "cryptomatte"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type"
+                  ]
+                },
+                "minItems": 0,
+                "maxItems": 16
+              },
+              "outputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+                    },
+                    "type": {
+                      "enum": [
+                        "rgba",
+                        "scalar",
+                        "depth",
+                        "vector",
+                        "cryptomatte"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "type"
+                  ]
+                },
+                "minItems": 0,
+                "maxItems": 16
+              }
+            },
+            "required": [
+              "id",
+              "operation",
+              "effect",
+              "inputs",
+              "outputs"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "source_port": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "target_port": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              }
+            },
+            "required": [
+              "source",
+              "source_port",
+              "target",
+              "target_port"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 2048
+        },
+        "color": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "working_space": {
+              "const": "scene-linear-srgb"
+            },
+            "alpha": {
+              "enum": [
+                "straight",
+                "premultiplied"
+              ]
+            },
+            "display_space": {
+              "enum": [
+                "srgb",
+                "rec709",
+                "rec2020-pq"
+              ]
+            }
+          },
+          "required": [
+            "working_space",
+            "alpha",
+            "display_space"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "registry_version",
+        "metadata",
+        "nodes",
+        "edges",
+        "color"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/) )(?!.*[\\\\:\\x00-\\x1f*?\"<>|])(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|(?![\\s\\S])))(?!.*[. ](?:/|(?![\\s\\S])))(?!(?:[^/]+/)*(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[cC][oO][mM][1-9\u00b9\u00b2\u00b3]|[lL][pP][tT][1-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/]+(?:/[^/]+)*(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    }
+  },
+  "$ref": "#/$defs/graph",
+  "title": "Cinematic graph authoring contract v1",
+  "description": "Structural contract only. Runtime verifies references, cycles, units and policies; no effect execution is claimed."
+}
