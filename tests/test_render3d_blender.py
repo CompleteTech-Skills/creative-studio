@@ -22,6 +22,14 @@ class Supervision(unittest.TestCase):
         return _supervise([sys.executable,'-c',code],cwd=root,timeout=10,
                           memory_bytes=1024**3,storage_bytes=16*1024**2,**overrides)
 
+    def test_child_numeric_libraries_keep_single_thread_budget(self):
+        from unittest.mock import patch
+        names=('OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS')
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.dict(os.environ,{name:'8' for name in names}):
+                payload,_=self.run_child("import os,json;print(json.dumps({k:os.environ[k] for k in "+repr(names)+"}))",Path(temporary))
+            self.assertEqual(json.loads(payload),{name:'1' for name in names})
+
     def test_success_and_bounded_real_child_log(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)
@@ -82,8 +90,15 @@ class Supervision(unittest.TestCase):
                                 'A descendant-held stdout pipe must not stall completed workers')
                 pid=int(pid_path.read_text())
                 status=Path('/proc',str(pid),'stat')
-                # A killed orphan can briefly remain a zombie pending reaping.
-                if status.exists():self.assertEqual(status.read_text().split()[2],'Z')
+                # Pipe closure can precede the kernel's final zombie state.
+                # Require actual exit within a bounded deadline, never a live R/S task.
+                deadline=time.monotonic()+3
+                while True:
+                    try:state=status.read_text().split()[2]
+                    except FileNotFoundError:break
+                    if state=='Z':break
+                    self.assertLess(time.monotonic(),deadline,'Owned descendant remained live: '+state)
+                    time.sleep(.01)
             finally:
                 if pid_path.exists():
                     try:os.kill(int(pid_path.read_text()),signal.SIGKILL)
@@ -177,6 +192,43 @@ class ResourceAdmission(unittest.TestCase):
             self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
             self.assertFalse((root/'output').exists())
 
+    def test_large_native_derivative_rejects_before_stage_overshoot(self):
+        from unittest.mock import patch
+        import numpy as np
+        import rig_test_helpers as helpers
+        import render3d_blender as module
+        from rig_geometry import Geometry,Mesh
+        from render3d_snapshot import create_snapshot,NativeRigAdapter
+        from test_render3d_contracts import request,file
+        def repeated_geometry():
+            count=2000
+            positions=np.tile(np.array([[.1,0,0],[-.1,0,0],[.1,2,0],[-.1,2,0.]]),(count,1))
+            triangles=np.concatenate([np.array([[0,1,2],[1,3,2]])+4*i for i in range(count)])
+            return Geometry([Mesh('strip',positions,triangles)],[dict(name='fixture')])
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'native').mkdir()
+            with patch.object(helpers,'test_geometry',repeated_geometry):rig=helpers.fixture(root/'native',animated=False)
+            snapshot=create_snapshot(rig.root,root/'snapshot',NativeRigAdapter())
+            spec=request();spec['camera']='front';spec['frame_range']=dict(start=0,end=1)
+            spec['settings']['resolution']=[64,64]
+            spec['snapshot']=file(payload=(root/'snapshot/snapshot.json').read_bytes())
+            budget=2*snapshot['total_bytes']+spec['snapshot']['bytes']+64*64*16
+            spec['settings']['resources']['storage_bytes']=budget
+            observed=[];check=module._check_storage
+            def tracked(stage,*args,**kwargs):
+                observed.append(sum(path.stat().st_size for path in Path(stage).rglob('*') if path.is_file()))
+                return check(stage,*args,**kwargs)
+            backend=object.__new__(module.BlenderBackend)
+            with patch.object(module,'_check_storage',side_effect=tracked):
+                with self.assertRaises(Render3DError) as caught:backend.render_frames(spec,root/'snapshot',root/'output')
+            self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+            self.assertTrue(observed)
+            self.assertLessEqual(max(observed),budget)
+            stage=Path(caught.exception.report['path'])
+            self.assertFalse((stage/'source/asset-0.glb').exists())
+            self.assertLessEqual(sum(path.stat().st_size for path in stage.rglob('*') if path.is_file()),budget)
+            self.assertFalse((root/'output').exists())
+
     def test_prepared_asset_cannot_continue_after_storage_exhaustion(self):
         from rig_test_helpers import fixture
         from render3d_blender import _prepare_asset
@@ -187,7 +239,30 @@ class ResourceAdmission(unittest.TestCase):
             with self.assertRaises(Render3DError) as caught:
                 _prepare_asset(rig.root,{},workspace,0,native=True,storage_bytes=64)
             self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
-            self.assertTrue((workspace/'asset-0.glb').is_file())
+            self.assertFalse((workspace/'asset-0.glb').exists())
+
+
+class CanonicalExportBudget(unittest.TestCase):
+    def test_owner_exports_admit_exact_payload_and_preserve_existing_targets(self):
+        from rig_test_helpers import fixture
+        from rig_gltf import export_geometry,export_gltf
+        from rig_errors import RigError
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'native').mkdir()
+            rig=fixture(root/'native',animated=False)
+            for suffix in ('glb','gltf'):
+                for name,exporter in [('geometry',lambda path,**options:export_geometry(rig.geometry,path,**options)),
+                                      ('rig',lambda path,**options:export_gltf(rig,path,**options))]:
+                    with self.subTest(format=suffix,owner=name):
+                        baseline=root/f'{name}-baseline.{suffix}';exporter(baseline)
+                        payload=baseline.read_bytes();target=root/f'{name}-bounded.{suffix}'
+                        exporter(target,max_bytes=len(payload))
+                        self.assertEqual(target.read_bytes(),payload)
+                        target.write_bytes(b'caller-owned bytes')
+                        with self.assertRaises(RigError) as error:exporter(target,max_bytes=len(payload)-1)
+                        self.assertEqual(error.exception.report['code'],'RIG_EXPORT_STORAGE')
+                        self.assertEqual(target.read_bytes(),b'caller-owned bytes')
+                        self.assertFalse(any(path.name.startswith('.'+target.name+'-') for path in root.iterdir()))
 
 
 @unittest.skipUnless(hasattr(os,'mkfifo'),'FIFO boundary tests require POSIX')
