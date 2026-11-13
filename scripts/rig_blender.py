@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import stat
 import numpy as np
 from rig_contracts import validate_contract
 from rig_errors import RigError, atomic_json, read_json, require, sha256
@@ -28,16 +29,49 @@ def _run(job,*,executable=None,timeout=300):
         report=read_json(job['report']);report['command']=[blender,*command[1:-1],'<job.json>'];return report
 
 
+
+def _new_output(path, code):
+    path = Path(path).absolute()
+    require(not any(parent.is_symlink() for parent in (path, *path.parents)),
+            'RIG_SYMLINK', 'Export destinations must not traverse symbolic links.')
+    require(not path.exists(), code, 'Use a new export destination.', preserved=str(path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path.parent.resolve() / path.name
+
+
+def _publish_outputs(outputs):
+    """Commit already verified files exclusively; the primary file goes last."""
+    from atomic_publish import _rename_no_replace
+    published = []
+    try:
+        for source, destination in outputs:
+            _rename_no_replace(source, destination)
+            identity = destination.lstat()
+            published.append((destination, identity.st_dev, identity.st_ino))
+    except OSError as exc:
+        # Remove only our own already-published sidecar, never a racing writer.
+        for path, device, inode in reversed(published):
+            try:
+                current = path.lstat()
+                if stat.S_ISREG(current.st_mode) and (current.st_dev, current.st_ino) == (device, inode):
+                    path.unlink()
+            except FileNotFoundError:
+                pass
+        raise RigError('RIG_EXPORT_PUBLICATION', 'Export destination changed or exclusive publication is unavailable.',
+                       preserved=str(destination), observed=str(exc)) from exc
+
+
 def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
     from rig_gltf import export_gltf
     from rig_animation import evaluate_animation
     from rig_skinning import evaluate_deformation
     from rig_attachments import socket_world
     from rig_skeleton import neutral_pose
-    destination=Path(destination).absolute();destination.parent.mkdir(parents=True,exist_ok=True)
+    destination=_new_output(destination,'RIG_EXPORT_EXISTS')
+    final_roundtrip=_new_output(destination.with_suffix('.roundtrip.glb'),'RIG_EXPORT_EXISTS') if verify else None
     timeout=timeout or rig.manifest['limits']['timeout_seconds']
-    with tempfile.TemporaryDirectory(prefix='hatch-blender-export-') as temporary:
-        root=Path(temporary);source=root/'character.glb';export_gltf(rig,source)
+    with tempfile.TemporaryDirectory(prefix='.hatch-blender-export-',dir=destination.parent) as temporary:
+        root=Path(temporary);staged=root/'editable.blend';source=root/'character.glb';export_gltf(rig,source)
         atomic_json(root/'rig.json',rig.manifest)
         samples=[];indices={m.id:np.linspace(0,len(m.positions)-1,min(24,len(m.positions)),dtype=int).tolist() for m in rig.geometry.meshes}
         for name,clip in rig.clips.items():
@@ -47,12 +81,12 @@ def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
                           sockets=[s['id'] for s in rig.manifest['attachments']])]
         socket_rest={s['id']:socket_world(rig,neutral_pose(rig.skeleton),s['id']).tolist() for s in rig.manifest['attachments']}
         base=dict(fps=24,duration=max((c['duration'] for c in rig.clips.values()),default=2.),samples=samples,socket_rest=socket_rest)
-        report=_run(dict(base,mode='create',input=str(source),manifest=str(root/'rig.json'),output=str(destination),report=str(root/'create-report.json')),
+        report=_run(dict(base,mode='create',input=str(source),manifest=str(root/'rig.json'),output=str(staged),report=str(root/'create-report.json')),
                     executable=executable,timeout=timeout)
         require(report['ok'],'RIG_BLENDER_EDITABLE','Blender output lacks armature, skin modifier or weights.')
         if verify:
-            exported=destination.with_suffix('.roundtrip.glb')
-            report=_run(dict(base,mode='reopen',input=str(destination),export=str(exported),report=str(root/'reopen-report.json')),
+            exported=root/'roundtrip.glb'
+            report=_run(dict(base,mode='reopen',input=str(staged),export=str(exported),report=str(root/'reopen-report.json')),
                         executable=executable,timeout=timeout)
             maximum=0.;joint_max=0.;socket_max=0.;compared=0
             require(len(report['samples']) == len(samples),'RIG_BLENDER_SAMPLES','Independent Blender sample inventory is incomplete.')
@@ -71,12 +105,16 @@ def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
                     socket_max=max(socket_max,float(np.max(np.abs(socket_world(rig,pose,name)-np.asarray(matrix)))))
             require(compared>0,'RIG_BLENDER_SAMPLES','Independent Blender mesh samples are missing.')
             report.update(max_vertex_error_m=maximum,max_joint_error_m=joint_max,compared_vertices=compared,
-                          max_socket_transform_error=socket_max,tolerance_m=.01,roundtrip_path=str(exported),roundtrip_sha256=sha256(exported))
+                          max_socket_transform_error=socket_max,tolerance_m=.01,roundtrip_path=str(final_roundtrip),roundtrip_sha256=sha256(exported))
             report['ok']=report['ok'] and maximum<=.01 and joint_max<=.01 and socket_max<=.01
         from rig_models import rig_signature
-        report.update(schema_version=1,format='blend',path=str(destination),sha256=sha256(destination),independent=True,reader='Blender',reopened=verify,
+        report.update(schema_version=1,format='blend',path=str(destination),sha256=sha256(staged),independent=True,reader='Blender',reopened=verify,
                       rig_sha256=rig_signature(rig.manifest),source_glb_sha256=sha256(source))
-        return validate_contract(report, 'RigExportReceipt')
+        validate_contract(report, 'RigExportReceipt')
+        require(report['ok'],'RIG_BLENDER_VERIFICATION','Independent Blender samples differ from the native rig; output was not published.')
+        publications=([(exported,final_roundtrip)] if verify else [])+[(staged,destination)]
+        _publish_outputs(publications)
+        return report
 
 
 def import_blend(path,*,scale=1.,limits=None,executable=None):
@@ -109,13 +147,13 @@ def render_blender_preview(rig,destination,*,clip=None,times=None,pose=None,blen
     times=[0.] if times is None else list(times)
     require(0<len(times)<=120 and all(math.isfinite(t) and t>=0 for t in times),
             'RIG_RENDER_BUDGET','A preview needs 1 to 120 finite nonnegative sample times.')
-    target=Path(destination).absolute()
-    require(not target.exists(),'RIG_RENDER_EXISTS','Use a new Blender preview destination.')
+    target=_new_output(destination,'RIG_RENDER_EXISTS')
     require(len(times)==1 or target.suffix.lower()!='.png','RIG_RENDER_DESTINATION','Use a folder for multiple frames.')
-    if len(times)==1 and target.suffix.lower()=='.png':target.parent.mkdir(parents=True,exist_ok=True);outputs=[target]
-    else:target.mkdir(parents=True);outputs=[target/f'frame-{i:04d}.png' for i in range(len(times))]
-    with tempfile.TemporaryDirectory(prefix='hatch-blender-render-') as temporary:
-        root=Path(temporary);working=rig
+    single_file=len(times)==1 and target.suffix.lower()=='.png'
+    outputs=[target] if single_file else [target/f'frame-{i:04d}.png' for i in range(len(times))]
+    with tempfile.TemporaryDirectory(prefix='.hatch-blender-render-',dir=target.parent) as temporary:
+        root=Path(temporary);staged=root/'frames';staged.mkdir()
+        staged_outputs=[staged/p.name for p in outputs];working=rig
         if pose is not None or clip is None:
             require(blend_path is None,'RIG_RENDER_POSE','Explicit poses require a fresh derived Blender scene.')
             working=deepcopy(rig);pose=pose or neutral_pose(rig.skeleton)
@@ -125,14 +163,25 @@ def render_blender_preview(rig,destination,*,clip=None,times=None,pose=None,blen
         if blend_path is None:
             blend_path=root/'render.blend';export_blender(working,blend_path,executable=executable,verify=False)
         blend_path=Path(blend_path).absolute();require(blend_path.is_file(),'RIG_BLENDER_INPUT','Saved Blender project is missing.')
-        requests=[dict(time=float(t),path=str(p)) for t,p in zip(times,outputs)]
+        requests=[dict(time=float(t),path=str(p)) for t,p in zip(times,staged_outputs)]
         report=_run(dict(mode='render',input=str(blend_path),clip=clip,frames=requests,width=width,height=height,camera=camera,
                          report=str(root/'report.json'),samples=[]),executable=executable,timeout=rig.manifest['limits']['timeout_seconds'])
-        require(all(p.is_file() and p.stat().st_size>100 for p in outputs),'RIG_RENDER_OUTPUT','Blender did not create every requested PNG.')
+        require(all(p.is_file() and not p.is_symlink() and p.stat().st_size>100 for p in staged_outputs),'RIG_RENDER_OUTPUT','Blender did not create every requested PNG.')
+        from PIL import Image
+        for path in staged_outputs:
+            try:
+                with Image.open(path) as frame:
+                    frame.load()
+                    require(frame.format=='PNG' and frame.size==(width,height) and frame.mode=='RGBA',
+                            'RIG_RENDER_OUTPUT','Blender output must be a decodable RGBA PNG at the requested dimensions.')
+            except (OSError, ValueError) as exc:
+                if isinstance(exc,RigError):raise
+                raise RigError('RIG_RENDER_OUTPUT','Blender output is not a complete decodable PNG.') from exc
         result=dict(schema_version=1,blender_version=report['blender_version'],engine='Cycles CPU',samples=16,
                     rig_sha256=rig_signature(rig.manifest),source_sha256=rig.manifest['source']['sha256'],
                     blend_sha256=sha256(blend_path),fixture=rig.manifest['source']['fixture'],clip=clip,camera=camera,
                     width=width,height=height,transparent=True,review_status='pending',
-                    frames=[dict(path=str(p),time=float(t),sha256=sha256(p)) for t,p in zip(times,outputs)])
-        if target.is_dir():atomic_json(target/'frames.json',result)
+                    frames=[dict(path=str(p),time=float(t),sha256=sha256(source)) for t,p,source in zip(times,outputs,staged_outputs)])
+        if not single_file:atomic_json(staged/'frames.json',result)
+        _publish_outputs([(staged_outputs[0],target)] if single_file else [(staged,target)])
         return result

@@ -131,3 +131,54 @@ class RigExternalIntegrationTests(unittest.TestCase):
         from rig_browser import verify_browser
         path=Path(self.temp.name)/'viewer';create_review_ui(self.rig,path);report=verify_browser(self.rig,path)
         self.assertTrue(report['ok']);self.assertTrue(report['ui_playback']);self.assertTrue(report['ui_weights'])
+
+
+class RigBlenderPublicationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name);self.rig=fixture(self.root)
+
+    def test_existing_export_and_sidecar_are_preserved_before_worker(self):
+        from unittest.mock import patch
+        from rig_blender import export_blender
+        target=self.root/'existing.blend';target.write_bytes(b'user blend')
+        with patch('rig_blender._run') as worker:
+            with self.assertRaises(RigError):export_blender(self.rig,target)
+            worker.assert_not_called()
+        self.assertEqual(target.read_bytes(),b'user blend')
+        target.unlink();sidecar=target.with_suffix('.roundtrip.glb');sidecar.write_bytes(b'user glb')
+        with patch('rig_blender._run') as worker:
+            with self.assertRaises(RigError):export_blender(self.rig,target)
+            worker.assert_not_called()
+        self.assertEqual(sidecar.read_bytes(),b'user glb');self.assertFalse(target.exists())
+
+    def test_racing_main_preserves_writer_and_rolls_back_only_owned_sidecar(self):
+        from rig_blender import _publish_outputs
+        a=self.root/'stage-glb';b=self.root/'stage-blend'
+        a.write_bytes(b'verified glb');b.write_bytes(b'verified blend')
+        sidecar=self.root/'out.roundtrip.glb';target=self.root/'out.blend'
+        target.mkdir()
+        with self.assertRaises(RigError):_publish_outputs([(a,sidecar),(b,target)])
+        self.assertTrue(target.is_dir());self.assertEqual(list(target.iterdir()),[])
+        self.assertFalse(sidecar.exists());self.assertEqual(b.read_bytes(),b'verified blend')
+
+    def test_worker_failure_and_invalid_clip_do_not_create_preview_destination(self):
+        from unittest.mock import patch
+        from rig_blender import render_blender_preview
+        target=self.root/'preview'
+        with self.assertRaises(RigError):render_blender_preview(self.rig,target,clip='missing')
+        self.assertFalse(target.exists())
+        with patch('rig_blender.export_blender',side_effect=RigError('TEST_FAILURE','Injected worker failure.')):
+            with self.assertRaises(RigError):render_blender_preview(self.rig,target,clip='bend')
+        self.assertFalse(target.exists());self.assertEqual(list(self.root.glob('.hatch-blender-render-*')),[])
+
+    def test_symlink_output_does_not_touch_referent(self):
+        from rig_blender import export_blender
+        real=self.root/'real.blend';real.write_bytes(b'preserved')
+        link=self.root/'link.blend'
+        try:link.symlink_to(real)
+        except OSError as exc:
+            if getattr(exc,'winerror',None)==1314:self.skipTest('Symlink privilege unavailable.')
+            raise
+        with self.assertRaises(RigError):export_blender(self.rig,link)
+        self.assertEqual(real.read_bytes(),b'preserved');self.assertTrue(link.is_symlink())
