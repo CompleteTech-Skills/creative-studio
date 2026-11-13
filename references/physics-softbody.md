@@ -34,7 +34,7 @@ arbitrary intermediate state is not implemented. Published files use exclusive
 no-replace promotion, and every cache inventories all required native bytes. Simulation and reopen use separate immutable trusted jobs. Disk caching is enabled after saving the native project so Blender retains the setting.
 
 A static verification report establishes exact-byte/source consistency and
-checks recorded native observations, source geometry, native jobs, Blend containers and decoded diagnostic PNGs. Cache inspection and metrics use the exact verified byte snapshot. Worker bytes are bound to this installed adapter version. It is not a signed provenance service or
+checks recorded native observations, source geometry, native jobs, Blend containers and decoded diagnostic PNGs. Cache inspection and metrics use the exact verified byte snapshot. Retained-world cache, temporary-copy and per-file limits are checked before native payloads are retained; the manifest counts toward those limits. The world and manifest bootstrap reads also have fixed document limits. Worker bytes are bound to this installed adapter version. It is not a signed provenance service or
 a fresh solver execution. `probe` without `--smoke` reports discovery separately
 from actual solver readiness. The adapter exposes soft-body capability probes, resource estimates, cache validation and evaluated-mesh inspection; transform-only animation export is unsupported.
 
@@ -50,3 +50,5 @@ The matched stiffness-0.7 control deforms less but continues bouncing at frame 9
 it is not labeled settled. Reducing damping from 0.2 to 0.05 at stiffness 0.7
 increases the measured tail vertex step (about 0.118 to 0.163 m). These are
 pinned-environment comparisons, not universal material calibrations. An earlier goal-pin control was invalid: zero native default goal weight disabled every pin while global goal friction slowed freefall. That failed evidence is retained, not accepted as pin proof. The corrected mapper uses default weight1, explicit selected vertex weights and zero goal friction; selected and unselected vertex motion must be distinguished by real native tests. Pins remain approximate solver goals rather than hard positional locks.
+
+The default 100-frame soft control retains about 0.0132 m of maximum per-vertex motion between its final output frames. This is a decaying bounded impact response; physical rest requires a separately declared velocity and duration tolerance. The stiffness and lower-damping controls remain in motion at frame 99.

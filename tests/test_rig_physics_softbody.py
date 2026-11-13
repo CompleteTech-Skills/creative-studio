@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from physics_backends import BackendError,canonical,parse,digest,_run_process,_inventory
-from physics_softbody import SoftBodyBackend,admit,_component_meshes,verify_cache,_validate_output,metrics
+from physics_softbody import SoftBodyBackend,admit,_component_meshes,verify_cache,_validate_output,metrics,_read_verified_cache,_Reader
 from physics_softbody_example import build_softbody_inputs
 
 
@@ -106,6 +106,32 @@ class SoftBodyAdmissionTests(unittest.TestCase):
                 with self.assertRaises(BackendError):backend.simulate(prepared)
                 worker.assert_not_called()
         finally:backend.cleanup(prepared)
+
+    def test_retained_storage_limits_reject_before_native_payload_reads(self):
+        # These are real cache files: no mocked cache bytes or solver output.
+        original_read=_Reader.read
+        for boundary in ('cache_bytes','temporary_bytes','bake_file_bytes'):
+            with self.subTest(boundary=boundary),tempfile.TemporaryDirectory() as name:
+                root=Path(name);world,_=build_softbody_inputs()
+                world['budgets'][boundary]=10000
+                (root/'world.json').write_bytes(canonical(world))
+                for i in range(80):
+                    (root/('native-'+str(i)+'x'*100)).write_bytes(b'native')
+                files=_inventory(root)
+                manifest=dict(schema_version=1,kind='hatch-softbody-cache',world_sha256=digest(canonical(world)),
+                    files=files,backend=dict(id='blender',adapter_version='1.0.0',application_version='Blender 4.5.3 LTS',
+                    solver_name='test',solver_version='test',executable_sha256='0'*64,platform='test',precision='mixed',device='cpu'),
+                    fixture=True,review_status='unreviewed',usage=dict(elapsed_seconds=0,peak_memory_bytes=0,
+                    output_bytes=sum(f['bytes'] for f in files),solver_steps=0))
+                (root/'cache.json').write_bytes(canonical(manifest))
+                reads=[]
+                def observed(reader,path,*args):
+                    reads.append(path)
+                    return original_read(reader,path,*args)
+                with patch.object(_Reader,'read',observed):
+                    with self.assertRaises(BackendError) as error:_read_verified_cache(root)
+                self.assertEqual(error.exception.report['code'],'PHYSICS_RESOURCE_LIMIT')
+                self.assertEqual(reads,['cache.json','world.json'])
 
     def test_metrics_preserve_verified_fixture_provenance(self):
         world,_=build_softbody_inputs();world['id']='custom-world'

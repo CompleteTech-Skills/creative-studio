@@ -290,21 +290,38 @@ def _validate_output(root,world,payloads=None):
 def _read_verified_cache(root,*,expected_world_sha256=None):
     root=Path(root)
     with _Reader(root) as reader:
-        manifest=parse(reader.read('cache.json'));validate_manifest(manifest)
+        manifest_bytes=reader.read('cache.json',MAX_DOCUMENT_BYTES)
+        manifest=parse(manifest_bytes);validate_manifest(manifest)
         require(manifest.get('schema_version')==1 and manifest.get('kind')=='hatch-softbody-cache','PHYSICS_CACHE_CORRUPT','Unsupported soft-body cache')
         require(expected_world_sha256 is None or manifest['world_sha256']==expected_world_sha256,'PHYSICS_STALE_CACHE','Cache belongs to another world')
         files=manifest.get('files');require(type(files) is list and len(files)<=256,'PHYSICS_CACHE_CORRUPT','Invalid cache inventory')
         paths=[r['path'] for r in files];_paths(paths)
         require(len(paths)==len(set(paths)) and set(paths)==reader.names()-{'cache.json'},
             'PHYSICS_CACHE_CORRUPT','Cache file inventory differs')
-        payloads={};total=0
-        for record in files:
-            require(record['bytes']<=MAX_CACHE_BYTES-total,'PHYSICS_RESOURCE_LIMIT','Aggregate cache byte bound exceeded')
-            payload=reader.read(record['path'],record['bytes']);total+=len(payload);payloads[record['path']]=payload;require(len(payload)==record['bytes'] and digest(payload)==record['sha256'],'PHYSICS_CACHE_CORRUPT','Changed cache bytes')
-        world=admit(parse(payloads['world.json']))
-        require(total==manifest['usage']['output_bytes'] and total<=min(world['budgets']['cache_bytes'],world['budgets']['bake_file_bytes']),
-                'PHYSICS_CACHE_CORRUPT','Cache usage and byte budgets differ from retained files')
+        # Admit the retained world before retaining native payloads. Both the
+        # private verification copy and the published cache include the manifest.
+        records={record['path']:record for record in files}
+        require('world.json' in records,'PHYSICS_CACHE_CORRUPT','Missing retained world')
+        world_record=records['world.json']
+        require(world_record['bytes']<=MAX_DOCUMENT_BYTES,'PHYSICS_RESOURCE_LIMIT','Retained world document exceeds limit')
+        world_bytes=reader.read('world.json',int(world_record['bytes']))
+        require(len(world_bytes)==world_record['bytes'] and digest(world_bytes)==world_record['sha256'],
+                'PHYSICS_CACHE_CORRUPT','Changed retained world bytes')
+        world=admit(parse(world_bytes));budget=world['budgets']
         require(digest(canonical(world))==manifest['world_sha256'],'PHYSICS_CACHE_CORRUPT','Changed world hash')
+        declared=sum(record['bytes'] for record in files)
+        retained=declared+len(manifest_bytes)
+        require(declared==manifest['usage']['output_bytes'] and retained<=min(MAX_CACHE_BYTES,budget['cache_bytes'],budget['temporary_bytes']),
+                'PHYSICS_RESOURCE_LIMIT','Retained cache and verification copy exceed byte budgets')
+        require(len(manifest_bytes)<=budget['bake_file_bytes'] and all(record['bytes']<=budget['bake_file_bytes'] for record in files),
+                'PHYSICS_RESOURCE_LIMIT','Retained cache file exceeds per-file budget')
+        payloads={'world.json':world_bytes};total=len(world_bytes)
+        for record in files:
+            if record['path']=='world.json':continue
+            payload=reader.read(record['path'],int(record['bytes']));total+=len(payload);payloads[record['path']]=payload
+            require(len(payload)==record['bytes'] and digest(payload)==record['sha256'],'PHYSICS_CACHE_CORRUPT','Changed cache bytes')
+        require(total==declared and set(paths)==reader.names()-{'cache.json'},
+                'PHYSICS_CACHE_CORRUPT','Cache inventory changed during verification')
         required={'world.json','worker.py','softbody-job.json','softbody-reopen-job.json','softbody.blend','deformation.json',
                   'simulate-report.json','reopen-report.json','initial.png','impact.png','final.png'}
         require(required<=set(paths),'PHYSICS_CACHE_CORRUPT','Missing required native soft-body artifacts')
