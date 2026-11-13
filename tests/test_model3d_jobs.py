@@ -1,0 +1,190 @@
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from unittest.mock import patch
+import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
+import model3d_jobs as jobs
+from model3d_job_cli import native_primitive
+from rig_errors import RigError, atomic_json, read_json, sha256
+
+
+class JobsTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name); self.job = self.root/'job'
+        self.request = dict(engine='test', parameters={})
+
+    def create(self, **kwargs):
+        return jobs.create_job(self.job, self.request, **kwargs)
+
+    def handler(self, context):
+        context.check(); (context.output/'mesh.bin').write_bytes(b'actual-output')
+
+    def test_real_native_primitive_archive_restore_and_cache(self):
+        request = dict(engine='native-primitive', parameters=dict(kind='box', parameters={}, name='box', normal_mode='smooth', format='glb'))
+        jobs.create_job(self.job, request)
+        result = jobs.run_job(self.job, native_primitive, handler_version='native-test1')
+        output = self.job/result['current_revision']/'output/model/model.glb'
+        self.assertTrue(output.exists()); original = sha256(output)
+        with patch('model3d_jobs._inventory', wraps=jobs._inventory):
+            cached = jobs.run_job(self.job, lambda _:self.fail('cached work reran'), handler_version='native-test1')
+        self.assertEqual(cached['attempts'], 1)
+        archive = self.root/'model.zip'; jobs.archive_job(self.job, archive)
+        restored = jobs.restore_job(archive, self.root/'restored')
+        self.assertEqual(restored, jobs.status(self.job))
+        self.assertEqual(sha256(self.root/'restored'/result['current_revision']/'output/model/model.glb'), original)
+
+    def test_input_capture_and_tamper_fail_before_callback(self):
+        source = self.root/'source.bin'; source.write_bytes(b'original')
+        self.create(inputs={'source.bin':source}); source.write_bytes(b'changed')
+        self.assertEqual((self.job/'inputs/source.bin').read_bytes(), b'original')
+        (self.job/'inputs/source.bin').write_bytes(b'tampered')
+        with self.assertRaises(RigError):jobs.run_job(self.job, lambda _:self.fail('read corrupt source'), handler_version='v1')
+        self.assertEqual(read_json(self.job/'job.json')['attempts'], 0)
+
+    def test_failed_revision_preserves_active_payload_and_bounded_attempts(self):
+        self.create(budgets={'attempts':2})
+        first = jobs.run_job(self.job, self.handler, handler_version='v1')
+        active = first['current_revision']; before = (self.job/active/'output/mesh.bin').read_bytes()
+        def fail(context):
+            (context.output/'incomplete').write_text('partial')
+            raise RigError('MODEL3D_TEST_FAILURE', 'planned')
+        with self.assertRaises(RigError):jobs.run_job(self.job, fail, handler_version='v2', retry=True)
+        current = jobs.status(self.job)
+        self.assertEqual(current['current_revision'], active)
+        self.assertEqual((self.job/active/'output/mesh.bin').read_bytes(), before)
+        self.assertEqual(current['status'], 'failed')
+        with self.assertRaises(RigError):jobs.run_job(self.job, self.handler, handler_version='v1', retry=True)
+        self.assertEqual(jobs.status(self.job)['attempts'], 2)
+
+    def test_cancellation_and_timeout_never_publish_partial_outputs(self):
+        self.create(budgets={'runtime_seconds':.01})
+        def cancelled(context):
+            jobs.cancel_job(self.job); (context.output/'partial').write_text('x'); context.check()
+        with self.assertRaises(RigError) as caught:jobs.run_job(self.job, cancelled, handler_version='v1')
+        self.assertEqual(caught.exception.report['code'], 'MODEL3D_JOB_CANCELLED')
+        self.assertEqual(jobs.status(self.job)['status'], 'cancelled')
+        jobs.clear_cancellation(self.job)
+        def timeout(context):
+            time.sleep(.02); context.check()
+        with self.assertRaises(RigError) as caught:jobs.run_job(self.job, timeout, handler_version='v1', retry=True)
+        self.assertEqual(caught.exception.report['code'], 'MODEL3D_JOB_TIMEOUT')
+        self.assertIsNone(jobs.status(self.job)['current_revision'])
+
+    def test_process_exit_after_checkpoint_recovers_without_replay(self):
+        self.create()
+        scripts = Path(jobs.__file__).parent
+        code = '''import os,sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[2])
+import model3d_jobs as j
+original=j._rename_no_replace
+def crash(stage,target):
+ original(stage,target)
+ os._exit(74)
+j._rename_no_replace=crash
+def handler(c):(c.output/'mesh.bin').write_bytes(b'checkpoint')
+j.run_job(sys.argv[1],handler,handler_version='v1')
+'''
+        result = subprocess.run([sys.executable, '-c', code, str(self.job), str(scripts)], capture_output=True)
+        self.assertEqual(result.returncode, 74, result.stderr.decode())
+        self.assertEqual(read_json(self.job/'job.json')['status'], 'running')
+        recovered = jobs.run_job(self.job, lambda _:self.fail('replayed published work'), handler_version='v1')
+        self.assertEqual(recovered['status'], 'completed'); self.assertEqual(recovered['attempts'], 1)
+
+    def test_process_exit_before_checkpoint_requires_explicit_retry(self):
+        self.create(); scripts=Path(jobs.__file__).parent
+        code="import os,sys;sys.path.insert(0,sys.argv[2]);import model3d_jobs as j;j.run_job(sys.argv[1],lambda c:os._exit(75),handler_version='v1')"
+        result=subprocess.run([sys.executable,'-c',code,str(self.job),str(scripts)],capture_output=True)
+        self.assertEqual(result.returncode,75)
+        with self.assertRaises(RigError):jobs.run_job(self.job,self.handler,handler_version='v1')
+        self.assertEqual(jobs.status(self.job)['status'],'interrupted')
+        self.assertEqual(jobs.run_job(self.job,self.handler,handler_version='v1',retry=True)['attempts'],2)
+
+    def test_writer_lock_is_not_reentrant_and_batch_isolation(self):
+        self.create(); second=self.root/'second'; jobs.create_job(second,self.request)
+        def competing(context):
+            with self.assertRaises(RigError) as caught:jobs.run_job(context.root,self.handler,handler_version='v1')
+            self.assertEqual(caught.exception.report['code'],'RIG_BUSY'); self.handler(context)
+        jobs.run_job(self.job,competing,handler_version='v1')
+        def bad(context):
+            if context.root == second:raise RigError('MODEL3D_TEST','bad sibling')
+            self.handler(context)
+        report=jobs.run_batch([self.job,second],bad,handler_version='v1')
+        self.assertEqual(report['succeeded'],1);self.assertEqual(jobs.status(self.job)['status'],'completed')
+
+    def test_path_and_size_budgets_preserve_destination(self):
+        with self.assertRaises(RigError):self.create(inputs={'../bad':self.root/'missing'})
+        self.assertFalse(self.job.exists())
+        self.create(budgets={'output_bytes':3})
+        with self.assertRaises(RigError):jobs.run_job(self.job,self.handler,handler_version='v1')
+        self.assertFalse((self.job/'revisions').exists())
+        with self.assertRaises(RigError):jobs.restore_job(self.root/'missing.zip',self.job)
+
+    @unittest.skipIf(os.name=='nt','symlink privilege is environment dependent')
+    def test_output_symlink_rejected_and_archive_race_preserved(self):
+        self.create()
+        def symlink(context):(context.output/'escape').symlink_to(self.root)
+        with self.assertRaises(RigError):jobs.run_job(self.job,symlink,handler_version='v1')
+        jobs.run_job(self.job,self.handler,handler_version='v1',retry=True)
+        destination=self.root/'archive.zip'
+        real=jobs._rename_no_replace
+        def race(stage,target):
+            Path(target).write_bytes(b'competing writer');return real(stage,target)
+        with patch('model3d_jobs._rename_no_replace',side_effect=race):
+            with self.assertRaises(FileExistsError):jobs.archive_job(self.job,destination)
+        self.assertEqual(destination.read_bytes(),b'competing writer')
+
+    def test_archive_traversal_duplicate_tamper_and_restore_rejection(self):
+        self.create();jobs.run_job(self.job,self.handler,handler_version='v1')
+        good=self.root/'good.zip';jobs.archive_job(self.job,good)
+        with zipfile.ZipFile(good) as archive:items={i.filename:archive.read(i.filename) for i in archive.infolist()}
+        cases=[{**items,'../escape':b'x'},{**items,'job.json':b'tampered'}]
+        for index,contents in enumerate(cases):
+            target=self.root/f'bad{index}.zip'
+            with zipfile.ZipFile(target,'w') as archive:
+                for name,data in contents.items():archive.writestr(name,data)
+            destination=self.root/f'bad{index}'
+            with self.assertRaises(RigError):jobs.restore_job(target,destination)
+            self.assertFalse(destination.exists())
+        with self.assertRaises(RigError):jobs.archive_job(self.job,good)
+
+    def test_corrupt_checkpoint_and_unsupported_stored_schema_are_structured(self):
+        self.create(); result=jobs.run_job(self.job,self.handler,handler_version='v1')
+        manifest=read_json(self.job/'job.json')
+        for patch_ in ({'schema_version':True},{'status':{}},{'budgets':{}},
+                       {'current_revision':{}},{'active_attempt':{}},{'revisions':[{}]}):
+            atomic_json(self.job/'job.json',{**manifest,**patch_})
+            with self.subTest(patch=patch_):
+                with self.assertRaises(RigError):jobs.status(self.job)
+        atomic_json(self.job/'job.json',manifest)
+        (self.job/result['current_revision']/'output/mesh.bin').write_bytes(b'changed')
+        with self.assertRaises(RigError) as caught:
+            jobs.run_job(self.job,lambda _:self.fail('corrupt output reused'),handler_version='v1')
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_JOB_CHECKPOINT')
+
+    def test_cancel_queued_job_and_bounded_zip_directory(self):
+        self.create();jobs.cancel_job(self.job)
+        with self.assertRaises(RigError):jobs.run_job(self.job,self.handler,handler_version='v1')
+        self.assertEqual(jobs.status(self.job)['status'],'cancelled')
+        self.assertEqual(jobs.status(self.job)['attempts'],0)
+        jobs.clear_cancellation(self.job)
+        jobs.run_job(self.job,self.handler,handler_version='v1',retry=True)
+        archive=self.root/'good.zip';jobs.archive_job(self.job,archive)
+        encoded=bytearray(archive.read_bytes());offset=encoded.rfind(b'PK\x05\x06')
+        # A hostile central-directory size is rejected before ZipFile allocation.
+        encoded[offset+12:offset+16]=(9*1024**2).to_bytes(4,'little')
+        hostile=self.root/'central-bomb.zip';hostile.write_bytes(encoded)
+        with self.assertRaises(RigError) as caught:jobs.restore_job(hostile,self.root/'bad')
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_ARCHIVE_LIMIT')
+        self.assertFalse((self.root/'bad').exists())
+
+
+if __name__=='__main__':unittest.main()

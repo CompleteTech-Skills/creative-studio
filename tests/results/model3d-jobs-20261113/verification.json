@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "base": "0226b6f3b2c37ff76d06a60df67fba37b3494dde",
+  "test_command": "python -m unittest discover -s tests -p test_model3d_jobs.py -v",
+  "tests": 12,
+  "result": "pass",
+  "demonstration": {
+    "durable_root": "/home/complete/.cache/hatch-coordination-20261112/model50-demo",
+    "command": "python scripts/demonstrate_model3d_jobs.py --destination NEW_DIR",
+    "assets": [
+      {
+        "name": "box",
+        "vertices": 8,
+        "triangles": 12,
+        "geometry_sha256": "7e6755acd9e4c9cfc09bc18fd51eef45ef31b33695f04c4e4ca00c085eae7ef3",
+        "archive_sha256": "e511efa7b8803a9e04be2a1512de22c95cd8817d5c90d7357f6ffffd09fa5fc2",
+        "attempts": 1,
+        "restored": true,
+        "cached_without_reexecution": true
+      },
+      {
+        "name": "sphere",
+        "vertices": 482,
+        "triangles": 960,
+        "geometry_sha256": "dc7caee2886cdb7ad392c8e40a7b03eec148bcb19132a31c6e49cf4fb2642990",
+        "archive_sha256": "2e0fdba9f3a17dca78fdda79d76e855aeb632eda70d67bcd3115da5e962a9f39",
+        "attempts": 1,
+        "restored": true,
+        "cached_without_reexecution": true
+      },
+      {
+        "name": "torus",
+        "vertices": 512,
+        "triangles": 1024,
+        "geometry_sha256": "af42be4d21c861ccf9752c52416e6cfba8e142ae5739347614110c29c7973761",
+        "archive_sha256": "c43418183fd9ab76d98a5c3ca79f24d3b6b37a5912b5cfdbc549081f841c91e0",
+        "attempts": 1,
+        "restored": true,
+        "cached_without_reexecution": true
+      }
+    ],
+    "hashed_files": 39,
+    "retained_archive": "examples/model3d-jobs/box-fixture.zip"
+  },
+  "provider_calls": 0,
+  "review_state": "visually-unreviewed",
+  "unexecuted": [
+    "Blender",
+    "browser",
+    "rendered appearance",
+    "provider inference",
+    "power-loss recovery",
+    "complete parent demonstrations A-M"
+  ],
+  "full_issue50_acceptance": false
+}
