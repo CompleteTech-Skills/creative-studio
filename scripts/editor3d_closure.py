@@ -46,6 +46,31 @@ def _files(value):
             yield from _files(child)
 
 
+def _manifest_references(value):
+    """Identify child documents by the native contract, never filename suffix."""
+    result = [item for item in _files(value) if isinstance(item.get('kind'), str)]
+    if not isinstance(value, dict):
+        return result
+    kind = value.get('kind')
+    if isinstance(kind, str) and kind.startswith('model3d-'):
+        result.extend(item['manifest'] for item in value.get('dependencies', []) if 'manifest' in item)
+        for field in ('asset', 'before', 'after'):
+            item = value.get(field)
+            if isinstance(item, dict) and 'manifest' in item:
+                result.append(item['manifest'])
+        if kind in ('model3d-job', 'model3d-provider-receipt'):
+            result.append(value['request'])
+    elif kind == 'hatch-3d-rig':
+        result.extend(value['animations'])
+        result.extend(value['review']['receipts'])
+        result.extend(value['validation'])
+    elif kind == 'project':
+        result.append(value['cast'])
+        result.extend(value['clips'])
+        result.extend(value['scenes'])
+    return result
+
+
 def _joined(prefix, relative):
     portable_name(relative)
     result = (PurePosixPath(prefix) / relative).as_posix() if prefix else relative
@@ -79,10 +104,7 @@ class _Closure:
         bound = dict(path=name, sha256=record['sha256'], bytes=size,
                      media_type='application/octet-stream')
         target = self.snapshot.capture(bound)
-        is_json = (manifest or record.get('media_type') == 'application/json'
-                   or isinstance(record.get('kind'), str)
-                   or name.lower().endswith('.json'))
-        if not is_json:
+        if not manifest:
             return None
         if name not in self.values:
             if size > 16 * 1024**2:
@@ -92,8 +114,9 @@ class _Closure:
         key = name, prefix
         if key not in self.expanded:
             self.active.add(name)
+            documents = _manifest_references(value)
             for child in _files(value):
-                self.capture(child, prefix, depth + 1)
+                self.capture(child, prefix, depth + 1, manifest=child in documents)
             self.active.remove(name)
             self.expanded.add(key)
         return value
@@ -245,6 +268,8 @@ def _verify_editor_bundle(project, scenes, nodes, assets, animations, root):
             reference = node['native']
             key = reference['owner'], reference['id'], reference['version'], reference['native_kind']
             document = native_documents[key]
+            if reference['owner'] != 'scene3d':
+                _error('UNAVAILABLE', 'This native node owner has no semantic editor binding adapter: ' + reference['owner'])
             if reference['owner'] == 'scene3d':
                 scene = next(item for item in scenes if item['id'] == node['scene_id'])
                 if reference != scene['native']:

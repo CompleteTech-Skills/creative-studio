@@ -229,6 +229,34 @@ class EditorNativeClosureTests(unittest.TestCase):
         edited[0]['scenes']=[dict(id=edited[1][0]['id'],sha256=contract_hash(edited[1][0]))]
         self.assertTrue(verify_editor_bundle(*edited,self.root)['native_resources_verified'])
 
+    def test_binary_texture_named_json_is_preserved_without_json_parsing(self):
+        shutil.copytree(ROOT/'examples/lookdev-contracts',self.root/'lookdev')
+        metadata=self.root/'lookdev/albedo.json'
+        value=json.loads(metadata.read_bytes())
+        pixels=self.root/'lookdev/textures/albedo.png'
+        renamed=self.root/'lookdev/textures/pixels.json'
+        pixels.rename(renamed)
+        value['file']['path']='textures/pixels.json'
+        metadata.write_text(json.dumps(value))
+        texture=reference(self.root,'lookdev/albedo.json','lookdev')
+        project=deepcopy(self.bundle[0]);project['dependency_manifest'].append(texture)
+        report=verify_editor_bundle(project,*self.bundle[1:],self.root)
+        self.assertIn('lookdev/textures/pixels.json',report['files'])
+
+    def test_unimplemented_foreign_node_binding_does_not_verify(self):
+        shutil.copytree(ROOT/'examples/camera3d',self.root/'camera')
+        source=reference(self.root,'camera/registry.json','camera3d')
+        camera=reference(self.root,'camera/main-camera.json','camera3d')
+        edited=deepcopy(self.bundle)
+        edited[0]['source_projects'].append(source)
+        edited[0]['dependency_manifest'].extend([source,camera])
+        edited[2][1]['native']=camera
+        edited[2][1]['native_node_id']='does-not-exist'
+        edited[1][0]['nodes']=[dict(id=n['id'],sha256=contract_hash(n)) for n in edited[2]]
+        edited[0]['scenes']=[dict(id=edited[1][0]['id'],sha256=contract_hash(edited[1][0]))]
+        with self.assertRaises(RigError) as raised:verify_editor_bundle(*edited,self.root)
+        self.assertEqual(raised.exception.report['code'],'EDITOR3D_UNAVAILABLE')
+
 
 if __name__ == '__main__':
     unittest.main()

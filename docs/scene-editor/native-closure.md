@@ -17,7 +17,9 @@ The verifier captures a bounded temporary snapshot using the existing no-follow
 Model3D snapshot implementation: at most 4096 files, 64 MiB per file, 256 MiB
 overall, and 32 dependency levels. Every file must match its exact SHA-256 and
 byte count when declared. Portable path aliases, links, cycles and conflicting
-hashes fail. The snapshot is discarded after validation. The original files are
+hashes fail. Native contract relationships determine which files are JSON
+  manifests; a filename suffix never converts an opaque payload into a document.
+The snapshot is discarded after validation. The original files are
 read again before success, so a concurrent source change invalidates the result.
 The caller must still own its project write boundary; this read-only verifier
 does not lock another process's live project or publish any files.
@@ -26,7 +28,8 @@ Native checks are delegated:
 
 - Scene3D: complete native project dependency lock and static document semantics.
   Editor node IDs, parent bindings and supported node kinds must match the exact
-  native scene. This does not claim every Scene3D asset's geometry was decoded.
+  native scene. Other native owners may supply assets but cannot claim verified
+  editor-node bindings until a dedicated semantic adapter is implemented. This does not claim every Scene3D asset's geometry was decoded.
 - Camera3D: native registry byte closure and cross-document semantics. Every
   editor camera reference must occur in that registry.
 - LookDev: the existing immutable registry verifies dependency identities,
