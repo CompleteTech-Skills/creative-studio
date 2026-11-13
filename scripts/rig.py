@@ -84,7 +84,10 @@ def dispatch(args):
         return expression_catalog(rig)
     if name=='resume':return resume(args.run_dir)
     if name in ('analyze','validate','test-motion'):return mutate(args.run_dir,name,dict(require_animation=getattr(args,'require_animation',False)))
-    if name=='auto':return mutate(args.run_dir,'auto',dict(template=args.template,replace=args.replace,landmarks=read_json(args.landmarks) if args.landmarks else None))
+    if name=='auto':
+        parameters=dict(template=args.template,replace=args.replace)
+        if args.landmarks is not None:parameters['landmarks']=read_json(args.landmarks)
+        return mutate(args.run_dir,'auto',parameters)
     if name=='weights':return mutate(args.run_dir,'weights',dict(method=args.method,iterations=args.iterations,regions=read_json(args.regions) if args.regions else None))
     if name=='configure':
         require(args.file,'RIG_ARGUMENT','--file must contain limit overrides.');return mutate(args.run_dir,name,dict(limits=read_json(args.file)))

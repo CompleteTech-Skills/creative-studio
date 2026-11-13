@@ -26,6 +26,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Callable, Literal, Mapping
 import unicodedata
@@ -732,7 +733,18 @@ class BlenderBackend:
         self._owned = {}
         self._results = {}
         self._attempted = set()
+        self._attempt_lock = threading.Lock()
         self._identity = None
+
+    def _claim_attempt(self, prepared):
+        # Reserve before discovery or file I/O can release the GIL. Every
+        # admitted invocation consumes the token, including failed attempts.
+        with self._attempt_lock:
+            owner = self._owner(prepared)
+            require(prepared.token not in self._attempted, 'PHYSICS_STATE',
+                    'A prepared attempt executes once; restart with a fresh preparation.')
+            self._attempted.add(prepared.token)
+            return owner
 
     def _discover(self, *, timeout=10):
         require(self.executable and Path(self.executable).is_file(), 'PHYSICS_BACKEND_UNAVAILABLE',
@@ -854,8 +866,7 @@ class BlenderBackend:
                 (cancel_token is None or callable(getattr(cancel_token,'is_set',None))),
                 'PHYSICS_REQUEST', 'Invalid simulation handle/callback/cancellation request.', category='invalid-input')
         require(cancel_token is None or not cancel_token.is_set(), 'PHYSICS_CANCELLED', 'The request was already cancelled.', category='timeout')
-        owner = self._owner(prepared)
-        require(prepared.token not in self._attempted, 'PHYSICS_STATE', 'A prepared attempt executes once; restart with a fresh preparation.')
+        owner = self._claim_attempt(prepared)
         world, root = owner['world'], owner['root']
         deadline = started + prepared.estimate.timeout_seconds
         with _Reader(root) as reader:
@@ -870,7 +881,6 @@ class BlenderBackend:
                         'PHYSICS_INPUT_CHANGED', 'Prepared source bytes changed.')
         identity = self._discover(timeout=min(10.,_remaining(deadline)))
         require(identity == owner['identity'], 'PHYSICS_BACKEND_CHANGED', 'Backend executable/version changed after preparation.')
-        self._attempted.add(prepared.token)
         original_job = (root/'worker-job.json').read_bytes()
         require(digest(original_job) == owner['worker_job_sha256'] and parse(original_job)['mode'] == 'simulate' and parse(original_job)['world_sha256'] == prepared.world_sha256 and
                 digest(canonical(parse(original_job)['world'])) == prepared.world_sha256,
@@ -1152,9 +1162,8 @@ class PyBulletBackend(BlenderBackend):
                 (progress is None or callable(progress)) and
                 (cancel_token is None or callable(getattr(cancel_token,'is_set',None))),
                 'PHYSICS_REQUEST','Invalid PyBullet simulation request; Blender point-cache controls do not apply.',category='invalid-input')
-        owner=self._owner(prepared)
-        require(prepared.token not in self._attempted,'PHYSICS_STATE','A prepared attempt executes once; restart with new preparation.')
         require(cancel_token is None or not cancel_token.is_set(),'PHYSICS_CANCELLED','The request was already cancelled.',category='timeout')
+        owner=self._claim_attempt(prepared)
         root,world=owner['root'],owner['world']
         deadline=started+prepared.estimate.timeout_seconds
         with _Reader(root) as reader:
@@ -1170,7 +1179,6 @@ class PyBulletBackend(BlenderBackend):
         identity=self._discover(timeout=min(10.,_remaining(deadline)))
         require(identity==owner['identity'] and self._module_record==owner['module_record'],
                 'PHYSICS_BACKEND_CHANGED','The isolated interpreter/module changed after preparation.')
-        self._attempted.add(prepared.token)
         try:
             measured=_run_process(self._command(root),root,timeout=_remaining(deadline),
                 memory_bytes=world['budgets']['memory_bytes'],output_bytes=min(world['budgets']['temporary_bytes'],MAX_CACHE_BYTES),
