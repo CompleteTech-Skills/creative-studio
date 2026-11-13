@@ -1,0 +1,9 @@
+{
+  "review_agent": "/root/rig_resource_limits/review_load_limits",
+  "reviewed_head": "399058f8571bd2cdb8228c346fbde134b05214c4",
+  "outcome": "AGENT_ERRORED_NO_FINAL_REVIEW_NO_PASS",
+  "exact_error": "Agent errored: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. Otherwise, confirm that the access_programs.cyber parameter is set to the appropriate tier, and note that some cybersecurity requests are still limited, even when Daybreak is on.\n\nThis agent's turn failed. If you still need this agent, use the available collaboration tools to give it another task.",
+  "finding_reported_before_error": "ZIP directory prewalk and Python zipfile offset reconciliation differed; entry-list allocation could precede count rejection.",
+  "correction_source_commit": "6d327e439fef47de19d289d8a33cee0839c2effe",
+  "fresh_review_required": true
+}

@@ -1,0 +1,20 @@
+{
+  "source_commit": "6d327e439fef47de19d289d8a33cee0839c2effe",
+  "tests": 109,
+  "seconds": 20.343,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "legacy_discovery_only": 809,
+  "frozen_source_files": 150,
+  "source_hashes_unchanged": true,
+  "correction": "Canonical ZIP directory offset equality before Python directory construction.",
+  "review_status": "Fresh independent actual Astra review required; previous reviewer execution errored after genuine finding, no approval produced.",
+  "prior_evidence": "validation.json describes original108test run accurately at e936cb4; not current-correction evidence.",
+  "artifacts": {
+    "corrected-source-before.json": "49995cc5e2f85c6ecda1153a43f68e9379d537c99d6ed4d177213808a8321758",
+    "corrected-combined.log": "7c283e33cab0bee08c5fe4620616f6e8c684c15869605e565e5fd07e1be6c715",
+    "zip-correction-focused.log": "6a953c695c5c6f015e2fc037e134737dd835caafaa7157d57f3df4481271249a",
+    "review-agent-error.json": "b195cfaf542be8ab1040459faf7dd01499ab03259066515656acf586a2989597"
+  }
+}
