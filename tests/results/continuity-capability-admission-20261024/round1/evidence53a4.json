@@ -1,0 +1,30 @@
+{
+  "candidate": "53a4ee463cf15f1cc379c60aaa9fccc53cd02ef8",
+  "python": "3.12.15 (main, Oct 21 2026, 17:47:06) [Clang 23.1.3 ]",
+  "packages": {
+    "numpy": "2.3.5",
+    "Pillow": "12.3.0",
+    "jsonschema": "4.25.1"
+  },
+  "source": {
+    "scripts/continuity_capabilities.py": "a9e9adc407e43cf31cd0a629944bde0b09ae4878afc4e9abc5985ae2eed1b0e7",
+    "scripts/continuity_capability_owners.py": "7da1111b9c9d9ce5e8f471eb5265fd735b3c39b2120488e8882aec5ead76bc23",
+    "tests/test_rig_continuity_capabilities.py": "17bdd7ebcb6ed0ae882213442b7aca79e2c5c53e32bca005124674f31688bc99"
+  },
+  "evidence": {
+    "/home/complete/.cache/hatch-fleet/review115/adversarial115.py": "d4a3b263ca6f061ca52f34e840fec8f8a8a4d1e3c454a8db0cd217c7b6c45f0b",
+    "/home/complete/.cache/hatch-fleet/review115/adversarial115.json": "7cee56221a4e9aa6ec7a271cde39d0bb4cc709ccf0d265f6a9a4cede7dbb0f9a",
+    "/home/complete/.cache/hatch-fleet/review115/resource115.py": "2c8f13b470d2b506f7b2a4c91fd4eb5624b8bb3d6a5b0d93d72aa3a2306acda8",
+    "/home/complete/.cache/hatch-fleet/review115/resource115.json": "531ef96985904183844aeffe0aaf90df9dd56887eeecbd93c60b5960b8a44a16",
+    "/home/complete/.cache/hatch-fleet/review115/expiry115.py": "4baa2751168406373109194823099f3d9173dd49d99d3d24329de24dbb59a0fd",
+    "/home/complete/.cache/hatch-fleet/review115/expiry115.json": "e78cf45815ce9563062c0835bf3f073702df3e67c92367b968c039cb358857b2",
+    "/home/complete/.cache/hatch-fleet/review115/focused53a4.log": "85c5338d8df3d08427a2bf50821381e353f440039785ab89d6a95ad8ba582cc9"
+  },
+  "actual_imports": {
+    "Pillow": "12.3.0",
+    "Pillow_module": "/home/complete/.cache/hatch-fleet/rig-py312/lib/python3.12/site-packages/PIL/__init__.py",
+    "numpy": "2.3.5",
+    "numpy_module": "/home/complete/.cache/hatch-fleet/rig-py312/lib/python3.12/site-packages/numpy/__init__.py",
+    "jsonschema_module": "/home/complete/.cache/hatch-fleet/rig-py312/lib/python3.12/site-packages/jsonschema/__init__.py"
+  }
+}

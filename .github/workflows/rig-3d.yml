@@ -128,6 +128,15 @@ jobs:
           tar -xJf /tmp/blender.tar.xz -C /tmp
       - run: echo 'HATCH_BLENDER=/tmp/blender-4.5.3-linux-x64/blender' >> "$GITHUB_ENV"
       - run: python scripts/verify_rig_demos.py --generate --destination /tmp/rig-blender-gate --blender
+      - name: Install isolated schema validator for Blender Python 3.11
+        run: |
+          python -m pip install --target /tmp/camera-blender-site --python-version 3.11 --only-binary=:all: jsonschema==4.25.1
+      - name: Verify actual Camera3D optics and Blender projection
+        run: python -m unittest discover -s tests -p test_rig_camera3d_optics.py -v
+        env:
+          HATCH_CAMERA3D_BLENDER_TEST: '1'
+          HATCH_CAMERA_TEST_SITE: /tmp/camera-blender-site
+          HATCH_CAMERA_EVIDENCE: /tmp/camera-optics-gate
       - name: Camera motion native projection and random seek
         run: |
           python -m pip install --python-version 3.11 --only-binary=:all: --target /tmp/camera-motion-site jsonschema==4.25.1
@@ -143,7 +152,9 @@ jobs:
         if: always()
         with:
           name: blender-evidence
-          path: /tmp/rig-blender-gate/**/validation/*.json
+          path: |
+            /tmp/rig-blender-gate/**/validation/*.json
+            /tmp/camera-optics-gate/*
   browser:
     name: Three.js browser playback and vertex comparison
     # Playwright 1.55.0 supports Ubuntu 24.04; ubuntu-latest now selects 26.04.

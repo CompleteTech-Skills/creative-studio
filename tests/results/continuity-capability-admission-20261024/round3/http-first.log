@@ -1,0 +1,13 @@
+test_actual_authorized_native_admission_and_discovery (test_rig_continuity_capability_http.CapabilityHTTPTests.test_actual_authorized_native_admission_and_discovery) ... ok
+test_auth_and_origin_are_checked_before_admission (test_rig_continuity_capability_http.CapabilityHTTPTests.test_auth_and_origin_are_checked_before_admission) ... ok
+test_http_cannot_change_root_policy_owner_or_command (test_rig_continuity_capability_http.CapabilityHTTPTests.test_http_cannot_change_root_policy_owner_or_command) ... ok
+test_missing_backend_is_exactly_blocked_over_http (test_rig_continuity_capability_http.CapabilityHTTPTests.test_missing_backend_is_exactly_blocked_over_http) ... ok
+test_outside_configured_root_and_changed_root_binding_rejected (test_rig_continuity_capability_http.CapabilityHTTPTests.test_outside_configured_root_and_changed_root_binding_rejected) ... ok
+test_trusted_policy_denial_stays_denied_over_http (test_rig_continuity_capability_http.CapabilityHTTPTests.test_trusted_policy_denial_stays_denied_over_http) ... ok
+test_unconfigured_owner_default_is_structured_closed (test_rig_continuity_capability_http.CapabilityHTTPTests.test_unconfigured_owner_default_is_structured_closed) ... ok
+test_worker_budget_and_unknown_queries_preserved (test_rig_continuity_capability_http.CapabilityHTTPTests.test_worker_budget_and_unknown_queries_preserved) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 3.008s
+
+OK

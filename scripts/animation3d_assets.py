@@ -5,13 +5,15 @@ The returned inventory is evidence of admission, not rendering or visual approva
 """
 from copy import deepcopy
 import hashlib
+import io
+from types import SimpleNamespace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import zipfile
 from functools import wraps
 
 from animation3d_contracts import KINDS, _walk, validate_contract
-from rig_errors import RigError, decode_json, require, safe_path
+from rig_errors import RigError, decode_json, open_payload, require, safe_path
 
 MAX_FILES = 4096
 MAX_BYTES = 256 * 1024**2
@@ -64,26 +66,39 @@ class Snapshot:
                     'ANIMATION_HASH', 'Conflicting exact dependency hash.')
             return self.destination / name
         require(len(self.inventory) < MAX_FILES, 'ANIMATION_LIMIT', 'Dependency file limit exceeded.')
-        require(source.stat().st_size <= self.max_bytes - self.total,
-                'ANIMATION_LIMIT', 'Dependency byte limit exceeded.')
         target = self.destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
         hashed = hashlib.sha256(); count = 0
-        with source.open('rb') as inp, target.open('xb') as out:
-            while block := inp.read(min(1024**2, self.max_bytes - self.total + 1)):
-                self.total += len(block); count += len(block)
-                require(self.total <= self.max_bytes, 'ANIMATION_LIMIT', 'Dependency grew beyond byte limit.')
-                hashed.update(block); out.write(block)
+        with open_payload(self.root, name) as (inp, metadata):
+            require(metadata.st_size <= self.max_bytes - self.total,
+                    'ANIMATION_LIMIT', 'Dependency byte limit exceeded.')
+            with target.open('xb') as out:
+                while block := inp.read(min(1024**2, self.max_bytes - self.total + 1)):
+                    self.total += len(block); count += len(block)
+                    require(self.total <= self.max_bytes, 'ANIMATION_LIMIT', 'Dependency grew beyond byte limit.')
+                    hashed.update(block); out.write(block)
         actual = hashed.hexdigest()
         require(digest is None or actual == digest, 'ANIMATION_HASH', 'Dependency hash differs from reference.')
         self.inventory[name] = {'sha256': actual, 'bytes': count}
         # Account before JSON/NumPy decoders allocate. Compressed rig bundles
         # expand independently of their on-disk byte budget.
+        remaining = self.memory_limit - self.expanded_bytes
+        require(count <= remaining, 'ANIMATION_LIMIT', 'Encoded dependency exceeds memory admission budget.')
         expanded = count
         if target.suffix == '.npz' or zipfile.is_zipfile(target):
-            with zipfile.ZipFile(target) as archive:
-                expanded = max(expanded, sum(i.file_size for i in archive.infolist()) * 3)
-                require(expanded <= self.memory_limit - self.expanded_bytes,
+            from rig_contracts import DEFAULT_LIMITS
+            from rig_load_limits import _zip_directory
+            payload = target.read_bytes()  # Private regular snapshot; encoded allocation already admitted.
+            directory_bytes = 0
+            def charge_directory(amount, asset):
+                nonlocal directory_bytes
+                directory_bytes += amount
+                require(count + directory_bytes <= remaining, 'ANIMATION_LIMIT',
+                        'ZIP directory exceeds memory admission budget.')
+            _zip_directory(payload, SimpleNamespace(limits={'archive_files': DEFAULT_LIMITS['archive_files']}, add=charge_directory))
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                expanded = max(expanded, sum(i.file_size for i in archive.infolist()) * 3) + directory_bytes
+                require(expanded <= remaining,
                         'ANIMATION_LIMIT', 'Expanded binary exceeds memory admission budget.')
                 import numpy as np
                 for info in archive.infolist():
@@ -93,12 +108,12 @@ class Snapshot:
                         require(version in ((1, 0), (2, 0)), 'ANIMATION_LIMIT', 'Unsupported binary array header.')
                         shape, _, dtype = (np.lib.format.read_array_header_1_0(stream) if version == (1, 0)
                                            else np.lib.format.read_array_header_2_0(stream))
-                        count = 1
+                        array_count = 1
                         for size in shape:
                             require(isinstance(size, int) and 0 <= size <= 2_000_000,
                                     'ANIMATION_LIMIT', 'Unsafe binary array dimensions.')
-                            count *= size
-                        require(not dtype.hasobject and count * dtype.itemsize * 3 <= self.memory_limit - self.expanded_bytes,
+                            array_count *= size
+                        require(not dtype.hasobject and array_count * dtype.itemsize * 3 + directory_bytes <= remaining,
                                 'ANIMATION_LIMIT', 'Binary array header exceeds memory admission budget.')
         self.expanded_bytes += expanded
         require(self.expanded_bytes <= self.memory_limit, 'ANIMATION_LIMIT', 'Dependency memory admission budget exceeded.')
@@ -245,7 +260,10 @@ def _validate_bindings(project, documents, native, snapshot_root):
                 require(frame_position(node) <= budgets['max_frames'], 'ANIMATION_LIMIT',
                         'Exact frame/subframe coordinate exceeds project frame budget.')
             for name, value in node.items():
-                if type(value) is int and (name == 'frame' or name.endswith(('_frame', '_frames')) or name == 'end_frame_exclusive'):
+                # Nodes have already passed their closed schema: compare every
+                # declared clock value, including JSON Schema integer-valued
+                # floats. Exact Python type checks would silently skip them.
+                if name == 'frame' or name.endswith(('_frame', '_frames')) or name == 'end_frame_exclusive':
                     require(value <= budgets['max_frames'], 'ANIMATION_LIMIT', 'Nested timeline coordinate exceeds project frame budget.')
             if 'frame' in node and 'transfer_duration_frames' in node:
                 require(node['frame'] + node['transfer_duration_frames'] <= budgets['max_frames'],
@@ -271,7 +289,15 @@ def _validate_bindings(project, documents, native, snapshot_root):
     require(sum(len(d['nodes']) for value in scene_projects for d in value['documents'].values()
                 if d['kind'] == 'scene3d-scene') <= budgets['max_scene_nodes'],
             'ANIMATION_LIMIT', 'Native scene exceeds project node budget.')
-    scenes = {d['id']: d for d in documents.values() if d['kind'] == KINDS['scene']}
+    # Bare shot IDs refer only to the exact active scene references explicitly
+    # selected by the project. Historical provenance versions never select an
+    # active scene according to dependency traversal order.
+    scenes = {}
+    for reference in project['scene_assets']:
+        value = documents.get(reference['path'])
+        if value is not None and value['kind'] == KINDS['scene']:
+            require(value['id'] not in scenes, 'ANIMATION_IDENTITY', 'Active scene ID is ambiguous.')
+            scenes[value['id']] = value
     owner_sources = {}
     for path, (kind, _) in native.items():
         if kind in ('camera3d-registry','material3d','material-instance3d','material-variant3d','light3d'):

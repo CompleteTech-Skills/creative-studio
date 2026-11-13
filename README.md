@@ -80,9 +80,15 @@ Read the [complete 3D guide](references/3d-rigging.md) for fitting uncertainty, 
 
 The 3D contracts are additive. Existing Codex atlas geometry/timing, 2D profiles/playback, decomposition and the 416-state catalog retain their original contracts. Selected actual clips map to catalog definitions; missing anatomy or animation remains explicit. Blender, WebGL and the optional 3D Python packages are unnecessary for ordinary 2D use.
 
-The additive [Scene3D contract foundation](references/scene3d-contracts.md) defines strict project, scene, shot, asset and prefab documents, verifies actual dependency bytes, and evaluates static hierarchical transforms with explicit Blender/glTF conversions. It preserves production v1. Scene construction, editing and rendering remain separate unfinished work; the included triangle is an engineering fixture.
+The additive [Scene3D contract foundation](references/scene3d-contracts.md) defines strict project, scene, shot, asset and prefab documents, verifies actual dependency bytes, and evaluates static hierarchical transforms with explicit Blender/glTF conversions. It preserves production v1. The [Scene3D service](references/scene3d-service.md) adds transactional hierarchy editing, real GLB/glTF import, immutable nested prefabs and complete dependency snapshots through CLI/API. Interactive editing, scene geometry construction and scene rendering remain separate work; included geometry is an engineering fixture.
 
 The [physics integration audit](references/physics-3d-audit.md) records current subsystem ownership, coordinate and timing decisions, and the executed compatibility baseline for future simulation work. No physics solver is implemented by that audit.
+
+The [continuity capability admission guide](references/continuity-capability-admission.md)
+separates discovery from actual native rig and image-master probes. It retains
+exact source/evidence references and reports unavailable backends, incomplete
+fields, and visual approval separately; fallback never grants missing authority.
+
 
 <div align="center">
 <img src="assets/art/story-1-ready.jpg" width="24%" alt="Chapter 1: an egg in a nest of sketches and swatches">

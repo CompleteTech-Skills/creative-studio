@@ -3,6 +3,7 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import shutil
+import tempfile
 import unittest
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
@@ -273,3 +274,156 @@ class ReleaseAdmissionRegressions(unittest.TestCase):
         self.assert_code('ANIMATION_INTERVAL')
         transfer['transfer_duration_frames']=1;self.assertTrue(self.check()['source_ready'])
         transfer['transfer_duration_frames']=2;self.assert_code('ANIMATION_INTERVAL')
+
+    def test_spatial_constraints_reject_real_scalar_morph_channels(self):
+        constraint=self.constraint('spatial','b2')
+        mesh=self.rig.geometry.meshes[0]
+        scalar=dict(kind='morph',actor_id='actor',mesh_id=mesh.id,morph_id='blink',property='weight')
+        constraint['source']=scalar;self.actor['constraints']=[constraint]
+        self.assert_code('ANIMATION_CONSTRAINT')
+        constraint['source']=dict(kind='node',node_id='root',property='visibility')
+        self.assert_code('ANIMATION_CONSTRAINT')
+        constraint['source']=dict(kind='bone',actor_id='actor',bone_id='b2',property='translation')
+        self.assertTrue(self.check()['source_ready'])
+        constraint['source']=dict(kind='node',node_id='root',property='translation')
+        self.assertTrue(self.check()['source_ready'])
+        constraint.pop('target_position');constraint['target']=scalar
+        self.assert_code('ANIMATION_CONSTRAINT')
+        constraint.update(type='rotation',source=dict(kind='bone',actor_id='actor',bone_id='b2',property='rotation'),
+                          target=dict(kind='bone',actor_id='actor',bone_id='b0',property='rotation'))
+        self.assertTrue(self.check()['source_ready'])
+        constraint.pop('target');constraint['target_position']=[0,0,0]
+        self.assert_code('ANIMATION_CONSTRAINT')
+
+    def test_provenance_scene_versions_cannot_select_active_shot_scene(self):
+        historical=deepcopy(self.scene);historical.update(version='2.0.0',actors=[])
+        self.f.project['provenance']['sources']=[self.f.put('historical-scene.json',historical,'scene')]
+        sequence=deepcopy(self.f.values['sequence']);placement=self.placement();placement['actor_id']='actor'
+        sequence['shots'][0]['clip_placements']=[placement]
+        self.f.project['sequences']=[self.f.put('sequence.json',sequence,'sequence')]
+        self.assertTrue(self.check()['source_ready'])  # Root version1 retains its actor.
+        historical['actors']=[deepcopy(self.actor)]
+        self.f.project['provenance']['sources']=[self.f.put('historical-scene.json',historical,'scene')]
+        self.scene['actors']=[]
+        self.assert_code('ANIMATION_REFERENCE')  # History cannot supply a missing active actor.
+        self.scene.update(version='2.0.0',actors=[self.actor]);self.f.project['provenance']['sources']=[]
+        self.assertTrue(self.check()['source_ready'])
+
+    def test_zip_directory_is_admitted_before_constructor_allocation(self):
+        import zipfile
+        from unittest.mock import patch
+        from animation3d_assets import Snapshot
+        from rig_contracts import DEFAULT_LIMITS
+        original=zipfile.ZipFile
+        archive_path=self.f.root/'directory.npz'
+        with original(archive_path,'w') as archive:
+            for index in range(1000):archive.writestr(str(index),b'')
+        with tempfile.TemporaryDirectory() as destination:
+            snapshot=Snapshot(self.f.root,destination);snapshot.memory_limit=1000
+            with patch('animation3d_assets.zipfile.ZipFile',wraps=original) as constructor:
+                with self.assertRaises(RigError):snapshot.copy(archive_path.name)
+                self.assertEqual(constructor.call_count,0)
+        with original(archive_path,'w') as archive:
+            for index in range(3):archive.writestr(str(index),b'')
+        # Metadata alone exceeds this bound although encoded bytes fit it.
+        with tempfile.TemporaryDirectory() as destination:
+            snapshot=Snapshot(self.f.root,destination);snapshot.memory_limit=1000
+            with patch('animation3d_assets.zipfile.ZipFile',wraps=original) as constructor:
+                with self.assertRaises(RigError):snapshot.copy(archive_path.name)
+                self.assertEqual(constructor.call_count,0)
+        # Exercise the canonical member-count authority with a small limit.
+        with tempfile.TemporaryDirectory() as destination:
+            snapshot=Snapshot(self.f.root,destination);snapshot.memory_limit=100000
+            with patch.dict(DEFAULT_LIMITS,archive_files=2),patch('animation3d_assets.zipfile.ZipFile',wraps=original) as constructor:
+                with self.assertRaises(RigError):snapshot.copy(archive_path.name)
+                self.assertEqual(constructor.call_count,0)
+        with tempfile.TemporaryDirectory() as destination:
+            snapshot=Snapshot(self.f.root,destination);snapshot.memory_limit=100000
+            snapshot.copy(archive_path.name)
+            self.assertGreater(snapshot.expanded_bytes,archive_path.stat().st_size)
+
+    def test_snapshot_fifo_replacement_is_rejected_at_descriptor_open(self):
+        import multiprocessing as mp
+        import os
+        from unittest.mock import patch
+        from animation3d_assets import Snapshot
+        if not hasattr(os,'mkfifo') or 'fork' not in mp.get_all_start_methods():
+            self.skipTest('POSIX FIFO/fork replacement race')
+        context=mp.get_context('fork');replaced=context.Event();receive,send=context.Pipe(duplex=False)
+        root=self.f.root/'race';root.mkdir();destination=self.f.root/'race-out';destination.mkdir()
+        source=root/'race.json';source.write_text('{}')
+        def child():
+            original_open=os.open;original_path_open=Path.open
+            def replace():
+                if not replaced.is_set():source.unlink();os.mkfifo(source);replaced.set()
+            def descriptor_open(path,*args,**kwargs):
+                if str(path) in (str(source),source.name):replace()
+                return original_open(path,*args,**kwargs)
+            def path_open(path,*args,**kwargs):
+                if path==source:replace()
+                return original_path_open(path,*args,**kwargs)
+            supported={descriptor_open if operation is original_open else operation for operation in os.supports_dir_fd}
+            try:
+                with patch('rig_errors.os.open',descriptor_open),patch.object(os,'supports_dir_fd',supported),patch.object(Path,'open',path_open):
+                    Snapshot(root,destination).copy(source.name)
+            except RigError as error:send.send(('rejected',error.report['code']))
+            except BaseException as error:send.send(('unexpected',type(error).__name__))
+            else:send.send(('admitted',None))
+            finally:send.close()
+        process=context.Process(target=child);process.start();send.close()
+        try:
+            self.assertTrue(replaced.wait(5),'The replacement hook must actually execute.')
+            process.join(2)
+            self.assertFalse(process.is_alive(),'Only this own bounded child may be stopped on a blocking regression.')
+            self.assertTrue(receive.poll(1))
+            self.assertEqual(receive.recv(),('rejected','RIG_PAYLOAD_TYPE'))
+            self.assertEqual(process.exitcode,0)
+        finally:
+            if process.is_alive():process.terminate();process.join(5)
+            receive.close()
+
+    def _set_numeric_budget_case(self, family, value):
+        self.scene['markers']=[];self.scene['interactions']=[];self.actor['constraints']=[];self.layer['placements']=[]
+        self.f.project['state_machines']=[];self.f.project['sequences']=[]
+        if family=='marker':
+            self.scene['markers']=[dict(id='boundary',name='boundary',frame=value,type='marker')]
+        elif family=='constraint-end':
+            constraint=self.constraint('bounded');constraint.update(start_frame=0,end_frame=value)
+            self.actor['constraints']=[constraint]
+        elif family in ('interaction-end','ownership-duration'):
+            interaction=deepcopy(self.f.values['interaction'])
+            interaction.update(participants=[dict(actor_id='actor',role='participant')],end_frame=value)
+            if family=='ownership-duration':
+                interaction['ownership_changes']=[dict(frame=0,next_owner='actor',world_pose_policy='blend_to_receiver',transfer_duration_frames=value)]
+            self.scene['interactions']=[interaction]
+        elif family=='transition-duration':
+            machine=deepcopy(self.f.values['state-machine']);machine['states'][0]['clip']=self.f.project['clips'][0]
+            machine['parameters']=[dict(name='go',type='bool',default=False)]
+            machine['transitions']=[dict(id='loop',from_state='idle',to_state='idle',conditions=[dict(parameter='go',operator='eq',value=True)],
+                condition_mode='all',priority=0,duration_frames=value,blend_curve='linear',interruption_policy='none')]
+            self.f.project['state_machines']=[self.f.put('bounded-machine.json',machine,'state-machine')]
+        elif family=='sequence-duration':
+            sequence=deepcopy(self.f.values['sequence']);sequence['total_frames']=value;sequence['shots'][0]['duration_frames']=value
+            self.f.project['sequences']=[self.f.put('bounded-sequence.json',sequence,'sequence')]
+        elif family=='placement-end':
+            placement=self.placement();placement.update(start_frame=value-24,duration_frames=24.0)
+            self.layer['placements']=[placement]
+        elif family=='placement-offset':
+            placement=self.placement();placement['time_offset_frames']=value;self.layer['placements']=[placement]
+        else:raise AssertionError(family)
+
+    def test_integer_and_whole_float_frame_budget_boundaries_match(self):
+        for family in ('marker','constraint-end','interaction-end','ownership-duration','transition-duration','sequence-duration','placement-end','placement-offset'):
+            for encoding in (int,float):
+                self.f.project['budgets']['max_frames']=encoding(100)
+                for boundary,accepted in ((100,True),(101,False)):
+                    self._set_numeric_budget_case(family,encoding(boundary))
+                    with self.subTest(family=family,encoding=encoding.__name__,boundary=boundary):
+                        if accepted:self.assertTrue(self.check()['source_ready'])
+                        else:self.assert_code('ANIMATION_LIMIT')
+
+    def test_boolean_and_fractional_interval_encodings_remain_rejected(self):
+        for family in ('marker','constraint-end','interaction-end','ownership-duration','transition-duration','sequence-duration','placement-offset'):
+            for value in (True,100.5):
+                self._set_numeric_budget_case(family,value)
+                with self.subTest(family=family,value=value):self.assert_code('ANIMATION_SCHEMA')

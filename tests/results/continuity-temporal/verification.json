@@ -1,0 +1,61 @@
+{
+  "acceptance": {
+    "independent_review": "pending",
+    "native_dynamic_sampling": "unsupported-fails-closed",
+    "parent107_109": "not-claimed",
+    "temporal_event_replay": "passed",
+    "visual_approval": false
+  },
+  "artifacts": {
+    "README.md": "86aaa36150fa2ad0cd470c5a339cbbf2ac1437340083c3c4d62f3a55cacd1b97",
+    "after.json": "1498cbda4043f26bf6d3b7514e5f1016938fb6769a6dbff5aeddbd9a00ae5f8b",
+    "before.json": "13ce313454b092b2abee51b71e6d51f3900e16dcbbc0b58f407f29c1ae00bebc",
+    "compatibility-initial.log": "679e47b4224c46775b664a58606addfd650783e998bdf0e06bcf9b2e06ddcb5d",
+    "compatibility.log": "13f2baae24e2097e474540a9fed977c27c4273471b94c6b3e0bd6b06d3a82259",
+    "continuity.log": "2d2f4f2d179c5d31fa4f981ab9a13a03778b54af2a695c27380a2f132bd33b0d",
+    "events.json": "3f6ba2c67dad97b68e62f64628c07ec5ae5f115a1ab9a0439084df19dbb01ad8",
+    "flashback.json": "b464cd6374baf9e5861a3250bd3b7aab00a7d440f948c1da9788d6b7d94be1b0",
+    "history.json": "98a79634e03cc51eff4c7824598ac3735d306294622069c09e3ba6474f04b5b4",
+    "last-displayed.json": "fb05dd8c84e1061759167f987c01ed772fb780f37b46ce4a5dcb26f0335c7087",
+    "native/example-animation.json": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+    "native/example-prefab.json": "e452d881f4a170d480bc294871c8dfa2178642d22796d55cb03340cb5af1111b",
+    "native/example-render.json": "59aeda2f2ae64e5f1992515a6bc32cd36f375f78c02f13189fdba3c67b8d3283",
+    "native/example-scene.json": "df11cf88234842c81cb0eb82c89678c88a163a7489da6d27e482031e09a46570",
+    "native/example-shot.json": "d10873c61f63117a6dfd4ba58b43a118ef28962b597e2347d1bb0683e26fdbab",
+    "native/location-0.json": "e154d71c360d69e73edde433b37f15a06dd420bdbc8383f4ae1931698c8fe790",
+    "native/location-1.json": "dea4e10d6414bbfdf01b942e52ebce24e34489c6f687e8031468ae64036b22d4",
+    "native/project.json": "2dd44388df3396be7fb63fdcff844424ac95c5bb8c9824b080350ce66cdbdc8b",
+    "native/shot-0.json": "69111bb5b07e1ea59b75935f7717a6e154e0431ab10296eaa5462c054606b9e8",
+    "native/shot-1.json": "9ef54402d34ca3ced8b9f3b5c88b976d85e08b8ce716396e9e7cfce850bf5625",
+    "native/shot-2.json": "2903491e09463f5fef6b42edea6637dc85a2069eda13483e1ffd8d2eafd792a2",
+    "native/triangle.json": "57d4221ae10d9a583ddff40804a73e19ceb01c3ac242f8e4a095a94a266fd897",
+    "native/triangle.obj": "f35f79225a9f04bd331d1095628cb1167409357db03405a45be22c8e0478848a",
+    "next-shot.json": "77f29974f04257269b6c96c3b57e502241a336c730e269fa7097a5d9a281cb3b",
+    "plan.json": "5923a69faea32b76709fdc20b840b80044c0b894e1cdf0f1240b3cef39871ae9",
+    "report.json": "4900bcd2feea4b5892fd5c066df45a17ab589a204d60c20e7d75d641d3879952",
+    "terminal.json": "c7daef9eda991eac93b17244d8c5586b0f64a84b359ceb9bfcb48173e3b2eacc"
+  },
+  "base_commit": "3f31e3fbbed75ca61dde86cdc3f6a31ed2c347a2",
+  "checks": [
+    {
+      "log": "continuity.log",
+      "status": "passed",
+      "tests": 108
+    },
+    {
+      "log": "compatibility.log",
+      "status": "passed",
+      "tests": 135
+    },
+    {
+      "command": "python scripts/continuity_contracts.py --generate-schemas profiles --check",
+      "status": "passed"
+    },
+    {
+      "report": "report.json",
+      "status": "passed"
+    }
+  ],
+  "implementation_commit": "fcbb418860173f3623cb910c0befcff8bd454d10",
+  "retained_failure": "compatibility-initial.log: two import loader errors from missing scripts import root; corrected invocation passed"
+}

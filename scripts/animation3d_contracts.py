@@ -305,6 +305,31 @@ def _check_constraint(node):
         require(destinations == 1, 'ANIMATION_CONSTRAINT', 'Enabled spatial constraint needs exactly one explicit destination.', stage='animation3d')
     if node['enabled'] and node['type'] == 'limit':
         require('position_limits' in node or 'rotation_limits' in node, 'ANIMATION_CONSTRAINT', 'Enabled limit constraint needs explicit limits.', stage='animation3d')
+    spatial = {'bone','node','camera','light'}
+    kind = node['type']
+    source = node['source']
+    if kind in ('look_at','aim','rotation'):
+        source_properties = {'rotation'}
+    elif kind == 'scale':
+        source_properties = {'scale'}
+    elif kind == 'parent':
+        source_properties = {'translation','rotation','scale'}
+    elif kind == 'limit':
+        source_properties = {'translation','rotation'}
+    else:
+        source_properties = {'translation'}
+    require(source['kind'] in spatial and source['property'] in source_properties,
+            'ANIMATION_CONSTRAINT', 'Constraint source has no compatible represented spatial property.', stage='animation3d')
+    target_property = 'translation' if kind in ('look_at','aim') else source['property']
+    if 'target' in node:
+        require(node['target']['kind'] in spatial and node['target']['property'] == target_property,
+                'ANIMATION_CONSTRAINT', 'Constraint target has no compatible represented spatial property.', stage='animation3d')
+    if 'target_position' in node:
+        require(target_property == 'translation' and kind != 'parent', 'ANIMATION_CONSTRAINT',
+                'A position destination cannot represent this constraint target.', stage='animation3d')
+    if kind == 'limit' and node['enabled']:
+        require(destinations == 0 and ('position_limits' if source['property']=='translation' else 'rotation_limits') in node,
+                'ANIMATION_CONSTRAINT', 'Limit fields must match the constrained spatial property.', stage='animation3d')
     if 'start_frame' in node and 'end_frame' in node:
         require(node['start_frame'] < node['end_frame'], 'ANIMATION_INTERVAL', 'Constraint interval is empty or reversed.', stage='animation3d')
     if 'target' in node:
