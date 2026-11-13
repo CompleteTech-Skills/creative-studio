@@ -157,6 +157,9 @@ def definitions():
         node.setdefault('allOf', []).append({
             'if': {'properties': {'type': {'enum': types}}}, 'then': {'required': [field]}})
     node['properties']['light_binding'] = light_binding
+    node['properties']['pose_binding'] = obj(dict(schema_version={'const':1},
+        rig=typed_ref('hatch-3d-rig'), pose=obj(dict(id=reference['properties']['id'],
+        rig_version=VERSION,file=ref('file')))))
     budget = obj(dict(max_nodes=integer(1, MAX_NODES), max_files=integer(1, MAX_FILES),
                        max_bytes=integer(1, MAX_TOTAL_BYTES), max_frames=integer(1, 1_000_000)))
     world = obj(dict(coordinate_system={'const': COORDINATES},
