@@ -194,7 +194,7 @@ def template_objects(recipe,build):
         terrain=Heightfield(width=40,depth=40,resolution=17,seed=recipe['seed'],elevation=4,max_slope=25)
         for i,point in enumerate(scatter(terrain,8,spacing=4,seed=recipe['seed'],clearance=1.2,max_slope=25)):
             height=rng.uniform(2,5)
-            shape(f'crystal-{i}','cone',(point[0],point[1]+height/2,point[2]),radius=1.1,height=height,segments=6)
+            shape(f'crystal-{i}','cone',(point[0],point[1]+height/2,point[2]),radius=1.1,height=height,segments=detail)
     else: # modular technical structures
         shape('deck','platform',(0,.3,0),width=18,height=.6,depth=12)
         for i,(x,z) in enumerate(((-7,-4),(-7,4),(7,-4),(7,4))):

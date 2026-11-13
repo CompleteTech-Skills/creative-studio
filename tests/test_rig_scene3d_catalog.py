@@ -40,6 +40,8 @@ class CatalogTests(unittest.TestCase):
             np.testing.assert_allclose(z['mesh'].vertices,np.asarray(x['mesh'].vertices)*2)
             np.testing.assert_allclose(z['position'],np.asarray(x['position'])*2)
         self.assertEqual([o['mesh'].obj() for o in plan(recipe('village',detail=12.0))],[o['mesh'].obj() for o in a])
+        low=plan(recipe('alien-landscape',detail=6));high=plan(recipe('alien-landscape',detail=24))
+        self.assertLess(sum(len(o['mesh'].triangles) for o in low),sum(len(o['mesh'].triangles) for o in high))
         original=catalog();original[0]['input_schema']['properties']['scale']['maximum']=999
         self.assertEqual(catalog()[0]['input_schema']['properties']['scale']['maximum'],10)
 
