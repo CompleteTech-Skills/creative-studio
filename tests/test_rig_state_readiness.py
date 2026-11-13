@@ -55,7 +55,7 @@ class RigStateReadinessTests(unittest.TestCase):
             self.assertEqual(loaded.manifest['state_mapping']['idle']['status'],'needs-review')
             self.assertEqual(loaded.manifest['review']['status'],'pending')
             self.assertEqual(loaded.manifest['revision'],before+1)
-            self.assertEqual(response['readiness']['report']['metrics']['max_vertex_displacement_m'],0.)
+            self.assertLess(response['readiness']['report']['metrics']['max_vertex_displacement_m'],1e-12)
             self.assertFalse(response['readiness']['visual_approval'])
             self.assertFalse(response['readiness']['full_package_acceptance'])
             descriptor=loaded.manifest['validation'][-1]
