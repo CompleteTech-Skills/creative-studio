@@ -117,6 +117,17 @@ class RigSpecializationTests(unittest.TestCase):
         for name,value in before.items():
             np.testing.assert_allclose(after[name]['positions'],value['positions'],atol=1e-12)
         self.assertNotIn('expressive-face',rig_capabilities(r))
+    def test_zero_expression_can_release_nonzero_default_morph(self):
+        r=deepcopy(self.humanoid)
+        for mesh in r.geometry.meshes:
+            if 'blink' in mesh.morphs:mesh.morph_defaults['blink']=1.
+        r.manifest['facial']['expressions']={'open':dict(schema_version=1,morphs={'blink':0.},bones={},incompatible=[])}
+        neutral=neutral_pose(r.skeleton)
+        before=evaluate_deformation(r,neutral)
+        after=evaluate_deformation(r,apply_expressions(r,neutral,{'open':1.}))
+        self.assertGreater(max(np.max(np.abs(after[name]['positions']-value['positions']))
+                               for name,value in before.items()),.01)
+        self.assertIn('expressive-face',rig_capabilities(r))
     def test_attach_detach_and_owner_transfer_preserve_world_space(self):
         r=self.humanoid;pose=neutral_pose(r.skeleton);matrix=socket_world(r,pose,'grip.right')
         prop=dict(id='cube',owner=None,socket=None,transform=decompose(matrix))
