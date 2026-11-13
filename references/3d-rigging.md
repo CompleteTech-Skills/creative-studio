@@ -278,6 +278,24 @@ Generation requires a new destination. Verification can be rerun without `--gene
 
 The public production delivery command remains scoped to all existing 2D tests by default (`--tests --test-scope 2d`), so its pinned environment does not need NumPy, pygltflib or Blender. It filters only the new `test_rig_*.py` modules before import and retains strict skip accounting. Use the focused 3D command above and the nine named CI jobs for 3D acceptance. The delivery runner also accepts `--test-scope all` when the complete 3D environment and test flags are enabled; unexpected integration skips still fail that gate.
 
+### Authored landmark admission
+
+`rig auto --landmarks FILE` accepts a source-bound object containing exactly
+`source_sha256` and `landmarks`. Each bone-keyed landmark requires `head` and
+`tail` arrays of three finite JSON numbers and `approved: true`. Numeric strings,
+booleans, unknown bone IDs, missing coordinates and unsupported fields fail with
+a typed diagnostic. The existing bone contract validates evidence source,
+nonempty reference and confidence in `[0, 1]` before the fitter returns a status.
+Landmarks take precedence over semantic regions and bounds; geometric sources
+or confidence below `0.9` retain an explicit anatomy uncertainty. This validates
+supplied annotations; it does not independently establish anatomy approval.
+
+The `test_rig_landmarks.py` regression exercises the real mutation dispatcher,
+valid source-bound fitting/reload and rejection with unchanged active manifest,
+immutable revisions and original source bytes. It covers the landmark-admission
+part of #52; broader import, template composition and native acceptance remain
+separate requirements.
+
 ## Native texture admission
 
 GLB/glTF and OBJ/MTL texture admission verifies the encoded PNG/JPEG container
@@ -286,6 +304,12 @@ header or `Pillow.verify()` alone is insufficient: a JPEG missing its final EOI
 marker or a PNG with invalid compressed scanlines is rejected with
 `RIG_TEXTURE_DECODE`. The imported `TextureImage` retains the exact original
 encoded bytes; validation neither repairs nor re-encodes damaged sources.
+The Model3D consumer retains its public boundary: native texture rejection is
+`MODEL3D_MODEL`, while an unavailable strict JPEG verifier is
+`MODEL3D_DEPENDENCY`. The nested native diagnostic and corrective instruction
+remain available; unrelated resource-limit codes retain their existing behavior.
+OBJ source inventories contain the exact canonical source paths, including when
+the caller uses a directory alias, and preserve every source byte digest.
 
 PNG admission additionally checks every chunk CRC (including IEND), a complete
 zlib stream/footer, and the exact filtered raster size for ordinary and Adam7

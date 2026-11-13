@@ -246,11 +246,32 @@ class TextureIntegrityTests(unittest.TestCase):
             path = self.obj(data, extension)
             imported = load_character_model(path)
             self.assertEqual(imported.geometry.images[0].data, data)
-            self.assertEqual(set(imported.source_files), {path, path.parent / 'texture.mtl', path.parent / ('0' + extension)})
+            self.assertEqual(set(imported.source_files),
+                             {p.resolve() for p in (path, path.parent / 'texture.mtl', path.parent / ('0' + extension))})
         self.assert_rejected(self.obj(image_bytes(fmt='JPEG')[:-2], '.jpg'), 'RIG_TEXTURE_DECODE')
         self.assert_rejected(self.obj(png_with_bad_pixels()), 'RIG_TEXTURE_DECODE')
         data = image_bytes(size=(4, 4))
         self.assert_rejected(self.obj(data, images=2), 'RIG_LIMIT_TEXTURE', limits={**DEFAULT_LIMITS, 'memory_bytes': 800})
+
+    def test_obj_parent_alias_preserves_exact_canonical_source_inventory(self):
+        path = self.obj(image_bytes())
+        actual_files = (path, path.parent / 'texture.mtl', path.parent / '0.png')
+        expected = {p.resolve(): hashlib.sha256(p.read_bytes()).hexdigest() for p in actual_files}
+        alias = self.root / 'parent-alias'
+        if os.name == 'nt':
+            # Junctions need no symbolic-link privilege and exercise the same
+            # canonical-parent boundary as Windows short/long temp aliases.
+            created = subprocess.run(['cmd', '/c', 'mklink', '/J', str(alias), str(path.parent)],
+                                     capture_output=True, text=True, timeout=15)
+            self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
+        else:
+            alias.symlink_to(path.parent, target_is_directory=True)
+        self.assertEqual(alias.resolve(), path.parent.resolve())
+        self.assertNotEqual(str(alias), str(path.parent))
+        imported = load_character_model(alias / path.name)
+        self.assertEqual(set(imported.source_files), set(expected))
+        self.assertEqual({p: hashlib.sha256(p.read_bytes()).hexdigest() for p in imported.source_files}, expected)
+        self.assertEqual({p.resolve(): hashlib.sha256(p.read_bytes()).hexdigest() for p in actual_files}, expected)
 
     def test_encoded_and_decoded_limits_precede_pixel_allocation(self):
         data = image_bytes()

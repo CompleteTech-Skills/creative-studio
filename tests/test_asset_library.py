@@ -307,6 +307,74 @@ class AssetLibraryTests(unittest.TestCase):
                 self.assertEqual(legacy_roundtrip(kind, original), original)
                 self.assertEqual((ROOT / relative).read_bytes(), original)
 
+    def test_review_integral_float_counts_preserve_raw_manifest_and_exact_bytes(self):
+        def floats(value):
+            if type(value) is int:
+                return float(value)
+            if isinstance(value, dict):
+                return {key: floats(child) for key, child in value.items()}
+            if isinstance(value, list):
+                return [floats(child) for child in value]
+            return value
+        manifest = seal(floats(self.manifest))
+        original_manifest = canonical_bytes(manifest)
+        sources_before = {name: source.read_bytes() for name, source in self.sources.items()}
+        schema = schemas()['asset-library-version.schema.json']
+        self.assertFalse(list(Draft202012Validator(schema).iter_errors(manifest)))
+        reference = self.register(manifest)
+        reopened = AssetLibrary(self.library.root)
+        restored = reopened.resolve(reference)
+        self.assertEqual(canonical_bytes(restored), original_manifest)
+        self.assertEqual(canonical_bytes(manifest), original_manifest)
+        self.assertEqual(reference['sha256'], manifest['manifest_sha256'])
+        for record in restored['files']:
+            self.assertIs(type(record['bytes']), float)
+            self.assertEqual(reopened.read_file(reference, record['path']), sources_before[record['path']])
+        self.assertEqual(read_source_bytes(self.mesh, float(len(self.mesh.read_bytes()))), self.mesh.read_bytes())
+        self.assertEqual({name: source.read_bytes() for name, source in self.sources.items()}, sources_before)
+        annotation = reopened.update_annotations(reference, expected_revision=0.0,
+            tags=['whole-float-revision'], favorite=False, note='Validated numeric revision copy')
+        self.assertEqual(annotation['revision'], 1)
+        self.assertEqual(canonical_bytes(reopened.resolve(reference)), original_manifest)
+        self.assertEqual(reopened.annotations(reference), annotation)
+        preview = dict(type='thumbnail', source_version_sha256=reference['sha256'],
+            backend='schema-fixture', backend_version='1.0.0', settings_sha256=self.files[1]['sha256'],
+            camera_sha256=self.files[1]['sha256'], lighting_sha256=self.files[1]['sha256'],
+            settings_file=self.files[1], camera_file=self.files[1], lighting_file=self.files[1],
+            file=self.files[0], width=1.0, height=1.0, status='generated')
+        for kind, value in [('AssetAnnotations', {**annotation, 'revision': 1.0}),
+                            ('AssetIdentity', restored['identity']), ('AssetPreview', preview)]:
+            before = canonical_bytes(value)
+            validate(value, kind)
+            self.assertEqual(canonical_bytes(value), before)
+
+    def test_review_invalid_integer_values_fail_structured_without_mutation(self):
+        reference = self.register()
+        database_before = self.library.database.read_bytes()
+        sources_before = {name: source.read_bytes() for name, source in self.sources.items()}
+        for value in (True, False, 1.5, -1, 0, 64*1024*1024+1, '43', None,
+                      float('nan'), float('inf'), -float('inf'), 10**5000):
+            manifest = deepcopy(self.manifest)
+            manifest['version'] = '2.0.0'
+            manifest['files'][0]['bytes'] = value
+            with self.assertRaises(RigError):
+                self.register(seal(manifest))
+            with self.assertRaises(RigError):
+                read_source_bytes(self.mesh, value)
+        for revision in (True, False, 0.5, -1, 2**53, '0', None,
+                         float('nan'), float('inf'), -float('inf'), 10**5000):
+            with self.assertRaises(RigError):
+                self.library.update_annotations(reference, expected_revision=revision,
+                    tags=[], favorite=False, note='Rejected invalid revision')
+        for version in (True, False, 1.5, -1, 0, 2, '1', None, float('nan'), float('inf'), 10**5000):
+            manifest = deepcopy(self.manifest)
+            manifest['schema_version'] = version
+            with self.assertRaises(RigError):
+                self.register(seal(manifest))
+        self.assertEqual(self.library.database.read_bytes(), database_before)
+        self.assertEqual({name: source.read_bytes() for name, source in self.sources.items()}, sources_before)
+        self.assertEqual(self.library.resolve(reference), self.manifest)
+
     def test_review_escaped_surrogate_and_dictionary_encoding_fail_structured_without_mutation(self):
         reference = self.register()
         database_before = self.library.database.read_bytes()

@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/lookdev-lighting-rig3d-v1",
+  "title": "Hatch look development lighting-rig3d v1",
+  "description": "Contract validity alone proves no executed shader or renderer capability.",
+  "$defs": {
+    "lighting-rig3d": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResourceRef"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "origin": {
+              "enum": [
+                "import",
+                "authored",
+                "derived",
+                "procedural-fixture"
+              ]
+            },
+            "tool": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "created_at": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\dZ$(?![\\s\\S])"
+            },
+            "source_hashes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+              },
+              "minItems": 0,
+              "maxItems": 1024
+            },
+            "attribution": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "license": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "identifier": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                }
+              },
+              "required": [
+                "identifier",
+                "source"
+              ]
+            }
+          },
+          "required": [
+            "origin",
+            "tool",
+            "created_at",
+            "source_hashes",
+            "attribution",
+            "license"
+          ]
+        },
+        "validation_status": {
+          "enum": [
+            "unvalidated",
+            "structurally-valid",
+            "rejected"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "kind": {
+          "const": "lighting-rig3d"
+        },
+        "lights": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ResourceRef"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "render_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "strict": {
+              "type": "boolean"
+            },
+            "allow_approximations": {
+              "type": "boolean"
+            },
+            "required_features": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$(?![\\s\\S])"
+              },
+              "minItems": 0,
+              "maxItems": 64,
+              "uniqueItems": true
+            },
+            "fallback": {
+              "enum": [
+                "reject",
+                "explicit-approximation",
+                "bake"
+              ]
+            }
+          },
+          "required": [
+            "strict",
+            "allow_approximations",
+            "required_features",
+            "fallback"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "version",
+        "dependencies",
+        "provenance",
+        "validation_status",
+        "capabilities",
+        "kind",
+        "lights",
+        "render_policy"
+      ]
+    },
+    "ResourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^(?!.*(?:^|/)(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Nn][Ii][Nn]\\$|[Cc][Oo][Nn][Oo][Uu][Tt]\\$|[Cc][Oo][Mm][1-9\u00b9\u00b2\u00b3]|[Ll][Pp][Tt][1-9\u00b9\u00b2\u00b3])(?:\\.|/|$))(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*[ .](?:/|$))[^/\\\\<>:\"|?*\\u0000-\\u001f\\u007f\\ud800-\\udfff]+(?:/[^/\\\\<>:\"|?*\\u0000-\\u001f\\u007f\\ud800-\\udfff]+)*$(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "kind": {
+          "enum": [
+            "material3d",
+            "material-instance3d",
+            "material-variant3d",
+            "texture3d",
+            "material-graph3d",
+            "light3d",
+            "lighting-rig3d",
+            "look3d",
+            "render-quality3d"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    }
+  },
+  "$ref": "#/$defs/lighting-rig3d"
+}

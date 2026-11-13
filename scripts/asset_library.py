@@ -9,6 +9,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -32,10 +33,21 @@ def _fail(code, message, path=None):
     raise RigError('LIBRARY_' + code, message, asset=str(path) if path else None)
 
 
+def _bounded_integer(value, minimum, maximum, *, code, label):
+    """Normalize a validated numeric copy, preserving original manifest values.
+
+    JSON Schema integer includes finite mathematically whole floating values.
+    Bound comparison happens before conversion, including arbitrarily large ints.
+    """
+    if (type(value) not in (int, float) or value < minimum or value > maximum or
+        (type(value) is float and (not math.isfinite(value) or not value.is_integer()))):
+        _fail(code, label + ' must be a bounded finite integer; booleans are not integers.')
+    return int(value)
+
+
 def _read_source_bytes(path, limit=MAX_FILE_BYTES):
     """Reject symlink/reparse components, bound allocation, detect changed files."""
-    if type(limit) is not int or not 1 <= limit <= MAX_FILE_BYTES:
-        _fail('LIMIT', 'Read bound must be an integer from 1 byte to 64 MiB.')
+    limit = _bounded_integer(limit, 1, MAX_FILE_BYTES, code='LIMIT', label='Source read bound')
     path = Path(path).absolute()
     for component in (path, *path.parents):
         info = component.lstat()
@@ -212,7 +224,9 @@ class AssetLibrary:
             _fail('INVENTORY', 'Source mapping must exactly match the file inventory.')
         payloads = {}
         for f in manifest['files']:
-            payload = read_source_bytes(sources[f['path']], min(f['bytes'], MAX_FILE_BYTES))
+            payload = read_source_bytes(sources[f['path']],
+                                        _bounded_integer(f['bytes'], 1, MAX_FILE_BYTES,
+                                                         code='LIMIT', label='File byte count'))
             if len(payload) != f['bytes'] or hashlib.sha256(payload).hexdigest() != f['sha256']:
                 _fail('HASH', 'Payload hash/size differs from the declared exact bytes.', f['path'])
             if detect_format(payload) != (f['format'], f['mime_type']):
@@ -325,8 +339,8 @@ class AssetLibrary:
             return result
 
     def update_annotations(self, reference, *, expected_revision, tags, favorite, note):
-        if type(expected_revision) is not int or expected_revision < 0:
-            _fail('REVISION', 'Expected revision must be a nonnegative integer.')
+        expected_revision = _bounded_integer(expected_revision, 0, 2**53-1,
+                                             code='REVISION', label='Expected revision')
         replacement = dict(schema_version=1, asset=reference, revision=expected_revision + 1,
                            tags=tags, favorite=favorite, note=note)
         validate(replacement, 'AssetAnnotations')
