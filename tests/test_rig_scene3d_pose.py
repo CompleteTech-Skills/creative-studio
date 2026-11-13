@@ -38,8 +38,14 @@ class PoseBindingTests(unittest.TestCase):
                               **self.file('actor/rig.json'))
         return dict(schema_version=1,rig=rig_ref,pose=dict(id=pose['id'],rig_version=pose['rig_version'],file=self.file(path)))
 
-    def actors(self):
+    def actors(self,*,with_socket=False):
         rig=fixture(self.root,name='actor')
+        if with_socket:
+            from rig_jobs import save_rig
+            rig.manifest['attachments']=[dict(schema_version=1,id='tool',bone='b1',
+                transform=dict(translation=[.2,.3,0],rotation=[0,0,0,1],scale=[1,1,1]),
+                role='test-tool',owner=rig.manifest['character']['id'])]
+            save_rig(rig,operation='author-test-socket')
         asset=deepcopy(self.bundle['documents']['triangle.json'])
         asset.update(id='actor',asset_type='character',skeleton=dict(kind='hatch-3d-rig',
             id=rig.manifest['id'],version=rig.manifest['version'],**self.file('actor/rig.json')),
@@ -60,6 +66,16 @@ class PoseBindingTests(unittest.TestCase):
         two['pose_binding']=self.bind(rig,neutral_pose(rig.skeleton,'rest'),'rest-pose.json')
         return rig,asset,one,two
 
+    def test_framing_requires_sampled_native_bounds_including_ancestors(self):
+        from scene3d_evaluate import frame_camera
+        self.actors()
+        cheap=self.evaluate(source_root=self.root)
+        for target in ('one','root'):
+            with self.assertRaises(RigError):frame_camera(cheap,dict(width=640,height=480),[target])
+        self.assertTrue(frame_camera(cheap,dict(width=640,height=480),['mesh'])['framing']['satisfied'])
+        sampled=self.evaluate(source_root=self.root,sample_geometry=True)
+        self.assertTrue(frame_camera(sampled,dict(width=640,height=480),['one'])['framing']['satisfied'])
+
     def test_actual_two_instance_pose_and_mesh_qualified_state_without_rest_mutation(self):
         rig,asset,one,two=self.actors()
         before=deepcopy(self.bundle);manifest=(self.root/'actor/rig.json').read_bytes()
@@ -72,6 +88,7 @@ class PoseBindingTests(unittest.TestCase):
         self.assertNotEqual(rig.manifest['version'],rig.skeleton['version'])
         self.assertIn('b1',state['bone_matrices'])
         self.assertIn('blink',state['morph_targets'][rig.geometry.meshes[0].id])
+        self.assertEqual(state['socket_matrices'],{})
         self.assertEqual(self.bundle,before);self.assertEqual((self.root/'actor/rig.json').read_bytes(),manifest)
         self.assertTrue(out['nodes']['one']['native_pose_evaluated'])
         without_vertices=self.evaluate(source_root=self.root)
@@ -110,6 +127,24 @@ class PoseBindingTests(unittest.TestCase):
             with self.assertRaises(RigError):self.evaluate(source_root=self.root,sample_geometry=True)
             decoder.assert_not_called()
 
+    def test_authored_socket_follows_pose_and_explicit_instance_world_mapping(self):
+        from rig_attachments import socket_world
+        rig,asset,one,two=self.actors(with_socket=True)
+        one['transform']['translation']=[7,2,3]
+        one['transform']['rotation']=axis_angle([0,1,0],.4).tolist()
+        before=deepcopy(self.bundle);source=(self.root/'actor/rig.json').read_bytes()
+        out=self.evaluate(source_root=self.root)
+        state=out['nodes']['one']['native_state'];other=out['nodes']['two']['native_state']
+        self.assertEqual(set(state['socket_matrices']),{'tool'})
+        self.assertEqual(state['socket_matrix_space'],'rig-bind')
+        matrix=np.asarray(state['socket_matrices']['tool'])
+        np.testing.assert_allclose(matrix,socket_world(rig,state['pose'],'tool'))
+        self.assertFalse(np.allclose(matrix,other['socket_matrices']['tool']))
+        np.testing.assert_allclose(np.asarray(state['world_from_rig'])@matrix,
+            np.asarray(out['nodes']['one']['world_matrix'])@socket_world(rig,state['pose'],'tool'))
+        self.assertEqual(self.bundle,before)
+        self.assertEqual((self.root/'actor/rig.json').read_bytes(),source)
+
     def test_decoder_uses_private_capture_after_original_source_changes(self):
         from rig_models import load_rig
         rig,asset,one,two=self.actors()
@@ -127,6 +162,65 @@ class PoseBindingTests(unittest.TestCase):
             self.assertEqual(after['nodes']['one']['native_state'],before['nodes']['one']['native_state'])
         finally:
             geometry.write_bytes(original)
+
+    def test_distinct_poses_share_one_exact_loaded_rig_and_keep_independent_state(self):
+        from rig_models import load_rig
+        from rig_operations import pose_operation
+        rig,asset,one,two=self.actors()
+        actors=[one,two]
+        for index in range(2,8):
+            actor=deepcopy(one);actor['id']='actor-'+str(index)
+            self.scene['nodes'].append(actor);actors.append(actor)
+        for index,actor in enumerate(actors):
+            pose=rotate_bone(rig.skeleton,neutral_pose(rig.skeleton,'pose-'+str(index)),
+                'b1',axis_angle([0,0,1],index/10))
+            actor['pose_binding']=self.bind(rig,pose,'pose-'+str(index)+'.json')
+        before=deepcopy(self.bundle)
+        with patch('rig_models.load_rig',wraps=load_rig) as loader, \
+             patch('rig_operations.pose_operation',wraps=pose_operation) as poser:
+            out=self.evaluate(source_root=self.root)
+        self.assertEqual(loader.call_count,1)
+        self.assertEqual(poser.call_count,8)
+        self.assertEqual(len({id(call.args[0].geometry) for call in poser.call_args_list}),1)
+        states=[out['nodes'][actor['id']]['native_state'] for actor in actors]
+        self.assertEqual(len({state['pose']['id'] for state in states}),8)
+        self.assertFalse(np.allclose(states[0]['bone_matrices']['b1'],states[-1]['bone_matrices']['b1']))
+        states[0]['pose']['bones'].clear()
+        self.assertTrue(states[-1]['pose']['bones'])
+        self.assertEqual(self.bundle,before)
+
+    def test_distinct_rig_input_budget_applies_without_geometry_sampling(self):
+        from rig_models import load_rig
+        first,asset,one,two=self.actors()
+        second=fixture(self.root,name='second')
+        second_ref=dict(kind='hatch-3d-rig',id=second.manifest['id'],version=second.manifest['version'],
+                        **self.file('second/rig.json'))
+        other_asset=deepcopy(asset);other_asset.update(id='second-asset',skeleton=second_ref,animations=[])
+        self.bundle['documents']['second-asset.json']=other_asset
+        actor=deepcopy(one);actor['id']='third'
+        actor['asset']=dict(kind='scene3d-asset',id=other_asset['id'],version=other_asset['version'],
+            path='second-asset.json',sha256=hashlib.sha256(canonical_bytes(other_asset)).hexdigest())
+        actor['pose_binding']=self.bind(second,neutral_pose(second.skeleton),'second-pose.json',second_ref)
+        self.scene['nodes'].append(actor)
+        self.register_authored_files(self.root,[p for p in (self.root/'second').rglob('*') if p.is_file()])
+        vertices=sum(len(mesh.positions) for mesh in first.geometry.meshes)
+        with patch('scene3d_pose.MAX_NATIVE_INPUT_VERTICES',vertices):
+            with self.assertRaisesRegex(RigError,'input vertex budget'):
+                self.evaluate(source_root=self.root)
+        with patch('scene3d_pose.MAX_NATIVE_INPUT_VERTICES',vertices*2), \
+             patch('rig_models.load_rig',wraps=load_rig) as loader:
+            self.evaluate(source_root=self.root)
+            self.assertEqual(loader.call_count,2)
+
+    def test_pose_deformation_cache_charged_before_native_allocation(self):
+        from rig_skinning import evaluate_deformation
+        rig,asset,one,two=self.actors()
+        vertices=sum(len(mesh.positions) for mesh in rig.geometry.meshes)
+        with patch('scene3d_pose.MAX_NATIVE_DEFORMED_VERTICES',vertices), \
+             patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deform:
+            with self.assertRaisesRegex(RigError,'deformation cache vertex budget'):
+                self.evaluate(source_root=self.root,sample_geometry=True)
+            self.assertEqual(deform.call_count,1)
 
     def test_imported_root_pose_matches_canonical_importer_and_keeps_other_instance(self):
         from asset_library import AssetLibrary
@@ -163,6 +257,29 @@ class PoseBindingTests(unittest.TestCase):
             self.assertEqual(out['native_geometry'][identifier],expected[identifier])
             self.assertEqual(out['nodes'][identifier]['native_state']['pose']['id'],pose['id'])
         self.assertNotIn('native_pose',out['nodes']['other'])
+        # Shared immutable imports/poses must reuse admitted geometry and actual
+        # deformation; component projection must not invoke another native load.
+        from rig_skinning import evaluate_deformation
+        expanded=SceneGraph(scene)
+        last_mapping=None
+        for index in range(1,8):
+            target='actor-'+str(index)
+            last_mapping=add_import(expanded,imported,target)['mapping']
+            expanded.configure_node(target,{'pose_binding':binding})
+        self.bundle['documents']['example-scene.json']=expanded.document()
+        with patch('rig_models.load_rig',wraps=load_rig) as loader, \
+             patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deform:
+            shared=self.evaluate(source_root=copied,sample_geometry=True)
+        self.assertEqual(loader.call_count,1)
+        self.assertEqual(deform.call_count,1)
+        self.assertEqual(len(shared['native_geometry']),8*len(out['native_geometry']))
+        # Reusing admitted arrays cannot bypass any component's source pin.
+        corrupt=expanded.document()
+        component=next(n for n in corrupt['nodes'] if n['id'] in last_mapping.values() and 'asset' in n)
+        component['metadata']['source_asset_sha256']='0'*64
+        self.bundle['documents']['example-scene.json']=corrupt
+        with self.assertRaises(RigError):self.evaluate(source_root=copied,sample_geometry=True)
+        self.bundle['documents']['example-scene.json']=scene
         from scene3d_snapshot import snapshot_project
         from scene3d_contracts import load_project
         from scene3d_evaluate import evaluate_scene

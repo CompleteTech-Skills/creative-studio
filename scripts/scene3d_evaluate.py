@@ -17,6 +17,8 @@ from scene3d_contracts import COORDINATES, load_project, validate_document, requ
 from scene3d_graph import SceneGraph
 from scene3d_prefabs import PrefabLibrary
 
+MAX_NATIVE_CACHE_VERTICES = 2000000
+
 
 def _rational(value):
     return {'numerator': value.numerator, 'denominator': value.denominator}
@@ -209,6 +211,7 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
         import numpy as np
         from scene3d_constraints import sample_path
         from scene3d_math import local_matrix
+        from scene3d_graph import _inverse
         for binding in sorted(paths,key=lambda b:depth(b['target'])):
             samples += 1
             require(samples <= max_track_samples,'Evaluated-track budget exceeded.','SCENE3D_EVALUATION_LIMIT')
@@ -224,7 +227,7 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
                 attachment = node['attachment']
                 world = (np.asarray(SceneGraph(working).evaluate_base(attachment['socket'])['world_matrix']) @
                          local_matrix(attachment['offset']))
-            local_target = (np.linalg.inv(world)@np.r_[desired,1])[:3]
+            local_target = (_inverse(world)@np.r_[desired,1])[:3]
             transform = node['transform']
             pivot_offset = local_matrix(transform)[:3,3]-np.asarray(transform['translation'])
             transform['translation'] = (local_target-pivot_offset).tolist()
@@ -271,6 +274,15 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
     from scene3d_pose import evaluate_poses
     pose_geometry = evaluate_poses(graph,evaluated,documents,native,source_root,
         verified_inventory=bundle['inventory'],sample_geometry=sample_geometry,max_vertices=max_geometry_vertices)
+    for state in evaluated.values():
+        state['native_bounds_evaluated'] = True
+    if not sample_geometry:
+        for identifier,state in evaluated.items():
+            if 'native_pose' in state or 'native_clip' in state:
+                cursor = identifier
+                while cursor is not None:
+                    evaluated[cursor]['native_bounds_evaluated'] = False
+                    cursor = nodes[cursor]['parent']
     if geometry is not None:
         geometry.update(pose_geometry)
         require(sum(len(points) for meshes in geometry.values() for points in meshes.values()) <=
@@ -323,7 +335,9 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
     from scene3d_contracts import portable_path
     from scene3d_capture import capture_verified_native
     import numpy as np
-    result, cache, count = {}, {}, 0
+    result, cache, rigs, count = {}, {}, {}, 0
+    rig_vertices = sampled_vertices = 0
+    native_input_limit = MAX_NATIVE_CACHE_VERTICES
     nodes = {node['id']:node for node in graph.document()['nodes']}
     for identifier, binding in native.items():
         node = nodes[identifier]
@@ -346,11 +360,21 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
         identity = ('kind', 'id', 'version', 'path', 'sha256')
         key = (tuple(rig_ref[field] for field in identity),
                tuple(reference[field] for field in identity), time, binding['loop'])
-        if key not in cache:
+        rig_key = key[0]
+        if rig_key not in rigs:
             with capture_verified_native(root,rig_ref['path'],inventory) as private_rig:
                 rig = load_rig(private_rig)
             require(rig.manifest['id'] == rig_ref['id'] and rig.manifest['version'] == rig_ref['version'],
                     'Native rig identity/version differs from the binding.')
+            size = sum(len(mesh.positions) for mesh in rig.geometry.meshes)
+            require(rig_vertices + size <= native_input_limit,
+                    'Native rig input vertex budget exceeded.', 'SCENE3D_EVALUATION_LIMIT')
+            rigs[rig_key] = (rig,size)
+            rig_vertices += size
+        rig, size = rigs[rig_key]
+        if key not in cache:
+            require(sampled_vertices + size <= native_input_limit,
+                    'Native deformation cache vertex budget exceeded.', 'SCENE3D_EVALUATION_LIMIT')
             require(reference['id'] in rig.clips, 'Native clip is absent from the rig.')
             descriptor = next(item for item in rig.manifest['animations']
                               if item['id'] == reference['id'])
@@ -361,13 +385,14 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
             clip = rig.clips[reference['id']]
             pose = evaluate_animation(rig, clip, float(time), loop=binding['loop'])['pose']
             deformed = evaluate_deformation(rig, pose)
-            cache[key] = (rig, deformed)
-        rig, deformed = cache[key]
+            cache[key] = deformed
+            sampled_vertices += size
+        deformed = cache[key]
         if 'source_component' in node.get('metadata', {}):
             # Retain the importer ownership of source transforms, component maps
             # and canonical bind-space geometry. Its evaluator avoids applying
             # the imported source hierarchy twice.
-            from scene3d_import import ImportedScene, evaluate_imported_vertices
+            from scene3d_import import ImportedScene, project_imported_vertices
             def original(suffix):
                 entries = [entry for entry in asset['dependencies'] if entry['path'].endswith(suffix)]
                 require(len(entries) == 1, 'Imported asset is missing its exact '+suffix+' record.')
@@ -382,8 +407,7 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
                     return {'nodes':[node]}
                 def evaluate_base(self, selected):
                     return graph.evaluate_base(selected)
-            sampled = evaluate_imported_vertices(ComponentView(),imported,rig_path.parent,
-                clip=reference['id'],time=float(time),loop=binding['loop'])
+            sampled = project_imported_vertices(ComponentView(),imported,rig,deformed)
             positions = sampled['nodes'][identifier]
         else:
             world = np.asarray(evaluated[identifier]['world_matrix'])
@@ -449,6 +473,9 @@ def frame_camera(evaluation, render, targets, **options):
     require(isinstance(targets,(list,tuple)) and 1 <= len(targets) <= 128 and
             all(isinstance(target,str) and target in evaluation['nodes'] for target in targets),
             'Framing requires 1..128 evaluated node IDs.')
+    require(all(evaluation['nodes'][target].get('native_bounds_evaluated', False) for target in targets),
+            'Framing native deformation requires sample_geometry=True for the evaluated frame.',
+            'SCENE3D_EVALUATION_GEOMETRY')
     from camera3d_constraints import frame_subject
     mapped = camera_matrices(evaluation,render)
     resolved = [dict(position=[evaluation['nodes'][target]['world_matrix'][axis][3] for axis in range(3)],

@@ -110,7 +110,27 @@ class SceneEvaluationTests(unittest.TestCase):
             character=node(identifier,'skinned_character','root');character['asset']=asset_ref
             self.scene['nodes'].append(character)
             self.shot['bindings'].append(dict(target=identifier,clip=clips[clip],start_frame=0,end_frame=24,speed=1,loop=False))
-        out=self.evaluate(12,source_root=self.root,sample_geometry=True)
+        from unittest.mock import patch
+        from rig_models import load_rig
+        with patch('rig_models.load_rig',wraps=load_rig) as loader:
+            out=self.evaluate(12,source_root=self.root,sample_geometry=True)
+        self.assertEqual(loader.call_count,1)
+        from scene3d_evaluate import frame_camera
+        cheap=self.evaluate(12)
+        for target in ('first','root'):
+            with self.assertRaises(RigError):frame_camera(cheap,dict(width=640,height=480),[target])
+        from rig_skinning import evaluate_deformation
+        with patch('scene3d_evaluate.MAX_NATIVE_CACHE_VERTICES',1), \
+                patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deformer:
+            with self.assertRaises(RigError):
+                self.evaluate(12,source_root=self.root,sample_geometry=True)
+            self.assertEqual(deformer.call_count,0)
+        source_vertices=sum(len(mesh.positions) for mesh in rig.geometry.meshes)
+        with patch('scene3d_evaluate.MAX_NATIVE_CACHE_VERTICES',source_vertices), \
+                patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deformer:
+            with self.assertRaises(RigError):
+                self.evaluate(12,source_root=self.root,sample_geometry=True)
+            self.assertEqual(deformer.call_count,1)
         first=np.asarray(next(iter(out['native_geometry']['first'].values())))
         second=np.asarray(next(iter(out['native_geometry']['second'].values())))
         self.assertEqual(out['nodes']['first']['world_bounds'],
@@ -160,6 +180,8 @@ class SceneEvaluationTests(unittest.TestCase):
         graph=SceneGraph(self.scene,external_references={})
         first_mapping=add_import(graph,imported,'one')['mapping']
         second_mapping=add_import(graph,imported,'two')['mapping']
+        extras=['copy-'+str(index) for index in range(6)]
+        for identifier in extras:add_import(graph,imported,identifier)
         transform=graph.transform('one');transform['translation']=[7,0,0];graph.set_transform('one',transform)
         self.bundle['documents']['example-scene.json']=graph.document()
         self.bundle['documents'][imported.asset_reference['path']]=imported.asset
@@ -168,8 +190,15 @@ class SceneEvaluationTests(unittest.TestCase):
         bend=clips[imported.report['native_clip_map']['bend']]
         neutral=clips[imported.report['native_clip_map']['neutral']]
         self.shot['bindings']=[dict(target=target,clip=ref,start_frame=0,end_frame=24,speed=1,loop=True)
-                              for target,ref in [('one',bend),('two',neutral)]]
-        out=self.evaluate(15,source_root=copied,sample_geometry=True)
+                              for target,ref in [('one',bend),('two',neutral),*[(i,bend) for i in extras]]]
+        from unittest.mock import patch
+        from rig_models import load_rig
+        from rig_skinning import evaluate_deformation
+        with patch('rig_models.load_rig',wraps=load_rig) as loader, \
+                patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deformer:
+            out=self.evaluate(15,source_root=copied,sample_geometry=True)
+        self.assertEqual(loader.call_count,1)
+        self.assertEqual(deformer.call_count,2)
         expected=evaluate_imported_vertices(graph,imported,copied/'imports/imported/1.0.0/native',
                                           clip=bend['id'],time=2.5,loop=True)['nodes']
         selected=[i for i in out['native_geometry'] if i in first_mapping.values()]
@@ -284,6 +313,20 @@ class SceneEvaluationTests(unittest.TestCase):
         self.assertNotEqual(self.evaluate(20)['nodes']['mesh']['world_matrix'],out['nodes']['mesh']['world_matrix'])
         self.shot['path_bindings'][0]['points']=[[0,0,0],[0,0,0]]
         with self.assertRaises(RigError):self.evaluate()
+
+    def test_underflowing_parent_path_inverse_fails_structurally_without_mutation(self):
+        parent='root'
+        for index in range(48):
+            group=node('tiny-'+str(index),'group',parent)
+            group['transform']['scale']=[1e-7]*3
+            self.scene['nodes'].append(group);parent=group['id']
+        self.scene['nodes'][1]['parent']=parent
+        self.shot['path_bindings']=[dict(schema_version=1,id='travel',target='mesh',
+            points=[[0,0,0],[1,0,0]],start_frame=0,end_frame=20,start_fraction=0,
+            end_fraction=1,space='world',orientation='preserve')]
+        before=deepcopy(self.bundle)
+        with self.assertRaises(RigError):self.evaluate(1)
+        self.assertEqual(self.bundle,before)
 
     def test_canonical_light_binding_uses_explicit_units_and_animated_multiplier(self):
         from lookdev_contracts import Registry,canonical_bytes
