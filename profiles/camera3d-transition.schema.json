@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hatch camera3d transition v1",
+  "$defs": {
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "camera3d-transition"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "type": {
+          "enum": [
+            "cut",
+            "dissolve",
+            "fade",
+            "wipe"
+          ]
+        },
+        "duration_frames": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000000
+        },
+        "overlap": {
+          "enum": [
+            "none",
+            "tail-head"
+          ]
+        },
+        "color_rgba": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "direction": {
+          "enum": [
+            "left",
+            "right",
+            "up",
+            "down"
+          ]
+        },
+        "curve": {
+          "enum": [
+            "linear",
+            "smoothstep"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "type",
+        "duration_frames",
+        "overlap",
+        "color_rgba",
+        "direction",
+        "curve"
+      ]
+    }
+  },
+  "$ref": "#/$defs/transition"
+}

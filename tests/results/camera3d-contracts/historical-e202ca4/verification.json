@@ -1,0 +1,99 @@
+{
+  "issue": 75,
+  "scope": "Additive camera contract foundation, not parent camera system completion",
+  "baseline_commit": "a08569cbdb593651807c887f4c9edd5e7b243973",
+  "tested_source_snapshot": "source-snapshot.json",
+  "source_hashes_unchanged_during_tests": true,
+  "command_results": [
+    {
+      "command": "/tmp/hatch-restore-venv/bin/python scripts/test_rig_gate.py schema-math",
+      "tests": 35,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 10.729
+    },
+    {
+      "command": "PYTHONPATH=scripts:tests /tmp/hatch-restore-venv/bin/python -m unittest test_production_contracts test_production_render -v",
+      "tests": 51,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 10.655
+    },
+    {
+      "command": "HATCH_BROWSER_EXECUTABLE=/usr/bin/chromium PYTHONPATH=scripts:tests /tmp/pr199-venv/bin/python -m unittest test_production_preview -v",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "seconds": 10.832,
+      "browser": "Chromium 152.0.7977.82"
+    },
+    {
+      "command": "/tmp/hatch-restore-venv/bin/python scripts/generate_schemas.py --check",
+      "exit": 0
+    },
+    {
+      "command": "/tmp/hatch-restore-venv/bin/python scripts/camera3d_contracts.py --check",
+      "exit": 0
+    },
+    {
+      "command": "/tmp/hatch-restore-venv/bin/python scripts/camera3d_contracts.py --validate examples/camera3d/registry.json",
+      "exit": 0,
+      "native_camera_documents": 3
+    }
+  ],
+  "optional_dependency_boundary": {
+    "legacy_tests_discovered": 802,
+    "discovery_not_full_execution": true,
+    "camera_tests_excluded_by_existing_rig_family_boundary": true
+  },
+  "prior_environment_failures": [
+    {
+      "command": "Initial legacy suite with /tmp/hatch-restore-venv/bin/python",
+      "result": "55 run, 1 class skip because Playwright unavailable; actual 4 Chromium tests rerun successfully in /tmp/pr199-venv"
+    },
+    {
+      "command": "Host python3 scripts/generate_schemas.py --check",
+      "result": "Missing Pillow in host interpreter; passed using declared-dependency environment"
+    }
+  ],
+  "limitations": [
+    "No camera renderer, browser camera editor, path/constraint solver, DOF execution or parent #14 demonstration claimed",
+    "Reference registry external resource semantics remain native-owner responsibility",
+    "Native camera math uses lazy optional NumPy; local Python 3.14.7 differs from CI Python 3.12",
+    "No human or production-art approval created",
+    "Independent Astra review and exact-head CI pending"
+  ],
+  "artifacts": {
+    "schema-math.log": {
+      "sha256": "af967e32adc4b2417a7263c94c2732b3f354a23e3947d89abec43e4ee2502719",
+      "bytes": 6068
+    },
+    "legacy-contract-render.log": {
+      "sha256": "7a49a6fe165ee9daaacf64b4f5abd06191dfc94125ffc9a183a8b75357b04599",
+      "bytes": 9693
+    },
+    "actual-browser.log": {
+      "sha256": "f7e1e194543c47b4a0a0bed8b7f1dc0091c80b1abe9d15c40685e00197743ff7",
+      "bytes": 884
+    },
+    "initial-legacy-missing-playwright.log": {
+      "sha256": "c73765447f84af734b905161273c2d40f1538bf7478279bcd348293a0a1647a0",
+      "bytes": 10538
+    },
+    "registry-example.json": {
+      "sha256": "cabda334465c8bbe4766598d987d2b622ecb274743ad629efa6c924b751a80a6",
+      "bytes": 276
+    },
+    "source-snapshot.json": {
+      "sha256": "dd63212f0fc6d444472041523845f5a5198f736b8dc0b4fc4f8741dcc24b82ff",
+      "bytes": 10764
+    },
+    "protected-inputs.json": {
+      "sha256": "db00f4392cf4384ec666b4cb59f14fbd06b773e18aa689b37a7223864ec03663",
+      "bytes": 1445
+    }
+  }
+}
