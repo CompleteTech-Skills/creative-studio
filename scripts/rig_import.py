@@ -221,7 +221,7 @@ def _import_skeleton(document: GltfDocument, parents, world, order, scale):
                           parent=ids[parent] if parent in ids else 'import-root' if virtual else None,
                           rest=decompose(local), head=head.tolist(), tail=tail.tolist(),
                           length=float(np.linalg.norm(tail-head)), roll=float(extra.get('roll', 0)),
-                          deform=i in deform, mirror=mirror,
+                          deform=extra.get('deform',i in deform), mirror=mirror,
                           evidence=dict(source='existing-rig', reference=f'glTF node {i}', confidence=1.)))
     result = dict(schema_version=1, id='imported-skeleton', version='1.0.0',
                   root='import-root' if virtual else ids[roots[0]], bones=bones)

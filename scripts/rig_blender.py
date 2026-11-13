@@ -58,6 +58,14 @@ def _publish_outputs(outputs):
                        preserved=str(destination), observed=str(exc)) from exc
 
 
+def _require_authoring_bones(report,rig):
+    expected={bone['id']:dict(native_id=bone['id'],role=bone['role'],deform=bone['deform'],parent=bone['parent'])
+              for bone in rig.skeleton['bones']}
+    require(report.get('bone_metadata')==expected,'RIG_BLENDER_BONE_METADATA',
+            'Editable Blender bones must preserve every native ID, role, deform flag and parent.',
+            expected=expected,observed=report.get('bone_metadata'))
+
+
 def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
     from rig_gltf import export_gltf
     from rig_animation import evaluate_animation
@@ -83,10 +91,12 @@ def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
         report=_run(dict(base,mode='create',input=str(source),manifest=str(root/'rig.json'),output=str(staged),report=str(root/'create-report.json')),
                     executable=executable,timeout=timeout)
         require(report['ok'],'RIG_BLENDER_EDITABLE','Blender output lacks armature, skin modifier or weights.')
+        _require_authoring_bones(report,rig)
         if verify:
             exported=root/'roundtrip.glb'
             report=_run(dict(base,mode='reopen',input=str(staged),export=str(exported),report=str(root/'reopen-report.json')),
                         executable=executable,timeout=timeout)
+            _require_authoring_bones(report,rig)
             maximum=0.;joint_max=0.;socket_max=0.;compared=0
             require(len(report['samples']) == len(samples),'RIG_BLENDER_SAMPLES','Independent Blender sample inventory is incomplete.')
             from rig_skeleton import evaluate_fk
