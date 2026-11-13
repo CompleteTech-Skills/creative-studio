@@ -21,6 +21,11 @@ class NativeCapabilityTests(unittest.TestCase):
                 evidence=json.loads((path/reference['path']).read_text())
                 self.assertEqual(evidence['execution']['vertices'],3)
                 self.assertEqual(evidence['execution']['triangles'],1)
+            stripped=deepcopy(result['value'])
+            stripped['capabilities'][0]['probe_evidence'][0]['dependencies']=[]
+            stripped['digest']=object_hash({k:v for k,v in stripped.items() if k!='digest'})
+            with self.assertRaisesRegex(RigError,'receipt payloads differ'):
+                cap.assert_admission(stripped,operations,evidence_root=path)
             changed=deepcopy(result);changed['value']['capabilities'][0]['limits']['max_provider_calls']=100
             with self.assertRaises(RigError):cap.assert_admission(changed,operations)
             changed['value']['digest']=object_hash({k:v for k,v in changed['value'].items() if k!='digest'})
