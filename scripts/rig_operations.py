@@ -3,7 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 import numpy as np
 from rig_errors import atomic_json, read_json, require, safe_path, sha256
-from rig_jobs import run_step, save_rig, configure_limits, next_version
+from rig_jobs import run_step, save_rig, configure_limits, next_version, write_rig_manifest, retain_artifact
 from rig_models import load_rig, rig_signature
 
 
@@ -24,7 +24,7 @@ def mutate(root,operation,parameters=None):
         artifacts=[];result={}
         if operation=='analyze':
             from rig_geometry import analyze_geometry
-            result=analyze_geometry(rig.geometry,rig.manifest['limits']);atomic_json(rig.root/'validation/geometry.json',result);artifacts=['validation/geometry.json']
+            result=analyze_geometry(rig.geometry,rig.manifest['limits']);artifacts=[retain_artifact(rig.root, 'geometry', result)]
         elif operation=='auto':
             from rig_templates import generate_skeleton
             from rig_contracts import validate_contract
@@ -51,11 +51,10 @@ def mutate(root,operation,parameters=None):
         elif operation in ('validate','test-motion'):
             from rig_validation import validate_rig,test_motion_ranges
             result=validate_rig(rig,require_animation=parameters.get('require_animation',False)) if operation=='validate' else test_motion_ranges(rig)
-            name='validation/'+('rig' if operation=='validate' else 'motion-ranges')+'.json';atomic_json(rig.root/name,result);artifacts=[name]
-            from rig_errors import object_hash
-            retained='validation/reports/'+object_hash(result)+'.json';atomic_json(rig.root/retained,result)
+            retained=retain_artifact(rig.root, operation, result);artifacts=[retained]
+            name=retained
             rig.manifest['validation'].append(dict(path=retained,sha256=sha256(rig.root/retained)))
-            atomic_json(rig.root/'rig.json',rig.manifest)
+            write_rig_manifest(rig.root, rig.manifest)
             ok=result['ok'] if operation=='validate' else result['report']['ok']
             require(ok,'RIG_VALIDATION_FAILED','Numerical validation failed; inspect the retained report.',asset=name,preserved=str(rig.root))
         elif operation=='correct':
@@ -78,12 +77,12 @@ def mutate(root,operation,parameters=None):
             from rig_retarget import retarget_animation
             source=load_rig(parameters['source']);value=retarget_animation(source,rig,parameters['clip'],profile=parameters.get('profile'),partial=parameters.get('partial',False))
             rig.clips[value['clip']['id']]=value['clip'];save_rig(rig,operation='retarget-animation')
-            name='validation/retarget-'+value['clip']['id']+'.json';atomic_json(rig.root/name,value['report']);artifacts=[name];result=value['report']
+            name=retain_artifact(rig.root, 'retarget-'+value['clip']['id'], value['report']);artifacts=[name];result=value['report']
         elif operation=='state-map':
             from rig_states import map_states
             result=map_states(rig,recipes=parameters.get('recipes'),selected=parameters.get('selected'),pack=parameters.get('pack'),approved_props=parameters.get('approved_props',[]))
             rig.manifest['state_mapping'].update(result['mapping']);save_rig(rig,operation='map-selected-states')
-            atomic_json(rig.root/'animations/state-mapping.json',result);artifacts=['animations/state-mapping.json']
+            artifacts=[retain_artifact(rig.root, 'state-mapping', result)]
         return dict(result=result,artifact_paths=artifacts,**({'job_status':result['job_status']} if 'job_status' in result else {}))
     return run_step(root,operation,parameters,action,status=STATUSES[operation])
 
