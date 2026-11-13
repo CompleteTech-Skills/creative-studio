@@ -22,6 +22,50 @@ from rig_states import map_states
 
 class RigWorkflowTests(unittest.TestCase):
     def setUp(self):self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.rig=fixture(self.temp.name)
+    def test_load_rig_retains_explicit_directory_authority_after_root_replacement(self):
+        from rig_errors import directory_capability
+        if not Path('/proc/self/fd').is_dir():
+            with self.assertRaises(RigError) as caught:
+                with directory_capability(0):self.fail('Unsupported descriptor authority admitted')
+            self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_UNAVAILABLE')
+            return
+        original=self.rig.root
+        fd=os.open(original,os.O_RDONLY|os.O_DIRECTORY)
+        try:
+            with directory_capability(fd) as cap:
+                original.rename(original.with_name('retained'));original.mkdir()
+                (original/'rig.json').write_text('{}')
+                loaded=load_rig(cap.path)
+                self.assertEqual(loaded.root,cap.path)
+                self.assertEqual(rig_signature(loaded.manifest),rig_signature(self.rig.manifest))
+                self.assertEqual((original/'rig.json').read_text(),'{}')
+        finally:os.close(fd)
+
+    def test_model_readers_retain_explicit_parent_authority(self):
+        from rig_errors import directory_capability
+        if not Path('/proc/self/fd').is_dir():
+            with self.assertRaises(RigError) as caught:
+                with directory_capability(0):self.fail('Unsupported descriptor authority admitted')
+            self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_UNAVAILABLE')
+            return
+        from rig_gltf import read_gltf
+        from rig_obj import import_obj
+        root=Path(self.temp.name)/'models';root.mkdir()
+        (root/'model.gltf').write_text('{"asset":{"version":"2.0"}}')
+        (root/'model.obj').write_text('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n')
+        fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY)
+        try:
+            with directory_capability(fd) as cap:
+                root.rename(root.with_name('retained-models'));root.mkdir()
+                (root/'model.gltf').write_text('{}');(root/'model.obj').write_text('foreign')
+                gltf=read_gltf(cap.path/'model.gltf')
+                obj=import_obj(cap.path/'model.obj')
+                self.assertEqual(gltf.path,cap.path/'model.gltf')
+                self.assertEqual(gltf.json['asset']['version'],'2.0')
+                self.assertEqual(len(obj.geometry.meshes),1)
+                self.assertEqual(obj.geometry.meshes[0].positions.tolist(),[[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]])
+        finally:os.close(fd)
+
     def correction(self,edits):
         r=self.rig;return dict(schema_version=1,kind='hatch-3d-rig-correction',rig_id=r.manifest['id'],rig_version=r.manifest['version'],
             expected_sha256=rig_signature(r.manifest),author='unit fixture',reason='Explicit test correction',created_at=timestamp(),edits=edits)
