@@ -137,3 +137,23 @@ class CapabilityTests(unittest.TestCase):
     def test_bare_malformed_snapshot_is_typed_failure(self):
         for value in (None,{},[],{'capabilities':[]}):
             with self.subTest(value=value),self.assertRaises(RigError):cap.assert_admission(value,[])
+
+    def test_empty_execution_evidence_cannot_admit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result=cap.probe(request(['importer.obj'],['importer.obj']),Path(directory)/'proof')
+            result['value']['capabilities'][0]['probe_evidence']=[]
+            result['value']['digest']=object_hash({k:v for k,v in result['value'].items() if k!='digest'})
+            with self.assertRaises(RigError):cap.assert_admission(result,['importer.obj'],evidence_root=Path(directory)/'proof')
+
+    def test_malformed_receipt_is_typed_failure(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)/'proof'
+            result=cap.probe(request(['importer.obj'],['importer.obj']),root)
+            reference=result['value']['capabilities'][0]['probe_evidence'][0]
+            path=root/reference['path'];path.write_bytes(b'{}')
+            reference['sha256']=hashlib.sha256(b'{}').hexdigest();reference['byte_size']=2
+            # Rebind every duplicated reference consistently; malformed receipt still fails.
+            result['artifacts']=[deepcopy(reference)];result['provenance_receipts']=[deepcopy(reference)]
+            result['value']['digest']=object_hash({k:v for k,v in result['value'].items() if k!='digest'})
+            with self.assertRaises(RigError):cap.assert_admission(result,['importer.obj'],evidence_root=root)
