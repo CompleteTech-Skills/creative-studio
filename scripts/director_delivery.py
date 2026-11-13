@@ -74,6 +74,26 @@ def _performance_input_hashes(root):
     return {relative: sha256(safe_path(root, relative, exists=True)) for relative in sorted(paths)}
 
 
+def verify_shot_clips(rigs):
+    """Bind rendered shot animation to the measured full performance clock."""
+    import numpy as np
+    from rig_animation import evaluate_animation
+    from rig_skeleton import evaluate_fk
+    for actor, rig in rigs.items():
+        for suffix, offset in [('establish', 0), ('discovery', 60)]:
+            for local in range(61):
+                full = evaluate_animation(rig, actor+'-investigation', (offset+local)/24,
+                                          contacts=False, constraints=False)
+                shot = evaluate_animation(rig, actor+'-'+suffix, local/24,
+                                          contacts=False, constraints=False)
+                expected = evaluate_fk(rig.skeleton, full['pose'])
+                observed = evaluate_fk(rig.skeleton, shot['pose'])
+                _require(set(expected) == set(observed) and all(np.allclose(expected[bone], observed[bone],
+                         atol=1e-8, rtol=0) for bone in expected),
+                         'Rendered shot clip differs from measured performance: '+actor+'-'+suffix)
+    return {'boundaries_per_shot': 61, 'actors': sorted(rigs), 'verified': True}
+
+
 def verify_performance_motion(performance_root):
     """Load the actual native rig geometry/weights/animation and verify motion."""
     from rig_models import load_rig
@@ -82,7 +102,9 @@ def verify_performance_motion(performance_root):
     before = _performance_input_hashes(root)
     scene = read_json(safe_path(root, 'scene.json', exists=True))
     rigs = {actor: load_rig(root / 'assets' / ('rig-' + actor)) for actor in ('aster', 'moss')}
+    shot_clips = verify_shot_clips(rigs)
     result = measure_motion(rigs, scene)
+    result['shot_clips'] = shot_clips
     after = _performance_input_hashes(root)
     _require(before == after, 'Performance inputs changed during verification.')
     result['input_sha256'] = before
