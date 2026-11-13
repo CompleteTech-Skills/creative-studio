@@ -198,3 +198,22 @@ alternatives with explicit approval, every required project/scene/asset/environm
 render command category, and integrated browser acceptance remain required work
 before #64 can be marked complete. The capabilities report states the current
 bounded behavior, and no parent acceptance claim follows from a passing unit suite.
+
+## Durable editor language and lifecycle adapters
+
+`scene3d_editor_language.plan_repository_description(repository, text,
+environment=False)` binds one exact repository revision/hash and the native scene
+plan. `apply_repository_plan(repository, plan, transaction_id)` calls the existing
+`EditorRepository.transact_native` lifecycle. Native locking, stale checks,
+idempotency, undo/redo and recovery retain their existing authority. Callers never
+supply a deserialized callback. A browser handler must retain the existing server's
+origin, Host and token protections; these trusted Python adapters alone do not
+establish a browser integration acceptance claim.
+
+`init --project SOURCE --scene PATH --destination NEW_REPOSITORY` captures an
+existing validated native project into the canonical durable repository. `archive
+--repository REPOSITORY --destination NEW_ZIP` and `restore --file ZIP --destination
+NEW_REPOSITORY` delegate verified all-revision archives and exclusive restore.
+`impact --project SOURCE --file TARGET_PATHS_JSON --purpose LABEL` delegates exact
+transitive dependency receipts. None creates a competing persistence format.
+Future schema conversion remains unsupported and fails under native validation.

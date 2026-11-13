@@ -33,6 +33,8 @@ def _parser():
             command.add_argument("--expected-sha256", required=True)
     from scene3d_cli_commands import add_parsers
     add_parsers(sub)
+    from scene3d_cli_lifecycle import add_parsers as add_lifecycle_parsers
+    add_lifecycle_parsers(sub)
     evaluate = sub.add_parser("evaluate", help="Sample actual scene animation at an exact frame")
     evaluate.add_argument("--project", required=True, type=Path)
     evaluate.add_argument("--scene", required=True)
@@ -64,6 +66,9 @@ def execute(args):
             import importlib.util
             result["dependencies"] = {name: importlib.util.find_spec(name) is not None for name in ("numpy", "PIL", "pygltflib")}
         return result
+    if args.command in ("init", "archive", "restore", "impact"):
+        from scene3d_cli_lifecycle import execute as execute_lifecycle
+        return execute_lifecycle(args)
     if args.command in ("scene", "asset", "object", "prefab", "camera", "shot", "lighting", "environment", "terrain", "room", "building", "layout"):
         from scene3d_cli_commands import execute as execute_native
         return execute_native(args)
@@ -124,6 +129,10 @@ def execute(args):
             plan = compile_description(graph, args.text)
     if args.command in ("plan", "describe"):
         return plan
+    if args.command == "generate":
+        from scene3d_graph import require
+        require(isinstance(plan, dict) and plan.get("kind") == "scene3d-environment-language-plan",
+                "Generate requires a reviewed environment geometry plan.", "SCENE3D_LANGUAGE_KIND")
     if isinstance(plan, dict) and plan.get("kind") == "scene3d-environment-language-plan":
         from scene3d_language_environment import apply_environment_plan
         return apply_environment_plan(args.project, args.destination, args.scene, plan, dry_run=args.dry_run)

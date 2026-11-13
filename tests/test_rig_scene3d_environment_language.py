@@ -54,6 +54,18 @@ class EnvironmentLanguageTests(unittest.TestCase):
                     apply_environment_plan(self.source, self.directory / 'bad', 'example-scene.json', plan)
                 self.assertFalse((self.directory / 'bad').exists())
 
+    def test_generate_rejects_an_ordinary_edit_plan(self):
+        from scene3d_language import compile_description
+        plan_file = self.directory / 'edit-plan.json'
+        plan_file.write_text(json.dumps(compile_description(self.graph, 'hide mesh')))
+        target = self.directory / 'not-generated'
+        command = [sys.executable, str(Path(__file__).resolve().parents[1] / 'scripts/scene3d.py')]
+        result = subprocess.run(command + ['generate', '--project', str(self.source), '--scene', 'example-scene.json',
+            '--file', str(plan_file), '--destination', str(target)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stderr)['error']['code'], 'SCENE3D_LANGUAGE_KIND')
+        self.assertFalse(target.exists())
+
     def test_aggregate_triangle_budget_is_unresolved_before_publication(self):
         text = '; '.join('create terrain named land' + str(index) +
             ' with width 10 meters, depth 10 meters, elevation 0 meters, resolution 99, seed 1'

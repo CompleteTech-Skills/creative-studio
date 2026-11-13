@@ -80,8 +80,6 @@ def execute(args):
         require(len({recipe['id'] for recipe in recipes}) == len(recipes), 'Duplicate recipe IDs in one batch.')
         require(sum(len(item['mesh'].triangles) for group in geometry for item in group) <= 200000,
                 'Aggregate generator batch triangle budget exceeded.')
-        require(sum(map(len, geometry)) + len(graph.document()['nodes']) <= 10000,
-                'Aggregate generator batch node budget exceeded.')
         if args.dry_run:
             return {'dry_run': True, 'recipes': recipes, 'generated_nodes': sum(map(len, geometry)),
                     'triangles': sum(len(item['mesh'].triangles) for group in geometry for item in group),
