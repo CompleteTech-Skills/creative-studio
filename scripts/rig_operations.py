@@ -42,6 +42,11 @@ def mutate(root,operation,parameters=None):
             for key in ('skeleton','controllers','attachments','uncertainties'):rig.manifest[key]=fitted[key]
             rig.manifest['archetype']=fitted['template_id'];rig.weights={};rig.clips={};rig.manifest['state_mapping']={}
             rig.manifest['facial']['eyes']=[b['id'] for b in rig.skeleton['bones'] if b['role'].startswith('eye.')]
+            if 'eyelids' in rig.manifest['facial']:
+                eyes=set(rig.manifest['facial']['eyes'])
+                rig.manifest['facial']['eyelids']=[binding for binding in rig.manifest['facial']['eyelids'] if binding['eye'] in eyes]
+            from rig_facial import validate_eyelid_bindings
+            validate_eyelid_bindings(rig)
             save_rig(rig,operation='generate-skeleton');result=dict(bones=len(rig.skeleton['bones']),uncertainties=len(fitted['uncertainties']),job_status=fitted['status'])
         elif operation=='weights':
             from rig_skinning import generate_skin_weights

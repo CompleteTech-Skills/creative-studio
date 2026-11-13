@@ -162,6 +162,34 @@ class EyelidCorrectionTests(unittest.TestCase):
         self.assertIn('blink',loaded.geometry.by_id()['eye-white-right'].morphs)
         gaze_at(loaded,neutral_pose(loaded.skeleton),[0,2,2])
 
+    def test_auto_replacement_prunes_absent_eyes_before_persisting_new_skeleton(self):
+        from rig_operations import mutate
+        from rig_models import load_rig
+        before=(self.rig.root/'rig.json').read_bytes()
+        result=mutate(self.rig.root,'auto',{'template':'robotic','replace':True})
+        self.assertEqual(result['status'],'succeeded')
+        loaded=load_rig(self.rig.root)
+        self.assertEqual(loaded.manifest['archetype'],'robotic')
+        self.assertEqual(loaded.manifest['facial']['eyes'],[])
+        self.assertEqual(loaded.manifest['facial']['eyelids'],[])
+        self.assertEqual(validate_eyelid_bindings(loaded),[])
+        self.assertNotEqual((self.rig.root/'rig.json').read_bytes(),before)
+        self.assertEqual(self.rig.manifest['facial']['eyelids'],[self.binding])
+
+    def test_auto_preserves_compatible_authored_bindings_and_default_no_replace(self):
+        from rig_operations import mutate
+        from rig_models import load_rig
+        original=(self.rig.root/'rig.json').read_bytes()
+        preserved=mutate(self.rig.root,'auto',{'template':'robotic'})
+        self.assertTrue(preserved['preserved_existing_rig'])
+        self.assertEqual((self.rig.root/'rig.json').read_bytes(),original)
+        mutate(self.rig.root,'auto',{'template':'humanoid','replace':True})
+        loaded=load_rig(self.rig.root)
+        self.assertEqual(loaded.manifest['facial']['eyelids'],[self.binding])
+        self.assertEqual(validate_eyelid_bindings(loaded),[self.binding])
+        pose=gaze_at(loaded,neutral_pose(loaded.skeleton),[0,2,2])
+        self.assertIn('blink',pose['morphs']['eye-white-left'])
+
     def test_invalid_facial_replacement_and_inert_morph_edit_reject_before_persistence(self):
         facial=deepcopy(self.rig.manifest['facial']);facial['eyelids'][0]['mesh']='missing'
         mesh=self.rig.geometry.by_id()['eye-white-left']
