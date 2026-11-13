@@ -103,7 +103,10 @@
           "const": 0.5
         },
         "threads": {
-          "const": 2
+          "enum": [
+            1,
+            2
+          ]
         },
         "max_seconds": {
           "type": "integer",
@@ -245,6 +248,25 @@
     },
     "review_status": {
       "const": "pending"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "torch_threads": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "torch_interop_threads": {
+          "const": 1
+        }
+      },
+      "required": [
+        "torch_threads",
+        "torch_interop_threads"
+      ]
     }
   },
   "required": [

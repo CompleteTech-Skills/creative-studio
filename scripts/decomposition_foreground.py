@@ -39,12 +39,16 @@ RECEIPT = obj({'schema_version': {'const': 1}, 'kind': {'const': 'foreground-pro
     'backend': obj({'name': {'const': 'torchvision-maskrcnn-coco-v1'}, 'weights_sha256': HASH,
                     'torch': TEXT, 'torchvision': TEXT, 'execution': {'const': 'local'}}),
     'parameters': obj({'score_threshold': CONFIDENCE, 'mask_threshold': {'const': .5},
-                        'threads': {'const': 2}, 'max_seconds': {'type': 'integer', 'minimum': 1, 'maximum': 300},
+                        'threads': {'enum': [1, 2]}, 'max_seconds': {'type': 'integer', 'minimum': 1, 'maximum': 300},
                         'max_pixels': {'const': MAX_PIXELS}}),
     'elapsed_seconds': {'type': 'number', 'minimum': 0},
     'candidates': array(CANDIDATE, MAX_CANDIDATES), 'overlap': ASSET,
     'overlay': ASSET, 'uncertainty': array(TEXT, 16, 1),
     'anatomy_recognized': {'const': False}, 'review_status': {'const': 'pending'}})
+
+# Optional on historical v1 receipts; current workers retain actual runtime counts.
+RECEIPT['properties']['runtime'] = obj({'torch_threads': {'enum': [1, 2]},
+    'torch_interop_threads': {'const': 1}})
 
 
 def _weight(path):
@@ -102,6 +106,8 @@ def load(root):
         raise ValueError('invalid recorded score threshold')
     if receipt['elapsed_seconds'] > receipt['parameters']['max_seconds'] + 5:
         raise ValueError('recorded inference exceeds its runtime budget')
+    if 'runtime' in receipt and receipt['runtime']['torch_threads'] != receipt['parameters']['threads']:
+        raise ValueError('actual worker thread count differs from recorded parameters')
     source = receipt['source']; size = (source['width'], source['height'])
     if size[0] * size[1] > MAX_PIXELS:
         raise ValueError('source exceeds foreground resource limit')
@@ -144,10 +150,12 @@ def load(root):
 
 
 def _worker(stage, weights, threshold):
+    for variable in ('OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS'):
+        os.environ[variable] = '1'
     import torch
     import torchvision
     from torchvision.models.detection import maskrcnn_resnet50_fpn, MaskRCNN_ResNet50_FPN_Weights
-    torch.set_num_threads(2)
+    torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
     source = read_json(stage / 'input.json')
     with Image.open(stage / source['asset']['path']) as image:
@@ -190,7 +198,8 @@ def _worker(stage, weights, threshold):
         draw.text((box[0], box[1]), identifier + ': ' + category, fill=(255, 0, 255, 255))
     overlaps.save(stage / 'masks/overlap.png'); overlay.save(stage / 'overlay.png')
     atomic_json(stage / 'output.json', {'candidates': candidates, 'overlap': _asset(stage, 'masks/overlap.png'),
-                                        'overlay': _asset(stage, 'overlay.png')})
+                                        'overlay': _asset(stage, 'overlay.png'),
+                                        'runtime': {'torch_threads': torch.get_num_threads(), 'torch_interop_threads': torch.get_num_interop_threads()}})
 
 
 def propose(source, destination, *, weights, enabled=False, origin, fixture=False,
@@ -238,7 +247,7 @@ def propose(source, destination, *, weights, enabled=False, origin, fixture=Fals
         receipt = {'schema_version': 1, 'kind': 'foreground-proposals', 'source': source_record,
             'backend': {'name': 'torchvision-maskrcnn-coco-v1', 'weights_sha256': MODEL_SHA256,
                 'execution': 'local', **capability['versions']},
-            'parameters': {'score_threshold': score_threshold, 'mask_threshold': .5, 'threads': 2, 'max_seconds': max_seconds, 'max_pixels': MAX_PIXELS},
+            'parameters': {'score_threshold': score_threshold, 'mask_threshold': .5, 'threads': 1, 'max_seconds': max_seconds, 'max_pixels': MAX_PIXELS},
             'elapsed_seconds': time.monotonic()-started, **output,
             'uncertainty': ['Object classes are model proposals, not semantic review or anatomy.',
                 'Candidate masks may omit thin, disconnected, cropped or unfamiliar foreground.',
