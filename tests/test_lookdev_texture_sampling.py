@@ -45,7 +45,8 @@ class ActualSamplerTests(unittest.TestCase):
         decoded=verify_texture_document(document,encoded)
         (output/'original.png').write_bytes(encoded)
         (output/'job.json').write_text(json.dumps(dict(scripts=str(root/'scripts'),output=str(output),
-                                                       document=document,pixels=decoded.pixels.tolist())))
+                                                       document=document,pixels=decoded.pixels.tolist(),
+                                                       native_site=os.environ.get('HATCH_LOOKDEV_TEST_SITE'))))
         result=subprocess.run([os.environ['HATCH_BLENDER'],'--background','--factory-startup',
             '--disable-autoexec','--python-use-system-env','--threads','1','--python-exit-code','1','--python',
             str(root/'tests/fixtures/lookdev_sampling_probe.py'),'--',str(output/'job.json')],
