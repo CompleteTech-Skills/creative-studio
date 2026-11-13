@@ -1,6 +1,8 @@
 """Actual authenticated browser autokey and cross-scene preview regressions."""
 from copy import deepcopy
 import hashlib
+import json
+import subprocess
 import os
 from pathlib import Path
 import tempfile
@@ -21,6 +23,12 @@ class TimelineBrowserTests(unittest.TestCase):
     def test_autokey_second_shot_is_one_durable_transaction_and_foreign_scene_rejected(self):
         from playwright.sync_api import sync_playwright
         from browser_runtime import launch_chromium
+        project_root=Path(__file__).resolve().parents[1]
+        metadata=dict(head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=project_root,text=True).strip(),
+            tree=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],cwd=project_root,text=True).strip(),
+            files={name:hashlib.sha256((project_root/name).read_bytes()).hexdigest() for name in
+                ('assets/editor3d/editor.js','assets/editor3d/timeline.js','scripts/editor3d_timeline.py','scripts/editor3d_viewer.py','tests/test_rig_editor3d_timeline_browser.py')})
+        print('TIMELINE_BROWSER_SOURCE '+json.dumps(metadata,sort_keys=True),flush=True)
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory);source=root/'source';bundle=build_example(source)
             scene=deepcopy(bundle['documents']['example-scene.json']);scene.update(id='foreign-scene',name='Foreign scene',shots=['foreign-shot'])
@@ -122,6 +130,7 @@ class TimelineBrowserTests(unittest.TestCase):
                         self.assertEqual(EditorRepository(repo.root).snapshot()['scene']['id'],'foreign-scene')
                         page.click('#undo');page.wait_for_function('(revision)=>window.hatchEditor.snapshot.revision===revision',arg=baseline+5)
                         self.assertEqual(page.evaluate('()=>window.hatchEditor.snapshot.scene.id'),'example-scene')
+                        print('TIMELINE_BROWSER_ACCEPTANCE '+json.dumps(dict(head=metadata['head'],status='passed',revision=repo.snapshot()['revision'],snapshot_sha256=repo.snapshot()['sha256']),sort_keys=True),flush=True)
 
 
                     finally:browser.close()
