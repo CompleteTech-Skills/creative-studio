@@ -239,14 +239,25 @@ class EditorHandler(BaseHTTPRequestHandler):
                 path = ROOT / 'assets/editor3d/index.html'
             elif route.path.startswith('/editor/'):
                 relative = route.path.removeprefix('/editor/')
-                require(relative in ('editor.js', 'editor.css', 'TransformControls.js', 'asset-browser.js', 'inspectors.js', 'timeline.js'), 'EDITOR3D_VIEW_PATH', 'Unknown editor asset.')
+                require(relative in ('editor.js', 'editor.css', 'TransformControls.js', 'asset-browser.js', 'inspectors.js', 'timeline.js', 'render-panel.js'), 'EDITOR3D_VIEW_PATH', 'Unknown editor asset.')
                 path = ROOT / 'assets/editor3d' / relative
             elif route.path.startswith('/vendor/'):
                 path = safe_path(ROOT / 'assets/rig-viewer/vendor', route.path.removeprefix('/vendor/'), exists=True)
                 require(path.suffix == '.js', 'EDITOR3D_VIEW_PATH', 'Unknown vendor asset.')
             else:
                 raise RigError('EDITOR3D_VIEW_PATH', 'Unknown local route.')
-            self.respond(200, path.read_bytes(), mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
+            payload = path.read_bytes()
+            if path.name == 'index.html':
+                extensions = []
+                for filename, symbol, container in (('asset-browser.js','mountAssetBrowser','asset-browser'),
+                        ('inspectors.js','mountInspectors','native-inspectors'),
+                        ('timeline.js','mountTimeline','timeline'),('render-panel.js','mountRenderPanel','render-panel')):
+                    if (ROOT / 'assets/editor3d' / filename).is_file():
+                        extensions.append(f"const {{{symbol}}} = await import('/editor/{filename}'); window.hatchEditor.registerExtension({symbol}, document.getElementById('{container}'));")
+                if extensions:
+                    boot = "<script type='module'>await import('/editor/editor.js');" + ''.join(extensions) + "</script>"
+                    payload = payload.replace(b'</body>', boot.encode() + b'</body>')
+            self.respond(200, payload, mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
         except (RigError, ValueError, OSError, TypeError) as exc:
             report = exc.report if isinstance(exc, RigError) else dict(code='EDITOR3D_VIEW_INPUT', message=str(exc))
             status = 401 if report['code'] == 'EDITOR3D_VIEW_AUTH' else 409 if any(word in report['code'] for word in ('STALE', 'CONFLICT')) else 400

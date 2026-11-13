@@ -577,6 +577,8 @@ async function install(snapshot) {
     ) +
     " triangles";
   window.editorReady = true;
+  if ($("diagnostic").hidden)
+    $("status").textContent = "Loaded saved revision " + revision;
 }
 async function reload(frame = false) {
   const snapshot = await api("snapshot");
