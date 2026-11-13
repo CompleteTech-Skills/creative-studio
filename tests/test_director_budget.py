@@ -34,9 +34,10 @@ def die_before_publication(root):
 class BudgetTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.root=Path(self.temp.name)/'ledger'
+        self.directory=Path(self.temp.name).resolve()
+        self.root=self.directory/'ledger'
         self.ledger=BudgetLedger.create(self.root,quantities(100),provider_limits={'local':quantities(10)},currency='USD')
-        path=Path(self.temp.name)/'usage.json';path.write_text('{"provider_calls":1,"origin":"test-accounting-event"}')
+        path=self.directory/'usage.json';path.write_text('{"provider_calls":1,"origin":"test-accounting-event"}')
         self.proof=[self.ledger.retain_evidence(path)]
 
     def reserve(self, **kwargs):
@@ -135,7 +136,7 @@ class BudgetTests(unittest.TestCase):
     def test_bad_inputs_and_symlink_destination_preserve_user_data(self):
         for value in [True,float('nan'),float('inf'),-1,'NaN']:
             with self.subTest(value=value),self.assertRaises(RigError):self.reserve(estimate=quantities(provider_calls=value))
-        alias=Path(self.temp.name)/'alias'
+        alias=self.directory/'alias'
         try:alias.symlink_to(self.root,target_is_directory=True)
         except OSError:self.skipTest('Symlink creation unavailable')
         with self.assertRaises(RigError):BudgetLedger(alias)
@@ -223,9 +224,30 @@ class BudgetTests(unittest.TestCase):
         row=next(iter(self.ledger.snapshot()['state']['reservations'].values()))
         self.assertEqual(row['reserved']['amount'],'1')
 
+    def test_adapter_owned_staging_handles_symlinked_system_temp(self):
+        from unittest.mock import patch
+        from director_budget import execute
+        target=self.directory/'private-temp';target.mkdir()
+        alias=self.directory/'system-temp'
+        alias.symlink_to(target,target_is_directory=True)
+        proof=self.proof[0]
+        original=(self.root/proof['path']).read_bytes()
+        reference=dict(artifact_id='rate-proof',kind='accounting-proof',schema_version=1,semantic_version='1.0.0',
+            path=proof['path'],sha256=proof['sha256'],byte_size=len(original),
+            media_type='application/json',provenance_ref=None,fixture=True,dependencies=[])
+        request=self.adapter_request()
+        request['input']['rate_evidence']=[reference]
+        with patch.object(tempfile,'tempdir',str(alias)):
+            result=execute(self.ledger,request,evidence_root=self.root)
+        self.assertEqual(result['value']['state'],'reserved')
+        retained=result['value']['evidence'][0]
+        self.assertEqual(retained['sha256'],proof['sha256'])
+        self.assertEqual((self.root/retained['path']).read_bytes(),original)
+        self.assertEqual(list(target.iterdir()),[])
+
     def test_adapter_large_storage_and_call_limits_have_valid_result(self):
         from director_budget import execute
-        self.ledger=BudgetLedger.create(Path(self.temp.name)/'large',quantities(3_000_000_000),
+        self.ledger=BudgetLedger.create(self.directory/'large',quantities(3_000_000_000),
             provider_limits={'local':quantities(3_000_000_000)},currency='USD')
         result=execute(self.ledger,self.adapter_request(),evidence_root=self.root)
         self.assertEqual(result['value']['remaining']['max_storage_bytes'],3_000_000_000)
@@ -242,7 +264,7 @@ class BudgetTests(unittest.TestCase):
             self.ledger.settle(receipt['reservation_id'],usage=quantities(amount=value),outcome='complete',
                 expected_revision=self.ledger.snapshot()['sha256'],idempotency_key='precise',evidence=self.proof)
             self.assertEqual(self.ledger.snapshot()['state']['reservations'][receipt['reservation_id']]['spent']['amount'],value)
-        ledger=BudgetLedger.create(Path(self.temp.name)/'exact',quantities(amount=1),
+        ledger=BudgetLedger.create(self.directory/'exact',quantities(amount=1),
             provider_limits={'local':quantities(amount=1)},currency='USD')
         proof=[ledger.retain_evidence(self.root/self.proof[0]['path'])]
         for index,amount in enumerate(['0.5','0.50000000000000000000000000001']):

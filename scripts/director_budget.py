@@ -340,7 +340,7 @@ def execute(ledger, request, *, evidence_root, provider='local', unknown_price_c
     with tempfile.TemporaryDirectory(prefix='budget-evidence-') as temporary:
         for index, reference in enumerate(sources):
             payload = _read_artifact(evidence_root, reference)
-            path = Path(temporary) / str(index); path.write_bytes(payload)
+            path = Path(temporary).resolve() / str(index); path.write_bytes(payload)
             proof.append(ledger.retain_evidence(path))
     common = dict(expected_revision=data['expected_ledger_revision'], idempotency_key=context['idempotency_key'])
     if method == 'BudgetLedger.reserve':
