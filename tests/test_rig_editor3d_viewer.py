@@ -448,6 +448,7 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                             // invalid so this registry test can own the one active claim.
                             const nativeFrame = document.querySelector('[aria-label=\"Exact frame\"]');
                             const originalFrame = nativeFrame?.value;
+                            if (nativeFrame && !window.hatchEditor.getTimelineContext()) throw Error('Installed native timeline has no valid current context');
                             if (nativeFrame) { nativeFrame.value = String(s.documents[s.project.shots[0].path].duration_frames); nativeFrame.dispatchEvent(new Event('input')); }
                             if (window.hatchEditor.getTimelineContext() !== null) throw Error('Unexpected active provider');
                             const context = {revision:s.revision,sha256:s.sha256,scene_path:s.scene_path,
