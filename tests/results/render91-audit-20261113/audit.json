@@ -1,6 +1,6 @@
 {
   "kind": "render91-full-audit-and-field-traceability",
-  "recorded_utc": "2026-11-13T13:56:39.944475+00:00",
+  "recorded_utc": "2026-11-13T14:08:27.396010+00:00",
   "foundation_revision": "c809829debf565f2030feebad3b6066b50dc43c4",
   "foundation_tree": "ab7c11b91ef761cce240c7a63f30af47d2bfa08f",
   "parent_requirements": {
@@ -1430,7 +1430,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1442,7 +1443,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1454,7 +1456,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1466,7 +1469,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1478,7 +1482,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1490,7 +1495,128 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
+    },
+    {
+      "document": "BackendCapabilities",
+      "path": "backend.id",
+      "required": true,
+      "schema": "profiles/render3d-capabilities.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "BackendCapabilities",
+      "path": "backend.adapter_version",
+      "required": true,
+      "schema": "profiles/render3d-capabilities.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "BackendCapabilities",
+      "path": "backend.application_version",
+      "required": true,
+      "schema": "profiles/render3d-capabilities.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "BackendCapabilities",
+      "path": "backend.executable_sha256",
+      "required": true,
+      "schema": "profiles/render3d-capabilities.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "BackendCapabilities",
+      "path": "backend.worker_sha256",
+      "required": true,
+      "schema": "profiles/render3d-capabilities.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "BackendCapabilities",
+      "path": "backend.platform",
+      "required": true,
+      "schema": "profiles/render3d-capabilities.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "BackendCapabilities",
+      "path": "backend.engine",
+      "required": true,
+      "schema": "profiles/render3d-capabilities.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "BackendCapabilities",
+      "path": "backend.device",
+      "required": true,
+      "schema": "profiles/render3d-capabilities.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
     },
     {
       "document": "BackendCapabilities",
@@ -1502,7 +1628,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1514,7 +1641,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1526,7 +1654,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1538,7 +1667,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1550,7 +1680,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1562,7 +1693,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1574,7 +1706,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1586,7 +1719,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1598,7 +1732,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1610,7 +1745,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1622,7 +1758,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1634,7 +1771,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1646,7 +1784,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1658,7 +1797,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1670,7 +1810,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1682,7 +1823,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1694,7 +1836,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1706,7 +1849,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "BackendCapabilities",
@@ -1718,7 +1862,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_discovery_is_not_execution",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_unavailable_backend_cannot_claim_successful_initialization"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1731,7 +1876,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1744,7 +1890,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1757,7 +1904,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1770,7 +1918,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1783,7 +1932,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1796,7 +1946,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1809,7 +1960,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1822,7 +1974,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1835,7 +1988,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1848,7 +2002,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1861,7 +2016,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1874,7 +2030,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1887,7 +2044,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1900,7 +2058,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1913,7 +2072,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1926,7 +2086,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1939,7 +2100,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1952,7 +2114,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1965,7 +2128,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1978,7 +2142,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -1991,7 +2156,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2004,7 +2170,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2017,7 +2184,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2030,7 +2198,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2043,7 +2212,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2056,7 +2226,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2069,7 +2240,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2082,7 +2254,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2095,7 +2268,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2108,7 +2282,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2121,7 +2296,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2134,7 +2310,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "FrameSpec",
@@ -2147,7 +2324,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_frame_fingerprint_detects_changed_clock_camera_or_dependencies",
         "tests/test_render3d_contracts.py:SceneSnapshot.test_shot_selection_changes_frame_identity_and_cache_key"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2159,7 +2337,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2171,7 +2350,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2183,7 +2363,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2195,7 +2376,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2207,7 +2389,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2219,7 +2402,128 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
+    },
+    {
+      "document": "RenderJob",
+      "path": "backend.id",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "backend.adapter_version",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "backend.application_version",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "backend.executable_sha256",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "backend.worker_sha256",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "backend.platform",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "backend.engine",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "backend.device",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "backend"
+      ]
     },
     {
       "document": "RenderJob",
@@ -2231,7 +2535,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2243,7 +2548,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2255,7 +2561,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2267,7 +2574,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2279,7 +2587,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2291,7 +2600,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2303,7 +2613,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2315,7 +2626,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2327,7 +2639,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2339,7 +2652,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2351,7 +2665,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2363,7 +2678,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2375,7 +2691,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2387,7 +2704,8 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderJob",
@@ -2399,7 +2717,53 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
+    },
+    {
+      "document": "RenderJob",
+      "path": "manifest.path",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "manifest"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "manifest.sha256",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "manifest"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "manifest.bytes",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "manifest"
+      ]
     },
     {
       "document": "RenderJob",
@@ -2411,7 +2775,83 @@
         "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
+    },
+    {
+      "document": "RenderJob",
+      "path": "error.code",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "error"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "error.category",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "error"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "error.message",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "error"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "error.path",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "error"
+      ]
+    },
+    {
+      "document": "RenderJob",
+      "path": "error.remediation",
+      "required": true,
+      "schema": "profiles/render3d-job.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_contracts.py:Contracts.test_job_counts_and_complete_state",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_empty_job_cannot_be_presented_as_completed_render"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "error"
+      ]
     },
     {
       "document": "RenderRequest",
@@ -2423,7 +2863,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2435,7 +2876,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2447,7 +2889,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2459,7 +2902,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2471,7 +2915,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2483,7 +2928,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2495,7 +2941,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2507,7 +2954,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2519,7 +2967,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2531,7 +2980,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2543,7 +2993,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2555,7 +3006,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2567,7 +3019,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2579,7 +3032,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2591,7 +3045,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2603,7 +3058,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2615,7 +3071,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2627,7 +3084,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2639,7 +3097,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2651,7 +3110,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2663,7 +3123,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2675,7 +3136,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2687,7 +3149,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2699,7 +3162,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2711,7 +3175,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2723,7 +3188,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2735,7 +3201,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2747,7 +3214,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2759,7 +3227,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2771,7 +3240,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2783,7 +3253,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2795,7 +3266,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2807,7 +3279,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2819,7 +3292,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2831,7 +3305,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2843,7 +3318,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2855,7 +3331,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2867,7 +3344,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2879,7 +3357,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2891,7 +3370,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2903,7 +3383,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2915,7 +3396,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2927,7 +3409,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2939,7 +3422,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2951,7 +3435,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2963,7 +3448,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2975,7 +3461,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2987,7 +3474,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -2999,7 +3487,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3011,7 +3500,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3023,7 +3513,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3035,7 +3526,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3047,7 +3539,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3059,7 +3552,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3071,7 +3565,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3083,7 +3578,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3095,7 +3591,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3107,7 +3604,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3119,7 +3617,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3131,7 +3630,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderRequest",
@@ -3143,7 +3643,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_strict_request_rejects_unknown_fields_unsafe_paths_and_bad_numbers",
         "tests/test_render3d_contracts.py:Contracts.test_bad_paths_ranges_rates_and_policy"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3156,7 +3657,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3169,7 +3671,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3182,7 +3685,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3195,7 +3699,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3208,7 +3713,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3221,7 +3727,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3234,7 +3741,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3247,7 +3755,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3260,7 +3769,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3273,7 +3783,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3286,7 +3797,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3299,7 +3811,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3312,7 +3825,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3325,7 +3839,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3338,7 +3853,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3351,7 +3867,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3364,7 +3881,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3377,7 +3895,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3390,7 +3909,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3403,7 +3923,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3416,7 +3937,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3429,7 +3951,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3442,7 +3965,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3455,7 +3979,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3468,7 +3993,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3481,7 +4007,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3494,7 +4021,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3507,7 +4035,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3520,7 +4049,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3533,7 +4063,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3546,7 +4077,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3559,7 +4091,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3572,7 +4105,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3585,7 +4119,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3598,7 +4133,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3611,7 +4147,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3624,7 +4161,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3637,7 +4175,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3650,7 +4189,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3663,7 +4203,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3676,7 +4217,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3689,7 +4231,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3702,7 +4245,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3715,7 +4259,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3728,7 +4273,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3741,7 +4287,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3754,7 +4301,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3767,7 +4315,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3780,7 +4329,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3793,7 +4343,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3806,7 +4357,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3819,7 +4371,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3832,7 +4385,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3845,7 +4399,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3858,7 +4413,56 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
+    },
+    {
+      "document": "RenderResult",
+      "path": "manifest.path",
+      "required": true,
+      "schema": "profiles/render3d-result.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_complete_result_requires_actual_verifier_identity_and_evidence",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
+        "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "manifest"
+      ]
+    },
+    {
+      "document": "RenderResult",
+      "path": "manifest.sha256",
+      "required": true,
+      "schema": "profiles/render3d-result.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_complete_result_requires_actual_verifier_identity_and_evidence",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
+        "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "manifest"
+      ]
+    },
+    {
+      "document": "RenderResult",
+      "path": "manifest.bytes",
+      "required": true,
+      "schema": "profiles/render3d-result.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_complete_result_requires_actual_verifier_identity_and_evidence",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
+        "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "manifest"
+      ]
     },
     {
       "document": "RenderResult",
@@ -3871,7 +4475,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3884,7 +4489,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderResult",
@@ -3897,7 +4503,72 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
+    },
+    {
+      "document": "RenderResult",
+      "path": "verification.verifier.id",
+      "required": true,
+      "schema": "profiles/render3d-result.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_complete_result_requires_actual_verifier_identity_and_evidence",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
+        "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "verification.verifier"
+      ]
+    },
+    {
+      "document": "RenderResult",
+      "path": "verification.verifier.version",
+      "required": true,
+      "schema": "profiles/render3d-result.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_complete_result_requires_actual_verifier_identity_and_evidence",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
+        "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "verification.verifier"
+      ]
+    },
+    {
+      "document": "RenderResult",
+      "path": "verification.verifier.code_sha256",
+      "required": true,
+      "schema": "profiles/render3d-result.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_complete_result_requires_actual_verifier_identity_and_evidence",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
+        "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "verification.verifier"
+      ]
+    },
+    {
+      "document": "RenderResult",
+      "path": "verification.verifier.platform",
+      "required": true,
+      "schema": "profiles/render3d-result.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_complete_result_requires_actual_verifier_identity_and_evidence",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
+        "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "verification.verifier"
+      ]
     },
     {
       "document": "RenderResult",
@@ -3910,7 +4581,56 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
         "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
+    },
+    {
+      "document": "RenderResult",
+      "path": "verification.evidence.path",
+      "required": true,
+      "schema": "profiles/render3d-result.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_complete_result_requires_actual_verifier_identity_and_evidence",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
+        "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "verification.evidence"
+      ]
+    },
+    {
+      "document": "RenderResult",
+      "path": "verification.evidence.sha256",
+      "required": true,
+      "schema": "profiles/render3d-result.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_complete_result_requires_actual_verifier_identity_and_evidence",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
+        "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "verification.evidence"
+      ]
+    },
+    {
+      "document": "RenderResult",
+      "path": "verification.evidence.bytes",
+      "required": true,
+      "schema": "profiles/render3d-result.schema.json",
+      "authority": "scripts/render3d_contracts.py:definitions/validate",
+      "tests": [
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_complete_result_requires_actual_verifier_identity_and_evidence",
+        "tests/test_render3d_independent.py:Render3DIndependentTests.test_successful_result_categories_cannot_overlap",
+        "tests/test_render3d_contracts.py:Contracts.test_usage_bytes_cover_the_supported_resource_budget"
+      ],
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": [
+        "verification.evidence"
+      ]
     },
     {
       "document": "RenderSnapshot",
@@ -3924,7 +4644,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -3938,7 +4659,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -3952,7 +4674,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -3966,7 +4689,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -3980,7 +4704,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -3994,7 +4719,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4008,7 +4734,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4022,7 +4749,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4036,7 +4764,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4050,7 +4779,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4064,7 +4794,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4078,7 +4809,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4092,7 +4824,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4106,7 +4839,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4120,7 +4854,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4134,7 +4869,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4148,7 +4884,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4162,7 +4899,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     },
     {
       "document": "RenderSnapshot",
@@ -4176,7 +4914,8 @@
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_source_growth_cannot_exceed_total_copy_budget_after_preflight",
         "tests/test_render3d_independent.py:Render3DIndependentTests.test_fifo_replacement_rejected_at_each_public_read_boundary"
       ],
-      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage."
+      "evidence_scope": "Strict structural/semantic document admission; executing renderer behavior is not asserted by schema coverage.",
+      "nullable_ancestors": []
     }
   ],
   "native_job_equivalent": {
@@ -4202,5 +4941,12 @@
     "Concrete renderer/hardware/quality/job recovery/full-film acceptance remains downstream92\u201398."
   ],
   "leaf_closure": "DO_NOT_CLOSE until exact native job equivalent, full audit follow-up integration, fresh whole-final review, current hosted checks, normal merge and meaningful postmerge/root receipts are complete.",
-  "no_historical_rewrite": true
+  "no_historical_rewrite": true,
+  "field_catalog_semantics": {
+    "required": "Required in the immediate containing object, conditional on that object or array item existing and matching its schema branch. This is not an unconditional root-level presence claim.",
+    "nullable_ancestors": "Each listed object path must be non-null for the descendant field requirement to apply.",
+    "array_items": "An item entry describes each existing array item, not a nonempty-array requirement.",
+    "complete_paths": 253,
+    "reproduction": "python tests/results/render91-audit-20261113/validate.py"
+  }
 }
