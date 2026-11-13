@@ -183,6 +183,12 @@ def demonstrate(output, executable):
     exact=missing.read_bytes();missing.unlink()
     diagnostic=inspect_package(broken)
     require(diagnostic['state']=='incomplete' and not diagnostic['verified'],'Missing required texture must block completeness.')
+    matches=[item for item in diagnostic.get('diagnostics',[])
+             if item.get('code')=='MISSING_MEMBER' and item.get('path')=='blobs/'+missing_sha]
+    require(len(matches)==1 and matches[0].get('expected',{}).get('sha256')==missing_sha,
+            'Verifier must identify the exact missing texture blob.')
+    require(any(item.get('reference')==refs['texture'] for item in matches[0].get('affected_assets',[])),
+            'Verifier must identify the exact affected texture asset version.')
     blocked=output/'must-not-restore'
     try:restore_package(broken,blocked)
     except (RigError,OSError,ValueError):pass
