@@ -87,6 +87,14 @@ class CameraExportTests(unittest.TestCase):
         self.assertTrue(report['exact_core_projection'])
         self.assertFalse(report['active_effects_preserved'])
 
+    def test_orthographic_dof_can_be_exported_with_explicit_loss(self):
+        self.optics['projection'] = dict(type='orthographic', orthographic_height_m=.1,
+            near_clip_m=.1, far_clip_m=100, shift_x=0, shift_y=0)
+        self.optics['depth_of_field']['enabled'] = True
+        plan = export_plan(self.optics, self.render, self.world, allow_loss=True)
+        self.assertEqual(plan['gltf']['cameras'][0]['type'], 'orthographic')
+        self.assertEqual(plan['loss_report']['losses'][0]['code'], 'physical-depth-of-field')
+
     def test_fingerprint_changes_with_optics_and_preserves_input(self):
         original = deepcopy(self.optics)
         a = export_plan(self.optics, self.render, self.world)

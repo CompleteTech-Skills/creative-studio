@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+import math
 import shutil
 import tempfile
 
 from atomic_publish import _rename_no_replace
-from camera3d_blender import optical_plan
 from camera3d_contracts import canonical_bytes
 from camera3d_math import _matrix, field_of_view, optical_gate
 from rig_errors import atomic_json, object_hash, sha256
@@ -28,8 +28,17 @@ def export_plan(optics, render, world_matrix, *, allow_loss=False, exposure=0.0,
     """
     if not isinstance(allow_loss, bool):
         raise ValueError('camera3d allow_loss must be boolean')
-    optical_plan(optics, render, exposure=exposure,
-                 motion_blur=motion_blur, shutter_frames=shutter_frames)
+    # glTF's supported subset differs from Blender's. Validate canonical
+    # documents without imposing Blender-only aperture/orthographic DOF limits;
+    # unsupported active effects are handled explicitly below by the loss policy.
+    width, height = optical_gate(optics, render)
+    for value, low, high, label in ((exposure, -32, 32, 'exposure'),
+                                   (shutter_frames, 0, 1, 'shutter_frames')):
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or not low <= value <= high):
+            raise ValueError(f'camera3d {label} must be finite in [{low},{high}]')
+    if not isinstance(motion_blur, bool):
+        raise ValueError('camera3d motion_blur must be boolean')
     world = _matrix(world_matrix, rigid=True)
     projection = optics['projection']
     losses = []
@@ -46,7 +55,6 @@ def export_plan(optics, render, world_matrix, *, allow_loss=False, exposure=0.0,
     if losses and not allow_loss:
         raise ValueError('camera3d glTF export requires explicit allow_loss for: ' +
                          ', '.join(item['code'] for item in losses))
-    width, height = optical_gate(optics, render)
     if projection['type'] == 'perspective':
         camera = dict(type='perspective', perspective=dict(
             yfov=field_of_view(optics, render)[1], aspectRatio=width / height,
