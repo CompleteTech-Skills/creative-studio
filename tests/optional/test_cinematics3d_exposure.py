@@ -100,6 +100,16 @@ class ExposureTests(unittest.TestCase):
         self.assertAlmostEqual(reset['correction_stops'], 1., places=5)
         self.assertIsNone(reset['previous_state_sha256'])
 
+    def test_stabilization_rounding_keeps_history_inside_policy_on_resume(self):
+        settings = exposure.policy(minimum_stops=-.1, maximum_stops=.2)
+        for first, second, bound in [(1., .01, .2), (.01, 1., -.1)]:
+            initial = exposure.advise(self.meter(first), Fraction(0), enabled=True, settings=settings)
+            stepped = exposure.advise(self.meter(second), Fraction(100), enabled=True, settings=settings, previous=initial)
+            self.assertEqual(stepped['correction_stops'], bound)
+            resumed = exposure.advise(self.meter(second), Fraction(101), enabled=True, settings=settings, previous=stepped)
+            self.assertEqual(resumed['correction_stops'], bound)
+            self.assertEqual(resumed['previous_state_sha256'], stepped['state_sha256'])
+
     def test_seek_policy_sequence_and_switch_changes_require_reset(self):
         meter = self.meter()
         state = exposure.advise(meter, Fraction(1), enabled=True)

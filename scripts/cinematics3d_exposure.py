@@ -177,6 +177,9 @@ def advise(measurement, source_time, *, authored_stops=0., settings=None, previo
             blend = -math.expm1(-float(delta)/settings['adaptation_seconds'])
             correction = prior_correction + blend*(desired-prior_correction)
         previous_hash = previous['state_sha256']
+    # A convex interpolation may overshoot its mathematical closed interval
+    # by an ulp. Keep our emitted history admissible on the next resume.
+    correction = max(settings['minimum_stops'], min(settings['maximum_stops'], correction))
     total = authored + correction
     _number(total, -24., 24.)
     value = dict(kind='cinematics-exposure-advice', schema_version=1, source_time=time,
