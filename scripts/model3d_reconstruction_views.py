@@ -33,6 +33,15 @@ def _budgets(values):
 def _array(value, shape, label):
     # Validate before conversion so boolean/string calibration is never numerical evidence.
     require(isinstance(value, (list, tuple, np.ndarray)), 'MODEL3D_HULL_CAMERA', 'Expected numeric '+label)
+    def shape_ok(item,expected):
+        if isinstance(item,np.ndarray):return item.shape==expected
+        return isinstance(item,(list,tuple)) and len(item)==expected[0] and (all(not isinstance(v,(list,tuple,np.ndarray)) for v in item) if len(expected)==1 else all(shape_ok(row,expected[1:]) for row in item))
+    require(shape_ok(value,shape),'MODEL3D_HULL_CAMERA','Invalid '+label+' shape.')
+    def numeric(item):
+        if isinstance(item,np.ndarray):return item.dtype.kind in 'fiu'
+        if isinstance(item,(list,tuple)):return all(numeric(v) for v in item)
+        return isinstance(item,(int,float,np.integer,np.floating)) and not isinstance(item,(bool,np.bool_))
+    require(numeric(value),'MODEL3D_HULL_CAMERA','Calibration values must be numeric, not booleans or strings.')
     try:raw=np.asarray(value)
     except (TypeError,ValueError):
         require(False,'MODEL3D_HULL_CAMERA','Invalid '+label)
