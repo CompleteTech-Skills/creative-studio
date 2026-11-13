@@ -185,14 +185,18 @@ def build_material(plan):
             # bare BSSRDF would erase reflection/emission and make zero-alpha
             # surfaces opaque; only the diffuse response changes here.
             scatter = nodes.new('ShaderNodeBsdfPrincipled')
-            for original_input in principled.inputs:
+            require(len(scatter.inputs) == len(principled.inputs), 'LOOKDEV_BLENDER_SOCKET',
+                    'Principled closure socket layouts differ.')
+            for original_input, scatter_input in zip(principled.inputs, scatter.inputs):
+                require(original_input.identifier == scatter_input.identifier, 'LOOKDEV_BLENDER_SOCKET',
+                        'Principled closure socket identifiers differ.')
                 if hasattr(original_input, 'default_value'):
                     default = original_input.default_value
                     try:
                         default = tuple(default)
                     except TypeError:
                         pass
-                    scatter.inputs[original_input.name].default_value = default
+                    scatter_input.default_value = default
             scatter.subsurface_method = 'RANDOM_WALK' if sss['method'] == 'random-walk' else 'BURLEY'
             scatter.inputs['Base Color'].default_value = (*sss['color'], color[3])
             scatter.inputs['Subsurface Weight'].default_value = 1.0
