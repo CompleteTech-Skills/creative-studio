@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from fractions import Fraction
 import hashlib
 import importlib.metadata
 import importlib.util
@@ -421,12 +421,12 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                       'PRICE','Known provider price requires a matching currency and bounded amount.')
                 calls=(resources or {}).get('max_provider_calls',1)
                 _need(type(calls) is int and calls>=0,'RESOURCE','Provider call estimate must be a nonnegative integer.')
-                _need(Decimal(str(price))*calls<=Decimal(str(budget_amount)),
+                _need(Fraction(str(price))*calls<=Fraction(str(budget_amount)),
                       'RESOURCE','Estimated provider amount exceeds budget.')
                 policy_amount=item['limits']['max_amount']
                 _need(type(policy_amount) in (int,float) and 0<=policy_amount<=1e9 and math.isfinite(policy_amount),
                       'PRICE','Known provider price requires a finite bounded capability amount.')
-                _need(Decimal(str(price))*calls<=Decimal(str(policy_amount)),
+                _need(Fraction(str(price))*calls<=Fraction(str(policy_amount)),
                       'RESOURCE','Estimated provider amount exceeds capability policy.')
     return deepcopy(value)
 
