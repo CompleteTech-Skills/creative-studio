@@ -83,7 +83,7 @@ def main():
         bpy.data.images.remove(image)
     # Fixed depth anchors make dolly/follow parallax observable independently
     # of keeping the foreground subject centered or preserving its image size.
-    for location, color in [((-1.5, 1, 0), (.02, .2, 1, 1)), ((1.5, 2, 0), (.02, 1, .2, 1))]:
+    for location, color in [((-1.5, 1, .8), (.02, .2, 1, 1)), ((1.5, 2, -.8), (.02, 1, .2, 1))]:
         bpy.ops.mesh.primitive_cube_add(size=.8, location=location)
         anchor=bpy.context.object
         anchor_material=material.copy()
@@ -111,8 +111,16 @@ def main():
                                      projection_matrix(sample['optics'],render),192,128)
             if projected is None:
                 raise AssertionError(name+': movement lost its actual foreground subject')
+            rgba=pixels.reshape(128,192,4)
+            foreground=(rgba[...,0]>1.5*rgba[...,1]) & (rgba[...,0]>1.5*rgba[...,2]) & (rgba[...,3]>.1)
+            fy,fx=np.where(foreground)
+            if len(fx)<4:raise AssertionError(name+': actual foreground subject is not visible')
+            actual_bounds=[int(fx.min()),int(127-fy.max()),int(fx.max()+1),int(128-fy.min())]
+            error=max(abs(float(a)-float(b)) for a,b in zip(actual_bounds,projected))
+            if error>3:raise AssertionError(f'{name}/{frame}: foreground tracking bounds mismatch {actual_bounds} != {projected}')
             frames.append(dict(frame=frame,path=path.name,sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
-                               target_m=target,sample=sample,projected_subject_bounds=list(projected)))
+                               target_m=target,sample=sample,projected_subject_bounds=list(projected),
+                               actual_subject_bounds=actual_bounds,subject_pixel_count=int(len(fx)),projection_error_pixels=error))
             bpy.data.images.remove(image)
         if name=='static-tripod' and maximum_difference>1e-9:
             raise AssertionError('Static movement preset changed its actual raster')

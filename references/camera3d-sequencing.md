@@ -167,7 +167,9 @@ evaluates all twelve movement presets through the motion owner and the target
 aim constraint owner, rendering eight consecutive display frames at 8 fps each.
 Fixed background depth anchors expose actual tracking/follow/dolly parallax.
 The static tripod must retain identical pixels; every other movement must show
-a measured raster difference. The host gate creates animated GIF previews from
+a measured raster difference. Each actual frame also isolates the red foreground
+subject from differently colored depth anchors and compares measured foreground
+bounds with the canonical projection within three pixels. The host gate creates animated GIF previews from
 those actual PNGs. These are short engineering previews, not the #82 film.
 
 ```bash
@@ -189,10 +191,12 @@ acceptance, multi-camera editor review, or the five-shot demonstration.
 `sample_movement_preset` is the production preset sampling entry point. It
 passes the exact frame/fps, authored base pose, optics, parameters and evaluated
 world target to `camera3d_motion.sample_motion`. Dolly/tracking/pedestal/crane,
-orbit/follow and dolly-zoom presets then use the constraint owner's
-`look_at_world` to retain the supplied subject. Static tripod and handheld retain
+orbit/follow and dolly-zoom presets use the constraint owner's `look_at_world`
+before and after motion sampling to retain the supplied subject. A dolly therefore
+travels along the initially aimed optical axis, and dolly-zoom synchronizes its
+lens against that same aimed depth even when the target is off the authored axis. Static tripod and handheld retain
 authored orientation. An aimed preset without an actual target fails explicitly.
-The returned dependency hash binds the motion sample and aim algorithm/version
+The returned dependency hash binds the original base pose, motion sample and aim algorithm/version
 and the resulting pose. Presets do not infer a scene target or resolve arbitrary
 source references; those remain with the authoritative scene/project owners.
 

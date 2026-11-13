@@ -11,7 +11,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 from camera3d_presets import CAMERA_PRESETS,MOVEMENT_PRESETS,SHOT_PRESETS
 from camera3d_preset_library import (schema,create_library_preset,revise_library_preset,
-    validate_library_preset,export_library_preset,import_library_preset)
+    validate_library_preset,export_library_preset,import_library_preset,sample_library_movement)
 
 
 class Library(unittest.TestCase):
@@ -50,6 +50,25 @@ class Library(unittest.TestCase):
         self.assertEqual(revised['content']['subject_frame_fraction'],.6)
         self.assertEqual(shot['content']['subject_frame_fraction'],.85)
 
+    def test_imported_custom_movement_runs_through_actual_owner_sampler(self):
+        from camera3d_presets import camera_preset
+        custom=create_library_preset('movement','slow-dolly-in',overrides={'parameters':{'distance_m':2}})
+        camera=camera_preset('cinematic-35mm');camera['transform']['translation']=[0,0,8]
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'custom.json';export_library_preset(custom,path)
+            restored=import_library_preset(path)
+            result=sample_library_movement(restored,camera['transform'],camera['optics'],
+                {'frame':12},24,target_position=[0,0,0])
+            self.assertEqual(result['transform']['translation'],[0,0,7])
+            self.assertTrue(result['target_aim'])
+            changed=revise_library_preset(restored,'1.0.1',overrides={'parameters':{'distance_m':4}})
+            farther=sample_library_movement(changed,camera['transform'],camera['optics'],
+                {'frame':12},24,target_position=[0,0,0])
+            self.assertEqual(farther['transform']['translation'],[0,0,6])
+            self.assertNotEqual(result['dependency_sha256'],farther['dependency_sha256'])
+        with self.assertRaises(ValueError):sample_library_movement(
+            create_library_preset('camera','standard-50mm'),camera['transform'],camera['optics'],{'frame':0},24)
+
     def test_invalid_versions_parameters_algorithms_and_hidden_fields_fail(self):
         examples=[create_library_preset('movement','handheld'),create_library_preset('camera','standard-50mm')]
         corruptions=[]
@@ -59,6 +78,8 @@ class Library(unittest.TestCase):
             changed=deepcopy(original);changed['content']['preset_version']='2.0.0';corruptions.append(changed)
         changed=deepcopy(examples[0]);changed['content']['parameters']['amplitude_m']=-1;corruptions.append(changed)
         changed=deepcopy(examples[0]);changed['content']['motion']='dolly';corruptions.append(changed)
+        for key in ('amplitude_m','frequency_hz'):
+            changed=deepcopy(examples[0]);changed['content']['parameters'][key]=1000.1;corruptions.append(changed)
         changed=deepcopy(examples[0]);changed['content']['parameters']['seed']=True;corruptions.append(changed)
         changed=deepcopy(examples[1]);changed['content']['transform']['scale']=[2,1,1];corruptions.append(changed)
         for value in corruptions:

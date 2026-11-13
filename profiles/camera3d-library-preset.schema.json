@@ -2460,12 +2460,12 @@
                     "amplitude_m": {
                       "type": "number",
                       "minimum": 0,
-                      "maximum": 1000000.0
+                      "maximum": 1000
                     },
                     "frequency_hz": {
                       "type": "number",
                       "minimum": 0,
-                      "maximum": 1000000.0
+                      "maximum": 1000
                     },
                     "seed": {
                       "type": "integer",
@@ -3008,12 +3008,12 @@
                         "amplitude_m": {
                           "type": "number",
                           "minimum": 0,
-                          "maximum": 1000000.0
+                          "maximum": 1000
                         },
                         "frequency_hz": {
                           "type": "number",
                           "minimum": 0,
-                          "maximum": 1000000.0
+                          "maximum": 1000
                         },
                         "seed": {
                           "type": "integer",

@@ -189,6 +189,8 @@ class ActualCameraPreviews(unittest.TestCase):
                 for frame in movement['frames']:
                     path=destination/frame['path']
                     self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(),frame['sha256'])
+                    self.assertGreater(frame['subject_pixel_count'],3)
+                    self.assertLessEqual(frame['projection_error_pixels'],3)
                     with Image.open(path) as image:
                         image.load();images.append(image.convert('RGB'))
                 images[0].save(destination/('movement-'+movement['name']+'.gif'),save_all=True,
@@ -273,6 +275,19 @@ class CatalogAndPresets(unittest.TestCase):
         self.assertEqual(source,before)
         with self.assertRaises(ValueError):
             sample_movement_preset('full-orbit',source['transform'],source['optics'],{'frame':0},24)
+
+    def test_off_axis_target_dolly_zoom_preserves_actual_aimed_optical_scale(self):
+        source=camera_preset('cinematic-35mm');source['transform']['translation']=[0,0,8]
+        scales=[]
+        for frame in (0,12,24):
+            sample=sample_movement_preset('dolly-zoom',source['transform'],source['optics'],
+                {'frame':frame},24,target_position=[4,0,0])
+            world=world_transform(sample['transform'])
+            depth=float(np.dot(np.array([4,0,0])-world[:3,3],-world[:3,2]))
+            scales.append(sample['optics']['projection']['focal_length_mm']/depth)
+        np.testing.assert_allclose(scales,[scales[0]]*3,atol=1e-12)
+        for key in ('amplitude_m','frequency_hz'):
+            with self.assertRaises(ValueError):movement_preset('handheld',overrides={key:1000.1})
 
     def test_storyboard_plan_projects_real_supplied_bounds_and_discloses_uncertainty(self):
         panel=dict(id='establish',subject_ids=['actor'],shot_preset='establishing-shot',duration_frames=24,notes='show the room')

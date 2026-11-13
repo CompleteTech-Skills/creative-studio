@@ -89,8 +89,8 @@ def movement_preset(name, *, overrides=None):
                 raise ValueError('camera3d seed must be a bounded integer')
         elif isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or abs(value) > 1e6:
             raise ValueError('camera3d preset parameters must be bounded finite numbers')
-        elif key in ('amplitude_m', 'frequency_hz') and value < 0:
-            raise ValueError('camera3d amplitude and frequency cannot be negative')
+        elif key in ('amplitude_m', 'frequency_hz') and not 0 <= value <= 1000:
+            raise ValueError('camera3d amplitude and frequency must be in the native range 0..1000')
     return dict(preset=name, preset_version='1.0.0', motion=motion, parameters=parameters)
 
 
@@ -267,7 +267,12 @@ def sample_movement_preset(name, base_transform, optics, time, duration_frames, 
     aimed = preset['motion'] not in ('static', 'shake')
     if aimed and target_position is None:
         raise ValueError('camera3d aimed movement preset requires an evaluated target')
-    sample = sample_motion(base_transform, optics, time, duration_frames,
+    aimed_base = deepcopy(base_transform)
+    if aimed:
+        initial_world, _ = look_at_world(world_transform(base_transform), target_position)
+        aimed_base = dict(translation=initial_world[:3, 3].tolist(),
+            rotation=matrix_quaternion(initial_world[:3, :3]).tolist(), scale=[1, 1, 1])
+    sample = sample_motion(aimed_base, optics, time, duration_frames,
                            preset['motion'], preset['parameters'],
                            target_position=target_position, fps=fps)
     diagnostics = None
@@ -275,7 +280,7 @@ def sample_movement_preset(name, base_transform, optics, time, duration_frames, 
         world, diagnostics = look_at_world(world_transform(sample['transform']), target_position)
         sample['transform'] = dict(translation=world[:3, 3].tolist(),
             rotation=matrix_quaternion(world[:3, :3]).tolist(), scale=[1, 1, 1])
-    dependency = dict(motion_sha256=sample['dependency_sha256'],
+    dependency = dict(motion_sha256=sample['dependency_sha256'], base_transform=base_transform,
                       preset=preset, target_aim=aimed,
                       aim_algorithm=VERSION if aimed else None,
                       transform=sample['transform'])

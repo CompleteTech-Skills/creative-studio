@@ -28,7 +28,7 @@ def schema():
             params[key]=({'type':'array','items':{'type':'number','minimum':-1e6,'maximum':1e6},'minItems':3,'maxItems':3}
                          if isinstance(value,list) else
                          {'type':'integer','minimum':0,'maximum':2**32-1} if key=='seed' else
-                         {'type':'number','minimum':0 if key in ('amplitude_m','frequency_hz') else -1e6,'maximum':1e6})
+                         {'type':'number','minimum':0 if key in ('amplitude_m','frequency_hz') else -1e6,'maximum':1000 if key in ('amplitude_m','frequency_hz') else 1e6})
         movement_variants.append(obj(dict(preset={'const':name},preset_version=VERSION,
                                           motion={'const':motion},parameters=obj(params))))
     movement={'oneOf':movement_variants}
@@ -113,6 +113,17 @@ def import_library_preset(path):
     from asset_library import read_source_bytes
     from rig_errors import decode_json
     return validate_library_preset(decode_json(read_source_bytes(path,MAX_BYTES)))
+
+
+def sample_library_movement(document,base_transform,optics,time,duration_frames,*,target_position=None,fps=None):
+    """Use imported movement/shot parameters through the same production sampler."""
+    from camera3d_presets import sample_movement_preset
+    validate_library_preset(document)
+    if document['family']=='camera':
+        raise ValueError('camera3d camera-only library preset has no movement')
+    movement=document['content'] if document['family']=='movement' else document['content']['movement']
+    return sample_movement_preset(movement['preset'],base_transform,optics,time,duration_frames,
+        overrides=movement['parameters'],target_position=target_position,fps=fps)
 
 
 def main():
