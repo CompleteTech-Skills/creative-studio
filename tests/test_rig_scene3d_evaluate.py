@@ -285,5 +285,46 @@ class SceneEvaluationTests(unittest.TestCase):
         out['nodes']['key']['light_binding']['light']['sha256']='0'*64
         with self.assertRaises(RigError):light_instances(out,registry)
 
+    def test_world_path_uses_attachment_socket_and_offset_basis(self):
+        socket=node('socket','socket','root')
+        socket['transform']['translation']=[10,0,0]
+        socket['transform']['rotation']=axis_angle([0,1,0],.3).tolist()
+        self.scene['nodes'].append(socket)
+        mesh=self.scene['nodes'][1]
+        mesh['attachment']=dict(owner='root',socket='socket',offset=dict(
+            translation=[2,0,0],rotation=[0,0,0,1],scale=[1,1,1]))
+        self.shot['path_bindings']=[dict(schema_version=1,id='travel',target='mesh',
+            points=[[0,0,0],[0,0,4]],start_frame=0,end_frame=20,
+            start_fraction=0,end_fraction=1,space='world',orientation='preserve')]
+        before=deepcopy(self.bundle)
+        for frame,expected in [(0,[0,0,0]),(10,[0,0,2]),(Fraction(5,2),[0,0,.5])]:
+            with self.subTest(frame=frame):
+                actual=np.asarray(self.evaluate(frame)['nodes']['mesh']['world_matrix'])[:3,3]
+                np.testing.assert_allclose(actual,expected,atol=1e-12)
+        self.assertEqual(self.bundle,before)
+
+    def test_world_paths_order_constraint_dependencies_before_dependent_parent(self):
+        a=node('a','group','root');b=node('b','group','a')
+        moving=node('moving','locator','b');moving['transform']['translation']=[10,0,0]
+        holder=node('holder','group','root')
+        holder['constraints']=[dict(id='follow',type='copy-transform',target='moving',influence=1)]
+        self.scene['nodes'].extend([holder,a,b,moving])
+        self.scene['nodes'][1]['parent']='holder'
+        def path(identifier,target,points):
+            return dict(schema_version=1,id=identifier,target=target,points=points,
+                start_frame=0,end_frame=20,start_fraction=0,end_fraction=1,
+                space='world',orientation='preserve')
+        paths=[path('child-path','mesh',[[0,0,0],[0,0,4]]),
+               path('moving-path','moving',[[0,0,0],[20,0,0]])]
+        for ordered in [paths,list(reversed(paths))]:
+            self.shot['path_bindings']=ordered
+            before=deepcopy(self.bundle)
+            out=self.evaluate(5)
+            np.testing.assert_allclose(np.asarray(out['nodes']['mesh']['world_matrix'])[:3,3],
+                                       [0,0,1],atol=1e-12)
+            np.testing.assert_allclose(np.asarray(out['nodes']['moving']['world_matrix'])[:3,3],
+                                       [5,0,0],atol=1e-12)
+            self.assertEqual(self.bundle,before)
+
 
 if __name__=='__main__':unittest.main()

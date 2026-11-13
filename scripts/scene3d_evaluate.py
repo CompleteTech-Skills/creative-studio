@@ -197,14 +197,15 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
         node['animation_bindings'] = []
     paths = [binding for binding in authored_shot.get('path_bindings', [])
              if binding['start_frame'] <= frame < binding['end_frame']]
+    ranks = {}
     def depth(identifier):
+        from scene3d_graph import _dependencies
         require(identifier in nodes, 'Path binding target is absent from the expanded scene.')
-        count = 0
-        while nodes[identifier]['parent'] is not None:
-            count += 1
-            identifier = nodes[identifier]['parent']
-        return count
+        if identifier not in ranks:
+            ranks[identifier] = 1 + max((depth(target) for target in _dependencies(nodes[identifier])),default=-1)
+        return ranks[identifier]
     if paths:
+        SceneGraph(working)  # Validate the complete dependency graph before ordering.
         import numpy as np
         from scene3d_constraints import sample_path
         from scene3d_math import local_matrix
@@ -219,6 +220,10 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
             parent = node['parent']
             world = (np.eye(4) if parent is None else
                      np.asarray(SceneGraph(working).evaluate_base(parent)['world_matrix']))
+            if 'attachment' in node:
+                attachment = node['attachment']
+                world = (np.asarray(SceneGraph(working).evaluate_base(attachment['socket'])['world_matrix']) @
+                         local_matrix(attachment['offset']))
             local_target = (np.linalg.inv(world)@np.r_[desired,1])[:3]
             transform = node['transform']
             pivot_offset = local_matrix(transform)[:3,3]-np.asarray(transform['translation'])
