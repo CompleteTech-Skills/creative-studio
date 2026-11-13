@@ -79,3 +79,9 @@ production artwork, motion-blur validation or the final three-shot film. Parent
 #238 and downstream #244–#258 remain open until their complete acceptance runs.
 For shared development hosts, acquire the coordination native-validation flock
 for the entire example invocation.
+
+The [retained validation receipt](../examples/cinematics3d/backend/receipt.json)
+records exact source hashes, actual tool/settings and independently decoded
+outputs. Its adjacent `engineering-evidence.zip` preserves the complete native
+fixture deliveries and test logs with a verified per-file inventory. The receipt
+identifies the tested source commit separately from this evidence-only commit.
