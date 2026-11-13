@@ -1,0 +1,35 @@
+[
+  {
+    "mode": "probe_verification",
+    "simulation_not_actual_cpu": true,
+    "reserved_cpu_units": 1,
+    "events": [
+      {
+        "event": "native_execute",
+        "cpu_units": 2.0
+      }
+    ],
+    "native_calls": 1,
+    "outcome": "failed",
+    "unsatisfied_gates": [
+      "resource-admission"
+    ]
+  },
+  {
+    "mode": "native_reservation",
+    "simulation_not_actual_cpu": true,
+    "reserved_cpu_units": 1,
+    "events": [
+      {
+        "event": "native_execute",
+        "cpu_units": 2.0
+      }
+    ],
+    "native_calls": 1,
+    "outcome": "failed",
+    "unsatisfied_gates": [
+      "resource-admission",
+      "resource-cpu_seconds"
+    ]
+  }
+]

@@ -1,14 +1,10 @@
-"""Exact-byte target registry using the native rig loader as target authority.
-
-The document can describe other owner domains, but this adapter only resolves
-actual rig bones/morphs. Camera/light/material/scene owners are never guessed.
-"""
+"""Exact-byte target registry delegating closure and property authority to native owners."""
 from copy import deepcopy
 from pathlib import Path
 
 from animation3d_contracts import KINDS, target_key, validate_contract
 from animation3d_time import frame_position
-from rig_errors import RigError, require, safe_path, sha256
+from rig_errors import RigError, require, safe_path, decode_json
 
 
 def _load_rig():
@@ -27,15 +23,21 @@ class TargetRegistry:
         require(document['kind']==KINDS['registry'],'ANIMATION_REGISTRY','Expected target registry.')
         self.root=Path(root).resolve()
         self.document=deepcopy(document)
+        self._resolved_domains={}
         self._entries={target_key(e['target']):deepcopy(e) for e in document['entries']}
 
     @classmethod
     def from_rig(cls, root, actor_id):
-        load_rig=_load_rig()
-        root=Path(root).resolve(); rig=load_rig(root)
-        from rig_skeleton import validate_skeleton
-        validate_skeleton(rig.skeleton,rig.manifest['limits'])
-        source=dict(id=rig.manifest['id'],version=rig.manifest['version'],path='rig.json',sha256=sha256(root/'rig.json'),kind='rig')
+        _load_rig()  # Preserve the optional-dependency diagnostic before file IO.
+        from animation3d_assets import verify_native
+        root=Path(root).resolve(); path=safe_path(root,'rig.json',exists=True)
+        require(path.stat().st_size<=16*1024**2,'ANIMATION_LIMIT','Rig manifest exceeds document budget.')
+        payload=path.read_bytes(); manifest=decode_json(payload)
+        require(isinstance(manifest,dict),'ANIMATION_KIND','Rig manifest must be an object.')
+        import hashlib
+        source=dict(id=manifest.get('id'),version=manifest.get('version'),path='rig.json',
+                    sha256=hashlib.sha256(payload).hexdigest(),kind='rig')
+        _,rig=verify_native(root,source)
         entries=[]
         for bone in rig.skeleton['bones']:
             for prop in ('translation','rotation','scale'):
@@ -48,17 +50,16 @@ class TargetRegistry:
     def resolve(self, target):
         entry=self._entries.get(target_key(target))
         require(entry is not None,'ANIMATION_TARGET','Target is not registered.',stage='animation3d')
-        require(entry['owner']=='rig' and entry['source']['kind']=='rig','ANIMATION_OWNER',
-            'This owner needs its explicit validated adapter.',stage='animation3d')
-        load_rig=_load_rig()
+        if entry['owner'] != 'rig':
+            from animation3d_owners import resolve_property_domain
+            self._resolved_domains[target_key(target)]=resolve_property_domain(self.root, entry)
+            return deepcopy(entry)
+        require(entry['source']['kind']=='rig','ANIMATION_OWNER',
+            'Rig entry needs a native rig source.',stage='animation3d')
         source=entry['source']; path=safe_path(self.root,source['path'],exists=True)
         require(path.name=='rig.json','ANIMATION_OWNER','Rig source must be a native rig.json.',stage='animation3d')
-        require(path.stat().st_size<=32*1024**2 and sha256(path)==source['sha256'],'ANIMATION_HASH','Rig source hash changed.',stage='animation3d')
-        rig=load_rig(path.parent)
-        from rig_skeleton import validate_skeleton
-        validate_skeleton(rig.skeleton,rig.manifest['limits'])
-        require(sha256(path)==source['sha256'] and rig.manifest['id']==source['id'] and rig.manifest['version']==source['version'],
-            'ANIMATION_IDENTITY','Loaded rig identity/version differs from registry.',stage='animation3d')
+        from animation3d_assets import verify_native
+        _,rig=verify_native(self.root,source)
         if target['kind']=='bone':
             require(target['bone_id'] in {b['id'] for b in rig.skeleton['bones']},'ANIMATION_TARGET','Bone is absent from rig.',stage='animation3d')
         elif target['kind']=='morph':
@@ -73,6 +74,13 @@ class TargetRegistry:
         validate_contract(dict(schema_version=1,kind=KINDS['track'],value=track))
         validate_track(track,duration_frames)
         entry=self.resolve(track['target'])
+        domain=self._resolved_domains.get(target_key(track['target']))
+        if domain is not None:
+            entry['_native_domain']=deepcopy(domain)
+            from jsonschema import Draft202012Validator
+            validator=Draft202012Validator(domain)
+            require(all(validator.is_valid(value) for value in [track['default_value']]+[key['value'] for key in track['keys']]),
+                    'ANIMATION_RANGE','Track values violate the admitted native property domain.',stage='animation3d')
         if 'minimum' in entry:
             for value in [track['default_value']]+[key['value'] for key in track['keys']]:
                 require(isinstance(value,(int,float)) and entry['minimum']<=value<=entry['maximum'],
@@ -112,6 +120,10 @@ def sample_track(track, time, registry):
     from animation3d_curves import evaluate_segment
     value=evaluate_segment(track,left,position)
     require(np.isfinite(value).all(),'ANIMATION_NUMERICAL','Interpolation produced nonfinite output.',stage='animation3d')
+    if '_native_domain' in entry:
+        from jsonschema import Draft202012Validator
+        require(Draft202012Validator(entry['_native_domain']).is_valid(value),'ANIMATION_RANGE',
+                'Interpolated value violates the admitted native property domain.',stage='animation3d')
     # Overshoot may violate scale/morph domain even when endpoints are valid.
     from animation3d_contracts import _check_value
     _check_value(value,track['target']['kind'],track['target']['property'])

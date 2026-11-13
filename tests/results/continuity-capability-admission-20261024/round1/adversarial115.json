@@ -1,0 +1,128 @@
+[
+  {
+    "name": "wrong_rig_filename",
+    "result": {
+      "outcome": "supported_fallback",
+      "bound": {
+        "id": "evidence-1166f2cc77d0de4f672a66ea",
+        "version": "1.0.0",
+        "path": "rig/identity.json",
+        "sha256": "1166f2cc77d0de4f672a66eaabe693bb4247579c51a0cc084a2d654e989c0b51",
+        "kind": "hatch-3d-rig"
+      },
+      "actual_rig_sha256": "91a1d152d221535d858946b98a1f7d2c0bcd085bc4aaf897c5c4905a2478f90f"
+    }
+  },
+  {
+    "name": "project_changed_after_initial_integrity",
+    "result": {
+      "outcome": "supported_fallback",
+      "integrity": "verified",
+      "request_project_hash": "218589323cbe80b7ed077e3ee36f1663e7cb5f8f4e4ad02c938ad8a5c2c5a6b9",
+      "actual_project_hash": "3415084be5093eb677a9b3073ee3c3f7be31de4e8cd540fc1f424be0cad8b88e"
+    }
+  },
+  {
+    "name": "categorical_fallback_graphical-editor",
+    "result": {
+      "schema_version": "1.0.0",
+      "kind": "continuity-capability-result",
+      "request_sha256": "a1fac1c9174b437d7e08264f3f3f9635d7e62525ebace02173b3f93dbf44546f",
+      "request_id": "fixture-request",
+      "outcome": "supported_fallback",
+      "checks": [
+        {
+          "id": "check-0",
+          "capability": "graphical-editor",
+          "outcome": "supported_fallback",
+          "implementation_id": "python-cli-service",
+          "owner": "hatch-rig",
+          "backend": "test-native",
+          "backend_version": "1.0.0",
+          "snapshot_sha256": "e4b5320db1d50bc683324eac16324e49faf94b41de9810b2a8427f339ea8ae9f",
+          "missing_fields": [],
+          "unsatisfied_gates": [],
+          "evidence": [
+            {
+              "id": "evidence-218589323cbe80b7ed077e3e",
+              "version": "1.0.0",
+              "path": "project.json",
+              "sha256": "218589323cbe80b7ed077e3ee36f1663e7cb5f8f4e4ad02c938ad8a5c2c5a6b9",
+              "kind": "project-revision"
+            }
+          ],
+          "measurements": {
+            "admission_resources": {
+              "wall_seconds": 0.00020845700055360794,
+              "process_cpu_seconds": 0.00020587199999999584,
+              "process_peak_rss_bytes": 53448704,
+              "rss_scope": "whole-process lifetime peak; not per-operation allocation",
+              "rss_status": "measured"
+            }
+          },
+          "limitations": [],
+          "elapsed_seconds": 0.00020845700055360794,
+          "error": null
+        }
+      ],
+      "integrity": "verified",
+      "visual_approval": false,
+      "report_sha256": "7e35ea2410b49d74ff5b7a3fa01ed751de0304f84a37dbbfd412c6d9ca2a15de"
+    }
+  },
+  {
+    "name": "categorical_fallback_video-encoding",
+    "result": {
+      "schema_version": "1.0.0",
+      "kind": "continuity-capability-result",
+      "request_sha256": "588468162ba7ce16210ecf9133e841a2ad2753e076ad98de86b3a63686a5a56c",
+      "request_id": "fixture-request",
+      "outcome": "supported_fallback",
+      "checks": [
+        {
+          "id": "check-0",
+          "capability": "video-encoding",
+          "outcome": "supported_fallback",
+          "implementation_id": "preserve-image-masters",
+          "owner": "hatch-rig",
+          "backend": "test-native",
+          "backend_version": "1.0.0",
+          "snapshot_sha256": "361a0bf7d2508ccf11e764edd47acad406573cfa9cca1b5b69ff4c30aa3e99c4",
+          "missing_fields": [],
+          "unsatisfied_gates": [],
+          "evidence": [
+            {
+              "id": "evidence-218589323cbe80b7ed077e3e",
+              "version": "1.0.0",
+              "path": "project.json",
+              "sha256": "218589323cbe80b7ed077e3ee36f1663e7cb5f8f4e4ad02c938ad8a5c2c5a6b9",
+              "kind": "project-revision"
+            }
+          ],
+          "measurements": {
+            "admission_resources": {
+              "wall_seconds": 0.00019757007248699665,
+              "process_cpu_seconds": 0.00019623800000001523,
+              "process_peak_rss_bytes": 53448704,
+              "rss_scope": "whole-process lifetime peak; not per-operation allocation",
+              "rss_status": "measured"
+            }
+          },
+          "limitations": [],
+          "elapsed_seconds": 0.00019757007248699665,
+          "error": null
+        }
+      ],
+      "integrity": "verified",
+      "visual_approval": false,
+      "report_sha256": "9b32a7ed2f5087fac885089cee8e4e0207ff23658c3f9dbcc7ce30040b5338b3"
+    }
+  },
+  {
+    "name": "malformed_native_response",
+    "result": {
+      "raised": "ValueError",
+      "message": "CONTINUITY_CAPABILITY_SCHEMA: None is not of type 'string'"
+    }
+  }
+]

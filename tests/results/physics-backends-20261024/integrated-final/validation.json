@@ -1,0 +1,38 @@
+{
+  "tested_source_head": "cee21cb8450acc3d918eb17bf4f7870cdcc66377",
+  "normal_merged_dependencies": {
+    "scene59": "11fb54c9f50e91b7960bae29c74f2d5cd9b5942d",
+    "main": "b16a2268e8cb5a3a29042058a95a7b2495903716"
+  },
+  "lifecycle": {
+    "tests": 48,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "seconds": 44.855
+  },
+  "scene": {
+    "tests": 67,
+    "failures": 0,
+    "errors": 0,
+    "seconds": 11.779
+  },
+  "retained_cache_verification": {
+    "blender": "PASS",
+    "pybullet": "PASS"
+  },
+  "crlf": {
+    "files": 176,
+    "mismatches": 0
+  },
+  "first_attempt": "lifecycle-contention.log retains2PHYSICS_BUSY failures due concurrent169 empty-interpreter discovery. Allprocessslot reservation corrected; identical source and command rerun pass. No tests weakened, no other process terminated.",
+  "review": "Prior60acfPASS historical; fresh exact-integrated-head review pending.",
+  "evidence_sha256": {
+    "tests/results/physics-backends-20261024/integrated-final/crlf.json": "b0382482bf4f309cbd3f7e73b5f04dd68862990001cd4d3ac8c5d4a083c8343d",
+    "tests/results/physics-backends-20261024/integrated-final/pybullet-cache.json": "088a946f14895b4b93d5a02a52a21d43505767b0c245483dd333bc5dda1901c7",
+    "tests/results/physics-backends-20261024/integrated-final/blender-cache.json": "56f0d01bb801219a448f42c6e6334b71c1016c7eb303efd4af39b68c835440bb",
+    "tests/results/physics-backends-20261024/integrated-final/scene.log": "eb3943696f7f984d20ab03e31001308b5e254ae84ec386612168ea775a49a49d",
+    "tests/results/physics-backends-20261024/integrated-final/lifecycle-contention.log": "0ae965049ec7e25423dfa1f70df7cee0a85f3aa7ea5ec5cff9415f58702a156f",
+    "tests/results/physics-backends-20261024/integrated-final/lifecycle.log": "f9984fe504c97840b36d4d583ea9e30283be99e19d5a733f9843c690e42b768f"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "reviewed_head": "853d5202e05a807230da724ca02f16214f8ae4b0",
+  "review_verdict": "CHANGES_REQUIRED",
+  "test_proof": {
+    "count": 45,
+    "seconds": 13.097,
+    "failures": 0,
+    "skips": 0,
+    "note": "Before a subsequent same-semantics cumulative-report-byte accounting optimization; final integrated rerun required."
+  },
+  "repairs_pending_independent_verification": [
+    "flattened/deduplicated initial+final closure, new/observablychangedrefs content check, cheap fingerprints between checks",
+    "fulladmission CPU+wall budget including verification/schema/report",
+    "review-required outcome always carries visual-approval missing field and gate"
+  ],
+  "remaining": [
+    "central authoritative native caller resource caps",
+    "final113 explicit typed reference-list API",
+    "final integrated tests/review/remoteCI"
+  ],
+  "current_source_sha256": {
+    "scripts/continuity_capabilities.py": "fc5e062138d4c4fb832871327f769c1041809da7574d66547d3bb30d13ed9360",
+    "scripts/continuity_capability_owners.py": "de856c591bb97f33774767d3ce7c6089db1be5c16c2839f1eef7fb0f98d43433",
+    "tests/test_rig_continuity_capabilities.py": "9f4963e9bd518b500fe33f709d229b72dd81122e368e62d0b9ad21793feca09f"
+  }
+}
