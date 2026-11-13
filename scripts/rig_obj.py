@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import hashlib
 from pathlib import Path
 import shlex
 import numpy as np
@@ -11,10 +12,23 @@ from rig_geometry import analyze_geometry
 from rig_models import Geometry, Mesh, TextureImage, validate_geometry
 
 
-def import_obj(path: Path, *, scale=1., limits=None):
+def import_obj(path: Path, *, scale=1., limits=None, source_reader=None):
     from rig_import import ImportedModel, _decode_texture
-    limits = limits or DEFAULT_LIMITS;path = Path(path).resolve()
-    require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'OBJ exceeds the encoded source budget.')
+    limits = limits or DEFAULT_LIMITS;path = Path(path).absolute() if source_reader is not None else Path(path).resolve()
+    payload_sizes = {}
+    def read_source(source, maximum):
+        if source_reader is None:
+            require(source.stat().st_size <= maximum, 'RIG_LIMIT_SOURCE', 'OBJ source exceeds its byte budget.')
+            with source.open('rb') as stream:
+                data = stream.read(maximum + 1)
+            require(len(data) <= maximum, 'RIG_LIMIT_SOURCE', 'OBJ source grew beyond its byte budget.')
+        else:
+            data = source_reader(source, maximum)
+        payload_sizes[source] = len(data)
+        require(sum(payload_sizes.values()) <= limits['dependency_bytes'],
+                'RIG_LIMIT_DEPENDENCIES', 'OBJ dependencies exceed their byte budget.')
+        return data
+    entry_bytes = read_source(path, limits['source_bytes'])
     require(math.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'OBJ scale must be positive.')
     vertices, uv, normals, groups, dependencies = [], [], [], {}, [path]
     materials = [dict(name='Default material')];material_ids = {'default': 0};images = [];textures = []
@@ -29,9 +43,8 @@ def import_obj(path: Path, *, scale=1., limits=None):
     def material_file(name):
         nonlocal total_texture_pixels
         p = safe_path(path.parent, name, exists=True);dependencies.append(p)
-        require(p.stat().st_size <= 1024**2, 'RIG_LIMIT_MTL', 'MTL exceeds 1 MiB.')
         material = None
-        for line in p.read_text('utf-8').splitlines():
+        for line in read_source(p, min(1024**2, limits['source_bytes'])).decode('utf-8').splitlines():
             fields = shlex.split(line, comments=True)
             if not fields:continue
             key, values = fields[0], fields[1:]
@@ -49,16 +62,14 @@ def import_obj(path: Path, *, scale=1., limits=None):
             elif material is not None and key == 'map_Kd':
                 require(values and not values[0].startswith('-'), 'RIG_MTL', 'Bake MTL texture options before import.')
                 texture = safe_path(p.parent, ' '.join(values), exists=True)
-                require(texture.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_TEXTURE', 'MTL texture exceeds its budget.')
-                with texture.open('rb') as stream:
-                    data = stream.read(limits['source_bytes'] + 1)
+                data = read_source(texture, limits['source_bytes'])
                 mime, pixels = _decode_texture(data, limits, total_texture_pixels)
                 total_texture_pixels += pixels
                 dependencies.append(texture);images.append(TextureImage(texture.name, mime, data))
                 textures.append(dict(source=len(images)-1))
                 material['pbrMetallicRoughness']['baseColorTexture'] = dict(index=len(textures)-1)
 
-    for line in path.read_text('utf-8').splitlines():
+    for line in entry_bytes.decode('utf-8').splitlines():
         fields = shlex.split(line, comments=True)
         if not fields:continue
         key, values = fields[0], fields[1:]
@@ -113,10 +124,10 @@ def import_obj(path: Path, *, scale=1., limits=None):
                            np.asarray(triangles, dtype=np.int64), material, attributes, name=name))
     geometry = Geometry(meshes, materials, images, textures)
     validate_geometry(geometry, limits)
-    require(sum(p.stat().st_size for p in set(dependencies)) <= limits['dependency_bytes'], 'RIG_LIMIT_DEPENDENCIES', 'OBJ dependencies exceed their budget.')
+    require(sum(payload_sizes.values()) <= limits['dependency_bytes'], 'RIG_LIMIT_DEPENDENCIES', 'OBJ dependencies exceed their budget.')
     report = analyze_geometry(geometry, limits)
     report.update(import_format='.obj', scale_conversion=scale, preserved_existing_rig=False, preserved_animation_clips=0,
-                  source_sha256=sha256(path), warnings=['OBJ imports geometry/materials only; skeletons and animations are not present in this format.',
+                  source_sha256=hashlib.sha256(entry_bytes).hexdigest(), warnings=['OBJ imports geometry/materials only; skeletons and animations are not present in this format.',
                     'Planar simple polygons are ear-clipped; OBJ bottom-left UVs are converted to glTF top-left UVs.'])
     return ImportedModel(geometry, list(dict.fromkeys(dependencies)), report=report)
 

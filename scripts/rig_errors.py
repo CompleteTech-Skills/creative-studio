@@ -149,15 +149,22 @@ def safe_path(root: str | Path, name: str, *, exists: bool = False) -> Path:
 
 
 @contextmanager
-def open_payload(root: str | Path, name: str):
+def open_payload(root: str | Path, name: str, *, root_identity=None):
     """Open an admitted regular payload without following replaceable parents.
 
     Reads remain the caller's responsibility and must be bounded. Descriptor and
     path identity are rechecked after the caller finishes. POSIX retains each
     directory descriptor; Windows checks the opened handle's canonical path.
     """
-    root = Path(root).absolute()
+    # The caller selects the trusted root. Canonicalize its platform aliases
+    # once (/var on macOS, DOS short paths on Windows); descendants still
+    # traverse no-follow descriptors and cannot redirect outside that root.
+    root = Path(root).resolve()
     target = safe_path(root, name, exists=True)
+    def check_root(info):
+        require(root_identity is None or (info.st_dev, info.st_ino) == root_identity,
+                'RIG_PAYLOAD_CHANGED', 'Selected source directory changed.', asset=name)
+    check_root(root.stat())
     flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0)
     descriptors = []
     try:
@@ -167,6 +174,7 @@ def open_payload(root: str | Path, name: str):
             descriptors.append(os.open(root.anchor, directory_flags))
             for part in root.parts[1:]:
                 descriptors.append(os.open(part, directory_flags, dir_fd=descriptors[-1]))
+            check_root(os.fstat(descriptors[-1]))
             parts = PurePosixPath(name).parts
             for part in parts[:-1]:
                 descriptors.append(os.open(part, directory_flags, dir_fd=descriptors[-1]))
@@ -195,11 +203,13 @@ def open_payload(root: str | Path, name: str):
                     actual = actual[4:]
                 require(os.path.normcase(actual) == os.path.normcase(os.path.abspath(target)),
                         'RIG_PAYLOAD_PATH', 'Opened source was redirected.', asset=name)
+            check_root(root.stat())
             current = safe_path(root, name, exists=True).stat()
             require((current.st_dev, current.st_ino) == (before.st_dev, before.st_ino),
                     'RIG_PAYLOAD_CHANGED', 'Payload changed while opening.', asset=name)
             yield stream, before
             after = os.fstat(stream.fileno())
+            check_root(root.stat())
             current = safe_path(root, name, exists=True).stat()
             def fingerprint(info):
                 fields = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
