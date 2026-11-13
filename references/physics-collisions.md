@@ -93,7 +93,7 @@ surfaces for the query process only. Bullet3.2.7 can falsely miss rays against i
 zero-margin box support shape; adding an undisclosed skin is not used. The solver
 keeps its original box. Query receipts explicitly name
 `exact-box-triangle-surface-v1;native-other-proxies-v1` and bind the original world
-and owned worker hash. Native slab-oracle tests cover162 face/near-edge/near-corner
+and owned worker hash. Native slab-oracle tests cover486 forward/reverse/inside face/near-edge/near-corner
 rays over .001–1000m boxes and rotated/offset poses with a1e-8m position tolerance.
 This is a ray-query representation, not evidence of new solver geometry or
 continuation. Zero-margin convex-hull queries remain explicitly unsupported.
