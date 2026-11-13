@@ -84,6 +84,31 @@ class SyntheticFileAdapter:
 
 
 class Render3DIndependentTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform=='linux','Explicit directory authority requires Linux procfd.')
+    def test_snapshot_exact_directory_capability_survives_public_replacement(self):
+        from rig_errors import directory_capability
+        with tempfile.TemporaryDirectory() as temporary:
+            parent=Path(temporary);source=parent/'source';source.mkdir()
+            adapter=SyntheticFileAdapter()
+            (source/'source.bin').write_bytes(adapter.files['source.bin'])
+            create_snapshot(source,parent/'snapshot',adapter)
+            descriptor=os.open(parent/'snapshot',os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                with directory_capability(descriptor) as cap:
+                    (parent/'snapshot').rename(parent/'retained')
+                    (parent/'snapshot').mkdir()
+                    (parent/'snapshot/source.bin').write_bytes(b'foreign replacement')
+                    for root in (cap.path,Path('/proc/self/fd')/str(descriptor)):
+                        with self.subTest(root=str(root)):
+                            document=verify_snapshot(root,adapter)
+                            self.assertEqual(document['files'][0]['sha256'],digest(adapter.files['source.bin']))
+                            destination=parent/('copy-'+str(root.name))
+                            create_snapshot(root,destination,adapter)
+                            self.assertEqual((destination/'source.bin').read_bytes(),adapter.files['source.bin'])
+                with self.assertRaises(Render3DError):
+                    verify_snapshot(Path('/proc/self/fd')/str(descriptor),adapter)
+            finally:os.close(descriptor)
+
     @unittest.skipUnless(hasattr(os, 'mkfifo') and hasattr(os, 'O_NONBLOCK'),
                          'FIFO and nonblocking file descriptors required')
     def test_source_replaced_with_fifo_does_not_block_snapshot_copy(self):
