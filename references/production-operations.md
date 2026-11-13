@@ -292,3 +292,37 @@ PYTHONDONTWRITEBYTECODE=1 python -m unittest discover -s tests -p 'test_producti
 ~~~
 
 These suites use explicit synthetic evidence and never invoke imagegen. They cover selective dependencies, reviewer identity/evidence freshness, import provenance, native retry accounting and negative archive/transport cases. Production art, audio/playback inspection and editor integration require separately recorded actual evidence.
+
+### Explicit zero-audio export commands
+
+`production.py export-video --request request.json --root masters --destination film.mp4 --silent --output receipt.json`
+uses the separate silent encoder. The request pins the source inventory, rational
+FPS, codec profile and audio-forbidden policy; CLI overrides cannot rewrite it.
+`verify-export --artifact film.mp4 --request request.json --root masters --require-silent`
+independently probes every stream and fully decodes the movie. Zero audio streams
+are required; an AAC track of silence does not satisfy this workflow.
+
+For complete legacy render folders, use `export-video --render-dir renders --destination film.webm --profile vp9-webm --silent`.
+For an assembled timeline use `--timeline timeline-directory`; its returned
+receipt retains the full source-to-output mapping. These commands preserve the
+legacy `render --video` audiovisual review behavior.
+
+`export-capabilities` reports actual installed encoder capabilities and separately
+reports whether persistent jobs are available. `export-status`, `export-resume`
+and `export-cancel` take `--job-root`; `export-batch --jobs jobs.json` consumes a
+bounded array of existing job roots. Job commands require the canonical optional
+`silent_jobs` authority. `export-sequence --request sequence.json --root masters
+--format png --destination sequence` requires `silent_sequence` and rejects an
+implicit format conversion. Missing authorities produce a nonzero structured
+`EXPORT_DEPENDENCY_UNAVAILABLE` report, never a successful placeholder.
+
+This CLI increment does not establish the complete #240 acceptance program:
+integrated poster/contact-sheet and preview packaging, explicit resolution/FPS preparation,
+portable delivery manifests and their current integrated acceptance remain open.
+
+The public `silent_cli.prepare_preview(source, root, destination, width=320)`
+uses the canonical explicit frame transform and returns a verified source plus
+its immutable transform identity. `preview(...)` additionally encodes and fully
+verifies a zero-audio H.264 derivative. `review_assets(..., indices=[0,72,192])`
+publishes exact source-pixel poster bytes, bounded thumbnails and a contact sheet
+with source and output hashes; all derivatives remain visually unreviewed.

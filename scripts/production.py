@@ -103,6 +103,9 @@ def _progress(event):
 
 
 def dispatch(args):
+    from silent_cli import COMMANDS, dispatch as export_dispatch
+    if args.command in COMMANDS:
+        return export_dispatch(args)
     if args.command == 'create':
         return _create(args)
     if args.command == 'restore':
@@ -203,6 +206,9 @@ def build_parser():
         child.add_argument('--output', help='New JSON report file; stdout prints only its absolute output path.')
         return child
 
+    from silent_cli import add_parsers
+    add_parsers(command)
+
     create = command('create', False)
     create.add_argument('--destination', required=True)
     source = create.add_mutually_exclusive_group(required=True)
@@ -296,7 +302,7 @@ def main(argv=None):
             print(json.dumps(result, sort_keys=True, indent=2))
         return 0
     except (ValueError, OSError, KeyError, TypeError) as exc:
-        print(json.dumps({'error': str(exc), 'command': args.command, 'provider_called': False}), file=sys.stderr)
+        print(json.dumps({'error': str(exc), 'code': getattr(exc, 'code', 'PRODUCTION_COMMAND_FAILED'), 'command': args.command, 'provider_called': False}), file=sys.stderr)
         return 2
 
 
