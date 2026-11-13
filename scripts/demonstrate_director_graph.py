@@ -53,7 +53,7 @@ def demonstrate(destination):
     report = dict(schema_version=1, fixture=True, production_jobs_executed=False,
                   native_obj_probe_executed=snapshot['value']['capabilities'][0]['execution_verified'],
                   compiled=result['status'] == 'succeeded',
-                  traceability=traceability(plan, result['value']) if result['value'] else [],
+                  traceability=traceability(plan, result['value'], request=compile_request, root=destination) if result['value'] else [],
                   graph_sha256=hashlib.sha256((destination / 'graph.json').read_bytes()).hexdigest())
     write('acceptance.json', report, 'graph-acceptance')
     return report

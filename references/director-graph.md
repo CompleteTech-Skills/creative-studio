@@ -51,7 +51,7 @@ Each cache key hashes the node, incoming edges, predecessor keys, pinned
 capability snapshot and resolution. Changing a dependency changes descendant
 keys. Refreshing capability expiry intentionally changes the snapshot identity.
 
-CPU/render and GPU estimates must fit the supplied budget. Unknown estimates
+CPU/IO/render and GPU estimates must fit the supplied budget. Unknown estimates
 remain null and make the critical-path estimate null; they are never invented
 zeroes. Estimates do not reserve resources or authorize execution. The longest
 dependency path is calculated from declared estimates; it is not a measured
@@ -61,7 +61,7 @@ runtime or a resource-constrained schedule.
 transitively stale, preserved and removed node IDs. It follows old and new edges
 so removal or reassignment does not hide downstream invalidation. Uncertain
 nodes are conservatively stale even when their current inputs compare equal.
-`traceability(plan, graph)` returns requirement → nodes → test/evidence mappings.
+`traceability(plan, graph, request=request, root=root)` revalidates the pinned plan and compiled graph before it returns requirement → nodes → test/evidence mappings.
 
 ## Reproduce
 

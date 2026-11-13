@@ -206,7 +206,7 @@ class DirectorGraphTests(unittest.TestCase):
 
     def test_traceability_and_edge_changes_are_in_cache_keys(self):
         before = self.compile()['value']
-        mapping = dg.traceability(self.plan, before)
+        mapping = dg.traceability(self.plan, before, request=self.request, root=self.root, now=self.now)
         self.assertEqual(mapping, [dict(requirement='produce', test='test_actual_compile', evidence=[], nodes=['a', 'b', 'c'])])
         second = self.write('second', {'spec': 2})
         for node in self.plan['nodes']:
@@ -218,6 +218,40 @@ class DirectorGraphTests(unittest.TestCase):
         after = self.compile()['value']
         self.assertEqual(shared['nodes'][0]['cache_key'], after['nodes'][0]['cache_key'])
         self.assertNotEqual(shared['nodes'][1]['cache_key'], after['nodes'][1]['cache_key'])
+
+    def test_resource_classes_cannot_hide_estimated_work(self):
+        for resource in ('none', 'provider', 'gpu', 'render'):
+            plan = deepcopy(self.plan)
+            plan['nodes'][0]['resource_class'] = resource
+            with self.subTest(resource=resource), self.assertRaises(ValueError):
+                dg.validate_plan(plan)
+        for node in self.plan['nodes']:
+            node['resource_class'] = 'io'
+        self.refresh()
+        self.request['input']['budget']['max_cpu_seconds'] = 0
+        with self.assertRaises(ValueError):
+            self.compile()
+
+    def test_provider_calls_are_aggregated_before_admission(self):
+        for node in self.plan['nodes']:
+            node.update(operation='PlanningProvider.generate_structured',
+                        native_owner='PlanningProvider', output_schema='planning-artifact',
+                        resource_class='provider', required_capabilities=['planning.provider'])
+        self.request['context']['policy']['network'] = 'allow-configured'
+        self.request['input']['budget']['max_provider_calls'] = 2
+        self.refresh()
+        with self.assertRaisesRegex(ValueError, 'provider invocations exceed budget'):
+            self.compile()
+
+    def test_traceability_rejects_unbound_plan_and_graph(self):
+        graph = self.compile()['value']
+        altered = deepcopy(self.plan)
+        altered['requirements'][0]['test'] = 'not-the-compiled-test'
+        with self.assertRaises(ValueError):
+            dg.traceability(altered, graph, request=self.request, root=self.root, now=self.now)
+        graph['nodes'][0]['cache_key'] = 'a' * 64
+        with self.assertRaises(ValueError):
+            dg.traceability(self.plan, graph, request=self.request, root=self.root, now=self.now)
 
     def test_concurrent_source_change_fails_before_result(self):
         original = dg._read

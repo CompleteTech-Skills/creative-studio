@@ -81,6 +81,16 @@ def validate_plan(plan):
                  'Nodes must delegate to the named native interface owner.')
         _require(node['output_schema'] == METHODS[node['operation']][1], 'OUTPUT',
                  'Output schema must match the native method contract.')
+        resource = node['resource_class']
+        if node['operation'] == 'PlanningProvider.generate_structured':
+            _require(resource == 'provider', 'RESOURCE', 'Planning provider work must use the provider resource class.')
+        elif node['operation'] == 'RenderAdapter.submit':
+            _require(resource in ('render', 'gpu'), 'RESOURCE', 'Render submission must account for CPU render or GPU work.')
+            backend = 'blender.gpu' if resource == 'gpu' else 'blender.cpu'
+            _require(backend in node['required_capabilities'], 'CAPABILITY', 'Render resource class must match its backend capability.')
+        else:
+            _require(resource in ('cpu', 'io') or (resource == 'none' and node['estimated_seconds'] == 0),
+                     'RESOURCE', 'Local work must account for CPU or IO time; none is only valid for a zero estimate.')
         if node['operation'] == 'RenderAdapter.submit':
             _require(bool({'blender.cpu', 'blender.gpu'} & set(node['required_capabilities'])),
                      'CAPABILITY', 'Render submission requires an executed Blender backend capability.')
@@ -234,9 +244,12 @@ def compile_graph(request, root, *, now=None):
         if node['resource_class'] == 'provider':
             _require(request['context']['policy']['network'] == 'allow-configured', 'POLICY',
                      'Provider nodes require explicit configured-network policy.')
-    _require(estimates['cpu'] + estimates['render'] <= data['budget']['max_cpu_seconds'],
+    _require(estimates['cpu'] + estimates['io'] + estimates['render'] <= data['budget']['max_cpu_seconds'],
              'BUDGET', 'Estimated CPU work exceeds budget.')
     _require(estimates['gpu'] <= data['budget']['max_gpu_seconds'], 'BUDGET', 'Estimated GPU work exceeds budget.')
+    provider_calls = sum(node['resource_class'] == 'provider' for node in plan['nodes'])
+    _require(provider_calls <= data['budget']['max_provider_calls'], 'BUDGET',
+             'Estimated provider invocations exceed budget.')
     predecessors = {item['id']: [] for item in plan['nodes']}
     for edge in plan['edges']:
         predecessors[edge['target']].append(edge['source'])
@@ -250,7 +263,7 @@ def compile_graph(request, root, *, now=None):
         from director_capabilities import assert_admission
         resource_estimate = {}
         if node['estimated_seconds'] is not None:
-            if node['resource_class'] in ('cpu', 'render'):
+            if node['resource_class'] in ('cpu', 'io', 'render'):
                 resource_estimate['max_cpu_seconds'] = node['estimated_seconds']
             elif node['resource_class'] == 'gpu':
                 resource_estimate['max_gpu_seconds'] = node['estimated_seconds']
@@ -304,11 +317,13 @@ class GraphCompiler:
             return result
 
 
-def traceability(plan, graph):
-    """Map every declared requirement to compiled nodes and exact test/evidence."""
-    validate_plan(plan)
-    nodes = {item['id']: item for item in graph['nodes']}
-    _require(set(nodes) == {item['id'] for item in plan['nodes']}, 'TRACEABILITY', 'Graph differs from plan.')
+def traceability(plan, graph, *, request, root, now=None):
+    """Map requirements only after verifying the exact pinned plan and graph."""
+    pinned = decode_json(_read(root, request['input']['plan']))
+    _require(canonical_plan(validate_plan(plan)) == canonical_plan(validate_plan(pinned)),
+             'TRACEABILITY', 'Traceability plan differs from the pinned compiler input.')
+    verified = compile_graph(request, root, now=now)['value']
+    _require(graph == verified, 'TRACEABILITY', 'Traceability graph differs from the verified compiler output.')
     return [dict(requirement=item['id'], test=item['test'], evidence=_sort_refs(item['evidence']),
                  nodes=sorted(node['id'] for node in plan['nodes'] if item['id'] in node['requirement_ids']))
             for item in sorted(plan['requirements'], key=lambda item: item['id'])]
