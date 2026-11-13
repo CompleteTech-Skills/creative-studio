@@ -17,6 +17,8 @@ independent reopen path. `physics_joints.measurements` calculates anchor error,
 axis displacement and relative rotation from solver body samples, using shared
 rig mathematics. It does not generate motion.
 
+Spring travel uses the declared axis and scalar linear limits; all perpendicular and angular axes remain locked. Generic six-DOF accepts explicit per-axis limits. Positive damping requires positive stiffness; zero-stiffness damping is rejected. Native reports verify anchor position, axis direction, spring activation, limits and stiffness/damping.
+
 Verification is in progress. The real solver gate is
 `HATCH_PHYSICS_BACKEND_TEST=1 python -m unittest discover -s tests -p test_rig_physics_joints.py`.
 The current fixture exercises seven constraint mappings and measures anchor

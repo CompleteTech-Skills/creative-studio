@@ -249,7 +249,7 @@ def create_joints(scene, world):
             c.spring_type='SPRING2'
             for i,axis_name in enumerate('xyz'):
                 for family,key in [('lin','linear_limits'),('ang','angular_limits')]:
-                    limits=joint.get(key,[[0,0]]*3)[i]
+                    limits=(joint['limits'] if key=='linear_limits' and i==2 else [0,0]) if kind=='spring' else joint.get(key,[[0,0]]*3)[i]
                     setattr(c,'use_limit_'+family+'_'+axis_name,True)
                     setattr(c,'limit_'+family+'_'+axis_name+'_lower',limits[0])
                     setattr(c,'limit_'+family+'_'+axis_name+'_upper',limits[1])
@@ -257,6 +257,9 @@ def create_joints(scene, world):
                 setattr(c,'spring_stiffness_'+axis_name,joint['stiffness'])
                 setattr(c,'spring_damping_'+axis_name,joint['damping'])
         reports.append(dict(id=joint['id'],type=c.type,body_a=c.object1.name,body_b=c.object2.name,
+            anchor=list(BASIS.to_3x3().transposed() @ obj.matrix_world.translation),
+            axis=list(BASIS.to_3x3().transposed() @ (obj.matrix_world.to_3x3() @ Vector((1,0,0) if kind=='slider' else (0,0,1)))),
+            spring_enabled=[getattr(c,'use_spring_'+x) for x in 'xyz'] if kind in ('spring','generic-6dof') else [False]*3,
             disable_collisions=c.disable_collisions,enabled=c.enabled,use_breaking=c.use_breaking,
             solver_iterations=c.solver_iterations,
             linear_limits=[[getattr(c,'use_limit_lin_'+x),getattr(c,'limit_lin_'+x+'_lower'),getattr(c,'limit_lin_'+x+'_upper')] for x in 'xyz'],

@@ -71,6 +71,11 @@ jobs:
           mkdir physics-evidence/rigid-bodies physics-evidence/rigid-replay
           python -B -m unittest discover -s tests -p test_rig_physics_rigid.py -v 2>&1 | tee physics-evidence/rigid-body-tests.log
           python -B -m unittest discover -s tests -p test_rig_physics_rigid_replay.py -v 2>&1 | tee physics-evidence/rigid-replay-tests.log
+      - name: Actual mechanical joint mappings and restoring response
+        env:
+          HATCH_JOINT_EVIDENCE: ${{ github.workspace }}/physics-evidence/joints
+        run: |
+          python -B -m unittest discover -s tests -p test_rig_physics_joints.py -v 2>&1 | tee physics-evidence/joints-tests.log
       - name: Actual category/shape/headless probes
         run: |
           python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json

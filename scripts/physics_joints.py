@@ -38,6 +38,8 @@ def admit(world, backend):
             _error('Spring stiffness only applies to spring/generic-6dof constraints.')
         if joint['damping'] and kind not in ('spring', 'generic-6dof'):
             _error('Spring damping only applies to spring/generic-6dof constraints.')
+        if joint['damping'] and not joint['stiffness']:
+            _error('Damping without an enabled positive-stiffness spring is unsupported.')
         if joint['motor_max_force'] or joint['motor_velocity']:
             _error('Native joint motors are not yet verified.')
         if 'break_force' in joint:
@@ -99,14 +101,22 @@ def validate_native_report(value, world):
     need(type(value) is list and len(value)==len(world['joints']), 'Native joint inventory differs.')
     types=dict(fixed='FIXED',hinge='HINGE',slider='SLIDER',ball='POINT',point='POINT',spring='GENERIC_SPRING',**{'generic-6dof':'GENERIC_SPRING'})
     for observed,joint in zip(value,world['joints']):
-        object_fields(observed,('id','type','body_a','body_b','disable_collisions','enabled','use_breaking','solver_iterations','linear_limits','angular_limits','stiffness','damping'), 'Native joint')
+        object_fields(observed,('id','type','body_a','body_b','anchor','axis','spring_enabled','disable_collisions','enabled','use_breaking','solver_iterations','linear_limits','angular_limits','stiffness','damping'), 'Native joint')
         need(observed['id']==joint['id'] and observed['type']==types[joint['type']] and observed['body_a']==joint['body_a'] and observed['body_b']==joint['body_b'] and observed['disable_collisions']==(not joint['collide_connected']) and observed['enabled'] is True and observed['use_breaking'] is False and observed['solver_iterations']==world['solver']['iterations'], 'Native constraint identity/settings differ.')
+        from rig_math import compose
+        import numpy as np
+        body=next(b for b in world['bodies'] if b['id']==joint['body_a'])
+        frame=compose(**body['transform']) @ compose(**joint['anchor_a'])
+        for key,expected in [('anchor',frame[:3,3]),('axis',frame[:3,:3] @ np.asarray(joint['axis']))]:
+            need(type(observed[key]) is list and len(observed[key])==3 and all(number(v) for v in observed[key]) and np.allclose(observed[key],expected,atol=1e-5,rtol=1e-6),'Native joint frame differs.')
+        expected_spring=joint['type'] in ('spring','generic-6dof') and joint['stiffness']>0
+        need(type(observed['spring_enabled']) is list and len(observed['spring_enabled'])==3 and all(type(v) is bool and v==expected_spring for v in observed['spring_enabled']),'Native spring enable flags differ.')
         for name in ('linear_limits','angular_limits'):
             rows=observed[name]
             need(type(rows) is list and len(rows)==3 and all(type(r) is list and len(r)==3 and type(r[0]) is bool and all(number(v) for v in r[1:]) for r in rows),'Malformed native limits.')
             for i,row in enumerate(rows):
                 active=(joint['type']=='hinge' and name=='angular_limits' and i==2) or (joint['type']=='slider' and name=='linear_limits' and i==0) or joint['type'] in ('spring','generic-6dof')
-                expected=joint.get(name,[[0,0]]*3)[i] if joint['type'] in ('spring','generic-6dof') else joint['limits']
+                expected=((joint['limits'] if name=='linear_limits' and i==2 else [0,0]) if joint['type']=='spring' else joint.get(name,[[0,0]]*3)[i]) if joint['type'] in ('spring','generic-6dof') else joint['limits']
                 need(row[0] is active and (not active or all(abs(a-b)<=max(1e-6,abs(b)*1e-6) for a,b in zip(row[1:],expected))), 'Native joint limit differs.')
         for name in ('stiffness','damping'):
             expected=joint[name] if joint['type'] in ('spring','generic-6dof') else 0
