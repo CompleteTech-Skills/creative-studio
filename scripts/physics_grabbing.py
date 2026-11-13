@@ -181,6 +181,8 @@ def release_state(previous, current, *, center_of_mass=(0., 0., 0.), impulse=(0.
     before, after = rigid_transform(previous['transform']), rigid_transform(current['transform'])
     origin_velocity = (np.asarray(after['translation'])-before['translation'])/float(dt)
     delta = qmul(after['rotation'], qinverse(before['rotation']))
+    require(abs(delta[3]) > 1e-12, 'PHYSICS_GRIP_ROTATION_AMBIGUOUS',
+            'A half-turn between samples has no unique angular direction; sample more frequently.')
     if delta[3] < 0:
         delta = -delta
     sine = float(np.linalg.norm(delta[:3]))
@@ -189,7 +191,7 @@ def release_state(previous, current, *, center_of_mass=(0., 0., 0.), impulse=(0.
     arm = qmatrix(after['rotation']) @ com
     linear = origin_velocity + np.cross(angular, arm)
     require(np.isfinite(linear).all() and np.isfinite(angular).all() and
-            np.linalg.norm(linear) <= 50 and np.linalg.norm(angular) <= 100,
+            np.linalg.norm(linear) <= 50 and np.linalg.norm(angular) <= 50,
             'PHYSICS_GRIP_SPEED', 'Recovered release velocity exceeds the native safety profile.')
     return dict(transform=after, origin_linear_velocity=origin_velocity.tolist(),
                 linear_velocity=linear.tolist(), angular_velocity=angular.tolist(),
@@ -235,10 +237,13 @@ def compile_release(world, payloads, body_id, release):
             body['mass']['center_of_mass'], 'PHYSICS_GRIP_COM',
             'Release velocity must be recovered for this exact physical center of mass.')
     transform = rigid_transform(release['transform'])
+    linear = _vector(release['linear_velocity'], 3, 'release velocity', maximum=50)
+    angular = _vector(release['angular_velocity'], 3, 'release angular velocity', maximum=50)
+    require(np.linalg.norm(linear) <= 50 and np.linalg.norm(angular) <= 50,
+            'PHYSICS_GRIP_SPEED', 'Release velocity exceeds the native magnitude bound.')
     body.update(mode='dynamic', authority='physics', animation=None,
                 transform={key: transform[key] for key in ('translation', 'rotation')},
-                linear_velocity=_vector(release['linear_velocity'], 3, 'release velocity', maximum=50).tolist(),
-                angular_velocity=_vector(release['angular_velocity'], 3, 'release angular velocity', maximum=100).tolist())
+                linear_velocity=linear.tolist(), angular_velocity=angular.tolist())
     if 'sleep' in body:
         body['sleep']['initially_sleeping'] = False
     # Never silently delete pre-existing force programs or pending events.

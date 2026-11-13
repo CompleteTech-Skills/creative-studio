@@ -16,8 +16,8 @@ new ownership store or animation scheduler. Character movement remains #173.
 
 `release_state` consumes two increasing, exact rational-time world transforms.
 It recovers origin velocity and shortest-arc world angular velocity, then
-includes the angular contribution at the center of mass. More than pi radians
-between samples is ambiguous and is not inferred. Explicit linear and angular
+includes the angular contribution at the center of mass. Half-turns are rejected;
+more than pi radians between samples is ambiguous and is not inferred. Explicit linear and angular
 impulses remain separately declared native force inputs. No velocity is reset
 to zero unless the sampled motion actually gives zero. Nonunit scales, malformed
 numbers, ambiguous times and excessive speed fail before native execution.
