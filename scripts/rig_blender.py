@@ -32,6 +32,8 @@ def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
     from rig_gltf import export_gltf
     from rig_animation import evaluate_animation
     from rig_skinning import evaluate_deformation
+    from rig_attachments import socket_world
+    from rig_skeleton import neutral_pose
     destination=Path(destination).absolute();destination.parent.mkdir(parents=True,exist_ok=True)
     timeout=timeout or rig.manifest['limits']['timeout_seconds']
     with tempfile.TemporaryDirectory(prefix='hatch-blender-export-') as temporary:
@@ -39,8 +41,12 @@ def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
         atomic_json(root/'rig.json',rig.manifest)
         samples=[];indices={m.id:np.linspace(0,len(m.positions)-1,min(24,len(m.positions)),dtype=int).tolist() for m in rig.geometry.meshes}
         for name,clip in rig.clips.items():
-            for fraction in (0.,.37,.73):samples.append(dict(clip=name,time=clip['duration']*fraction,vertices=indices,bones=[b['id'] for b in rig.skeleton['bones']]))
-        base=dict(fps=24,duration=max((c['duration'] for c in rig.clips.values()),default=2.),samples=samples)
+            for fraction in (0.,.37,.73):samples.append(dict(clip=name,time=clip['duration']*fraction,vertices=indices,bones=[b['id'] for b in rig.skeleton['bones']],sockets=[s['id'] for s in rig.manifest['attachments']]))
+        if not samples:
+            samples=[dict(clip='rest',time=0.,rest=True,vertices=indices,bones=[b['id'] for b in rig.skeleton['bones']],
+                          sockets=[s['id'] for s in rig.manifest['attachments']])]
+        socket_rest={s['id']:socket_world(rig,neutral_pose(rig.skeleton),s['id']).tolist() for s in rig.manifest['attachments']}
+        base=dict(fps=24,duration=max((c['duration'] for c in rig.clips.values()),default=2.),samples=samples,socket_rest=socket_rest)
         report=_run(dict(base,mode='create',input=str(source),manifest=str(root/'rig.json'),output=str(destination),report=str(root/'create-report.json')),
                     executable=executable,timeout=timeout)
         require(report['ok'],'RIG_BLENDER_EDITABLE','Blender output lacks armature, skin modifier or weights.')
@@ -48,19 +54,25 @@ def export_blender(rig,destination,*,executable=None,timeout=None,verify=True):
             exported=destination.with_suffix('.roundtrip.glb')
             report=_run(dict(base,mode='reopen',input=str(destination),export=str(exported),report=str(root/'reopen-report.json')),
                         executable=executable,timeout=timeout)
-            maximum=0.;joint_max=0.;compared=0
+            maximum=0.;joint_max=0.;socket_max=0.;compared=0
+            require(len(report['samples']) == len(samples),'RIG_BLENDER_SAMPLES','Independent Blender sample inventory is incomplete.')
             from rig_skeleton import evaluate_fk
             for sample in report['samples']:
-                require(sample['matched'],'RIG_BLENDER_ANIMATION','Blender could not activate a named NLA clip.',asset=sample['clip'])
-                pose=evaluate_animation(rig,rig.clips[sample['clip']],sample['time'])['pose'];native=evaluate_deformation(rig,pose);world=evaluate_fk(rig.skeleton,pose)
+                require(sample['matched'] or not rig.clips,'RIG_BLENDER_ANIMATION','Blender could not activate a named NLA clip.',asset=sample['clip'])
+                require(set(sample['meshes']) == set(indices) and set(sample['bones']) == {b['id'] for b in rig.skeleton['bones']} and set(sample['sockets']) == set(socket_rest),
+                        'RIG_BLENDER_SAMPLES','Independent Blender mesh, bone or socket inventory is incomplete.')
+                pose=evaluate_animation(rig,rig.clips[sample['clip']],sample['time'])['pose'] if rig.clips else neutral_pose(rig.skeleton);native=evaluate_deformation(rig,pose);world=evaluate_fk(rig.skeleton,pose)
                 for name,points in sample['meshes'].items():
+                    require(np.shape(points)==(len(indices[name]),3),'RIG_BLENDER_SAMPLES','Independent Blender vertex sample count differs.')
                     reference=native[name]['positions'][indices[name]]
                     maximum=max(maximum,float(np.linalg.norm(reference-np.array(points),axis=1).max()));compared+=len(points)
                 for name,point in sample['bones'].items():joint_max=max(joint_max,float(np.linalg.norm(world[name][:3,3]-point)))
+                for name,matrix in sample['sockets'].items():
+                    socket_max=max(socket_max,float(np.max(np.abs(socket_world(rig,pose,name)-np.asarray(matrix)))))
             require(compared>0,'RIG_BLENDER_SAMPLES','Independent Blender mesh samples are missing.')
             report.update(max_vertex_error_m=maximum,max_joint_error_m=joint_max,compared_vertices=compared,
-                          tolerance_m=.01,roundtrip_path=str(exported),roundtrip_sha256=sha256(exported))
-            report['ok']=report['ok'] and maximum<=.01 and joint_max<=.01
+                          max_socket_transform_error=socket_max,tolerance_m=.01,roundtrip_path=str(exported),roundtrip_sha256=sha256(exported))
+            report['ok']=report['ok'] and maximum<=.01 and joint_max<=.01 and socket_max<=.01
         from rig_models import rig_signature
         report.update(schema_version=1,format='blend',path=str(destination),sha256=sha256(destination),independent=True,reader='Blender',reopened=verify,
                       rig_sha256=rig_signature(rig.manifest),source_glb_sha256=sha256(source))

@@ -80,6 +80,36 @@ class RigExternalIntegrationTests(unittest.TestCase):
         self.assertLess(report['max_vertex_error_m'],.01);self.assertGreater(report['compared_vertices'],0)
         self.assertEqual(report['schema_version'],1);self.assertEqual(report['format'],'blend')
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_socket_preserves_full_native_transform_during_animation(self):
+        from rig_blender import export_blender
+        from rig_math import axis_angle
+        from rig_attachments import socket_world
+        from rig_animation import evaluate_animation
+        self.rig.manifest['attachments'] = [dict(schema_version=1, id='grip.right', bone='b1',
+            transform=dict(translation=[.13,.21,.34], rotation=axis_angle([1,2,3],.7).tolist(),
+                           scale=[.7,1.2,1.6]), role='grip', owner=self.rig.manifest['character']['id'])]
+        report=export_blender(self.rig,Path(self.temp.name)/'socket.blend')
+        self.assertTrue(report['ok']);self.assertLess(report['max_socket_transform_error'],.005)
+        for sample in report['samples']:
+            pose=evaluate_animation(self.rig,self.rig.clips[sample['clip']],sample['time'])['pose']
+            np.testing.assert_allclose(sample['sockets']['grip.right'],
+                socket_world(self.rig,pose,'grip.right'),atol=.005)
+        self.assertGreater(np.max(np.abs(np.asarray(report['samples'][0]['sockets']['grip.right']) -
+                                         np.asarray(report['samples'][1]['sockets']['grip.right']))), .01)
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_unanimated_rig_reopens_and_samples_bind_pose(self):
+        from rig_blender import export_blender
+        self.rig.clips={}
+        report=export_blender(self.rig,Path(self.temp.name)/'static.blend')
+        self.assertTrue(report['ok']);self.assertTrue(report['reopened'])
+        self.assertEqual(len(report['samples']),1)
+        self.assertEqual(report['samples'][0]['clip'],'rest')
+        self.assertEqual(report['samples'][0]['matched'],[])
+        self.assertLess(report['max_vertex_error_m'],1e-5)
+        self.assertGreater(report['compared_vertices'],0)
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
     def test_blender_creation_receipt_does_not_claim_reopen(self):
         from rig_blender import export_blender
         report=export_blender(self.rig,Path(self.temp.name)/'created.blend',verify=False)

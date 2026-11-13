@@ -183,7 +183,8 @@ def definitions() -> dict:
                            skins=count, joints=count, animations=arr(identifier, 0, 64),
                            keyframes=integer, independently_verified={'const': False}))
     blender_sample = obj(dict(clip=identifier, time=dict(type='number', minimum=0, maximum=120),
-                              matched=arr(text), meshes=mapping(arr(vec)), bones=mapping(vec)))
+                              matched=arr(text), meshes=mapping(arr(vec)), bones=mapping(vec),
+                              sockets=mapping(arr(arr(num,4,4),4,4))), ['clip','time','matched','meshes','bones'])
     blender_fields = dict(schema_version={'const': 1}, format={'const': 'blend'},
                           blender_version=text, meshes=count, vertices=count, armatures=count,
                           bones=count, armature_modifiers=count, vertex_groups=count,
@@ -195,12 +196,13 @@ def definitions() -> dict:
                           reader={'const': 'Blender'}, reopened=boolean,
                           rig_sha256=digest, source_glb_sha256=digest)
     verification_fields = dict(max_vertex_error_m=error_distance, max_joint_error_m=error_distance,
+                               max_socket_transform_error=error_distance,
                                compared_vertices=count, tolerance_m=positive,
                                roundtrip_path=text, roundtrip_sha256=digest)
     blender_export = obj({**blender_fields, **verification_fields}, list(blender_fields))
     blender_export['allOf'] = [{
         'if': {'properties': {'reopened': {'const': True}}},
-        'then': {'required': list(verification_fields)},
+        'then': {'required': [field for field in verification_fields if field != 'max_socket_transform_error']},
         'else': {'not': {'anyOf': [{'required': [field]} for field in verification_fields]}}
     }]
     export_receipt = {'oneOf': [ref('RigGltfExportReceipt'), ref('RigBlenderExportReceipt')]}
