@@ -109,7 +109,7 @@ def package_rig(root, destination):
                 info.create_system = 3
                 info.external_attr = (stat.S_IFREG | 0o644) << 16
                 archive.writestr(info, inventory_bytes)
-            with open(temporary, 'rb') as completed:
+            with open(temporary, 'r+b') as completed:
                 os.fsync(completed.fileno())
             # Refuse a mixed revision if a writer ignored the shared run lock.
             final_entries, _ = _package_entries(root, rig.manifest['limits'])
