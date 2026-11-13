@@ -2,7 +2,6 @@
 from pathlib import Path
 import hashlib,json,os,shutil,subprocess,sys,tempfile,unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from lookdev_textures import decode_texture
 from lookdev_styles import mapping_ids
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -36,8 +35,15 @@ def inspect_outputs(root):
     for name in ('agx','warm','exposed'):
         difference=float(np.abs(colors[name]-colors['standard']).mean());measured['standard/'+name]=difference
         if difference<.1:raise AssertionError('OCIO setting has no saved pixel effect: '+name)
-    a=decode_texture((root/'color-linear.exr').read_bytes(),role='base-color',encoding='linear-srgb').pixels
-    b=decode_texture((root/'color-linear-display-changed.exr').read_bytes(),role='base-color',encoding='linear-srgb').pixels
+    import OpenEXR
+    def hdr(name):
+        with OpenEXR.File(str(root/name)) as image:
+            if image.header()['type']!=OpenEXR.scanlineimage:raise AssertionError('Expected scanline HDR output.')
+            pixels=image.channels()['RGBA'].pixels
+            if pixels.shape!=(96,96,4) or not np.isfinite(pixels).all():raise AssertionError('Invalid actual HDR samples.')
+            return pixels.copy()
+    a=hdr('color-linear.exr')
+    b=hdr('color-linear-display-changed.exr')
     delta=float(np.max(np.abs(a-b)));measured['HDR_display_transform_delta']=delta
     if delta>1e-6:raise AssertionError('Scene-linear output incorrectly baked display transform.')
     (root/'measured-comparisons.json').write_text(json.dumps(measured,indent=2)+'\n')

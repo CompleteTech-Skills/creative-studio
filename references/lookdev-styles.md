@@ -47,7 +47,10 @@ and a new output directory. Run with `--factory-startup --python-use-system-env
 --threads 1`, using the pinned Blender4.5 and optional Python3.11 jsonschema
 dependencies. It executes every recipe with actual geometry under Cycles,
 retains rendered PNGs, mapping/source hashes and OCIO comparison PNG/EXR files.
-Use the shared native flock when running on the coordination host.
+The opt-in test uses pinned OpenEXR3.3.4 as an independent output decoder.
+Blender emits version2 EXR with the valid LONG_NAMES flag; this is separate
+from the intentionally narrower source-texture decoder. Use the shared native
+flock when running on the coordination host.
 
 This package does not complete #88: browser color/shading comparison, ACES-inspired
 mapping, seeded flicker events, automated anatomy
