@@ -104,13 +104,19 @@ class RetargetControlTests(unittest.TestCase):
             'b0': dof('twist', axis=[0, 1, 0], translation=[False, True, False], scale=[True, False, False])})
         pose = neutral_pose(source.skeleton)
         pose['bones']['b0'] = dict(translation=[.3, .4, .5], scale=[2., 3., 4.],
-            rotation=qmul(axis_angle([1, 0, 0], .5), axis_angle([0, 1, 0], .6)).tolist())
+            rotation=axis_angle([0, 1, 0], .6).tolist())
         result = retarget_pose(source, target, pose, profile)
         np.testing.assert_allclose(result['bones']['b0']['translation'], [0, .4, 0], atol=1e-12)
         np.testing.assert_allclose(result['bones']['b0']['scale'], [2, 1, 1], atol=1e-12)
         self.assertLess(qangle(result['bones']['b0']['rotation'], axis_angle([0, 1, 0], .6)), 1e-8)
         np.testing.assert_allclose(evaluate_deformation(target, result)['strip']['positions'][0],
                                    [.2*math.cos(.6), .4, -.2*math.sin(.6)], atol=1e-12)
+        # Exercise swing rejection separately from nonuniform scale, since the
+        # existing TRS evaluator intentionally rejects sheared world matrices.
+        pose['bones']['b0']['scale'] = [1., 1., 1.]
+        pose['bones']['b0']['rotation'] = qmul(axis_angle([1, 0, 0], .5), axis_angle([0, 1, 0], .6)).tolist()
+        result = retarget_pose(source, target, pose, profile)
+        self.assertLess(qangle(result['bones']['b0']['rotation'], axis_angle([0, 1, 0], .6)), 1e-8)
         locked = build_retarget_profile(source, target, supported_dofs={'b0': dof('locked')})
         result = retarget_pose(source, target, pose, locked)
         self.assertLess(qangle(result['bones']['b0']['rotation']), 1e-8)
