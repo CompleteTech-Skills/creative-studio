@@ -37,6 +37,23 @@ class ComponentRevisionTests(unittest.TestCase):
         self.assertEqual(restored['project'], original['project'])
         self.assertEqual({p.relative_to(self.root/'source'):p.read_bytes() for p in (self.root/'source').rglob('*') if p.is_file()}, source)
 
+    def test_followup_writer_does_not_turn_committed_patch_into_failure(self):
+        repository = self.repository
+        original_apply = repository.apply
+        def followup(*args, **kwargs):
+            result = original_apply(*args, **kwargs)
+            camera = deepcopy(next(n for n in result['scene']['nodes'] if n['id']=='camera')['camera'])
+            camera['vertical_fov'] = 1.0
+            batch = dict(schema_version=1,commands=[dict(operation='configure-node',parameters=dict(identifier='camera',properties=dict(camera=camera)))])
+            original_apply(result['revision'],batch,'followup',expected_sha256=result['sha256'])
+            return result
+        repository.apply = followup
+        before = repository.snapshot()
+        receipt = self.patch(0,before['sha256'])
+        self.assertEqual(receipt['after']['revision'],1)
+        self.assertEqual(repository.snapshot()['revision'],2)
+        self.assertEqual(next(n for n in repository.snapshot(1)['scene']['nodes'] if n['id']=='camera')['camera']['vertical_fov'],.9)
+
     def test_stale_and_invalid_patch_preserve_last_valid_project(self):
         before = self.repository.snapshot()
         self.patch(0, before['sha256'])

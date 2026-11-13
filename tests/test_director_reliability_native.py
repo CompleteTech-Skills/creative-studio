@@ -92,7 +92,11 @@ raise AssertionError('Actual worker completed before cancellation')
                     executable = os.readlink('/proc/'+str(pid)+'/exe')
                 except FileNotFoundError:
                     continue
-                if Path(executable).name.startswith('blender'):
+                try:
+                    command = Path('/proc/'+str(pid)+'/cmdline').read_bytes().split(b'\0')
+                except FileNotFoundError:
+                    continue
+                if Path(executable).name.startswith('blender') and any(b'render3d_blender_worker.py' in part for part in command):
                     native_pids.append(pid)
             if native_pids:
                 break

@@ -59,7 +59,7 @@ def apply_camera_or_light_patch(repository, expected_revision, expected_sha256,
     _require(_asset_identity(after) == assets, 'Native component edit changed asset identity or review records.')
     # Reopen the committed revision through the public owner before reporting it.
     from editor3d_repository import EditorRepository
-    reopened = EditorRepository(repository.root).snapshot()
+    reopened = EditorRepository(repository.root).snapshot(after['revision'])
     _require(reopened == after, 'Reopened project differs from committed component edit.')
     return dict(schema_version=1, kind='director-component-revision',
                 before=dict(revision=before['revision'], sha256=before['sha256']),
