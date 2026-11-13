@@ -9,6 +9,7 @@ import tempfile
 import time
 import unittest
 import uuid
+from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import model3d_job_batches as batches
@@ -104,11 +105,23 @@ class BatchTests(unittest.TestCase):
         self.assertLessEqual((file_/'diagnostic-large.bin').stat().st_size,65536)
 
     def test_cancellation_kills_owned_descendant_without_pid_guessing(self):
-        root,job=self.make_worker('tree')
+        self.assert_descendant_cancelled('tree')
+
+    def test_cancellation_discovers_children_of_non_main_threads(self):
+        self.assert_descendant_cancelled('thread-tree')
+
+    def assert_descendant_cancelled(self,diagnostic):
+        root,job=self.make_worker(diagnostic)
         deadline=time.monotonic()+30
         while not (root/'diagnostic-child.json').exists() and time.monotonic()<deadline:time.sleep(.02)
         child=read_json(root/'diagnostic-child.json')['pid'];identity=worker._identity(child)
-        self.assertIsNotNone(identity);worker.cancel(root)
+        self.assertIsNotNone(identity)
+        if diagnostic=='thread-tree':
+            leader=worker.state(root)['pid']
+            main_children=(Path('/proc')/str(leader)/'task'/str(leader)/'children').read_text().split()
+            self.assertNotIn(str(child),main_children)
+            self.assertIn(child,worker._descendants(worker.state(root)['process_identity']))
+        worker.cancel(root)
         state=self.wait_worker(root);self.assertEqual(state['status'],'cancelled')
         deadline=time.monotonic()+3
         while time.monotonic()<deadline:
@@ -118,6 +131,32 @@ class BatchTests(unittest.TestCase):
             if state_=='Z':break
             time.sleep(.02)
         else:self.fail('owned descendant still executing after cancellation')
+        self.assertIsNone(job_status(job)['current_revision'])
+
+    def test_inventory_exhaustion_still_kills_real_owned_leader(self):
+        root,job=self.make_worker('sleep')
+        deadline=time.monotonic()+30;state=None
+        while time.monotonic()<deadline:
+            state=worker.state(root)
+            if state.get('process_identity') and (root/'enforced.json').exists():break
+            time.sleep(.02)
+        self.assertIsNotNone(state.get('process_identity'))
+        # Use a real owned fixed-command process and actual kernel group kill;
+        # inject only the bounded discovery error instead of spawning512tasks.
+        class Handle:
+            pid=state['pid']
+            def wait(self,timeout):
+                end=time.monotonic()+timeout
+                while time.monotonic()<end:
+                    identity=worker._identity(self.pid)
+                    if identity is None:return 0
+                    text=(Path('/proc')/str(self.pid)/'stat').read_text()
+                    if text[text.rfind(')')+2:].split()[0]=='Z':return 0
+                    time.sleep(.01)
+                raise subprocess.TimeoutExpired('owned probe',timeout)
+        with patch('model3d_job_worker._descendants',side_effect=RigError('MODEL3D_WORKER_TREE','synthetic inventory ceiling')):
+            worker._stop(Handle(),state['process_identity'],root,request_sha256=object_hash(read_json(root/'request.json')))
+        self.assertIn(self.wait_worker(root)['status'],('resource-exhausted','failed'))
         self.assertIsNone(job_status(job)['current_revision'])
 
     def test_unknown_quotas_and_unsafe_requests_fail_before_publication(self):

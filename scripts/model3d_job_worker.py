@@ -75,7 +75,7 @@ def _request(root, expected_hash=None):
             and isinstance(value['job_root'],str) and Path(value['job_root']).is_absolute()
             and isinstance(value['handler_version'],str) and 0<len(value['handler_version'])<=128
             and type(value['retry']) is bool and value['limits']==limits(value['limits'])
-            and value['diagnostic'] in (None,'sleep','memory','cpu','tree','file'),
+            and value['diagnostic'] in (None,'sleep','memory','cpu','tree','thread-tree','file'),
             'MODEL3D_WORKER_SCHEMA', 'Invalid fixed-worker request.')
     require(expected_hash is None or object_hash(value)==expected_hash,
             'MODEL3D_WORKER_CHANGED','Fixed worker request changed after launch authorization.')
@@ -90,7 +90,7 @@ def launch(job_root, root, *, resource_limits=None, retry=False, diagnostic=None
     job_root=Path(job_root).absolute(); status(job_root)
     root=Path(root).absolute()
     require(not root.exists() and not root.is_symlink(), 'MODEL3D_WORKER_EXISTS', 'Choose a new worker directory.')
-    require(diagnostic in (None,'sleep','memory','cpu','tree','file'), 'MODEL3D_WORKER_DIAGNOSTIC', 'Unknown fixed diagnostic.')
+    require(diagnostic in (None,'sleep','memory','cpu','tree','thread-tree','file'), 'MODEL3D_WORKER_DIAGNOSTIC', 'Unknown fixed diagnostic.')
     require(type(retry) is bool, 'MODEL3D_WORKER_SCHEMA', 'Retry must be explicit boolean.')
     _, version=engine_api(); token=uuid.uuid4().hex
     value=dict(schema_version=1,kind='model3d-owned-worker',token=token,job_root=str(job_root),
@@ -182,7 +182,7 @@ def verify_request(root, *, job_root, token=None, request_sha256=None):
 
 
 def _descendants(identity):
-    known={}; pending=[identity['pid']]
+    known={}; pending=[identity['pid']];tasks_seen=0
     while pending:
         pid=pending.pop()
         if pid in known:continue
@@ -190,10 +190,17 @@ def _descendants(identity):
         if actual is None or actual['group']!=identity['group']:continue
         require(len(known)<512,'MODEL3D_WORKER_TREE','Owned worker tree exceeds its process budget.')
         known[pid]=actual
-        try:children=(Path('/proc')/str(pid)/'task'/str(pid)/'children').read_text()
+        try:
+            with os.scandir(Path('/proc')/str(pid)/'task') as tasks:
+                for task in tasks:
+                    tasks_seen+=1
+                    require(tasks_seen<=1024,'MODEL3D_WORKER_TREE','Owned thread inventory exceeds its budget.')
+                    try:
+                        with (Path(task.path)/'children').open('rb') as stream:children=stream.read(65537)
+                    except (FileNotFoundError,ProcessLookupError):continue
+                    require(len(children)<=65536,'MODEL3D_WORKER_TREE','Owned child inventory exceeds its byte budget.')
+                    pending.extend(int(value) for value in children.split())
         except (FileNotFoundError,ProcessLookupError):continue
-        require(len(children)<=65536,'MODEL3D_WORKER_TREE','Owned child inventory exceeds its byte budget.')
-        pending.extend(int(value) for value in children.split())
     return known
 
 
@@ -201,7 +208,15 @@ def _stop(process, identity, root, known=None, request_sha256=None):
     """Signal only a process group with a live, birth-checked owned member."""
     known={} if known is None else dict(known)
     if identity and identity['group']==process.pid and owned_identity(identity,root,'execute',request_sha256):
-        known.update(_descendants(identity))
+        try:known.update(_descendants(identity))
+        except RigError as exc:
+            if exc.report['code']!='MODEL3D_WORKER_TREE':raise
+            # Traversal exhaustion must not prevent cleanup. The live fixed
+            # leader itself anchors ownership of this isolated process group.
+            try:os.killpg(identity['group'],signal.SIGKILL)
+            except ProcessLookupError:pass
+            process.wait(timeout=2.)
+            return
     def owned():return any(_identity(pid)==record for pid,record in known.items())
     if owned():
         try:os.killpg(identity['group'],signal.SIGTERM)
@@ -243,10 +258,16 @@ def _execute(root,expected_hash):
     elif diagnostic=='memory':
         allocation=bytearray(value['limits']['memory_bytes']*2)
         require(not allocation,'MODEL3D_WORKER_DIAGNOSTIC','Unreachable memory diagnostic.')
-    elif diagnostic=='tree':
-        child=subprocess.Popen([sys.executable,'-I',str(Path(__file__).resolve()),'sleep-child','--root',str(root)],
-                               stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        atomic_json(root/'diagnostic-child.json',dict(pid=child.pid))
+    elif diagnostic in ('tree','thread-tree'):
+        def spawn_child():
+            child=subprocess.Popen([sys.executable,'-I',str(Path(__file__).resolve()),'sleep-child','--root',str(root)],
+                                   stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            atomic_json(root/'diagnostic-child.json',dict(pid=child.pid))
+            if diagnostic=='thread-tree':time.sleep(30.)
+        if diagnostic=='thread-tree':
+            import threading
+            thread=threading.Thread(target=spawn_child);thread.start();thread.join()
+        else:spawn_child()
         time.sleep(30.)
     elif diagnostic=='file':
         with (root/'diagnostic-large.bin').open('wb') as stream:

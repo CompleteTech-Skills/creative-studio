@@ -83,7 +83,7 @@ replayed. Native job locks remain the final writer-exclusion authority. A lost
 supervisor is not equivalent to a successfully completed engine, and operator
 inspection may be required for ambiguous startup/process ownership.
 
-Fixed diagnostic modes (`sleep`, `cpu`, `memory`, `file`, `tree`) are developer
+Fixed diagnostic modes (`sleep`, `cpu`, `memory`, `file`, `tree`, `thread-tree`) are developer
 fixtures for exercising actual kernel limits and descendant cancellation. They
 never claim to generate geometry and cannot select arbitrary executable code.
 Normal batch requests do not enable them. Geometry acceptance comes from real
