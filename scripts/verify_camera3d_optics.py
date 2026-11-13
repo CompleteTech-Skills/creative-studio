@@ -93,6 +93,25 @@ def main():
                 bpy.data.objects.remove(camera, do_unlink=True)
                 bpy.data.cameras.remove(data)
 
+    # Orthographic world coverage must not be constrained by perspective
+    # sensor-width limits (which Blender measures in millimeters).
+    for height in (.1, 10000):
+        value = deepcopy(optics)
+        value['projection'] = dict(type='orthographic', orthographic_height_m=height,
+                                  shift_x=0, shift_y=0, near_clip_m=.1, far_clip_m=100)
+        camera = apply_camera(scene, value, render, world_matrix=transformed_world)
+        observed = np.array(camera.calc_matrix_camera(bpy.context.evaluated_depsgraph_get(),
+            x=render['width'], y=render['height'],
+            scale_x=scene.render.pixel_aspect_x, scale_y=scene.render.pixel_aspect_y))
+        error = float(np.abs(observed - projection_matrix(value, render)).max())
+        maximum = max(maximum, error)
+        cases.append(dict(type='orthographic', height=height, error=error))
+        if error >= 2e-5:
+            raise AssertionError(f'orthographic scale mismatch: {cases[-1]}')
+        data = camera.data
+        bpy.data.objects.remove(camera, do_unlink=True)
+        bpy.data.cameras.remove(data)
+
     # Independent depth-separated real meshes in camera-local coordinates.
     bpy.ops.object.select_all(action='SELECT'); bpy.ops.object.delete(use_global=False)
     world = np.eye(4)
