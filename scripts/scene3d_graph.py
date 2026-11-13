@@ -724,6 +724,7 @@ class SceneGraph:
             return result
         for current in chosen:
             result = deepcopy({k: v for k, v in evaluate(current).items() if not k.startswith('_')})
+            result['own_world_bounds'] = deepcopy(result['world_bounds'])
             result['world_bounds'] = deepcopy(aggregate(current))
             if self._isolate is not None:
                 result['editor_visible'] = result['editor_visible'] and current in self._isolate

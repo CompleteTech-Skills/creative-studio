@@ -232,9 +232,25 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
         for identifier, meshes in geometry.items():
             arrays = [np.asarray(points) for points in meshes.values() if len(points)]
             if arrays:
-                evaluated[identifier]['world_bounds'] = dict(
+                evaluated[identifier]['own_world_bounds'] = dict(
                     minimum=np.min([points.min(axis=0) for points in arrays], axis=0).tolist(),
                     maximum=np.max([points.max(axis=0) for points in arrays], axis=0).tolist())
+        children = {identifier: [] for identifier in nodes}
+        for identifier, node in nodes.items():
+            if node['parent'] is not None:
+                children[node['parent']].append(identifier)
+        def bounds(identifier):
+            boxes = [evaluated[identifier]['own_world_bounds']]
+            boxes.extend(bounds(child) for child in children[identifier])
+            boxes = [box for box in boxes if box is not None]
+            result = (dict(minimum=np.min([box['minimum'] for box in boxes], axis=0).tolist(),
+                           maximum=np.max([box['maximum'] for box in boxes], axis=0).tolist())
+                      if boxes else None)
+            evaluated[identifier]['world_bounds'] = result
+            return result
+        for identifier, node in nodes.items():
+            if node['parent'] is None:
+                bounds(identifier)
     require(authored == before_scene and authored_shot == before_shot, 'Authored scene changed during evaluation.')
     result = {'schema_version': 1, 'coordinate_system': COORDINATES,
               'scene': _reference_identity(authored, scene_path), 'shot': _reference_identity(authored_shot, shot_path),

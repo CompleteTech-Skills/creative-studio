@@ -106,6 +106,11 @@ class SceneEvaluationTests(unittest.TestCase):
         second=np.asarray(next(iter(out['native_geometry']['second'].values())))
         self.assertEqual(out['nodes']['first']['world_bounds'],
                          dict(minimum=first.min(axis=0).tolist(),maximum=first.max(axis=0).tolist()))
+        owned=[state['own_world_bounds'] for ident,state in out['nodes'].items()
+               if ident != 'root' and state['own_world_bounds'] is not None]
+        self.assertEqual(out['nodes']['root']['world_bounds'],dict(
+            minimum=np.min([box['minimum'] for box in owned],axis=0).tolist(),
+            maximum=np.max([box['maximum'] for box in owned],axis=0).tolist()))
         self.assertGreater(np.max(np.abs(first-second)),.05)
         self.assertTrue(out['native_geometry_sampled'])
         self.assertTrue(out['nodes']['first']['native_animation_evaluated'])
