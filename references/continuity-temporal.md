@@ -115,7 +115,7 @@ Generate/check schemas using the existing continuity generator:
 
 `tests/test_rig_continuity_temporal.py` constructs a real hash-bound native project
 with two locations, two character stand-ins, a distinct prop and three shots.
-The dedicated continuity CI gate executes all 14 temporal tests with optional
+The dedicated continuity CI gate executes all 15 temporal tests with optional
 3D dependencies on Linux, Windows and macOS. Its `test_rig_` name keeps native
 evaluation outside ordinary 2D discovery, which does not install NumPy.
 Tests exercise actual replay, native hierarchy evaluation, out-of-order requests,
@@ -130,5 +130,12 @@ original-production-media recovery, render or aesthetic approval is claimed.
 The static evaluator and integer event transitions are the supported executable
 capability. Rich costume/ownership/rules, live rendering and capability-admitted
 dynamic evaluation remain outside issue 116's implemented structural slice.
+
+When an incoming native scene already contains an intentional relocation, pass
+its authored initial events atomically with `registry.create_timeline(plan, events=events)`
+or `python scripts/continuity_temporal.py --registry continuity.sqlite --asset-root project create plan.json --events events.json`.
+The initial event list receives the same ordering, precondition, reference and replay checks
+as appended events. Contradicting native state or invalid initial events reject before
+any timeline head is persisted. Omitting events retains empty-history creation.
 
 A retained trace can be reproduced with `python tests/continuity_temporal_probe.py NEW_OUTPUT_DIRECTORY`. It writes the native fixture, event history, exact snapshots and source/runtime hashes. The SQLite file is a disposable probe sidecar, never an approved asset.

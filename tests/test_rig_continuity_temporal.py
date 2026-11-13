@@ -16,7 +16,7 @@ from scene3d_contracts import canonical_bytes, load_project
 from scene3d_example import build_example, TRANSFORM
 
 
-def fixture(root, *, dynamic=False):
+def fixture(root, *, dynamic=False, incoming_translation=None):
     build_example(root)
     old_scene = json.loads((root / 'example-scene.json').read_bytes())
     old_shot = json.loads((root / 'example-shot.json').read_bytes())
@@ -36,6 +36,8 @@ def fixture(root, *, dynamic=False):
         for identifier in ('second-character', 'prop'):
             node = deepcopy(scene['nodes'][1]); node['id'] = identifier
             scene['nodes'].append(node)
+        if i == 1 and incoming_translation is not None:
+            scene['nodes'][1]['transform']['translation'] = list(incoming_translation)
         scenes.append(write(scene))
     for i in range(3):
         shot = deepcopy(old_shot)
@@ -244,6 +246,41 @@ class TemporalTests(unittest.TestCase):
         p['scenes'][1]['scene_to_world']['translation']=[10,0,0]
         with self.assertRaisesRegex(ValueError,'SOURCE_STATE'):
             self.registry.create_timeline(p)
+
+    def test_atomic_initial_events_author_changed_native_scene_and_cli(self):
+        root = Path(self.temp.name)/'arrival-native'
+        plan = fixture(root,incoming_translation=[7,0,0])
+        plan['shots'][2]['story_start_tick'] = 4004
+        before = deepcopy(TRANSFORM); before['translation'] = [2,0,0]
+        after = deepcopy(TRANSFORM); after['translation'] = [7,0,0]
+        arrival = event('arrive',4004,kind='relocate',target='aster',before=before,after=after)
+        database = Path(self.temp.name)/'arrival.sqlite'
+        with IdentityRegistry(database,asset_root=root) as registry:
+            with self.assertRaisesRegex(ValueError,'SOURCE_STATE'):
+                registry.create_timeline(plan)
+            invalid = deepcopy(arrival); invalid['operations'][0]['before']['translation'] = [99,0,0]
+            with self.assertRaisesRegex(ValueError,'PRECONDITION'):
+                registry.create_timeline(plan,events=[invalid])
+            head = registry.create_timeline(plan,events=[arrival])
+            self.assertEqual(registry.temporal_history('main')['events'],[arrival])
+            self.assertEqual(registry.temporal_history('main')['sha256'],head)
+            previous = registry.temporal_snapshot('main','shot-0',3)['snapshot']
+            terminal = registry.temporal_snapshot('main','shot-0',4,boundary='terminal')['snapshot']
+            incoming = registry.temporal_snapshot('main','shot-2',0)['snapshot']
+            self.assertEqual(previous['entities'][0]['transform']['translation'],[2.,0.,0.])
+            self.assertEqual(incoming['entities'][0]['transform']['translation'],[7.,0.,0.])
+            self.assertEqual(terminal['entities'],incoming['entities'])
+            self.assertEqual(incoming['applied_events'],['arrive'])
+        plan['timeline_id'] = 'cli-arrival'
+        from continuity_contracts import canonical_bytes as continuity_bytes
+        plan_file = Path(self.temp.name)/'arrival-plan.json'; plan_file.write_bytes(continuity_bytes(plan))
+        events_file = Path(self.temp.name)/'arrival-events.json'; events_file.write_bytes(continuity_bytes([arrival]))
+        base = [sys.executable,str(Path(__file__).resolve().parents[1]/'scripts/continuity_temporal.py'),
+            '--registry',str(database),'--asset-root',str(root)]
+        process = subprocess.run(base+['create',str(plan_file),'--events',str(events_file)],capture_output=True,text=True)
+        self.assertEqual(process.returncode,0,process.stdout+process.stderr)
+        with IdentityRegistry(database,asset_root=root) as registry:
+            self.assertEqual(registry.temporal_history('cli-arrival')['events'],[arrival])
 
     def test_native_dynamic_source_fails_closed(self):
         plan = fixture(Path(self.temp.name) / 'dynamic', dynamic=True)

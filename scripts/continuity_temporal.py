@@ -372,10 +372,19 @@ class TemporalRegistryMixin:
         self._history('temporal-commit', identifier, dict(before_sha256=expected, after_sha256=checksum, parents=record['parents']))
         return checksum
 
-    def create_timeline(self, plan):
+    def create_timeline(self, plan, *, events=None):
         plan = validate_document(plan, 'temporal-timeline')
+        if events is None:
+            events = []
+        if not isinstance(events, list):
+            fail('EVENT', 'initial events require a list')
+        if len(events) > MAX_EVENTS:
+            fail('LIMIT', 'too many initial temporal events')
+        events = [validate_document(e, 'temporal-event') for e in events]
+        # Incoming native scene state and its authored transitions must be
+        # admitted together; no invalid empty intermediate timeline is stored.
         with self._transaction():
-            return self._temporal_commit(dict(plan=plan, events=[], parents=[]), None)
+            return self._temporal_commit(dict(plan=plan, events=events, parents=[]), None)
 
     def append_events(self, timeline_id, events, *, expected_sha256):
         if not isinstance(events, list) or not events:
@@ -495,7 +504,7 @@ def main(argv=None):
     parser.add_argument('--registry', required=True, type=Path)
     parser.add_argument('--asset-root', required=True, type=Path)
     commands = parser.add_subparsers(dest='command', required=True)
-    create = commands.add_parser('create'); create.add_argument('plan', type=Path)
+    create = commands.add_parser('create'); create.add_argument('plan', type=Path); create.add_argument('--events', type=Path)
     append = commands.add_parser('append'); append.add_argument('timeline'); append.add_argument('events', type=Path); append.add_argument('--expected', required=True)
     fork = commands.add_parser('fork'); fork.add_argument('timeline'); fork.add_argument('new_id'); fork.add_argument('branch'); fork.add_argument('--expected', required=True)
     merge = commands.add_parser('merge'); merge.add_argument('target'); merge.add_argument('source'); merge.add_argument('--expected', required=True); merge.add_argument('--source-head', required=True)
@@ -513,7 +522,7 @@ def main(argv=None):
         return decode_json(data)
     try:
         with IdentityRegistry(args.registry, asset_root=args.asset_root) as registry:
-            if args.command == 'create': result = dict(sha256=registry.create_timeline(read(args.plan)))
+            if args.command == 'create': result = dict(sha256=registry.create_timeline(read(args.plan),events=read(args.events) if args.events is not None else None))
             elif args.command == 'append': result = dict(sha256=registry.append_events(args.timeline, read(args.events), expected_sha256=args.expected))
             elif args.command == 'fork': result = dict(sha256=registry.fork_timeline(args.timeline,args.new_id,args.branch,expected_sha256=args.expected))
             elif args.command == 'merge': result = dict(sha256=registry.merge_timeline(args.target,args.source,expected_sha256=args.expected,source_sha256=args.source_head))
