@@ -23,13 +23,14 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   });
   const curve=document.createElementNS('http://www.w3.org/2000/svg','svg');curve.setAttribute('viewBox','0 0 500 180');curve.setAttribute('role','img');curve.setAttribute('aria-label','Evaluated channel curve');curve.style.width='100%';curve.style.maxHeight='180px';
   const curveLegend=document.createElement('p');curveLegend.textContent='Curve samples use native local channels before constraints.';
-  async function drawCurve(){const s=getSnapshot(),serial=++request;const selectedTarget=target();
-    const result=await api('timeline/curve',{revision:s.revision,sha256:s.sha256,shot:shotPath,target:selectedTarget,property:property.value,sample_count:17});
-    if(disposed||serial!==request||result.revision!==getSnapshot().revision||result.snapshot_sha256!==getSnapshot().sha256)return;
+  async function drawCurve(){const s=getSnapshot(),serial=++request;const selectedTarget=target(),selectedProperty=property.value,selectedShot=shotPath;
+    const result=await api('timeline/curve',{revision:s.revision,sha256:s.sha256,shot:selectedShot,target:selectedTarget,property:selectedProperty,sample_count:17});
+    const currentTarget=property.value==='world_exposure'?'world':getSelection().length===1?getSelection()[0]:null;
+    if(disposed||serial!==request||selectedProperty!==property.value||selectedShot!==shotPath||selectedTarget!==currentTarget||result.revision!==getSnapshot().revision||result.snapshot_sha256!==getSnapshot().sha256)return;
     curve.replaceChildren();const samples=result.samples,values=samples.map(sample=>Array.isArray(sample.value)?sample.value:[Number(sample.value)]),all=values.flat(),minimum=Math.min(...all),maximum=Math.max(...all),span=maximum-minimum||1;
     const colors=['#55ccff','#ffcc55','#ff77aa','#99dd66'];
     for(let component=0;component<values[0].length;component++){const line=document.createElementNS('http://www.w3.org/2000/svg','polyline');line.setAttribute('fill','none');line.setAttribute('stroke',colors[component]);line.setAttribute('stroke-width','2');line.setAttribute('points',values.map((value,index)=>`${20+460*index/(values.length-1)},${160-140*(value[component]-minimum)/span}`).join(' '));curve.append(line);}
-    curveLegend.textContent=`${result.target} · ${result.property}: ${minimum} to ${maximum}. ${samples.length} exact native samples before constraints; edit saved keys below.`;
+    curveLegend.textContent=`${result.target} · ${result.property}: ${minimum} to ${maximum}. ${samples.length} exact native samples (${result.semantics.replaceAll('-',' ')}); edit saved keys below.`;
     message('Curve sampled from saved revision '+result.revision+'.');
   }
   const tracks=document.createElement('div');tracks.setAttribute('aria-label','Saved tracks and keys');
@@ -79,6 +80,7 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
     tracks.replaceChildren();for(const track of doc.tracks){const line=document.createElement('p');line.textContent=`${track.target} · ${track.property} · ${track.interpolation}: `;
       for(const key of track.keys){line.append(button(String(key.frame),()=>{frame.value=String(key.frame);if(track.target!=='world')onSelect?.(track.target);property.value=track.property;interpolation.value=track.interpolation;value.value=JSON.stringify(key.value);return scrub();}));}tracks.append(line);}
   }
+  property.addEventListener('change',()=>{++request;curve.replaceChildren();curveLegend.textContent='Choose Evaluate channel curve to sample this channel.';});
   shot.addEventListener('change',()=>{stop();++request;clearPreview();shotPath=shot.value;renderShot();});
   return {refresh(next){stop();++request;const previous=snapshot?.documents[shotPath];snapshot=next;clip.replaceChildren();for(const ref of next.project.animations){const option=document.createElement('option');option.value=ref.path;option.textContent=ref.id+' '+ref.version;clip.append(option);}shot.replaceChildren();for(const ref of next.project.shots){const o=document.createElement('option');o.value=ref.path;o.textContent=next.documents[ref.path].name;shot.append(o);}if(!next.documents[shotPath]||!next.project.shots.some(r=>r.path===shotPath))shotPath=next.project.shots.find(ref=>ref.id===previous?.id&&next.documents[ref.path].scene.id===previous?.scene.id)?.path||next.project.shots[0]?.path||'';shot.value=shotPath;renderShot();},dispose(){disposed=true;stop();++request;unregister?.();root.remove();}};
 }

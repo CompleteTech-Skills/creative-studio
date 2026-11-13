@@ -251,7 +251,9 @@ def sample_curve(repository, body):
                 _require('light' in state,'Light intensity requires a light target.');value=state['light']['intensity']
         samples.append(dict(frame=evaluated['frame'],value=deepcopy(value)))
     return dict(revision=body['revision'],snapshot_sha256=body['sha256'],shot=deepcopy(body['shot']),
-                target=target,property=prop,samples=samples,semantics='evaluated-local-channels-before-constraints')
+                target=target,property=prop,samples=samples,semantics=(
+                    'evaluated-local-channels-before-constraints' if prop in ('translation','rotation','scale') else
+                    'effective-render-visibility' if prop=='visible' else 'evaluated-world-exposure' if prop=='world_exposure' else 'evaluated-light-intensity'))
 
 
 def routes():
