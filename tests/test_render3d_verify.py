@@ -99,11 +99,55 @@ class ImageVerification(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path=Path(temporary)/'test.exr'
             self.exr(path,channels={'Z':np.full((2,3),np.inf,dtype=np.float32)})
-            with self.assertRaises(Render3DError):verify_image(path,output=output('exr',32,passes=['depth']),resolution=[3,2],pass_name='depth')
+            with self.assertRaises(Render3DError):verify_image(path,output=output('exr',32,passes=['combined','depth']),resolution=[3,2],pass_name='depth')
             self.exr(path,channels={'Z':np.ones((2,3),dtype=np.float32)})
             with self.assertRaises(Render3DError):verify_image(path,output=output('exr',32),resolution=[3,2])
-            report=verify_image(path,output=output('exr',32,passes=['depth']),resolution=[3,2],pass_name='depth')
+            report=verify_image(path,output=output('exr',32,passes=['combined','depth']),resolution=[3,2],pass_name='depth')
             self.assertEqual(set(report['channels']),{'Z'})
+
+    def test_standalone_configuration_rejects_invalid_precision_and_budgets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'test.exr';self.exr(path)
+            for options in (dict(output=output('exr',8),resolution=[3,2]),
+                            dict(output=output('exr',32),resolution=[3.0,2]),
+                            dict(output=output('exr',32),resolution=[3,2],max_bytes=True),
+                            dict(output=output('exr',32),resolution=[3,2],memory_bytes=0)):
+                with self.subTest(options=options),self.assertRaises(Render3DError):verify_image(path,**options)
+
+    def test_rgb_color_key_transparency_and_interrupted_idat_reject(self):
+        import zlib
+        def chunk(kind,payload):
+            return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff)
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'test.png';self.png(path,alpha=False);original=path.read_bytes()
+            path.write_bytes(original[:33]+chunk(b'tRNS',struct.pack('>HHH',255,0,255))+original[33:])
+            with self.assertRaises(Render3DError):verify_image(path,output=output(alpha='opaque'),resolution=[3,2])
+            length=struct.unpack('>I',original[33:37])[0];payload=original[41:41+length];middle=len(payload)//2
+            path.write_bytes(original[:33]+chunk(b'IDAT',payload[:middle])+chunk(b'tEXt',b'note\0interrupt')+
+                             chunk(b'IDAT',payload[middle:])+original[45+length:])
+            with self.assertRaises(Render3DError):verify_image(path,output=output(alpha='opaque'),resolution=[3,2])
+
+    def test_multipart_cropped_windows_and_trailing_exr_reject(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'test.exr';a=np.ones((2,3),np.float32)
+            OpenEXR.File([OpenEXR.Part({},dict(R=a,G=a,B=a,A=a)),OpenEXR.Part({},dict(Z=a*np.nan))]).write(str(path))
+            with self.assertRaises(Render3DError):verify_image(path,output=output('exr',32),resolution=[3,2])
+            header={'dataWindow':(np.array([100,200],np.int32),np.array([102,201],np.int32)),
+                    'displayWindow':(np.array([0,0],np.int32),np.array([999,999],np.int32))}
+            OpenEXR.File(header,dict(R=a,G=a,B=a,A=a)).write(str(path))
+            with self.assertRaises(Render3DError):verify_image(path,output=output('exr',32),resolution=[3,2])
+            self.exr(path);path.write_bytes(path.read_bytes()+b'extra')
+            with self.assertRaises(Render3DError):verify_image(path,output=output('exr',32),resolution=[3,2])
+
+    def test_supported_exr_compression_block_boundaries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'test.exr';a=np.ones((67,3),np.float32)
+            for name in ('NO','RLE','ZIPS','ZIP','PIZ','PXR24','B44','B44A','DWAA','DWAB'):
+                with self.subTest(compression=name):
+                    OpenEXR.File({'compression':getattr(OpenEXR,name+'_COMPRESSION')},
+                                 dict(R=a,G=a,B=a,A=a)).write(str(path))
+                    report=verify_image(path,output=output('exr',32),resolution=[3,67])
+                    self.assertEqual(report['resolution'],[3,67])
 
     def scene_result(self,root):
         source=root/'source';snapshot_root=root/'snapshot';build_example(source)
@@ -163,6 +207,22 @@ class ImageVerification(unittest.TestCase):
             image.unlink();target.rename(image)
             (snapshot/'triangle.obj').write_bytes(b'changed')
             with self.assertRaises(Render3DError):verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+
+    def test_result_snapshot_disappearing_between_owner_reads_is_typed(self):
+        import shutil
+        from unittest.mock import patch
+        import render3d_snapshot
+        with tempfile.TemporaryDirectory() as temporary:
+            request,result,root,snapshot,backend=self.scene_result(Path(temporary))
+            original=render3d_snapshot.verify_snapshot
+            def disappearing(*args,**kwargs):
+                verified=original(*args,**kwargs)
+                shutil.rmtree(snapshot)
+                return verified
+            with patch.object(render3d_snapshot,'verify_snapshot',side_effect=disappearing):
+                with self.assertRaises(Render3DError) as error:
+                    verify_result(request,result,root,snapshot_root=snapshot,expected_backend=backend)
+            self.assertEqual(error.exception.report['category'],'stale-asset')
 
     def test_unexpected_directory_and_nonregular_inventory_reject(self):
         import os
