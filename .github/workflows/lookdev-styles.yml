@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m pip install -r requirements-rig-test.txt
+      - run: python -m pip install -r requirements-rig-test.txt 'OpenEXR==3.3.4'
       - name: Install matching Blender Python contract dependencies
         run: python -m pip install --target "$RUNNER_TEMP/blender-lookdev-deps" 'jsonschema==4.26.0'
       - name: Install checksum-verified Blender 4.5.3 LTS
