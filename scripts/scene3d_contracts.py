@@ -18,7 +18,7 @@ from pathlib import Path
 import re
 import unicodedata
 
-from rig_errors import RigError, decode_json, finite_json
+from rig_errors import RigError, decode_json, finite_json, normalize_root, open_payload, safe_path
 
 MAX_DOCUMENT_BYTES = 16 * 1024 * 1024
 MAX_FILES = 4096
@@ -191,6 +191,15 @@ def definitions():
         dependencies=arr(ref('reference')), resources=obj(dict(vertices=integer(0, 1000000),
         triangles=integer(0, 2000000), bytes=integer(1, MAX_TOTAL_BYTES))),
         validation=arr(ref('file')), review=ref('review')))
+    # Optional canonical mapping preserves compatibility with authored assets that
+    # predate native primitive projection. Original and normalized indexes differ.
+    material_primitive = obj(dict(mesh=ID, encoding=enum('normalized-glb', 'obj'),
+        source_mesh=nullable(integer(0, 1000000)), source_primitive=integer(0, 1000000),
+        source_material_index=nullable(integer(0, 65535)),
+        normalized_mesh=nullable(integer(0, 1000000)), normalized_primitive=nullable({'type': 'integer', 'const': 0})))
+    asset['properties']['material_bindings'] = arr(obj(dict(
+        slot=ID, material_index=nullable(integer(0, 65535)),
+        primitives=arr(material_primitive, minimum=1, maximum=10000))), minimum=1, maximum=65536)
     animation = base('animation', dict(duration_frames=integer(1, 1_000_000), fps=ref('rate'),
         tracks=arr(ref('track'), maximum=4096), bindings=arr(ref('binding'), maximum=256),
         dependencies=arr(ref('reference')), provenance=ref('provenance')))
@@ -611,6 +620,26 @@ def validate_document(value, kind=None):
             require(c['start_frame'] < c['end_frame'] <= value['duration_frames'], 'Invalid temporal constraint interval.')
             require(c['target'] != c['constraint']['target'], 'Self-referential temporal constraint.')
     elif kind == 'asset':
+        bindings = value.get('material_bindings', [])
+        _unique(bindings, 'native material slot', lambda x: x['slot'])
+        _unique(bindings, 'native material index', lambda x: x['material_index'])
+        primitives = [p for b in bindings for p in b['primitives']]
+        _unique(primitives, 'native material mesh', lambda x: x['mesh'])
+        _unique([p for p in primitives if p['encoding'] == 'normalized-glb'],
+                'normalized material primitive', lambda x: x['normalized_mesh'])
+        for binding in bindings:
+            for p in binding['primitives']:
+                require((p['encoding'] == 'normalized-glb' and p['source_mesh'] is not None and
+                         p['normalized_mesh'] is not None and p['normalized_primitive'] == 0 and
+                         binding['material_index'] is not None) or
+                        (p['encoding'] == 'obj' and p['source_mesh'] is None and
+                         p['normalized_mesh'] is None and p['normalized_primitive'] is None and
+                         p['source_material_index'] is None and binding['material_index'] is None),
+                        'Material projection indexes disagree with its geometry encoding.')
+        require(all(b['primitives'] for b in bindings), 'Material slots need actual primitive bindings.')
+        component_meshes = {m for meshes in value['components'].values() for m in meshes}
+        require(not bindings or {p['mesh'] for p in primitives} == (component_meshes or {value['id']}),
+                'Material bindings must cover exactly the native component meshes.')
         _unique(value['sockets'], 'asset socket', lambda x: x['id'])
         require(value['review']['status'] == 'unreviewed' or bool(value['review']['receipts']),
                 'A review status needs retained evidence receipts.')
@@ -669,13 +698,41 @@ def read_document(path):
 
 
 def load_project(root, name='project.json'):
-    """Read-only closure verification. Files must remain stable during this call.
+    """Verify real project files through canonical no-follow source admission.
 
-    This is not a transaction or a sandbox against a malicious concurrent writer.
-    Later workers must revalidate input hashes at their own admission boundary.
+    Internal directory capabilities retain their descriptor authority. Callers
+    must still revalidate bytes at later worker admission boundaries.
     """
-    root = Path(root).resolve(strict=True)
+    root = normalize_root(root)
     require(root.is_dir(), 'Project root must be a directory.')
+    return _load_project(root, name)
+
+
+def validate_project_files(files, name='project.json'):
+    """Verify a private immutable byte closure with the identical project engine.
+
+    No filesystem locations, symlinks or deferred reads are represented here.
+    The real-filesystem entry point continues to enforce all source admission
+    checks; both sources share paths, hashes, identities, budgets and semantics.
+    Unreferenced retained bytes are bounded and path-checked too.
+    """
+    require(type(files) is dict and 0 < len(files) <= MAX_FILES,
+            'Expected a bounded private project byte mapping.')
+    files = dict(files)
+    aliases, total = set(), 0
+    for path, raw in files.items():
+        portable_path(path)
+        folded = unicodedata.normalize('NFC', path).casefold()
+        require(folded not in aliases, 'Portable path alias collision.')
+        aliases.add(folded)
+        require(type(raw) is bytes, 'Project byte mapping values must be immutable bytes.')
+        total += len(raw)
+        require(total <= MAX_TOTAL_BYTES, 'Project byte mapping exceeds the global byte budget.')
+    return _load_project(None, name, byte_files=files)
+
+
+def _load_project(root, name, *, byte_files=None):
+    """One schema, identity, hash and semantic validator for both trusted sources."""
     documents, inventory, identities, edges, aliases, payloads = {}, {}, {}, {}, {}, {}
     total = 0
     budgets = dict(max_files=MAX_FILES, max_bytes=MAX_TOTAL_BYTES, max_nodes=MAX_NODES, max_frames=1_000_000)
@@ -686,24 +743,16 @@ def load_project(root, name='project.json'):
         folded = unicodedata.normalize('NFC', path).casefold()
         require(folded not in aliases or aliases[folded] == path, 'Portable path alias collision.')
         aliases[folded] = path
-        target = root
-        for part in path.split('/'):
-            target = target / part
-            require(not target.is_symlink(), 'Dependency path traverses a symlink.')
-            require(not getattr(target, 'is_junction', lambda: False)(), 'Dependency path traverses a junction.')
-            require(target.resolve().is_relative_to(root), 'Dependency resolves outside the project root.')
-        require(target.is_file(), 'Missing regular dependency: ' + path)
-        size = target.stat().st_size
-        require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
-        require(len(inventory) < budgets['max_files'], 'Project file budget exceeded.')
-        digest = hashlib.sha256()
-        observed = 0
-        chunks = []
-        with target.open('rb') as stream:
+        def consume(stream, size):
+            nonlocal total
+            digest = hashlib.sha256()
+            observed = 0
+            chunks = []
             while True:
                 chunk = stream.read(min(1024*1024, budgets['max_bytes'] - total + 1))
                 if not chunk:
                     break
+                # The outer count is shared by all dependency reads.
                 total += len(chunk)
                 observed += len(chunk)
                 require(total <= budgets['max_bytes'], 'Project byte budget exceeded during read.')
@@ -711,10 +760,39 @@ def load_project(root, name='project.json'):
                 if path.endswith('.json'):
                     require(sum(map(len, chunks)) + len(chunk) <= MAX_DOCUMENT_BYTES, 'Document exceeds 16 MiB.')
                     chunks.append(chunk)
-        require(observed == size, 'Dependency changed size while reading: ' + path)
-        inventory[path] = dict(sha256=digest.hexdigest(), bytes=observed)
-        payloads[path] = b''.join(chunks)
-        return payloads[path]
+            require(observed == size, 'Dependency changed size while reading: ' + path)
+            inventory[path] = dict(sha256=digest.hexdigest(), bytes=observed)
+            payloads[path] = b''.join(chunks)
+            return payloads[path]
+
+        if byte_files is not None:
+            require(path in byte_files, 'Missing regular dependency: ' + path)
+            raw = byte_files[path]
+            size = len(raw)
+            require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
+            require(len(inventory) < budgets['max_files'], 'Project file budget exceeded.')
+            class ByteReader:
+                offset = 0
+                def read(self, maximum):
+                    chunk = raw[self.offset:self.offset + maximum]
+                    self.offset += len(chunk)
+                    return chunk
+            return consume(ByteReader(), size)
+        target = root
+        for part in path.split('/'):
+            target = target / part
+            require(not target.is_symlink(), 'Dependency path traverses a symlink.')
+            require(not getattr(target, 'is_junction', lambda: False)(), 'Dependency path traverses a junction.')
+            # Resolve only containment, preserving descriptor authority for reads.
+            require(target.resolve().is_relative_to(root.resolve()), 'Dependency resolves outside the project root.')
+        require(target.is_file(), 'Missing regular dependency: ' + path)
+        target = safe_path(root, path, exists=True)
+        size = target.stat().st_size
+        require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
+        require(len(inventory) < budgets['max_files'], 'Project file budget exceeded.')
+        with open_payload(root, path) as (stream, opened):
+            require(opened.st_size == size, 'Dependency changed size while opening: ' + path)
+            return consume(stream, size)
 
     def visit(path, expected=None, depth=0):
         require(depth <= MAX_DEPTH, 'Dependency closure exceeds 128 levels.')

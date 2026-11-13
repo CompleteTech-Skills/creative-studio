@@ -196,6 +196,9 @@ class SceneGraph:
                 all(canonical_bytes(animation_documents[p]) == canonical_bytes(d) for p,d in self._animation_documents.items()),
                 'Parsed animation context must match its exact verified source bytes.', 'SCENE3D_ANIMATION_CONTEXT')
         self._derived_documents = {}
+        # Trusted in-process source capability for planning only. It never
+        # appears in document(), digest, snapshots or browser payloads.
+        self._planning_source = None
         self._scene = deepcopy(scene)
         self._references = deepcopy(external_references)
         require(asset_bounds is None or isinstance(asset_bounds,dict), 'Invalid asset bounds context.')
@@ -262,7 +265,18 @@ class SceneGraph:
                     total += len(raw)
                     require(total <= MAX_TOTAL_BYTES, 'Animation context bytes exceed bound.')
                     payloads[path] = raw
-        return cls(scene, external_references=references, asset_bounds=bounds, animation_payloads=payloads)
+        graph = cls(scene, external_references=references, asset_bounds=bounds, animation_payloads=payloads)
+        if source_root is not None:
+            graph._planning_source = (str(Path(source_root).absolute()), scene_path)
+        return graph
+
+    def planning_source(self):
+        """Return trusted source coordinates, requiring fresh verification by callers.
+
+        This is not an assertion that the source remains unchanged. Standalone
+        in-memory graphs do not have a verified project planning context.
+        """
+        return self._planning_source
 
     @staticmethod
     def _check_service_semantics(scene):

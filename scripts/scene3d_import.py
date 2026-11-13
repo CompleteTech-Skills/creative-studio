@@ -33,6 +33,7 @@ from scene3d_example import node as make_node
 from scene3d_graph import SceneGraph, _inventories, _inverse, fail, require, transform_for_matrix
 from scene3d_prefabs import _refs, scoped_id
 from scene3d_snapshot import _new_destination
+from scene3d_materials import native_material_bindings
 from atomic_publish import _rename_no_replace
 
 
@@ -367,6 +368,7 @@ def import_gltf(source, library: AssetLibrary, *, asset_id, version='1.0.0',
             source=file('native/source/'+source_info['path'].name), provenance=provenance,
             coordinate_system=COORDINATES, original_coordinate_system='glTF 2.0 right-handed Y-up meters',
             pivot=[0, 0, 0], meshes=[file('normalized.glb')], materials=[],
+            material_bindings=native_material_bindings(document.json, rig.geometry),
             bounds=dict(minimum=points.min(axis=0).tolist(), maximum=points.max(axis=0).tolist()),
             collision=None, sockets=[], components=components, skeleton=rig_ref if rig.manifest.get('skeleton') else None,
             animations=animations, lods=[], dependencies=[],
@@ -606,7 +608,7 @@ def _load_verified_native(imported, native_root):
         return load_rig(admitted)
 
 
-def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=0.):
+def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=0., loop=False):
     """Evaluate actual native deformation then each scene component's edit delta."""
     from rig_animation import evaluate_animation
     from rig_skinning import evaluate_deformation
@@ -617,11 +619,12 @@ def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=
     if clip is not None:
         clip = imported.report['native_clip_map'].get(clip, clip)
         require(clip in rig.clips, 'Unknown imported native clip.')
-        evaluated = evaluate_deformation(rig, evaluate_animation(rig, clip, time)['pose'])
+        evaluated = evaluate_deformation(rig, evaluate_animation(rig, clip, time, loop=loop)['pose'])
     elif rig.manifest.get('skeleton') and rig.weights:
         evaluated = evaluate_deformation(rig)
     else:
-        evaluated = {m.id: dict(positions=m.positions) for m in rig.geometry.meshes}
+        from rig_skinning import evaluate_morph_positions
+        evaluated = {m.id: dict(positions=evaluate_morph_positions(m)) for m in rig.geometry.meshes}
     source_world = {h['source_node']: np.asarray(h['world_matrix']) for h in imported.hierarchy}
     by_id = rig.geometry.by_id()
     result = {}

@@ -143,12 +143,19 @@ def validate_skin(skin: SkinWeights, mesh: Mesh, skeleton: dict, limits=None) ->
                 vertices=len(weights), influences=weights.shape[1], locked_vertices=len(skin.locked))
 
 
-def deform_mesh(mesh: Mesh, skin: SkinWeights, world: dict, morph_weights=None) -> np.ndarray:
+def evaluate_morph_positions(mesh: Mesh, morph_weights=None) -> np.ndarray:
+    """Evaluate canonical position morphs without requiring a skeleton/skin."""
     vertices = np.array(mesh.positions, dtype=np.float64, copy=True)
     for name, amount in {**mesh.morph_defaults, **(morph_weights or {})}.items():
         require(name in mesh.morphs, 'RIG_MORPH_REFERENCE', 'Morph target is unavailable: ' + name, asset=mesh.id)
         require(np.isfinite(amount) and -2 <= amount <= 2, 'RIG_MORPH_RANGE', 'Morph weights must be finite in [-2, 2].')
         vertices += mesh.morphs[name]['POSITION']*amount
+    require(np.isfinite(vertices).all(), 'RIG_NONFINITE_DEFORMATION', 'Morph evaluation produced nonfinite positions.')
+    return vertices
+
+
+def deform_mesh(mesh: Mesh, skin: SkinWeights, world: dict, morph_weights=None) -> np.ndarray:
+    vertices = evaluate_morph_positions(mesh, morph_weights)
     matrices = np.array([world[name] @ skin.inverse_bind[i] for i, name in enumerate(skin.joints)])
     output = np.zeros_like(vertices)
     for start in range(0, len(vertices), 8192):

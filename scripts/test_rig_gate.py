@@ -6,12 +6,7 @@ import sys
 import unittest
 
 ROOT=Path(__file__).resolve().parents[1]
-GROUPS={
- 'schema-math':['test_rig_director_capabilities.py','test_rig_math.py','test_rig_contracts.py','test_rig_compatibility.py','test_rig_camera3d_contracts.py','test_rig_camera3d_optics.py','test_rig_scene3d_math.py','test_rig_physics_timing_cache.py','test_rig_landmarks.py','test_rig_editor3d_contracts.py','test_rig_editor3d_closure.py','test_rig_editor3d_repository.py','test_rig_editor3d_viewer.py','test_rig_editor3d_state.py','test_rig_editor3d_actions.py','test_render3d_contracts.py','test_render3d_independent.py'],
- 'skinning':['test_rig_skinning.py','test_rig_weight_input_boundaries.py'],
- 'animation-ik':['test_rig_controls.py','test_rig_animation.py','test_rig_specializations.py','test_rig_morph_authoring.py'],
- 'interoperability':['test_rig_interop.py','test_rig_import_transforms.py','test_rig_material_validation.py','test_rig_texture_integrity.py','test_rig_jpeg.py','test_rig_scene3d_service.py','test_rig_editor3d_components.py'],
- 'operations-archive':['test_rig_correction_validation.py','test_rig_workflow.py','test_rig_http.py','test_rig_render.py']}
+GROUPS={'schema-math': ['test_rig_director_capabilities.py', 'test_rig_math.py', 'test_rig_contracts.py', 'test_rig_compatibility.py', 'test_rig_camera3d_contracts.py', 'test_rig_camera3d_optics.py', 'test_rig_scene3d_math.py', 'test_rig_physics_timing_cache.py', 'test_rig_landmarks.py', 'test_rig_editor3d_contracts.py', 'test_rig_editor3d_closure.py', 'test_rig_editor3d_repository.py', 'test_rig_editor3d_viewer.py', 'test_rig_editor3d_state.py', 'test_rig_editor3d_actions.py', 'test_render3d_contracts.py', 'test_render3d_independent.py'], 'skinning': ['test_rig_skinning.py', 'test_rig_weight_input_boundaries.py'], 'animation-ik': ['test_rig_controls.py', 'test_rig_animation.py', 'test_rig_specializations.py', 'test_rig_morph_authoring.py'], 'interoperability': ['test_rig_interop.py', 'test_rig_import_transforms.py', 'test_rig_material_validation.py', 'test_rig_texture_integrity.py', 'test_rig_jpeg.py', 'test_rig_scene3d_service.py', 'test_rig_editor3d_components.py', 'test_rig_scene3d_evaluate.py', 'test_rig_scene3d_materials.py', 'test_rig_scene3d_export.py'], 'operations-archive': ['test_rig_correction_validation.py', 'test_rig_workflow.py', 'test_rig_http.py', 'test_rig_render.py', 'test_rig_editor3d_repository.py', 'test_rig_scene3d_lifecycle.py', 'test_rig_scene3d_language.py', 'test_rig_scene3d_cli_commands.py', 'test_rig_scene3d_environment_language.py', 'test_rig_scene3d_project_bytes.py', 'test_rig_scene3d_editor_language.py']}
 
 
 def main():
