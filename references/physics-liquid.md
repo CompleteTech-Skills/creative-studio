@@ -40,6 +40,60 @@ covered by opt-in `test_rig_physics_liquid*.py` tests. Run with
 `HATCH_PHYSICS_BACKEND_TEST=1` and `HATCH_BLENDER` set to the pinned executable.
 Unavailable Blender is an explicit failure, never simulated evidence.
 
+The matched 48-frame, resolution-24 pouring experiment additionally runs
+`physics_liquid_acceptance.evaluate_caches` on its baseline, viscosity .01,
+and uncontained/open-bottom caches. It verifies the complete native cache
+inventories and exact fixture world, settings and source meshes before
+independently decoding every BOBJ surface. All other viscosity-pair inputs
+are identical. The open control changes only the container geometry and
+bottom boundary required to let fluid drain. The stationary/moving paddle
+experiment remains a separate geometry-response check.
+
+The quantitative acceptance profile uses canonical metres and h=3/24=.125 m:
+
+- At every output frame, measure the greatest surface excursion beyond the
+  container's outer x/z walls (+/-.9 m) or below its floor (0 m). Include
+  above-rim splashes in this conservative envelope. Require excursion <=2h
+  (.25 m): one cell for obstacle rasterization and one for the meshed
+  interface. This is an engineering acceptance envelope, not a proved
+  discretization-error estimate or a guarantee of sub-cell impermeability.
+- Clip actual surface triangles to the interior observation box, x/z +/- .8 m,
+  y from floor-top minus h to rim minus 2h. Require an initially absent pool
+  (area <=h²) and a retained patch >=16h² (.25 m², a 4x4-cell equivalent)
+  in every final-quarter frame (36–47). The uncontained control must have
+  <=h² in those same frames. This distinguishes visible retained liquid
+  from immediate drainage without interpreting interface area as mass.
+- Detect first contact when the lowest surface reaches floor-top plus h in
+  each viscosity case. Use the first six frames after the later contact,
+  after emission ends and before the late retention window. Measure the
+  maximum radial extent of surface vertices below rim minus 2h. Higher
+  viscosity must reduce mean impact spread by >2h, allowing one cell per
+  independently meshed radial interface, with reduction >h at every sample.
+  The window follows contact, not whichever frames happen to maximize the
+  difference. Zero response, a reversed effect and a sub-cell effect fail.
+
+These are output-frame **surface geometry proxies**. They bound observed
+surface position and demonstrate retained surface and viscosity response;
+they do not measure liquid mass, leakage flux, continuous-time escape,
+velocity from changing topology, or disappeared subgrid droplets. The .25 m
+comparison/envelope is distinct from the 2e-5 m native/reopened coordinate
+agreement check. The latter measures cache agreement only.
+
+With `HATCH_LIQUID_EVIDENCE` set, the actual native test retains every sampled
+metric, check, physical threshold, world/cache hash, backend identity, setting
+and resource measurement in `surface-acceptance.json`, including failed
+physical results. Existing immutable caches can be assessed without rebaking:
+
+```
+python scripts/physics_liquid_acceptance.py --baseline CACHE/baseline \
+  --viscous CACHE/viscous --uncontained CACHE/uncontained --output NEW_REPORT.json
+```
+
+This command never changes the caches, and exits nonzero for failed physical
+acceptance. Analytic clipping and adversarial metric tests establish the
+measurement implementation; only actual decoded solver caches establish the
+native experiment. Current-head CI and independent review remain required.
+
 Mass conservation, production liquid appearance, robust splashes, secondary
 particles, two-way coupling, arbitrary complex moving obstacles and the full
 Physics Laboratory remain unverified or unsupported. Signed surface volume is
