@@ -4,7 +4,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import stat
 import hashlib
 import numpy as np
 from rig_contracts import validate_contract
@@ -41,24 +40,18 @@ def _new_output(path, code):
 
 
 def _publish_outputs(outputs):
-    """Commit already verified files exclusively; the primary file goes last."""
+    """Publish complete files exclusively, retaining evidence on partial failure.
+
+    For a two-file export, the primary .blend file is published last. A failed
+    final promotion may leave a complete verified sidecar; never unlink a public
+    path during rollback because another writer may have replaced that path.
+    """
     from atomic_publish import _rename_no_replace
-    published = []
     try:
         for source, destination in outputs:
             _rename_no_replace(source, destination)
-            identity = destination.lstat()
-            published.append((destination, identity.st_dev, identity.st_ino))
     except OSError as exc:
-        # Remove only our own already-published sidecar, never a racing writer.
-        for path, device, inode in reversed(published):
-            try:
-                current = path.lstat()
-                if stat.S_ISREG(current.st_mode) and (current.st_dev, current.st_ino) == (device, inode):
-                    path.unlink()
-            except FileNotFoundError:
-                pass
-        raise RigError('RIG_EXPORT_PUBLICATION', 'Export destination changed or exclusive publication is unavailable.',
+        raise RigError('RIG_EXPORT_PUBLICATION', 'Export destination changed or exclusive publication is unavailable; any verified sidecar is retained.',
                        preserved=str(destination), observed=str(exc)) from exc
 
 

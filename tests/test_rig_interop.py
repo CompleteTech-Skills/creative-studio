@@ -164,7 +164,7 @@ class RigBlenderPublicationTests(unittest.TestCase):
             worker.assert_not_called()
         self.assertEqual(sidecar.read_bytes(),b'user glb');self.assertFalse(target.exists())
 
-    def test_racing_main_preserves_writer_and_rolls_back_only_owned_sidecar(self):
+    def test_racing_main_preserves_writer_and_retains_verified_sidecar(self):
         from rig_blender import _publish_outputs
         a=self.root/'stage-glb';b=self.root/'stage-blend'
         a.write_bytes(b'verified glb');b.write_bytes(b'verified blend')
@@ -172,7 +172,7 @@ class RigBlenderPublicationTests(unittest.TestCase):
         target.mkdir()
         with self.assertRaises(RigError):_publish_outputs([(a,sidecar),(b,target)])
         self.assertTrue(target.is_dir());self.assertEqual(list(target.iterdir()),[])
-        self.assertFalse(sidecar.exists());self.assertEqual(b.read_bytes(),b'verified blend')
+        self.assertEqual(sidecar.read_bytes(),b'verified glb');self.assertEqual(b.read_bytes(),b'verified blend')
 
     def test_worker_failure_and_invalid_clip_do_not_create_preview_destination(self):
         from unittest.mock import patch
