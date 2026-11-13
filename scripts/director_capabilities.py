@@ -363,7 +363,10 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                 evidence=decode_json(_read_artifact(evidence_root,reference))
                 _need(isinstance(evidence,dict) and evidence.get('operation')==operation and evidence.get('execution_verified') is True and evidence.get('status')=='available','EVIDENCE','Probe evidence does not verify capability.')
                 _need(evidence.get('policy_limits')==item['limits'] and evidence.get('version')==item['version'],'EVIDENCE','Capability policy/version differs from execution receipt.')
-                for payload in reference['dependencies']:_read_artifact(evidence_root,payload)
+                payloads=evidence.get('payloads')
+                _need(isinstance(payloads,list) and payloads==reference['dependencies'],
+                      'EVIDENCE','Retained receipt payloads differ from the capability dependency references.')
+                for payload in payloads:_read_artifact(evidence_root,payload)
         for resource,amount in (resources or {}).items():
             _need(resource in LIMITS and type(amount) in (int,float) and amount>=0,'RESOURCE','Unknown or invalid resource estimate.')
             maximum=item['limits'][resource]
