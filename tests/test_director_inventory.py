@@ -1,6 +1,7 @@
 """Actual local inventory evidence and fail-closed provider/resource boundaries."""
 import json
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shutil
 import tempfile
@@ -9,7 +10,7 @@ from unittest.mock import patch
 
 import director_capabilities as cap
 import director_inventory as inventory
-from rig_errors import RigError
+from rig_errors import RigError, object_hash
 from test_director_capabilities import request
 
 
@@ -110,6 +111,41 @@ class InventoryTests(unittest.TestCase):
             with Image.open(root/payload['path']) as image:
                 image.load()
                 self.assertEqual(image.convert('RGBA').getpixel((0, 0)), (12, 34, 56, 78))
+
+    def test_every_remote_family_requires_network_reservation_allowlist_and_price(self):
+        # Exact-byte synthetic executed receipts exercise policy only, not a
+        # claim that any real provider ran.
+        for operation in inventory.PROVIDERS:
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                limits = {**cap.LIMITS, 'max_provider_calls': 1, 'currency': 'USD', 'max_amount': 1}
+                receipt = dict(operation=operation, status='available', execution_verified=True,
+                    version='engineering-fixture', policy_limits=limits, payloads=[],
+                    provider_id='fixture-provider', price_availability='known', price_per_call=.25,
+                    currency='USD', fixture=True)
+                path = root/'receipt.json'
+                path.write_text(json.dumps(receipt))
+                reference = cap._reference(path, root)
+                snapshot = dict(capabilities=[dict(operation=operation, status='available',
+                    execution_verified=True, version='engineering-fixture', limits=limits,
+                    probe_evidence=[reference])],
+                    expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())
+                snapshot['digest'] = object_hash(snapshot)
+                if not (hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd):
+                    with self.assertRaises(RigError) as error:
+                        cap.assert_admission(snapshot, [operation], evidence_root=root)
+                    self.assertEqual(error.exception.report['code'], 'DIRECTOR_PLATFORM')
+                    continue
+                authority = dict(evidence_root=root, network_policy='allow-configured',
+                    budget_reservation_id='fixture-reservation', budget_currency='USD',
+                    budget_amount=.25, paid_policy='bounded', allowed_providers=['fixture-provider'],
+                    resources={'max_provider_calls': 1})
+                cap.assert_admission(snapshot, [operation], **authority)
+                for delta in ({'network_policy': 'deny'}, {'budget_reservation_id': None},
+                              {'allowed_providers': []}, {'paid_policy': 'deny'},
+                              {'budget_amount': .24}, {'budget_currency': 'EUR'}):
+                    with self.subTest(delta=delta), self.assertRaises(RigError):
+                        cap.assert_admission(snapshot, [operation], **{**authority, **delta})
 
 
 if __name__ == '__main__':

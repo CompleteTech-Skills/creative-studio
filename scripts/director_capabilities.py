@@ -43,6 +43,7 @@ MODULES = {'module.scene3d':'scene3d_contracts', 'module.camera3d':'camera3d_con
 LIMITS = dict(max_provider_calls=0, max_cpu_seconds=3600, max_gpu_seconds=3600,
               max_storage_bytes=1024**3, max_memory_bytes=1536*1024**2,
               currency=None, max_amount=None, policy_ref=None)
+REMOTE_OPERATIONS = frozenset(('planning.provider', *inventory.PROVIDERS))
 
 
 def _need(condition, code, message):
@@ -350,7 +351,7 @@ def probe(request, evidence_root, *, configuration=None):
             except (OSError,ValueError,ImportError) as error:
                 record.update(status='unavailable',reason='local-probe-failed')
                 record['failure_type']=type(error).__name__ # no raw error/path/credentials
-            if operation=='planning.provider' and record.get('price_availability')=='unknown':
+            if operation in REMOTE_OPERATIONS and record.get('price_availability')=='unknown':
                 diagnostics.append(_diagnostic('CAPABILITY_PRICE_UNKNOWN',operation,'Provider price is unknown; admission requires explicit allowance and reservation.'))
             if operation=='blender.gpu' and not record['execution_verified']:record['fallback']='blender.cpu-requires-separate-probe-and-explicit-policy'
             record['dependency_fingerprint']=object_hash(record['dependencies'])
@@ -433,7 +434,7 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                     amount = (resources or {}).get(key, 0)
                     _need(type(amount) in (int, float) and 0 <= amount <= observed,
                           'RESOURCE', 'Resource estimate exceeds the measured available capacity: '+key)
-                if operation=='planning.provider':
+                if operation in REMOTE_OPERATIONS:
                     provider=evidence.get('provider_id')
                     _need(isinstance(provider,str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}',provider) is not None,
                           'POLICY','Executed provider receipt requires a valid provider identity.')
@@ -443,13 +444,13 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
             _need(resource in LIMITS and type(amount) in (int,float) and amount>=0,'RESOURCE','Unknown or invalid resource estimate.')
             maximum=item['limits'][resource]
             _need(maximum is not None and amount<=maximum,'RESOURCE','Resource estimate exceeds capability bound: '+resource)
-        if operation=='planning.provider':
+        if operation in REMOTE_OPERATIONS:
             _need(isinstance(allowed_providers,(list,tuple)) and
                   all(isinstance(p,str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}',p) is not None for p in allowed_providers),
                   'POLICY','Provider allowlist must contain exact provider identities.')
             _need(len(set(receipt_providers))==1 and receipt_providers[0] in allowed_providers,
                   'POLICY','Executed provider identity is not permitted by the operation policy.')
-            _need(network_policy=='allow-configured' and budget_reservation_id is not None,'POLICY','Remote planning requires configured network authority and a reservation.')
+            _need(network_policy=='allow-configured' and budget_reservation_id is not None,'POLICY','Remote provider work requires configured network authority and a reservation.')
             _need(bool(receipt_prices) and all(p==receipt_prices[0] for p in receipt_prices),
                   'EVIDENCE','Provider execution receipts disagree about pricing.')
             known=receipt_prices[0]
