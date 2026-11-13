@@ -475,12 +475,14 @@ def rig_plan(registry, reference, *, engine='CYCLES', options=None, max_lights=6
     require(rig['kind'] == 'lighting-rig3d', 'LIGHT_KIND', 'Expected a lighting rig.')
     require(engine in ENGINES, 'LIGHT_ENGINE', 'Choose Cycles or EEVEE.')
     validate_resource(rig)
-    from lookdev_contracts import check_compatibility
     supported = LOCAL_FEATURES | ({'light-environment', 'indirect-lighting', 'light-linking'}
                                   if engine == 'CYCLES' else set())
-    compatibility = check_compatibility(rig, supported)
-    require(not compatibility['missing'], 'LIGHT_UNSUPPORTED',
-            'Required lighting-rig features are unsupported: ' + ', '.join(compatibility['missing']))
+    # The generic single-document checker intentionally refuses rigs. Resolve
+    # parent requirements here and each complete child policy below; no fallback
+    # implementation is advertised by this adapter.
+    missing = sorted(set(rig['render_policy']['required_features']) - supported)
+    require(not missing, 'LIGHT_UNSUPPORTED',
+            'Required lighting-rig features are unsupported: ' + ', '.join(missing))
     require(len(rig['lights']) <= max_lights, 'LIGHT_LIMIT', 'Lighting rig exceeds active-light budget.')
     options = {} if options is None else options
     require(isinstance(options, dict) and not set(options) - {r['id'] for r in rig['lights']},
