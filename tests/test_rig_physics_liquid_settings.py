@@ -13,9 +13,10 @@ from physics_liquid_settings import admit,validate_settings,schemas
 class LiquidSettingsTests(unittest.TestCase):
     def test_native_clock_representability_is_checked_before_execution(self):
         for numerator,denominator,accepted in [(24,1,True),(30000,1001,True),(240,1,True),
-            (1000000,1,False),(30000000,1001001,False),(1,2,False)]:
+            (1000000,1,False),(1000000,33333,False),(1,2,False)]:
             with self.subTest(numerator=numerator,denominator=denominator):
                 world,_,settings=build_liquid_inputs()
+                world['budgets']['duration_seconds']=1000000
                 world['fps']=dict(numerator=numerator,denominator=denominator)
                 step=Fraction(denominator,numerator)
                 world['solver']['fixed_step']=dict(numerator=step.numerator,denominator=step.denominator)
