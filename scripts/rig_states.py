@@ -60,7 +60,7 @@ def _state_discovery(rig, state, requested, executable, capabilities, archetype,
     inventory=dict(requested_clips=list(requested),available_clips=present,missing_clips=missing,
                    validated_complete_recipe=bool(executable),required_bones=None,
                    required_morph_targets=None,bone_channels=None,morph_channels=None,
-                   contact_chains=None,skinned_joints=None,
+                   contact_chains=None,constraints=None,skinned_joints=None,
                    required_accessories=deepcopy(state['props']['required']),
                    accessory_binding_status='Catalog prop approval only; no automatic socket or ownership binding is inferred.')
     if executable:
@@ -76,6 +76,9 @@ def _state_discovery(rig, state, requested, executable, capabilities, archetype,
                  for index in set(skin.indices[skin.weights>0].tolist())}
         required=skinned|{bone for bone,path in bone_channels}
         required.update(bone for name in contact_ids for bone in chains[name]['bones'])
+        constraints=rig.manifest['controllers']['constraints']
+        required.update(constraint['bone'] for constraint in constraints)
+        required.update(constraint['target'] for constraint in constraints if 'target' in constraint)
         parents={bone['id']:bone['parent'] for bone in rig.skeleton['bones']}
         for bone in list(required):
             parent=parents[bone]
@@ -86,7 +89,7 @@ def _state_discovery(rig, state, requested, executable, capabilities, archetype,
             bone_channels=[dict(bone=bone,path=path) for bone,path in sorted(bone_channels)],
             morph_channels=[dict(mesh=mesh,morphs=names) for mesh,names in sorted(morph_channels.items())],
             contact_chains=[dict(id=name,bones=list(chains[name]['bones'])) for name in sorted(contact_ids)],
-            skinned_joints=sorted(skinned))
+            constraints=deepcopy(constraints),skinned_joints=sorted(skinned))
     return dict(catalog_requirements=dict(anatomy=deepcopy(anatomy),archetypes=list(state['archetypes']),props=deepcopy(state['props'])),
         compatibility=dict(missing_all=sorted(set(anatomy['requires_all'])-available),
             missing_any=[] if not anatomy['requires_any'] or available.intersection(anatomy['requires_any']) else list(anatomy['requires_any']),
@@ -103,7 +106,7 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
         [library.resolve(s) for s in (selected or [])]+(library.expand_pack(pack) if pack else [])))
     capabilities=rig_capabilities(rig);archetype=rig.manifest['archetype']
     if archetype not in library.archetypes:archetype='generic'
-    mapping={};compiled={};events={}
+    mapping={};compiled={};events={};discovery={};controllers_validated=False
     for name in names:
         reasons=library.incompatibilities(name,archetype,capabilities,approved_props)
         requested=resolved.get(name,[])
@@ -112,6 +115,9 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
         elif not clips or any(c not in rig.clips for c in clips):
             status='requires-animation';reason='No complete executable 3D clip recipe is available for this state.';clips=[]
         else:
+            if not controllers_validated:
+                from rig_ik import validate_controllers
+                validate_controllers(rig.skeleton,rig.manifest['controllers']);controllers_validated=True
             for clip in clips:validate_animation(rig,rig.clips[clip])
             status='supported' if rig.manifest['review']['status']=='approved' else 'needs-review'
             reason='Executable 3D channels are available; state-specific semantic and visual review is required.'
@@ -121,9 +127,9 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
                 legal_transitions=state['legal_transitions'],completion=state['completion'],recovery=state['recovery'],
                 reduced_motion=deepcopy(state['reduced_motion']),events=deepcopy(state['events']),cancel_state='static-neutral',
                 anatomical_adaptation='Uses only existing weighted anatomy; no invented body parts.',semantic_review=state['semantic_review'])
-        mapping[name]=dict(status=status,clips=clips,reason=reason,
-            discovery=_state_discovery(rig,library.states[name],requested,clips if name in compiled else [],
-                                       capabilities,archetype,approved_props))
+        mapping[name]=dict(status=status,clips=clips,reason=reason)
+        discovery[name]=_state_discovery(rig,library.states[name],requested,clips if name in compiled else [],
+                                         capabilities,archetype,approved_props)
         if name in compiled:
             for event in dict.fromkeys([*library.states[name]['events'], 'state:'+name,
                                        *('state:'+alias for alias in library.states[name]['aliases'])]):
@@ -144,7 +150,7 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
         limitations='Position buffers only; excludes normals, textures, pose matrices, renderer memory, encoded output and repeated runtime loops.')
     return dict(schema_version=1,catalog_version=library.version,catalog_sha256=library.sha256,total_catalog_states=len(library.states),
                 selected_states=len(names),capabilities=capabilities,mapping=mapping,recipes=compiled,
-                counts=dict(Counter(v['status'] for v in mapping.values())),events=events,work_estimate=estimate,
+                counts=dict(Counter(v['status'] for v in mapping.values())),events=events,work_estimate=estimate,discovery=discovery,
                 asset_provenance=dict(rig=dict(id=rig.manifest['id'],version=rig.manifest['version'],
                     manifest_sha256=object_hash(rig.manifest),source=deepcopy(rig.manifest['source']),
                     provenance=deepcopy(rig.manifest['provenance'])),

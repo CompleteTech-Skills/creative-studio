@@ -366,12 +366,12 @@ These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
 
-Each selected state's `discovery` separates catalog anatomy/archetype/prop
+The additive top-level `discovery` map, keyed by selected canonical state ID, separates catalog anatomy/archetype/prop
 requirements from a validated recipe's actual dependencies. It lists missing
 capabilities, excluded present capabilities, alternative capability requirements,
 and required props still awaiting explicit approval. Executable recipes expose
-exact bone channels, mesh-qualified morph targets, contact chains, weighted skin
-joints and their parent dependencies. Incomplete or incompatible recipes leave
+exact bone channels, mesh-qualified morph targets, contact chains, globally evaluated native constraints (including named targets),
+weighted skin joints and their parent dependencies. Incomplete or incompatible recipes leave
 these concrete bone/morph inventories `null`; catalog capability names are not
 invented joint IDs. Prop approval does not establish an accessory socket or
 ownership binding. Requested, present and missing clip IDs remain visible even
