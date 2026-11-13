@@ -294,6 +294,8 @@ class BlenderBackend:
             cinematic_plan=validate_bound_plan(cinematics['plan'],request)
             cinematic_files=validate_configuration(cinematic_plan,cinematics['configuration'])
             cinematic_code={str(Path(p).name):sha256(p) for p in (compiler_file,runtime_file)}
+        require(('cinematics_sha256' in request['settings'])==(cinematic_plan is not None),
+                'unsupported-feature','Cinematic settings require their matching compiled native plan.')
         root=Path(snapshot_root).absolute();target=Path(destination).absolute()
         require(not target.exists() and not target.is_symlink(),'ownership','Render destination already exists.')
         require(not target.parent.resolve().joinpath(target.name).is_relative_to(root.resolve()),'ownership','Output cannot be nested in source snapshot.')

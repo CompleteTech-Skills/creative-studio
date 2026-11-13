@@ -119,9 +119,11 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
     for pass_name in effective['settings']['output']['passes']:
         require(pass_name=='combined' or probe['passes'].get(pass_name,False),
                 'CINEMATICS_UNSUPPORTED','Native pass is unavailable: '+pass_name)
-    plan['request_sha256']=object_hash(effective)
     plan['effective_settings']={key:deepcopy(effective['settings'][key]) for key in ('exposure','view_transform')}
     plan['effective_settings']['alpha']=effective['settings']['output']['alpha']
+    effective['settings']['cinematics_sha256']=object_hash({k:v for k,v in plan.items() if k!='request_sha256'})
+    validate_render(effective,'RenderRequest')
+    plan['request_sha256']=object_hash(effective)
     try:
         validate_plan(plan)
     except ValueError as exc:
@@ -136,6 +138,8 @@ def validate_bound_plan(plan,request):
         raise RigError('CINEMATICS_PLAN',str(exc)) from exc
     require(plan['request_sha256']==object_hash(request) and plan['camera']==request['camera'],
             'CINEMATICS_STALE','Native cinematic plan is bound to a different render request.')
+    require(request['settings'].get('cinematics_sha256')==object_hash({k:v for k,v in plan.items() if k!='request_sha256'}),
+            'CINEMATICS_STALE','Native cinematic plan differs from the cache-bound settings.')
     expected={key:request['settings'][key] for key in ('exposure','view_transform')}
     expected['alpha']=request['settings']['output']['alpha']
     require(plan['effective_settings']==expected,'CINEMATICS_STALE','Native effective settings differ from the render request.')

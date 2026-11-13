@@ -38,6 +38,23 @@ class Compiler(unittest.TestCase):
         validate_configuration(compiled['plan'],compiled['configuration'])
         self.assertEqual(compiled['configuration']['documents/exposure.json'],canonical_bytes(e))
 
+    def test_native_effects_are_bound_to_request_and_frame_cache_settings(self):
+        from rig_errors import object_hash
+        req=request();base,stack=bundle([]);a=compile_plan(base,stack,req,inventory())
+        e=default_effect('volumetric-fog','fog');changed,stack=bundle([e]);b=compile_plan(changed,stack,req,inventory())
+        self.assertNotEqual(object_hash(a['request']),object_hash(b['request']))
+        self.assertNotEqual(object_hash(a['request']['settings']),object_hash(b['request']['settings']))
+        with self.assertRaises(RigError):validate_bound_plan(a['plan'],b['request'])
+        mutated=deepcopy(a['plan']);mutated['fog']=dict(density_per_meter=.1,anisotropy=0)
+        mutated['request_sha256']=object_hash(a['request'])
+        with self.assertRaises(RigError):validate_bound_plan(mutated,a['request'])
+        from render3d_blender import BlenderBackend
+        from render3d_contracts import Render3DError
+        backend=object.__new__(BlenderBackend)
+        with self.assertRaises(Render3DError) as caught:
+            backend.render_frames(a['request'],'unused-snapshot','unused-output')
+        self.assertEqual(caught.exception.report['category'],'unsupported-feature')
+
     def test_stale_request_and_bytes_rejected(self):
         registry,stack=bundle([]);compiled=compile_plan(registry,stack,request(),inventory())
         changed=deepcopy(compiled['request']);changed['settings']['seed']+=1

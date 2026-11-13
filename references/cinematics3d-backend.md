@@ -20,7 +20,15 @@ pixel evidence. Reports retain `rendered: false`, `pixel_verified: false` and
 `compile_plan(registry, stack_ref, request, probe, input_bytes=...)` validates the
 native RenderRequest and cinematic registry, resolves an effective scene/shot
 stack, binds exact original configuration/optics bytes, and returns a new request
-plus a worker plan. It does not mutate caller data or render. Current mappings
+plus a worker plan. It inserts the optional `settings.cinematics_sha256` digest into the returned
+request. This binds the whole native plan/configuration into the ordinary request
+and frame-cache settings identities. Changing fog/DOF cannot reuse vanilla or
+other cinematic pixels. Backends reject the digest without its matching plan.
+The scheduler does not yet persist compiled cinematic bundles; use direct adapter
+execution until the operations owner integrates it. The additive optional schema
+field preserves existing v1 requests; ordinary requests omit it.
+
+It does not mutate caller data or render. Current mappings
 are display exposure, Standard/AgX transform, physical perspective-camera DOF
 with the referenced native Camera3D optics, and world volumetric fog. The worker
 reads back mapped properties and fails on clamping. Object-local global effects,
