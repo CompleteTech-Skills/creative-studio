@@ -189,6 +189,19 @@ class SilentContracts(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     video.validate_request(request)
 
+    def test_descriptor_destinations_reject_nonbasename_and_invalid_handles(self):
+        for name in ('../escape.mp4', 'nested/movie.mp4', 'CON.mp4', 'movie:.mp4', 'movie.mp4 '):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                video.encode(self.request, self.root, name, destination_dir_fd=-1)
+        with self.assertRaises(ValueError):
+            video.encode(self.request, self.root, 'movie.mp4', destination_dir_fd=True)
+        descriptor = os.open(self.root / self.paths[0], os.O_RDONLY)
+        try:
+            with self.assertRaises(ValueError):
+                video.encode(self.request, self.root, 'movie.mp4', destination_dir_fd=descriptor)
+        finally:
+            os.close(descriptor)
+
 
 @unittest.skipUnless(MEDIA_AVAILABLE, 'FFmpeg/ffprobe or tested secure publication adapter unavailable')
 class SilentMedia(SilentContracts):
@@ -219,6 +232,31 @@ class SilentMedia(SilentContracts):
                          hashlib.sha256(path.read_bytes()).hexdigest())
         for key in ('source_manifest_sha256', 'request_sha256'):
             self.assertRegex(receipt[key], r'^[0-9a-f]{64}$')
+
+    def test_private_destination_fd_survives_parent_swap_through_both_passes(self):
+        request = video.make_request(self.source, 'vp9-webm', encoding={
+            'speed': 6, 'threads': 1, 'gop': 24, 'rate_control': {'mode': 'two-pass', 'bitrate': 100000}})
+        foreign = []
+        with video._pin_directory(self.root) as parent_fd:
+            with video._private_stage(parent_fd, prefix='.job-attempt-') as (private, private_fd):
+                (private / 'attempt').mkdir()
+                attempt_fd = os.open('attempt', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=private_fd)
+                try:
+                    def replace_parent(event):
+                        if event['phase'] == 'encode-pass-1' and not foreign:
+                            wrapper = Path(os.readlink('/proc/self/fd/' + str(private_fd)))
+                            wrapper.rename(wrapper.with_name(wrapper.name + '-retained'))
+                            replacement = wrapper / 'attempt'; replacement.mkdir(parents=True)
+                            sentinel = replacement / 'movie.webm'; sentinel.write_bytes(b'unrelated replacement')
+                            foreign.append(sentinel)
+                    receipt = video.encode(request, self.root, 'movie.webm', destination_dir_fd=attempt_fd,
+                                           progress=replace_parent)
+                    artifact = private / 'attempt/movie.webm'
+                    video.validate_receipt(receipt, artifact, request, self.root)
+                    self.assertEqual(len(receipt['passes']), 2)
+                finally:
+                    os.close(attempt_fd)
+        self.assertEqual(foreign[0].read_bytes(), b'unrelated replacement')
 
     def test_actual_h264_all_required_rates_and_adjacent_wav(self):
         with wave.open(str(self.root / 'speech.wav'), 'wb') as audio:

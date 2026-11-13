@@ -686,6 +686,16 @@ def _destination(path):
     return path
 
 
+def _destination_name(value):
+    value = os.fspath(value)
+    if (not isinstance(value, str) or not 1 <= len(value) <= 255 or value in ('.', '..') or
+            any(character in value for character in ('/', '\\', ':')) or value[-1] in (' ', '.') or
+            any(ord(character) < 32 for character in value) or
+            re.match(r'(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)', value)):
+        raise ValueError('descriptor destination requires one portable filename')
+    return value
+
+
 def secure_publication_supported():
     # The current subprocess path adapter uses Linux procfs and inherited FDs.
     # The shared primitive also supports macOS dirfds, but no untested fdescfs
@@ -696,7 +706,13 @@ def secure_publication_supported():
 def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
     validate_request(request)
     request = copy.deepcopy(request)
-    destination = _destination(destination)
+    destination = Path(_destination_name(destination))
+    try:
+        os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        pass
+    else:
+        raise ValueError('destination must be new')
     profile = PROFILES[request['profile']]
     if destination.suffix != profile['extension']:
         raise ValueError('destination extension differs from explicit profile')
@@ -705,7 +721,8 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
     caps = capabilities(ffmpeg=ffmpeg, ffprobe=ffprobe)
     if caps['status'] != 'available' or caps['profiles'][request['profile']]['status'] != 'supported':
         raise ValueError('requested media profile unavailable/unsupported; no fallback')
-    if shutil.disk_usage(destination.parent).free < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
+    filesystem = os.fstatvfs(parent_fd)
+    if filesystem.f_bavail * filesystem.f_frsize < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
         raise ValueError('insufficient free storage for bounded snapshot and output')
     with _private_stage(parent_fd, prefix='.silent-export-') as (stage, source_fd):
         inputs = stage/'frames'; inputs.mkdir()
@@ -765,11 +782,23 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         return receipt
 
 
-def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
+def encode(request, root, destination, *, destination_dir_fd=None, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
     validate_request(request)
+    if destination_dir_fd is not None:
+        name = _destination_name(destination)
+        if type(destination_dir_fd) is not int or destination_dir_fd < 0:
+            raise ValueError('destination descriptor must identify an open directory')
+        descriptor = os.dup(destination_dir_fd)
+        try:
+            if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                raise ValueError('destination descriptor must identify an open directory')
+            return _encode_pinned(request, root, name, descriptor, ffmpeg=ffmpeg,
+                                  ffprobe=ffprobe, cancel=cancel, progress=progress)
+        finally:
+            os.close(descriptor)
     destination = _destination(destination)
     with _pin_directory(destination.parent) as parent_fd:
-        return _encode_pinned(request, root, destination, parent_fd, ffmpeg=ffmpeg,
+        return _encode_pinned(request, root, destination.name, parent_fd, ffmpeg=ffmpeg,
                               ffprobe=ffprobe, cancel=cancel, progress=progress)
 
 

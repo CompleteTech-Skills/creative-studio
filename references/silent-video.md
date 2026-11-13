@@ -271,3 +271,11 @@ actual transformed pixel against the declared operation. The strict
 [transform](../schemas/silent-frame-transform-v1.schema.json) schemas describe
 this separate conversion artifact. PNG8 opacity/color rules remain unchanged;
 transparent or HDR input needs its own explicit verified preparation step.
+
+For descriptor-owned job directories, `encode(request, source_root, 'movie.mp4',
+destination_dir_fd=attempt_fd)` uses a validated, duplicated directory handle
+and a portable basename. It checks collisions and available storage through that
+handle and publishes from the same encoder used by ordinary path exports. Both
+passes inherit the pinned staging descriptor. No procfd alias is converted back
+to a mutable destination pathname. The caller retains ownership of its original
+handle and must keep any source capabilities alive for the call.
