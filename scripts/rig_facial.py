@@ -6,7 +6,7 @@ import math
 import numpy as np
 from rig_constraints import apply_constraints
 from rig_errors import require
-from rig_math import axis_angle, qmul
+from rig_math import axis_angle, qmul, unit
 from rig_skeleton import evaluate_fk, hierarchy_order, rotate_bone
 
 
@@ -155,6 +155,7 @@ def appendage_controls(rig, pose: dict, *, time=0., tail_curl=0., tail_wag=0.,
     require(not (tail_curl or tail_wag or secondary) or tails, 'RIG_TAIL_UNAVAILABLE', 'Character has no tail chain.')
     require(not (wing_flap or wing_fold or wing_twist) or wings, 'RIG_WING_UNAVAILABLE', 'Character has no requested wing joints.')
     phase = (int(seed) % 65536)*.013
+    rest_world = evaluate_fk(rig.skeleton) if wing_twist else {}
     for i, bone in enumerate(tails):
         angle = tail_curl*.65+tail_wag*.38*math.sin(2*math.pi*time-i*.45)
         angle += secondary*.15*math.sin(time*7-i*.6+phase)*math.exp(-.35*time)
@@ -162,6 +163,11 @@ def appendage_controls(rig, pose: dict, *, time=0., tail_curl=0., tail_wag=0.,
     for bone in wings:
         sign = -1 if bone['id'].endswith('.left') else 1
         angle = sign*(wing_flap*.7*math.sin(2*math.pi*time)+wing_fold*.7)
-        rotation = qmul(axis_angle([0, 0, 1], angle), axis_angle([0, 1, 0], sign*wing_twist*.7))
+        # Imported joint frames need not point local +Y along the authored
+        # bone. Derive the length axis from rest geometry in that joint frame.
+        length_axis = (unit(np.linalg.solve(rest_world[bone['id']][:3,:3],
+                            np.asarray(bone['tail'])-np.asarray(bone['head'])))
+                       if wing_twist else [0,1,0])
+        rotation = qmul(axis_angle([0, 0, 1], angle), axis_angle(length_axis, sign*wing_twist*.7))
         result = rotate_bone(rig.skeleton, result, bone['id'], rotation)
     return apply_constraints(rig.skeleton, result, rig.manifest['controllers']['constraints'])[0]
