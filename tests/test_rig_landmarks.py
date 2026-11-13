@@ -2,6 +2,9 @@
 from copy import deepcopy
 from pathlib import Path
 import tempfile
+import json
+import subprocess
+import sys
 import unittest
 
 import numpy as np
@@ -74,8 +77,9 @@ class LandmarkAdmissionTests(unittest.TestCase):
             source_hashes = {p: sha256(p) for p in (rig.root/'source').rglob('*') if p.is_file()}
             revisions = {p: sha256(p) for p in (rig.root/'rig/revisions').glob('*')}
             good = deepcopy(self.landmarks[self.name])
-            for payload in ({}, [], False,
+            for payload in ({}, [], False, None,
                             {'source_sha256': '0'*64, 'landmarks': {}},
+                            {'source_sha256': rig.manifest['source']['sha256'], 'landmarks': None},
                             {'source_sha256': rig.manifest['source']['sha256'],
                              'landmarks': {self.name: {**good, 'confidence': 'high'}}}):
                 with self.subTest(payload=payload), self.assertRaises(RigError):
@@ -85,6 +89,29 @@ class LandmarkAdmissionTests(unittest.TestCase):
                 self.assertEqual({p: sha256(p) for p in (rig.root/'source').rglob('*') if p.is_file()}, source_hashes)
                 self.assertEqual(read_json(rig.root/'job.json')['steps']['auto']['status'], 'failed')
                 load_rig(rig.root)
+
+    def test_cli_rejects_explicit_null_without_discarding_skin_or_animation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            rig=fixture(directory)
+            before=(rig.root/'rig.json').read_bytes()
+            revisions={p:sha256(p) for p in (rig.root/'rig/revisions').glob('*')}
+            sources={p:sha256(p) for p in (rig.root/'source').rglob('*') if p.is_file()}
+            path=Path(directory)/'landmarks.json';path.write_text('null')
+            command=[sys.executable,str(Path(__file__).resolve().parents[1]/'scripts/rig.py'),
+                'auto','--run-dir',str(rig.root),'--template','robotic','--replace']
+            result=subprocess.run([*command,'--landmarks',str(path)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,1,result.stderr)
+            self.assertEqual(json.loads(result.stdout)['error']['code'],'RIG_LANDMARK_SOURCE')
+            self.assertNotIn('Traceback',result.stderr)
+            self.assertEqual((rig.root/'rig.json').read_bytes(),before)
+            self.assertEqual({p:sha256(p) for p in (rig.root/'rig/revisions').glob('*')},revisions)
+            self.assertEqual({p:sha256(p) for p in (rig.root/'source').rglob('*') if p.is_file()},sources)
+            loaded=load_rig(rig.root)
+            self.assertTrue(loaded.weights);self.assertTrue(loaded.clips)
+            # Omitting the flag still permits the explicitly requested refit.
+            result=subprocess.run(command,capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            validate_skeleton(load_rig(rig.root).skeleton)
 
     def test_dispatcher_accepts_hash_bound_landmarks_and_can_reload(self):
         with tempfile.TemporaryDirectory() as directory:
