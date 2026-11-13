@@ -440,6 +440,32 @@ class RegistryTests(unittest.TestCase):
             self.registry.promote('deprecated-copy',expected_sha256=checksum,review=review,select=True,expected_selected_revision_id='robot-r1')
         self.assertEqual(list(self.registry.db.iterdump()),before)
 
+    def test_reuse_selection_verifies_original_receipt_and_preserves_transaction(self):
+        revision, checksum = self.promote()
+        self.registry.create_draft('same', revision)
+        review = review_for(self.assets, revision, name='replacement')
+        original_receipt = self.assets / 'review1.json'
+        original_bytes = original_receipt.read_bytes()
+        original_review = self.registry.revision('robot-r1')['review']
+        for corruption in (None, b'corrupted original receipt'):
+            with self.subTest(missing=corruption is None):
+                if corruption is None:
+                    original_receipt.unlink()
+                else:
+                    original_receipt.write_bytes(corruption)
+                before = list(self.registry.db.iterdump())
+                with self.assertRaises((OSError, ValueError)):
+                    self.registry.promote('same', expected_sha256=checksum,
+                                          review=review, select=True)
+                self.assertEqual(list(self.registry.db.iterdump()), before)
+                self.assertIsNone(self.registry.identity('robot')['selected_revision'])
+                self.assertEqual(self.registry.draft('same')['sha256'], checksum)
+                original_receipt.write_bytes(original_bytes)
+        self.assertEqual(self.registry.promote('same', expected_sha256=checksum,
+                                              review=review, select=True), checksum)
+        self.assertEqual(self.registry.revision('robot-r1')['review'], original_review)
+        self.assertEqual(self.registry.identity('robot')['selected_revision'], 'robot-r1')
+
     def test_invalid_draft_and_stale_edits_preserve_all_rows(self):
         revision=sample('revision');checksum=self.registry.create_draft('draft',revision)
         original=self.registry.db.iterdump();before=list(original)

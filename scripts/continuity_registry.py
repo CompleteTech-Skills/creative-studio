@@ -278,6 +278,9 @@ class IdentityRegistry:
                 if select and old[1]:
                     raise ValueError('CONTINUITY_DEPRECATED: cannot select deprecated revision')
                 if select:
+                    # Reuse retains the original immutable approval, not the
+                    # newly supplied receipt. Verify that retained binding first.
+                    self.revision(document['revision_id'])
                     self.db.execute('UPDATE identities SET selected=? WHERE id=?', (document['revision_id'], document['identity_id']))
                 self.db.execute('DELETE FROM drafts WHERE id=?', (draft_id,))
                 self._history('reuse-revision', document['revision_id'], dict(sha256=checksum, selected=select))
