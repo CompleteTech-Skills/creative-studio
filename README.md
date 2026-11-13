@@ -417,3 +417,5 @@ closures for later consumption. Scene requests bind the frozen project, scene,
 shot and camera identities. It preserves existing 2D rendering; the planned
 production renderer remains separate unfinished work. See the guide for exact
 commands, ownership boundaries and remaining acceptance gates.
+
+The authenticated offline asset browser uses exact canonical library versions, native search and locally packaged Three.js. See [asset browser and local API](references/asset-library/browser.md) for startup, resource limits, metadata repair and managed-job integration.

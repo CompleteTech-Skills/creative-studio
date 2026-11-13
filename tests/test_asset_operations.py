@@ -153,7 +153,29 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
     def test_unknown_operation_and_optional_capability_do_not_fake_success(self):
         for operation in ('remote-upload','generate','semantic-search'):
             with self.assertRaises(RigError):self.owner.execute(operation,{},apply=True)
+        with self.assertRaises(RigError):self.owner.submit([], {})
         self.assertEqual(self.owner.capabilities()['production_approval'],False)
+
+    def test_project_bind_uses_ordered_native_scope_and_preserves_unavailable_unbind(self):
+        from asset_library_versions import ScopedResolver
+        ref=self.fixture.register();binding=dict(library='local',reference=ref)
+        p=dict(project_id='test-project',slot='hero',binding=binding,expected_revision=0)
+        result=self.owner.execute('project.bind',p,apply=True)['result']
+        self.assertEqual(result['revision'],1)
+        resolver=ScopedResolver([('local',self.library)],project_library='local')
+        before=resolver.bindings('test-project')
+        self.assertEqual(before['bindings']['hero'],binding)
+        with self.assertRaises(RigError) as caught:self.owner.execute('project.unbind',dict(project_id='test-project',slot='hero'),apply=True)
+        self.assertEqual(caught.exception.report['code'],'LIBRARY_OPERATIONS_UNAVAILABLE')
+        self.assertEqual(resolver.bindings('test-project'),before)
+        with self.assertRaises(RigError):self.owner.execute('project.bind',p,apply=True)
+
+    def test_browser_cli_delegates_explicit_loopback_server_arguments(self):
+        from unittest.mock import patch
+        with patch('asset_library_browser.main',return_value=0) as start:
+            result=assets.run(['browser','--library',str(self.library.root),'--index',str(self.root/'index'),'--port','0'])
+        self.assertTrue(result['ok'])
+        self.assertEqual(start.call_args.args[0],['--library',str(self.library.root),'--index',str(self.root/'index'),'--port','0'])
 
     def test_cli_json_help_mutation_guard_and_exclusive_report(self):
         out=io.StringIO();err=io.StringIO()
