@@ -185,3 +185,91 @@ class ReleaseAdmissionRegressions(unittest.TestCase):
             with self.subTest(frame=frame,ticks=ticks):
                 if accepted:self.assertTrue(self.check()['source_ready'])
                 else:self.assert_code('ANIMATION_LIMIT')
+
+    def test_contact_object_requires_real_scene_context_and_target(self):
+        contact=dict(id='plant',target_bone='b0',kind='foot',start_frame=0,end_frame=24,
+                     coordinate_space='object',target_object='root',position_tolerance_m=.01,solver_weight=1)
+        self.clip['contacts']=[contact]
+        def refresh():self.f.project['clips']=[self.f.put('clip.json',self.clip,'clip')]
+        refresh();self.assert_code('ANIMATION_TARGET')  # Unplaced clip has no object-space scene binding.
+        self.layer['placements']=[self.placement()]
+        self.assertTrue(self.check()['source_ready'])
+        contact['target_object']='fabricated';refresh();self.layer['placements'][0]['clip']=self.f.project['clips'][0]
+        self.assert_code('ANIMATION_TARGET')
+        del contact['target_object'];refresh();self.layer['placements'][0]['clip']=self.f.project['clips'][0]
+        self.assert_code('ANIMATION_CONTACT')
+
+    def test_interaction_marker_names_resolve_existing_scene_markers(self):
+        interaction=deepcopy(self.f.values['interaction'])
+        interaction.update(participants=[dict(actor_id='actor',role='participant')],synchronization_markers=['missing'])
+        self.scene['interactions']=[interaction];self.assert_code('ANIMATION_REFERENCE')
+        self.scene['markers']=[dict(id='marker-id',name='beat',frame=0,type='marker')]
+        interaction['synchronization_markers']=['beat'];self.assertTrue(self.check()['source_ready'])
+        interaction['participants'][0]['interaction_marker']='missing';self.assert_code('ANIMATION_REFERENCE')
+        interaction['participants'][0]['interaction_marker']='beat';self.assertTrue(self.check()['source_ready'])
+
+    def test_dependency_registries_validate_native_targets_and_owner_dispatch(self):
+        document=dict(schema_version=1,kind=KINDS['registry'],id='dependency-registry',version='1.0.0',
+                      entries=[dict(owner='rig',source=self.rigref,target=dict(kind='bone',actor_id='actor',bone_id='fabricated',property='translation'))])
+        def refresh():
+            self.clip['dependencies']=[self.f.put('registry.json',document)]
+            self.f.project['clips']=[self.f.put('clip.json',self.clip,'clip')]
+        refresh();self.assert_code('ANIMATION_TARGET')
+        document['entries'][0]['target']['bone_id']='b0';refresh();self.assertTrue(self.check()['source_ready'])
+        shutil.copytree(Path(__file__).resolve().parents[1]/'examples/camera3d',self.f.root/'camera')
+        source=self.f.put('camera/registry.json',json.loads((self.f.root/'camera/registry.json').read_text()))
+        for source,target in [(source,dict(kind='camera',camera_id='camera',property='translation')),
+                              (self.rigref,dict(kind='bone',actor_id='actor',bone_id='b0',property='translation'))]:
+            document['entries']=[dict(owner='lookdev',source=source,target=target)];refresh()
+            with self.subTest(kind=target['kind']):
+                self.assert_code('ANIMATION_OWNER')
+                registry=TargetRegistry(self.f.root,document)
+                with self.assertRaises(RigError) as caught:registry.resolve(target)
+                self.assertEqual(caught.exception.report['code'],'ANIMATION_OWNER')
+
+    def test_enabled_spatial_constraints_require_explicit_destinations(self):
+        for kind in ('position','rotation','scale','parent','aim','look_at','distance','grasp','path_follow'):
+            value=self.constraint('targetless','b2');value['type']=kind;value.pop('target_position')
+            self.actor['constraints']=[value]
+            with self.subTest(kind=kind):self.assert_code('ANIMATION_CONSTRAINT')
+        self.actor['constraints']=[self.constraint('valid-point','b2')]
+        self.actor['constraints'][0]['target']=dict(kind='bone',actor_id='actor',bone_id='b0',property='translation')
+        self.assert_code('ANIMATION_CONSTRAINT');self.actor['constraints'][0].pop('target')
+        self.assertTrue(self.check()['source_ready'])
+        self.actor['constraints'][0].update(type='limit');self.actor['constraints'][0].pop('target_position')
+        self.assert_code('ANIMATION_CONSTRAINT')
+        self.actor['constraints'][0]['position_limits']=dict(minimum=[-1,-1,-1],maximum=[1,1,1])
+        self.assertTrue(self.check()['source_ready'])
+
+    def test_initial_state_parameter_overrides_bind_machine_names_and_types(self):
+        self.actor['initial_state_parameters']={'orphan':True};self.assert_code('ANIMATION_REFERENCE')
+        machine=deepcopy(self.f.values['state-machine']);machine['states'][0]['clip']=self.f.project['clips'][0]
+        machine['parameters']=[dict(name='go',type='bool',default=False),dict(name='count',type='int',default=0),
+                               dict(name='speed',type='float',default=0),dict(name='fire',type='trigger',default=False)]
+        self.actor['state_machine']=self.f.put('machine.json',machine,'state-machine')
+        for overrides in [{'missing':True},{'go':123},{'count':True},{'count':1.0},{'count':10000000000},{'speed':True},{'speed':1e10},{'fire':12},{'fire':True}]:
+            self.actor['initial_state_parameters']=overrides
+            with self.subTest(overrides=overrides),self.assertRaises(RigError):self.check()
+        self.actor['initial_state_parameters']={'go':True,'count':2,'speed':.5,'fire':False}
+        self.assertTrue(self.check()['source_ready'])
+
+    def test_named_state_events_require_explicit_event_owner(self):
+        machine=deepcopy(self.f.values['state-machine']);machine['states'][0]['clip']=self.f.project['clips'][0]
+        def refresh():self.actor['state_machine']=self.f.put('machine.json',machine,'state-machine')
+        refresh();self.assertTrue(self.check()['source_ready'])
+        for field in ('enter_events','exit_events'):
+            machine['states'][0][field]=['missing-event'];refresh()
+            with self.subTest(field=field):self.assert_code('ANIMATION_OWNER')
+            machine['states'][0].pop(field)
+        machine['parameters']=[dict(name='go',type='bool',default=False)]
+        machine['transitions']=[dict(id='loop',from_state='idle',to_state='idle',conditions=[dict(parameter='go',operator='eq',value=True)],
+            condition_mode='all',priority=0,duration_frames=1,blend_curve='linear',interruption_policy='none',exit_marker='missing-marker')]
+        refresh();self.assert_code('ANIMATION_OWNER')
+
+    def test_transfer_duration_must_fit_its_interaction_interval(self):
+        interaction=deepcopy(self.f.values['interaction']);interaction['participants']=[dict(actor_id='actor',role='participant')]
+        transfer=dict(frame=23,next_owner='actor',world_pose_policy='blend_to_receiver',transfer_duration_frames=100)
+        interaction['ownership_changes']=[transfer];self.scene['interactions']=[interaction]
+        self.assert_code('ANIMATION_INTERVAL')
+        transfer['transfer_duration_frames']=1;self.assertTrue(self.check()['source_ready'])
+        transfer['transfer_duration_frames']=2;self.assert_code('ANIMATION_INTERVAL')

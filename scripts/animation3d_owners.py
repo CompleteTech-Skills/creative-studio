@@ -41,6 +41,8 @@ def _resolve_property(entry, admitted):
                 'Camera property has no native representation for this projection.')
         return optics['projection'][fields[prop]]
     if owner == 'lookdev':
+        require(domain in ('material','light') and kind in ('material3d','material-instance3d','material-variant3d','light3d'),
+                'ANIMATION_OWNER', 'LookDev adapter requires its native material or light owner.')
         reference = native.reference(source['id'], source['version'])
         if domain == 'material':
             require(kind in ('material3d','material-instance3d','material-variant3d') and

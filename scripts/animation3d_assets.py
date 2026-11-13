@@ -247,6 +247,9 @@ def _validate_bindings(project, documents, native, snapshot_root):
             for name, value in node.items():
                 if type(value) is int and (name == 'frame' or name.endswith(('_frame', '_frames')) or name == 'end_frame_exclusive'):
                     require(value <= budgets['max_frames'], 'ANIMATION_LIMIT', 'Nested timeline coordinate exceeds project frame budget.')
+            if 'frame' in node and 'transfer_duration_frames' in node:
+                require(node['frame'] + node['transfer_duration_frames'] <= budgets['max_frames'],
+                        'ANIMATION_LIMIT', 'Ownership transfer interval exceeds project frame budget.')
             if 'start_frame' in node and 'duration_frames' in node:
                 require(node['start_frame'] + node['duration_frames'] <= budgets['max_frames'],
                         'ANIMATION_LIMIT', 'Nested timeline interval exceeds project frame budget.')
@@ -363,6 +366,8 @@ def _validate_bindings(project, documents, native, snapshot_root):
                 bone(rig, root['source_bone'])
             else: target(dict(kind='node',node_id=root['source_node'],property='translation'), scene=scene)
         for contact in clip['contacts']:
+            if 'target_object' in contact:
+                target(dict(kind='node',node_id=contact['target_object'],property='translation'), scene=scene)
             if 'target_bone' in contact:
                 require(rig is not None, 'ANIMATION_TARGET', 'Contact needs a bound rig.')
                 bone(rig, contact['target_bone'])
@@ -425,6 +430,8 @@ def _validate_bindings(project, documents, native, snapshot_root):
                 for track in d[field]: track_target(track, scene=d)
             actor_ids = {a['actor_id'] for a in d['actors']}
             for interaction in d['interactions']:
+                require(set(interaction['synchronization_markers']) <= {m['name'] for m in d['markers']},
+                        'ANIMATION_REFERENCE', 'Interaction synchronization marker is absent from scene markers.')
                 require({p['actor_id'] for p in interaction['participants']} <= actor_ids,
                         'ANIMATION_REFERENCE', 'Interaction participant is absent from scene.')
                 if 'prop_id' in interaction:
@@ -466,8 +473,25 @@ def _validate_bindings(project, documents, native, snapshot_root):
                         bone(rig, identifier)
                     for value in layer['placements']: placement(value, d, actor, layer)
                     for value in layer.get('affected_targets', []): target(value, rig, d, actor['actor_id'])
+                if 'state_machine' not in actor:
+                    require(not actor.get('initial_state_parameters'), 'ANIMATION_REFERENCE',
+                            'Initial state parameters need an explicitly bound state machine.')
                 if 'state_machine' in actor:
                     machine = document(actor['state_machine'], 'state-machine')
+                    parameters = {item['name']: item for item in machine['parameters']}
+                    from animation3d_contracts import schemas
+                    from jsonschema import Draft202012Validator
+                    parameter_schema = schemas()['animation3d-state-machine.schema.json']['$defs']['state-machine']['properties']['parameters']['items']
+                    parameter_validator = Draft202012Validator(parameter_schema)
+                    for name, value in actor.get('initial_state_parameters', {}).items():
+                        require(name in parameters, 'ANIMATION_REFERENCE', 'Initial state parameter is absent from bound machine.')
+                        ptype = parameters[name]['type']
+                        require((ptype in ('bool','trigger') and type(value) is bool) or
+                                (ptype == 'float' and type(value) in (int,float)) or
+                                (ptype == 'int' and type(value) is int),
+                                'ANIMATION_VALUE', 'Initial state parameter has the wrong declared type.')
+                        require(parameter_validator.is_valid({**parameters[name], 'default': value}),
+                                'ANIMATION_VALUE', 'Initial state parameter violates its canonical declared domain.')
                     for state in machine['states']:
                         require('clip' in state, 'ANIMATION_OWNER', 'Blend-tree admission needs an explicit owner.')
                         clip_targets(document(state['clip'], 'clip'), rig, d, actor['actor_id'])
@@ -492,7 +516,22 @@ def _validate_bindings(project, documents, native, snapshot_root):
                 require(d[field.replace('_rig','_skeleton_signature')] == object_hash(rig.skeleton),
                         'ANIMATION_TARGET', 'Retarget skeleton signature differs from bound rig.')
                 for value in d['mappings']: bone(rig, value[key])
+        if d['kind'] == KINDS['registry']:
+            from animation3d_owners import _resolve_property
+            for entry in d['entries']:
+                admitted = native.get(entry['source']['path'])
+                require(admitted is not None, 'ANIMATION_OWNER', 'Registry target needs an explicit admitted native source.')
+                if entry['owner'] == 'rig':
+                    require(entry['source']['kind'] == 'rig' and admitted[0] == 'hatch-3d-rig' and
+                            entry['target']['kind'] in ('bone','morph'), 'ANIMATION_OWNER',
+                            'Rig registry entry needs its native rig and skeletal target.')
+                    target(entry['target'], admitted[1])
+                else:
+                    _resolve_property(entry, admitted)
         if d['kind'] == KINDS['state-machine']:
+            require(not any(state.get('enter_events') or state.get('exit_events') for state in d['states']) and
+                    not any('exit_marker' in transition for transition in d['transitions']),
+                    'ANIMATION_OWNER', 'Named state events and transition markers need an explicit canonical event owner.')
             require(all('clip' in state for state in d['states']), 'ANIMATION_OWNER', 'Blend-tree admission needs an explicit owner.')
     for path, d in documents.items():
         if d['kind'] == KINDS['clip'] and path not in placed_clips: clip_targets(d)

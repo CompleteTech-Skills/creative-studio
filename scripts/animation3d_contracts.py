@@ -299,6 +299,12 @@ def _check_condition_intersection(conditions, parameters):
 
 
 def _check_constraint(node):
+    destinations = sum(key in node for key in ('target','target_position','target_object_id'))
+    require(destinations <= 1, 'ANIMATION_CONSTRAINT', 'Constraint destinations are ambiguous.', stage='animation3d')
+    if node['enabled'] and node['type'] in ('look_at','aim','parent','position','rotation','scale','distance','grasp','path_follow'):
+        require(destinations == 1, 'ANIMATION_CONSTRAINT', 'Enabled spatial constraint needs exactly one explicit destination.', stage='animation3d')
+    if node['enabled'] and node['type'] == 'limit':
+        require('position_limits' in node or 'rotation_limits' in node, 'ANIMATION_CONSTRAINT', 'Enabled limit constraint needs explicit limits.', stage='animation3d')
     if 'start_frame' in node and 'end_frame' in node:
         require(node['start_frame'] < node['end_frame'], 'ANIMATION_INTERVAL', 'Constraint interval is empty or reversed.', stage='animation3d')
     if 'target' in node:
@@ -310,7 +316,7 @@ def _check_constraint(node):
     if node['type'] in ('two_bone_ik','multi_bone_ik','foot_plant'):
         require(node['source']['kind']=='bone' and len(chain)>=3 and
             (node['type']!='two_bone_ik' or len(chain)==3) and
-            ('target' in node or 'target_position' in node),
+            ('target' in node or 'target_position' in node or 'target_object_id' in node),
             'ANIMATION_CONSTRAINT','IK requires a bone source, valid chain and explicit target.',stage='animation3d')
     for key,low,high in [('position_limits','minimum','maximum'),('rotation_limits','minimum_rad','maximum_rad')]:
         if key in node:
@@ -366,6 +372,8 @@ def _check_interaction(value):
     for transfer in value.get('ownership_changes',[]):
         require(value['start_frame']<=transfer['frame']<value['end_frame'] and transfer['frame']>previous,
             'ANIMATION_INTERVAL','Ownership events must be unique, ordered and inside interaction.',stage='animation3d')
+        require(transfer['frame'] + transfer.get('transfer_duration_frames', 0) <= value['end_frame'],
+                'ANIMATION_INTERVAL', 'Ownership transfer interval exceeds interaction bounds.', stage='animation3d')
         previous=transfer['frame']
         for key in ('previous_owner','next_owner'):
             require(key not in transfer or transfer[key] in actors,'ANIMATION_REFERENCE','Ownership actor is not a participant.',stage='animation3d')
@@ -417,6 +425,8 @@ def _semantic(value):
         require(all(e['frame']<=duration for e in value['events']) and all(c['end_frame']<=duration for c in value['contacts']),
             'ANIMATION_TIME','Event/contact exceeds clip duration.',stage='animation3d')
         for contact in value['contacts']:
+            require(contact['coordinate_space'] != 'object' or 'target_object' in contact,
+                    'ANIMATION_CONTACT', 'Object-space contact needs its explicit target object.', stage='animation3d')
             require(sum(key in contact for key in ('target_node','target_bone','target_anchor'))==1,
                 'ANIMATION_CONTACT','Contact requires exactly one target.',stage='animation3d')
         markers={e['name'] for e in value['events'] if e['type']=='marker'}
