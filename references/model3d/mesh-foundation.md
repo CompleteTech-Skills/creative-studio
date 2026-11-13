@@ -59,3 +59,8 @@ pivot conversion, writes and reimports all eighteen GLB/glTF/OBJ exports, then
 imports one GLB through the immutable source pipeline. Its `acceptance.json`
 records actual topology and every generated payload hash. This is an engineering
 fixture demonstration; it supplies no artistic approval or provider claim.
+
+Source snapshots canonicalize the explicitly selected root once so system path
+aliases work on macOS and Windows; descendant symlinks remain rejected. Native
+glTF source hierarchies are capped at depth 256 as well as 10,000 total nodes,
+returning a structured resource diagnostic before Python recursion limits.

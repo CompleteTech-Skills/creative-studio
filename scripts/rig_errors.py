@@ -156,7 +156,10 @@ def open_payload(root: str | Path, name: str):
     path identity are rechecked after the caller finishes. POSIX retains each
     directory descriptor; Windows checks the opened handle's canonical path.
     """
-    root = Path(root).absolute()
+    # The caller selects the trusted root. Canonicalize its platform aliases
+    # once (/var on macOS, DOS short paths on Windows); descendants still
+    # traverse no-follow descriptors and cannot redirect outside that root.
+    root = Path(root).resolve()
     target = safe_path(root, name, exists=True)
     flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0)
     descriptors = []

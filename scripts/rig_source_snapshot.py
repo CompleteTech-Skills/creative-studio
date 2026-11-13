@@ -63,9 +63,10 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
     entry = Path(path).absolute()
     require(entry.suffix.lower() in ('.glb', '.gltf', '.obj', '.blend'),
             'RIG_FORMAT', 'Source snapshots support GLB, glTF, OBJ and packed Blender files.')
-    source_root = entry.parent
+    source_root = entry.parent.resolve()
+    entry = source_root / entry.name
     temporary = tempfile.TemporaryDirectory(prefix='rig-source-')
-    root = Path(temporary.name)
+    root = Path(temporary.name).resolve()
     records, aliases = {}, {}
     total = 0
     read_bytes = 0

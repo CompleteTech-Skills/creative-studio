@@ -15,6 +15,42 @@ from rig_gltf import export_geometry
 from rig_models import Geometry, Mesh
 
 class MeshImportTests(unittest.TestCase):
+    def test_deep_hierarchy_returns_structured_bounded_failure(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            payload = dict(asset={'version': '2.0'}, scene=0, scenes=[{'nodes': [0]}],
+                           nodes=[{'children': [i+1]} for i in range(1100)] + [{}])
+            source = root/'deep.gltf'
+            source.write_text(json.dumps(payload))
+            result = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1]/'scripts/model3d.py'),
+                                     'mesh', 'import', '--file', str(source), '--destination', str(root/'out')],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertNotIn('Traceback', result.stderr)
+            self.assertEqual(json.loads(result.stderr)['error']['code'], 'RIG_LIMIT_DEPTH')
+            self.assertFalse((root/'out').exists())
+
+    def test_trusted_root_alias_is_canonicalized_without_accepting_child_links(self):
+        if not hasattr(os, 'symlink'):
+            self.skipTest('Symlinks are unavailable.')
+        from rig_errors import open_payload
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            real = root/'real'; real.mkdir()
+            (real/'bytes.bin').write_bytes(b'unchanged')
+            alias = root/'alias'
+            try:
+                alias.symlink_to(real, target_is_directory=True)
+            except OSError:
+                self.skipTest('This host cannot create symlinks.')
+            with open_payload(alias, 'bytes.bin') as (stream, info):
+                self.assertEqual(stream.read(), b'unchanged')
+            (real/'child.bin').symlink_to(real/'bytes.bin')
+            with self.assertRaises(RigError):
+                with open_payload(alias, 'child.bin'):
+                    pass
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
