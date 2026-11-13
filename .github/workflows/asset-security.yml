@@ -1,0 +1,50 @@
+name: Asset library security and portability
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  security-portability:
+    name: Asset security (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - run: python -m pip install -r requirements-rig-test.txt
+      - run: npm ci --ignore-scripts --prefix tools/rig
+      - name: Set private test temporary directory and Python imports
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP']) / 'asset-security'
+          root.mkdir(mode=0o700, exist_ok=False)
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as stream:
+              for name in ('TMPDIR', 'TMP', 'TEMP'):
+                  print(f'{name}={root}', file=stream)
+              print('PYTHONPATH=' + os.pathsep.join(('scripts', 'tests')), file=stream)
+          PY
+      - name: Real import negatives and canonical library regressions
+        run: |
+          python -m unittest discover -s tests -p test_rig_asset_security.py -v 2>&1 | tee asset-import-security.log
+          python -m unittest discover -s tests -p 'test_asset*.py' -v 2>&1 | tee asset-library-regressions.log
+      - name: Generated schema consistency
+        run: python scripts/generate_schemas.py --check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: asset-security-${{ matrix.os }}
+          path: |
+            asset-import-security.log
+            asset-library-regressions.log
