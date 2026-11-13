@@ -40,7 +40,7 @@ def generate(root,*,fps=12):
         print('retargeted '+name,flush=True)
 
 
-def verify(root,*,blender=False,browser=False,validator=False,render=False,archives=False):
+def verify(root,*,blender=False,browser=False,validator=False,render=False,archives=False,specializations=False):
     from rig_validation import validate_rig,test_motion_ranges
     from rig_gltf import export_gltf
     from rig_import import load_character_model
@@ -65,14 +65,14 @@ def verify(root,*,blender=False,browser=False,validator=False,render=False,archi
             report=validate_gltf(glb);atomic_json(rig.root/'validation/khronos.json',report)
             require(report['ok'],'RIG_DEMO_GLTF','Khronos found invalid glTF.',asset=name,observed=report['issues'])
             entry['khronos']=dict(errors=report['issues']['numErrors'],warnings=report['issues']['numWarnings'],version=report['validator'])
-        if blender and name in ARCHETYPES:
+        if blender:
             from rig_blender import export_blender
             report=export_blender(rig,rig.root/'exports/character.blend');atomic_json(rig.root/'validation/blender.json',report)
             require(report['ok'],'RIG_DEMO_BLENDER','Independent Blender comparison failed.',asset=name,observed=report.get('max_vertex_error_m'))
             entry['blender']=dict(version=report['blender_version'],max_vertex_error_m=report['max_vertex_error_m'],reopened=report['reopened'])
             entry['artifacts']['blend']=f'{name}/exports/character.blend'
             from rig_blender import render_blender_preview
-            selected='walk' if 'walk' in rig.clips else 'hinge-sweep'
+            selected='walk' if 'walk' in rig.clips else 'hinge-sweep' if 'hinge-sweep' in rig.clips else next(iter(rig.clips))
             with tempfile.TemporaryDirectory(prefix='hatch-demo-blender-preview-') as temporary:
                 preview=render_blender_preview(rig,Path(temporary)/'frames',clip=selected,times=[0.,.65],
                     blend_path=rig.root/'exports/character.blend',blend_sha256=report['sha256'])
@@ -91,17 +91,19 @@ def verify(root,*,blender=False,browser=False,validator=False,render=False,archi
             destination=rig.root/'preview/frames'
             if not destination.exists():render_frame_sequence(rig,destination,clip=clip,fps=12,width=256,height=256)
             entry['artifacts']['pose_sheet']=f'{name}/preview/pose-sheet.png';entry['artifacts']['animation']=f'{name}/preview/frames/animation.webp'
-        if browser and name in ARCHETYPES:
+        if browser:
             from rig_viewer import create_review_ui
             from rig_browser import verify_browser
             destination=rig.root/'review-ui'
             if not destination.exists():create_review_ui(rig,destination)
             report=verify_browser(rig,destination,screenshot=rig.root/'preview/browser.png');atomic_json(rig.root/'validation/threejs.json',report)
             require(report['ok'],'RIG_DEMO_BROWSER','Independent Three.js comparison failed.',asset=name,observed=report.get('max_vertex_error_m'))
-            entry['threejs']=dict(version=report['version'],browser=report['browser'],max_vertex_error_m=report['max_vertex_error_m'])
+            entry['threejs']=dict(version=report['version'],browser=report['browser'],max_vertex_error_m=report['max_vertex_error_m'],
+                                  reduced_motion_mode=report['reduced_motion_mode'],
+                                  reduced_motion_max_vertex_error_m=report['reduced_motion_max_vertex_error_m'])
             entry['artifacts']['viewer']=f'{name}/review-ui/index.html'
         job=read_json(rig.root/'job.json');job['rig_sha256']=rig_signature(rig.manifest)
-        if blender and browser and validator and name in ARCHETYPES:job['status']='roundtrip-verified'
+        if blender and browser and validator:job['status']='roundtrip-verified'
         elif job['status']!='roundtrip-verified':job['status']='animation-ready'
         atomic_json(rig.root/'job.json',job)
         if archives:
@@ -117,20 +119,26 @@ def verify(root,*,blender=False,browser=False,validator=False,render=False,archi
             entry['archive']=dict(path=path.relative_to(root).as_posix(),sha256=package['sha256'],restored_and_evaluated=True)
         results.append(entry);print('verified '+name,flush=True)
         atomic_json(root/'acceptance.partial.json',dict(fixtures=results,complete=False))
+    specialized=None
+    if specializations:
+        from rig_acceptance_fixtures import verify_extended_fixtures
+        specialized=verify_extended_fixtures(root,blender=blender,render=render,validator=validator)
     output=dict(schema_version=1,created_at=timestamp(),status='automated-fixture-acceptance-passed',production_artwork_approved=False,
         visual_review='Agent inspection documented separately; production visual approval remains pending.',
         tool_versions=dict(python=platform.python_version(),numpy=importlib.metadata.version('numpy'),jsonschema=importlib.metadata.version('jsonschema'),Pillow=importlib.metadata.version('Pillow')),
+        required_fixtures=[*ARCHETYPES,'humanoid-retarget','quadruped-retarget'],
         gates=dict(numeric=True,independent_khronos=validator,independent_blender=blender,independent_threejs=browser,
-                   blender_cpu_render=blender,rendered_evidence=render,archive_restore=archives),fixtures=results)
+                   blender_cpu_render=blender,rendered_evidence=render,archive_restore=archives,
+                   specializations=specializations),fixtures=results,specializations=specialized)
     atomic_json(root/'acceptance.json',output);(root/'acceptance.partial.json').unlink(missing_ok=True);return output
 
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--destination',default='examples/rig-3d');p.add_argument('--generate',action='store_true')
-    for flag in ('blender','browser','validator','render','archives'):p.add_argument('--'+flag,action='store_true')
+    for flag in ('blender','browser','validator','render','archives','specializations'):p.add_argument('--'+flag,action='store_true')
     a=p.parse_args()
     if a.generate:generate(a.destination)
-    verify(a.destination,**{k:getattr(a,k) for k in ('blender','browser','validator','render','archives')})
+    verify(a.destination,**{k:getattr(a,k) for k in ('blender','browser','validator','render','archives','specializations')})
 
 
 if __name__=='__main__':main()
