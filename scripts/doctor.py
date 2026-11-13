@@ -13,6 +13,11 @@ def capabilities():
     from rig_doctor import rig_capability_description
     return {'interface_version': 1,
         'rig_3d': rig_capability_description(),
+        'asset_library': {'api_version': '1.0.0', 'command': 'python scripts/assets.py',
+            'delegation': 'python scripts/hatch.py assets', 'local': True,
+            'managed_jobs': ['conversion','preview','export','index','package'],
+            'discovery': 'assets capabilities', 'explicit_apply': True,
+            'production_approval': False, 'implicit_installation': False},
         'model3d_contracts': {'schema_version': 1, 'command': 'python scripts/model3d.py',
             'operations': ['capabilities', 'validate'],
             'payload_validation': 'Hash-verified snapshot and existing GLB/glTF/OBJ inspection.',
