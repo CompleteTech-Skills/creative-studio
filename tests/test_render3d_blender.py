@@ -114,6 +114,24 @@ class Supervision(unittest.TestCase):
 
 
 class ResourceAdmission(unittest.TestCase):
+    @unittest.skipUnless(sys.platform=='linux','Explicit directory authority requires Linux procfd.')
+    def test_unregistered_snapshot_descriptor_rejects_before_owner_decode(self):
+        from unittest.mock import patch
+        from render3d_blender import BlenderBackend
+        from test_render3d_contracts import request
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'source';source.mkdir()
+            descriptor=os.open(source,os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                backend=object.__new__(BlenderBackend)
+                with patch('render3d_blender.load',side_effect=AssertionError('Unregistered root must reject before reading metadata')) as read:
+                    with self.assertRaises(Render3DError) as caught:
+                        backend.render_frames(request(),Path('/proc/self/fd')/str(descriptor),root/'new-parent/output')
+                self.assertEqual(caught.exception.report['category'],'invalid-input')
+                read.assert_not_called()
+                self.assertFalse((root/'new-parent').exists())
+            finally:os.close(descriptor)
+
     def test_missing_private_publication_adapter_rejects_before_decode_or_destination(self):
         from unittest.mock import patch
         from rig_test_helpers import fixture
