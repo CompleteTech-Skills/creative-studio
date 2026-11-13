@@ -231,7 +231,7 @@ def validate_budget(budget):
              budget['schema_version'] == 1 and budget['kind'] == 'director-local-budget', 'BUDGET', 'Invalid budget snapshot.')
     limits = budget['limits']
     _require(isinstance(limits, dict) and set(limits) == {'max_cpu_seconds', 'max_memory_bytes', 'max_storage_bytes', 'max_provider_calls'}, 'BUDGET', 'Invalid budget dimensions.')
-    _require(all(type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1e15 for value in limits.values()) and
+    _require(all(type(value) in (int, float) and 0 <= value <= 1e15 and math.isfinite(value) for value in limits.values()) and
              limits['max_provider_calls'] == 0, 'BUDGET', 'Invalid local budget limits; paid/provider work is not supported.')
     unsigned = {key: value for key, value in budget.items() if key != 'revision_sha256'}
     _require(budget['revision_sha256'] == object_hash(unsigned), 'BUDGET', 'Stale budget revision.')

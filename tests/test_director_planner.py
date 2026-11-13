@@ -91,7 +91,7 @@ class DirectorPlannerTests(unittest.TestCase):
         self.assertEqual(dp.validate_budget(budget),budget)
         changed=deepcopy(budget);changed['limits']['max_cpu_seconds']=1
         with self.assertRaisesRegex(ValueError,'Stale budget'):dp.validate_budget(changed)
-        for value in [float('inf'),float('nan'),-1,True]:
+        for value in [float('inf'),float('nan'),-1,True,10**1000]:
             invalid=deepcopy(limits);invalid['max_cpu_seconds']=value
             with self.subTest(value=value),self.assertRaises(ValueError):dp.create_budget(invalid)
         invalid=deepcopy(limits);invalid['max_provider_calls']=1
