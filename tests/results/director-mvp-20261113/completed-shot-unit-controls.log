@@ -1,0 +1,8 @@
+test_a_later_completed_shot_needs_its_own_checkpoint_coverage (test_rig_director_delivery.CompletedShotCheckpointTests.test_a_later_completed_shot_needs_its_own_checkpoint_coverage) ... ok
+test_reused_result_cannot_claim_a_different_native_backend (test_rig_director_delivery.CompletedShotCheckpointTests.test_reused_result_cannot_claim_a_different_native_backend) ... ok
+test_valid_png_and_rewritten_result_cannot_replace_external_checkpoint (test_rig_director_delivery.CompletedShotCheckpointTests.test_valid_png_and_rewritten_result_cannot_replace_external_checkpoint) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.017s
+
+OK

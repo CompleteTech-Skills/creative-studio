@@ -37,7 +37,7 @@ Director #31 owns persistence, interruption and selective rework acceptance.
 A supervised optional-decoder failure can continue with
 `--resume-retained-stage PRIVATE_STAGE --retained-inventory TRUSTED_CHECKPOINT`.
 The external checkpoint supplies the original supervisor's backend identity and
-exact frame index/path/byte/hash inventory. Recovered frames must match it and
+exact frame index/path/byte/hash inventory. The checkpoint must cover every completed shot reused, including a previously completed discovery shot; missing coverage fails closed. It may cover the original first60frames or all120frames. Recovered frames must match it and
 pass independent full decoding before publication. Process usage lost before
 publication remains unavailable. This is continuation integrity from a trusted
 checkpoint, not retrospective authentication of an untrusted producer's claimed

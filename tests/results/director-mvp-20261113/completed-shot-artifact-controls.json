@@ -1,0 +1,32 @@
+{
+  "valid_png_and_rewritten_result": {
+    "rejected": true,
+    "error": {
+      "code": "DIRECTOR_DELIVERY",
+      "stage": "director-delivery",
+      "message": "Completed shot differs from trusted checkpoint or lacks checkpoint coverage.",
+      "asset": null,
+      "expected": null,
+      "observed": null,
+      "retryable": false,
+      "correction": "Correct the indicated input and retry.",
+      "preserved": null
+    },
+    "original_preserved": true
+  },
+  "later_shot_missing_checkpoint": {
+    "rejected": true,
+    "error": {
+      "code": "DIRECTOR_DELIVERY",
+      "stage": "director-delivery",
+      "message": "Completed shot differs from trusted checkpoint or lacks checkpoint coverage.",
+      "asset": null,
+      "expected": null,
+      "observed": null,
+      "retryable": false,
+      "correction": "Correct the indicated input and retry.",
+      "preserved": null
+    },
+    "original_preserved": true
+  }
+}

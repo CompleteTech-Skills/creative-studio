@@ -28,3 +28,21 @@ provider execution, production artwork or artistic approval.
 
 Use a new output destination and the shared native validation lock when running
 `python scripts/director_delivery.py PERFORMANCE_ROOT NEW_DESTINATION --blender BLENDER_4_5_3`.
+
+
+After actual execution, fresh review identified a separate completed-result resume
+branch that did not compare mutable image metadata with the external checkpoint.
+The original successful120-frame execution used the raw-stage recovery branch,
+which already enforced that checkpoint. The later fix requires exact backend and
+frame/hash coverage for every reused completed shot, including the discovery shot.
+Three focused unit controls and two whole-orchestration controls on private copies
+of the actual artifacts reject a valid replacement PNG with rewritten result
+metadata and reject absent discovery-shot checkpoint coverage. No native render
+was repeated; all original artifacts remain immutable. The receipt separately
+records the original executed fingerprints and the corrected current runtime
+fingerprint, so it does not claim that all current source files are unchanged.
+
+The canonical scene-evidence relocation from `8daaf85` shortens three historical
+artifact paths while preserving their payload hashes and an old/new path manifest.
+It repairs Windows checkout failures before tests, without changing runtime files.
+The confirmed Director Windows capability test correction is also integrated.

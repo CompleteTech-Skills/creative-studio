@@ -201,6 +201,16 @@ def encode_rendered_mvp(root, shots, destination, *, ffmpeg=None, ffprobe=None):
             'verification': verification, 'visual_review': 'not-performed'}
 
 
+def verify_completed_shot_checkpoint(result, frame_range, admission, expected_backend):
+    """Bind every reused completed shot to the trusted external continuation data."""
+    _require(expected_backend == admission['backend'] and result['backend'] == admission['backend'],
+             'Original admitted backend is unavailable for retained recovery.')
+    expected = [item for item in admission['images'] if frame_range['start'] <= item['frame'] < frame_range['end']]
+    _require([dict(frame=item['frame'], **item['file']) for item in result['images']] == expected and
+             [item['frame'] for item in expected] == list(range(frame_range['start'], frame_range['end'])),
+             'Completed shot differs from trusted checkpoint or lacks checkpoint coverage.')
+
+
 def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffprobe=None, retained_stage=None, retained_inventory=None):
     """Execute both canonical shots and encode independently verified masters.
 
@@ -242,6 +252,18 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
             retained_bytes = stream.read(1024**2+1)
         retained_admission = decode_json(retained_bytes, max_bytes=1024**2)
         retained_checkpoint_sha256 = hashlib.sha256(retained_bytes).hexdigest()
+        import re
+        images = retained_admission.get('images') if isinstance(retained_admission, dict) else None
+        _require(isinstance(images, list) and len(images) in (60, 120), 'Checkpoint must cover the first shot or both complete shots.')
+        for item in images:
+            _require(isinstance(item, dict) and set(item) == {'frame', 'path', 'bytes', 'sha256'} and
+                     type(item['frame']) is int and 0 <= item['frame'] < 120 and
+                     item['path'] == f'frames/{item["frame"]:06d}.png' and
+                     type(item['bytes']) is int and 0 <= item['bytes'] <= 2*1024**3 and
+                     isinstance(item['sha256'], str) and re.fullmatch('[0-9a-f]{64}', item['sha256']) is not None,
+                     'Invalid trusted checkpoint frame inventory.')
+        _require([item['frame'] for item in images] == list(range(len(images))),
+                 'Checkpoint frames must be unique, complete and ordered.')
     motion = verify_performance_motion(root)
     static = verify_no_motion_negative(root)
     bundle = load_project(root / 'scene-project')
@@ -300,6 +322,7 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
                 from render3d_contracts import load
                 from render3d_verify import verify_result
                 result = load(stage / identifier / 'result.json', 'RenderResult')
+                verify_completed_shot_checkpoint(result, request['frame_range'], retained_admission, identity)
                 verify_result(request, result, stage / identifier, snapshot_root=snapshot_root, expected_backend=identity)
             elif retained_stage is not None and identifier == 'establish':
                 from render3d_blender import recover_verified_stage
@@ -311,7 +334,8 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
                 admitted = retained_admission['backend']
                 _require(identity == admitted, 'Original admitted backend is unavailable for retained recovery.')
                 result = recover_verified_stage(request, candidates[0], stage / identifier,
-                    expected_backend=admitted, executable=backend.executable, expected_images=retained_admission['images'])
+                    expected_backend=admitted, executable=backend.executable,
+                    expected_images=[item for item in retained_admission['images'] if start <= item['frame'] < end])
             else:
                 result = backend.render_frames(request, snapshot_root, stage / identifier)
             shot = dict(request=request, result=result, directory=identifier,

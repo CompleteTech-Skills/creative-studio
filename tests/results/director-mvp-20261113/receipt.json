@@ -172,6 +172,34 @@
     "motion-tests.log": "1285751a5334d6008649a3c9f0f39fa478ba8b8c4a38cad23c40db3a6ace3fd0",
     "actual-completion.log": "8caa713b66a3057b35ccdcdc15a024c555e554d256bfb4903f80bb60d4dc884b",
     "trusted-continuation-checkpoint.json": "d71e39c9aa1a20cedd02e11031e5a279db5bc0f34b0bdc3dea74aa7e0abc2532",
-    "valid-png-substitution-negative.json": "32dae41b90873cd0f2c00ef3c3f924bd53300fcbd8499f533b9dc79fea7a1eaf"
-  }
+    "valid-png-substitution-negative.json": "32dae41b90873cd0f2c00ef3c3f924bd53300fcbd8499f533b9dc79fea7a1eaf",
+    "completed-shot-unit-controls.log": "78a1e760abd2c7f06d43469f6d51be884f81d11ee371223375252a88578cfbbd",
+    "completed-shot-artifact-controls.log": "aa2761c0f01b88bf0d6899c2b79aec2a54670923250864e63ad707b1e387c1c9",
+    "completed-shot-artifact-controls.json": "1bcb5470ba4fd68e7853040cccf2c940772508d91f43a0442510867a426660ef"
+  },
+  "post_execution_corrections": [
+    {
+      "path": "scripts/director_delivery.py",
+      "scope": "Completed-shot continuation metadata guards; original actual run used the already checkpoint-bound raw-stage recovery branch.",
+      "behavior": "Every reused completed shot must match external backend and exact frame/path/byte/hash inventory; second-shot reuse requires external checkpoint coverage too.",
+      "regressions": "Three valid-PNG/coverage/backend unit controls passed; two copied-actual-artifact whole-orchestration controls passed without native rendering. Original120 artifacts and original60 checkpoint hashes were preserved."
+    }
+  ],
+  "current_runtime_file_sha256": {
+    "scripts/director_delivery.py": "d0c87d74b637e1b8cb2ec943202ee4bc70bbec0e26164052b007e647bded2ea8",
+    "scripts/director_scene.py": "6dc62b6899d6ebbb2a580d426542c3c526884d65d8c2e698ecf7950aaec7c080",
+    "scripts/director_scene_binding.py": "40216aedae830a9e5b7e6a3f499d0dccd7b13092ec80aa3556df7471c24b448e",
+    "scripts/director_scene_worker.py": "9719c337084bef71fd2ebd5ee0ce8711bb886fab91c02df393e0d7b9416ab3c6",
+    "scripts/render3d_blender.py": "7a02244c8866b6742c5de86221e5e43c6190ab00f003658deb87928415178c16",
+    "scripts/render3d_blender_worker.py": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+    "scripts/render3d_contracts.py": "7a318877c9b58581e6729479d23792f7388d40fb962d279c5294a3d24c3909ff",
+    "scripts/render3d_snapshot.py": "2ed5aaa18675a98920d62bfc7b3ffea117e2d96962605a8f8301deb5909d9edc",
+    "scripts/render3d_verify.py": "60d2b870206734319637c30a6be176404c92042a3093da5bc80ef2a0f9fba357",
+    "scripts/render3d_acceptance.py": "dcb91aa6c3b76580362d05627268dc43836b9948bca7683639b80a2872bf5dde",
+    "scripts/scene3d_evaluate.py": "d2f6952404ee1865e38713b5bdc2759e143da81c1f0521f3bda84bc1aedde83e",
+    "scripts/silent_video.py": "45fb756f6686f2caa0376b402666e5f40c8ca3edff5b7be0a207e4b75a802560"
+  },
+  "post_execution_changed_runtime_files": [
+    "scripts/director_delivery.py"
+  ]
 }
