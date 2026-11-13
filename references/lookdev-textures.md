@@ -235,3 +235,30 @@ jsonschema dependency directory matching Blender Python (3.11 for Blender 4.5).
 This directory is passed only to the trusted Blender fixture. Keep host Python
 3.12 dependencies on the host search path; compiled dependency wheels must not
 be shared across Python ABIs.
+
+## Canonical world triplanar color sampling
+
+`lookdev_triplanar.create_triplanar_color(shader_tree, Texture3D, original_bytes,
+shared_cache, scale=1, sharpness=4)` verifies the canonical original through the
+texture owner, installs one image through the bounded cache/image owner, and
+returns color and alpha shader sockets plus an exact source/derivation receipt.
+It creates no material, persistent store or replacement slot mapper. The existing
+material owner may connect these sockets to its authoritative shader.
+
+The three projections follow `project_surface_uvs` including negative-facing
+orientation, world-meter repeat density and normalized powered-normal weights.
+Position and normal use `rig_math.BLENDER_FROM_CANONICAL`; generated object bounds
+never replace canonical world coordinates. Nearest/linear and repeat/clamp retain
+the shared sampler's explicit semantics. Only color roles are supported. Tangent
+normal maps, mirrored repeat and mipmap sampling reject explicitly. The adapter
+blends straight color and alpha separately; it does not claim premultiplied color,
+normal reorientation or GPU residency. On failure it removes only nodes and the
+image allocated by that call; existing caller material nodes remain intact.
+
+The optional gate in `tests/optional/test_lookdev_triplanar_native.py`, enabled by
+`HATCH_LOOKDEV_TRIPLANAR_TEST=1`, checks actual Cycles outputs for six oriented
+axial faces and three equal-weight seam cases against independent CPU projection
+and decoded source samples, then saves/reopens the packed image-bound shader.
+Set `HATCH_BLENDER`, a fresh `HATCH_LOOKDEV_TRIPLANAR_EVIDENCE` directory and, when
+Blender's Python lacks validator packages, `HATCH_LOOKDEV_TEST_SITE` to compatible
+optional validator dependencies. No dependency is added to ordinary 2D use.

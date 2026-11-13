@@ -1,0 +1,41 @@
+name: LookDev triplanar shader validation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  triplanar-native:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-rig-test.txt
+      - run: python -m unittest discover -s tests -p test_rig_lookdev_triplanar.py -v
+      - name: Install checksum-verified Blender and compatible validator
+        run: |
+          curl -fL --retry 3 https://download.blender.org/release/Blender4.5/blender-4.5.3-linux-x64.tar.xz -o /tmp/blender.tar.xz
+          echo '975c58fcb244273838534bba771e64ad87739216b0f9b39a888531a49a72d845  /tmp/blender.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/blender.tar.xz -C /tmp
+          python -m pip install --target /tmp/triplanar-native-site --python-version 3.11 --only-binary=:all: 'jsonschema>=4.23,<5'
+      - name: Verify actual oriented projections and continuous blends
+        run: python -m unittest discover -s tests/optional -p test_lookdev_triplanar_native.py -v 2>&1 | tee /tmp/lookdev-triplanar.log
+        env:
+          HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
+          HATCH_LOOKDEV_TEST_SITE: /tmp/triplanar-native-site
+          HATCH_LOOKDEV_TRIPLANAR_TEST: '1'
+          HATCH_LOOKDEV_TRIPLANAR_EVIDENCE: /tmp/lookdev-triplanar-evidence
+          OPENBLAS_NUM_THREADS: '1'
+          OMP_NUM_THREADS: '1'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: lookdev-triplanar-evidence
+          path: |
+            /tmp/lookdev-triplanar.log
+            /tmp/lookdev-triplanar-evidence/
