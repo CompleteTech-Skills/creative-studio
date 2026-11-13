@@ -267,16 +267,20 @@ class SpatialIndex:
             require(tested <= MAX_QUERY_TESTS, 'Ray query budget exceeded.', 'SCENE3D_SPATIAL_LIMIT')
             for index, (a,b,c) in enumerate(triangles):
                 e1, e2 = b-a, c-a
+                scale = max(float(np.max(np.abs(e1))),float(np.max(np.abs(e2))))
+                if scale == 0:
+                    continue
+                e1, e2 = e1/scale, e2/scale
                 p = np.cross(direction,e2)
                 det = np.dot(e1,p)
-                if abs(det) < EPS:
+                if abs(det) < np.finfo(float).eps:
                     continue
                 inverse = 1./det
-                offset = origin-a
+                offset = (origin-a)/scale
                 u = np.dot(offset,p)*inverse
                 q = np.cross(offset,e1)
                 v = np.dot(direction,q)*inverse
-                distance = np.dot(e2,q)*inverse
+                distance = np.dot(e2,q)*inverse*scale
                 if u >= -EPS and v >= -EPS and u+v <= 1+EPS and -EPS <= distance <= limit:
                     normal = np.cross(e1,e2)
                     normal /= np.linalg.norm(normal)

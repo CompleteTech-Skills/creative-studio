@@ -34,6 +34,13 @@ class SpatialTests(unittest.TestCase):
         self.assertEqual(hit['triangle'],0)
         self.assertEqual(index.raycast([2.2,2,.2],[0,-1e308,0]),hit)
 
+    def test_ray_tiny_triangle_preserves_interior(self):
+        index = SpatialIndex(self.graph(),{'mesh':dict(vertices=[[0,0,0],[0,0,1e-6],[1e-6,0,0]],triangles=[[0,1,2]])})
+        hit = index.raycast([2.00000025,1,2.5e-7],[0,-1,0])
+        self.assertIsNotNone(hit)
+        self.assertAlmostEqual(hit['distance'],1)
+        np.testing.assert_allclose(hit['normal'],[0,1,0])
+
     def test_bounds_only_not_misrepresented_as_triangle(self):
         index = SpatialIndex(self.graph())
         self.assertEqual(index.overlap(dict(minimum=[2,0,0],maximum=[3,1,1])),['mesh'])
