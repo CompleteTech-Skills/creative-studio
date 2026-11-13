@@ -395,7 +395,9 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
             _need(maximum is not None and amount<=maximum,'RESOURCE','Resource estimate exceeds capability bound: '+resource)
         if operation=='planning.provider':
             _need(network_policy=='allow-configured' and budget_reservation_id is not None,'POLICY','Remote planning requires configured network authority and a reservation.')
-            known=receipt_prices[0] if receipt_prices and all(p==receipt_prices[0] for p in receipt_prices) else None
+            _need(bool(receipt_prices) and all(p==receipt_prices[0] for p in receipt_prices),
+                  'EVIDENCE','Provider execution receipts disagree about pricing.')
+            known=receipt_prices[0]
             _need(price_per_call is None or known is not None and type(price_per_call) in (int,float)
                   and math.isfinite(price_per_call) and price_per_call==known[0],
                   'PRICE','Explicit provider price differs from retained execution evidence.')
@@ -409,6 +411,8 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                 _need(type(calls) is int and calls>=0,'RESOURCE','Provider call estimate must be a nonnegative integer.')
                 _need(Decimal(str(price))*calls<=Decimal(str(budget_amount)),
                       'RESOURCE','Estimated provider amount exceeds budget.')
+                _need(Decimal(str(price))*calls<=Decimal(str(item['limits']['max_amount'])),
+                      'RESOURCE','Estimated provider amount exceeds capability policy.')
     return deepcopy(value)
 
 
