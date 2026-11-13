@@ -47,7 +47,7 @@ class ActualSamplerTests(unittest.TestCase):
         (output/'job.json').write_text(json.dumps(dict(scripts=str(root/'scripts'),output=str(output),
                                                        document=document,pixels=decoded.pixels.tolist())))
         result=subprocess.run([os.environ['HATCH_BLENDER'],'--background','--factory-startup',
-            '--disable-autoexec','--threads','1','--python-exit-code','1','--python',
+            '--disable-autoexec','--python-use-system-env','--threads','1','--python-exit-code','1','--python',
             str(root/'tests/fixtures/lookdev_sampling_probe.py'),'--',str(output/'job.json')],
             text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=180)
         (output/'render.log').write_text(result.stdout)
