@@ -40,6 +40,8 @@ class TextureTests(unittest.TestCase):
             manifest['identity'].update(id='albedo',kind='texture',name='Albedo',slug='albedo',subtype='surface')
             manifest['files']=[record('texture.json',contract,'json','application/json'),
                                record(document['file']['path'],payload,'png','image/png')]
+            manifest['files'][0].update(role=t.TEXTURE_DOCUMENT_ROLE,
+                technical_metadata=dict(t.TEXTURE_DOCUMENT_METADATA))
             manifest['compatibility']['formats']=['json','png']
             manifest['compatibility']['texture_channels']=['base-color']
             manifest['metadata']['category']='texture'
@@ -52,8 +54,27 @@ class TextureTests(unittest.TestCase):
                 license_record['path']:root/'examples/asset-library-foundation/source/license.txt'})
             actual,pixels=t.load_library_texture(library,reference,'texture.json')
             self.assertEqual(actual,document)
+            self.assertEqual(t.find_library_texture_document(library,reference),'texture.json')
+            self.assertEqual(t.load_library_texture(library,reference)[0],document)
             self.assertEqual(pixels.source_sha256,hashlib.sha256(payload).hexdigest())
             self.assertEqual(library.read_file(reference,document['file']['path']),payload)
+            for index,change in enumerate(('unmarked','wrong-version','bool-version','ambiguous'),1):
+                variant=deepcopy(manifest);variant['version']='1.0.'+str(index)
+                sources={'texture.json':folder/'texture.json',document['file']['path']:folder/'original.png',
+                         license_record['path']:root/'examples/asset-library-foundation/source/license.txt'}
+                if change=='unmarked':variant['files'][0]['role']='texture'
+                elif change in ('wrong-version','bool-version'):
+                    variant['files'][0]['technical_metadata']['native-schema-version']=2 if change=='wrong-version' else True
+                else:
+                    duplicate=deepcopy(variant['files'][0]);duplicate['path']='texture-copy.json'
+                    variant['files'].append(duplicate);sources['texture-copy.json']=folder/'texture.json'
+                    variant['publication']['inventory'].append('texture-copy.json')
+                variant['provenance']['sources']=deepcopy([x for x in variant['files'] if x['role']!='license'])
+                alternate=library.register(seal(variant),sources)
+                with self.subTest(change=change),self.assertRaises(RigError):
+                    t.find_library_texture_document(library,alternate)
+                if change=='unmarked':
+                    self.assertEqual(t.load_library_texture(library,alternate,'texture.json')[0],document)
             wrong=deepcopy(reference);wrong['sha256']='0'*64
             with self.assertRaises(RigError):t.load_library_texture(library,wrong,'texture.json')
             with self.assertRaises(RigError):t.load_library_texture(library,reference,'../texture.json')

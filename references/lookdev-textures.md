@@ -164,3 +164,17 @@ shared native validation flock and an owned disk TMPDIR. The separate six-mesh
 response gate still covers curved and hard-edge geometry; directional correctness
 on curved/skinned imported MikkTSpace assets and cross-engine equivalence remain
 separate validation obligations.
+
+## Explicit native document discovery
+
+New texture asset versions declare exactly one required JSON file with
+`role: "texture3d-document"`, MIME `application/json`, and flat
+`technical_metadata: {"native-kind": "texture3d", "native-schema-version": 1}`.
+`find_library_texture_document(library, exact_asset_reference)` reads the verified
+inventory and returns that declared logical path. It rejects missing, ambiguous
+or unsupported declarations; it never searches arbitrary JSON or guesses names.
+`load_library_texture(library, reference)` uses this convention when no path is
+provided. Existing unmarked versions continue to load through their explicitly
+retained `document_path`; callers must not invent a discovery path for them.
+The Texture3D document and its actual original pixels are still independently
+validated after selection. Markers identify a declared entry point, not approval.

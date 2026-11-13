@@ -24,6 +24,8 @@ from lookdev_contracts import canonical_bytes, portable_path
 from rig_errors import RigError, require
 
 VERSION = "1.0.0"
+TEXTURE_DOCUMENT_ROLE = 'texture3d-document'
+TEXTURE_DOCUMENT_METADATA = {'native-kind': 'texture3d', 'native-schema-version': 1}
 KINDS = ("wood", "stone", "marble", "concrete", "fabric", "leather", "scratched-metal",
          "brushed-metal", "clay", "sand", "painted-plastic", "ceramic", "toon-ramp")
 COLOR_ROLES = {"base-color", "emission", "sheen-color", "environment"}
@@ -383,7 +385,24 @@ def verify_texture_document(document, payload, *, limits=Limits()):
     return decoded
 
 
-def load_library_texture(library, reference, document_path, *, limits=Limits()):
+def find_library_texture_document(library, reference):
+    """Find only the explicitly inventoried native document, never guess JSON."""
+    manifest=library.resolve(reference)
+    candidates=[f for f in manifest['files'] if f['role']==TEXTURE_DOCUMENT_ROLE]
+    require(len(candidates)==1,'TEXTURE_DOCUMENT',
+            'Expected one declared texture3d-document; unmarked versions require an explicit document path.')
+    record=candidates[0]
+    metadata=record.get('technical_metadata',{})
+    require(record['format']=='json' and record['mime_type']=='application/json'
+            and record['required'] is True
+            and metadata.get('native-kind')=='texture3d'
+            and type(metadata.get('native-schema-version')) is int
+            and metadata['native-schema-version']==1,
+            'TEXTURE_DOCUMENT','Unsupported native texture document marker.')
+    return record['path']
+
+
+def load_library_texture(library, reference, document_path=None, *, limits=Limits()):
     """Read a Texture3D document and exact pixels through the shared asset owner.
 
     The public AssetResolver methods verify the immutable version reference and
@@ -393,6 +412,8 @@ def load_library_texture(library, reference, document_path, *, limits=Limits()):
     """
     from rig_errors import decode_json
     from lookdev_contracts import MAX_RESOURCE_BYTES
+    if document_path is None:
+        document_path=find_library_texture_document(library,reference)
     portable_path(document_path)
     library.resolve(reference)
     contract = library.read_file(reference, document_path)
