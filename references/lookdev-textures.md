@@ -147,7 +147,7 @@ This is an application memory cache, not durable disk cache, GPU allocation or
 KTX2 compression. Source decoding and mipmap working memory retain their own
 separate admission limit. Shader binding, GPU texture upload and backend-native
 compression must consume these explicit buffers through their owning renderer.
-Run `python -m unittest discover -s tests -p test_lookdev_texture_cache.py -v`.
+Run `python -m unittest discover -s tests -p test_rig_lookdev_texture_cache.py -v`.
 
 ## Directional tangent ground truth
 
@@ -235,3 +235,7 @@ jsonschema dependency directory matching Blender Python (3.11 for Blender 4.5).
 This directory is passed only to the trusted Blender fixture. Keep host Python
 3.12 dependencies on the host search path; compiled dependency wheels must not
 be shared across Python ABIs.
+
+Cache and sampler tests use the `test_rig_` optional 3D namespace. The
+ordinary 2D gate does not import them; the LookDev workflow explicitly runs
+cache regressions and the actual cache/sampler native acceptance gates.
