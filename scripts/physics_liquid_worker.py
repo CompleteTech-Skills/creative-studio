@@ -67,17 +67,22 @@ def main():
         if hashlib.sha256(path.read_bytes()).hexdigest()!=job['expected_blend_sha256']:raise ValueError('Native liquid project changed.')
         bpy.ops.wm.open_mainfile(filepath=str(path),load_ui=False,use_scripts=False)
         scene=bpy.context.scene;domain=bpy.data.objects[d['id']]
+        if scene.render.fps!=world['fps']['numerator'] or scene.render.fps_base!=world['fps']['denominator']:
+            raise ValueError('Reopened native liquid clock differs from the admitted clock.')
         samples=sample(scene,domain,reversed(range(frames)),world['budgets']['vertices'],world['budgets']['triangles'])
         render(scene,root,settings,'replay-')
         (root/'replay-mesh-samples.json').write_bytes(canonical(dict(samples=samples)))
         (root/'replay-report.json').write_bytes(canonical(dict(mode='reopen',blend_sha256=job['expected_blend_sha256'],
-            frames=list(range(frames)),version=bpy.app.version_string,build=bpy.app.build_hash.decode())))
+            frames=list(range(frames)),version=bpy.app.version_string,build=bpy.app.build_hash.decode(),
+            clock=dict(fps_numerator=scene.render.fps,fps_base=scene.render.fps_base))))
         return
     if job['mode']!='simulate' or job['expected_blend_sha256'] is not None:raise ValueError('Invalid liquid operation.')
     bpy.ops.wm.read_factory_settings(use_empty=True)
     if not bpy.app.build_options.fluid or not bpy.app.build_options.openvdb:raise ValueError('Mantaflow/OpenVDB unavailable.')
     scene=bpy.context.scene;scene.frame_start=1;scene.frame_end=frames
     scene.render.fps=world['fps']['numerator'];scene.render.fps_base=world['fps']['denominator']
+    if scene.render.fps!=world['fps']['numerator'] or scene.render.fps_base!=world['fps']['denominator']:
+        raise ValueError('Native liquid clock changed or clamped the admitted clock.')
     scene.gravity=BASIS.to_3x3()@Vector(world['gravity'])
     objects={}
     for body in world['bodies']:
@@ -116,7 +121,8 @@ def main():
     ds.use_viscosity=d['viscosity']>0;ds.viscosity_value=d['viscosity']
     ds.cfl_condition=settings['cfl'];ds.timesteps_min=settings['minimum_substeps'];ds.timesteps_max=settings['maximum_substeps']
     for name,value in settings['boundaries'].items():setattr(ds,'use_collision_border_'+name,value)
-    observed=dict(resolution=ds.resolution_max,mesh_scale=ds.mesh_scale,particle_radius=ds.particle_radius,
+    observed=dict(fps_numerator=scene.render.fps,fps_base=scene.render.fps_base,
+        resolution=ds.resolution_max,mesh_scale=ds.mesh_scale,particle_radius=ds.particle_radius,
         viscosity_enabled=ds.use_viscosity,viscosity=ds.viscosity_value,cfl=ds.cfl_condition,
         minimum_substeps=ds.timesteps_min,maximum_substeps=ds.timesteps_max,
         boundaries={name:getattr(ds,'use_collision_border_'+name) for name in settings['boundaries']})

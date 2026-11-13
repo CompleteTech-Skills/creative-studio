@@ -27,6 +27,8 @@ class NativeLiquidTests(unittest.TestCase):
     def test_real_bake_reopen_and_corruption(self):
         with self.workspace('pouring') as root:
             world,payloads,settings=build_liquid_inputs()
+            world['fps']=dict(numerator=30000,denominator=1001)
+            world['solver']['fixed_step']=dict(numerator=1001,denominator=30000)
             world['components'][0]['resolution']=[float(v) for v in world['components'][0]['resolution']]
             original_world=core.canonical(world)
             original=dict(payloads)
@@ -38,6 +40,8 @@ class NativeLiquidTests(unittest.TestCase):
             self.assertTrue(report['geometry']['reopened_geometry_verified'])
             self.assertLessEqual(report['geometry']['maximum_native_vertex_error'],2e-5)
             self.assertEqual(len(report['geometry']['samples']),48)
+            observed=core.parse((root/'liquid-report.json').read_bytes())['observed']
+            self.assertEqual((observed['fps_numerator'],observed['fps_base']),(30000,1001))
             # Updating inventory hashes cannot conceal stale source/worker/replay bindings.
             manifest_path=root/'liquid-cache.json';manifest_bytes=manifest_path.read_bytes()
             mutations={'inputs/inlet.obj':b'v 99 99 99\n',
@@ -68,6 +72,35 @@ class NativeLiquidTests(unittest.TestCase):
                 mesh.write_bytes(b'corrupted')
                 with self.assertRaises(core.BackendError):verify_cache(root)
             finally:mesh.write_bytes(original)
+            # Rebinding unsigned hashes cannot raise the world's declared storage limits.
+            paths=['world.json','liquid-job.json','liquid-report.json','liquid-cache.json']
+            pristine={name:(root/name).read_bytes() for name in paths}
+            for field,manifest_only in [('cache_bytes',False),('temporary_bytes',False),('bake_file_bytes',False),
+                ('cache_bytes',True),('temporary_bytes',True)]:
+                with self.subTest(field=field,manifest_only=manifest_only):
+                    try:
+                        changed=core.parse(pristine['world.json']);changed['budgets'][field]=1
+                        manifest=core.parse(pristine['liquid-cache.json'])
+                        for _ in range(8):
+                            world_data=core.canonical(changed);world_hash=core.digest(world_data)
+                            job=core.parse(pristine['liquid-job.json']);job.update(world=changed,world_sha256=world_hash)
+                            native_report=core.parse(pristine['liquid-report.json']);native_report['world_sha256']=world_hash
+                            replacement={'world.json':world_data,'liquid-job.json':core.canonical(job),
+                                'liquid-report.json':core.canonical(native_report)}
+                            manifest['world_sha256']=world_hash
+                            for entry in manifest['files']:
+                                if entry['path'] in replacement:
+                                    data=replacement[entry['path']];entry.update(bytes=len(data),sha256=core.digest(data))
+                            capacity=sum(entry['bytes'] for entry in manifest['files'])
+                            if not manifest_only or changed['budgets'][field]==capacity:break
+                            changed['budgets'][field]=capacity
+                        else:self.fail('Storage boundary did not stabilize.')
+                        for name,data in replacement.items():(root/name).write_bytes(data)
+                        (root/'liquid-cache.json').write_bytes(core.canonical(manifest))
+                        with self.assertRaises(core.BackendError) as raised:verify_cache(root)
+                        self.assertEqual(raised.exception.report['code'],'PHYSICS_CACHE_LIMIT')
+                    finally:
+                        for name,data in pristine.items():(root/name).write_bytes(data)
 
     def test_actual_viscosity_moving_obstacle_and_open_boundary(self):
         results={}

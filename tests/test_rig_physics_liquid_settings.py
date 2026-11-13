@@ -1,4 +1,5 @@
 from copy import deepcopy
+from fractions import Fraction
 from pathlib import Path
 import sys
 import tempfile
@@ -10,6 +11,19 @@ from physics_liquid_settings import admit,validate_settings,schemas
 
 
 class LiquidSettingsTests(unittest.TestCase):
+    def test_native_clock_representability_is_checked_before_execution(self):
+        for numerator,denominator,accepted in [(24,1,True),(30000,1001,True),(240,1,True),
+            (1000000,1,False),(30000000,1001001,False),(1,2,False)]:
+            with self.subTest(numerator=numerator,denominator=denominator):
+                world,_,settings=build_liquid_inputs()
+                world['fps']=dict(numerator=numerator,denominator=denominator)
+                step=Fraction(denominator,numerator)
+                world['solver']['fixed_step']=dict(numerator=step.numerator,denominator=step.denominator)
+                if accepted:admit(world,settings)
+                else:
+                    with self.assertRaises(core.BackendError) as raised:admit(world,settings)
+                    self.assertEqual(raised.exception.report['code'],'PHYSICS_LIQUID_UNSUPPORTED')
+
     def test_integer_valued_domain_resolution_preserves_source_bytes(self):
         world,_,settings=build_liquid_inputs()
         world['components'][0]['resolution']=[24.,24.,24.]

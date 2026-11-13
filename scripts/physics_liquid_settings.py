@@ -66,6 +66,10 @@ def admit(world, settings):
     core.require(len(world['components'])==1 and world['components'][0]['category']=='liquid' and not world['joints'] and not world['events'] and not world['forces'],
         'PHYSICS_LIQUID_UNSUPPORTED','This adapter supports one liquid domain without rigid joints/events/force fields.')
     d=world['components'][0]
+    fps=world['fps']
+    core.require(1<=Fraction(fps['numerator'],fps['denominator'])<=240 and
+        fps['numerator']<=32767 and fps['denominator']<=1000000,
+        'PHYSICS_LIQUID_UNSUPPORTED','Liquid output clocks must be 1..240 fps with exactly representable native fps/base fields.')
     core.require(d['transform']['rotation']==[0,0,0,1] and len(set(d['size']))==1 and len(set(d['resolution']))==1 and
         8<=d['resolution'][0]<=64 and .1<=d['size'][0]<=100 and all(abs(x)<=1000 for x in d['transform']['translation']),
         'PHYSICS_LIQUID_UNSUPPORTED','Liquid domain must be an unrotated cube with bounded 8..64 resolution.')

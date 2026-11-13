@@ -17,33 +17,47 @@ from physics_liquid_validation import verify_geometry
 
 def verify_cache(root, *, expected_world_sha256=None):
     with core._Reader(root) as reader:
-        manifest=core.parse(reader.read('liquid-cache.json',1024*1024))
+        manifest_bytes=reader.read('liquid-cache.json',1024*1024)
+        manifest=core.parse(manifest_bytes)
         core.require(type(manifest) is dict and set(manifest)=={'protocol','kind','world_sha256','settings_sha256','files','backend','resources','project_manifest'} and
             manifest['protocol']==1 and manifest['kind']=='hatch-native-liquid-cache',
             'PHYSICS_CACHE_CORRUPT','Invalid liquid cache manifest.')
         files=manifest['files']
         core.require(type(files) is list and 1<=len(files)<=core.MAX_FILES,'PHYSICS_CACHE_CORRUPT','Invalid liquid inventory.')
-        names=set();total=0;payloads={}
+        names=set();total=0;payloads={};entries={}
         for entry in files:
             core.require(type(entry) is dict and set(entry)=={'path','bytes','sha256'} and type(entry['bytes']) is int and
                 0<=entry['bytes']<=core.MAX_CACHE_BYTES,'PHYSICS_CACHE_CORRUPT','Invalid inventory entry.')
             name=core.path_name(entry['path'])
             core.require(name not in names and name!='liquid-cache.json','PHYSICS_CACHE_CORRUPT','Duplicate inventory entry.')
-            names.add(name);total+=entry['bytes']
-            core.require(total<=256*1024**2,'PHYSICS_CACHE_CORRUPT','Liquid cache exceeds bounded profile.')
+            names.add(name);total+=entry['bytes'];entries[name]=entry
+            core.require(total+len(manifest_bytes)<=core.MAX_CACHE_BYTES,'PHYSICS_CACHE_CORRUPT','Liquid cache exceeds bounded profile.')
+        core.require(reader.names()==names|{'liquid-cache.json'},'PHYSICS_CACHE_CORRUPT','Liquid inventory is incomplete.')
+        core.require({'world.json','liquid-settings.json'}<=names,'PHYSICS_CACHE_CORRUPT','Liquid configuration is missing.')
+        # Admit the small configuration before reading bulk native artifacts.
+        for name in ('world.json','liquid-settings.json'):
+            entry=entries[name];payload=reader.read(name,min(entry['bytes'],1024*1024))
+            core.require(len(payload)==entry['bytes'] and core.digest(payload)==entry['sha256'],
+                'PHYSICS_CACHE_CORRUPT','Liquid configuration changed.')
+            payloads[name]=payload
+        world,settings=admit(core.parse(payloads['world.json']),core.parse(payloads['liquid-settings.json']))
+        budgets=world['budgets']
+        core.require(total+len(manifest_bytes)<=min(budgets['cache_bytes'],budgets['temporary_bytes']) and
+            len(manifest_bytes)<=budgets['bake_file_bytes'] and
+            all(entry['bytes']<=budgets['bake_file_bytes'] for entry in files),
+            'PHYSICS_CACHE_LIMIT','Liquid cache exceeds retained world storage limits, including its manifest.')
+        for name,entry in entries.items():
+            if name in payloads:continue
             payload=reader.read(name,entry['bytes'])
             core.require(len(payload)==entry['bytes'] and core.digest(payload)==entry['sha256'],
                 'PHYSICS_CACHE_CORRUPT','Liquid artifact changed.')
             payloads[name]=payload
-        core.require(reader.names()==names|{'liquid-cache.json'},'PHYSICS_CACHE_CORRUPT','Liquid inventory is incomplete.')
         class Snapshot:
             def read(self,name,limit=core.MAX_CACHE_BYTES):
                 value=payloads.get(name)
                 core.require(value is not None and len(value)<=limit,'PHYSICS_CACHE_CORRUPT','Missing or excessive liquid artifact.')
                 return value
         reader=Snapshot()
-        world=core.parse(reader.read('world.json',1024*1024));settings=core.parse(reader.read('liquid-settings.json',1024*1024))
-        world,settings=admit(world,settings)
         core.require(core.digest(core.canonical(world))==manifest['world_sha256'] and
             core.digest(core.canonical(settings))==manifest['settings_sha256'] and
             (expected_world_sha256 is None or expected_world_sha256==manifest['world_sha256']),
@@ -70,7 +84,8 @@ def verify_cache(root, *, expected_world_sha256=None):
             report['native_bake'] is True and 'Blender '+report['version']==manifest['backend']['application_version'],
             'PHYSICS_CACHE_CORRUPT','Liquid worker report identity differs.')
         d=world['components'][0]
-        observed=dict(resolution=d['resolution'][0],mesh_scale=settings['mesh_scale'],particle_radius=settings['particle_radius'],
+        observed=dict(fps_numerator=world['fps']['numerator'],fps_base=world['fps']['denominator'],
+            resolution=d['resolution'][0],mesh_scale=settings['mesh_scale'],particle_radius=settings['particle_radius'],
             viscosity_enabled=d['viscosity']>0,viscosity=d['viscosity'],cfl=settings['cfl'],
             minimum_substeps=settings['minimum_substeps'],maximum_substeps=settings['maximum_substeps'],boundaries=settings['boundaries'])
         actual=report.get('observed')
@@ -80,7 +95,8 @@ def verify_cache(root, *, expected_world_sha256=None):
             core.require(same,'PHYSICS_CACHE_CORRUPT','Liquid native setting differs: '+key)
         core.require(report.get('frame_count')==world['frame_range']['end'] and report.get('render_frames')==settings['render_frames'] and
             report.get('cache_format')=='OPENVDB+BOBJECT' and report.get('build')==core.SUPPORTED_BLENDER_BUILD and
-            replay.get('version')==report['version'] and replay.get('build')==report['build'],
+            replay.get('version')==report['version'] and replay.get('build')==report['build'] and
+            replay.get('clock')==dict(fps_numerator=world['fps']['numerator'],fps_base=world['fps']['denominator']),
             'PHYSICS_CACHE_CORRUPT','Liquid native report timing, cache or build differs.')
         from PIL import Image
         for frame in settings['render_frames']:
@@ -135,10 +151,11 @@ def simulate(world, source_payloads, destination, *, settings, executable=None, 
         with core._Reader(stage) as reader:verify_geometry(reader,world)
         manifest=dict(protocol=1,kind='hatch-native-liquid-cache',world_sha256=job['world_sha256'],
             settings_sha256=job['settings_sha256'],files=core._inventory(stage),backend=identity,resources=resources,project_manifest=project_manifest)
-        core.require(sum(x['bytes'] for x in manifest['files'])<=min(world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']) and
-            all(x['bytes']<=world['budgets']['bake_file_bytes'] for x in manifest['files']),
+        manifest_bytes=core.canonical(manifest)
+        core.require(sum(x['bytes'] for x in manifest['files'])+len(manifest_bytes)<=min(core.MAX_CACHE_BYTES,world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']) and
+            len(manifest_bytes)<=world['budgets']['bake_file_bytes'] and all(x['bytes']<=world['budgets']['bake_file_bytes'] for x in manifest['files']),
             'PHYSICS_RESOURCE_LIMIT','Liquid output exceeds admitted storage limits.')
-        core._write(stage/'liquid-cache.json',core.canonical(manifest))
+        core._write(stage/'liquid-cache.json',manifest_bytes)
         result=verify_cache(stage,expected_world_sha256=job['world_sha256'])
         core._publish(stage,destination)
         return result
