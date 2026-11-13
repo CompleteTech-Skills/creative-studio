@@ -258,7 +258,7 @@ def native_signature(graph, value, path):
     if path not in {f['path'] for f in manifest['files']}:
         fail('COMPATIBILITY','Native entry is outside the exact inventory.',path)
     with tempfile.TemporaryDirectory(prefix='hatch-dependency-native-') as temporary:
-        root=Path(temporary)
+        root=Path(temporary).resolve()
         for record in manifest['files']:
             target=root/record['path'];target.parent.mkdir(parents=True,exist_ok=True)
             target.write_bytes(library.read_own_file(value['reference'],record['path']))
@@ -441,7 +441,7 @@ def apply_replacement(graph,plan,*,versions):
     for source,manifest,updated in prepared:
         library=graph.owner(source)
         with tempfile.TemporaryDirectory(prefix='hatch-dependency-replacement-') as temporary:
-            root=Path(temporary);files={}
+            root=Path(temporary).resolve();files={}
             for record in manifest['files']:
                 path=root/record['path'];path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_bytes(library.read_own_file(source['reference'],record['path']));files[record['path']]=path
@@ -471,7 +471,7 @@ def normalize_static_units(graph,value,path,*,version):
     if version==manifest['version']:fail('CONVERSION','Conversion needs a new immutable version.')
     scale=manifest['compatibility']['unit_scale']
     with tempfile.TemporaryDirectory(prefix='hatch-dependency-conversion-') as temporary:
-        root=Path(temporary);sources={}
+        root=Path(temporary).resolve();sources={}
         for record in manifest['files']:
             target=root/record['path'];target.parent.mkdir(parents=True,exist_ok=True)
             target.write_bytes(library.read_own_file(value['reference'],record['path']));sources[record['path']]=target
