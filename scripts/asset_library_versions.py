@@ -139,7 +139,7 @@ class AssetVersions:
         self.library = library
 
     def _stream(self, asset_id):
-        return 'asset-version.' + identifier(asset_id)
+        return 'asset-version.' + hashlib.sha256(identifier(asset_id).encode('utf-8')).hexdigest()
 
     def state(self, asset_id):
         asset_id = identifier(asset_id)
@@ -227,6 +227,8 @@ class AssetVersions:
                       and item['previous'] != state['promoted'] and item['previous'] not in state['deprecated']), None)
         if prior is None: fail('ROLLBACK', 'No retained previous selected version is available.')
         plan = self.promotion_plan(prior, consumers=consumers)
+        if plan['expected_revision'] != expected_revision:
+            fail('CONFLICT', 'Lifecycle changed while preparing rollback.')
         if not plan['compatible']: fail('COMPATIBILITY', 'Previous version no longer satisfies consumer requirements.')
         return self._append(plan, 'rollback', reason)
 
@@ -323,7 +325,7 @@ class ScopedResolver:
     def bindings(self, project_id):
         if self.project_library is None: fail('SCOPE', 'Configure a project-local store for durable pins.')
         owner = self.libraries[self.project_library]
-        stream = 'asset-bindings.' + identifier(project_id)
+        stream = 'asset-bindings.' + hashlib.sha256(identifier(project_id).encode('utf-8')).hexdigest()
         state = dict(revision=0, bindings={})
         for item in _event_stream(owner, stream):
             doc = item['document']
@@ -344,7 +346,7 @@ class ScopedResolver:
         if state['revision'] >= MAX_EVENTS: fail('LIMIT', 'Binding history has reached its event budget.')
         values = {**state['bindings'], slot: deepcopy(binding)}
         if len(values) > MAX_BINDINGS: fail('LIMIT', 'Project binding count exceeds admission.')
-        return self.libraries[self.project_library].append_event('asset-bindings.' + identifier(project_id),
+        return self.libraries[self.project_library].append_event('asset-bindings.' + hashlib.sha256(identifier(project_id).encode('utf-8')).hexdigest(),
             expected_revision=expected_revision, document=dict(schema_version=1, bindings=values))
 
 

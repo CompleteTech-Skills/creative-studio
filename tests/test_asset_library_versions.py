@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 
 from asset_library import AssetLibrary, file_record
 from asset_library_contracts import seal
@@ -104,6 +105,30 @@ class VersionTests(unittest.TestCase):
         for consumers in [False, {}, '']:
             with self.assertRaises(RigError): self.versions.promote(first, expected_revision=0, consumers=consumers)
         self.assertEqual(self.versions.state('triangle')['revision'], 0)
+
+    def test_rollback_rejects_concurrent_promotion_during_plan(self):
+        first = self.initial(); self.versions.promote(first, expected_revision=0)
+        second = self.versions.create(self.newer(first), self.sources, previous=first)
+        self.versions.promote(second, expected_revision=1)
+        original = self.versions.promotion_plan
+        def racing_plan(reference, **kwargs):
+            other = AssetVersions(AssetLibrary(self.library.root))
+            other.promote(second, expected_revision=2)
+            return original(reference, **kwargs)
+        with patch.object(self.versions, 'promotion_plan', side_effect=racing_plan):
+            with self.assertRaises(RigError): self.versions.rollback('triangle', expected_revision=2)
+        self.assertEqual(self.versions.state('triangle')['revision'], 3)
+        self.assertEqual(self.versions.state('triangle')['promoted'], second)
+
+    def test_valid_underscore_ids_have_durable_lifecycle_and_project_bindings(self):
+        self.manifest['identity']['id'] = 'asset_name'; self.manifest = seal(self.manifest)
+        reference = self.initial(); self.versions.promote(reference, expected_revision=0)
+        local = AssetLibrary(self.root / 'project', create=True)
+        resolver = ScopedResolver([('project', local), ('shared', self.library)], project_library='project')
+        binding = resolver.select('asset_name')
+        resolver.bind('project_name', 'actor', binding, expected_revision=0)
+        self.assertEqual(resolver.bindings('project_name')['bindings']['actor'], binding)
+        self.assertEqual(self.versions.state('asset_name')['promoted'], reference)
 
     def test_stale_revisions_and_concurrent_promotions_are_rejected(self):
         first = self.initial(); barrier = threading.Barrier(2); outcomes = []
