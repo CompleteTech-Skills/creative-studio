@@ -1,0 +1,12 @@
+{
+  "task": "<REFERRING_EXPRESSION_SEGMENTATION>",
+  "text": "mouth",
+  "raw_output": "</s><s> <loc_445> <loc_834> <loc_451> <loc_834> <loc_457> <loc_834> <loc_470> <loc_834> <loc_476> <loc_832> <loc_482> <loc_830> <loc_486> <loc_828> <loc_492> <loc_824> <loc_496> <loc_820> <loc_500> <loc_820> <loc_507> <loc_828> <loc_513> <loc_832> <loc_517> <loc_834> <loc_523> <loc_836> <loc_532> <loc_838> <loc_553> <loc_838> <loc_555> <loc_842> <loc_555> <loc_895> <loc_553> <loc_907> <loc_551> <loc_915> <loc_549> <loc_921> <loc_547> <loc_925> <loc_543> <loc_931> <loc_532> <loc_942> <loc_527> <loc_946> <loc_523> <loc_948> <loc_517> <loc_950> <loc_486> <loc_950> <loc_480> <loc_948> <loc_472> <loc_944> <loc_461> <loc_933> <loc_457> <loc_925> <loc_455> <loc_919> <loc_453> <loc_911> <loc_451> <loc_902> <loc_449> <loc_890> <loc_447> <loc_878> <loc_445> <loc_865> <loc_443> <loc_851> </s>",
+  "parsed": {
+    "<REFERRING_EXPRESSION_SEGMENTATION>": {
+      "polygons": [],
+      "labels": []
+    }
+  },
+  "generated_token_count": 81
+}

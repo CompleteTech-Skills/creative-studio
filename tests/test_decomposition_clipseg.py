@@ -26,6 +26,13 @@ class ClipSegContracts(unittest.TestCase):
                 path.unlink();target=Path(temp)/'actual.json';target.write_bytes(b'contract fixture');path.symlink_to(target)
                 with self.assertRaisesRegex(ValueError,'pinned'):clip.model_directory()
 
+    def test_streamed_model_hash_uses_explicit_byte_bound(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'model.bin';path.write_bytes(b'123456789')
+            with patch.object(clip,'MAX_MODEL_FILE_BYTES',8):
+                with self.assertRaisesRegex(ValueError,'byte bound'):clip._hash(path)
+            self.assertEqual(clip._hash(path), __import__('hashlib').sha256(b'123456789').hexdigest())
+
     def test_invalid_thresholds_duplicate_taxonomy_and_prompt_rejected(self):
         request={'taxonomy':['anatomy/head'],'prompt':'','parameters':dict(clip.DEFAULT_PARAMETERS)}
         clip.validate_options(request)
@@ -38,6 +45,36 @@ class ClipSegContracts(unittest.TestCase):
                {**request,'parameters':{**clip.DEFAULT_PARAMETERS,'unsupported':1}}]
         for case in cases:
             with self.subTest(case=case),self.assertRaises(ValueError):clip.validate_options(case)
+
+    def test_input_hash_and_decode_share_admitted_bytes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'source.png';mask=root/'mask.png'
+            Image.new('RGBA',(8,6),(40,80,120,77)).save(source)
+            Image.new('L',(8,6),255).save(mask)
+            request={'source':{'path':'source.png','sha256':clip._hash(source),'width':8,'height':6},
+                     'references':[{'path':'mask.png','sha256':clip._hash(mask)}],
+                     'policy':{'max_pixels':48}}
+            from decomposition_analysis import _record_bytes
+            def replace_after_read(path, maximum):
+                data=_record_bytes(path,maximum)
+                if Path(path)==source:Image.new('RGBA',(8,6),(255,0,0,255)).save(source)
+                return data
+            with patch.object(analysis,'_record_bytes',side_effect=replace_after_read):
+                rgb,foreground=clip._request_images(root,request)
+            self.assertEqual(rgb.getpixel((0,0)),(40,80,120))
+            self.assertEqual(foreground.size,(8,6))
+            with self.assertRaisesRegex(ValueError,'bytes changed'):clip._request_images(root,request)
+
+    def test_mismatched_reference_geometry_and_resource_bounds_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'source.png';mask=root/'mask.png'
+            Image.new('RGBA',(8,6)).save(source);Image.new('L',(4,6),255).save(mask)
+            request={'source':{'path':'source.png','sha256':clip._hash(source),'width':8,'height':6},
+                     'references':[{'path':'mask.png','sha256':clip._hash(mask)}],
+                     'policy':{'max_pixels':48}}
+            with self.assertRaisesRegex(ValueError,'size changed'):clip._request_images(root,request)
+            request['policy']['max_pixels']=47
+            with self.assertRaisesRegex(ValueError,'admitted image contract'):clip._request_images(root,request)
 
     def test_analysis_job_binds_new_backend_and_parameters_without_inference(self):
         model={'provider':'test-fixture','name':'mechanics-only','version':'0', 'files':[],

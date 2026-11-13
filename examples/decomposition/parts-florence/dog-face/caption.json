@@ -1,0 +1,9 @@
+{
+  "task": "<MORE_DETAILED_CAPTION>",
+  "text": "",
+  "raw_output": "</s><s>The image is a cartoon illustration of a dog's face. The dog has a round head with two large, round eyes and a small nose. Its ears are brown and its nose is black. Its mouth is pink and its tongue is sticking out, as if it is sticking its tongue out. The background is black, making the dog's head and ears stand out.</s>",
+  "parsed": {
+    "<MORE_DETAILED_CAPTION>": "The image is a cartoon illustration of a dog's face. The dog has a round head with two large, round eyes and a small nose. Its ears are brown and its nose is black. Its mouth is pink and its tongue is sticking out, as if it is sticking its tongue out. The background is black, making the dog's head and ears stand out."
+  },
+  "generated_token_count": 77
+}

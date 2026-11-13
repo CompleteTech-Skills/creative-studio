@@ -19,6 +19,7 @@ FILES = {
  'tokenizer_config.json':'4c75d57fd9bd0be8478ad2d6f8b9cebdd4a45338eb108547329c2b6333476ca6',
  'vocab.json':'e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349',
  'model.safetensors':'d00ca85d6b859f9d07b7cfb8ef26fe9771cb275b34c9368f2ecf603139307f55'}
+MAX_MODEL_FILE_BYTES = 610_000_000
 VERSIONS={'torch':'2.10.0','transformers':'4.57.6'}
 PARAMETERS = obj({'mask_threshold':{'type':'number','minimum':.05,'maximum':.95},
                   'presence_threshold':{'type':'number','minimum':.05,'maximum':.99}})
@@ -29,9 +30,23 @@ DEFAULT_TAXONOMY=['anatomy/head','face/eyes','face/mouth','anatomy/ears','anatom
 
 
 def _hash(path):
-    digest=hashlib.sha256()
-    with Path(path).open('rb') as stream:
-        for block in iter(lambda:stream.read(1024*1024),b''):digest.update(block)
+    from rig_errors import open_payload
+    path = Path(path).absolute()
+    digest = hashlib.sha256()
+    # Preserve ordinary OS root aliases (for example macOS /var) while the
+    # canonical reader rejects links at the actual payload name.
+    with open_payload(path.parent.resolve(), path.name) as (stream, info):
+        if info.st_size > MAX_MODEL_FILE_BYTES:
+            raise ValueError('CLIPSeg file exceeds byte bound')
+        total = 0
+        while True:
+            block = stream.read(min(1024*1024, MAX_MODEL_FILE_BYTES + 1 - total))
+            if not block:
+                break
+            total += len(block)
+            if total > MAX_MODEL_FILE_BYTES:
+                raise ValueError('CLIPSeg file grew past byte bound')
+            digest.update(block)
     return digest.hexdigest()
 
 
@@ -42,7 +57,7 @@ def model_directory():
     if root.is_symlink() or not root.is_dir():raise ValueError('CLIPSeg model directory must be a real local directory')
     for name,digest in FILES.items():
         path=root/name
-        if path.is_symlink() or not path.is_file() or path.stat().st_size>610_000_000 or _hash(path)!=digest:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size>MAX_MODEL_FILE_BYTES or _hash(path)!=digest:
             raise ValueError('CLIPSeg model file missing or differs from pinned snapshot: '+name)
     return root.resolve()
 
@@ -71,24 +86,49 @@ def validate_options(request):
         raise ValueError('CLIPSeg accepts bounded category text, no additional free-form prompt')
 
 
+def _request_images(root, request):
+    """Decode only the exact bounded source/reference bytes named by the request."""
+    import io
+    from PIL import Image
+    from asset_contracts import MAX_SOURCE_BYTES
+    from decomposition_analysis import _record_bytes
+    from decomposition_spec import safe_path
+    from decomposition_masks import binary
+    images = []
+    for descriptor in (request['source'], request['references'][0]):
+        data = _record_bytes(safe_path(root, descriptor['path']), MAX_SOURCE_BYTES)
+        if hashlib.sha256(data).hexdigest() != descriptor['sha256']:
+            raise ValueError('CLIPSeg source/reference bytes changed')
+        try:
+            with Image.open(io.BytesIO(data)) as image:
+                if (image.format not in ('PNG', 'WEBP', 'JPEG') or getattr(image, 'n_frames', 1) != 1
+                        or image.width * image.height > request['policy']['max_pixels']):
+                    raise ValueError('CLIPSeg input exceeds admitted image contract')
+                images.append(image.copy())
+        except (OSError, Image.DecompressionBombError) as exc:
+            raise ValueError('CLIPSeg input cannot be decoded safely') from exc
+    size = (request['source']['width'], request['source']['height'])
+    if any(image.size != size for image in images):
+        raise ValueError('CLIPSeg source/reference size changed')
+    return images[0].convert('RGB'), binary(images[1])
+
+
 def proposals(root,request):
     """Return actual learned masks; uncertain labels remain pending proposals."""
+    validate_options(request)
+    rgb, foreground = _request_images(root, request)
     for variable in ('OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS'):
         os.environ[variable]='1'
     import torch
     from PIL import Image
     from transformers import CLIPSegProcessor,CLIPSegForImageSegmentation
-    from decomposition_spec import safe_path
-    from decomposition_masks import binary,intersect,count,mask_to_runs,MAX_TOTAL_RUNS
-    validate_options(request)
+    from decomposition_masks import intersect,count,mask_to_runs,MAX_TOTAL_RUNS
     current=identity()
     if current!=request['model']:raise ValueError('CLIPSeg identity changed after request')
     torch.set_num_threads(1);torch.set_num_interop_threads(1)
     directory=model_directory()
     processor=CLIPSegProcessor.from_pretrained(directory,local_files_only=True)
     model=CLIPSegForImageSegmentation.from_pretrained(directory,local_files_only=True,use_safetensors=True).eval()
-    with Image.open(safe_path(root,request['source']['path'])) as image:rgb=image.convert('RGB')
-    with Image.open(safe_path(root,request['references'][0]['path'])) as image:foreground=binary(image)
     support=torch.frombuffer(bytearray(foreground.tobytes()),dtype=torch.uint8).reshape(rgb.height,rgb.width)>0
     prompts=[category.rsplit('/',1)[-1].replace('-',' ') for category in request['taxonomy']]
     # Reject overlong token sequences rather than silently truncating their meaning.
