@@ -28,6 +28,7 @@ remain unchanged.
 ```bash
 python scripts/model3d_semantic_style.py style --source revision1 --style clay --part body --destination revision2
 python scripts/model3d_semantic_style.py state --source revision2 --state waving --destination revision3
+python scripts/demonstrate_model3d_style_state.py --source examples/model3d-semantic/robot/native --destination output/new-style-state-proof
 ```
 
 The source snapshot must already contain the relevant saved pose and explicit

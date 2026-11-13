@@ -26,6 +26,7 @@ def apply_style_materials(asset,style_id,*,parts=None,notes=''):
     style execution. The resulting metadata describes the precise approximation.
     """
     from style_registry import resolve_style
+    require(isinstance(style_id,str) and 0<len(style_id)<=128,'MODEL3D_STYLE_UNSUPPORTED','Style selection must be a bounded registry identifier.')
     validate_asset(asset);snapshot=resolve_style(style_id,notes=notes);resolved=snapshot['resolved_id']
     require(resolved in STYLE_RECIPES,'MODEL3D_STYLE_UNSUPPORTED',
             'Executable PBR adaptations currently support clay, 3d-toy and plush only.')
@@ -39,7 +40,7 @@ def apply_style_materials(asset,style_id,*,parts=None,notes=''):
     require(len(asset.geometry.materials)+len(slots)<=4096,'MODEL3D_STYLE_LIMIT','Style material revisions exceed their slot budget.')
     require(all(not asset.geometry.materials[index].get('extensions') for index in slots),
             'MODEL3D_STYLE_UNSUPPORTED','Material shader extensions require their native authoring owner; core PBR factors cannot certify this adaptation.')
-    recipe=STYLE_RECIPES[resolved]
+    recipe=deepcopy(STYLE_RECIPES[resolved])
     styled=bind_style(asset,style_id,notes=notes,adaptations=dict(
         geometry='Existing native geometry preserved; no generated topology is implied.',
         material=f"Execute {recipe['family']}: metallic={recipe['metallic']}, roughness={recipe['roughness']} on selected parts.",
@@ -51,13 +52,13 @@ def apply_style_materials(asset,style_id,*,parts=None,notes=''):
         pbr=material.setdefault('pbrMetallicRoughness',{})
         before=dict(metallic=pbr.get('metallicFactor',1.),roughness=pbr.get('roughnessFactor',1.))
         pbr.update(metallicFactor=recipe['metallic'],roughnessFactor=recipe['roughness'])
-        changes.append(dict(source_slot=index,before=before,after=recipe,
+        changes.append(dict(source_slot=index,before=before,after=deepcopy(recipe),
                             source_material_sha256=object_hash(asset.geometry.materials[index])))
         mapping[index]=len(result.geometry.materials);result.geometry.materials.append(material)
     for mesh in result.geometry.meshes:
         if mesh.id in mesh_ids:mesh.material=mapping[mesh.material]
     for key in parts:result.parts[key]['evidence'].append(dict(kind='executed-supported-registry-style',
-        registry_id=resolved,registry_snapshot_sha256=snapshot['sha256'],material_changes=changes,
+        registry_id=resolved,registry_snapshot_sha256=snapshot['sha256'],material_changes=deepcopy(changes),
         limitation='Supported portable PBR aspects only; geometry, strands and learned textures are not generated.'))
     return _finish(styled,result,'execute-supported-style:'+resolved)
 

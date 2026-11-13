@@ -60,5 +60,13 @@ class StyleExecutionTests(unittest.TestCase):
         self.assertEqual(styled.geometry.materials[slot]['extras'],['opaque',{'customTexture':999}])
         with self.assertRaises(RigError):apply_style_materials(self.asset,'clay',parts=[{}])
 
+    def test_returned_evidence_cannot_mutate_future_recipe_execution(self):
+        first=apply_style_materials(self.asset,'clay')
+        first.parts['body']['evidence'][-1]['material_changes'][0]['after']['roughness']=.05
+        self.assertEqual(first.parts['head']['evidence'][-1]['material_changes'][0]['after']['roughness'],.92)
+        second=apply_style_materials(self.asset,'clay')
+        slot=second.geometry.by_id()['body'].material
+        self.assertEqual(second.geometry.materials[slot]['pbrMetallicRoughness']['roughnessFactor'],.92)
+
 
 if __name__=='__main__':unittest.main()
