@@ -185,6 +185,8 @@ def _prepare_scene(request,snapshot_root,workspace):
     assets={};nodes=[]
     allowed={'root','group','mesh_instance','skinned_character','static_prop','animated_prop','terrain','camera','light','socket','constraint_target','locator'}
     for node in scene['nodes']:
+        require('source_component' not in node.get('metadata', {}),'unsupported-feature',
+                'Imported components require canonical geometry projection before rendering.')
         require(node['type'] in allowed,'unsupported-feature','Unsupported Scene3D node type: '+node['type'])
         require(node['render']['receive_shadow'],'unsupported-feature','Disabling shadow reception requires a supported material mapping.')
         entry=dict(id=node['id'],type=node['type'],camera=node.get('camera'),light=node.get('light'),
@@ -206,8 +208,12 @@ def _prepare_scene(request,snapshot_root,workspace):
             state=_static_state(bundle,scene,shot)
         else:
             state=evaluate_scene(bundle,scene_ref['path'],shot_ref['path'],shot_frame,source_root=snapshot_root)
+        require(not state.get('world', {}).get('light_binding'),'unsupported-feature',
+                'Evaluated physical world lights require the authoritative look-development adapter.')
         for entry in nodes:
             node_state=state['nodes'][entry['id']]
+            require(not node_state.get('material_overrides') and not node_state.get('light_binding'),'unsupported-feature',
+                    'Evaluated material and physical light overrides require the authoritative look-development adapter.')
             require(not node_state.get('native_pose'),'unsupported-feature',
                     'Bound native Pose rendering requires the authoritative rig pose adapter.')
             matrix=np.asarray(node_state['world_matrix'])
