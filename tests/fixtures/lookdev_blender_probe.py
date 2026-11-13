@@ -98,6 +98,36 @@ if mode == 'render':
         assert abs(advanced_bsdf.inputs[socket].default_value - expected) < 1e-6, socket
     result = {'blender': bpy.app.version_string, 'engine': scene.render.engine,
               'samples': scene.cycles.samples, 'probe': probe(), 'materials': {}}
+    # Linked Blender objects must retain independent per-instance looks.
+    for explicit_slots, object_link in ((False, False), (True, False), (True, True)):
+        source = sphere.data.copy()
+        sentinel = bpy.data.materials.new('untouched-linked-material')
+        source.materials.append(sentinel)
+        selected = bpy.data.objects.new('selected-linked-instance', source)
+        sibling = bpy.data.objects.new('untouched-linked-instance', source)
+        scene.collection.objects.link(selected); scene.collection.objects.link(sibling)
+        if object_link:
+            selected.material_slots[0].link = 'OBJECT'
+            selected.material_slots[0].material = sentinel
+        original_indices = [face.material_index for face in source.polygons]
+        try:
+            assign_material(selected, advanced, slots=[99])
+            raise AssertionError('Invalid linked slot accepted')
+        except RigError:
+            pass
+        assert selected.data == source and sibling.data == source
+        assign_material(selected, advanced, slots=[0] if explicit_slots else None)
+        assert selected.data != source and sibling.data == source
+        selected_slot = 0 if explicit_slots else len(selected.material_slots) - 1
+        assert selected.material_slots[selected_slot].material == advanced
+        assert len(source.materials) == 1 and source.materials[0] == sentinel
+        assert [face.material_index for face in source.polygons] == original_indices
+        selected_data = selected.data
+        bpy.data.objects.remove(selected, do_unlink=True)
+        bpy.data.objects.remove(sibling, do_unlink=True)
+        bpy.data.meshes.remove(selected_data); bpy.data.meshes.remove(source)
+        bpy.data.materials.remove(sentinel)
+    result['linked_instances_isolated'] = True
     for value in job['plans']:
         material = build_material(value)
         material.use_fake_user = True

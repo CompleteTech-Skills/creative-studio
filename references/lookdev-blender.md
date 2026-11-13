@@ -17,6 +17,8 @@ plan = material_plan(registry, exact_material_reference, engine='CYCLES')
 This validates native inheritance and the effective render policy, then copies
 its immutable values and exact source reference into a hash-bound internal plan.
 The trusted worker sets the planned engine and calls `build_material(plan)`.
+`assign_material` validates existing integer mesh slots and isolates shared mesh
+data before assignment, preserving other linked object instances.
 The plan is an internal handoff; external JSON still enters through the canonical
 LookDev `Registry`. Inherited materials never mutate the base resource.
 
@@ -95,10 +97,15 @@ allocating a production material.
 | Alpha mask/blend, single-sided coverage | Native shader coverage and transparent backface mixture | Admission and implementation; extended visual cases remain under #90 |
 | Subsurface | Native Cycles transport for opaque dielectrics | Actual SSS-on/off pixel difference; metallic/transmissive mixtures reject |
 | Displacement | Baked into real mesh vertices | Actual 0.075 m coordinate change; original mesh preserved; budget/modifier rejection tests |
-| EEVEE SSS/transmission/iridescence | Unsupported | Backend-specific capability and admission rejection tests |
+| EEVEE SSS/transmission/iridescence/anisotropy/sheen | Unsupported for strict verified mapping | Backend-specific capability and admission rejection tests |
 | Variable/partial iridescence, volume, unresolved textures/graphs | Unsupported in this adapter | Explicit preallocation rejection; dedicated owner integration required |
 
 No approximate mapping is silently selected. Supported constant iridescence uses
 native thin-film sockets; browser appearance and glTF render equivalence are not
 established by serialization. #90 owns the complete material laboratory and
 cross-engine image comparisons; those acceptance checks remain open.
+
+EEVEE anisotropy is unsupported and its sheen layer is approximate in the
+[Blender 4.5 supported-node reference](https://docs.blender.org/manual/en/4.5/render/eevee/limitations/nodes_support.html).
+Both reject in this adapter until a separately labeled and verified approximation
+exists; socket assignment alone does not establish effect support.

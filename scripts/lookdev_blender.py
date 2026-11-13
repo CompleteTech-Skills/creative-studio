@@ -21,7 +21,8 @@ REQUIRED_SOCKETS = {'Base Color', 'Metallic', 'Roughness', 'IOR', 'Alpha',
     'Specular IOR Level', 'Specular Tint', 'Transmission Weight', 'Coat Weight',
     'Coat Roughness', 'Sheen Weight', 'Sheen Tint', 'Sheen Roughness',
     'Anisotropic', 'Anisotropic Rotation', 'Emission Color', 'Emission Strength',
-    'Thin Film IOR', 'Thin Film Thickness'}
+    'Thin Film IOR', 'Thin Film Thickness', 'Subsurface Weight',
+    'Subsurface Radius', 'Subsurface Scale'}
 
 
 def _bpy():
@@ -37,7 +38,7 @@ def _bpy():
 def _features(engine):
     require(engine in ('CYCLES', 'BLENDER_EEVEE_NEXT'), 'LOOKDEV_BLENDER_ENGINE',
             'Choose Cycles or EEVEE.')
-    return BASE_FEATURES if engine == 'CYCLES' else BASE_FEATURES - {'subsurface', 'transmission', 'iridescence'}
+    return BASE_FEATURES if engine == 'CYCLES' else BASE_FEATURES - {'subsurface', 'transmission', 'iridescence', 'anisotropy', 'sheen'}
 
 
 def probe():
@@ -202,7 +203,7 @@ def build_material(plan):
             scatter.inputs['Subsurface Weight'].default_value = 1.0
             scatter.inputs['Subsurface Scale'].default_value = 1.0
             scatter.inputs['Subsurface Radius'].default_value = tuple(sss['radius_meters'])
-            scatter.inputs['Subsurface IOR'].default_value = s['ior']
+            # Blender 4.5 uses the copied Principled IOR for subsurface transport.
             mix = nodes.new('ShaderNodeMixShader')
             mix.inputs[0].default_value = sss['weight']
             links.new(shader, mix.inputs[1]); links.new(scatter.outputs['BSDF'], mix.inputs[2])
@@ -228,19 +229,24 @@ def build_material(plan):
 
 
 def assign_material(obj, material, *, slots=None):
-    """Assign a material to explicit existing mesh face slots; preserve other slots."""
+    """Assign explicit mesh slots without changing linked object instances."""
     require(obj.type == 'MESH', 'LOOKDEV_MESH', 'Material assignment requires a real mesh.')
+    if slots is not None:
+        require(isinstance(slots, (list, tuple)) and slots and len(set(slots)) == len(slots) and
+                all(type(i) is int and 0 <= i < len(obj.data.materials) for i in slots),
+                'LOOKDEV_SLOT', 'Select distinct existing material slot indices.')
+    # Blender stores slots and polygon indices on shared mesh data. Isolate the
+    # selected instance only after all slot admission checks have succeeded.
+    if obj.data.users > 1:
+        obj.data = obj.data.copy()
     if slots is None:
         obj.data.materials.append(material)
         index = len(obj.data.materials) - 1
         for face in obj.data.polygons:
             face.material_index = index
     else:
-        require(isinstance(slots, (list, tuple)) and slots and len(set(slots)) == len(slots) and
-                all(type(i) is int and 0 <= i < len(obj.data.materials) for i in slots),
-                'LOOKDEV_SLOT', 'Select distinct existing material slot indices.')
         for i in slots:
-            obj.data.materials[i] = material
+            obj.material_slots[i].material = material
     return {'mesh': obj.name, 'material': material.name,
             'plan_sha256': material['hatch_plan_sha256'], 'polygons': len(obj.data.polygons)}
 
