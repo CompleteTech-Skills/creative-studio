@@ -1,0 +1,30 @@
+name: Camera editor comparison
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  camera-comparison-browser:
+    name: Actual camera comparison WebGL
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-rig-test.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: PYTHONPATH=scripts:tests python -m unittest discover -s tests -p test_rig_camera3d_editor.py -v 2>&1 | tee camera-editor-tests.log
+        env:
+          HATCH_CAMERA_EDITOR_BROWSER_TEST: '1'
+          OPENBLAS_NUM_THREADS: '1'
+          OMP_NUM_THREADS: '1'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: camera-editor-tests-${{ github.sha }}
+          path: camera-editor-tests.log
