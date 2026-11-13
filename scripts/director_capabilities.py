@@ -36,8 +36,8 @@ MODULES = {'module.scene3d':'scene3d_contracts', 'module.camera3d':'camera3d_con
            'module.lookdev3d':'lookdev_contracts', 'module.animation3d':'animation3d_contracts',
            'module.render3d':'render3d_contracts', 'module.editor3d':'editor3d_contracts',
            'native.acquisition':'hatch'}
-LIMITS = dict(max_provider_calls=0, max_cpu_seconds=60, max_gpu_seconds=60,
-              max_storage_bytes=64*1024**2, max_memory_bytes=1024**3,
+LIMITS = dict(max_provider_calls=0, max_cpu_seconds=3600, max_gpu_seconds=3600,
+              max_storage_bytes=1024**3, max_memory_bytes=1536*1024**2,
               currency=None, max_amount=None, policy_ref=None)
 
 
@@ -59,12 +59,16 @@ def _unknown_usage():
 
 def _config(configuration):
     value = dict(configuration or {})
-    _need(not set(value)-{'blender','ffmpeg','ffprobe','timeout_seconds','planning_provider'}, 'CONFIG', 'Unknown configuration field.')
+    _need(not set(value)-{'blender','ffmpeg','ffprobe','timeout_seconds','planning_provider','production_limits'}, 'CONFIG', 'Unknown configuration field.')
     for name in ('blender','ffmpeg','ffprobe'):
         if name in value:
             _need(value[name] is None or isinstance(value[name],str), 'CONFIG', 'Executable must be a trusted local path or null.')
     timeout=value.get('timeout_seconds',45)
     _need(type(timeout) is int and 1 <= timeout <= 120,'CONFIG','Timeout must be one to 120 seconds.')
+    limits=value.get('production_limits',{})
+    _need(isinstance(limits,dict) and not set(limits)-{'max_cpu_seconds','max_gpu_seconds','max_storage_bytes','max_memory_bytes'},'CONFIG','Unknown production resource limit.')
+    for name,amount in limits.items():
+        _need(type(amount) is int and 1<=amount<=2_000_000_000,'CONFIG','Production limits must be positive bounded integers.')
     provider=value.get('planning_provider')
     if provider is not None:
         _need(isinstance(provider,dict) and not set(provider)-{'id','configured','price_per_call','currency'},'CONFIG','Provider descriptor accepts no credentials or endpoints.')
@@ -144,11 +148,13 @@ for backend in ('CUDA','OPTIX','HIP','ONEAPI','METAL'):
    for d in prefs.devices:d.use=d.type!='CPU'
    found=True;break
  except Exception:pass
-if not found:raise RuntimeError('No usable GPU')
+if not found:
+ open('failure.json','w').write(json.dumps({'reason':'gpu-unavailable'}))
+ raise RuntimeError('No usable GPU')
 s.cycles.device='GPU'
 ''' if gpu else "s.cycles.device='CPU'\n") + '''s.render.filepath='probe.png'
 bpy.ops.render.render(write_still=True)
-print('DIRECTOR_PROBE='+json.dumps({'version':bpy.app.version_string,'rendered':True}))
+print('DIRECTOR_PROBE='+json.dumps({'version':bpy.app.version_string,'rendered':True,'device':s.cycles.device}))
 ''',encoding='utf-8')
     outcome,text=_worker([executable,'--background','--factory-startup','--disable-autoexec','--threads','1','--python',script],directory,timeout)
     if outcome['success']:
@@ -157,7 +163,10 @@ print('DIRECTOR_PROBE='+json.dumps({'version':bpy.app.version_string,'rendered':
             image.load();_need(image.size==(8,8),'DECODE','Probe raster dimensions differ.')
         marker=next((line.removeprefix('DIRECTOR_PROBE=') for line in text.splitlines() if line.startswith('DIRECTOR_PROBE=')),None)
         _need(marker is not None,'WORKER','Missing Blender result.')
-        outcome.update(version=decode_json(marker)['version'],render_sha256=sha256(Path(directory)/'probe.png'),resolution=[8,8])
+        outcome.update(version=decode_json(marker)['version'],device=decode_json(marker)['device'],render_sha256=sha256(Path(directory)/'probe.png'),resolution=[8,8])
+    elif (Path(directory)/'failure.json').is_file():
+        failure=decode_json((Path(directory)/'failure.json').read_bytes())
+        if failure=={'reason':'gpu-unavailable'}:outcome['reason']='gpu-unavailable'
     return outcome
 
 
@@ -171,7 +180,9 @@ def _codec_probe(ffmpeg, ffprobe, operation, directory, timeout):
         if not verified['success']:return verified
         streams=decode_json(text)['streams'];video=[s for s in streams if s['codec_type']=='video']
         _need(len(streams)==len(video)==1 and int(video[0]['nb_read_frames'])==1,'DECODE','Codec probe did not independently decode one silent frame.')
-        result.update(codec=codec[0],decoded_frames=1,audio_streams=0,output_sha256=sha256(output))
+        version_result,version_text=_worker([ffmpeg,'-version'],directory,timeout)
+        version=version_text.splitlines()[0].split()[2] if version_result['success'] and version_text.startswith('ffmpeg version ') else None
+        result.update(codec=codec[0],version=version,decoded_frames=1,audio_streams=0,output_sha256=sha256(output))
     return result
 
 
@@ -202,12 +213,12 @@ def _import_probe(operation,directory,timeout):
     if outcome['success']:
         value=decode_json(text)
         _need(value['vertices']==3 and value['triangles']==1,'GEOMETRY','Importer did not decode triangle geometry.')
-        outcome.update(value,source_sha256=sha256(source))
+        outcome.update(value,version='native-rig-v1',source_sha256=sha256(source))
     return outcome
 
 
 def _reference(path, stage, dependencies=()):
-    return dict(artifact_id='probe-'+path.stem,kind='director-capability-evidence',schema_version=1,
+    return dict(artifact_id='probe-'+path.stem,kind='capability-probe-evidence',schema_version=1,
                 semantic_version='1.0.0',path=path.relative_to(stage).as_posix(),sha256=sha256(path),
                 byte_size=path.stat().st_size,media_type='application/json',provenance_ref=None,fixture=True,dependencies=list(dependencies))
 
@@ -234,7 +245,7 @@ def probe(request, evidence_root, *, configuration=None):
             _need(datetime.fromisoformat(request['context']['deadline'].replace('Z','+00:00'))>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired during probing.')
             payloads=[]
             record={'schema_version':1,'operation':operation,'discovered':False,'initialized':False,'execution_verified':False,
-                    'status':'unavailable','reason':'unsupported-operation','dependencies':{},'fallback':None}
+                    'status':'unavailable','reason':'unsupported-operation','dependencies':{'probe_source':sha256(Path(__file__))},'fallback':None}
             version=None;executable=None
             try:
                 if operation.startswith('blender.') or operation=='importer.blend':
@@ -287,15 +298,18 @@ def probe(request, evidence_root, *, configuration=None):
             except (OSError,ValueError,ImportError) as error:
                 record.update(status='unavailable',reason='local-probe-failed')
                 record['failure_type']=type(error).__name__ # no raw error/path/credentials
+            if operation=='planning.provider' and record.get('price_availability')=='unknown':
+                diagnostics.append(_diagnostic('CAPABILITY_PRICE_UNKNOWN',operation,'Provider price is unknown; admission requires explicit allowance and reservation.'))
             if operation=='blender.gpu' and not record['execution_verified']:record['fallback']='blender.cpu-requires-separate-probe-and-explicit-policy'
             record['dependency_fingerprint']=object_hash(record['dependencies'])
             record['fixture']=True
             record['payloads']=payloads
             path=stage/'receipts'/(object_hash(record)+'.json');path.write_text(json.dumps(record,sort_keys=True,indent=2)+'\n',encoding='utf-8')
             reference=_reference(path,stage,payloads);refs.append(reference)
-            records.append(dict(operation=operation,version=version,status=record['status'],limits=deepcopy(LIMITS),
+            records.append(dict(operation=operation,version=version,status=record['status'],limits={**deepcopy(LIMITS),**config.get('production_limits',{})},
                                 probe_evidence=[reference],execution_verified=record['execution_verified']))
             if record['status']!='available':diagnostics.append(_diagnostic('CAPABILITY_'+record['reason'].upper().replace('-','_'),operation,record['reason']))
+        _need(datetime.fromisoformat(request['context']['deadline'].replace('Z','+00:00'))>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired before publication.')
         value=dict(capabilities=records,expires_at=(stamp+timedelta(hours=1)).isoformat(),digest='0'*64)
         value['digest']=object_hash({k:v for k,v in value.items() if k!='digest'})
         result=dict(schema_version=1,kind='director-result',method='CapabilityRegistry.probe',status='succeeded',
@@ -311,6 +325,7 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                      resources=None, network_policy='deny', price_per_call=None,
                      budget_reservation_id=None, allow_unknown_price=False):
     """Fail closed for missing/stale/unexecuted native capabilities or resources."""
+    _need(isinstance(snapshot,dict),'SCHEMA','Capability snapshot must be an object.')
     if snapshot.get('kind')=='director-result':
         validate_method_result('CapabilityRegistry.probe',snapshot)
         value=snapshot['value'];_need(value is not None,'SNAPSHOT','Probe failed.')
@@ -329,6 +344,7 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
     for operation in required_operations:
         item=by_op.get(operation)
         _need(item is not None and item['status']=='available' and item['execution_verified'],'UNAVAILABLE','Required capability is unverified: '+operation)
+        _need(evidence_root is not None,'EVIDENCE_ROOT','Admission requires the exact retained evidence root.')
         if evidence_root is not None:
             from director_contracts import _read_artifact
             for reference in item['probe_evidence']:
