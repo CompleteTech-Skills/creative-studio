@@ -51,7 +51,8 @@ class LiquidAcceptanceTests(unittest.TestCase):
         for case, field, value, check in [
             ('baseline', 'pool_surface_area_m2', 0., 'accumulated_surface_retained'),
             ('uncontained', 'pool_surface_area_m2', 1., 'uncontained_control_drains'),
-            ('baseline', 'exterior_excursion_m', .251, 'contained_leakage_envelope')]:
+            ('baseline', 'exterior_excursion_m', .251, 'contained_leakage_envelope'),
+            ('viscous', 'exterior_excursion_m', .251, 'contained_leakage_envelope')]:
             samples = self.series()
             for frame in samples[case][36:]:
                 frame[field] = value

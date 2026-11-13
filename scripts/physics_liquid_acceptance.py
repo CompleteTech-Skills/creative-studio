@@ -81,7 +81,7 @@ def assess_series(series, *, cell_size, emission_end_frame):
         samples[i]['pool_surface_area_m2'] >= minimum_patch
         for samples in (low, high) for i in window)
     checks = dict(
-        contained_leakage_envelope=max(s['exterior_excursion_m'] for s in low) <= leakage_envelope,
+        contained_leakage_envelope=max(s['exterior_excursion_m'] for samples in (low, high) for s in samples) <= leakage_envelope,
         initial_pool_absent=max(s['pool_surface_area_m2'] for s in low[:min(6, len(low))]) <= h*h,
         accumulated_surface_retained=min(low[i]['pool_surface_area_m2'] for i in late) >= minimum_patch,
         viscous_surface_retained=min(high[i]['pool_surface_area_m2'] for i in late) >= minimum_patch,
@@ -96,7 +96,7 @@ def assess_series(series, *, cell_size, emission_end_frame):
         impact_frames=impacts, viscosity_frames=window,
         viscosity_spread_reduction_m=differences, mean_viscosity_spread_reduction_m=mean_difference,
         viscosity_comparison_tolerance_m=viscosity_threshold,
-        maximum_exterior_excursion_m=max(s['exterior_excursion_m'] for s in low),
+        maximum_exterior_excursion_m=max(s['exterior_excursion_m'] for samples in (low, high) for s in samples),
         minimum_late_contained_surface_m2=min(low[i]['pool_surface_area_m2'] for i in late),
         minimum_late_viscous_surface_m2=min(high[i]['pool_surface_area_m2'] for i in late),
         maximum_late_uncontained_surface_m2=max(open_[i]['pool_surface_area_m2'] for i in late))

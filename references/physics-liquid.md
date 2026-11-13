@@ -52,7 +52,7 @@ experiment remains a separate geometry-response check.
 
 The quantitative acceptance profile uses canonical metres and h=3/24=.125 m:
 
-- At every output frame, measure the greatest surface excursion beyond the
+- At every output frame in both contained viscosity cases, measure the greatest surface excursion beyond the
   container's outer x/z walls (+/-.9 m) or below its floor (0 m). Include
   above-rim splashes in this conservative envelope. Require excursion <=2h
   (.25 m): one cell for obstacle rasterization and one for the meshed
