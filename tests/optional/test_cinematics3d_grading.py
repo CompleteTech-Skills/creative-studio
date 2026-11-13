@@ -82,6 +82,19 @@ class GradingTests(unittest.TestCase):
         np.testing.assert_array_equal(masked[1, :3], np.full(3, .18, np.float32))
         np.testing.assert_array_equal(masked[:,3], source[:,3])
 
+    def test_hdr_diagnostics_use_float64_reductions_without_changing_pixels(self):
+        source = np.array([[1e38, 1e38, 1e38, 1.]], np.float32)
+        for signs in ([-1., -1., -1.], [3., -3., 3.]):
+            operation = self.operation('channel-matrix', {'matrix': np.diag(signs).tolist(), 'offset': [0.,0.,0.]})
+            result, receipt = self.apply('.', self.plan([operation]), source)
+            expected = (source[:, :3].astype(np.float64)*signs).astype(np.float32)
+            np.testing.assert_array_equal(result[:, :3], expected)
+            diagnostic = receipt['diagnostics']
+            difference = np.abs(expected.astype(np.float64)-source[:, :3].astype(np.float64)).mean()
+            self.assertEqual(diagnostic['mean_absolute_difference'], float(difference))
+            self.assertTrue(np.isfinite(diagnostic['neutral_max_channel_spread']))
+            self.assertEqual(receipt['execution_sha256'], grade.object_hash({k:v for k,v in receipt.items() if k != 'execution_sha256'}))
+
     def test_lift_gamma_gain_and_channel_matrix_have_reference_values(self):
         source = self.pixels()
         p = {'lift': [.1, 0., -.1], 'gamma': [2., 1., .5], 'gain': [1., 2., .5]}

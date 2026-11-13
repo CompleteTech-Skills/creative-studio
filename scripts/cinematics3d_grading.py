@@ -187,12 +187,17 @@ def diagnostics(before, after):
     import numpy as np
     result = {}
     for name, pixels in (('before', before), ('after', after)):
-        rgb = pixels.reshape(-1, 4)[:, :3]; luma = rgb@np.array([.2126, .7152, .0722])
+        rgb = np.asarray(pixels.reshape(-1, 4)[:, :3], dtype=np.float64)
+        luma = rgb@np.array([.2126, .7152, .0722])
         histogram, edges = np.histogram(luma, bins=16, range=(0, 1))
         result[name] = {'min': float(rgb.min()), 'max': float(rgb.max()), 'below_zero': int((rgb < 0).sum()),
                         'above_one': int((rgb > 1).sum()), 'mean_luminance': float(luma.mean()),
                         'histogram_0_1': histogram.tolist(), 'histogram_edges': edges.tolist()}
-    source = before.reshape(-1, 4)[:, :3]; target = after.reshape(-1, 4)[:, :3]
+    # Finite float32 endpoints can have differences, spreads and reduction
+    # sums beyond float32 range. Diagnose them in float64, without changing
+    # the actual graded pixels or their recorded float32 precision.
+    source = np.asarray(before.reshape(-1, 4)[:, :3], dtype=np.float64)
+    target = np.asarray(after.reshape(-1, 4)[:, :3], dtype=np.float64)
     neutral = source.max(axis=1)-source.min(axis=1) <= 1e-6
     result['neutral_pixels'] = int(neutral.sum())
     result['neutral_max_channel_spread'] = float(np.ptp(target[neutral], axis=1).max()) if neutral.any() else None
