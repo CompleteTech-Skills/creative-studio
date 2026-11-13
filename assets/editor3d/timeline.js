@@ -12,7 +12,9 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   for(const mode of ['linear','step','slerp']){const o=document.createElement('option');o.value=mode;o.textContent=mode;interpolation.append(o);}
   const autokey=document.createElement('input');autokey.type='checkbox';autokey.setAttribute('aria-label','Autokey transforms at selected frame');autokey.disabled=typeof registerCommitInterceptor!=='function';
   const autoLabel=document.createElement('label');autoLabel.append(autokey,document.createTextNode(' Autokey transforms'));
-  const unregisterPreview=registerPreviewEditAuthorizer?.(({snapshot:current,evaluation})=>{
+  const unregisterPreview=registerPreviewEditAuthorizer?.(({snapshot:current,evaluation,selection=[]})=>{
+    const chosen=current.documents[shotPath],overrides=chosen?.camera_overrides;
+    if(selection.includes(chosen?.camera)&&(overrides?.transform||overrides?.[chosen?.camera]?.transform))return false;
     const at=Number(frame.value);
     return !playing&&autokey.checked&&Number.isSafeInteger(at)&&current.project.shots.some(ref=>ref.path===shotPath)&&
       current.documents[shotPath].scene.path===current.scene_path&&evaluation?.shot?.path===shotPath&&
@@ -27,6 +29,8 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
     if(commands.some(c=>c.operation!=='transform'))throw Error('Autokey requires a transform-only transaction.');
     if(!current.project.shots.some(ref=>ref.path===shotPath))throw Error('Reload and select the current shot before autokey.');
     if(current.documents[shotPath].scene.path!==current.scene_path)throw Error('Switch to the shot scene before autokey.');
+    const chosen=current.documents[shotPath],overrides=chosen.camera_overrides;
+    if(commands.some(cmd=>cmd.parameters.identifier===chosen.camera)&&(overrides?.transform||overrides?.[chosen.camera]?.transform))throw Error('Remove the shot camera transform override before autokey.');
     const at=Number(frame.value);if(!Number.isSafeInteger(at)||at<0||at>=current.documents[shotPath].duration_frames)throw Error('Autokey frame must be inside the selected shot.');
     const keys=[];for(const cmd of commands)for(const channel of ['translation','rotation','scale'])keys.push({operation:'key-upsert',document:shotPath,target:cmd.parameters.identifier,property:channel,frame:at,value:structuredClone(cmd.parameters.transform[channel])});
     return {route:'timeline/edit',body:{expected_revision,expected_sha256,transaction_id,commands:keys}};
