@@ -1,5 +1,6 @@
 """Fixed Blender adapter for native Director scene assets; no asset-supplied code."""
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -52,7 +53,7 @@ def create(job):
         key_world.keyframe_insert(data_path='scale',frame=key['frame'])
     for name,data in job['cameras'].items():
         camera=bpy.data.objects.new(name,bpy.data.cameras.new(name));scene.collection.objects.link(camera)
-        camera.matrix_world=Matrix(data['matrix']);camera.data.lens_unit='FOV';camera.data.angle=data['fov'];camera.data.clip_start=.05;camera.data.clip_end=100
+        camera.matrix_world=Matrix(data['matrix']);camera.data.sensor_fit='VERTICAL';camera.data.sensor_height=24.;camera.data.lens=12./math.tan(data['fov']/2);camera.data.clip_start=.05;camera.data.clip_end=100
     scene.camera=bpy.data.objects['wide']
     for frame,name in [(0,'wide'),(60,'investigation')]:
         marker=scene.timeline_markers.new(name,frame=frame);marker.camera=bpy.data.objects[name]
