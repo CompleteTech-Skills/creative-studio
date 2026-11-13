@@ -1,0 +1,19 @@
+test_archive_traversal_duplicate_tamper_and_restore_rejection (test_model3d_jobs.JobsTests.test_archive_traversal_duplicate_tamper_and_restore_rejection) ... ok
+test_batch_continues_after_ordinary_handler_exception (test_model3d_jobs.JobsTests.test_batch_continues_after_ordinary_handler_exception) ... ok
+test_cancel_queued_job_and_bounded_zip_directory (test_model3d_jobs.JobsTests.test_cancel_queued_job_and_bounded_zip_directory) ... ok
+test_cancellation_and_timeout_never_publish_partial_outputs (test_model3d_jobs.JobsTests.test_cancellation_and_timeout_never_publish_partial_outputs) ... ok
+test_corrupt_checkpoint_and_unsupported_stored_schema_are_structured (test_model3d_jobs.JobsTests.test_corrupt_checkpoint_and_unsupported_stored_schema_are_structured) ... ok
+test_failed_revision_preserves_active_payload_and_bounded_attempts (test_model3d_jobs.JobsTests.test_failed_revision_preserves_active_payload_and_bounded_attempts) ... ok
+test_input_capture_and_tamper_fail_before_callback (test_model3d_jobs.JobsTests.test_input_capture_and_tamper_fail_before_callback) ... ok
+test_output_symlink_rejected_and_archive_race_preserved (test_model3d_jobs.JobsTests.test_output_symlink_rejected_and_archive_race_preserved) ... ok
+test_path_and_size_budgets_preserve_destination (test_model3d_jobs.JobsTests.test_path_and_size_budgets_preserve_destination) ... ok
+test_process_exit_after_checkpoint_recovers_without_replay (test_model3d_jobs.JobsTests.test_process_exit_after_checkpoint_recovers_without_replay) ... ok
+test_process_exit_before_checkpoint_requires_explicit_retry (test_model3d_jobs.JobsTests.test_process_exit_before_checkpoint_requires_explicit_retry) ... ok
+test_real_native_primitive_archive_restore_and_cache (test_model3d_jobs.JobsTests.test_real_native_primitive_archive_restore_and_cache) ... ok
+test_transient_final_manifest_failure_keeps_published_checkpoint_recoverable (test_model3d_jobs.JobsTests.test_transient_final_manifest_failure_keeps_published_checkpoint_recoverable) ... ok
+test_writer_lock_is_not_reentrant_and_batch_isolation (test_model3d_jobs.JobsTests.test_writer_lock_is_not_reentrant_and_batch_isolation) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 24.418s
+
+OK

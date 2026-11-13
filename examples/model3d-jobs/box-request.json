@@ -1,0 +1,14 @@
+{
+  "engine": "native-primitive",
+  "parameters": {
+    "kind": "box",
+    "parameters": {
+      "width": 2,
+      "height": 1,
+      "depth": 0.5
+    },
+    "name": "box",
+    "normal_mode": "smooth",
+    "format": "glb"
+  }
+}
