@@ -419,6 +419,29 @@ class NormalizationPrecisionTests(unittest.TestCase):
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],0)
                     self.assertEqual(db.execute('SELECT COUNT(*) FROM blobs').fetchone()[0],0)
 
+    def test_cli_huge_json_scale_returns_structured_failure_without_publication(self):
+        import subprocess
+        import sys
+        source=self.source([[.25,.125,-.5],[2.,.125,-.5],[.25,1.5,.75]])
+        original=source.read_bytes();license_bytes=self.license.read_bytes()
+        request=dict(identity=self.base['identity'],version='1.0.0',metadata=self.base['metadata'],
+                     license_file=str(self.license),fixture=True,blender_roundtrip=False,
+                     unit_scale=json.loads('1'+'0'*400))
+        request_path=self.root/'request.json';request_path.write_text(json.dumps(request))
+        completed=subprocess.run([sys.executable,str(ROOT/'scripts/asset_library_import.py'),
+            'import','--library',str(self.library.root),'--source',str(source),
+            '--request',str(request_path)],capture_output=True,text=True,timeout=30,cwd=ROOT)
+        self.assertEqual(completed.returncode,2,completed.stderr)
+        result=json.loads(completed.stdout)
+        self.assertEqual(result['status'],'failed')
+        self.assertEqual(result['diagnostic']['code'],'LIBRARY_IMPORT_NORMALIZATION')
+        self.assertNotIn('Traceback',completed.stdout+completed.stderr)
+        self.assertEqual(source.read_bytes(),original)
+        self.assertEqual(self.license.read_bytes(),license_bytes)
+        with sqlite3.connect(self.library.database) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],0)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM blobs').fetchone()[0],0)
+
     def test_finite_integer_and_float_scales_preserve_explicit_world_bounds(self):
         import numpy as np
         source=self.source([[.25,.125,-.5],[2.,.125,-.5],[.25,1.5,.75]])
