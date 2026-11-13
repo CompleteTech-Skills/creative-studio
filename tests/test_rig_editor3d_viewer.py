@@ -291,7 +291,7 @@ class EditorPersistentBrowserTests(unittest.TestCase):
     def test_pending_and_consecutive_numeric_edits_preserve_control_state(self):
         from tempfile import TemporaryDirectory
         from editor3d_repository import EditorRepository
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import sync_playwright, expect
         from browser_runtime import launch_chromium
         with TemporaryDirectory() as directory:
             repository = EditorRepository.create(ROOT / 'examples/scene3d-contracts', Path(directory) / 'saved')
@@ -319,19 +319,19 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                         pending.pop().continue_()
                         page.unroute('**/api/commands')
                         page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1')
-                        self.assertTrue(y.is_enabled())
+                        expect(y).to_be_enabled()
                         y.fill('1'); y.press('Tab')
                         page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2')
-                        self.assertTrue(x.is_enabled())
+                        expect(x).to_be_enabled()
                         saved = EditorRepository(repository.root).snapshot()
                         self.assertEqual(next(n for n in saved['scene']['nodes'] if n['id'] == 'mesh')['transform']['translation'], [3, 1, 0])
                         page.click('#undo')
                         page.wait_for_function('() => window.hatchEditor.snapshot.revision === 3')
-                        self.assertTrue(y.is_enabled())
+                        expect(y).to_be_enabled()
                         self.assertEqual(y.input_value(), '0')
                         page.click('#redo')
                         page.wait_for_function('() => window.hatchEditor.snapshot.revision === 4')
-                        self.assertTrue(y.is_enabled())
+                        expect(y).to_be_enabled()
                         self.assertEqual(y.input_value(), '1')
                     finally:
                         browser.close()
