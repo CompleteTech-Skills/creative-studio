@@ -146,6 +146,16 @@ class ScenePrefabPreparation(unittest.TestCase):
                         to_blender(np.asarray(expected['nodes'][entry['id']]['world_matrix'])))
             self.assertEqual(spec['scene'],{k:scene_ref[k] for k in ('id','version')})
             self.assertEqual(load_project(root/'persisted')['inventory'],persisted['inventory'])
+            # A newly supported evaluator Pose must not silently render rest state.
+            from unittest.mock import patch
+            def bound_pose(*args,**kwargs):
+                value=evaluate_scene(*args,**kwargs)
+                next(iter(value['nodes'].values()))['native_pose']={'pose':'exact-bound-pose'}
+                return value
+            posed_workspace=root/'posed-workspace';posed_workspace.mkdir()
+            with patch('scene3d_evaluate.evaluate_scene',side_effect=bound_pose), self.assertRaises(Render3DError) as caught:
+                _prepare_scene(spec,root/'snapshot',posed_workspace)
+            self.assertEqual(caught.exception.report['category'],'unsupported-feature')
 
 
 @unittest.skipUnless(os.environ.get('HATCH_RENDER3D_REAL_TESTS') == '1',
