@@ -145,9 +145,9 @@ class EditorNativeStateTests(unittest.TestCase):
             with sync_playwright() as runtime:
                 browser=launch_chromium(runtime)
                 try:
-                    page=browser.new_page();page.goto(server.url);page.wait_for_function('window.editorReady === true')
+                    page=browser.new_page();page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
                     page.locator('#collections input').uncheck()
-                    page.wait_for_function('window.hatchEditor.snapshot.revision === 2')
+                    page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2')
                     page.wait_for_function("window.hatchEditor.objects.get('mesh').visible === false")
                     saved=repository.snapshot()
                     self.assertTrue(next(node for node in saved['scene']['nodes'] if node['id']=='mesh')['visible'])
@@ -167,7 +167,7 @@ class EditorNativeStateTests(unittest.TestCase):
             with sync_playwright() as runtime:
                 browser=launch_chromium(runtime)
                 try:
-                    page=browser.new_page(viewport={'width':1400,'height':900});page.goto(server.url);page.wait_for_function('window.editorReady === true')
+                    page=browser.new_page(viewport={'width':1400,'height':900});page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
                     page.locator('[data-id="mesh"]').click()
                     point=page.evaluate('''async () => {
                         const THREE=await import('/vendor/build/three.module.min.js');
@@ -182,10 +182,10 @@ class EditorNativeStateTests(unittest.TestCase):
                     }''')
                     page.mouse.move(point['x'],point['y']);page.mouse.down()
                     page.mouse.move(point['x']+70,point['y'],steps=12);page.mouse.up()
-                    page.wait_for_function('window.hatchEditor.snapshot.revision === 1')
+                    page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1')
                     saved=EditorRepository(repository.root).snapshot(); native=SceneGraph(saved['scene']).evaluate_base('mesh')
                     self.assertNotEqual(next(n for n in saved['scene']['nodes'] if n['id']=='mesh')['transform']['translation'],[2,0,0])
-                    page.goto('about:blank');page.goto(server.url);page.wait_for_function('window.editorReady === true')
+                    page.goto('about:blank');page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
                     actual=page.evaluate('''() => {const o=window.hatchEditor.objects.get('mesh');o.updateWorldMatrix(true,true);let result=[];
                         o.traverse(m=>{if(m.isMesh){const p=m.geometry.attributes.position;for(let i=0;i<p.count;i++)result.push(m.localToWorld(m.position.clone().set(p.getX(i),p.getY(i),p.getZ(i))).toArray());}});return result;}''')
                     np.testing.assert_allclose(actual,transform_points(np.asarray(native['world_matrix']),vertices),atol=1e-6)
@@ -204,7 +204,7 @@ class EditorNativeStateTests(unittest.TestCase):
                 browser=launch_chromium(runtime)
                 try:
                     page=browser.new_page();page.goto(server.url)
-                    page.wait_for_function('document.querySelector("#status").textContent.includes("viewport unavailable")')
+                    page.wait_for_function('() => document.querySelector("#status").textContent.includes("viewport unavailable")')
                     self.assertIsNot(page.evaluate('window.editorReady'),True)
                     self.assertIn('Expand prefab',page.locator('#diagnostic').inner_text())
                     self.assertEqual(page.evaluate('window.hatchEditor.objects.size'),0)
