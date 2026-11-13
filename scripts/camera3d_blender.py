@@ -46,7 +46,7 @@ def optical_plan(optics, render, *, exposure=0.0, motion_blur=False, shutter_fra
     width, height = optical_gate(optics, render)
     for value, low, high, label in ((exposure, -32, 32, 'exposure'),
                                    (shutter_frames, 0, 1, 'shutter_frames')):
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not low <= value <= high:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high or not math.isfinite(value):
             raise ValueError(f'camera3d {label} must be finite in [{low},{high}]')
     if not isinstance(motion_blur, bool):
         raise ValueError('camera3d motion_blur must be boolean')
