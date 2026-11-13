@@ -97,9 +97,15 @@ def definitions() -> dict:
                       role=text, owner=identifier))
     expression = obj(dict(schema_version={'const': 1}, morphs=mapping(num, 128),
                           bones=mapping(pose_transform, 256), incompatible=arr(identifier, 0, 128)))
+    eyelid = obj(dict(eye=identifier, mesh=identifier, morph=identifier,
+                     up_weight=dict(type='number', minimum=-2, maximum=2),
+                     down_weight=dict(type='number', minimum=-2, maximum=2),
+                     up_radians=dict(type='number', exclusiveMinimum=0, maximum=1.5707963267948966),
+                     down_radians=dict(type='number', exclusiveMinimum=0, maximum=1.5707963267948966)))
     facial = obj(dict(schema_version={'const': 1}, eyes=arr(identifier, 0, 32),
                      morph_targets=mapping(arr(identifier, 0, 128), 4096),
-                     expressions=mapping(expression, 128)))
+                     expressions=mapping(expression, 128), eyelids=arr(eyelid, 0, 128)),
+                 ['schema_version', 'eyes', 'morph_targets', 'expressions'])
     skin = obj(dict(schema_version={'const': 1}, id=identifier, version=version,
                     mesh=identifier, joints=arr(identifier, 1, 256), data=file_ref,
                     method={'enum': ['distance', 'diffusion', 'segmented', 'rigid', 'imported', 'manual']},
