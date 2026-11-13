@@ -57,6 +57,16 @@ class TriangleContacts(unittest.TestCase):
         first=Mesh('first',positions,np.array([[0,1,2]],dtype=np.uint8))
         second=Mesh('second',np.array([[.1,.1,0],[.2,.1,0],[.1,.2,0]]),np.array([[0,1,2]],dtype=np.uint8))
         self.assertEqual(geometry_contacts(Geometry([first,second],[{}]))['contact_count'],1)
+    def test_exact_work_and_contact_results_charge_memory_budget(self):
+        points=np.array([[0.,0,0],[1,0,0],[0,1,0]])
+        mesh=Mesh('coincident',np.tile(points,(150,1)),np.arange(450).reshape(-1,3))
+        with self.assertRaises(RigError) as error:triangle_contacts(mesh,limits={'memory_bytes':500000})
+        self.assertEqual(error.exception.report['code'],'MODEL3D_INTERSECTION_BUDGET')
+        small=Mesh('small',np.tile(points,(3,1)),np.arange(9).reshape(-1,3))
+        with self.assertRaises(RigError):triangle_contacts(small,limits={'memory_bytes':200000})
+        report=triangle_contacts(small,limits={'memory_bytes':300000})
+        self.assertEqual(report['contact_count'],3)
+        self.assertLessEqual(report['conservative_working_bytes']+report['contact_count']*8192,300000)
     def test_invalid_limits_and_nonfinite_reject(self):
         mesh=self.pair([[0,0,0],[1,0,0],[0,1,0]],[[0,0,0],[1,0,0],[0,1,0]])
         for kwargs in [dict(max_pairs=True),dict(max_pairs=10**1000),dict(max_triangles=0)]:

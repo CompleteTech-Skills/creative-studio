@@ -11,7 +11,10 @@ Input triangles must be nondegenerate; repair remains a separate explicit
 operation. Native admission and working-memory checks execute before exact work.
 Defaults allow 4096 triangles and 100000 sweep pair comparisons. Hard API ceilings
 are 20000 triangles and 200000 comparisons. Exhaustion produces a structured
-failure; it never becomes a partial passing report. Exact predicates use each
+failure; it never becomes a partial passing report. Exact fraction/sweep storage
+and predicate temporaries reserve a conservative working-memory allowance before
+allocation. Each retained contact, including optional part metadata, charges
+8192 additional bytes; result exhaustion also fails without a partial report. Exact predicates use each
 finite float16/32/64 value's exact binary-rational representation, with no geometric epsilon.
 Higher-precision float arrays reject. Mixed integer/floating parts reject integer
 coordinates outside the conservative exact float64 range ±2**53 before aggregation;

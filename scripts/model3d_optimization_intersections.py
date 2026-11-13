@@ -68,13 +68,20 @@ def triangle_contacts(mesh,*,max_triangles=4096,max_pairs=100_000,limits=None):
     explicit pair budget. Budget exhaustion rejects without a partial success
     report. Input geometry is never modified and degeneracies reject explicitly.
     """
-    _check(mesh,limits)
+    budget=_check(mesh,limits)
     require(mesh.positions.dtype.kind!='f' or mesh.positions.dtype.itemsize<=8,
             'MODEL3D_INTERSECTION_NUMERIC','Exact float predicates support binary floating types up to float64.')
     require(type(max_triangles) is int and 1<=max_triangles<=20_000
             and type(max_pairs) is int and 1<=max_pairs<=200_000,
             'MODEL3D_INTERSECTION_BUDGET','Intersection limits must be bounded positive native integers.')
     require(len(mesh.triangles)<=max_triangles,'MODEL3D_INTERSECTION_BUDGET','Triangle count exceeds exact diagnostic budget.')
+    # Conservative allowance covers retained fractions/sets/sweep arrays plus
+    # bounded exact-predicate temporaries. Each reported pair, including later
+    # geometry-wrapper part metadata, reserves another 8192 bytes.
+    working=len(mesh.positions)*4096+len(mesh.triangles)*4096+131072
+    require(working<=budget['memory_bytes'],'MODEL3D_INTERSECTION_BUDGET',
+            'Exact contact working memory exceeds the configured budget before allocation.')
+    contact_budget=min(max_pairs,(budget['memory_bytes']-working)//8192)
     require(not _degenerate(mesh).any(),'MODEL3D_INTERSECTION_DEGENERATE','Repair degenerate triangles explicitly before intersection measurement.')
     # Preserve integer coordinates without an intervening float conversion;
     # float16/32/64 inputs retain their exact binary ratios.
@@ -96,11 +103,15 @@ def triangle_contacts(mesh,*,max_triangles=4096,max_pairs=100_000,limits=None):
             exact_pairs+=1
             a=tuple(exact[int(k)] for k in mesh.triangles[i]);b=tuple(exact[int(k)] for k in mesh.triangles[j])
             kind=_contact(a,b)
-            if kind:contacts.append(dict(triangles=sorted([i,j]),kind=kind))
+            if kind:
+                require(len(contacts)<contact_budget,'MODEL3D_INTERSECTION_BUDGET',
+                        'Exact contact result exceeds the configured memory budget.')
+                contacts.append(dict(triangles=sorted([i,j]),kind=kind))
         active.append(i)
     contacts.sort(key=lambda x:x['triangles'])
     return dict(schema_version=1,kind='hatch-model3d-triangle-contacts',mesh=mesh.id,
                 triangles=len(triangles),contacts=contacts,contact_count=len(contacts),
+                conservative_working_bytes=working,contact_result_budget=contact_budget,
                 sweep_pair_comparisons=comparisons,adjacent_pairs_excluded=adjacent,
                 aabb_pairs_separated=separated,exact_pairs_checked=exact_pairs,
                 numeric_policy='exact binary-rational predicates; no geometric epsilon',
