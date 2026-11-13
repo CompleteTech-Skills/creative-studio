@@ -267,7 +267,7 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
             evaluated[identifier]['native_clip'] = deepcopy(binding)
             evaluated[identifier]['native_animation_evaluated'] = bool(sample_geometry)
     geometry = _sample_native_geometry(graph, evaluated, documents, native, source_root,
-                                       max_geometry_vertices) if sample_geometry else None
+                                       max_geometry_vertices,bundle['inventory']) if sample_geometry else None
     from scene3d_pose import evaluate_poses
     pose_geometry = evaluate_poses(graph,evaluated,documents,native,source_root,
         sample_geometry=sample_geometry,max_vertices=max_geometry_vertices)
@@ -312,7 +312,7 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
     return result
 
 
-def _sample_native_geometry(graph, evaluated, documents, native, root, max_vertices):
+def _sample_native_geometry(graph, evaluated, documents, native, root, max_vertices, inventory):
     require(root is not None, 'Native geometry requires the exact source root.')
     from rig_models import load_rig
     from rig_animation import evaluate_animation
@@ -321,6 +321,7 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
     from rig_errors import decode_json
     from asset_library import read_source_bytes
     from scene3d_contracts import portable_path
+    from scene3d_capture import capture_verified_native
     import numpy as np
     result, cache, count = {}, {}, 0
     nodes = {node['id']:node for node in graph.document()['nodes']}
@@ -346,7 +347,8 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
         key = (tuple(rig_ref[field] for field in identity),
                tuple(reference[field] for field in identity), time, binding['loop'])
         if key not in cache:
-            rig = load_rig(rig_path.parent)
+            with capture_verified_native(root,rig_ref['path'],inventory) as private_rig:
+                rig = load_rig(private_rig)
             require(rig.manifest['id'] == rig_ref['id'] and rig.manifest['version'] == rig_ref['version'],
                     'Native rig identity/version differs from the binding.')
             require(reference['id'] in rig.clips, 'Native clip is absent from the rig.')

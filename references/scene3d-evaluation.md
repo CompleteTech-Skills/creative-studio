@@ -56,6 +56,9 @@ A light node may carry `light_binding` with `schema_version: 1`, an exact
 canonical `light3d` reference under `light`, `intensity_scale` in [0, 1000000],
 and a linear RGB `color_multiplier` in [0,1]. This multiplies the physical source
 light; it never interprets the legacy unitless `light.intensity` as physical power.
+The lighting owner retains photometric tint semantics: candela/lux colors are
+normalized to unit luminance after tint (black stays dark); use intensity_scale
+for brightness changes. Area watt sources retain direct RGB multiplication.
 `light_intensity_scale` and `light_color_multiplier` tracks animate those explicit
 multipliers. Optional shot `light_overrides` replace a target's complete binding
 as the final shot override. The world binding instead carries `light`,
