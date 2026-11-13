@@ -108,6 +108,25 @@ class TemporalTests(unittest.TestCase):
         self.assertEqual(self.registry.temporal_history('main',revision=self.initial)['events'],[])
         self.assertEqual(self.registry.temporal_history('main')['sha256'],head)
 
+    def test_native_project_nested_under_asset_root(self):
+        # Native internal pointers stay project-local; only plan pointers gain
+        # the path from the continuity asset root to that project directory.
+        asset_root = Path(self.temp.name)
+        plan = deepcopy(self.plan)
+        plan['project_revision']['path'] = 'native/' + plan['project_revision']['path']
+        for section, field in (('scenes','scene'),('shots','shot')):
+            for entry in plan[section]:
+                entry[field]['path'] = 'native/' + entry[field]['path']
+        engine = TemporalEngine(asset_root, dict(plan=plan, events=[]))
+        snapshot = engine.snapshot('shot-0',0,head_sha256='0'*64)
+        self.assertEqual(len(snapshot['entities']),3)
+        # An equal-ID source at a different asset-root path is not membership.
+        plan['scenes'][0]['scene']['path'] = 'other/' + Path(plan['scenes'][0]['scene']['path']).name
+        other = asset_root/'other'; other.mkdir()
+        (other/'location-0.json').write_bytes((self.root/'location-0.json').read_bytes())
+        with self.assertRaisesRegex(ValueError,'scene is not in native project'):
+            TemporalEngine(asset_root, dict(plan=plan, events=[]))
+
     def test_event_specific_order_at_same_tick(self):
         self.append([event('a',1001),event('b',1001,before=True,after=False,priority=1,prerequisites=['a'])])
         self.assertEqual(self.snap(frame=1,boundary='before')['snapshot']['applied_events'],[])

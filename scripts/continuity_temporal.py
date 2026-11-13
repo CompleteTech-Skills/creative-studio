@@ -128,8 +128,14 @@ class TemporalEngine:
         project_doc = native_validate(decode_json(read_reference_bytes(self.root, project)), 'project')
         if (project_doc['id'], project_doc['version'], project_doc['kind']) != (project['id'], project['version'], project['kind']):
             fail('REFERENCE', 'project reference identity mismatch')
-        known_scenes = {digest(r) for r in project_doc['scenes']}
-        known_shots = {digest(r) for r in project_doc['shots']}
+        # Native child paths are relative to the native project directory;
+        # timeline pointers are relative to the continuity asset root. Preserve
+        # exact identity/hash binding while comparing in the same path space.
+        project_directory = Path(project['path']).parent
+        def rooted(reference):
+            return dict(reference, path=(project_directory / reference['path']).as_posix())
+        known_scenes = {digest(rooted(r)) for r in project_doc['scenes']}
+        known_shots = {digest(rooted(r)) for r in project_doc['shots']}
         scenes, seeds = {}, {}
         for entry in self.plan['scenes']:
             reference = entry['scene']
