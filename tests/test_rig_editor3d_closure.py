@@ -287,6 +287,8 @@ class EditorNativeClosureTests(unittest.TestCase):
         project=deepcopy(self.bundle[0]);project['source_projects'].append(original)
         project['dependency_manifest'].extend([original,additional])
         with self.assertRaises(RigError):verify_editor_bundle(project,*self.bundle[1:],self.root)
+        project['source_projects'] = []
+        with self.assertRaises(RigError):verify_editor_bundle(project,*self.bundle[1:],self.root)
 
     def test_material_does_not_consume_other_owners_opaque_payloads(self):
         from lookdev_contracts import Registry

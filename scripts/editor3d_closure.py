@@ -292,6 +292,9 @@ def _verify_editor_bundle(project, scenes, nodes, assets, animations, root):
                 from rig_models import load_rig
                 from rig_validation import validate_rig
                 rig = load_rig(native_root)
+                from rig_errors import object_hash
+                if object_hash(rig.manifest) != object_hash(value):
+                    _error('IDENTITY', 'Native rig loader did not evaluate the exact bound manifest.')
                 report = validate_rig(rig)
                 if not report['ok']:
                     _error('NATIVE', 'Native rig fails numerical validation.')
