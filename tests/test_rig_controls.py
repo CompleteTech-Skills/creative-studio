@@ -80,6 +80,31 @@ class RigControlTests(unittest.TestCase):
         other=solve_ik(skeleton,pose,ik_chain(),[0,0,0],pole=[0,0,2])
         np.testing.assert_allclose(evaluate_fk(skeleton,other.pose)['b1'][:3,3],[0,0,1],atol=1e-12)
 
+    def test_closed_multisegment_matching_keeps_all_segments_and_weighted_geometry(self):
+        from rig_models import Geometry, Mesh, RigAsset, SkinWeights
+        from rig_skinning import evaluate_deformation
+        skeleton=chain_skeleton(5);pose=neutral_pose(skeleton)
+        for name in ('b1','b2','b3'):
+            pose=rotate_bone(skeleton,pose,name,axis_angle([0,0,1],math.pi/2))
+        before=evaluate_fk(skeleton,pose);rest=evaluate_fk(skeleton)
+        positions=np.array([[.1,0,0],[.2,1,0],[.1,2,0],[.2,3,0],[.1,4,0]])
+        mesh=Mesh('strip',positions,np.array([[0,1,2],[2,3,4]]))
+        names=[f'b{i}' for i in range(5)]
+        skin=SkinWeights('strip',names,np.arange(5)[:,None],np.ones((5,1)),
+                         np.array([np.linalg.inv(rest[name]) for name in names]))
+        rig=RigAsset({'skeleton':skeleton},Geometry([mesh]),{'strip':skin})
+        chain=ik_chain(5,'fabrik');targets=match_fk_to_ik(skeleton,pose,chain)
+        result=solve_ik(skeleton,pose,chain,**targets)
+        self.assertTrue(result.converged,result.report())
+        for name,world in evaluate_fk(skeleton,result.pose).items():
+            np.testing.assert_allclose(world,before[name],atol=1e-12)
+        np.testing.assert_allclose(evaluate_deformation(rig,result.pose)['strip']['positions'],
+                                   evaluate_deformation(rig,pose)['strip']['positions'],atol=1e-12)
+        limit=dict(schema_version=1,id='bend-limit',bone='b1',type='hinge',axis=[0,0,1],minimum=0.,maximum=.4)
+        limited=solve_ik(skeleton,pose,chain,**targets,constraints=[limit])
+        self.assertFalse(limited.converged)
+        self.assertGreater(limited.residual_m,.1)
+
     def test_matched_fold_still_enforces_existing_joint_limits(self):
         skeleton=chain_skeleton()
         pose=rotate_bone(skeleton,neutral_pose(skeleton),'b1',axis_angle([1,0,0],math.pi))

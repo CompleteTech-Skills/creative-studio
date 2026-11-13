@@ -108,7 +108,16 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     changes, iterations = [], 0
     tolerance = chain['tolerance']
     limit = chain['iterations']
-    if chain['solver'] == 'two-bone':
+    pole_delta = pole-origin
+    matched_fold = (distance <= 1e-9 and np.linalg.norm(points[-1]-target) <= tolerance
+                    and np.linalg.norm(pole_delta) > 1e-9
+                    and np.dot(unit(pole_delta), unit(points[1]-origin)) >= 1.-1e-12)
+    if matched_fold:
+        # A closed multisegment chain has no endpoint axis from which to
+        # reconstruct its interior. Keep the authoritative matched seed when
+        # its pole agrees; constraints and final orientation still run below.
+        if constrained:result, changes = apply_constraints(skeleton, result, constrained, ordered=True)
+    elif chain['solver'] == 'two-bone':
         a, b = lengths
         if distance <= 1e-9 and abs(a-b) <= 1e-9:
             # At a complete equal-length fold there is no root-to-end axis.
