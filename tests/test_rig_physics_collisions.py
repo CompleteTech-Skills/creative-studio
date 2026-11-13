@@ -174,6 +174,20 @@ class CollisionNativeTests(unittest.TestCase):
         self.assertGreater(distances[0.]-distances[.9],1.)
         self.assertGreater(bounce_heights[.9]-bounce_heights[0.],.5)
 
+    def test_real_static_concave_gap_is_not_replaced_by_a_convex_hull(self):
+        from physics_collision_query import raycast_cache
+        world,payloads=self.base()
+        world['bodies'][1]['colliders'][0]['shape']=dict(type='triangle-mesh',source='floor-asset',
+            vertices=[[-5,.1,-5],[-.6,.1,-5],[-.6,.1,5],[-5,.1,5],[.6,.1,-5],[5,.1,-5],[5,.1,5],[.6,.1,5]],
+            triangles=[[0,2,1],[0,3,2],[4,6,5],[4,7,6]])
+        cache,states,contacts=self.run_world(world,payloads,'concave-gap')
+        self.assertLess(states['samples'][-1]['bodies'][0]['translation'][1],-10)
+        self.assertFalse(any(frame['contacts'] for frame in contacts['samples']))
+        result=raycast_cache(cache,0,[dict(start=[x,2,2],end=[x,-1,2],mask=0xffffffff) for x in [0,2]],
+                             interpreter=os.environ['HATCH_PYBULLET_PYTHON'])
+        self.assertFalse(result['results'][0]['hit'])
+        self.assertEqual(result['results'][1]['body'],'floor')
+
     def test_real_playground_contacts_queries_and_tunneling_record(self):
         import physics_backends as physics
         from physics_collision_example import build_collision_inputs
@@ -189,3 +203,17 @@ class CollisionNativeTests(unittest.TestCase):
         self.assertTrue(query['results'][0]['hit'])
         self.assertTrue(query.pop('preview_png').startswith(b'\x89PNG\r\n\x1a\n'))
         physics._write(self.root/'query.json',physics.canonical(query))
+
+
+class CollisionQueryAdmissionTests(unittest.TestCase):
+    def test_malformed_rays_fail_before_cache_or_solver_access(self):
+        from unittest.mock import patch
+        from physics_collision_query import raycast_cache
+        import physics_backends as physics
+        base=dict(start=[0,1,0],end=[0,0,0],mask=0xffffffff)
+        cases=[[],[dict(base,mask=True)],[dict(base,start=[float('nan'),0,0])],
+               [dict(base,end=base['start'])],[dict(base,unused=0)],[dict(base,mask=-1)]]
+        for rays in cases:
+            with self.subTest(rays=rays), patch.object(physics,'_read_cache') as read:
+                with self.assertRaises(physics.BackendError):raycast_cache('/must-not-open',0,rays)
+                read.assert_not_called()

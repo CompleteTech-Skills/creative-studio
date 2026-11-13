@@ -46,16 +46,16 @@ def raycast_cache(cache, frame, queries, *, interpreter=None, preview=False):
             output_bytes=min(world['budgets']['temporary_bytes'],16*1024*1024),label='query')
         with physics._Reader(root) as reader:
             output=physics.parse(reader.read('query-result.json',2*1024*1024))
-        physics.require(type(output) is dict and output.get('ok') is True and output.get('operation')=='collision-query' and
-            output.get('world_sha256')==manifest['world_sha256'] and output.get('worker_sha256')==worker_hash and output.get('frame')==frame and
+        physics.require(type(output) is dict and set(output)=={'ok','operation','world_sha256','worker_sha256','frame','backend','results'} and output.get('ok') is True and output.get('operation')=='collision-query' and
+            output.get('world_sha256')==manifest['world_sha256'] and output.get('worker_sha256')==worker_hash and type(output.get('frame')) is int and output['frame']==frame and
             output.get('backend')==backend._module_record and type(output.get('results')) is list and len(output['results'])==len(queries),
             'PHYSICS_QUERY','Native query response identity/count differs.')
         bodies={body['id'] for body in world['bodies']}
         for ray,result in zip(queries,output['results']):
-            physics.require(type(result) is dict and type(result.get('hit')) is bool,
+            physics.require(type(result) is dict and set(result)=={'hit','body','fraction','position','normal'} and type(result.get('hit')) is bool,
                             'PHYSICS_QUERY','Malformed native query hit.')
             if result['hit']:
-                physics.require(result.get('body') in bodies and type(result.get('fraction')) in (int,float) and 0<=result['fraction']<=1 and
+                physics.require(type(result.get('body')) is str and result['body'] in bodies and type(result.get('fraction')) in (int,float) and 0<=result['fraction']<=1 and
                     all(type(result.get(key)) is list and len(result[key])==3 and all(type(x) in (int,float) and math.isfinite(x) for x in result[key]) for key in ('position','normal')),
                     'PHYSICS_QUERY','Malformed native ray intersection.')
                 expected=[a+(b-a)*result['fraction'] for a,b in zip(ray['start'],ray['end'])]

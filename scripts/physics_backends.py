@@ -144,6 +144,15 @@ def _world(value):
     value['solver']['fixed_step'] = {key: int(item) for key, item in value['solver']['fixed_step'].items()}
     for key in ('substeps', 'iterations', 'seed'):
         value['solver'][key] = int(value['solver'][key])
+    for body in value['bodies']:
+        for collider in body['colliders']:
+            collider['group']=int(collider['group']);collider['mask']=int(collider['mask'])
+            shapes=[collider['shape']]
+            while shapes:
+                shape=shapes.pop()
+                if shape['type']=='compound':shapes.extend(child['shape'] for child in shape['children'])
+                elif shape['type'] in ('convex-hull','triangle-mesh'):
+                    shape['triangles']=[[int(index) for index in face] for face in shape['triangles']]
     from physics_contracts import definitions
     for key, schema in definitions()['PhysicsBudgets']['properties'].items():
         if schema.get('type') == 'integer':
@@ -609,6 +618,7 @@ def _admit_world(value, backend):
                 'PHYSICS_MATERIAL_UNSUPPORTED', 'Blender/PyBullet expose one friction coefficient; unequal static/dynamic requests are unsupported.', category='capability-gap')
         require(material['collision_margin'] == 0, 'PHYSICS_MARGIN_UNSUPPORTED',
                 'Nonzero additional contact skin has not been verified; native margin property storage is not physical separation support.',category='capability-gap')
+    proxy_totals=[0,0,0]
     for body in world['bodies']:
         require(len(body['id'].encode()) <= 63 and body['category'] == 'rigid-body' and body['mode'] in ('dynamic', 'static', 'kinematic') and body['parent'] is None,
                 'PHYSICS_BODY_UNSUPPORTED', 'Only unparented static/dynamic/kinematic rigid bodies with native names <=63 bytes are implemented.', category='capability-gap')
@@ -629,11 +639,12 @@ def _admit_world(value, backend):
                     'The explicit proxy profile currently requires the verified DIRECT adapter.', category='capability-gap')
             from physics_collisions import validate_colliders, CollisionError
             try:
-                proxy_vertices, proxy_triangles, _ = validate_colliders(body,
+                proxy_vertices, proxy_triangles, proxy_leaves = validate_colliders(body,
                     source_ids={item['id'] for item in world['assets'] if item['kind'] == 'geometry'})
             except CollisionError as exc:
                 raise BackendError('PHYSICS_GEOMETRY', str(exc), category='invalid-input') from exc
-            require(proxy_vertices <= budget['vertices'] and proxy_triangles <= budget['triangles'],
+            proxy_totals=[total+count for total,count in zip(proxy_totals,(proxy_vertices,proxy_triangles,proxy_leaves))]
+            require(proxy_totals[0] <= budget['vertices'] and proxy_totals[1] <= budget['triangles'] and proxy_totals[2]<=128,
                     'PHYSICS_RESOURCE_LIMIT', 'Collision proxy exceeds declared mesh budget.', category='resource-exhaustion')
         else:
             require(len(body['colliders']) == 1, 'PHYSICS_SHAPE_UNSUPPORTED', 'Exactly one box/sphere collider per body is supported.', category='capability-gap')
@@ -1471,7 +1482,8 @@ def _additional_shape_smoke(backend):
 
 
 def _validate_contacts(value,world,world_hash,*,legacy=False):
-    ids={body['id'] for body in world['bodies']}
+    body_map={body['id']:body for body in world['bodies']}
+    ids=set(body_map)
     require(isinstance(value,dict) and set(value)=={'schema_version','kind','world_sha256','samples'} and
             value['schema_version']==1 and value['kind']=='hatch-pybullet-contacts' and value['world_sha256']==world_hash and
             type(value['samples']) is list and len(value['samples'])==world['frame_range']['end'],
@@ -1499,6 +1511,9 @@ def _validate_contacts(value,world,world_hash,*,legacy=False):
                         'PHYSICS_CACHE_CORRUPT','Invalid native contact impulse or tangent force.',category='cache-corruption')
                 require(abs(contact['normal_impulse']-contact['normal_force']*float(step))<=1e-8*max(1,contact['normal_impulse']),
                         'PHYSICS_CACHE_CORRUPT','Native contact impulse differs from the observed step force.',category='cache-corruption')
+                left=body_map[contact['body_a']]['colliders'][0];right=body_map[contact['body_b']]['colliders'][0]
+                require(bool(left['group'] & right['mask']) and bool(right['group'] & left['mask']),
+                        'PHYSICS_CACHE_CORRUPT','Filtered collision pair produced contact.',category='cache-corruption')
                 excluded={frozenset(pair) for pair in world.get('collision_exclusions',[])}
                 require(frozenset((contact['body_a'],contact['body_b'])) not in excluded,
                         'PHYSICS_CACHE_CORRUPT','Excluded collision pair produced contact.',category='cache-corruption')

@@ -90,7 +90,7 @@ def validate_colliders(body, *, source_ids):
 
 
 def collision_capabilities():
-    return dict(backend='pybullet', shapes=['sphere', 'box', 'capsule', 'cylinder',
+    return dict(backend='pybullet', readiness='not-probed', shapes=['sphere', 'box', 'capsule', 'cylinder',
         'convex-hull', 'compound', 'static-triangle-mesh'], convex_decomposition='explicit convex compound children',
         filtering='bilateral group/mask; explicit pair exclusions', contacts='native Bullet contact manifolds',
         raycast='native Bullet closest ray test', sweep='unsupported', sensors='unsupported',
