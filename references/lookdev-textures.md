@@ -178,3 +178,54 @@ provided. Existing unmarked versions continue to load through their explicitly
 retained `document_path`; callers must not invent a discovery path for them.
 The Texture3D document and its actual original pixels are still independently
 validated after selection. Markers identify a declared entry point, not approval.
+## Native consumption of disposable cached buffers
+
+`lookdev_texture_blender.create_cached_blender_image(cache, decoded, name=...,
+profile='browser', mip_level=0)` prepares the bounded CPU pyramid, selects an
+explicit level and installs those exact pixels through `create_blender_image`.
+It returns the packed native image and a derivation receipt containing original
+source hash, cache key, selected dimensions, bytes and float32 pixel hash. The
+receipt also captures SHA-256 of the actual binder, cache, texture, contract and
+error helper source modules when imported. Validation checkouts must stay frozen
+through a job. The same receipt is stored on the native image and survives a saved project when the
+image remains assigned to a shader. Clearing CPU cache buffers does not remove
+native shader images. Callers own image assignment and rollback/removal.
+
+The opt-in `HATCH_LOOKDEV_CACHE_TEST=1` gate uses `HATCH_BLENDER` and an optional
+new `HATCH_LOOKDEV_CACHE_EVIDENCE` directory. Run `python -m unittest discover -s
+tests -p test_rig_lookdev_cache_consumer.py -v`. The trusted fixture renders two
+actual Cycles emission shaders sampling selected derived red/blue images,
+measures the rendered colors, and reopens the shader-bound blue packed image to
+compare its exact pixel hash and derivation. This establishes native shader
+consumption of derived pixels. GPU residency and canonical PBR texture-slot
+binding remain separate renderer/material adapter work; texture-bearing
+canonical material plans still reject until that bridge is implemented.
+
+## Canonical native sampler settings
+
+`lookdev_texture_sampling.sampler_plan(Texture3D)` admits explicit nearest/linear
+filtering and repeat/clamp wrapping. `configure_blender_sampler(node, Texture3D)`
+requires a native image shader node whose installed image source hash, role and
+encoding match the document, then sets Closest/Linear and REPEAT/EXTEND explicitly.
+Callers must first verify original bytes and metadata through
+`verify_texture_document` or `load_library_texture`, then install through the
+image/cache owner. Sampler schema and installed-image custom properties alone
+do not authenticate pixels; derived dimensions may legitimately differ from
+source dimensions. It never relies on the node defaults. Mirrored wrapping and explicit mipmap
+filtering reject until their coordinate/filter implementations are verified.
+This helper owns sampler settings only; direct canonical material-slot composition
+remains with the PBR adapter. A returned plan records exact document and helper
+source hashes. The opt-in HATCH_LOOKDEV_SAMPLING_TEST gate samples an actual
+PNG-derived red/blue texture through Cycles, compares boundary filtering and
+out-of-range repeat/clamp behavior, and retains exact image hashes.
+
+The image derivation explicitly distinguishes original `encoding` provenance from
+`actual_decoded_encoding` (`linear-srgb` for color roles, `data` for data roles).
+`pixel_layout` is `float32-rgba`, `decoded_byte_order` is `little-endian`,
+`decoded_row_order` is `top-down` and
+`native_row_order` is `bottom-up`. The selected float32 RGBA digest binds the
+top-down little-endian float32 buffer bytes before Blender installation. Blender stores these already
+linear/data values with `Non-Color`; graph adapters must not reapply the original
+sRGB transfer function. Consumers must verify the descriptor, pixels and exact
+source hash before admitting a predecoded image, rather than infer interpretation
+from an image merely being float-backed.
