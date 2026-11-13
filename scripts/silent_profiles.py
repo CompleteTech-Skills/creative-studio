@@ -37,7 +37,10 @@ def encoding_schema():
 
 
 def validate_encoding(profile, settings):
-    _structural(settings, encoding_schema(), 'silent encoding controls')
+    try:
+        _structural(settings, encoding_schema(), 'silent encoding controls')
+    except (OverflowError, RecursionError) as exc:
+        raise ValueError('encoding controls exceed numeric/nesting limits') from exc
     codec = profile['codec']
     if codec not in QUALITY:
         raise ValueError('unsupported codec controls')
