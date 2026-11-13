@@ -368,6 +368,7 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                         if (source / ref['path']).is_file():
                             ref['sha256'] = hashlib.sha256((source / ref['path']).read_bytes()).hexdigest()
                     path.write_text(json.dumps(document))
+            baseline_files = {path.name: path.read_bytes() for path in source.iterdir() if path.is_file()}
             repository = EditorRepository.create(source, Path(directory) / 'saved')
             calls = []
             def edit(server, body):
@@ -379,7 +380,10 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                 self.assertEqual((body['revision'], body['sha256']), (current['revision'], current['sha256']))
                 shot = current['documents'][body['shot']]
                 rate = Fraction(**shot['fps'])
-                graph = SceneGraph(current['scene'])
+                authored_scene = json.loads(json.dumps(current['scene']))
+                if 'transform' in shot['camera_overrides']:
+                    next(n for n in authored_scene['nodes'] if n['id'] == shot['camera'])['transform'] = shot['camera_overrides']['transform']
+                graph = SceneGraph(authored_scene)
                 sampled = graph.evaluate_base()
                 for identifier, state in sampled.items():
                     authored = next(n for n in current['scene']['nodes'] if n['id'] == identifier)
@@ -438,6 +442,19 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                         }''')
                         self.assertTrue(result['rejected']); self.assertTrue(result['projectionRejected'])
                         self.assertTrue(result['exposureRejected']); self.assertTrue(result['shadingRejected'])
+                        context_checks = page.evaluate('''() => {
+                            if (window.hatchEditor.getTimelineContext() !== null) throw Error('Unexpected provider');
+                            const s = window.hatchEditor.snapshot;
+                            const context = {revision:s.revision,sha256:s.sha256,scene_path:s.scene_path,
+                                shot_path:s.project.shots[0].path,frame:{numerator:0,denominator:1}};
+                            const stop = window.hatchEditor.registerTimelineProvider(() => context);
+                            const copy = window.hatchEditor.getTimelineContext(); copy.frame.numerator = 10;
+                            const isolated = window.hatchEditor.getTimelineContext().frame.numerator === 0;
+                            context.revision++; let stale = false;
+                            try { window.hatchEditor.getTimelineContext(); } catch { stale = true; }
+                            stop(); return [isolated,stale,window.hatchEditor.getTimelineContext() === null];
+                        }''')
+                        self.assertEqual(context_checks, [True, True, True])
                         self.assertEqual(result['revision'], 0)
                         captured = result['captured']
                         self.assertEqual(captured['resolution'], [320, 240])
@@ -533,6 +550,45 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                             catch (error) { return error.message; }
                         }''')
                         self.assertIn('area light', reason)
+                        for case in ('camera-override', 'pivot', 'effective-lock'):
+                            with self.subTest(preview_edit_case=case):
+                                for name, payload in baseline_files.items(): (source / name).write_bytes(payload)
+                                scene = json.loads((source / 'example-scene.json').read_text())
+                                target = 'camera' if case == 'camera-override' else 'mesh'
+                                authored = next(n for n in scene['nodes'] if n['id'] == target)
+                                if case == 'camera-override':
+                                    project = json.loads((source / 'project.json').read_text())
+                                    path = source / project['shots'][0]['path']
+                                    shot = json.loads(path.read_text())
+                                    shot['camera_overrides']['transform'] = authored['transform']
+                                    path.write_text(json.dumps(shot))
+                                elif case == 'pivot':
+                                    authored['transform'].update(translation=[0,0,0], pivot=[1,0,0],
+                                        rotation=[0,0,math.sqrt(0.5),math.sqrt(0.5)])
+                                else:
+                                    scene['collections'].append(dict(id='locked-members',name='Locked collection',visible=True,locked=True))
+                                    authored['collections'].append('locked-members')
+                                (source / 'example-scene.json').write_text(json.dumps(scene))
+                                for _ in range(6):
+                                    for path in source.glob('*.json'):
+                                        document = json.loads(path.read_text())
+                                        for ref in all_refs(document):
+                                            if (source / ref['path']).is_file():
+                                                ref['sha256'] = hashlib.sha256((source / ref['path']).read_bytes()).hexdigest()
+                                        path.write_text(json.dumps(document))
+                                repository = EditorRepository.create(source, Path(directory) / case)
+                                server.repository = repository
+                                page.goto('about:blank'); page.goto(server.url)
+                                page.wait_for_function('() => window.editorReady === true')
+                                saved = repository.snapshot()
+                                evaluated = evaluate(server, dict(revision=saved['revision'],sha256=saved['sha256'],shot=saved['project']['shots'][0]['path'],frame=0))
+                                page.evaluate('''({target,evaluated}) => {
+                                    window.hatchEditor.select(target);
+                                    window.hatchEditor.registerPreviewEditAuthorizer(() => true);
+                                    window.hatchEditor.preview(evaluated);
+                                }''', dict(target=target,evaluated=evaluated))
+                                self.assertTrue(page.get_by_label('translation X', exact=True).is_disabled())
+                                self.assertTrue(page.evaluate('!window.hatchEditor.gizmo.object'))
                     finally: browser.close()
             finally: server.shutdown(); server.server_close(); thread.join(timeout=5)
 

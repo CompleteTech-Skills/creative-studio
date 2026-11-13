@@ -185,3 +185,11 @@ controls stay disabled during preview. Core admission rejects constrained or
 attached targets, stale evaluations and commands outside the selected transform
 roots. A preview transform must also be claimed by one atomic native command
 interceptor; it cannot silently fall back to an authored base-scene edit.
+
+
+Effective inherited locks, nonzero transform pivots and selected camera transform
+overrides also disable preview autokey until their native inverse-edit mapping is
+supported. `registerTimelineProvider` supplies the one authoritative selected shot
+and rational frame to other extensions. `getTimelineContext` returns a copied,
+validated current context, returns null when absent, and rejects multiple/stale
+providers or a frame outside the active saved shot.

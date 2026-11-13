@@ -42,7 +42,7 @@ let renderer,
   previewActive = false;
 const collapsed = new Set();
 const extensions = [];
-const commitInterceptors = new Set(), installSubscribers = new Map(), unavailableNodes = new Map(), previewEditAuthorizers = new Set();
+const commitInterceptors = new Set(), installSubscribers = new Map(), unavailableNodes = new Map(), previewEditAuthorizers = new Set(), timelineProviders = new Set();
 let lastEvaluation = null;
 function clearInstallSubscriptions() {
   for (const record of installSubscribers.values()) {
@@ -69,7 +69,10 @@ function canEditPreview() {
   if (!frame || !Number.isSafeInteger(frame.numerator) || frame.denominator !== 1) return false;
   for (const id of roots()) {
     const node = nodes.get(id), state = lastEvaluation.nodes?.[id];
-    if (!node || node.locked || !state || node.constraints?.length || node.attachment || node.path_binding ||
+    if (!node || node.locked || !state || state.locked || state.selectable === false ||
+        node.transform.pivot?.some(value => value !== 0) ||
+        (id === shot.camera && shot.camera_overrides?.transform) ||
+        node.constraints?.length || node.attachment || node.path_binding ||
         state.native_clip || shot.path_bindings?.length || shot.temporal_constraints?.some(item =>
           item.target === id && item.start_frame <= frame.numerator && frame.numerator < item.end_frame)) return false;
   }
@@ -79,6 +82,27 @@ function canEditPreview() {
     catch { return false; }
   }
   return allowed === 1;
+}
+function registerTimelineProvider(callback) {
+  if (typeof callback !== "function") throw Error("A timeline provider must be a function.");
+  timelineProviders.add(callback);
+  return () => timelineProviders.delete(callback);
+}
+function getTimelineContext() {
+  if (timelineProviders.size === 0) return null;
+  if (timelineProviders.size !== 1) throw Error("Exactly one timeline provider is required.");
+  const value = [...timelineProviders][0]();
+  if (value == null) return null;
+  const expected = ["revision", "sha256", "scene_path", "shot_path", "frame"];
+  if (Object.keys(value).sort().join() !== expected.sort().join() ||
+      value.revision !== revision || value.sha256 !== sha256 || value.scene_path !== currentSnapshot.scene_path ||
+      !currentSnapshot.project.shots.some(ref => ref.path === value.shot_path)) throw Error("Timeline context is stale or unregistered.");
+  const shot = currentSnapshot.documents[value.shot_path], f = value.frame;
+  if (shot.scene.path !== value.scene_path || !f || Object.keys(f).sort().join() !== "denominator,numerator" ||
+      !Number.isSafeInteger(f.numerator) || !Number.isSafeInteger(f.denominator) || f.denominator <= 0 ||
+      f.numerator < 0 || BigInt(f.numerator) >= BigInt(shot.duration_frames) * BigInt(f.denominator))
+    throw Error("Timeline context does not name an exact frame in the active saved shot.");
+  return structuredClone(value);
 }
 function refreshPreviewEditState() { inspect(); attach(); }
 function registerPreviewEditAuthorizer(callback) {
@@ -1628,6 +1652,8 @@ window.hatchEditor = {
       upload,
       registerCommitInterceptor,
       registerPreviewEditAuthorizer,
+      registerTimelineProvider,
+      getTimelineContext,
       refreshPreviewEditState,
       capturePreview,
       downloadArtifact,
@@ -1651,6 +1677,8 @@ window.hatchEditor = {
   },
   registerCommitInterceptor,
   registerPreviewEditAuthorizer,
+  registerTimelineProvider,
+  getTimelineContext,
   refreshPreviewEditState,
   capturePreview,
   downloadArtifact,
