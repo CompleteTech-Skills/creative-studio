@@ -192,6 +192,26 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(library.resolve(new)['version'], '2.0.0')
         self.assertEqual((Path(restored['restored']) / 'context/project.json').read_bytes(), context.read_bytes())
 
+    def test_scoped_identity_conflicts_reject_before_package_publication(self):
+        other = AssetLibrary(self.root / 'other-library', create=True)
+        conflicting = deepcopy(self.fixture.manifest)
+        conflicting['metadata']['description'] = 'Conflicting bytes for same immutable ID/version'
+        second = other.register(seal(conflicting), self.fixture.sources)
+        graph = DependencyGraph({'local': self.library, 'other': other})
+        with self.assertRaisesRegex(RigError, 'immutable ID/version'):
+            create_package(graph, [], self.root / 'conflict', package_id='conflict',
+                scopes={'a': [locator('local', self.mesh)], 'b': [locator('other', second)]})
+        self.assertFalse((self.root / 'conflict').exists())
+        conflicting['version'] = '2.0.0'; conflicting['identity']['library'] = 'different-library'
+        # A separate source registry can contain this identity, but one restored
+        # authority cannot change stable identity across versions of the same ID.
+        third_library = AssetLibrary(self.root / 'third-library', create=True)
+        third = third_library.register(seal(conflicting), self.fixture.sources)
+        graph = DependencyGraph({'local': self.library, 'third': third_library})
+        with self.assertRaisesRegex(RigError, 'stable identity'):
+            create_package(graph, [], self.root / 'identity-conflict', package_id='conflict',
+                scopes={'a': [locator('local', self.mesh)], 'b': [locator('third', third)]})
+
     def test_package_symlinks_hardlinks_case_alias_and_oversize_rejected(self):
         blob = self.package / 'blobs' / self.fixture.files[0]['sha256']
         original = blob.read_bytes(); blob.unlink(); blob.symlink_to(self.fixture.mesh)
