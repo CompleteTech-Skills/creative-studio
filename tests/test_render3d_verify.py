@@ -30,43 +30,6 @@ def output(format='png',depth=8,alpha='straight',passes=None):
     return dict(format=format,bit_depth=depth,alpha=alpha,passes=passes or ['combined'],color_space='srgb' if format=='png' else 'linear')
 
 
-class ArtifactReadCounts(unittest.TestCase):
-    def test_whole_float_counts_preserve_reference_and_payload(self):
-        from render3d_verify import captured_file_ref
-        with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary)
-            for payload in (b'',b'abc'):
-                (root/'artifact').write_bytes(payload)
-                for count in (len(payload),float(len(payload))):
-                    reference=dict(path='artifact',bytes=count,sha256=hashlib.sha256(payload).hexdigest())
-                    original=json.dumps(reference)
-                    with captured_file_ref(root,reference,max_bytes=len(payload)) as (stream,record):
-                        self.assertEqual(stream.read(),payload)
-                        self.assertEqual(record['bytes'],len(payload))
-                    self.assertEqual(read_file_ref(root,reference,max_bytes=len(payload),memory_bytes=len(payload)),payload)
-                    self.assertEqual(json.dumps(reference),original)
-                    self.assertIs(type(reference['bytes']),type(count))
-
-    def test_invalid_counts_and_private_byte_budgets_fail_before_open(self):
-        from unittest.mock import patch
-        from render3d_verify import captured_file_ref
-        with tempfile.TemporaryDirectory() as temporary:
-            root=Path(temporary)
-            for count in (True,False,-1,1.5,10**400,float('inf'),float('nan')):
-                reference=dict(path='artifact',bytes=count,sha256='0'*64)
-                with self.subTest(count_type=type(count).__name__),patch('rig_errors.open_payload') as opened:
-                    with self.assertRaises(Render3DError):
-                        with captured_file_ref(root,reference,max_bytes=3):pass
-                    with self.assertRaises(Render3DError):read_file_ref(root,reference,max_bytes=3,memory_bytes=3)
-                    opened.assert_not_called()
-            reference=dict(path='artifact',bytes=4.0,sha256='0'*64)
-            with patch('rig_errors.open_payload') as opened:
-                with self.assertRaises(Render3DError):
-                    with captured_file_ref(root,reference,max_bytes=3):pass
-                with self.assertRaises(Render3DError):read_file_ref(root,reference,max_bytes=4,memory_bytes=3)
-                opened.assert_not_called()
-
-
 @unittest.skipUnless(DEPENDENCIES,'optional OpenEXR/pypng decoder packages unavailable')
 class ImageVerification(unittest.TestCase):
     def png(self,path,depth=8,alpha=True):

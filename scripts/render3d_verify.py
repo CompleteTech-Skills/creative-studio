@@ -30,15 +30,12 @@ def captured_file_ref(root, reference, *, max_bytes=256*1024**2):
     require(type(max_bytes) is int and 0<=max_bytes<=2**40,
             'invalid-input','Artifact byte budget must be a bounded nonnegative integer.')
     require(reference['bytes']<=max_bytes,'storage-exhaustion','Artifact exceeds its verification byte budget.')
-    # JSON Schema integers include whole-valued JSON numbers such as 3.0.
-    # Normalize only the private I/O count; preserve the authored reference.
-    expected_bytes=int(reference['bytes'])
     try:
         with tempfile.TemporaryFile() as frozen:
             digest=hashlib.sha256();size=0
             with open_payload(root,reference['path']) as (source,info):
                 require(info.st_size==reference['bytes'],'corrupt-output','Artifact size differs from its reference.')
-                while chunk:=source.read(min(1024*1024,expected_bytes-size+1)):
+                while chunk:=source.read(min(1024*1024,reference['bytes']-size+1)):
                     size+=len(chunk)
                     require(size<=reference['bytes'],'corrupt-output','Artifact grew beyond its reference.')
                     digest.update(chunk);frozen.write(chunk)
@@ -59,7 +56,7 @@ def read_file_ref(root,reference,*,max_bytes=32*1024**2,memory_bytes=32*1024**2)
     validate(reference,'FileRef')
     require(reference['bytes']<=memory_bytes,'system-memory','Artifact exceeds the semantic reader memory budget.')
     with captured_file_ref(root,reference,max_bytes=max_bytes) as (stream,_):
-        return stream.read(int(reference['bytes']))
+        return stream.read(reference['bytes'])
 
 
 @contextmanager
