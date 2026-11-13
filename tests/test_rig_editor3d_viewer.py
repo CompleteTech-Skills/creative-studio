@@ -350,6 +350,15 @@ class EditorPersistentBrowserTests(unittest.TestCase):
             # Aim the saved native camera at the triangle's actual front face.
             native_camera['transform'].update(translation=[2.5, -3, 0.5], rotation=[math.sqrt(0.5), 0, 0, math.sqrt(0.5)])
             (source / 'example-scene.json').write_text(json.dumps(document))
+            project = json.loads((source / 'project.json').read_text())
+            first_shot = json.loads((source / project['shots'][0]['path']).read_text())
+            orthographic = json.loads(json.dumps(first_shot))
+            orthographic.update(id='orthographic-shot', name='Orthographic override')
+            orthographic['camera_overrides']['camera'] = dict(native_camera['camera'], projection='orthographic')
+            (source / 'orthographic-shot.json').write_text(json.dumps(orthographic))
+            reference = dict(project['shots'][0], id=orthographic['id'], path='orthographic-shot.json', sha256='0'*64)
+            project['shots'].append(reference); project['dependency_lock'].append(reference)
+            (source / 'project.json').write_text(json.dumps(project))
             for _ in range(6):
                 for path in source.glob('*.json'):
                     document = json.loads(path.read_text())
@@ -375,6 +384,8 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                     state.update(visible=state['render_visible'], material_overrides=authored['material_overrides'])
                     for name in ('camera', 'light'):
                         if name in authored: state[name] = authored[name]
+                    if identifier == shot['camera'] and 'camera' in shot['camera_overrides']:
+                        state['camera'] = shot['camera_overrides']['camera']
                 time = Fraction(body['frame']) / rate
                 return dict(revision=current['revision'], snapshot_sha256=current['sha256'],
                     scene=shot['scene'], shot=next(r for r in current['project']['shots'] if r['path'] == body['shot']),
@@ -409,9 +420,17 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                             const captured = await window.hatchEditor.capturePreview(metadata);
                             let rejected = false;
                             try { await window.hatchEditor.capturePreview({...metadata,sha256:'0'.repeat(64)}); } catch { rejected = true; }
-                            return {captured,rejected,revision:window.hatchEditor.snapshot.revision};
+                            const overrideRef = s.project.shots.find(r => r.id === 'orthographic-shot');
+                            let projectionRejected = false;
+                            try { await window.hatchEditor.capturePreview({...metadata,shot:{id:overrideRef.id,version:overrideRef.version}}); }
+                            catch { projectionRejected = true; }
+                            let exposureRejected = false;
+                            try { window.hatchEditor.preview({nodes:[],world:{exposure:1024}}); }
+                            catch { exposureRejected = true; }
+                            return {captured,rejected,projectionRejected,exposureRejected,revision:window.hatchEditor.snapshot.revision};
                         }''')
-                        self.assertTrue(result['rejected']); self.assertEqual(result['revision'], 0)
+                        self.assertTrue(result['rejected']); self.assertTrue(result['projectionRejected'])
+                        self.assertTrue(result['exposureRejected']); self.assertEqual(result['revision'], 0)
                         captured = result['captured']
                         self.assertEqual(captured['resolution'], [320, 240])
                         from PIL import Image
@@ -447,6 +466,31 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                             return [stale, window.delayedCleanups];
                         }''')
                         self.assertEqual(lifecycle, [1, 2])
+                        document = json.loads((source / 'example-scene.json').read_text())
+                        area = json.loads(json.dumps(document['nodes'][0]))
+                        area.update(id='area', name='Unsupported native area light', type='light', parent='root',
+                                    light=dict(type='area', color=[1, 1, 1], intensity=1))
+                        document['nodes'].append(area); document['lights'].append('area')
+                        (source / 'example-scene.json').write_text(json.dumps(document))
+                        for _ in range(6):
+                            for path in source.glob('*.json'):
+                                document = json.loads(path.read_text())
+                                for ref in all_refs(document):
+                                    if (source / ref['path']).is_file():
+                                        ref['sha256'] = hashlib.sha256((source / ref['path']).read_bytes()).hexdigest()
+                                path.write_text(json.dumps(document))
+                        repository = EditorRepository.create(source, Path(directory) / 'area-saved')
+                        server.repository = repository
+                        page.goto('about:blank'); page.goto(server.url)
+                        page.wait_for_function('() => window.editorReady === true')
+                        reason = page.evaluate('''async () => {
+                            const s = window.hatchEditor.snapshot, ref = s.project.shots[0], shot = s.documents[ref.path];
+                            try { await window.hatchEditor.capturePreview({revision:s.revision,sha256:s.sha256,
+                                shot:{id:ref.id,version:ref.version},camera:shot.camera,frame:0,source_time:{numerator:0,denominator:1},
+                                color_space:'srgb',view_transform:'standard',resolution:[320,240]}); return ''; }
+                            catch (error) { return error.message; }
+                        }''')
+                        self.assertIn('area light', reason)
                     finally: browser.close()
             finally: server.shutdown(); server.server_close(); thread.join(timeout=5)
 

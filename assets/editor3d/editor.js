@@ -42,7 +42,7 @@ let renderer,
   previewActive = false;
 const collapsed = new Set();
 const extensions = [];
-const commitInterceptors = new Set(), installSubscribers = new Map();
+const commitInterceptors = new Set(), installSubscribers = new Map(), unavailableNodes = new Map();
 let lastEvaluation = null;
 function clearInstallSubscriptions() {
   for (const record of installSubscribers.values()) {
@@ -218,6 +218,12 @@ async function capturePreview(metadata) {
     for (const [id, node] of Object.entries(evaluated.nodes)) {
       if (!objects.has(id) || node.native_clip || JSON.stringify(node.material_overrides || []) !== JSON.stringify(nodes.get(id)?.material_overrides || []))
         throw Error("This evaluated geometry/material binding has no exact browser capture adapter.");
+      if (node.visible !== false && unavailableNodes.has(id)) throw Error(unavailableNodes.get(id));
+      if (node.camera) {
+        const actual = objects.get(id).children.find(child => child.isCamera);
+        if (!actual || actual.isPerspectiveCamera !== (node.camera.projection === "perspective"))
+          throw Error("The evaluated camera projection has no matching browser capture adapter.");
+      }
     }
     preview(evaluated);
     const captureCamera = objects.get(metadata.camera)?.children.find(child => child.isCamera);
@@ -245,6 +251,8 @@ async function capturePreview(metadata) {
   }
 }
 function preview(scene) {
+  if (scene.world && (!Number.isFinite(scene.world.exposure) || scene.world.exposure < -20 || scene.world.exposure > 20))
+    throw Error("Evaluated preview exposure is supported from -20 to +20 stops.");
   if (scene.revision !== undefined && (scene.revision !== revision || scene.snapshot_sha256 !== sha256 ||
       scene.scene?.path !== currentSnapshot.scene_path)) throw Error("Evaluation belongs to another saved scene revision.");
   lastEvaluation = structuredClone(scene);
@@ -600,6 +608,7 @@ async function install(snapshot) {
   if (!doc?.nodes)
     throw Error("The repository supplied no native Scene3D scene.");
   disposeContent();
+  unavailableNodes.clear();
   $("revision").textContent =
     "Revision " + revision + " · " + String(sha256).slice(0, 10);
   world.background = new THREE.Color(
@@ -615,6 +624,7 @@ async function install(snapshot) {
     setTransform(object, node.transform);
     object.visible = node.visible;
     content.add(object);
+    if (["prefab_instance", "billboard_2d"].includes(node.type)) unavailableNodes.set(node.id, "No exact viewport adapter for " + node.type);
     if (node.asset) {
       const reference = node.asset;
       const asset = assets[JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])];
@@ -629,15 +639,18 @@ async function install(snapshot) {
           }
           object.add(actual);
         } catch (error) {
+          unavailableNodes.set(node.id, error.message);
           diagnostic("Asset " + node.asset.id + ": " + error.message);
         }
-      } else
+      } else {
+        unavailableNodes.set(node.id, asset?.message || "No verified viewport adapter.");
         diagnostic(
           "Asset " +
             node.asset.id +
             ": " +
             (asset?.message || "No verified viewport adapter."),
         );
+      }
     }
     if (node.type === "camera") {
       const c = node.camera,
@@ -671,6 +684,7 @@ async function install(snapshot) {
           spot: THREE.SpotLight,
         }[l.type];
       if (!ctor) {
+        unavailableNodes.set(node.id, "The native area light has no exact viewport adapter.");
         diagnostic(
           "Area-light preview is unavailable: the native scene light has no area dimensions. No point-light substitute was rendered.",
         );
