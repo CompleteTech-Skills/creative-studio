@@ -141,3 +141,18 @@ KTX2 compression. Source decoding and mipmap working memory retain their own
 separate admission limit. Shader binding, GPU texture upload and backend-native
 compression must consume these explicit buffers through their owning renderer.
 Run `python -m unittest discover -s tests -p test_lookdev_texture_cache.py -v`.
+
+## Directional tangent ground truth
+
+The opt-in `test_rig_lookdev_texture_direction.py` gate uses actual Cycles shader
+normal-vector output encoded into lossless float32 EXR. A constant tangent vector
+with nonzero X and Y is compared to an independently calculated world-space
+basis on a plane: ordinary UVs, mirrored U, UV rotation, nonuniform object scale,
+and a keyframed shape-key tilt. The assertions check vector direction and sign,
+not only a changed image. The tolerance is 0.002 per world-vector component.
+Set `HATCH_LOOKDEV_TEXTURE_TEST=1`, `HATCH_BLENDER` and a new
+`HATCH_LOOKDEV_DIRECTION_EVIDENCE` directory before running the gate. Use the
+shared native validation flock and an owned disk TMPDIR. The separate six-mesh
+response gate still covers curved and hard-edge geometry; directional correctness
+on curved/skinned imported MikkTSpace assets and cross-engine equivalence remain
+separate validation obligations.
