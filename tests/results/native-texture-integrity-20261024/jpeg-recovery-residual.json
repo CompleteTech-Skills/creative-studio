@@ -1,0 +1,66 @@
+{
+  "status": "KNOWN_UNRESOLVED_NATIVE_JPEG_INTEGRITY_LIMITATION",
+  "cases": [
+    {
+      "removed_suffix_bytes": 2,
+      "original_eoi_restored": true,
+      "native_decoder_result": [
+        "image/jpeg",
+        1024
+      ],
+      "encoded_sha256": "f7aa64cf9f5f369a45ee48c602577ff4f7d7da1bdb1fc674ea907dae6cd284ec",
+      "independent_local_djpeg_exit": 0,
+      "independent_local_djpeg_stderr": "",
+      "claim": "removed2isvalidpositive; othercuts demonstrate known JPEG recovery; djpeg is probe only, not a declared runtime dependency"
+    },
+    {
+      "removed_suffix_bytes": 5,
+      "original_eoi_restored": true,
+      "native_decoder_result": [
+        "image/jpeg",
+        1024
+      ],
+      "encoded_sha256": "df1a0aba6e5de7580f1c200a349e3b1986916e2b46d627e2f95b91ad2e4fe8e2",
+      "independent_local_djpeg_exit": 2,
+      "independent_local_djpeg_stderr": "Corrupt JPEG data: premature end of data segment\n",
+      "claim": "removed2isvalidpositive; othercuts demonstrate known JPEG recovery; djpeg is probe only, not a declared runtime dependency"
+    },
+    {
+      "removed_suffix_bytes": 20,
+      "original_eoi_restored": true,
+      "native_decoder_result": [
+        "image/jpeg",
+        1024
+      ],
+      "encoded_sha256": "5e07ea43618540bf5bcb1bc6c00fd10b3b07cf5e6bb92a706a84f9a3ea6d3ef5",
+      "independent_local_djpeg_exit": 2,
+      "independent_local_djpeg_stderr": "Corrupt JPEG data: premature end of data segment\n",
+      "claim": "removed2isvalidpositive; othercuts demonstrate known JPEG recovery; djpeg is probe only, not a declared runtime dependency"
+    },
+    {
+      "removed_suffix_bytes": 100,
+      "original_eoi_restored": true,
+      "native_decoder_result": [
+        "image/jpeg",
+        1024
+      ],
+      "encoded_sha256": "d76f68ad392848f32cdacdc948283f8b4143863e74affbadb3c8f65f53fa8063",
+      "independent_local_djpeg_exit": 2,
+      "independent_local_djpeg_stderr": "Corrupt JPEG data: premature end of data segment\n",
+      "claim": "removed2isvalidpositive; othercuts demonstrate known JPEG recovery; djpeg is probe only, not a declared runtime dependency"
+    },
+    {
+      "removed_suffix_bytes": 300,
+      "original_eoi_restored": true,
+      "native_decoder_result": [
+        "image/jpeg",
+        1024
+      ],
+      "encoded_sha256": "461f033e52da0a24c5c3ca7ed85108bf4015e4d6636a988345195fee071f02f3",
+      "independent_local_djpeg_exit": 2,
+      "independent_local_djpeg_stderr": "Corrupt JPEG data: premature end of data segment\n",
+      "claim": "removed2isvalidpositive; othercuts demonstrate known JPEG recovery; djpeg is probe only, not a declared runtime dependency"
+    }
+  ],
+  "pillow_source": "https://github.com/python-pillow/Pillow/blob/12.3.0/src/libImaging/JpegDecode.c"
+}

@@ -1,0 +1,17 @@
+test_actual_arithmetic_baseline_and_progressive_fixtures (test_rig_jpeg.StrictJpegTests.test_actual_arithmetic_baseline_and_progressive_fixtures) ... ok
+test_actual_entropy_damage_recovered_by_pillow_is_rejected (test_rig_jpeg.StrictJpegTests.test_actual_entropy_damage_recovered_by_pillow_is_rejected) ... ok
+test_actual_missing_package_environment_returns_actionable_failure (test_rig_jpeg.StrictJpegTests.test_actual_missing_package_environment_returns_actionable_failure) ... ok
+test_all_native_decoder_calls_explicitly_enable_strict_warnings (test_rig_jpeg.StrictJpegTests.test_all_native_decoder_calls_explicitly_enable_strict_warnings) ... ok
+test_header_pixel_working_and_identity_limits_precede_pixel_decode (test_rig_jpeg.StrictJpegTests.test_header_pixel_working_and_identity_limits_precede_pixel_decode) ... ok
+test_importing_boundary_does_not_import_3d_decoder_dependencies (test_rig_jpeg.StrictJpegTests.test_importing_boundary_does_not_import_3d_decoder_dependencies) ... ok
+test_missing_or_untested_dependency_never_looks_verified (test_rig_jpeg.StrictJpegTests.test_missing_or_untested_dependency_never_looks_verified) ... ok
+test_noninteger_boolean_and_huge_limits_are_rejected_structurally (test_rig_jpeg.StrictJpegTests.test_noninteger_boolean_and_huge_limits_are_rejected_structurally) ... ok
+test_oversized_actual_sof_dimensions_reject_before_full_decode (test_rig_jpeg.StrictJpegTests.test_oversized_actual_sof_dimensions_reject_before_full_decode) ... ok
+test_progressive_scan_limit_and_metadata_markers_are_not_confused (test_rig_jpeg.StrictJpegTests.test_progressive_scan_limit_and_metadata_markers_are_not_confused) ... ok
+test_real_baseline_progressive_colors_and_sizes_preserve_bytes (test_rig_jpeg.StrictJpegTests.test_real_baseline_progressive_colors_and_sizes_preserve_bytes) ... ok
+test_structural_damage_and_trailing_data_are_explicit (test_rig_jpeg.StrictJpegTests.test_structural_damage_and_trailing_data_are_explicit) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.442s
+
+OK

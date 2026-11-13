@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 import hashlib
 import io
 import json
+import math
+import sys
 from pathlib import Path
 import stat
 from typing import Any
@@ -12,7 +14,7 @@ import zipfile
 import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS, validate_contract
-from rig_errors import (atomic_bytes, decode_json, object_hash, read_json, require,
+from rig_errors import (atomic_bytes, decode_json, finite_json, object_hash, read_json, require,
                         safe_path, sha256)
 
 
@@ -85,6 +87,141 @@ class RigAsset:
         return self.manifest['skeleton']
 
 
+# Texture fields in the material extensions already supported by rig_gltf.
+# Only declared texture slots are traversed: arbitrary extras are not bindings.
+_MATERIAL_TEXTURE_SLOTS = {
+    'KHR_materials_clearcoat': ('clearcoatTexture', 'clearcoatRoughnessTexture', 'clearcoatNormalTexture'),
+    'KHR_materials_iridescence': ('iridescenceTexture', 'iridescenceThicknessTexture'),
+    'KHR_materials_sheen': ('sheenColorTexture', 'sheenRoughnessTexture'),
+    'KHR_materials_specular': ('specularTexture', 'specularColorTexture'),
+    'KHR_materials_transmission': ('transmissionTexture',),
+    'KHR_materials_volume': ('thicknessTexture',),
+    'KHR_materials_anisotropy': ('anisotropyTexture',),
+}
+
+
+def _material_number(value, label: str, *, minimum=None, maximum=None) -> None:
+    # Compare ints before isfinite (which converts to float) so even malicious
+    # huge native integers fail with a domain diagnostic rather than OverflowError.
+    require(isinstance(value, (int, float)) and not isinstance(value, bool)
+            and -sys.float_info.max <= value <= sys.float_info.max
+            and math.isfinite(value)
+            and (minimum is None or value >= minimum)
+            and (maximum is None or value <= maximum),
+            'RIG_MATERIAL', 'Material numeric parameter is invalid.', asset=label)
+
+
+def _material_index(value, size: int, label: str, *, code='RIG_TEXTURE_REFERENCE') -> int:
+    # Keep the existing native glTF _index profile: actual ints, never bools.
+    require(type(value) is int and 0 <= value < size,
+            code, 'Material/texture reference index is invalid.', asset=label)
+    return value
+
+
+def _texcoord_index(value, label: str) -> int:
+    require(type(value) is int and value >= 0, 'RIG_TEXTURE_REFERENCE',
+            'Texture coordinate set must be a nonnegative integer.', asset=label)
+    return value
+
+
+def _material_vector(value, width: int, label: str, *, minimum=None, maximum=None) -> None:
+    require(isinstance(value, (list, tuple)) and len(value) == width,
+            'RIG_MATERIAL', 'Material vector has an invalid shape.', asset=label)
+    for item in value:
+        _material_number(item, label, minimum=minimum, maximum=maximum)
+
+
+def _texture_binding(info, geometry: Geometry, label: str, *, normal=False, occlusion=False) -> int:
+    require(isinstance(info, dict), 'RIG_TEXTURE_REFERENCE', 'Texture information must be an object.', asset=label)
+    _material_index(info.get('index'), len(geometry.textures), label)
+    # A coordinate-set index need not refer to a globally declared resource;
+    # its actual availability is checked on every assigned primitive below.
+    coord = info.get('texCoord', 0)
+    coord = _texcoord_index(coord, label + ':texCoord')
+    extensions = info.get('extensions', {})
+    require(isinstance(extensions, dict), 'RIG_MATERIAL', 'Texture extensions must be an object.', asset=label)
+    if 'KHR_texture_transform' in extensions:
+        transform = extensions['KHR_texture_transform']
+        require(isinstance(transform, dict), 'RIG_MATERIAL', 'Texture transform must be an object.', asset=label)
+        for field in ('offset', 'scale'):
+            if field in transform:
+                _material_vector(transform[field], 2, label + ':' + field)
+        if 'rotation' in transform:
+            _material_number(transform['rotation'], label + ':rotation')
+        if 'texCoord' in transform:
+            coord = _texcoord_index(transform['texCoord'], label + ':transform.texCoord')
+    if normal and 'scale' in info:
+        # glTF normal scale is finite, not restricted to [0,1] or nonnegative.
+        _material_number(info['scale'], label + ':scale')
+    if occlusion and 'strength' in info:
+        _material_number(info['strength'], label + ':strength', minimum=0, maximum=1)
+    return coord
+
+
+def _validate_materials(geometry: Geometry) -> list[set[int]]:
+    """Validate portable core bindings without changing source material dictionaries."""
+    require(isinstance(geometry.materials, list) and isinstance(geometry.textures, list)
+            and isinstance(geometry.samplers, list), 'RIG_MATERIAL', 'Material resources must be arrays.')
+    finite_json(geometry.materials)
+    finite_json(geometry.textures)
+    finite_json(geometry.samplers)
+    for index, sampler in enumerate(geometry.samplers):
+        require(isinstance(sampler, dict), 'RIG_TEXTURE_SAMPLER', 'Texture sampler must be an object.')
+        for key, allowed in (('magFilter', (9728, 9729)),
+                             ('minFilter', (9728, 9729, 9984, 9985, 9986, 9987)),
+                             ('wrapS', (33071, 33648, 10497)), ('wrapT', (33071, 33648, 10497))):
+            if key in sampler:
+                value = sampler[key]
+                require(type(value) is int and value in allowed, 'RIG_TEXTURE_SAMPLER', 'Unsupported texture sampler parameter.',
+                        asset=str(index) + ':' + key)
+    for index, texture in enumerate(geometry.textures):
+        require(isinstance(texture, dict), 'RIG_TEXTURE_REFERENCE', 'Texture must be an object.')
+        _material_index(texture.get('source'), len(geometry.images), str(index) + ':source')
+        if 'sampler' in texture:
+            _material_index(texture['sampler'], len(geometry.samplers), str(index) + ':sampler')
+    bindings = []
+    for index, material in enumerate(geometry.materials):
+        label = 'material-' + str(index)
+        require(isinstance(material, dict), 'RIG_MATERIAL', 'Material must be an object.', asset=label)
+        pbr = material.get('pbrMetallicRoughness', {})
+        require(isinstance(pbr, dict), 'RIG_MATERIAL', 'PBR parameters must be an object.', asset=label)
+        if 'baseColorFactor' in pbr:
+            _material_vector(pbr['baseColorFactor'], 4, label + ':baseColorFactor', minimum=0, maximum=1)
+        for key in ('metallicFactor', 'roughnessFactor'):
+            if key in pbr:
+                _material_number(pbr[key], label + ':' + key, minimum=0, maximum=1)
+        if 'emissiveFactor' in material:
+            _material_vector(material['emissiveFactor'], 3, label + ':emissiveFactor', minimum=0, maximum=1)
+        if 'alphaCutoff' in material:
+            _material_number(material['alphaCutoff'], label + ':alphaCutoff', minimum=0)
+        if 'alphaMode' in material:
+            require(material['alphaMode'] in ('OPAQUE', 'MASK', 'BLEND'),
+                    'RIG_MATERIAL', 'Unsupported alpha mode.', asset=label)
+        if 'doubleSided' in material:
+            require(type(material['doubleSided']) is bool, 'RIG_MATERIAL', 'doubleSided must be boolean.', asset=label)
+        coords = set()
+        for key in ('baseColorTexture', 'metallicRoughnessTexture'):
+            if key in pbr:
+                coords.add(_texture_binding(pbr[key], geometry, label + ':' + key))
+        for key in ('normalTexture', 'occlusionTexture', 'emissiveTexture'):
+            if key in material:
+                coords.add(_texture_binding(material[key], geometry, label + ':' + key,
+                                            normal=key == 'normalTexture', occlusion=key == 'occlusionTexture'))
+        extensions = material.get('extensions', {})
+        require(isinstance(extensions, dict), 'RIG_MATERIAL', 'Material extensions must be an object.', asset=label)
+        for name, fields in _MATERIAL_TEXTURE_SLOTS.items():
+            if name not in extensions:
+                continue
+            extension = extensions[name]
+            require(isinstance(extension, dict), 'RIG_MATERIAL', 'Material extension must be an object.', asset=name)
+            for key in fields:
+                if key in extension:
+                    coords.add(_texture_binding(extension[key], geometry, label + ':' + name + ':' + key,
+                                                normal=key == 'clearcoatNormalTexture'))
+        bindings.append(coords)
+    return bindings
+
+
 def validate_geometry(geometry: Geometry, limits: dict | None = None) -> None:
     limits = limits or DEFAULT_LIMITS
     require(bool(geometry.meshes) and len(geometry.meshes) <= 4096, 'RIG_GEOMETRY', 'Expected 1–4096 mesh primitives.')
@@ -92,6 +229,7 @@ def validate_geometry(geometry: Geometry, limits: dict | None = None) -> None:
             expected=limits['vertices'], observed=geometry.vertex_count)
     require(geometry.triangle_count <= limits['triangles'], 'RIG_LIMIT_TRIANGLES', 'Triangle budget exceeded.')
     require(len(geometry.by_id()) == len(geometry.meshes), 'RIG_DUPLICATE_MESH', 'Mesh IDs must be unique.')
+    bindings = _validate_materials(geometry)
     allocation = 0
     for mesh in geometry.meshes:
         v, f = np.asarray(mesh.positions), np.asarray(mesh.triangles)
@@ -99,7 +237,10 @@ def validate_geometry(geometry: Geometry, limits: dict | None = None) -> None:
                 'RIG_VERTICES', 'Mesh positions must be nonempty finite Nx3 arrays.', asset=mesh.id)
         require(f.ndim == 2 and f.shape[1] == 3 and len(f) > 0 and f.dtype.kind in 'iu'
                 and f.min() >= 0 and f.max() < len(v), 'RIG_TRIANGLES', 'Triangle indices are invalid.', asset=mesh.id)
-        require(0 <= mesh.material < len(geometry.materials), 'RIG_MATERIAL', 'Missing mesh material.', asset=mesh.id)
+        material = _material_index(mesh.material, len(geometry.materials), mesh.id, code='RIG_MATERIAL')
+        for coord in bindings[material]:
+            require(coord in (0, 1) and 'TEXCOORD_' + str(coord) in mesh.attributes, 'RIG_TEXTURE_UV',
+                    'Assigned material requires a missing texture coordinate set.', asset=mesh.id)
         require(len(mesh.morphs) <= limits['morphs'], 'RIG_LIMIT_MORPHS', 'Morph target budget exceeded.')
         require(set(mesh.morph_defaults) <= set(mesh.morphs) and all(np.isfinite(v) and -2 <= v <= 2 for v in mesh.morph_defaults.values()),
                 'RIG_MORPH_RANGE', 'Default morph weights must reference targets within [-2, 2].')
@@ -109,6 +250,9 @@ def validate_geometry(geometry: Geometry, limits: dict | None = None) -> None:
                     'RIG_ATTRIBUTE', 'Unsupported native attribute: ' + name)
             require(values.shape == (len(v), width) and np.isfinite(values).all(),
                     'RIG_ATTRIBUTE', 'Invalid vertex attribute array.', asset=mesh.id + ':' + name)
+            if name == 'COLOR_0':
+                require(np.all((values >= 0) & (values <= 1)), 'RIG_COLOR_RANGE',
+                        'Vertex color components must be in [0, 1].', asset=mesh.id)
             allocation += values.nbytes
         for name, targets in mesh.morphs.items():
             require('POSITION' in targets, 'RIG_MORPH', 'Each native morph needs position deltas.', asset=name)
@@ -120,8 +264,6 @@ def validate_geometry(geometry: Geometry, limits: dict | None = None) -> None:
         allocation += v.nbytes + f.nbytes
     require(all(i.mime_type in ('image/png', 'image/jpeg') for i in geometry.images),
             'RIG_TEXTURE_FORMAT', 'Use PNG or JPEG textures for the portable core profile.')
-    require(all(isinstance(t.get('source'), int) and 0 <= t['source'] < len(geometry.images)
-                for t in geometry.textures), 'RIG_TEXTURE_REFERENCE', 'Texture image reference is invalid.')
     allocation += sum(len(i.data) for i in geometry.images)
     require(allocation * 4 <= limits['memory_bytes'], 'RIG_LIMIT_MEMORY',
             'Estimated geometry processing allocation exceeds the memory budget.', observed=allocation * 4)

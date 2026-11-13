@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AssetCompatibility v1",
+  "$defs": {
+    "AssetCompatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "coordinate_system": {
+          "enum": [
+            "right-handed-y-up-z-forward",
+            "legacy-2d"
+          ]
+        },
+        "unit_scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000.0
+        },
+        "rig_signature": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 1,
+          "uniqueItems": false
+        },
+        "skeleton_signature": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 1,
+          "uniqueItems": false
+        },
+        "material_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "texture_channels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "animation_channels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "renderers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "consumer_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "coordinate_system",
+        "unit_scale",
+        "rig_signature",
+        "skeleton_signature",
+        "material_capabilities",
+        "texture_channels",
+        "animation_channels",
+        "renderers",
+        "formats",
+        "extensions",
+        "consumer_capabilities"
+      ]
+    }
+  },
+  "$ref": "#/$defs/AssetCompatibility"
+}

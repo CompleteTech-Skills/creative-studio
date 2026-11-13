@@ -1,0 +1,526 @@
+test_direction_morphs_preserve_weighted_transformed_vectors (test_rig_import_transforms.RigImportTransformTests.test_direction_morphs_preserve_weighted_transformed_vectors) ...
+  test_direction_morphs_preserve_weighted_transformed_vectors (test_rig_import_transforms.RigImportTransformTests.test_direction_morphs_preserve_weighted_transformed_vectors) (extension='glb', reflected=False) ... FAIL
+  test_direction_morphs_preserve_weighted_transformed_vectors (test_rig_import_transforms.RigImportTransformTests.test_direction_morphs_preserve_weighted_transformed_vectors) (extension='glb', reflected=True) ... FAIL
+  test_direction_morphs_preserve_weighted_transformed_vectors (test_rig_import_transforms.RigImportTransformTests.test_direction_morphs_preserve_weighted_transformed_vectors) (extension='gltf', reflected=False) ... FAIL
+  test_direction_morphs_preserve_weighted_transformed_vectors (test_rig_import_transforms.RigImportTransformTests.test_direction_morphs_preserve_weighted_transformed_vectors) (extension='gltf', reflected=True) ... FAIL
+test_invalid_direction_inputs_fail_without_changing_originals (test_rig_import_transforms.RigImportTransformTests.test_invalid_direction_inputs_fail_without_changing_originals) ...
+  test_invalid_direction_inputs_fail_without_changing_originals (test_rig_import_transforms.RigImportTransformTests.test_invalid_direction_inputs_fail_without_changing_originals) (kwargs={'zero_tangent': True}) ... FAIL
+  test_invalid_direction_inputs_fail_without_changing_originals (test_rig_import_transforms.RigImportTransformTests.test_invalid_direction_inputs_fail_without_changing_originals) (kwargs={'normals': False, 'morph': True}) ... FAIL
+test_multiple_weighted_direction_morphs_keep_linear_composition (test_rig_import_transforms.RigImportTransformTests.test_multiple_weighted_direction_morphs_keep_linear_composition) ... FAIL
+test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) ...
+  test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='glb', reflected=False, handedness=-1.0) ... FAIL
+  test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='glb', reflected=False, handedness=1.0) ... FAIL
+  test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='glb', reflected=True, handedness=-1.0) ... FAIL
+  test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='glb', reflected=True, handedness=1.0) ... FAIL
+  test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='gltf', reflected=False, handedness=-1.0) ... FAIL
+  test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='gltf', reflected=False, handedness=1.0) ... FAIL
+  test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='gltf', reflected=True, handedness=-1.0) ... FAIL
+  test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='gltf', reflected=True, handedness=1.0) ... FAIL
+test_saved_run_keeps_exact_original_source_bytes (test_rig_import_transforms.RigImportTransformTests.test_saved_run_keeps_exact_original_source_bytes) ... FAIL
+test_tangents_without_normals_still_transform_as_directions (test_rig_import_transforms.RigImportTransformTests.test_tangents_without_normals_still_transform_as_directions) ... FAIL
+
+======================================================================
+FAIL: test_direction_morphs_preserve_weighted_transformed_vectors (test_rig_import_transforms.RigImportTransformTests.test_direction_morphs_preserve_weighted_transformed_vectors) (extension='glb', reflected=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 93, in test_direction_morphs_preserve_weighted_transformed_vectors
+    np.testing.assert_allclose(actual/np.linalg.norm(actual), expected/np.linalg.norm(expected), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 0.41432474507894324 (ACTUAL), 0.4047014757230685 (DESIRED)
+ [1]: -0.9044935860581027 (ACTUAL), -0.9054392908198559 (DESIRED)
+ [2]: -0.10112545868881041 (ACTUAL), -0.12804845249829172 (DESIRED)
+Max absolute difference among violations: 0.02692299
+Max relative difference among violations: 0.2102563
+ ACTUAL: array([ 0.414325, -0.904494, -0.101125])
+ DESIRED: array([ 0.404701, -0.905439, -0.128048])
+
+======================================================================
+FAIL: test_direction_morphs_preserve_weighted_transformed_vectors (test_rig_import_transforms.RigImportTransformTests.test_direction_morphs_preserve_weighted_transformed_vectors) (extension='glb', reflected=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 93, in test_direction_morphs_preserve_weighted_transformed_vectors
+    np.testing.assert_allclose(actual/np.linalg.norm(actual), expected/np.linalg.norm(expected), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: -0.41432474507894324 (ACTUAL), -0.4047014757230685 (DESIRED)
+ [1]: -0.9044935860581027 (ACTUAL), -0.9054392908198559 (DESIRED)
+ [2]: -0.10112545868881041 (ACTUAL), -0.12804845249829172 (DESIRED)
+Max absolute difference among violations: 0.02692299
+Max relative difference among violations: 0.2102563
+ ACTUAL: array([-0.414325, -0.904494, -0.101125])
+ DESIRED: array([-0.404701, -0.905439, -0.128048])
+
+======================================================================
+FAIL: test_direction_morphs_preserve_weighted_transformed_vectors (test_rig_import_transforms.RigImportTransformTests.test_direction_morphs_preserve_weighted_transformed_vectors) (extension='gltf', reflected=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 93, in test_direction_morphs_preserve_weighted_transformed_vectors
+    np.testing.assert_allclose(actual/np.linalg.norm(actual), expected/np.linalg.norm(expected), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: 0.41432474507894324 (ACTUAL), 0.4047014757230685 (DESIRED)
+ [1]: -0.9044935860581027 (ACTUAL), -0.9054392908198559 (DESIRED)
+ [2]: -0.10112545868881041 (ACTUAL), -0.12804845249829172 (DESIRED)
+Max absolute difference among violations: 0.02692299
+Max relative difference among violations: 0.2102563
+ ACTUAL: array([ 0.414325, -0.904494, -0.101125])
+ DESIRED: array([ 0.404701, -0.905439, -0.128048])
+
+======================================================================
+FAIL: test_direction_morphs_preserve_weighted_transformed_vectors (test_rig_import_transforms.RigImportTransformTests.test_direction_morphs_preserve_weighted_transformed_vectors) (extension='gltf', reflected=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 93, in test_direction_morphs_preserve_weighted_transformed_vectors
+    np.testing.assert_allclose(actual/np.linalg.norm(actual), expected/np.linalg.norm(expected), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: -0.41432474507894324 (ACTUAL), -0.4047014757230685 (DESIRED)
+ [1]: -0.9044935860581027 (ACTUAL), -0.9054392908198559 (DESIRED)
+ [2]: -0.10112545868881041 (ACTUAL), -0.12804845249829172 (DESIRED)
+Max absolute difference among violations: 0.02692299
+Max relative difference among violations: 0.2102563
+ ACTUAL: array([-0.414325, -0.904494, -0.101125])
+ DESIRED: array([-0.404701, -0.905439, -0.128048])
+
+======================================================================
+FAIL: test_invalid_direction_inputs_fail_without_changing_originals (test_rig_import_transforms.RigImportTransformTests.test_invalid_direction_inputs_fail_without_changing_originals) (kwargs={'zero_tangent': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 118, in test_invalid_direction_inputs_fail_without_changing_originals
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_invalid_direction_inputs_fail_without_changing_originals (test_rig_import_transforms.RigImportTransformTests.test_invalid_direction_inputs_fail_without_changing_originals) (kwargs={'normals': False, 'morph': True})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 118, in test_invalid_direction_inputs_fail_without_changing_originals
+    with self.assertRaises(RigError) as caught:
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+AssertionError: RigError not raised
+
+======================================================================
+FAIL: test_multiple_weighted_direction_morphs_keep_linear_composition (test_rig_import_transforms.RigImportTransformTests.test_multiple_weighted_direction_morphs_keep_linear_composition)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 134, in test_multiple_weighted_direction_morphs_keep_linear_composition
+    np.testing.assert_allclose(actual/np.linalg.norm(actual),
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               expected/np.linalg.norm(expected), atol=1e-7)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 3 / 3 (100%)
+Mismatch at indices:
+ [0]: -0.4627022072197321 (ACTUAL), -0.4663086553191246 (DESIRED)
+ [1]: -0.883870398209401 (ACTUAL), -0.8804373713804511 (DESIRED)
+ [2]: 0.06840896580963007 (ACTUAL), 0.08594342936578511 (DESIRED)
+Max absolute difference among violations: 0.01753446
+Max relative difference among violations: 0.20402332
+ ACTUAL: array([-0.462702, -0.88387 ,  0.068409])
+ DESIRED: array([-0.466309, -0.880437,  0.085943])
+
+======================================================================
+FAIL: test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='glb', reflected=False, handedness=-1.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 65, in test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source
+    np.testing.assert_allclose(mesh.attributes['TANGENT'][:, :3], np.tile(expected_t, (3, 1)), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 6 / 9 (66.7%)
+First 5 mismatches are at indices:
+ [0, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+ [0, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [1, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+ [1, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [2, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+Max absolute difference among violations: 0.4472136
+Max relative difference among violations: 1.
+ ACTUAL: array([[0.447214, 0.894427, 0.      ],
+       [0.447214, 0.894427, 0.      ],
+       [0.447214, 0.894427, 0.      ]])
+ DESIRED: array([[0.894427, 0.447214, 0.      ],
+       [0.894427, 0.447214, 0.      ],
+       [0.894427, 0.447214, 0.      ]])
+
+======================================================================
+FAIL: test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='glb', reflected=False, handedness=1.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 65, in test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source
+    np.testing.assert_allclose(mesh.attributes['TANGENT'][:, :3], np.tile(expected_t, (3, 1)), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 6 / 9 (66.7%)
+First 5 mismatches are at indices:
+ [0, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+ [0, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [1, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+ [1, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [2, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+Max absolute difference among violations: 0.4472136
+Max relative difference among violations: 1.
+ ACTUAL: array([[0.447214, 0.894427, 0.      ],
+       [0.447214, 0.894427, 0.      ],
+       [0.447214, 0.894427, 0.      ]])
+ DESIRED: array([[0.894427, 0.447214, 0.      ],
+       [0.894427, 0.447214, 0.      ],
+       [0.894427, 0.447214, 0.      ]])
+
+======================================================================
+FAIL: test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='glb', reflected=True, handedness=-1.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 65, in test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source
+    np.testing.assert_allclose(mesh.attributes['TANGENT'][:, :3], np.tile(expected_t, (3, 1)), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 6 / 9 (66.7%)
+First 5 mismatches are at indices:
+ [0, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+ [0, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [1, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+ [1, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [2, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+Max absolute difference among violations: 0.4472136
+Max relative difference among violations: 1.
+ ACTUAL: array([[-0.447214,  0.894427,  0.      ],
+       [-0.447214,  0.894427,  0.      ],
+       [-0.447214,  0.894427,  0.      ]])
+ DESIRED: array([[-0.894427,  0.447214,  0.      ],
+       [-0.894427,  0.447214,  0.      ],
+       [-0.894427,  0.447214,  0.      ]])
+
+======================================================================
+FAIL: test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='glb', reflected=True, handedness=1.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 65, in test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source
+    np.testing.assert_allclose(mesh.attributes['TANGENT'][:, :3], np.tile(expected_t, (3, 1)), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 6 / 9 (66.7%)
+First 5 mismatches are at indices:
+ [0, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+ [0, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [1, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+ [1, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [2, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+Max absolute difference among violations: 0.4472136
+Max relative difference among violations: 1.
+ ACTUAL: array([[-0.447214,  0.894427,  0.      ],
+       [-0.447214,  0.894427,  0.      ],
+       [-0.447214,  0.894427,  0.      ]])
+ DESIRED: array([[-0.894427,  0.447214,  0.      ],
+       [-0.894427,  0.447214,  0.      ],
+       [-0.894427,  0.447214,  0.      ]])
+
+======================================================================
+FAIL: test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='gltf', reflected=False, handedness=-1.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 65, in test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source
+    np.testing.assert_allclose(mesh.attributes['TANGENT'][:, :3], np.tile(expected_t, (3, 1)), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 6 / 9 (66.7%)
+First 5 mismatches are at indices:
+ [0, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+ [0, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [1, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+ [1, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [2, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+Max absolute difference among violations: 0.4472136
+Max relative difference among violations: 1.
+ ACTUAL: array([[0.447214, 0.894427, 0.      ],
+       [0.447214, 0.894427, 0.      ],
+       [0.447214, 0.894427, 0.      ]])
+ DESIRED: array([[0.894427, 0.447214, 0.      ],
+       [0.894427, 0.447214, 0.      ],
+       [0.894427, 0.447214, 0.      ]])
+
+======================================================================
+FAIL: test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='gltf', reflected=False, handedness=1.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 65, in test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source
+    np.testing.assert_allclose(mesh.attributes['TANGENT'][:, :3], np.tile(expected_t, (3, 1)), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 6 / 9 (66.7%)
+First 5 mismatches are at indices:
+ [0, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+ [0, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [1, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+ [1, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [2, 0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+Max absolute difference among violations: 0.4472136
+Max relative difference among violations: 1.
+ ACTUAL: array([[0.447214, 0.894427, 0.      ],
+       [0.447214, 0.894427, 0.      ],
+       [0.447214, 0.894427, 0.      ]])
+ DESIRED: array([[0.894427, 0.447214, 0.      ],
+       [0.894427, 0.447214, 0.      ],
+       [0.894427, 0.447214, 0.      ]])
+
+======================================================================
+FAIL: test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='gltf', reflected=True, handedness=-1.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 65, in test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source
+    np.testing.assert_allclose(mesh.attributes['TANGENT'][:, :3], np.tile(expected_t, (3, 1)), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 6 / 9 (66.7%)
+First 5 mismatches are at indices:
+ [0, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+ [0, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [1, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+ [1, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [2, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+Max absolute difference among violations: 0.4472136
+Max relative difference among violations: 1.
+ ACTUAL: array([[-0.447214,  0.894427,  0.      ],
+       [-0.447214,  0.894427,  0.      ],
+       [-0.447214,  0.894427,  0.      ]])
+ DESIRED: array([[-0.894427,  0.447214,  0.      ],
+       [-0.894427,  0.447214,  0.      ],
+       [-0.894427,  0.447214,  0.      ]])
+
+======================================================================
+FAIL: test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source (test_rig_import_transforms.RigImportTransformTests.test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source) (extension='gltf', reflected=True, handedness=1.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 65, in test_nonuniform_transform_preserves_orthogonal_tangent_frame_and_source
+    np.testing.assert_allclose(mesh.attributes['TANGENT'][:, :3], np.tile(expected_t, (3, 1)), atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 6 / 9 (66.7%)
+First 5 mismatches are at indices:
+ [0, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+ [0, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [1, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+ [1, 1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+ [2, 0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+Max absolute difference among violations: 0.4472136
+Max relative difference among violations: 1.
+ ACTUAL: array([[-0.447214,  0.894427,  0.      ],
+       [-0.447214,  0.894427,  0.      ],
+       [-0.447214,  0.894427,  0.      ]])
+ DESIRED: array([[-0.894427,  0.447214,  0.      ],
+       [-0.894427,  0.447214,  0.      ],
+       [-0.894427,  0.447214,  0.      ]])
+
+======================================================================
+FAIL: test_saved_run_keeps_exact_original_source_bytes (test_rig_import_transforms.RigImportTransformTests.test_saved_run_keeps_exact_original_source_bytes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 104, in test_saved_run_keeps_exact_original_source_bytes
+    np.testing.assert_allclose(rig.geometry.meshes[0].attributes['TANGENT'][0, :3], expected, atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 2 / 3 (66.7%)
+Mismatch at indices:
+ [0]: -0.447213595499958 (ACTUAL), -0.8944271909999159 (DESIRED)
+ [1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+Max absolute difference among violations: 0.4472136
+Max relative difference among violations: 1.
+ ACTUAL: array([-0.447214,  0.894427,  0.      ])
+ DESIRED: array([-0.894427,  0.447214,  0.      ])
+
+======================================================================
+FAIL: test_tangents_without_normals_still_transform_as_directions (test_rig_import_transforms.RigImportTransformTests.test_tangents_without_normals_still_transform_as_directions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-import52/tests/test_rig_import_transforms.py", line 110, in test_tangents_without_normals_still_transform_as_directions
+    np.testing.assert_allclose(mesh.attributes['TANGENT'][0], [2/np.sqrt(5), 1/np.sqrt(5), 0, 1], atol=1e-7)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 1780, in assert_allclose
+    assert_array_compare(compare, actual, desired, err_msg=str(err_msg),
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         verbose=verbose, header=header, equal_nan=equal_nan,
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                         strict=strict)
+                         ^^^^^^^^^^^^^^
+  File "/tmp/hatch-restore-venv/lib/python3.14/site-packages/numpy/testing/_private/utils.py", line 988, in assert_array_compare
+    raise AssertionError(msg)
+AssertionError:
+Not equal to tolerance rtol=1e-07, atol=1e-07
+
+Mismatched elements: 2 / 4 (50%)
+Mismatch at indices:
+ [0]: 0.447213595499958 (ACTUAL), 0.8944271909999159 (DESIRED)
+ [1]: 0.894427190999916 (ACTUAL), 0.4472135954999579 (DESIRED)
+Max absolute difference among violations: 0.4472136
+Max relative difference among violations: 1.
+ ACTUAL: array([0.447214, 0.894427, 0.      , 1.      ])
+ DESIRED: array([0.894427, 0.447214, 0.      , 1.      ])
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.293s
+
+FAILED (failures=17)
