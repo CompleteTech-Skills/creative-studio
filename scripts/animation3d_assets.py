@@ -53,6 +53,7 @@ class Snapshot:
         self.total = 0
         self.memory_limit = MAX_BYTES
         self.expanded_bytes = 0
+        self.native_memory = 0
 
     def copy(self, name, digest=None):
         source = safe_path(self.root, name, exists=True)
@@ -82,9 +83,12 @@ class Snapshot:
         self.inventory[name] = {'sha256': actual, 'bytes': count}
         # Account before JSON/NumPy decoders allocate. Compressed rig bundles
         # expand independently of their on-disk byte budget.
-        remaining = self.memory_limit - self.expanded_bytes
+        remaining = self.memory_limit - self.expanded_bytes - self.native_memory
         require(count <= remaining, 'ANIMATION_LIMIT', 'Encoded dependency exceeds memory admission budget.')
         expanded = count
+        if target.suffix == '.json':
+            from rig_load_limits import _JSON_FACTOR
+            expanded = count * _JSON_FACTOR
         if target.suffix == '.npz' or zipfile.is_zipfile(target):
             from rig_contracts import DEFAULT_LIMITS
             from rig_load_limits import _zip_directory
@@ -116,7 +120,7 @@ class Snapshot:
                         require(not dtype.hasobject and array_count * dtype.itemsize * 3 + directory_bytes <= remaining,
                                 'ANIMATION_LIMIT', 'Binary array header exceeds memory admission budget.')
         self.expanded_bytes += expanded
-        require(self.expanded_bytes <= self.memory_limit, 'ANIMATION_LIMIT', 'Dependency memory admission budget exceeded.')
+        require(self.expanded_bytes + self.native_memory <= self.memory_limit, 'ANIMATION_LIMIT', 'Dependency memory admission budget exceeded.')
         require(target.suffix != '.json' or count <= 16 * 1024**2,
                 'ANIMATION_LIMIT', 'JSON document exceeds 16 MiB.')
         return target
@@ -152,7 +156,17 @@ class Snapshot:
             self.copy(identity, value['character']['identity_sha256'])
             from rig_models import load_rig
             from rig_skeleton import validate_skeleton
-            rig = load_rig(path.parent)
+            remaining = self.memory_limit - self.expanded_bytes - self.native_memory
+            require(remaining > 0, 'ANIMATION_LIMIT', 'No native load memory remains in project budget.')
+            try:
+                rig = load_rig(path.parent, limits={'memory_bytes': remaining})
+            except RigError as exc:
+                if exc.report['code'] == 'RIG_LIMIT_MEMORY':
+                    raise RigError('ANIMATION_LIMIT', 'Native rig load exceeds remaining project memory budget.', stage='animation3d') from exc
+                raise
+            self.native_memory += rig.resource_usage['estimated_memory_bytes']
+            require(self.expanded_bytes + self.native_memory <= self.memory_limit,
+                    'ANIMATION_LIMIT', 'Retained native rigs exceed aggregate project memory budget.')
             validate_skeleton(rig.skeleton, rig.manifest['limits'])
             return kind, rig
         if isinstance(kind, str) and kind.startswith('scene3d-'):
@@ -246,6 +260,7 @@ def load_project(root, name='animation-project.json'):
         _validate_bindings(project, documents, native, snapshot.destination)
         return {'project': deepcopy(project), 'documents': deepcopy(documents),
                 'inventory': deepcopy(snapshot.inventory), 'bytes': snapshot.total,
+                'memory_admission': dict(limit_bytes=snapshot.memory_limit, estimated_bytes=snapshot.expanded_bytes + snapshot.native_memory, native_estimated_bytes=snapshot.native_memory, method='canonical-native-plus-snapshot-v1', scope='conservative data admission; not process RSS'),
                 'source_ready': True, 'scope': 'exact dependency and native target admission; no evaluated scene or render'}
 
 
