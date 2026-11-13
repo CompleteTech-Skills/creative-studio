@@ -10,7 +10,7 @@ from scene3d_contracts import read_document
 from scene3d_graph import SceneGraph
 from scene3d_spatial import SpatialIndex, snap_grid, snap_scale
 from scene3d_constraints import (attach, detach, place, sample_path, set_constraint,
-                                 snap_rotation, snap_surface, snap_transform)
+                                 snap_rotation, snap_surface, snap_transform, snap_bounds, follow_path)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -137,6 +137,63 @@ class SpatialTests(unittest.TestCase):
         self.assertEqual(before,graph.document())
         receipt = place(graph,index,'mesh',[[2,0,0],[10,0,0]])
         self.assertEqual(receipt['position'],[10,0,0])
+
+    def test_degenerate_triangles_and_oriented_box_separation(self):
+        graph = self.graph()
+        index = SpatialIndex(graph,{'mesh':dict(vertices=[[0,0,0],[0,0,0],[1,0,0]],triangles=[[0,1,2]])})
+        hit = index.nearest([2.5,2,0])
+        self.assertAlmostEqual(hit['distance'],2)
+        np.testing.assert_allclose(hit['point'],[2.5,0,0])
+        self.assertIsNone(index.raycast([2.5,2,0],[0,-1,0]))
+        # Two long, parallel narrow boxes whose world AABBs overlap.
+        node = graph.document()['nodes'][1]
+        node['bounds'] = dict(minimum=[-2,-.1,-.1],maximum=[2,.1,.1])
+        node['transform'] = dict(translation=[0,0,0],rotation=[0,math.sin(math.pi/8),0,math.cos(math.pi/8)],scale=[1,1,1])
+        scene = graph.document();scene['nodes'][1] = node
+        other = deepcopy(node);other.update(id='other',name='other')
+        other['transform']['translation'] = [.5,0,.5]
+        scene['nodes'].append(other)
+        boxes = SpatialIndex(SceneGraph(scene,external_references={}))
+        self.assertIn('other',boxes.overlap(boxes.bounds('mesh')))
+        self.assertNotIn('other',boxes.oriented_overlap('mesh'))
+
+    def test_real_saved_room_geometry_door_opening_and_ground(self):
+        import tempfile
+        from scene3d_environment import create_environment, load_meshes
+        from scene3d_contracts import load_project
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)/'rooms'
+            create_environment(root,dict(id='rooms',version=1,seed=1,generator='rooms',parameters=dict(rooms=2),budget=30))
+            bundle = load_project(root)
+            path = bundle['project']['scenes'][-1]['path']
+            scene = bundle['documents'][path]
+            graph = SceneGraph.from_bundle(bundle,path)
+            index = SpatialIndex(graph,load_meshes(root,path))
+            through_door = index.raycast([0,1,0],[1,0,0])
+            wall = index.raycast([0,2.6,0],[1,0,0])
+            self.assertEqual(through_door['node'],'rooms-partition-2')
+            self.assertEqual(wall['node'],'rooms-partition-1')
+            self.assertAlmostEqual(through_door['distance'],7.4)
+            self.assertAlmostEqual(wall['distance'],2.4)
+            floor = index.ground([0,2.8,0])
+            self.assertEqual(floor['node'],'rooms-floor-0')
+            self.assertAlmostEqual(floor['point'][1],0)
+            self.assertEqual(graph.document(),scene)
+
+    def test_bounds_snap_and_explicit_follow_preserve_orientation(self):
+        graph = self.graph()
+        other = deepcopy(graph.document()['nodes'][1])
+        other.update(id='other',name='other')
+        other['transform']['translation'] = [5,0,0]
+        graph.create(other)
+        index = self.index(graph)
+        snap_bounds(graph,index,'mesh','other',axis=0,gap=.5)
+        self.assertAlmostEqual(index.bounds('mesh')['minimum'][0],6.5)
+        follow_path(graph,'camera',[[0,0,0],[4,0,0]],.25)
+        np.testing.assert_allclose(np.asarray(graph.transform('camera',space='world'))[:3,3],[1,0,0])
+        before = graph.document()
+        with self.assertRaises(RigError): follow_path(graph,'camera',[[0,0,0],[1,0,0]],.5,expected_revision=-1)
+        self.assertEqual(before,graph.document())
 
     def test_surface_snap_and_arc_length_path(self):
         graph = self.graph()

@@ -163,3 +163,27 @@ def snap_surface(graph,index,identifier,origin,*,max_distance=1e6,offset=0,align
         transform['rotation'] = matrix_quaternion(np.column_stack([x,normal,z])).tolist()
     graph.set_transform(identifier,compose(**{k:transform[k] for k in ('translation','rotation','scale')}),space='world',expected_revision=expected_revision)
     return hit
+
+
+def snap_bounds(graph,index,identifier,target,*,axis,side='after',gap=0,expected_revision=None):
+    """Translate a world AABB face to a target face along a declared XYZ axis."""
+    require(type(axis) is int and axis in (0,1,2), 'Bounds snap axis must be 0, 1 or 2.', 'SCENE3D_SPATIAL')
+    require(side in ('before','after'), 'Bounds snap side must be before or after.', 'SCENE3D_SPATIAL')
+    gap = _positive(gap,'bounds gap',zero=True)
+    require(identifier!=target, 'Cannot snap bounds to self.', 'SCENE3D_SPATIAL')
+    low,high = _box(index.bounds(identifier)); target_low,target_high = _box(index.bounds(target))
+    delta = target_high[axis]+gap-low[axis] if side=='after' else target_low[axis]-gap-high[axis]
+    matrix = np.asarray(graph.transform(identifier,space='world'),dtype=float)
+    matrix[axis,3] += delta
+    return graph.set_transform(identifier,matrix,space='world',expected_revision=expected_revision)
+
+
+def follow_path(graph,identifier,points,fraction,*,expected_revision=None):
+    """Author one explicit world-space path sample using the graph revision gate.
+
+    Time sampling/persistence remains the animation owner's responsibility. This
+    function does not claim a static node will continue moving after it returns.
+    """
+    matrix = np.asarray(graph.transform(identifier,space='world'),dtype=float)
+    matrix[:3,3] = sample_path(points,fraction)
+    return graph.set_transform(identifier,matrix,space='world',expected_revision=expected_revision)
