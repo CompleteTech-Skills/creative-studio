@@ -232,6 +232,23 @@ class CapabilityTest(unittest.TestCase):
         self.assertGreaterEqual(m['process_cpu_seconds'],0)
         self.assertIn(m['rss_status'],('measured','unavailable'))
 
+    def test_measured_memory_limit_blocks_before_owner_execution(self):
+        owner, request=self.bound('geometry-inspection')
+        request['checks'][0]['resources']['memory_bytes']=1
+        with patch.object(owner, 'execute', wraps=owner.execute) as execute:
+            result=self.engine(owner).run(request)
+        self.assertEqual(result['outcome'],'failed')
+        self.assertIn('resource-memory_bytes',result['checks'][0]['unsatisfied_gates'])
+        execute.assert_not_called()
+
+    def test_peak_memory_overshoot_and_unavailable_measurement_fail_closed(self):
+        for peaks in ((1,1,256*1024*1024),(None,)):
+            owner, request=self.bound('geometry-inspection')
+            with patch('continuity_capabilities._peak_memory_bytes',side_effect=peaks):
+                result=self.engine(owner).run(request)
+            self.assertEqual(result['outcome'],'failed',result)
+            self.assertIn('resource-memory_bytes',result['checks'][0]['unsatisfied_gates'])
+
     def test_schema_files_are_current(self):
         for kind,schema in schemas().items():
             actual=json.loads((REPO/'profiles'/('continuity-capability-'+kind+'.schema.json')).read_text())
