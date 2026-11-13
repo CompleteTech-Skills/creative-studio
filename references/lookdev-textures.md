@@ -81,8 +81,8 @@ are portable independently of this publication restriction.
 
 The shared AssetLibrary remains the authority for blob deduplication, cache
 storage, version lifecycle and eviction. This module does not create a second
-asset index. Image-to-material provider generation, real curved/deforming-mesh
-normal-render comparisons, cache integration and complete #85 acceptance remain
+asset index. Image-to-material provider generation, asset-cache integration,
+directional tangent ground-truth comparisons and complete #85 acceptance remain
 integration work; the implementation must not be presented as full parent #15
 acceptance.
 
@@ -93,3 +93,24 @@ the optional rig environment. The suite decodes real raster/HDR fixtures, checks
 all thirteen procedural outputs and deterministic hashes, checks linear-light
 and normal mip behavior, exercises packing/UV/UDIM transforms, and verifies
 exact source publication and rejection of corrupt/oversized/unsafe inputs.
+
+## Actual Blender texture gate
+
+Enable `HATCH_LOOKDEV_TEXTURE_TEST=1`, set `HATCH_BLENDER` to the pinned Blender
+4.5.3 executable and `HATCH_LOOKDEV_TEXTURE_EVIDENCE` to a new directory, then run
+`python -m unittest discover -s tests -p test_rig_lookdev_texture_blender.py -v`.
+The host strictly decodes a generated PNG normal map and passes those exact
+validated float pixels and original hash to a trusted Blender fixture. Actual
+Cycles CPU renders compare normal strength zero versus one on curved, hard-edge,
+mirrored-UV, rotated-UV, nonuniform-scale and animated shape-key-deformed meshes.
+Each comparison requires a measured visible pixel change; this proves execution
+on those geometries. Directional ground-truth comparisons under UV reflection,
+rotation and deformation, cross-engine comparisons and MikkTSpace equivalence
+remain unverified. Unit checks
+separately assert positive-Y derivative orientation and tangent handedness.
+The map remains assigned to a real shader when the packed project is saved;
+reopening must recover every decoded pixel within 1e-7 and the original hash.
+Unassigned Blender images have no users and can be omitted by Blender's save;
+callers must bind the returned image to a shader or deliberately retain it.
+A successful process exit alone is insufficient: the test checks every render
+hash, measured differences and packed-image pixel values after reopen.
