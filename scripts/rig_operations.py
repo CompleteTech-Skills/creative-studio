@@ -87,9 +87,34 @@ def mutate(root,operation,parameters=None):
             name=retain_artifact(rig.root, 'retarget-'+value['clip']['id'], value['report']);artifacts=[name];result=value['report']
         elif operation=='state-map':
             from rig_states import map_states
+            from rig_models import RigAsset
+            from rig_validation import validate_rig
+            # Mapping saves a new revision, so compile against the review state
+            # that save_rig will publish rather than the superseded approval.
+            rig.manifest['review']=dict(status='pending', receipts=[])
             result=map_states(rig,recipes=parameters.get('recipes'),selected=parameters.get('selected'),pack=parameters.get('pack'),approved_props=parameters.get('approved_props',[]))
+            for previous in rig.manifest['state_mapping'].values():
+                if previous['status']=='supported':
+                    previous.update(status='needs-review', reason='A new rig revision requires renewed visual review.')
             rig.manifest['state_mapping'].update(result['mapping']);save_rig(rig,operation='map-selected-states')
-            artifacts=[retain_artifact(rig.root, 'state-mapping', result)]
+            clip_ids=sorted({clip for recipe in result['recipes'].values() for clip in recipe['clips']})
+            # Share immutable arrays, skeleton and bindings; validate only the
+            # requested recipes without scanning unrelated animation clips.
+            selected=RigAsset(rig.manifest, rig.geometry, rig.weights,
+                              {name:rig.clips[name] for name in clip_ids}, rig.root)
+            report=validate_rig(selected, require_animation=False)
+            report['kind']='hatch-3d-selected-state-readiness'
+            structure=any(check['name']=='structure' and check['status']=='passed' for check in report['checks'])
+            status=('animation-ready' if report['ok'] and result['recipes'] else
+                    'structurally-valid' if report['ok'] else
+                    'skeleton-generated' if structure and not rig.weights else 'needs-correction')
+            result.update(job_status=status, readiness=dict(scope='selected-recipes-only',
+                clip_ids=clip_ids, executable_recipes=len(result['recipes']), report=report,
+                full_package_acceptance=False, visual_approval=False))
+            readiness=retain_artifact(rig.root, 'selected-state-readiness', result['readiness'])
+            rig.manifest['validation'].append(dict(path=readiness, sha256=sha256(rig.root/readiness)))
+            write_rig_manifest(rig.root, rig.manifest)
+            artifacts=[readiness, retain_artifact(rig.root, 'state-mapping', result)]
         return dict(result=result,artifact_paths=artifacts,**({'job_status':result['job_status']} if 'job_status' in result else {}))
     return run_step(root,operation,parameters,action,status=STATUSES[operation])
 
