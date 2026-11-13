@@ -1,0 +1,33 @@
+name: Silent video media verification
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  silent-media:
+    name: Actual silent media and legacy review movie
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash --noprofile --norc -eo pipefail {0}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-delivery.txt
+      - run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+      - run: python -m unittest discover -s tests -p test_silent_video.py -v 2>&1 | tee silent-media.log
+        env:
+          HATCH_SILENT_MEDIA_TEST: '1'
+      - run: python -m unittest discover -s tests -p test_production_render.py -v 2>&1 | tee legacy-review-movie.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: silent-media-${{ github.sha }}
+          path: |
+            silent-media.log
+            legacy-review-movie.log
+          if-no-files-found: error
