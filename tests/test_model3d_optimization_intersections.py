@@ -45,6 +45,18 @@ class TriangleContacts(unittest.TestCase):
         b=Mesh('right',m.positions[3:],np.array([[0,1,2]]))
         result=geometry_contacts(Geometry([a,b],[{}]))
         self.assertEqual(result['contacts'][0]['parts'],[{'mesh':'left','triangle':0},{'mesh':'right','triangle':0}])
+    def test_mixed_large_integer_and_float_parts_reject_lossy_promotion(self):
+        value=10**16
+        integer=Mesh('integer',np.array([[value+1,0,0],[value+2,0,0],[value+1,1,0]],dtype=np.int64),np.array([[0,1,2]]))
+        floating=Mesh('floating',np.array([[value,0,0],[value,1,0],[value-2,0,0]],dtype=float),np.array([[0,1,2]]))
+        with self.assertRaises(RigError) as error:geometry_contacts(Geometry([integer,floating],[{}]))
+        self.assertEqual(error.exception.report['code'],'MODEL3D_INTERSECTION_NUMERIC')
+        self.assertEqual(triangle_contacts(integer)['contact_count'],0)
+    def test_narrow_indices_are_widened_before_part_offset(self):
+        positions=np.zeros((255,3));positions[:3]=[[0,0,0],[3,0,0],[0,3,0]]
+        first=Mesh('first',positions,np.array([[0,1,2]],dtype=np.uint8))
+        second=Mesh('second',np.array([[.1,.1,0],[.2,.1,0],[.1,.2,0]]),np.array([[0,1,2]],dtype=np.uint8))
+        self.assertEqual(geometry_contacts(Geometry([first,second],[{}]))['contact_count'],1)
     def test_invalid_limits_and_nonfinite_reject(self):
         mesh=self.pair([[0,0,0],[1,0,0],[0,1,0]],[[0,0,0],[1,0,0],[0,1,0]])
         for kwargs in [dict(max_pairs=True),dict(max_pairs=10**1000),dict(max_triangles=0)]:

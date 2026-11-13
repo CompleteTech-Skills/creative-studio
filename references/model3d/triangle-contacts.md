@@ -12,7 +12,11 @@ operation. Native admission and working-memory checks execute before exact work.
 Defaults allow 4096 triangles and 100000 sweep pair comparisons. Hard API ceilings
 are 20000 triangles and 200000 comparisons. Exhaustion produces a structured
 failure; it never becomes a partial passing report. Exact predicates use each
-finite float's exact binary-rational value, with no geometric epsilon. Coplanar
+finite float16/32/64 value's exact binary-rational representation, with no geometric epsilon.
+Higher-precision float arrays reject. Mixed integer/floating parts reject integer
+coordinates outside the conservative exact float64 range ±2**53 before aggregation;
+homogeneous integer coordinates remain exact. Validated triangle indices widen to
+int64 before applying part offsets. Coplanar
 projection and all segment/triangle predicates use rational arithmetic.
 
 Pairs sharing any indexed vertex are excluded. Adjacent foldover remains

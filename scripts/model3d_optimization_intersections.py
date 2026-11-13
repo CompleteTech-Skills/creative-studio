@@ -69,13 +69,15 @@ def triangle_contacts(mesh,*,max_triangles=4096,max_pairs=100_000,limits=None):
     report. Input geometry is never modified and degeneracies reject explicitly.
     """
     _check(mesh,limits)
+    require(mesh.positions.dtype.kind!='f' or mesh.positions.dtype.itemsize<=8,
+            'MODEL3D_INTERSECTION_NUMERIC','Exact float predicates support binary floating types up to float64.')
     require(type(max_triangles) is int and 1<=max_triangles<=20_000
             and type(max_pairs) is int and 1<=max_pairs<=200_000,
             'MODEL3D_INTERSECTION_BUDGET','Intersection limits must be bounded positive native integers.')
     require(len(mesh.triangles)<=max_triangles,'MODEL3D_INTERSECTION_BUDGET','Triangle count exceeds exact diagnostic budget.')
     require(not _degenerate(mesh).any(),'MODEL3D_INTERSECTION_DEGENERATE','Repair degenerate triangles explicitly before intersection measurement.')
-    # Native geometry admission bounds integer positions to exactly representable
-    # float64. Preserve their exact integer values; floats retain exact binary ratios.
+    # Preserve integer coordinates without an intervening float conversion;
+    # float16/32/64 inputs retain their exact binary ratios.
     used=np.unique(mesh.triangles)
     exact={int(i):tuple(Fraction(int(x)) if mesh.positions.dtype.kind in 'iu' else Fraction(float(x))
                         for x in mesh.positions[i]) for i in used}
@@ -121,9 +123,15 @@ def geometry_contacts(geometry,*,max_triangles=4096,max_pairs=100_000,limits=Non
             and geometry.triangle_count<=max_triangles,'MODEL3D_INTERSECTION_BUDGET','Aggregate triangle count exceeds diagnostic limit.')
     require(geometry.vertex_count*96+geometry.triangle_count*256<=budget['memory_bytes'],
             'MODEL3D_INTERSECTION_BUDGET','Aggregate contact working memory exceeds budget.')
+    dtype=np.result_type(*(mesh.positions.dtype for mesh in geometry.meshes))
+    if dtype.kind=='f':
+        require(dtype.itemsize<=8 and all(mesh.positions.dtype.kind=='f' or
+                (-2**53<=int(mesh.positions.min()) and int(mesh.positions.max())<=2**53)
+                for mesh in geometry.meshes),'MODEL3D_INTERSECTION_NUMERIC',
+                'Mixed floating/integer parts must preserve exact integer coordinates within float64 precision.')
     positions=[];triangles=[];mapping=[];offset=0
     for mesh in geometry.meshes:
-        positions.append(mesh.positions);triangles.append(mesh.triangles+offset)
+        positions.append(mesh.positions);triangles.append(mesh.triangles.astype(np.int64)+offset)
         mapping.extend((mesh.id,i) for i in range(len(mesh.triangles)));offset+=len(mesh.positions)
     merged=Mesh('contact-measurement',np.concatenate(positions),np.concatenate(triangles))
     result=triangle_contacts(merged,max_triangles=max_triangles,max_pairs=max_pairs,limits=budget)
