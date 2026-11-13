@@ -1,0 +1,1104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AssetVersion v1",
+  "$defs": {
+    "AssetVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "asset-library-version"
+        },
+        "identity": {
+          "$ref": "#/$defs/AssetIdentity"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+          "maxLength": 32
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssetFile"
+          },
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssetDependency"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "metadata": {
+          "$ref": "#/$defs/AssetMetadata"
+        },
+        "compatibility": {
+          "$ref": "#/$defs/AssetCompatibility"
+        },
+        "previews": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssetPreview"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "provenance": {
+          "$ref": "#/$defs/AssetProvenance"
+        },
+        "publication": {
+          "$ref": "#/$defs/AssetPublication"
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "identity",
+        "version",
+        "files",
+        "dependencies",
+        "metadata",
+        "compatibility",
+        "previews",
+        "provenance",
+        "publication",
+        "manifest_sha256"
+      ]
+    },
+    "AssetPublication": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "visibility": {
+          "enum": [
+            "private",
+            "project-local"
+          ]
+        },
+        "distribution": {
+          "enum": [
+            "not-evaluated",
+            "restricted"
+          ]
+        },
+        "license_evaluation": {
+          "enum": [
+            "not-evaluated",
+            "evidence-retained"
+          ]
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm]1|[Cc][Oo][Mm]2|[Cc][Oo][Mm]3|[Cc][Oo][Mm]4|[Cc][Oo][Mm]5|[Cc][Oo][Mm]6|[Cc][Oo][Mm]7|[Cc][Oo][Mm]8|[Cc][Oo][Mm]9|[Ll][Pp][Tt]1|[Ll][Pp][Tt]2|[Ll][Pp][Tt]3|[Ll][Pp][Tt]4|[Ll][Pp][Tt]5|[Ll][Pp][Tt]6|[Ll][Pp][Tt]7|[Ll][Pp][Tt]8|[Ll][Pp][Tt]9)(?:\\.|/|$))[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?(?:/(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm]1|[Cc][Oo][Mm]2|[Cc][Oo][Mm]3|[Cc][Oo][Mm]4|[Cc][Oo][Mm]5|[Cc][Oo][Mm]6|[Cc][Oo][Mm]7|[Cc][Oo][Mm]8|[Cc][Oo][Mm]9|[Ll][Pp][Tt]1|[Ll][Pp][Tt]2|[Ll][Pp][Tt]3|[Ll][Pp][Tt]4|[Ll][Pp][Tt]5|[Ll][Pp][Tt]6|[Ll][Pp][Tt]7|[Ll][Pp][Tt]8|[Ll][Pp][Tt]9)(?:\\.|/|$))[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?)*$(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "verification": {
+          "enum": [
+            "payload-verified"
+          ]
+        },
+        "integration": {
+          "enum": [
+            "not-exercised",
+            "native-reference"
+          ]
+        }
+      },
+      "required": [
+        "visibility",
+        "distribution",
+        "license_evaluation",
+        "inventory",
+        "verification",
+        "integration"
+      ]
+    },
+    "AssetProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "enum": [
+            "import",
+            "generated",
+            "derived",
+            "fixture"
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssetFile"
+          },
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "provider": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "receipt": {
+                "$ref": "#/$defs/AssetFile"
+              },
+              "identifier": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "parameters": {
+                "type": "object",
+                "maxProperties": 64,
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                  "maxLength": 64
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "number",
+                      "minimum": -1000000000000.0,
+                      "maximum": 1000000000000.0
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                          },
+                          {
+                            "type": "number",
+                            "minimum": -1000000000000.0,
+                            "maximum": 1000000000000.0
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      },
+                      "minItems": 0,
+                      "maxItems": 64,
+                      "uniqueItems": false
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "name",
+              "receipt"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 1,
+          "uniqueItems": false
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "required": [
+              "name",
+              "version"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "parents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                "maxLength": 64
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                "maxLength": 32
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "sha256"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "license_evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssetFile"
+          },
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssetFile"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "uncertainty": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "source_records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "file": {
+                "$ref": "#/$defs/AssetFile"
+              },
+              "source_uri": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "original_filename": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "acquired_at": {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 64,
+                "format": "date-time",
+                "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$(?![\\s\\S])"
+              },
+              "author": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "copyright_holder": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "file",
+              "source_uri",
+              "original_filename",
+              "acquired_at",
+              "author"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "conversions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tool": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "timestamp": {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 64,
+                "format": "date-time",
+                "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$(?![\\s\\S])"
+              },
+              "operation": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/AssetFile"
+                },
+                "minItems": 1,
+                "maxItems": 256,
+                "uniqueItems": false
+              },
+              "outputs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/AssetFile"
+                },
+                "minItems": 1,
+                "maxItems": 256,
+                "uniqueItems": false
+              }
+            },
+            "required": [
+              "tool",
+              "version",
+              "timestamp",
+              "operation",
+              "inputs",
+              "outputs"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "edit_history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "human",
+                  "automated"
+                ]
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "timestamp": {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 64,
+                "format": "date-time",
+                "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$(?![\\s\\S])"
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/AssetFile"
+                },
+                "minItems": 0,
+                "maxItems": 256,
+                "uniqueItems": false
+              }
+            },
+            "required": [
+              "kind",
+              "description",
+              "timestamp",
+              "evidence"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": false
+        }
+      },
+      "required": [
+        "method",
+        "origin",
+        "fixture",
+        "sources",
+        "provider",
+        "tools",
+        "parents",
+        "edits",
+        "license_evidence",
+        "permissions",
+        "uncertainty"
+      ]
+    },
+    "AssetFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm]1|[Cc][Oo][Mm]2|[Cc][Oo][Mm]3|[Cc][Oo][Mm]4|[Cc][Oo][Mm]5|[Cc][Oo][Mm]6|[Cc][Oo][Mm]7|[Cc][Oo][Mm]8|[Cc][Oo][Mm]9|[Ll][Pp][Tt]1|[Ll][Pp][Tt]2|[Ll][Pp][Tt]3|[Ll][Pp][Tt]4|[Ll][Pp][Tt]5|[Ll][Pp][Tt]6|[Ll][Pp][Tt]7|[Ll][Pp][Tt]8|[Ll][Pp][Tt]9)(?:\\.|/|$))[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?(?:/(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm]1|[Cc][Oo][Mm]2|[Cc][Oo][Mm]3|[Cc][Oo][Mm]4|[Cc][Oo][Mm]5|[Cc][Oo][Mm]6|[Cc][Oo][Mm]7|[Cc][Oo][Mm]8|[Cc][Oo][Mm]9|[Ll][Pp][Tt]1|[Ll][Pp][Tt]2|[Ll][Pp][Tt]3|[Ll][Pp][Tt]4|[Ll][Pp][Tt]5|[Ll][Pp][Tt]6|[Ll][Pp][Tt]7|[Ll][Pp][Tt]8|[Ll][Pp][Tt]9)(?:\\.|/|$))[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?)*$(?![\\s\\S])"
+        },
+        "role": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 67108864
+        },
+        "format": {
+          "enum": [
+            "glb",
+            "gltf",
+            "obj",
+            "png",
+            "jpeg",
+            "webp",
+            "json",
+            "binary"
+          ]
+        },
+        "mime_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "format_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "technical_metadata": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              {
+                "type": "number",
+                "minimum": -1000000000000.0,
+                "maximum": 1000000000000.0
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    {
+                      "type": "number",
+                      "minimum": -1000000000000.0,
+                      "maximum": 1000000000000.0
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "minItems": 0,
+                "maxItems": 64,
+                "uniqueItems": false
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "path",
+        "role",
+        "sha256",
+        "bytes",
+        "format",
+        "mime_type",
+        "required"
+      ]
+    },
+    "AssetPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "thumbnail",
+            "turntable",
+            "motion",
+            "material"
+          ]
+        },
+        "source_version_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "backend": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "backend_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "settings_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "camera_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "lighting_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "settings_file": {
+          "$ref": "#/$defs/AssetFile"
+        },
+        "camera_file": {
+          "$ref": "#/$defs/AssetFile"
+        },
+        "lighting_file": {
+          "$ref": "#/$defs/AssetFile"
+        },
+        "file": {
+          "$ref": "#/$defs/AssetFile"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8192
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8192
+        },
+        "status": {
+          "enum": [
+            "generated",
+            "verified-externally"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "source_version_sha256",
+        "backend",
+        "backend_version",
+        "settings_sha256",
+        "camera_sha256",
+        "lighting_sha256",
+        "settings_file",
+        "camera_file",
+        "lighting_file",
+        "file",
+        "width",
+        "height",
+        "status"
+      ]
+    },
+    "AssetCompatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "coordinate_system": {
+          "enum": [
+            "right-handed-y-up-z-forward",
+            "legacy-2d"
+          ]
+        },
+        "unit_scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000.0
+        },
+        "rig_signature": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 1,
+          "uniqueItems": false
+        },
+        "skeleton_signature": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 1,
+          "uniqueItems": false
+        },
+        "material_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "texture_channels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "animation_channels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "renderers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "consumer_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "coordinate_system",
+        "unit_scale",
+        "rig_signature",
+        "skeleton_signature",
+        "material_capabilities",
+        "texture_channels",
+        "animation_channels",
+        "renderers",
+        "formats",
+        "extensions",
+        "consumer_capabilities"
+      ]
+    },
+    "AssetMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "category": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "author": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source_url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "allowed_uses": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "keywords": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "style_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                "maxLength": 64
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                "maxLength": 32
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "sha256"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": false
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "review_status": {
+          "enum": [
+            "unreviewed"
+          ]
+        }
+      },
+      "required": [
+        "description",
+        "category",
+        "author",
+        "publisher",
+        "source_url",
+        "license",
+        "allowed_uses",
+        "keywords",
+        "style_refs",
+        "capabilities",
+        "review_status"
+      ]
+    },
+    "AssetDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+              "maxLength": 64
+            },
+            "version": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+              "maxLength": 32
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "sha256"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "origin": {
+          "enum": [
+            "authored",
+            "imported",
+            "discovered"
+          ]
+        },
+        "relationship": {
+          "enum": [
+            "direct",
+            "transitive"
+          ]
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "target",
+        "purpose",
+        "required",
+        "origin",
+        "relationship",
+        "capabilities"
+      ]
+    },
+    "AssetIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "library": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "kind": {
+          "enum": [
+            "character",
+            "rig",
+            "animation",
+            "prop",
+            "material",
+            "texture",
+            "environment",
+            "light",
+            "camera",
+            "prefab",
+            "reference",
+            "legacy-pet",
+            "legacy-cast",
+            "legacy-clip"
+          ]
+        },
+        "subtype": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "created_at": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 64,
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$(?![\\s\\S])"
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "id",
+        "namespace",
+        "library",
+        "slug",
+        "name",
+        "kind",
+        "subtype",
+        "created_at",
+        "attribution",
+        "owner"
+      ]
+    }
+  },
+  "$ref": "#/$defs/AssetVersion"
+}

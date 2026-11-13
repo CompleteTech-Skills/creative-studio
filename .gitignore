@@ -1,5 +1,7 @@
 __pycache__/
 *.py[cod]
+/.venv/
+/.venv-rig/
 /output/
 
 # Reconstruct these exact production assets from the tracked source transports.

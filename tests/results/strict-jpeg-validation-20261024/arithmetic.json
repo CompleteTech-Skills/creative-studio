@@ -1,0 +1,43 @@
+[
+  {
+    "path": "tests/fixtures/strict-jpeg-arithmetic.jpg",
+    "command": [
+      "cjpeg",
+      "-arithmetic"
+    ],
+    "report": {
+      "decoder": "simplejpeg",
+      "decoder_version": "1.9.0",
+      "width": 32,
+      "height": 32,
+      "colorspace": "YCbCr",
+      "subsampling": "420",
+      "scan_count": 1,
+      "estimated_working_bytes": 16384,
+      "sha256": "6b3145c4fdf55376dd5a13cca8fd9afc6d37aecbff02084949841d96340b09f6",
+      "encoded_bytes": 805,
+      "strict_warnings": true
+    }
+  },
+  {
+    "path": "tests/fixtures/strict-jpeg-arithmetic-progressive.jpg",
+    "command": [
+      "cjpeg",
+      "-arithmetic",
+      "-progressive"
+    ],
+    "report": {
+      "decoder": "simplejpeg",
+      "decoder_version": "1.9.0",
+      "width": 32,
+      "height": 32,
+      "colorspace": "YCbCr",
+      "subsampling": "420",
+      "scan_count": 10,
+      "estimated_working_bytes": 16384,
+      "sha256": "e9e6439d8160dbdb6f0275c590b8f463f32917a905eedb5e891a20d5ff9cf809",
+      "encoded_bytes": 950,
+      "strict_warnings": true
+    }
+  }
+]
