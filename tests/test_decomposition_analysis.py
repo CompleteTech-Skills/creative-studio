@@ -2,6 +2,7 @@
 from __future__ import annotations
 import copy
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -271,6 +272,51 @@ class AnalysisTests(unittest.TestCase):
                 self.assertFalse(recovered['response_available'])
                 self.assertEqual(self.ingest(job)['attempts'],2)
                 self.assertEqual(self.original,(self.root/'decomposition.json').read_bytes())
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'requires POSIX FIFO support')
+    def test_retry_rejects_fifo_in_each_existing_history_record_without_blocking(self):
+        for name in ('state.json','worker.log','cancel','response.json','worker-response.json'):
+            with self.subTest(name=name):
+                job=self.prepare(prompt=name)
+                failed=self.response(job);failed.update(status='failed',errors=['Fixture failure'])
+                failed['annotation']['components']=[]
+                self.ingest(job,failed)
+                folder=self.root/'analysis-jobs'/job['job']
+                (folder/'worker.log').write_bytes(b'fixture log')
+                (folder/'worker-response.json').write_bytes(b'{}')
+                (folder/'cancel').write_bytes(b'cancel\n')
+                history=folder/'attempt-1';history.mkdir()
+                os.mkfifo(history/name)
+                result=subprocess.run([sys.executable,analysis.__file__,'retry','--root',str(self.root),
+                    '--job',job['job']],capture_output=True,text=True,timeout=3)
+                self.assertEqual(result.returncode,2,result.stdout)
+                self.assertIn('regular file',result.stderr)
+                self.assertTrue((folder/'response.json').is_file())
+                self.assertEqual(self.original,(self.root/'decomposition.json').read_bytes())
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'requires POSIX FIFO support')
+    def test_retry_recovery_rejects_fifo_history_state_without_blocking(self):
+        job=self.prepare()
+        folder=self.root/'analysis-jobs'/job['job']
+        state=json.loads((folder/'state.json').read_text());state.update(status='failed',attempts=1)
+        atomic_json(folder/'state.json',state)
+        real_recovery=analysis._recover_retry
+        calls=[]
+        def interrupt(root, identifier):
+            calls.append(identifier)
+            if len(calls)>1:
+                raise RuntimeError('crash')
+            return real_recovery(root,identifier)
+        with mock.patch.object(analysis,'_recover_retry',side_effect=interrupt):
+            with self.assertRaisesRegex(RuntimeError,'crash'):
+                analysis.retry(self.root,job['job'])
+        retained=folder/'attempt-1/state.json';retained.unlink();os.mkfifo(retained)
+        result=subprocess.run([sys.executable,analysis.__file__,'status','--root',str(self.root),
+            '--job',job['job']],capture_output=True,text=True,timeout=3)
+        self.assertEqual(result.returncode,2)
+        self.assertIn('regular file',result.stderr)
+        self.assertEqual(json.loads((folder/'state.json').read_text()),state)
+        self.assertTrue((folder/'retry.json').is_file())
 
     def test_runtime_timeout_kills_real_subprocess_and_keeps_manual_route(self):
         model={'provider':'synthetic-fixture','name':'none','version':'test','files':[], 'identity_evidence':'No detector used by timeout test'}

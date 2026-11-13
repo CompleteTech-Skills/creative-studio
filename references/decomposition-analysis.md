@@ -121,6 +121,9 @@ proposal publication. Failed, cancelled or interrupted work requires explicit
 Retry records a journal after preserving the complete prior attempt and before
 removing live files. Status/resume completes an interrupted retry from that
 verified history, including crashes before or after the final state write.
+Live and archived job records are read through bounded nonblocking file
+descriptors with no-follow and regular-file checks; pipes, devices and symbolic
+links cannot block recovery or supply record bytes.
 Retry means authorizing a new attempt when the earlier outcome is known or
 uncertain. It is never implicit in resume. An interrupted job with a valid completed worker
 response must recover it before retrying. Explicit retry of a failed or cancelled

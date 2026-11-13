@@ -8,6 +8,9 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import hashlib
+import os
+import stat
 import shutil
 from pathlib import Path
 import subprocess
@@ -16,7 +19,7 @@ import tempfile
 import time
 
 from asset_contracts import hash_object, sha
-from character_decomposition import (_annotation, load_decomposition, read_json,
+from character_decomposition import (_annotation, load_decomposition,
                                      rebuild_from_annotation)
 from decomposition_spec import (ANNOTATION_SCHEMA, HASH, TEXT, NOTE, BOOLEAN,
     array, obj, validate_structure, safe_path)
@@ -57,6 +60,41 @@ RESPONSE = obj({'schema_version': {'const': 1}, 'kind': {'const': 'decomposition
         'elapsed_seconds': {'anyOf': [{'type': 'number', 'minimum': 0}, {'type': 'null'}]},
         'cost': {'anyOf': [{'const': 0}, {'type': 'null'}]}, 'note': TEXT}),
     'errors': array(TEXT, 128)})
+
+
+def _record_bytes(path):
+    """Read a bounded regular record without following links or blocking on FIFOs."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError as exc:
+        raise ValueError('analysis record cannot be opened safely: ' + str(path)) from exc
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_RESPONSE_BYTES:
+            raise ValueError('analysis record must be a bounded regular file: ' + str(path))
+        data = stream.read(MAX_RESPONSE_BYTES + 1)
+        if len(data) > MAX_RESPONSE_BYTES:
+            raise ValueError('analysis record exceeds byte quota: ' + str(path))
+        return data
+
+
+def _record_sha(path):
+    return hashlib.sha256(_record_bytes(path)).hexdigest()
+
+
+def _record_json(path):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate JSON key: ' + key)
+            result[key] = value
+        return result
+    try:
+        return json.loads(_record_bytes(path).decode('utf-8'), object_pairs_hook=unique,
+            parse_constant=lambda value: (_ for _ in ()).throw(ValueError('nonfinite JSON number')))
+    except (json.JSONDecodeError, UnicodeError, RecursionError) as exc:
+        raise ValueError('invalid analysis JSON: ' + str(exc)) from exc
 
 
 def schemas():
@@ -120,9 +158,9 @@ def provenance(root, annotation, source_hash):
                 'evidence': RESPONSE['properties']['evidence'], 'semantic_approval': {'const': False}})
     validate_structure(record, spec, 'analysis lineage')
     job = _job(root, record['job'])
-    request = read_json(job / 'request.json')
-    response = read_json(job / 'response.json')
-    state = read_json(job / 'state.json')
+    request = _record_json(job / 'request.json')
+    response = _record_json(job / 'response.json')
+    state = _record_json(job / 'state.json')
     validate_structure(request, REQUEST, 'analysis lineage request')
     validate_structure(response, RESPONSE, 'analysis lineage response')
     validate_structure(state, STATE, 'analysis lineage state')
@@ -130,7 +168,7 @@ def provenance(root, annotation, source_hash):
     if (hash_object(request) != digest or response['request_sha256'] != digest or
             state['request_sha256'] != digest or request['source']['sha256'] != source_hash or
             response['source_sha256'] != source_hash or response['annotation']['source_sha256'] != source_hash or
-            sha(job / 'response.json') != record['response_sha256'] or
+            _record_sha(job / 'response.json') != record['response_sha256'] or
             state.get('response_sha256') != record['response_sha256'] or
             record['model'] != response['model'] or record['evidence'] != response['evidence'] or
             response['status'] != 'proposed' or state['status'] not in ('proposed', 'applied')):
@@ -184,11 +222,11 @@ def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_secon
     # Applying this exact analysis changes the manifest revision. Repeating the
     # high-level analyze command must still reuse that accepted result instead
     # of spending another detector/provider call on its own output revision.
-    annotation = read_json(safe_path(root, manifest['annotation']['path']))
+    annotation = _record_json(safe_path(root, manifest['annotation']['path']))
     previous_id = annotation.get('extensions', {}).get('decomposition_analysis', {}).get('job')
     if previous_id:
         previous_job = _job(root, previous_id)
-        previous_request = read_json(previous_job / 'request.json')
+        previous_request = _record_json(previous_job / 'request.json')
         comparable = lambda value: {key: item for key, item in value.items() if key != 'base_manifest_sha256'}
         if comparable(previous_request) == comparable(request):
             prior = status(root, previous_id)
@@ -197,7 +235,7 @@ def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_secon
     identifier = hash_object(request)
     job = _job(root, identifier)
     if job.exists():
-        if read_json(job / 'request.json') != request:
+        if _record_json(job / 'request.json') != request:
             raise ValueError('analysis request collision')
         return status(root, identifier)
     directory = safe_path(root, 'analysis-jobs')
@@ -223,13 +261,13 @@ def _recover_retry(root, identifier):
     journal = job / 'retry.json'
     if not journal.exists():
         return
-    transaction = read_json(journal)
+    transaction = _record_json(journal)
     names = ('worker.log', 'cancel', 'response.json', 'worker-response.json')
     validate_structure(transaction, obj({'previous': STATE, 'next': STATE,
         'files': {'type': 'object', 'additionalProperties': False,
                   'properties': {name: HASH for name in names}}}), 'analysis retry journal')
     previous, following = transaction['previous'], transaction['next']
-    request = read_json(job / 'request.json')
+    request = _record_json(job / 'request.json')
     validate_structure(request, REQUEST, 'analysis retry request')
     if hash_object(request) != identifier:
         raise ValueError('analysis retry request changed')
@@ -239,19 +277,19 @@ def _recover_retry(root, identifier):
             (previous['status'] not in ('failed', 'cancelled', 'interrupted') and 'cancel' not in transaction['files']) or previous['attempts'] >= 3):
         raise ValueError('invalid analysis retry transition')
     history = safe_path(root, 'analysis-jobs/' + identifier + '/attempt-' + str(previous['attempts']))
-    if read_json(safe_path(history, 'state.json')) != previous:
+    if _record_json(safe_path(history, 'state.json')) != previous:
         raise ValueError('retry history state changed')
-    current = read_json(job / 'state.json')
+    current = _record_json(job / 'state.json')
     if current not in (previous, following):
         raise ValueError('retry live state changed')
     # The complete old attempt is durable before deleting any live artifact.
     for name, digest in transaction['files'].items():
         retained = safe_path(history, name)
-        if not retained.is_file() or sha(retained) != digest:
+        if not retained.is_file() or _record_sha(retained) != digest:
             raise ValueError('retry history artifact changed')
         live = job / name
         if live.exists():
-            if sha(live) != digest:
+            if _record_sha(live) != digest:
                 raise ValueError('retry live artifact changed')
             live.unlink()
     atomic_json(job / 'state.json', following)
@@ -261,15 +299,15 @@ def _recover_retry(root, identifier):
 def status(root, identifier):
     job = _job(root, identifier)
     _recover_retry(root, identifier)
-    request = read_json(job / 'request.json')
+    request = _record_json(job / 'request.json')
     if hash_object(request) != identifier:
         raise ValueError('analysis request changed')
     _source(root, request)
-    state = read_json(job / 'state.json')
+    state = _record_json(job / 'state.json')
     validate_structure(state, STATE, 'analysis state')
     if state['request_sha256'] != identifier:
         raise ValueError('analysis state/request mismatch')
-    if 'response_sha256' in state and sha(job / 'response.json') != state['response_sha256']:
+    if 'response_sha256' in state and _record_sha(job / 'response.json') != state['response_sha256']:
         raise ValueError('analysis response changed')
     if (job / 'cancel').exists() and state['status'] not in ('running', 'applied'):
         state = {**state, 'status': 'cancelled'}
@@ -296,7 +334,7 @@ def cancel(root, identifier):
 def _validated_response(root, identifier, response):
     validate_structure(response, RESPONSE, 'analysis response')
     job = _job(root, identifier)
-    request = read_json(job / 'request.json')
+    request = _record_json(job / 'request.json')
     _source(root, request)
     if hash_object(request) != identifier or response['request_sha256'] != identifier or response['source_sha256'] != request['source']['sha256']:
         raise ValueError('response binds a different request/source')
@@ -336,16 +374,16 @@ def ingest(root, identifier, response_path):
     path = Path(response_path)
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_RESPONSE_BYTES:
         raise ValueError('analysis response must be a bounded regular JSON file')
-    request = read_json(job / 'request.json')
+    request = _record_json(job / 'request.json')
     if request['backend'] == 'opencv-haar' and path.resolve() != (job / 'worker-response.json').resolve():
         raise ValueError('local responses must come from the fixed worker; use external backend for imports')
-    response = read_json(path)
+    response = _record_json(path)
     _validated_response(root, identifier, response)
-    state = read_json(job / 'state.json')
+    state = _record_json(job / 'state.json')
     if state['status'] in ('cancelled', 'applied') or (job / 'cancel').exists():
         raise ValueError('analysis job is cancelled or already applied')
     if (job / 'response.json').exists():
-        if read_json(job / 'response.json') != response:
+        if _record_json(job / 'response.json') != response:
             raise ValueError('analysis response is immutable')
     else:
         if request['backend'] == 'external':
@@ -353,7 +391,7 @@ def ingest(root, identifier, response_path):
                 raise ValueError('analysis retry quota exhausted')
             state['attempts'] += 1
         atomic_json(job / 'response.json', response)
-    state.update(status=response['status'], response_sha256=sha(job / 'response.json'))
+    state.update(status=response['status'], response_sha256=_record_sha(job / 'response.json'))
     atomic_json(job / 'state.json', state)
     return status(root, identifier)
 
@@ -364,9 +402,9 @@ def run(root, identifier):
     request = info['request']
     if request['backend'] != 'opencv-haar':
         raise ValueError('external backend requires attributed response ingest; no remote dispatch')
-    state = read_json(job / 'state.json')
+    state = _record_json(job / 'state.json')
     if state['status'] in ('proposed', 'unsupported', 'applied'):
-        _validated_response(root, identifier, read_json(job / 'response.json'))
+        _validated_response(root, identifier, _record_json(job / 'response.json'))
         return info
     if (job / 'cancel').exists():
         state.update(status='cancelled', error='Cancelled before dispatch')
@@ -424,27 +462,27 @@ def run(root, identifier):
 def apply(root, identifier):
     job = _job(root, identifier)
     info = status(root, identifier)
-    response = read_json(job / 'response.json')
+    response = _record_json(job / 'response.json')
     normalized = _validated_response(root, identifier, response)
     if info['status'] == 'applied':
         return info
     if info['status'] != 'proposed' or (job / 'cancel').exists():
         raise ValueError('only uncancelled proposed analysis may be applied')
-    evidence = {'job': identifier, 'response_sha256': sha(job / 'response.json'),
+    evidence = {'job': identifier, 'response_sha256': _record_sha(job / 'response.json'),
                 'model': response['model'], 'evidence': response['evidence'],
                 'semantic_approval': False}
     normalized['extensions']['decomposition_analysis'] = evidence
     current = load_decomposition(root)
     # Recover a crash after the atomic decomposition replacement but before the
     # job state acknowledgement without creating another revision.
-    current_annotation = read_json(safe_path(root, current['annotation']['path']))
+    current_annotation = _record_json(safe_path(root, current['annotation']['path']))
     if current_annotation.get('extensions', {}).get('decomposition_analysis') != evidence:
         if sha(Path(root) / 'decomposition.json') != info['request']['base_manifest_sha256']:
             raise ValueError('decomposition changed since analysis request; preserve reviewer edits')
         current = rebuild_from_annotation(root, normalized,
             reason='Automatic source-bound proposals; semantic review remains pending.',
             author=normalized['author'])
-    state = read_json(job / 'state.json')
+    state = _record_json(job / 'state.json')
     state.update(status='applied', applied_revision=current['revision'])
     atomic_json(job / 'state.json', state)
     return status(root, identifier)
@@ -457,7 +495,7 @@ def retry(root, identifier):
         raise ValueError('retry requires a failed/interrupted/cancelled job below attempt quota')
     if (job / 'worker-response.json').exists():
         try:
-            _validated_response(root, identifier, read_json(job / 'worker-response.json'))
+            _validated_response(root, identifier, _record_json(job / 'worker-response.json'))
         except ValueError:
             pass  # Preserve invalid output in the explicit retry's attempt history.
         else:
@@ -465,27 +503,27 @@ def retry(root, identifier):
                 raise ValueError('completed worker response must be recovered before retry')
     history = safe_path(root, 'analysis-jobs/' + identifier + '/attempt-' + str(info['attempts']))
     history.mkdir(exist_ok=True)
-    previous = read_json(job / 'state.json')
+    previous = _record_json(job / 'state.json')
     files = {}
     for name in ('state.json','worker.log','cancel','response.json','worker-response.json'):
         path = safe_path(root, 'analysis-jobs/' + identifier + '/' + name)
         target = safe_path(root, 'analysis-jobs/' + identifier + '/' + history.name + '/' + name)
         if path.exists():
-            if target.exists() and sha(path) != sha(target):
+            if target.exists() and _record_sha(path) != _record_sha(target):
                 raise ValueError('retry history conflict')
             if not target.exists():
                 descriptor, temp_name = tempfile.mkstemp(prefix='.record-', dir=history)
                 temporary = Path(temp_name)
                 try:
                     with open(descriptor, 'wb', closefd=True) as output:
-                        output.write(path.read_bytes())
+                        output.write(_record_bytes(path))
                     from atomic_publish import _rename_no_replace
                     _rename_no_replace(temporary, target)
                 finally:
                     if temporary.exists():
                         temporary.unlink()
             if name != 'state.json':
-                files[name] = sha(path)
+                files[name] = _record_sha(path)
     state = {key: info[key] for key in ('attempts','request_sha256','applied_revision','error')}
     state.update(status='ready' if info['request']['backend'] == 'opencv-haar' else 'awaiting-external', error=None)
     atomic_json(job / 'retry.json', {'previous': previous, 'next': state, 'files': files})
@@ -499,7 +537,7 @@ def _worker(root, identifier):
     from PIL import Image
     root = Path(root)
     job = _job(root, identifier)
-    request = read_json(job / 'request.json')
+    request = _record_json(job / 'request.json')
     _source(root, request)
     if _model() != request['model']:
         raise ValueError('local cascade identity changed')
