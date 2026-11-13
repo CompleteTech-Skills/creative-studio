@@ -133,3 +133,38 @@ binaries. They do not claim 3D geometry or production-art approval. See
 `tests/results/silent-video-foundations.json` for executed results, source
 revision, versions, logs and limitations. Run focused acceptance with
 `python -m unittest discover -s tests -p test_silent_video.py -v`.
+
+## Exact multi-shot frame assembly
+
+`silent_timeline.assemble(shots, NEW_DIRECTORY)` copies complete, already
+rendered PNG inventories into one immutable sequence. Each shot record has an
+explicit unique `id`, read-only `root`, admitted `source`, and half-open `start`
+and `end` frame indices. `source_from_production` continues to validate the
+legacy WAV-bearing renderer output before admission; assembling its PNGs does
+not remove or change that WAV. The Blender adapter must receive real renderer
+output; an `origin` string alone never proves native rendering.
+
+All shots must have the same dimensions, rational FPS, precision, color and
+alpha policy. Conversion requires a separate explicit operation. No FPS
+conversion, resizing, extra transition frames, audio generation or geometry
+rendering occurs here. Source inventories are checked in full, including frames
+outside selected ranges. Assembly reads one bounded frame at a time and never
+loads the entire film into RAM. Aggregate frame and byte budgets apply to both
+input inventories and selected output. Output is a new directory published by
+an exclusive atomic rename; cancellation and validation failure publish nothing.
+
+The directory contains contiguous `frames/000000.png` files and `timeline.json`.
+The versioned [timeline schema](../schemas/silent-timeline-v1.schema.json)
+records every input source/hash, shot boundary, source-to-output frame index,
+exact rational `PTS(n) = n / FPS`, and duration. `silent_timeline.validate(root)`
+rechecks those relationships and every delivered byte. The source at
+`manifest['source']` can be passed directly to `silent_video.make_request` and
+`encode` for MP4 or VP9 WebM. `assembled` provenance retains the original source
+class inside each shot; it does not promote synthetic fixtures into artwork.
+
+For example, ranges of 72, 120 and 48 frames at 24 fps produce exactly 240
+frames and 10 seconds, with cuts at output indices 72 and 192. The regression
+suite verifies those cuts and actual audio-free MP4/WebM encoding using labeled
+synthetic pixels. Genuine three-shot 3D production acceptance, EXR/HDR/alpha
+preservation and the full CLI/jobs integration remain separate requirements;
+this API does not report them complete or supply visual approval.

@@ -14,7 +14,8 @@
       "enum": [
         "synthetic",
         "production2d",
-        "blender3d"
+        "blender3d",
+        "assembled"
       ]
     },
     "format": {
