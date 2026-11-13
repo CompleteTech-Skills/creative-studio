@@ -1,0 +1,14 @@
+{
+  "worktree": {
+    "setup": [
+      "node -e \"const{spawnSync}=require('node:child_process');const{join}=require('node:path');const py=process.platform==='win32'?'python':'python3';for(const[dir,requirements]of[['.venv','requirements-delivery.txt'],['.venv-rig','requirements-rig-test.txt']]){for(const[exe,args]of[[py,['-m','venv',dir]],[join(dir,process.platform==='win32'?'Scripts/python.exe':'bin/python'),['-m','pip','install','-r',requirements]]]){const r=spawnSync(exe,args,{stdio:'inherit'});if(r.error){console.error(r.error.message);process.exit(1)}if(r.status!==0)process.exit(r.status===null?1:r.status)}}\"",
+      "npm ci --ignore-scripts --prefix tools/rig"
+    ],
+    "teardown": "echo \"Setup starts no persistent services; Paseo handles worktree removal.\""
+  },
+  "scripts": {
+    "diff-check": {
+      "command": "git diff --check"
+    }
+  }
+}
