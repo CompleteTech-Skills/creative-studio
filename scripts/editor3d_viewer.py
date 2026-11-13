@@ -266,7 +266,7 @@ class EditorHandler(BaseHTTPRequestHandler):
                 path = ROOT / 'assets/editor3d/index.html'
             elif route.path.startswith('/editor/'):
                 relative = route.path.removeprefix('/editor/')
-                require(relative in ('editor.js', 'editor.css', 'TransformControls.js', 'asset-browser.js', 'inspectors.js', 'timeline.js', 'render-panel.js'), 'EDITOR3D_VIEW_PATH', 'Unknown editor asset.')
+                require(relative in ('editor.js', 'editor.css', 'TransformControls.js', 'asset-browser.js', 'inspectors.js', 'timeline.js', 'render-panel.js', 'editor-language.js'), 'EDITOR3D_VIEW_PATH', 'Unknown editor asset.')
                 path = ROOT / 'assets/editor3d' / relative
             elif route.path.startswith('/vendor/'):
                 path = safe_path(ROOT / 'assets/rig-viewer/vendor', route.path.removeprefix('/vendor/'), exists=True)
@@ -278,7 +278,8 @@ class EditorHandler(BaseHTTPRequestHandler):
                 extensions = []
                 for filename, symbol, container in (('asset-browser.js','mountAssetBrowser','asset-browser'),
                         ('inspectors.js','mountInspectors','native-inspectors'),
-                        ('timeline.js','mountTimeline','timeline'),('render-panel.js','mountRenderPanel','render-panel')):
+                        ('timeline.js','mountTimeline','timeline'),('render-panel.js','mountRenderPanel','render-panel'),
+                        ('editor-language.js','mountSceneLanguage','scene-language')):
                     if (ROOT / 'assets/editor3d' / filename).is_file():
                         extensions.append(f"const {{{symbol}}} = await import('/editor/{filename}'); window.hatchEditor.registerExtension({symbol}, document.getElementById('{container}'));")
                 if extensions:
