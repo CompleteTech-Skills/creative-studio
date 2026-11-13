@@ -1097,9 +1097,11 @@ $("recall").onclick = () => {
   if (bookmark) {
     $("view").value = bookmark.view;
     setView();
-    camera.position.fromArray(bookmark.position);
-    orbit.target.fromArray(bookmark.target);
-    orbit.update();
+    if ($("view").value !== "camera") {
+      camera.position.fromArray(bookmark.position);
+      orbit.target.fromArray(bookmark.target);
+      orbit.update();
+    }
   }
 };
 function setView() {
@@ -1275,7 +1277,7 @@ function cancelDrag() {
   for (const [id, record] of drag.records)
     setTransform(objects.get(id), record.local);
   drag = null;
-  orbit.enabled = true;
+  orbit.enabled = $("view").value !== "camera";
   gizmo.reset();
   inspect();
 }
@@ -1297,7 +1299,7 @@ function initialize() {
     gizmo = new TransformControls(camera, renderer.domElement);
     world.add(gizmo.getHelper());
     gizmo.addEventListener("dragging-changed", (e) => {
-      orbit.enabled = !e.value;
+      orbit.enabled = $("view").value !== "camera" && !e.value;
       if (e.value) {
         content.updateMatrixWorld(true);
         drag = {
@@ -1461,7 +1463,7 @@ function frame() {
     $("time").value = animationTime;
     $("clock").textContent = animationTime.toFixed(2) + " s";
   }
-  orbit.update();
+  if ($("view").value !== "camera") orbit.update();
   for (const h of helpers) h.update?.();
   selectionHelpers.forEach((h) => h.update());
   renderer.render(world, camera);
