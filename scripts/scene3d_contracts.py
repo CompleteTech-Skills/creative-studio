@@ -18,7 +18,7 @@ from pathlib import Path
 import re
 import unicodedata
 
-from rig_errors import RigError, decode_json, finite_json
+from rig_errors import RigError, decode_json, finite_json, normalize_root, open_payload, safe_path
 
 MAX_DOCUMENT_BYTES = 16 * 1024 * 1024
 MAX_FILES = 4096
@@ -673,8 +673,10 @@ def load_project(root, name='project.json'):
 
     This is not a transaction or a sandbox against a malicious concurrent writer.
     Later workers must revalidate input hashes at their own admission boundary.
+    Explicit internal directory capabilities retain their descriptor authority;
+    dependency reads never resolve that authority into a replaceable pathname.
     """
-    root = Path(root).resolve(strict=True)
+    root = normalize_root(root)
     require(root.is_dir(), 'Project root must be a directory.')
     documents, inventory, identities, edges, aliases, payloads = {}, {}, {}, {}, {}, {}
     total = 0
@@ -691,15 +693,19 @@ def load_project(root, name='project.json'):
             target = target / part
             require(not target.is_symlink(), 'Dependency path traverses a symlink.')
             require(not getattr(target, 'is_junction', lambda: False)(), 'Dependency path traverses a junction.')
-            require(target.resolve().is_relative_to(root), 'Dependency resolves outside the project root.')
+            # Resolve only this containment comparison, never the authority used
+            # for opening files below. Registered descriptor roots stay pinned.
+            require(target.resolve().is_relative_to(root.resolve()), 'Dependency resolves outside the project root.')
         require(target.is_file(), 'Missing regular dependency: ' + path)
+        target = safe_path(root, path, exists=True)
         size = target.stat().st_size
         require(size <= budgets['max_bytes'] - total, 'Project byte budget exceeded.')
         require(len(inventory) < budgets['max_files'], 'Project file budget exceeded.')
         digest = hashlib.sha256()
         observed = 0
         chunks = []
-        with target.open('rb') as stream:
+        with open_payload(root, path) as (stream, opened):
+            require(opened.st_size == size, 'Dependency changed size while opening: ' + path)
             while True:
                 chunk = stream.read(min(1024*1024, budgets['max_bytes'] - total + 1))
                 if not chunk:
