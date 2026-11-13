@@ -122,6 +122,8 @@ JobManager(root/'jobs').run('crash',FileAdapter(root/'published',crash='publishe
                                    env={**os.environ, 'PYTHONPATH': 'scripts:tests'})
         self.assertEqual(completed.returncode, 72)
         self.assertEqual(self.manager.status('crash')['status'], 'interrupted')
+        self.error('ASSET_JOB_RECOVERY',lambda:self.manager.cancel('crash'))
+        self.assertEqual(self.manager.status('crash')['status'],'interrupted')
         self.manager.resume('crash')
         result = self.manager.run('crash', self.adapter)
         self.assertEqual(result['status'], 'published')
@@ -185,7 +187,8 @@ root=Path(sys.argv[1]);CrashManager(root/'jobs').run(sys.argv[3],FileAdapter(roo
         self.assertEqual(self.manager._inventory('library'), result['staged']['inventory'])
 
     def test_runtime_failure_and_durable_pool_configuration(self):
-        manager = JobManager(self.root / 'short', limits={'runtime_seconds': 1, 'io': 1}, create=True)
+        manager = JobManager(self.root / 'short', limits={'runtime_seconds': 1, 'io': 1.0}, create=True)
+        self.assertIs(type(manager.limits['io']),int)
         manager.submit('import', {'text': 'slow'}, key='slow')
         self.assertEqual(JobManager(self.root / 'short').limits['io'], 1)
         self.error('ASSET_JOB_LIMIT', lambda: JobManager(self.root / 'short', limits={'io': 2}))

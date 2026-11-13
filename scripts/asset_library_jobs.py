@@ -84,6 +84,7 @@ def _limits(changes=None):
         maximum = DEFAULT_LIMITS[name]
         if not _number(value, 1, maximum) or (name != 'runtime_seconds' and int(value) != value):
             fail('LIMIT', 'Limits must be positive finite values within the documented hard ceiling: ' + name)
+        if name!='runtime_seconds':result[name]=int(value)
     return result
 
 
@@ -329,6 +330,8 @@ class JobManager:
             record = self._read(identifier)
             if record['status'] == 'published':
                 fail('PUBLISHED', 'Published output cannot be cancelled; use its canonical lifecycle API.')
+            if record['verified'] is not None and record['status'] in ('queued','failed','interrupted'):
+                fail('RECOVERY','Publication may have completed; explicitly resume and recover before cancellation.')
             atomic_json(self._cancel_path(identifier), {'id': identifier, 'at': timestamp()})
             if record['status'] in ('queued', 'failed', 'interrupted', 'cancelled'):
                 record['status'] = 'cancelled'
