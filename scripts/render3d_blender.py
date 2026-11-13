@@ -7,6 +7,7 @@ sanitized GLB derivatives are passed into the fixed Blender worker.
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import ExitStack
 from fractions import Fraction
 import hashlib
 import json
@@ -20,8 +21,8 @@ import tempfile
 import threading
 import time
 
-from atomic_publish import _rename_no_replace
-from rig_errors import RigError, atomic_json, atomic_bytes, read_json, safe_path, sha256, object_hash
+from atomic_publish import _rename_no_replace, pinned_directory, private_stage
+from rig_errors import RigError, atomic_json, atomic_bytes, read_json, safe_path, sha256, object_hash, directory_capability, normalize_root
 from render3d_contracts import (Render3DError, require, validate, make_frame_spec,
                                 frame_times, VERSION, load, open_regular)
 from render3d_snapshot import NativeRigAdapter, Scene3DAdapter, verify_snapshot, create_snapshot
@@ -72,12 +73,12 @@ def _rss(pid):
     return total
 
 
-def _supervise(command, *, cwd, timeout, memory_bytes, storage_bytes, cancelled=None):
+def _supervise(command, *, cwd, timeout, memory_bytes, storage_bytes, cancelled=None, pass_fds=()):
     """Drain bounded logs while supervising time, memory, storage and cancellation."""
     env=dict(os.environ,OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',MKL_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1')
     start=time.monotonic(); log=bytearray(); lock=threading.Lock(); peak=0
     process=subprocess.Popen(command,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
-                             start_new_session=os.name=='posix')
+                             start_new_session=os.name=='posix', **({'pass_fds':pass_fds} if pass_fds else {}))
     def drain():
         while True:
             chunk=process.stdout.read(16384)
@@ -303,7 +304,7 @@ class BlenderBackend:
 
     def render_frames(self,request,snapshot_root,destination,*,cancelled=None,progress=None):
         validate(request,'RenderRequest')
-        root=Path(snapshot_root).absolute();target=Path(destination).absolute()
+        root=normalize_root(snapshot_root);target=Path(destination).absolute()
         require(not target.exists() and not target.is_symlink(),'ownership','Render destination already exists.')
         require(not target.parent.resolve().joinpath(target.name).is_relative_to(root.resolve()),'ownership','Output cannot be nested in source snapshot.')
         snapshot=load(root/'snapshot.json','RenderSnapshot');self.validate(snapshot,request['settings'])
@@ -321,81 +322,85 @@ class BlenderBackend:
         verify_snapshot(root,adapter,max_total_bytes=source_budget)
         make_frame_spec(request,request['frame_range']['start'],root/'snapshot.json',max_total_bytes=source_budget)
         target.parent.mkdir(parents=True,exist_ok=True)
-        stage=Path(tempfile.mkdtemp(prefix='.render3d-',dir=target.parent))
-        try:
-            frozen=stage/'snapshot'
-            captured=create_snapshot(root,frozen,adapter,max_total_bytes=source_budget)
-            require(captured==snapshot,'stale-asset','Snapshot changed while capturing render source.')
+        with ExitStack() as transaction:
+            parent_fd=transaction.enter_context(pinned_directory(target.parent))
+            private_path,private_fd=transaction.enter_context(private_stage(parent_fd,prefix='.render3d-',cleanup_on_error=False))
+            capability=transaction.enter_context(directory_capability(private_fd))
+            stage=capability.path/'payload';stage.mkdir()
             try:
-                with open_regular(root/'snapshot.json',32*1024**2) as stream:
-                    original=stream.read(32*1024**2+1)
-            except OSError as exc:
-                raise Render3DError('stale-asset',str(exc),path=root/'snapshot.json') from exc
-            require(len(original)<=32*1024**2,'invalid-input','Snapshot metadata exceeds32MiB.')
-            require(len(original)==request['snapshot']['bytes'] and hashlib.sha256(original).hexdigest()==request['snapshot']['sha256'],
-                    'stale-asset','Snapshot metadata differs from request-bound bytes.')
-            atomic_bytes(frozen/'snapshot.json',original)
-            _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes']+width*height*16*frame_count)
-            source=stage/'source';source.mkdir()
-            scene=(_prepare_scene if snapshot['scope']=='scene3d' else _prepare_native)(request,frozen,source)
-            require(scene['geometry_vertices']>0 and scene['geometry_triangles']>0,'missing-asset','Rendering requires actual nonempty geometry.')
-            backend=self.inspect_version()
-            job=dict(schema_version=1,mode='render',settings=settings,scene=scene,output='../frames',report='../worker-report.json')
-            job_payload=(json.dumps(job,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
-            _check_storage(stage,resources['storage_bytes'],reserve=len(job_payload)+snapshot['total_bytes']+width*height*16*frame_count)
-            atomic_bytes(source/'job.json',job_payload)
-            command=[self.executable,'--background','--factory-startup','--disable-autoexec','--python-exit-code','1','--python',str(WORKER),'--',str(source/'job.json')]
-            log,usage=_supervise(command,cwd=stage,timeout=resources['timeout_seconds'],memory_bytes=resources['memory_bytes'],storage_bytes=resources['storage_bytes'],cancelled=cancelled)
-            (stage/'blender.log').write_bytes(log)
-            require(sha256(self.executable)==backend['executable_sha256'] and sha256(WORKER)==backend['worker_sha256'],
-                    'stale-asset','Executed backend code changed during rendering.')
-            report=read_json(stage/'worker-report.json')
-            require(report['version']==backend['application_version'],'verification-failed','Worker version changed after admission.')
-            require(report['rendered']==[f['index'] for f in scene['frames']],'incomplete-output','Worker did not report every requested frame.')
-            images=[]
-            extension=settings['output']['format']
-            for frame in scene['frames']:
-                relative=f'frames/{frame["index"]:06d}.{extension}';path=stage/relative
-                images.append(dict(frame=frame['index'],file=dict(path=relative,sha256=sha256(path),bytes=path.stat().st_size),
-                    format=extension,bit_depth=settings['output']['bit_depth'],pass_name='combined',resolution=[width,height]))
-                if progress:progress(frame['index'])
-            manifest=dict(schema_version=1,request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],backend=backend,
-                          frames=[frame['spec'] for frame in scene['frames']],worker=report,fixture=snapshot['fixture'])
-            atomic_json(stage/'manifest.json',manifest)
-            artifact=lambda name:dict(path=name,sha256=sha256(stage/name),bytes=(stage/name).stat().st_size)
-            indices=[frame['index'] for frame in scene['frames']]
-            result=dict(schema_version=1,kind='render3d-result',job=request['id'],request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],
-                backend=backend,status='complete',requested_frames=indices,successful=indices,failed=[],skipped=[],reused=[],images=images,diagnostics=[],
-                usage=dict(**usage,output_bytes=sum(p.stat().st_size for p in stage.rglob('*') if p.is_file()),measurement='measured' if usage['peak_memory_bytes'] is not None else 'estimated'),
-                logs=[artifact('blender.log')],manifest=artifact('manifest.json'),verification=dict(status='not-run',verifier=None,evidence=None))
-            from render3d_verify import verify_result
-            _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes'])
-            verification=verify_result(request,result,stage,snapshot_root=frozen,expected_backend=backend,max_total_bytes=source_budget)
-            atomic_json(stage/'verification.json',verification)
-            result['verification']=dict(status='passed',verifier=verification['verifier'],evidence=artifact('verification.json'))
-            # Include verification evidence and the self-describing result JSON
-            # in the measured published byte count, including its own digits.
-            base_bytes=sum(p.stat().st_size for p in stage.rglob('*') if p.is_file())
-            for _ in range(8):
-                payload=(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
-                total_bytes=base_bytes+len(payload)
-                if result['usage']['output_bytes']==total_bytes:break
-                result['usage']['output_bytes']=total_bytes
-            else:raise Render3DError('invalid-input','Unable to encode stable delivery usage.')
-            require(total_bytes<=resources['storage_bytes'],
-                    'storage-exhaustion','Verified delivery exceeds storage budget.')
-            validate(result,'RenderResult');atomic_bytes(stage/'result.json',payload)
-            _rename_no_replace(stage,target)
-            return result
-        except Exception as exc:
-            error=exc if isinstance(exc,Render3DError) else Render3DError(
-                'invalid-input' if isinstance(exc,RigError) else 'storage-exhaustion' if isinstance(exc,OSError) and exc.errno in (28,122) else 'external-tool',str(exc))
-            error.report['path']=str(stage)
-            try:atomic_json(stage/'failure.json',error.report)
-            except OSError:pass
-            # Private failed staging is retained for diagnostics; it is never a
-            # published result and the requested destination remains untouched.
-            raise error from exc
+                frozen=stage/'snapshot'
+                captured=create_snapshot(root,frozen,adapter,max_total_bytes=source_budget)
+                require(captured==snapshot,'stale-asset','Snapshot changed while capturing render source.')
+                try:
+                    with open_regular(root/'snapshot.json',32*1024**2) as stream:
+                        original=stream.read(32*1024**2+1)
+                except OSError as exc:
+                    raise Render3DError('stale-asset',str(exc),path=root/'snapshot.json') from exc
+                require(len(original)<=32*1024**2,'invalid-input','Snapshot metadata exceeds32MiB.')
+                require(len(original)==request['snapshot']['bytes'] and hashlib.sha256(original).hexdigest()==request['snapshot']['sha256'],
+                        'stale-asset','Snapshot metadata differs from request-bound bytes.')
+                atomic_bytes(frozen/'snapshot.json',original)
+                _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes']+width*height*16*frame_count)
+                source=stage/'source';source.mkdir()
+                scene=(_prepare_scene if snapshot['scope']=='scene3d' else _prepare_native)(request,frozen,source)
+                require(scene['geometry_vertices']>0 and scene['geometry_triangles']>0,'missing-asset','Rendering requires actual nonempty geometry.')
+                backend=self.inspect_version()
+                job=dict(schema_version=1,mode='render',settings=settings,scene=scene,output='../frames',report='../worker-report.json')
+                job_payload=(json.dumps(job,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+                _check_storage(stage,resources['storage_bytes'],reserve=len(job_payload)+snapshot['total_bytes']+width*height*16*frame_count)
+                atomic_bytes(source/'job.json',job_payload)
+                command=[self.executable,'--background','--factory-startup','--disable-autoexec','--python-exit-code','1','--python',str(WORKER),'--',str(source/'job.json'),str(capability.fd)]
+                log,usage=_supervise(command,cwd=stage,timeout=resources['timeout_seconds'],memory_bytes=resources['memory_bytes'],storage_bytes=resources['storage_bytes'],cancelled=cancelled,pass_fds=(capability.fd,))
+                (stage/'blender.log').write_bytes(log)
+                require(sha256(self.executable)==backend['executable_sha256'] and sha256(WORKER)==backend['worker_sha256'],
+                        'stale-asset','Executed backend code changed during rendering.')
+                report=read_json(stage/'worker-report.json')
+                require(report['version']==backend['application_version'],'verification-failed','Worker version changed after admission.')
+                require(report['rendered']==[f['index'] for f in scene['frames']],'incomplete-output','Worker did not report every requested frame.')
+                images=[]
+                extension=settings['output']['format']
+                for frame in scene['frames']:
+                    relative=f'frames/{frame["index"]:06d}.{extension}';path=stage/relative
+                    images.append(dict(frame=frame['index'],file=dict(path=relative,sha256=sha256(path),bytes=path.stat().st_size),
+                        format=extension,bit_depth=settings['output']['bit_depth'],pass_name='combined',resolution=[width,height]))
+                    if progress:progress(frame['index'])
+                manifest=dict(schema_version=1,request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],backend=backend,
+                              frames=[frame['spec'] for frame in scene['frames']],worker=report,fixture=snapshot['fixture'])
+                atomic_json(stage/'manifest.json',manifest)
+                artifact=lambda name:dict(path=name,sha256=sha256(stage/name),bytes=(stage/name).stat().st_size)
+                indices=[frame['index'] for frame in scene['frames']]
+                result=dict(schema_version=1,kind='render3d-result',job=request['id'],request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],
+                    backend=backend,status='complete',requested_frames=indices,successful=indices,failed=[],skipped=[],reused=[],images=images,diagnostics=[],
+                    usage=dict(**usage,output_bytes=sum(p.stat().st_size for p in stage.rglob('*') if p.is_file()),measurement='measured' if usage['peak_memory_bytes'] is not None else 'estimated'),
+                    logs=[artifact('blender.log')],manifest=artifact('manifest.json'),verification=dict(status='not-run',verifier=None,evidence=None))
+                from render3d_verify import verify_result
+                _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes'])
+                verification=verify_result(request,result,stage,snapshot_root=frozen,expected_backend=backend,max_total_bytes=source_budget)
+                atomic_json(stage/'verification.json',verification)
+                result['verification']=dict(status='passed',verifier=verification['verifier'],evidence=artifact('verification.json'))
+                # Include verification evidence and the self-describing result JSON
+                # in the measured published byte count, including its own digits.
+                base_bytes=sum(p.stat().st_size for p in stage.rglob('*') if p.is_file())
+                for _ in range(8):
+                    payload=(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+                    total_bytes=base_bytes+len(payload)
+                    if result['usage']['output_bytes']==total_bytes:break
+                    result['usage']['output_bytes']=total_bytes
+                else:raise Render3DError('invalid-input','Unable to encode stable delivery usage.')
+                require(total_bytes<=resources['storage_bytes'],
+                        'storage-exhaustion','Verified delivery exceeds storage budget.')
+                validate(result,'RenderResult');atomic_bytes(stage/'result.json',payload)
+                _rename_no_replace('payload',target.name,source_dir_fd=private_fd,destination_dir_fd=parent_fd)
+                return result
+            except Exception as exc:
+                error=exc if isinstance(exc,Render3DError) else Render3DError(
+                    'invalid-input' if isinstance(exc,RigError) else 'storage-exhaustion' if isinstance(exc,OSError) and exc.errno in (28,122) else 'external-tool',str(exc))
+                error.report['path']=os.readlink(capability.path)+'/'+stage.name
+                try:atomic_json(stage/'failure.json',error.report)
+                except OSError:pass
+                # Private failed staging is retained for diagnostics; it is never a
+                # published result and the requested destination remains untouched.
+                raise error from exc
 
     def prepare(self,snapshot,settings):
         return self.validate(snapshot,settings)

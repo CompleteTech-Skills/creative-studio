@@ -348,7 +348,30 @@ class NativeRendering(unittest.TestCase):
                     exposure=0,view_transform='standard',resources=dict(memory_bytes=2*1024**3,
                         storage_bytes=128*1024**2,timeout_seconds=120,workers=1,max_frames=10)))
             backend=BlenderBackend()
-            result=backend.render_frames(request,root/'snapshot',root/'render')
+            # Replace the public staging basename before actual Blender I/O.
+            # Worker output, host verification, final rename, and cleanup must
+            # retain the original directory authority throughout the render.
+            import render3d_blender as implementation
+            from unittest.mock import patch
+            supervise=implementation._supervise
+            substitutions=[]
+            def replace_outer(command,**options):
+                stage=Path(options['cwd'])
+                self.assertEqual(stage.parts[:4],('/','proc','self','fd'))
+                original=Path(os.readlink(stage.parent))
+                retained=original.with_name(original.name+'-retained')
+                original.rename(retained)
+                original.mkdir()
+                (original/'unverified.txt').write_text('UNVERIFIED REPLACEMENT')
+                substitutions.append((original,retained))
+                return supervise(command,**options)
+            with patch.object(implementation,'_supervise',side_effect=replace_outer):
+                result=backend.render_frames(request,root/'snapshot',root/'render')
+            self.assertEqual(len(substitutions),1)
+            replacement,retained=substitutions[0]
+            self.assertEqual((replacement/'unverified.txt').read_text(),'UNVERIFIED REPLACEMENT')
+            self.assertFalse((root/'render/unverified.txt').exists())
+            self.assertFalse((retained/'payload').exists())
             self.assertEqual(result['verification']['status'],'passed')
             self.assertEqual(result['usage']['output_bytes'],
                 sum(p.stat().st_size for p in (root/'render').rglob('*') if p.is_file()))

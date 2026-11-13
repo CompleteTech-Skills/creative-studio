@@ -121,7 +121,7 @@ def preview_camera(objects,direction):
 
 
 def main():
-    path=Path(sys.argv[sys.argv.index('--')+1]).resolve();root=path.parent
+    path=Path(sys.argv[sys.argv.index('--')+1]);root=path.parent
     require(path.stat().st_size<=32*1024**2,'Worker job exceeds32MiB')
     job=json.loads(path.read_text())
     require(set(job)=={'schema_version','mode','settings','scene','output','report'} and job['schema_version']==1 and job['mode']=='render','Unexpected worker job shape')
@@ -187,4 +187,10 @@ def main():
     (root.parent/'worker-report.json').write_text(json.dumps(report,allow_nan=False,indent=2))
 
 
-if __name__=='__main__':main()
+if __name__=='__main__':
+    # Only the fixed host launcher supplies this inherited descriptor. No scene
+    # document or asset metadata can grant worker filesystem authority.
+    sys.path.insert(0,str(Path(__file__).resolve().parent))
+    from rig_errors import directory_capability
+    with directory_capability(int(sys.argv[sys.argv.index('--')+2])):
+        main()
