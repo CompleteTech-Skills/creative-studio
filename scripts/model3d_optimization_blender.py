@@ -154,7 +154,8 @@ def decimate_blender(geometry,destination,*,angle_degrees=1.,sharp_angle_degrees
 
     DISSOLVE preserves delimiter edges and interpolated UVs under this bounded
     profile. It is useful for coplanar/near-planar tessellation, not arbitrary
-    target-ratio simplification. Normals may change only under explicit policy.
+    target-ratio simplification. Output normals are flat; replacing source normals
+    requires the explicit recompute_normals policy.
     """
     limits=_limits(limits);names,texture_pixels=_preflight(geometry,limits)
     angle_degrees=_number(angle_degrees,.001,45.,'MODEL3D_DECIMATE_POLICY')
@@ -229,7 +230,7 @@ def decimate_blender(geometry,destination,*,angle_degrees=1.,sharp_angle_degrees
             source_triangles=geometry.triangle_count,texture_pixels=texture_pixels,triangles=output.triangle_count,vertices=output.vertex_count,
             angle_degrees=angle_degrees,sharp_angle_degrees=sharp_angle_degrees,budgets=dict(budgets),parts=parts,
             policy=dict(max_distance_m=max_distance,min_silhouette_iou=min_silhouette_iou,uv_tolerance=uv_tolerance,
-                        point_tolerance_m=point_tolerance,recompute_normals=recompute_normals,
+                        point_tolerance_m=point_tolerance,recompute_normals=recompute_normals,normal_mode='flat',
                         protected_vertices=copy.deepcopy(protected_vertices)),
             source_descriptor=original,limits=limits,artistic_approval=False,
             limitations=['Planar/angle-limited DISSOLVE, not general textured target-ratio collapse.',

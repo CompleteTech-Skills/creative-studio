@@ -59,7 +59,8 @@ Always choose tolerances appropriate to source units/float32 interchange. Output
 contains retained source geometry, `source.glb`, `editable.blend`,
 `optimized.glb`, save/reopen reports and a hash inventory in `optimization.json`.
 The receipt also retains the chosen distance/silhouette/UV/point thresholds,
-normal replacement flag, explicit protected vertex indices, angles and budgets;
+normal replacement flag, `normal_mode: flat`, explicit protected vertex indices,
+angles and budgets;
 measurements can therefore be assessed against the exact policy that accepted them.
 Passing `source_snapshot` from `import_snapshot` retains exact original source
 files through the existing Model3D interchange adapter.
