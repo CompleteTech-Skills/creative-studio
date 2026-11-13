@@ -27,6 +27,8 @@ Reuse selected actual clips with `state-map`; missing anatomy and missing animat
 
 For interoperability evidence, run the pinned Khronos validator, independent Blender save/reopen and independent Three.js vertex/playback tests. Distinguish generated/exported, independently verified, visually reviewed and production-approved. The retained demo characters are procedural engineering fixtures. Use [3D acceptance and limitations](references/3d-rigging-acceptance.md) for evidence boundaries and the baseline/integrated regression results.
 
+For additive 3D scene documents, read [Scene3D contracts](references/scene3d-contracts.md). Use `python scripts/scene3d_contracts.py PROJECT_ROOT` to verify a hash-bound document closure. This foundation evaluates static transforms only; it does not implement a scene builder, interactive editor, render backend or visual approval. Preserve production v1 pixel fields and use explicit 2D/3D adapters.
+
 Run `python scripts/hatch.py doctor` before unfamiliar workflows; `capabilities` lists bounded interfaces. Use [workflow](references/workflow.md) for lifecycle commands. Unsupported formats, policies and excessive allocations must fail clearly.
 
 ## Select expanded character states
