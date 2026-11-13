@@ -17,3 +17,5 @@ from rig_blender import export_blender, render_blender_preview
 from rig_package import package_rig, restore_rig
 from rig_jobs import create_run, save_rig
 from rig_facial import create_morph_target, edit_morph_target, expression_catalog, apply_expressions, gaze_at
+
+from rig_hand_controls import discover_hand_controls, apply_hand_control
