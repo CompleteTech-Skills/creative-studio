@@ -293,13 +293,80 @@ class _Reader:
         except OSError as exc:
             raise BackendError('PHYSICS_CACHE_CORRUPT', 'Cannot open cache directory: ' + str(exc), category='cache-corruption') from exc
 
+    @classmethod
+    def from_descriptor(cls, descriptor):
+        """Own a validated duplicate of an explicit internal directory FD.
+
+        No path or metadata can manufacture this authority. The caller retains
+        its descriptor, and closing it cannot invalidate this owned duplicate.
+        """
+        require(type(descriptor) is int and descriptor>=0,'PHYSICS_PATH','Expected a live directory descriptor.')
+        require(os.name=='posix' and os.open in os.supports_dir_fd and hasattr(os,'O_NOFOLLOW'),
+                'PHYSICS_PLATFORM_UNSUPPORTED','Directory descriptor I/O requires supported POSIX operations.')
+        owned=None
+        try:
+            before=os.fstat(descriptor)
+            require(stat.S_ISDIR(before.st_mode),'PHYSICS_PATH','Descriptor must identify a directory.')
+            owned=os.dup(descriptor)
+            after=os.fstat(owned)
+            require(stat.S_ISDIR(after.st_mode) and (before.st_dev,before.st_ino)==(after.st_dev,after.st_ino),
+                    'PHYSICS_PATH','Directory descriptor changed during acquisition.')
+            reader=object.__new__(cls)
+            reader.fd=owned
+            reader._descriptor_identity=(after.st_dev,after.st_ino)
+            reader._descriptor_closed=False
+            owned=None
+            return reader
+        except OSError as exc:
+            raise BackendError('PHYSICS_PATH','Expected a live directory descriptor.') from exc
+        finally:
+            if owned is not None:os.close(owned)
+
+    def _check_descriptor(self):
+        identity=getattr(self,'_descriptor_identity',None)
+        if identity is None:return
+        require(not self._descriptor_closed,'PHYSICS_PATH','Owned directory context is closed.')
+        try:
+            current=os.fstat(self.fd)
+            require(stat.S_ISDIR(current.st_mode) and (current.st_dev,current.st_ino)==identity,
+                    'PHYSICS_PATH','Owned directory descriptor was closed or reused.')
+        except OSError as exc:
+            raise BackendError('PHYSICS_PATH','Owned directory descriptor is closed.') from exc
+
+    def stat(self,name):
+        """Read bounded relative regular-file metadata without following links."""
+        self._check_descriptor()
+        path_name(name)
+        descriptor=os.dup(self.fd)
+        try:
+            parts=name.split('/')
+            for part in parts[:-1]:
+                child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor)
+                os.close(descriptor);descriptor=child
+            info=os.stat(parts[-1],dir_fd=descriptor,follow_symlinks=False)
+            require(stat.S_ISREG(info.st_mode),'PHYSICS_CACHE_CORRUPT','Relative payload is not a regular file.')
+            return info
+        except OSError as exc:
+            raise BackendError('PHYSICS_CACHE_CORRUPT','Missing or unsafe relative payload: '+name) from exc
+        finally:os.close(descriptor)
+
     def __enter__(self):
         return self
 
     def __exit__(self, *_):
-        os.close(self.fd)
+        identity=getattr(self,'_descriptor_identity',None)
+        if identity is None:
+            os.close(self.fd)
+            return
+        if self._descriptor_closed:return
+        self._descriptor_closed=True
+        try:
+            info=os.fstat(self.fd)
+            if (info.st_dev,info.st_ino)==identity:os.close(self.fd)
+        except OSError:pass
 
     def read(self, name, limit=MAX_CACHE_BYTES):
+        self._check_descriptor()
         path_name(name)
         require(type(limit) is int and 0<=limit<=MAX_CACHE_BYTES,'PHYSICS_CACHE_CORRUPT',
                 'Cache read requires a bounded canonical integer byte count.',category='cache-corruption')
@@ -327,9 +394,12 @@ class _Reader:
             os.close(fd)
 
     def names(self):
+        self._check_descriptor()
         files = set()
         count = 0
-        pending = [(os.dup(self.fd),'')]
+        initial=(os.open('.',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=self.fd)
+            if hasattr(self,'_descriptor_identity') else os.dup(self.fd))
+        pending = [(initial,'')]
         try:
             while pending:
                 descriptor,prefix=pending.pop()
@@ -355,6 +425,80 @@ class _Reader:
         finally:
             for descriptor,_ in pending:
                 os.close(descriptor)
+
+
+def _write_relative(directory_fd,name,payload):
+    """Write one new bounded immutable payload beneath a pinned directory."""
+    path_name(name)
+    require(type(payload) is bytes and len(payload)<=MAX_CACHE_BYTES,'PHYSICS_RESOURCE_LIMIT',
+            'Relative output requires bounded immutable bytes.')
+    with _Reader.from_descriptor(directory_fd) as reader:
+        descriptor=os.dup(reader.fd)
+        try:
+            parts=name.split('/')
+            for part in parts[:-1]:
+                try:os.mkdir(part,mode=0o700,dir_fd=descriptor)
+                except FileExistsError:pass
+                child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor)
+                os.close(descriptor);descriptor=child
+            output=os.open(parts[-1],os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,
+                           0o600,dir_fd=descriptor)
+            with os.fdopen(output,'wb') as stream:stream.write(payload)
+        except FileExistsError as exc:
+            raise BackendError('PHYSICS_DESTINATION_EXISTS','Relative output already exists; original preserved.') from exc
+        except OSError as exc:
+            raise BackendError('PHYSICS_PATH','Unsafe or unavailable relative output: '+name) from exc
+        finally:os.close(descriptor)
+
+
+def _inventory_relative(directory_fd):
+    """Hash a bounded complete artifact inventory through an owned root FD."""
+    with _Reader.from_descriptor(directory_fd) as reader:
+        names=sorted(reader.names())
+        _paths(names)
+        require(len(names)<=MAX_FILES,'PHYSICS_RESOURCE_LIMIT','Too many generated cache files.')
+        total=0;files=[]
+        for name in names:
+            info=reader.stat(name)
+            require(info.st_size<=MAX_CACHE_BYTES-total,'PHYSICS_RESOURCE_LIMIT','Generated cache bytes exceed admission.')
+            payload=reader.read(name,MAX_CACHE_BYTES-total)
+            total+=len(payload)
+            files.append(dict(path=name,sha256=digest(payload),bytes=len(payload)))
+        require(reader.names()==set(names),'PHYSICS_WORKER_OUTPUT','Artifact inventory changed during capture.')
+        return files
+
+
+def _tree_size_relative(directory_fd):
+    """Measure pinned regular files without loading their contents.
+
+    A worker may atomically replace temporary save files between polls. Missing
+    entries are ignored as in the existing path monitor; links fail closed.
+    """
+    with _Reader.from_descriptor(directory_fd) as reader:
+        pending=[os.open('.',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=reader.fd)]
+        total=0;count=0
+        try:
+            while pending:
+                descriptor=pending.pop()
+                try:
+                    for name in os.listdir(descriptor):
+                        count+=1
+                        require(count<=MAX_FILES+32,'PHYSICS_RESOURCE_LIMIT','Worker entry count exceeds admission.')
+                        path_name(name)
+                        try:
+                            info=os.stat(name,dir_fd=descriptor,follow_symlinks=False)
+                            if stat.S_ISDIR(info.st_mode):
+                                pending.append(os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor))
+                            else:
+                                require(stat.S_ISREG(info.st_mode),'PHYSICS_WORKER_OUTPUT','Worker produced a link or special file.')
+                                total+=info.st_size
+                        except FileNotFoundError:continue
+                finally:os.close(descriptor)
+        except OSError as exc:
+            raise BackendError('PHYSICS_WORKER_OUTPUT','Worker directory changed unsafely during measurement.') from exc
+        finally:
+            for descriptor in pending:os.close(descriptor)
+        return total
 
 
 def _worker_bytes(backend):
