@@ -426,11 +426,21 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
         raise ValueError('sequence stage must be a separate sibling basename')
     with media._pin_directory(destination.parent) as parent_fd:
         parent=Path('/proc/self/fd')/str(parent_fd)
+        created_stage=True
         try:os.mkdir(stage_name,mode=0o700,dir_fd=parent_fd)
-        except FileExistsError:pass
+        except FileExistsError:created_stage=False
         stage_fd=os.open(stage_name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent_fd)
         try:
             stage=Path('/proc/self/fd')/str(stage_fd)
+            # Never create even a lock inode in an unrelated existing directory.
+            # A complete matching plan is the persistent ownership boundary.
+            if not created_stage:
+                if (stage/'plan.json').exists():
+                    if _read_json(stage,'plan.json')!=plan:raise ValueError('staging belongs to another source/provenance')
+                elif set(os.listdir(stage))=={'lock','.plan.json.partial'}:
+                    if _read(stage,'.plan.json.partial',MAX_JSON_BYTES)!=_json_bytes(plan):
+                        raise ValueError('incomplete staging plan does not match request')
+                else:raise ValueError('unrecognized preexisting sequence staging')
             lock_fd=os.open('lock',os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW|os.O_NONBLOCK,0o600,dir_fd=stage_fd)
             try:
                 if not stat.S_ISREG(os.fstat(lock_fd).st_mode):raise ValueError('invalid sequence stage lock')
