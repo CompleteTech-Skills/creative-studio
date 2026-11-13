@@ -52,8 +52,10 @@ python scripts/hatch.py decompose-review-ui --run-dir output/character \
 ```
 
 `propose` requires a new output directory and explicit analysis opt-in. It runs a
-child process with two CPU threads, at most 1.5 million source pixels, 32 candidate
+child process with one CPU thread, at most 1.5 million source pixels, 32 candidate
 masks and a configurable wall-clock limit (default 120 seconds, maximum 300).
+Current receipts retain actual Torch/interop counts. Historical v1 receipts
+with two threads remain readable; current execution uses one.
 The generated schema is `profiles/decomposition-foreground.schema.json`.
 `doctor` reports missing dependencies or weights without attempting inference.
 A missing backend, a failed worker or no useful candidates leaves manual

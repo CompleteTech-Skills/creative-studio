@@ -60,6 +60,14 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(len(fg.load(destination/'foreground-analysis')['candidates']),2)
         self.assertEqual(load_decomposition(destination)['source']['sha256'],before)
 
+    def test_current_runtime_counts_are_bound_and_historical_threads_remain_readable(self):
+        self.assertEqual(fg.load(self.root)['parameters']['threads'],2)
+        self.receipt['parameters']['threads']=1
+        self.receipt['runtime']={'torch_threads':1,'torch_interop_threads':1};self.save()
+        fg.load(self.root)
+        self.receipt['runtime']['torch_threads']=2;self.save()
+        with self.assertRaises(ValueError):fg.load(self.root)
+
     def test_unknown_duplicate_empty_selection_rejected(self):
         for ids in [[],['bogus'],['candidate-1','candidate-1']]:
             with self.subTest(ids=ids), self.assertRaises(ValueError):
