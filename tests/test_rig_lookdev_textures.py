@@ -18,6 +18,67 @@ def png(array):
 
 
 class TextureTests(unittest.TestCase):
+    def test_public_scalar_admission_reports_structured_numeric_errors(self):
+        invalid=(10**400,-10**400,True,float('inf'),float('nan'),'1',None)
+        for argument in ('scale','frequency','variation','turbulence','strength','rotation'):
+            for value in invalid:
+                with self.subTest(argument=argument,value_type=type(value).__name__),self.assertRaises(RigError) as caught:
+                    if argument=='strength':t.normal_from_height(np.zeros((2,2),np.float32),strength=value)
+                    elif argument=='rotation':t.transform_uv([[0,0]],rotation=value)
+                    else:t.procedural_maps('clay',width=1,height=1,**{argument:value})
+                self.assertEqual(caught.exception.report['code'],'TEXTURE_NUMBER')
+
+    def test_scalar_valid_endpoints_preserve_behavior_without_publication(self):
+        from unittest.mock import patch
+        with patch.object(t,'publish_texture',side_effect=AssertionError('Unexpected publication.')) as publisher:
+            for argument,endpoints in {'scale':(.001,1000),'frequency':(.01,1024),
+                                       'variation':(0,1),'turbulence':(0,1)}.items():
+                for value in endpoints:
+                    result=t.procedural_maps('clay',width=1,height=1,**{argument:value})
+                    self.assertEqual(result['recipe'][argument],value)
+            for value in (0,1000):
+                actual=t.normal_from_height(np.zeros((2,2),np.float32),strength=value)
+                np.testing.assert_array_equal(actual,np.tile([.5,.5,1,1],(2,2,1)))
+            for value in (-1e9,1e9):
+                np.testing.assert_array_equal(t.transform_uv([[0,0]],rotation=value),[[0,0]])
+            for argument in ('scale','frequency','variation','turbulence'):
+                with self.assertRaises(RigError):
+                    t.procedural_maps('clay',width=1,height=1,**{argument:10**400})
+            publisher.assert_not_called()
+
+    def test_procedural_colors_reject_untyped_vectors_before_conversion(self):
+        from unittest.mock import patch
+        invalid=(None,'000',[],[0,0],[[0],0,0],[10**400,0,0],
+                 ['0','0','0'],[False,False,False],[True,True,True],
+                 [float('nan'),0,0],[float('inf'),0,0],[1j,0,0],
+                 np.array(0),np.array([[0,0,0]]),np.array([False]*3))
+        with patch.object(t,'publish_texture',side_effect=AssertionError('Unexpected publication.')) as publisher:
+            for argument in ('color_low','color_high'):
+                for value in invalid:
+                    with self.subTest(argument=argument,value_type=type(value).__name__),self.assertRaises(RigError) as caught:
+                        t.procedural_maps('clay',width=1,height=1,**{argument:value})
+                    self.assertEqual(caught.exception.report['code'],'TEXTURE_COLOR')
+            publisher.assert_not_called()
+
+    def test_procedural_color_numeric_arraylike_endpoints_and_alpha(self):
+        from fractions import Fraction
+        from array import array
+        from unittest.mock import patch
+        with patch.object(t,'publish_texture',side_effect=AssertionError('Unexpected publication.')) as publisher:
+            variants=[([0,0,0],[1,1,1]),((0.,0.,0.),(1.,1.,1.)),
+                      (np.zeros(3,np.float32),np.ones(3,np.float64)),
+                      (np.zeros(3,np.int64),np.ones(3,np.uint8)),
+                      (array('f',[0,0,0]),array('f',[1,1,1])),
+                      ([Fraction(0)]*3,[Fraction(1)]*3)]
+            for low,high in variants:
+                result=t.procedural_maps('clay',width=2,height=2,color_low=low,color_high=high)
+                self.assertEqual(result['recipe']['color_low'],[0,0,0])
+                self.assertEqual(result['recipe']['color_high'],[1,1,1])
+                for role,payload in result['maps'].items():
+                    pixels=t.decode_texture(payload,role=role,encoding='srgb' if role=='base-color' else 'data').pixels
+                    np.testing.assert_array_equal(pixels[:,:,3],np.ones((2,2)))
+            publisher.assert_not_called()
+
     def test_srgb_is_decoded_once_and_alpha_is_linear(self):
         data=png(np.array([[[128,128,128,64]]],dtype=np.uint8))
         image=t.decode_texture(data,role='base-color',encoding='srgb')
