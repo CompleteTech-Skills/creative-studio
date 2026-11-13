@@ -43,7 +43,7 @@ def _new_destination(destination):
 def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                      scene_version=None, project_version=None, derived_documents=None,
                      extra_payloads=None, document_replacements=None, project_selection=None,
-                     max_bytes=1024**3):
+                     shot_documents=None, max_bytes=1024**3):
     """Copy and revalidate actual source bytes, then exclusively publish a closure.
 
     New scene versions coexist with original scene/shot versions. The return value
@@ -51,6 +51,9 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     Additional derived documents must already reference complete input payloads.
     """
     require(type(max_bytes) is int and 0 < max_bytes <= 1024**3, 'Invalid snapshot byte budget.')
+    require(shot_documents is None or isinstance(shot_documents, list) and len(shot_documents) <= 1024,
+            'Additional shot documents must be a bounded list.')
+    require(not shot_documents or graph is not None, 'New shots require an explicit edited scene.')
     destination = _new_destination(destination)
     bundle = load_project(source_root)
     source_root = Path(source_root).resolve(strict=True)
@@ -116,7 +119,7 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         r = _file_reference(document, payload, path)
         additions.append(r)
         field = {'scene3d-asset': 'assets', 'scene3d-prefab': 'prefabs',
-                 'scene3d-animation': 'animations'}.get(document['kind'])
+                 'scene3d-animation': 'animations', 'scene3d-shot': 'shots'}.get(document['kind'])
         if field is not None:
             project[field].append(deepcopy(r))
         if document['kind'] == 'scene3d-asset' and document['asset_type'] == 'character':
@@ -135,7 +138,7 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         combined_derived[path] = document
     for path, document in combined_derived.items():
         created = add_document(document, path)
-        field = {'scene3d-scene': 'scenes', 'scene3d-shot': 'shots'}.get(created['kind'])
+        field = {'scene3d-scene': 'scenes'}.get(created['kind'])
         if field is not None:
             project[field].append(created)
     if graph is not None:
@@ -169,14 +172,21 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         project['scenes'].append(active_scene)
         # Existing shots remain valid against the retained old scene; new exact
         # shot versions bind the edited scene without overwriting their originals.
-        for reference in list(project['shots']):
+        for reference in bundle['project']['shots']:
             old_shot = bundle['documents'][reference['path']]
             if old_shot['scene']['path'] != scene_path:
                 continue
             shot = deepcopy(old_shot)
             shot['version'] = version_patch(shot['version'])
             shot['scene'] = deepcopy(active_scene)
-            project['shots'].append(add_document(shot))
+            add_document(shot)
+        for shot in shot_documents or []:
+            shot = validate_document(deepcopy(shot), 'shot')
+            require(shot['scene'] == _file_reference(original, files[scene_path], scene_path),
+                    'New shot must select the exact edited source scene.')
+            require(shot['id'] in replacement['shots'], 'New shot must be associated with the edited scene.')
+            shot['scene'] = deepcopy(active_scene)
+            add_document(shot)
     replacements = {} if document_replacements is None else document_replacements
     require(isinstance(replacements, dict) and len(replacements) <= 4096,
             'Document replacements must be a bounded path/document mapping.')
@@ -253,6 +263,7 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                 require(path in allowed, 'Project selection cannot inject an unregistered reference.')
                 selected.append(deepcopy(allowed[path]))
             project[field] = selected
+
     original_project = files['project.json']
     history = 'history/project-'+hashlib.sha256(original_project).hexdigest()+'.json'
     files[history] = original_project
