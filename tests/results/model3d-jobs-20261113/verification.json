@@ -3,10 +3,10 @@
   "fixture": true,
   "base": "0226b6f3b2c37ff76d06a60df67fba37b3494dde",
   "test_command": "python -m unittest discover -s tests -p test_model3d_jobs.py -v",
-  "tests": 12,
+  "tests": 14,
   "result": "pass",
   "demonstration": {
-    "durable_root": "/home/complete/.cache/hatch-coordination-20261112/model50-demo-final",
+    "durable_root": "/home/complete/.cache/hatch-coordination-20261112/model50-demo-reviewed",
     "command": "python scripts/demonstrate_model3d_jobs.py --destination NEW_DIR",
     "assets": [
       {
@@ -14,7 +14,7 @@
         "vertices": 8,
         "triangles": 12,
         "geometry_sha256": "7e6755acd9e4c9cfc09bc18fd51eef45ef31b33695f04c4e4ca00c085eae7ef3",
-        "archive_sha256": "883948cf419003e9f2bb7b90452649a0f0b375d0dd43797b77bf023d1be1f5b5",
+        "archive_sha256": "7c78347742ea46ed8dc76d21380fea17cd3a028eac6c6afbb5cf625bfbe221be",
         "attempts": 1,
         "restored": true,
         "cached_without_reexecution": true
@@ -24,7 +24,7 @@
         "vertices": 482,
         "triangles": 960,
         "geometry_sha256": "dc7caee2886cdb7ad392c8e40a7b03eec148bcb19132a31c6e49cf4fb2642990",
-        "archive_sha256": "b803406f3921885db6919c01c842a0f1beff7850e3c57a981f17094047e1b728",
+        "archive_sha256": "23d0560278aff44f6042f20ca53ce5e8ac629226275d5d45f3cdf4bfdaa6586c",
         "attempts": 1,
         "restored": true,
         "cached_without_reexecution": true
@@ -34,7 +34,7 @@
         "vertices": 512,
         "triangles": 1024,
         "geometry_sha256": "af42be4d21c861ccf9752c52416e6cfba8e142ae5739347614110c29c7973761",
-        "archive_sha256": "7b7ae3079cd8065dff2e5c263af2d27a3ea98940c9c03e0c9f0bec75d159778e",
+        "archive_sha256": "595b29650825b960ca2cd74978d974ba11751b50cef54dfdc8378fae9e641382",
         "attempts": 1,
         "restored": true,
         "cached_without_reexecution": true
@@ -53,5 +53,8 @@
     "power-loss recovery",
     "complete parent demonstrations A-M"
   ],
-  "full_issue50_acceptance": false
+  "full_issue50_acceptance": false,
+  "reviewed_source": "943978539dcd99f2e2e5e1c81df1bbf3dc28c9ef",
+  "independent_review": "model-evidence/remaining/model50-review.md",
+  "independent_tests": 14
 }
