@@ -892,6 +892,7 @@ function inspect() {
   const id = [...selection][0],
     node = nodes.get(id),
     object = objects.get(id);
+  const previewAllowed = previewActive && canEditPreview();
   $("base-inspector")
     .querySelectorAll("input,select,button")
     .forEach((e) => {
@@ -899,7 +900,7 @@ function inspect() {
         !e.closest("#overlay-controls") &&
         !["clip", "play", "time", "show-all"].includes(e.id)
       )
-        e.disabled = !node || busy || node.locked || (previewActive && (!e.closest("#transform-fields") || !canEditPreview()));
+        e.disabled = !node || busy || node.locked || (previewActive && (!e.closest("#transform-fields") || !previewAllowed));
     });
   $("locked").disabled = !node || busy || previewActive;
   if (!node) {
