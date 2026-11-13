@@ -259,6 +259,35 @@ Generation requires a new destination. Verification can be rerun without `--gene
 
 The public production delivery command remains scoped to all existing 2D tests by default (`--tests --test-scope 2d`), so its pinned environment does not need NumPy, pygltflib or Blender. It filters only the new `test_rig_*.py` modules before import and retains strict skip accounting. Use the focused 3D command above and the nine named CI jobs for 3D acceptance. The delivery runner also accepts `--test-scope all` when the complete 3D environment and test flags are enabled; unexpected integration skips still fail that gate.
 
+Weight-edit input validation preserves the original skin on failure. Direct
+`edit_weights` calls use the smaller of four and the stored width when the
+influence limit is omitted. Explicit limits require an integer from one through
+the stored width; larger requests and null fail instead of silently discarding
+authored influences. Correction assignments and mirrors cap the profile limit
+to that stored width. `copy_weights` requires integer vertex references without
+coercing correction sources (booleans are not
+vertices). `smooth_weights` requires integer iterations from zero through 64 and
+a finite numeric strength from zero through one. These bounded API repairs do
+not establish completion of the broader #53 skinning acceptance.
+
+### Authored landmark admission
+
+`rig auto --landmarks FILE` accepts a source-bound object containing exactly
+`source_sha256` and `landmarks`. Each bone-keyed landmark requires `head` and
+`tail` arrays of three finite JSON numbers and `approved: true`. Numeric strings,
+booleans, unknown bone IDs, missing coordinates and unsupported fields fail with
+a typed diagnostic. The existing bone contract validates evidence source,
+nonempty reference and confidence in `[0, 1]` before the fitter returns a status.
+Landmarks take precedence over semantic regions and bounds; geometric sources
+or confidence below `0.9` retain an explicit anatomy uncertainty. This validates
+supplied annotations; it does not independently establish anatomy approval.
+
+The `test_rig_landmarks.py` regression exercises the real mutation dispatcher,
+valid source-bound fitting/reload and rejection with unchanged active manifest,
+immutable revisions and original source bytes. It covers the landmark-admission
+part of #52; broader import, template composition and native acceptance remain
+separate requirements.
+
 ## Native texture admission
 
 GLB/glTF and OBJ/MTL texture admission verifies the encoded PNG/JPEG container
