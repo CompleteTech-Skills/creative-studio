@@ -188,6 +188,7 @@ class TemporalEngine:
                 fail('MAPPING', 'presentation mappings overlap or are out of order')
             last_end = end
             interval = (entry['scene_start_tick'], entry['scene_start_tick'] + step * shot['duration_frames'])
+            _integer(interval[1], 'scene end')
             if any(interval[0] < b and a < interval[1] for a,b in scene_intervals.get(scene_id, [])):
                 fail('MAPPING', 'scene shot intervals overlap')
             scene_intervals.setdefault(scene_id, []).append(interval)

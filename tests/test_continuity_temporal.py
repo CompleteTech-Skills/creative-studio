@@ -127,6 +127,19 @@ class TemporalTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'scene is not in native project'):
             TemporalEngine(asset_root, dict(plan=plan, events=[]))
 
+    def test_scene_interval_derived_end_stays_exact_at_safe_integer_boundary(self):
+        plan = deepcopy(self.plan)
+        plan['timeline_id'] = 'scene-boundary'
+        plan['shots'][2]['scene_start_tick'] = 2**53-1
+        with self.assertRaisesRegex(ValueError, 'TIME.*scene end'):
+            self.registry.create_timeline(plan)
+        # Reject before persistence, then allow a mapping whose terminal tick
+        # is exactly the largest supported JSON integer.
+        plan['shots'][2]['scene_start_tick'] -= 4004
+        self.registry.create_timeline(plan)
+        terminal = self.registry.temporal_snapshot('scene-boundary','shot-2',4,boundary='terminal')
+        self.assertEqual(terminal['snapshot']['scene_tick'],2**53-1)
+
     def test_event_specific_order_at_same_tick(self):
         self.append([event('a',1001),event('b',1001,before=True,after=False,priority=1,prerequisites=['a'])])
         self.assertEqual(self.snap(frame=1,boundary='before')['snapshot']['applied_events'],[])
