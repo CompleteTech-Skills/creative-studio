@@ -138,6 +138,14 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
         fresh=self.owner.submit('index',p);self.owner.cancel_job(second['id']);self.owner.run_job(fresh['id'])
         self.assertEqual(self.owner.execute('search',dict(index=p['index'],query='changed'))['result']['total'],1)
 
+    def test_import_admission_reserves_shared_blender_pool_before_conversion(self):
+        p=dict(source=str(self.fixture.mesh),identity=self.fixture.manifest['identity'],version='1.0.0',
+            metadata=self.fixture.manifest['metadata'],license_file=str(self.fixture.license),fixture=True,blender_roundtrip=False)
+        queued=self.owner.submit('import',p)
+        self.assertIn('blender',queued['resources'])
+        self.assertEqual(queued['status'],'queued')
+        self.assertEqual(self.library.list_references(),[])
+
     def test_unknown_operation_and_optional_capability_do_not_fake_success(self):
         for operation in ('remote-upload','generate','semantic-search'):
             with self.assertRaises(RigError):self.owner.execute(operation,{},apply=True)

@@ -218,7 +218,7 @@ class AssetOperations:
         # mutable source bytes before any durable request is queued.
         adapter=OperationAdapter(self,operation,p)
         p=adapter.admit()
-        resources={'import':('cpu','io','hash'),'preview':('preview','blender'),
+        resources={'import':('cpu','blender','io','hash'),'preview':('preview','blender'),
             'thumbnail':('preview','blender'),'turntable':('preview','blender'),
             'export':('cpu','io'),'index':('index','io'),'bundle.create':('archive','io'),
             'bundle.restore':('archive','io')}[operation]
