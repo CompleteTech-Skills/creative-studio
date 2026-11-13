@@ -293,7 +293,7 @@ def _materialize_array(payload, shape, dtype, offset, fortran):
 
 
 def _read_bundle(path: Path, limits: dict, budget=None, kind=None, expected_hash=None) -> tuple[dict, dict]:
-    from rig_load_limits import LoadBudget, scan_bundle
+    from rig_load_limits import LoadBudget, scan_bundle, read_bundle_member
     budget = budget if budget is not None else LoadBudget(limits)
     metadata, headers, snapshot = scan_bundle(path, limits, budget, expected_hash)
     _check_load_headers(metadata, headers, limits, kind)
@@ -303,7 +303,7 @@ def _read_bundle(path: Path, limits: dict, budget=None, kind=None, expected_hash
             for name, (shape, dtype, offset, fortran) in headers.items():
                 # The verified header and byte payload are from the same immutable
                 # archive snapshot. No NumPy allocator consumes untrusted headers.
-                payload = archive.read(name + '.npy')
+                payload = read_bundle_member(archive, archive.getinfo(name + '.npy'))
                 arrays[name] = _materialize_array(payload, shape, dtype, offset, fortran)
     except (OSError, ValueError, EOFError, zipfile.BadZipFile, RuntimeError) as exc:
         from rig_errors import RigError

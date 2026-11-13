@@ -123,7 +123,7 @@ def _zip_directory(payload: bytes, budget: LoadBudget):
     require(disk == directory_disk == 0 and disk_count == count and count != 65535
             and directory_offset != 0xffffffff and directory_size != 0xffffffff
             and offset + 22 + comment == len(tail)
-            and directory_offset + directory_size <= size - len(tail) + offset,
+            and directory_offset + directory_size == size - len(tail) + offset,
             'RIG_BINARY', 'Unsupported or malformed native ZIP directory.')
     require(count <= budget.limits['archive_files'], 'RIG_LIMIT_BINARY', 'Too many binary members.')
     # Do not trust EOCD's entry count: zipfile itself walks the entire central
@@ -142,6 +142,26 @@ def _zip_directory(payload: bytes, budget: LoadBudget):
         require(actual_count <= budget.limits['archive_files'], 'RIG_LIMIT_BINARY', 'Too many binary members.')
     require(actual_count == count, 'RIG_BINARY', 'ZIP entry count differs from its directory.')
     budget.add(actual_count * 1024 + directory_size * 2, 'ZIP directory')
+
+
+def read_bundle_member(archive, info):
+    """Read admitted logical bytes without unbounded ZipExtFile decompression.
+
+    read(-1) can allocate far beyond a forged central-directory file_size before
+    zipfile truncates the output. Fixed-size requests bound each decompressor
+    output independently of that untrusted declaration.
+    """
+    chunks = bytearray()
+    with archive.open(info) as stream:
+        remaining = info.file_size
+        while remaining:
+            chunk = stream.read(min(64 * 1024, remaining))
+            require(chunk, 'RIG_BINARY', 'Truncated native ZIP member.', asset=info.filename)
+            chunks.extend(chunk)
+            remaining -= len(chunk)
+        require(stream.read(1) == b'', 'RIG_BINARY', 'Native ZIP member exceeds its declared size.',
+                asset=info.filename)
+    return bytes(chunks)
 
 
 def scan_bundle(path: Path, limits: dict, budget: LoadBudget, expected_hash=None):
@@ -173,7 +193,7 @@ def scan_bundle(path: Path, limits: dict, budget: LoadBudget, expected_hash=None
             require(meta_info.file_size <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'Binary metadata exceeds 32 MiB.')
             budget.add(meta_info.file_size * _JSON_FACTOR, path.name + ': binary JSON estimate')
             budget.json_bytes += meta_info.file_size
-            metadata = decode_json(archive.read(meta_info))
+            metadata = decode_json(read_bundle_member(archive, meta_info))
             require(isinstance(metadata, dict), 'RIG_BINARY', 'Binary metadata must be an object.')
             headers = {}
             for info in infos:
