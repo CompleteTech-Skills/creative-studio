@@ -11,13 +11,11 @@ from unittest.mock import patch
 
 import director_contracts as dc
 import director_graph as dg
-from rig_errors import object_hash
+from rig_errors import RigError, object_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@unittest.skipUnless(hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd,
-                     'Secure descriptor-relative file access unavailable.')
 class DirectorGraphTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -65,10 +63,28 @@ class DirectorGraphTests(unittest.TestCase):
                                      resolution=self.write('resolution', self.resolution, kind='resolution-plan'))
         self.request['context']['capability_snapshot_sha256'] = self.snapshot['digest']
 
+    def require_secure_reads(self):
+        """Exercise the real fail-closed boundary when secure reads are unavailable."""
+        if hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd:
+            return True
+        before = {path.name: path.read_bytes() for path in self.root.iterdir()}
+        with self.assertRaises(RigError) as failure:
+            self.compile()
+        self.assertEqual(failure.exception.report['code'], 'DIRECTOR_PLATFORM')
+        result = dg.GraphCompiler().compile(self.request, self.root, now=self.now)
+        self.assertEqual(result['status'], 'failed')
+        self.assertIsNone(result['value'])
+        self.assertEqual(result['diagnostics'][0]['code'], 'DIRECTOR_PLATFORM')
+        dc.validate_method_result('GraphCompiler.compile', result, self.request)
+        self.assertEqual(before, {path.name: path.read_bytes() for path in self.root.iterdir()})
+        return False
+
     def compile(self):
         return dg.compile_graph(self.request, self.root, now=self.now)
 
     def test_actual_compile_topology_exact_edges_and_critical_path(self):
+        if not self.require_secure_reads():
+            return
         before = {p.name: p.read_bytes() for p in self.root.iterdir()}
         result = self.compile()
         self.assertEqual(result['status'], 'succeeded')
@@ -79,6 +95,8 @@ class DirectorGraphTests(unittest.TestCase):
         self.assertEqual(before, {p.name: p.read_bytes() for p in self.root.iterdir()})
 
     def test_equivalent_reordering_preserves_graph_and_cache_keys(self):
+        if not self.require_secure_reads():
+            return
         original = self.compile()['value']
         self.plan['nodes'].reverse()
         self.plan['edges'].reverse()
@@ -86,6 +104,8 @@ class DirectorGraphTests(unittest.TestCase):
         self.assertEqual(original, self.compile()['value'])
 
     def test_branch_critical_path_and_unknown_estimate(self):
+        if not self.require_secure_reads():
+            return
         self.plan['edges'] = [dict(source='a', target='c', artifact=self.input),
                               dict(source='b', target='c', artifact=self.input)]
         self.refresh()
@@ -103,6 +123,8 @@ class DirectorGraphTests(unittest.TestCase):
                 dg.validate_plan(plan)
 
     def test_edges_pin_complete_exact_input(self):
+        if not self.require_secure_reads():
+            return
         self.plan['edges'][0]['artifact'] = deepcopy(self.input)
         self.plan['edges'][0]['artifact']['semantic_version'] = '2.0.0'
         self.refresh()
@@ -110,6 +132,8 @@ class DirectorGraphTests(unittest.TestCase):
             self.compile()
 
     def test_changed_input_invalidates_node_and_descendants_only(self):
+        if not self.require_secure_reads():
+            return
         before = self.compile()['value']
         new_input = self.write('replacement', {'new': 'native bytes'})
         self.plan['nodes'][1]['inputs'].append(new_input)
@@ -120,12 +144,16 @@ class DirectorGraphTests(unittest.TestCase):
         self.assertEqual(impact['stale'], ['b', 'c'])
 
     def test_uncertain_dependency_invalidates_conservatively(self):
+        if not self.require_secure_reads():
+            return
         graph = self.compile()['value']
         self.assertEqual(dg.impact(graph, graph, uncertain=['a'])['stale'], ['a', 'b', 'c'])
         with self.assertRaises(ValueError):
             dg.impact(graph, graph, uncertain=['absent'])
 
     def test_tampered_missing_and_symlink_input_fail(self):
+        if not self.require_secure_reads():
+            return
         source = self.root / self.input['path']
         original = source.read_bytes()
         for mode in ('tamper', 'missing', 'symlink'):
@@ -139,6 +167,8 @@ class DirectorGraphTests(unittest.TestCase):
                 self.compile()
 
     def test_missing_unavailable_and_unverified_capability_fail(self):
+        if not self.require_secure_reads():
+            return
         for change in ('missing', 'unavailable', 'untested', 'unverified', 'no-evidence'):
             original = deepcopy(self.snapshot)
             if change == 'missing':
@@ -156,6 +186,8 @@ class DirectorGraphTests(unittest.TestCase):
             self.snapshot = original
 
     def test_stale_snapshot_and_missing_evidence_fail(self):
+        if not self.require_secure_reads():
+            return
         self.snapshot['expires_at'] = self.now.isoformat()
         self.snapshot['digest'] = object_hash({k: v for k, v in self.snapshot.items() if k != 'digest'})
         self.refresh()
@@ -190,11 +222,15 @@ class DirectorGraphTests(unittest.TestCase):
             dg.validate_plan(self.plan)
 
     def test_budget_and_context_digest_fail(self):
+        if not self.require_secure_reads():
+            return
         self.request['input']['budget']['max_cpu_seconds'] = 8
         with self.assertRaises(ValueError):
             self.compile()
 
     def test_class_returns_typed_capability_block(self):
+        if not self.require_secure_reads():
+            return
         self.snapshot['capabilities'] = []
         self.snapshot['digest'] = object_hash({k: v for k, v in self.snapshot.items() if k != 'digest'})
         self.refresh()
@@ -205,6 +241,8 @@ class DirectorGraphTests(unittest.TestCase):
         dc.validate_method_result('GraphCompiler.compile', result, self.request)
 
     def test_traceability_and_edge_changes_are_in_cache_keys(self):
+        if not self.require_secure_reads():
+            return
         before = self.compile()['value']
         mapping = dg.traceability(self.plan, before, request=self.request, root=self.root, now=self.now)
         self.assertEqual(mapping, [dict(requirement='produce', test='test_actual_compile', evidence=[], nodes=['a', 'b', 'c'])])
@@ -226,6 +264,8 @@ class DirectorGraphTests(unittest.TestCase):
                 self.compile()
 
     def test_deadline_expiring_during_compilation_fails(self):
+        if not self.require_secure_reads():
+            return
         self.request['context']['deadline'] = (self.now + timedelta(seconds=1)).isoformat()
         with patch.object(dg.time, 'monotonic', side_effect=[0, 2]):
             with self.assertRaisesRegex(ValueError, 'deadline expired during compilation'):
@@ -237,6 +277,8 @@ class DirectorGraphTests(unittest.TestCase):
             plan['nodes'][0]['resource_class'] = resource
             with self.subTest(resource=resource), self.assertRaises(ValueError):
                 dg.validate_plan(plan)
+        if not self.require_secure_reads():
+            return
         for node in self.plan['nodes']:
             node['resource_class'] = 'io'
         self.refresh()
@@ -245,6 +287,8 @@ class DirectorGraphTests(unittest.TestCase):
             self.compile()
 
     def test_provider_calls_are_aggregated_before_admission(self):
+        if not self.require_secure_reads():
+            return
         for node in self.plan['nodes']:
             node.update(operation='PlanningProvider.generate_structured',
                         native_owner='PlanningProvider', output_schema='planning-artifact',
@@ -257,6 +301,8 @@ class DirectorGraphTests(unittest.TestCase):
             self.compile()
 
     def test_known_provider_receipt_pricing_fits_bounded_aggregate_budget(self):
+        if not self.require_secure_reads():
+            return
         # Engineering contract fixture only: no provider execution or payment.
         limits={**deepcopy(self.request['input']['budget']),'max_provider_calls':3,
                 'currency':'USD','max_amount':1}
@@ -305,6 +351,8 @@ class DirectorGraphTests(unittest.TestCase):
             self.compile()
 
     def test_traceability_rejects_unbound_plan_and_graph(self):
+        if not self.require_secure_reads():
+            return
         graph = self.compile()['value']
         altered = deepcopy(self.plan)
         altered['requirements'][0]['test'] = 'not-the-compiled-test'
@@ -315,6 +363,8 @@ class DirectorGraphTests(unittest.TestCase):
             dg.traceability(self.plan, graph, request=self.request, root=self.root, now=self.now)
 
     def test_concurrent_source_change_fails_before_result(self):
+        if not self.require_secure_reads():
+            return
         original = dg._read
         replaced = False
         def read(root, artifact):
@@ -328,6 +378,8 @@ class DirectorGraphTests(unittest.TestCase):
             self.compile()
 
     def test_malformed_snapshot_is_typed_failure(self):
+        if not self.require_secure_reads():
+            return
         self.request['input']['capabilities'] = self.write('bad-caps', [], kind='capability-snapshot')
         result = dg.GraphCompiler().compile(self.request, self.root, now=self.now)
         self.assertEqual(result['status'], 'failed')
@@ -344,6 +396,8 @@ class DirectorGraphTests(unittest.TestCase):
             plan['nodes'][0].update(operation=operation, output_schema=schema, native_owner=owner)
             with self.subTest(operation=operation), self.assertRaises(ValueError):
                 dg.validate_plan(plan)
+        if not self.require_secure_reads():
+            return
         self.request['input']['budget']['max_cpu_seconds'] = 100
         self.request['context']['capability_snapshot_sha256'] = 'a' * 64
         with self.assertRaises(ValueError):
