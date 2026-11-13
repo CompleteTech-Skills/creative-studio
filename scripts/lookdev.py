@@ -274,7 +274,13 @@ class Project:
                             inventory=deepcopy(self.inventory), loss_report=dict(format='native', lost=[], approximated=[]),
                             rendered=False, aesthetic_review='not-run')
             _write_at(stage_fd, 'export-manifest.json', canonical_bytes(manifest))
+            verified_stage = os.fstat(stage_fd)
             rename_no_replace_at(parent_fd, stage_name, parent_fd, destination.name)
+            published = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
+            require(stat.S_ISDIR(published.st_mode) and
+                    (published.st_dev, published.st_ino) == (verified_stage.st_dev, verified_stage.st_ino),
+                    'LOOKDEV_PROJECT_PUBLICATION_CHANGED',
+                    'Published directory differs from verified staging; destination is unverified and preserved.')
             return manifest
         finally:
             # Failed staging remains anchored under the owned output parent for

@@ -163,3 +163,22 @@ class ProjectTests(unittest.TestCase):
         for incorrect in (dict(exact,kind='light'),dict(exact,sha256='0'*64),dict(exact,id='other')):
             with self.assertRaises(RigError):load_closure(self.root,[incorrect])
         with self.assertRaises(RigError):load_closure(self.root,[])
+
+    def test_stage_substitution_never_reports_verified_success(self):
+        import lookdev
+        destination=self.parent/'delivery'
+        original=lookdev.rename_no_replace_at
+        def substitute(parent_fd,stage_name,target_fd,target_name):
+            os.rename(stage_name,stage_name+'-original',src_dir_fd=parent_fd,dst_dir_fd=parent_fd)
+            os.mkdir(stage_name,dir_fd=parent_fd)
+            replacement=os.open(stage_name,os.O_DIRECTORY,dir_fd=parent_fd)
+            try:
+                fd=os.open('injected',os.O_WRONLY|os.O_CREAT,0o600,dir_fd=replacement)
+                os.write(fd,b'unverified');os.close(fd)
+            finally:os.close(replacement)
+            return original(parent_fd,stage_name,target_fd,target_name)
+        with patch.object(lookdev,'rename_no_replace_at',side_effect=substitute):
+            with self.assertRaises(RigError) as error:
+                Project(self.root).export_native(destination)
+        self.assertEqual(error.exception.report['code'],'LOOKDEV_PROJECT_PUBLICATION_CHANGED')
+        self.assertEqual((destination/'injected').read_bytes(),b'unverified')
