@@ -11,7 +11,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 from render3d_contracts import Render3DError
-from render3d_quality import output_plan
+from render3d_quality import output_plan, _validated_plan
 
 
 def settings():
@@ -28,6 +28,11 @@ class QualityContracts(unittest.TestCase):
                         dict(passes=['combined','normal'])):
             value=settings();value['output'].update(changes)
             with self.subTest(changes=changes),self.assertRaises(Render3DError):output_plan(value)
+        value=settings();value['output'].update(format='exr',bit_depth=16,color_space='linear',passes=['combined','depth'])
+        with self.assertRaises(Render3DError):output_plan(value)
+        value['output']['passes']=['combined','albedo']
+        plan=output_plan(value);plan['passes'].append('normal')
+        with self.assertRaises(Render3DError):_validated_plan(plan)
         value=settings();value['engine']='eevee'
         with self.assertRaises(Render3DError):output_plan(value)
         value=settings();value['samples']=True
@@ -107,7 +112,7 @@ class RealQuality(unittest.TestCase):
         for format,depth in [('png',8),('png',16),('exr',16),('exr',32)]:
             value=settings();value['output'].update(format=format,bit_depth=depth,
                 color_space='linear' if format=='exr' else 'srgb',
-                passes=['combined','depth','normal','albedo'] if format=='exr' else ['combined'])
+                passes=(['combined','depth','normal','albedo'] if depth==32 else ['combined','albedo']) if format=='exr' else ['combined'])
             configurations.append(value)
         (root/'settings.json').write_text(json.dumps([output_plan(c) for c in configurations]));(root/'worker.py').write_text(WORKER)
         command=[find_blender(),'--background','--factory-startup','--disable-autoexec','--python-exit-code','1',

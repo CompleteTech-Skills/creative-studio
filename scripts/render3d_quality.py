@@ -34,6 +34,9 @@ def output_plan(settings):
     require(settings['engine'] == 'cycles', 'unsupported-feature',
             'The verified quality adapter currently supports Cycles only.')
     output = settings['output']
+    require(not (output['format'] == 'exr' and output['bit_depth'] == 16
+                 and set(output['passes']) & {'depth', 'normal'}), 'unsupported-feature',
+            'Native Blender depth and normal passes require full-float EXR output.')
     return dict(version=VERSION, format=output['format'], bit_depth=output['bit_depth'],
                 passes=list(output['passes']), alpha=output['alpha'],
                 color_space=output['color_space'], resolution=list(settings['resolution']),
@@ -69,6 +72,9 @@ def _validated_plan(value):
     else:
         require(value['bit_depth'] in (16,32) and value['color_space']=='linear'
                 and value['view_transform']=='standard','invalid-input','EXR plan must preserve scene-linear output.')
+    require(not (value['format'] == 'exr' and value['bit_depth'] == 16
+                 and set(value['passes']) & {'depth', 'normal'}), 'unsupported-feature',
+            'Native Blender depth and normal passes require full-float EXR output.')
     return value
 
 
