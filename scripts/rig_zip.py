@@ -9,7 +9,7 @@ def _codec_errors(compression, *, path, member, codec_code, stage):
     if compression is None or compression == zipfile.ZIP_STORED:return ()
     modules = {zipfile.ZIP_DEFLATED:'zlib', zipfile.ZIP_BZIP2:'bz2', zipfile.ZIP_LZMA:'lzma'}
     if hasattr(zipfile, 'ZIP_ZSTANDARD'):
-        modules.update({20:'compression.zstd', zipfile.ZIP_ZSTANDARD:'compression.zstd'})
+        modules[zipfile.ZIP_ZSTANDARD] = 'compression.zstd'
     name = modules.get(compression)
     if name is None:
         raise RigError(codec_code, 'ZIP member uses an unsupported compression method.', stage=stage,
