@@ -219,6 +219,15 @@ class DirectorContractTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     dc.validate_document(changed)
 
+    def test_context_accepts_rfc3339_lowercase_and_rejects_invalid_deadlines(self):
+        request = self.method_sample('CapabilityRegistry.probe', 'director-request')
+        request['context']['deadline'] = '2030-01-01t00:00:00z'
+        dc.validate_document(request)
+        dc.validate_method_request('CapabilityRegistry.probe', request)
+        request['context']['deadline'] = '2030-01-01t25:00:00z'
+        with self.assertRaises(dc.RigError):
+            dc.validate_document(request)
+
     def test_context_rejects_implicit_network_and_paid_authority(self):
         original = self.sample('director-request')
         for policy in ({'network': 'allow-configured'}, {'paid': 'bounded'},

@@ -130,9 +130,11 @@ def _semantics(value):
                 _require(amount is None or float(amount).is_integer(),'USAGE','Count measurements must be integers.')
         if 'policy' in x and 'project_revision_sha256' in x:
             policy=x['policy']
-            datetime.fromisoformat(x['deadline'].replace('Z','+00:00'))
-            _require(datetime.fromisoformat(x['deadline'].replace('Z','+00:00')).tzinfo is not None,
-                     'CONTEXT','Deadline must include a timezone.')
+            try:
+                deadline=datetime.fromisoformat(x['deadline'].upper().replace('Z','+00:00'))
+            except ValueError:
+                _require(False,'CONTEXT','Deadline must be an RFC3339 timestamp.')
+            _require(deadline.tzinfo is not None,'CONTEXT','Deadline must include a timezone.')
             if policy['network']=='allow-configured' or policy['paid']!='deny':
                 _require(policy['policy_ref'] is not None,'AUTHORIZATION','Network/paid operations require an explicit policy reference.')
             if policy['paid']!='deny':
