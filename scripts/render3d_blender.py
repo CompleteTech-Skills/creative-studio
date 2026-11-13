@@ -22,7 +22,7 @@ import time
 from atomic_publish import _rename_no_replace
 from rig_errors import RigError, atomic_json, atomic_bytes, read_json, safe_path, sha256, object_hash
 from render3d_contracts import (Render3DError, require, validate, make_frame_spec,
-                                frame_times, VERSION)
+                                frame_times, VERSION, load, open_regular)
 from render3d_snapshot import NativeRigAdapter, Scene3DAdapter, verify_snapshot, create_snapshot
 
 WORKER = Path(__file__).with_name('render3d_blender_worker.py')
@@ -34,20 +34,24 @@ def _error(category, message):
 
 
 def _stop(process):
-    if process.poll() is not None:
-        return
+    # The worker leader can exit while descendants remain in its session.
+    # Signal the owned group even after poll() reports a completed leader.
     if os.name == 'posix':
-        os.killpg(process.pid, signal.SIGTERM)
-    else:
+        try:os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:return
+    elif process.poll() is None:
         process.terminate()
+    else:
+        return
     try:
         process.wait(timeout=3)
     except subprocess.TimeoutExpired:
+        if os.name != 'posix':process.kill()
+    finally:
         if os.name == 'posix':
-            os.killpg(process.pid, signal.SIGKILL)
-        else:
-            process.kill()
-        process.wait(timeout=5)
+            try:os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:pass
+    if process.poll() is None:process.wait(timeout=5)
 
 
 def _rss(pid):
@@ -96,6 +100,8 @@ def _supervise(command, *, cwd, timeout, memory_bytes, storage_bytes, cancelled=
             if error:
                 _stop(process);break
             time.sleep(.1)
+        # Close descendant-held output pipes before joining the log reader.
+        _stop(process)
         reader.join(timeout=5)
         payload=bytes(log)
         if error:raise error
@@ -295,7 +301,7 @@ class BlenderBackend:
         root=Path(snapshot_root).absolute();target=Path(destination).absolute()
         require(not target.exists() and not target.is_symlink(),'ownership','Render destination already exists.')
         require(not target.parent.resolve().joinpath(target.name).is_relative_to(root.resolve()),'ownership','Output cannot be nested in source snapshot.')
-        snapshot=read_json(root/'snapshot.json');validate(snapshot,'RenderSnapshot');self.validate(snapshot,request['settings'])
+        snapshot=load(root/'snapshot.json','RenderSnapshot');self.validate(snapshot,request['settings'])
         adapter=Scene3DAdapter() if snapshot['scope']=='scene3d' else NativeRigAdapter()
         verify_snapshot(root,adapter)
         make_frame_spec(request,request['frame_range']['start'],root/'snapshot.json')
@@ -312,7 +318,12 @@ class BlenderBackend:
             frozen=stage/'snapshot'
             captured=create_snapshot(root,frozen,adapter)
             require(captured==snapshot,'stale-asset','Snapshot changed while capturing render source.')
-            original=(root/'snapshot.json').read_bytes()
+            try:
+                with open_regular(root/'snapshot.json',32*1024**2) as stream:
+                    original=stream.read(32*1024**2+1)
+            except OSError as exc:
+                raise Render3DError('stale-asset',str(exc),path=root/'snapshot.json') from exc
+            require(len(original)<=32*1024**2,'invalid-input','Snapshot metadata exceeds32MiB.')
             require(len(original)==request['snapshot']['bytes'] and hashlib.sha256(original).hexdigest()==request['snapshot']['sha256'],
                     'stale-asset','Snapshot metadata differs from request-bound bytes.')
             atomic_bytes(frozen/'snapshot.json',original)
