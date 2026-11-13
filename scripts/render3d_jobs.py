@@ -6,6 +6,7 @@ Expired heartbeats never authorize taking work from a live owner process.
 from __future__ import annotations
 from contextlib import contextmanager
 from copy import deepcopy
+from fractions import Fraction
 import json
 import hashlib
 import os
@@ -24,6 +25,7 @@ from render3d_contracts import Render3DError, require, validate, make_frame_spec
 
 VERSION = 1
 TERMINAL = ('complete', 'cancelled', 'failed')
+RETRYABLE = ('timeout','worker-crash','device-initialization')
 
 
 def _dump(value):
@@ -119,6 +121,8 @@ class JobStore:
         with self._transaction() as db:
             db.execute('CREATE TABLE IF NOT EXISTS storage_reservations('
                        'stage TEXT PRIMARY KEY, bytes INTEGER NOT NULL, pid INTEGER NOT NULL)')
+            if 'job' not in {row['name'] for row in db.execute('PRAGMA table_info(storage_reservations)')}:
+                db.execute('ALTER TABLE storage_reservations ADD COLUMN job TEXT')
 
     @contextmanager
     def _transaction(self):
@@ -177,13 +181,73 @@ class JobStore:
             self._event(db,job,'submitted',{'frames':len(specs)})
         return job
 
+    def _checked_request(self, row):
+        """The stored ID binds both the exact native request and backend."""
+        try:
+            request=decode_json(row['request']);backend=decode_json(row['backend'])
+            validate(request,'RenderRequest');validate(backend,'BackendIdentity')
+        except (RigError,TypeError,ValueError) as exc:
+            raise Render3DError('ownership','Persisted job input is invalid: '+str(exc)) from exc
+        require(object_hash(dict(request=request,backend=backend))==row['id'],
+                'ownership','Persisted request/backend no longer matches its immutable job ID.')
+        require(row['priority']==request['priority'],'ownership','Persisted scheduling priority differs from its request.')
+        return request,backend
+
+    def resolve_request(self, job, request_sha256):
+        """Resolve RenderJob.id/request_sha256 through this existing store.
+
+        The returned native request contains project/scene/shot versions,
+        scheduling/resource/retry policies and source pins. Resolution does not
+        approve current source bytes or rendered output.
+        """
+        require(isinstance(job,str) and len(job)==64 and all(char in '0123456789abcdef' for char in job),
+                'invalid-input','Request binding requires a native content-addressed job ID.')
+        require(isinstance(request_sha256,str) and len(request_sha256)==64
+                and all(char in '0123456789abcdef' for char in request_sha256),
+                'invalid-input','Request binding requires a canonical SHA-256 digest.')
+        with self._transaction() as db:
+            row=db.execute('SELECT * FROM jobs WHERE id=?',(job,)).fetchone()
+            require(row is not None,'missing-asset','Request binding has no job in this store.')
+            request,_=self._checked_request(row)
+            require(object_hash(request)==request_sha256,'stale-asset','Request binding digest differs from the stored request.')
+            return request
+
     def status(self, job, *, event_limit=1000):
+        require(isinstance(job,str) and len(job)==64 and all(char in '0123456789abcdef' for char in job),
+                'invalid-input','Status requires a native content-addressed job ID.')
         require(type(event_limit) is int and 0 <= event_limit <= 10000,'invalid-input','Invalid event limit.')
         with self._transaction() as db:
             row=db.execute('SELECT * FROM jobs WHERE id=?',(job,)).fetchone()
             require(row is not None,'invalid-input','Unknown render job.')
-            result=dict(row);result['request']=json.loads(result['request']);result['backend']=json.loads(result['backend'])
-            result['frames']=[dict(x) for x in db.execute('SELECT frame,state,attempts,heartbeat,error,cache_key FROM frames WHERE job=? ORDER BY frame',(job,))]
+            request,backend=self._checked_request(row)
+            result=dict(row);result['request']=request;result['backend']=backend
+            result['request_sha256']=object_hash(request)
+            result['request_binding']=dict(owner='render3d_jobs.JobStore',job_id=job,
+                request_sha256=result['request_sha256'],resolver='JobStore.resolve_request')
+            result['project']=deepcopy(request['project']);result['scene']=deepcopy(request['scene'])
+            result['shot']=deepcopy(request['shot'])
+            result['frames']=[dict(x) for x in db.execute('SELECT frame,state,attempts,pid,token,heartbeat,error,cache_key FROM frames WHERE job=? ORDER BY frame',(job,))]
+            counts={name:sum(frame['state']==state for frame in result['frames']) for name,state in
+                    (('queued','queued'),('active','running'),('completed','complete'),('failed','failed'),('cancelled','cancelled'))}
+            counts['requested']=len(result['frames'])
+            expected=request['frame_range']['end']-request['frame_range']['start']
+            require([frame['frame'] for frame in result['frames']]==list(range(request['frame_range']['start'],request['frame_range']['end']))
+                    and counts['requested']==expected and sum(counts[key] for key in counts if key!='requested')==expected,
+                    'ownership','Persisted frames no longer partition the immutable request.')
+            result['counts']=counts
+            result['progress']=dict(completion_ratio=rational(Fraction(counts['completed'],expected)),
+                completion_percent=100*counts['completed']/expected,
+                settled_percent=100*(counts['completed']+counts['failed']+counts['cancelled'])/expected)
+            result['retry_policy']=dict(max_attempts=request['max_attempts'],retryable_categories=list(RETRYABLE))
+            resources=request['settings']['resources'];active=counts['active']
+            stages=list(db.execute('SELECT stage,bytes,pid,job FROM storage_reservations'))
+            result['reservation']=dict(basis='declared-reservations-not-measured-usage',
+                active_frames=active,workers=active*resources['workers'],
+                memory_bytes=active*resources['memory_bytes'],
+                worker_storage_bytes=active*resources['storage_bytes'],
+                gpu_workers=active if backend['device']!='cpu' else 0,
+                cache_staging_bytes=sum(stage['bytes'] for stage in stages if stage['job']==job and _alive(stage['pid'])),
+                unattributed_store_staging_bytes=sum(stage['bytes'] for stage in stages if stage['job'] is None and _alive(stage['pid'])))
             result['events']=[dict(x) for x in db.execute('SELECT seq,at,event,detail FROM (SELECT seq,at,event,detail FROM events WHERE job=? ORDER BY seq DESC LIMIT ?) ORDER BY seq',(job,event_limit))]
             return result
 
@@ -466,8 +530,8 @@ class JobStore:
             live=list(db.execute('SELECT j.request,f.token FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'))
             require(self._storage_reserved(db,live)+reserve<=self.capacity['storage_bytes'],
                     'storage-exhaustion','Complete cache stage exceeds unreserved store capacity.')
-            db.execute('INSERT INTO storage_reservations(stage,bytes,pid) VALUES(?,?,?)',
-                       (stage.name,reserve,os.getpid()))
+            db.execute('INSERT INTO storage_reservations(stage,bytes,pid,job) VALUES(?,?,?,?)',
+                       (stage.name,reserve,os.getpid(),lease['job']))
         created=False
         try:
             stage.mkdir();created=True
@@ -535,7 +599,7 @@ class JobStore:
             completed=True
             return dict(lease=lease,reused=False)
         except Exception as exc:
-            try:self.fail(lease,exc,retryable=isinstance(exc,Render3DError) and exc.report['category'] in ('timeout','worker-crash','device-initialization'))
+            try:self.fail(lease,exc,retryable=isinstance(exc,Render3DError) and exc.report['category'] in RETRYABLE)
             except Render3DError:pass
             raise
         finally:

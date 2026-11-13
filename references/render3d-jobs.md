@@ -100,3 +100,7 @@ durable job callback. The fixture is synthetic and carries no visual approval.
 Portable delivery retains historical per-frame receipt JSON and current pixel
 verification. Raw historical worker logs/reports remain in the JobStore cache;
 the archive integration must include them for a full executed-evidence archive.
+
+The [native request binding reference](render3d-job-bindings.md) documents the
+executable `RenderJob.id`/request-digest resolver and the context, reservation,
+retry and progress fields projected from this same owner.
