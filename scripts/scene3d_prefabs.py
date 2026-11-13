@@ -178,9 +178,49 @@ class PrefabLibrary:
         document['provenance']['origin'] = 'derived'
         document['provenance']['tool'] = 'scene3d-prefab-extraction-v1'
         validate_document(document, 'prefab')
+        # Graph edits may introduce mapped clips absent from the original
+        # catalog. Stage their exact transitive closure with the new prefab;
+        # a failed extraction must not leave partial catalog registrations.
+        staged = PrefabLibrary()
+        staged._documents = dict(self._documents)
+        staged._payloads = dict(self._payloads)
+        staged._references = dict(self._references)
+        animation_payloads = graph.animation_payloads()
+        visiting, admitted = set(), set()
+        def admit_animation(reference, depth=0):
+            if reference.get('kind') != 'scene3d-animation':
+                return
+            require(depth <= MAX_DEPTH, 'Extracted animation closure exceeds depth bound.', 'SCENE3D_PREFAB_DEPTH')
+            identity = (reference['kind'], reference['id'], reference['version'])
+            if identity in admitted:
+                staged.resolve(reference)
+                return
+            require(identity not in visiting, 'Recursive extracted animation closure.', 'SCENE3D_PREFAB_CYCLE')
+            visiting.add(identity)
+            if identity in staged._documents:
+                source = staged.resolve(reference)
+            else:
+                payload = animation_payloads.get(reference['path'])
+                require(payload is not None and hashlib.sha256(payload).hexdigest() == reference['sha256'],
+                        'Extracted prefab needs its exact animation context.', 'SCENE3D_ANIMATION_CONTEXT')
+                source = validate_document(decode_json(payload), 'animation')
+                require((source['id'], source['version']) == (reference['id'], reference['version']),
+                        'Extracted animation identity differs from its exact reference.')
+                # Count parents immediately too; staged registration is private
+                # and register_bytes enforces combined catalog bounds.
+                require(staged.register_bytes(payload, reference['path']) == reference,
+                        'Extracted animation reference changed during catalog admission.')
+            for nested in all_refs(source):
+                admit_animation(nested, depth+1)
+            visiting.remove(identity)
+            admitted.add(identity)
+        for dependency in all_refs(document):
+            admit_animation(dependency)
+        reference = staged.register(document)
+        staged._has_fixture(reference)  # Require a usable complete owner closure.
         # Evaluate against the complete expanded context before catalog mutation.
-        placement = SceneGraph(self.expand(scene)['scene']).evaluate_base(root_id)['world_matrix']
-        reference = self.register(document)
+        placement = SceneGraph(staged.expand(scene)['scene']).evaluate_base(root_id)['world_matrix']
+        self._documents, self._payloads, self._references = staged._documents, staged._payloads, staged._references
         return dict(reference=reference, prefab=document, placement=placement)
 
     def _validate_scene(self, scene):
