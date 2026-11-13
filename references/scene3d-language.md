@@ -134,6 +134,49 @@ requests the temporal owner's bounded native deformation sampling. Frames outsid
 the shot's half-open interval and invalid rational values fail explicitly. Base
 inspection and this timeline evaluation remain distinct operations.
 
+## Real geometry templates
+
+`plan`/`describe`/`revise --environment` select a second bounded deterministic
+parser. It delegates to the Scene3D environment owner's actual geometry recipes.
+For example:
+
+```sh
+python scripts/scene3d.py --output plan.json plan --environment \
+  --project input-project --scene courtyard.json \
+  --text 'Create a workshop named shop with two rooms, width 5 meters, depth 5 meters, height 3 meters, seed 42'
+python scripts/scene3d.py generate --project input-project --scene courtyard.json \
+  --file plan.json --destination generated-project
+```
+
+Supported complete statement forms are:
+
+- `Create a workshop named ID with N rooms, width W meters, depth D meters, height H meters, seed S`.
+  `fantasy`, `science-fiction` and `rooms` use the same architecture form.
+- `Create terrain named ID with width W meters, depth D meters, elevation E meters, resolution N, seed S`.
+- `Create a box named ID with width W meters, depth D meters, height H meters, seed S`.
+  `plane` uses the same form with height zero.
+
+Up to sixteen statements form one atomic generation batch. Each recipe has an
+explicit seed and 256-node budget. Geometry validation computes actual nodes and
+triangles during planning before mutation. Plans retain original prose, exact
+source revision/digest, typed recipes, geometry counts, generation seeds,
+uncertainties, user constraints and explicit empty sections for unrequested asset,
+character, camera or lighting intentions. Unknown words, missing dimensions,
+nonintegral room counts and impossible geometry remain unresolved. Applying a plan
+recompiles its original description exactly before delegating one immutable
+`apply_recipes` snapshot; forged recipes and stale source tokens fail closed.
+Generated meshes are editable persisted native nodes with hash-bound OBJ bytes.
+Existing authored nodes, source bytes and manual generator overrides retain their
+native owner protections. No material, camera, character or asset substitution is
+inferred from a theme name.
+
+For richer exact recipe parameters, `terrain generate`, `room create`, `building
+generate` and `layout generate` receive the same revision/digest/destination flags
+as native edits. `--file` contains one canonical recipe, or a list for `layout`.
+`--dry-run` computes and validates actual geometry and returns counts without
+publishing. See `scene3d-environment.md` for supported shapes, openings, paths,
+scatter, placement parameters and generation limitations.
+
 ## Acceptance scope and traceability
 
 This is an implemented subset of issue #64 and parent #12 sections 21–23.
@@ -142,6 +185,10 @@ immutable snapshots, CLI subprocesses, preserved geometry/source bytes, world
 motion under a rotated parent, sequential target resolution, ambiguity, unsupported
 text, stale revisions, malicious rehashed plans, resource limits and atomic failed
 batches. These tests do not prove general environment construction or editor UI.
+
+`tests/test_rig_scene3d_environment_language.py` independently exercises real
+workshop geometry bytes, reopening, unchanged source closure, strict unknown prose,
+forged/stale plans, actual CLI generation and terrain dry runs.
 
 The existing Editor3D owner owns browser controls, accessible alternatives,
 revisioned HTTP API, local-only protections and editable persistence. Scene3D

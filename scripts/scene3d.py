@@ -15,16 +15,17 @@ def _parser():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("capabilities")
     sub.add_parser("doctor")
-    for name in ("validate", "inspect", "snapshot", "plan", "describe", "revise", "apply-plan", "edit", "scene-state"):
+    for name in ("validate", "inspect", "snapshot", "plan", "describe", "revise", "apply-plan", "edit", "scene-state", "generate"):
         command = sub.add_parser(name)
         command.add_argument("--project", required=True, type=Path)
-        if name in ("plan", "describe", "revise", "apply-plan", "edit", "scene-state"):
+        if name in ("plan", "describe", "revise", "apply-plan", "edit", "scene-state", "generate"):
             command.add_argument("--scene", required=True, help="Exact project-relative scene manifest")
         if name in ("plan", "describe", "revise"):
             command.add_argument("--text", required=True, help="Semicolon-separated supported offline statements")
-        if name in ("apply-plan", "edit"):
+            command.add_argument("--environment", action="store_true", help="Compile supported geometry-template prose")
+        if name in ("apply-plan", "edit", "generate"):
             command.add_argument("--file", required=True, type=Path)
-        if name in ("snapshot", "revise", "apply-plan", "edit"):
+        if name in ("snapshot", "revise", "apply-plan", "edit", "generate"):
             command.add_argument("--destination", required=True, type=Path, help="New immutable snapshot directory")
             command.add_argument("--dry-run", action="store_true")
         if name == "edit":
@@ -43,7 +44,7 @@ def _parser():
 
 def capabilities():
     return {"schema_version": 1, "kind": "scene3d-cli-capabilities", "language_backend": "offline-grammar-v1",
-            "supported": ["validated-closure-inspection", "immutable-snapshot", "language-plan",
+            "supported": ["validated-closure-inspection", "immutable-snapshot", "language-plan", "bounded-environment-template-prose",
                           "exact-rational-scene-evaluation", "named-native-command-adapters", "atomic-typed-batch", "exact-target-transform", "visibility-lock", "subtree-duplicate", "reparent", "safe-delete"],
             "language_statements": ["move TARGET 2 meters east", "position TARGET at 1, 0, 3",
                                     "scale TARGET by 2", "rotate TARGET 30 degrees around y", "hide TARGET",
@@ -63,7 +64,7 @@ def execute(args):
             import importlib.util
             result["dependencies"] = {name: importlib.util.find_spec(name) is not None for name in ("numpy", "PIL", "pygltflib")}
         return result
-    if args.command in ("scene", "asset", "object", "prefab", "camera", "shot", "lighting", "environment"):
+    if args.command in ("scene", "asset", "object", "prefab", "camera", "shot", "lighting", "environment", "terrain", "room", "building", "layout"):
         from scene3d_cli_commands import execute as execute_native
         return execute_native(args)
     if args.command == "evaluate":
@@ -111,14 +112,21 @@ def execute(args):
                                   derived_documents=applied["derived_documents"])
         result["operations"] = len(applied["results"])
         return result
-    if args.command == "apply-plan":
+    if args.command in ("apply-plan", "generate"):
         from asset_library import read_source_bytes
         from rig_errors import decode_json
         plan = decode_json(read_source_bytes(args.file, 1024 * 1024))
     else:
-        plan = compile_description(graph, args.text)
+        if args.environment:
+            from scene3d_language_environment import compile_environment_description
+            plan = compile_environment_description(graph, args.text)
+        else:
+            plan = compile_description(graph, args.text)
     if args.command in ("plan", "describe"):
         return plan
+    if isinstance(plan, dict) and plan.get("kind") == "scene3d-environment-language-plan":
+        from scene3d_language_environment import apply_environment_plan
+        return apply_environment_plan(args.project, args.destination, args.scene, plan, dry_run=args.dry_run)
     library = PrefabLibrary.from_files(args.project, bundle)
     applied = apply_plan(graph, library, plan)
     if args.dry_run:

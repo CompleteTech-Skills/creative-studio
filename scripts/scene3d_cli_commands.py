@@ -42,11 +42,46 @@ def add_parsers(sub):
             command.add_argument('--destination', required=True, type=Path)
             command.add_argument('--dry-run', action='store_true')
 
+    for category, action in (('terrain', 'generate'), ('room', 'create'), ('building', 'generate'), ('layout', 'generate')):
+        group = sub.add_parser(category, help='Bounded native procedural geometry')
+        commands = group.add_subparsers(dest='action', required=True)
+        command = commands.add_parser(action)
+        command.add_argument('--project', required=True, type=Path)
+        command.add_argument('--scene', required=True)
+        command.add_argument('--file', required=True, type=Path, help='Canonical recipe object, or recipe list for layout')
+        command.add_argument('--expected-revision', required=True, type=int)
+        command.add_argument('--expected-sha256', required=True)
+        command.add_argument('--destination', required=True, type=Path)
+        command.add_argument('--dry-run', action='store_true')
+
 
 def execute(args):
     from scene3d_contracts import load_project
     from scene3d_graph import SceneGraph, require
     bundle = load_project(args.project)
+    if args.command in ('terrain', 'room', 'building', 'layout'):
+        from asset_library import read_source_bytes
+        from rig_errors import decode_json
+        from scene3d_environment import apply_recipes, plan
+        graph = SceneGraph.from_bundle(bundle, args.scene, source_root=args.project)
+        require(type(args.expected_revision) is int and graph.revision == args.expected_revision and
+                graph.digest == args.expected_sha256,
+                'Scene changed after the source revision was inspected.', 'SCENE3D_CONFLICT')
+        value = decode_json(read_source_bytes(args.file, 1024 * 1024))
+        recipes = value if args.command == 'layout' else [value]
+        require(isinstance(recipes, list) and 1 <= len(recipes) <= 16 and
+                all(isinstance(recipe, dict) for recipe in recipes), 'Expected one to sixteen typed geometry recipes.')
+        generators = {'terrain': {'terrain'}, 'room': {'rooms'},
+                      'building': {'rooms', 'workshop', 'fantasy', 'science-fiction'}}
+        if args.command != 'layout':
+            require(all(recipe.get('generator') in generators[args.command] for recipe in recipes),
+                    'Recipe generator does not match the requested CLI category.')
+        geometry = [plan(recipe) for recipe in recipes]
+        if args.dry_run:
+            return {'dry_run': True, 'recipes': recipes, 'generated_nodes': sum(map(len, geometry)),
+                    'triangles': sum(len(item['mesh'].triangles) for group in geometry for item in group),
+                    'destination': str(args.destination)}
+        return apply_recipes(args.project, args.destination, args.scene, recipes)
     if args.action in OPERATIONS.get(args.command, {}):
         from asset_library import read_source_bytes
         from rig_errors import decode_json
