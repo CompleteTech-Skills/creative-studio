@@ -171,3 +171,53 @@ class EditorBrowserTests(EditorHttpTests):
                 self.assertEqual(page.evaluate('() => window.hatchEditor.errors'), [])
             finally:
                 browser.close()
+
+
+@unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual editor browser acceptance explicitly.')
+class EditorPersistentBrowserTests(unittest.TestCase):
+    def test_numeric_group_undo_redo_and_reopen_are_real_native_edits(self):
+        from tempfile import TemporaryDirectory
+        from editor3d_repository import EditorRepository
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with TemporaryDirectory() as directory:
+            repository = EditorRepository.create(ROOT / 'examples/scene3d-contracts', Path(directory) / 'saved')
+            server = EditorServer(repository)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser = launch_chromium(runtime)
+                    try:
+                        page = browser.new_page(viewport={'width': 1400, 'height': 900})
+                        errors=[];page.on('pageerror',lambda error:errors.append(str(error)))
+                        page.goto(server.url)
+                        page.wait_for_function('() => window.editorReady === true')
+                        page.locator('[data-id="mesh"]').click()
+                        page.get_by_label('translation X',exact=True).fill('3')
+                        page.get_by_label('translation X',exact=True).press('Tab')
+                        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1')
+                        saved=EditorRepository(repository.root).snapshot()
+                        self.assertEqual(next(n for n in saved['scene']['nodes'] if n['id']=='mesh')['transform']['translation'],[3,0,0])
+                        page.click('#undo')
+                        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2')
+                        self.assertEqual(page.get_by_label('translation X',exact=True).input_value(),'2')
+                        page.click('#redo')
+                        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 3')
+                        self.assertEqual(page.get_by_label('translation X',exact=True).input_value(),'3')
+                        page.click('#group')
+                        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 4')
+                        saved=EditorRepository(repository.root).snapshot()
+                        node=next(n for n in saved['scene']['nodes'] if n['id']=='mesh')
+                        self.assertTrue(node['parent'].startswith('group-'))
+                        page.goto(server.url)
+                        page.wait_for_function('() => window.editorReady === true && window.hatchEditor.snapshot.revision === 4')
+                        page.locator('[data-id="mesh"]').click()
+                        self.assertEqual(page.get_by_label('translation X',exact=True).input_value(),'3')
+                        self.assertIn('Loaded saved revision 4',page.locator('#status').inner_text())
+                        self.assertEqual(errors,[])
+                        self.assertEqual(page.evaluate('() => window.hatchEditor.errors'),[])
+                    finally:
+                        browser.close()
+            finally:
+                server.shutdown();server.server_close();thread.join(timeout=5)
