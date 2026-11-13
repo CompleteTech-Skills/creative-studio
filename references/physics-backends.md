@@ -126,6 +126,8 @@ The supported profile is intentionally narrower than the world schema.
   requires at least512MiB host memory plus input/mesh/sample allowances. The
   actual process RSS, elapsed time, output bytes and solver-step count are recorded.
   Log/file count/byte caps, deadlines and cancellation are enforced while running.
+  After exit, owned descendants are stopped and final file/log sizes are checked
+  again before any worker report is accepted, including for fast-exiting workers.
   POSIX termination escalates the entire owned process group even if its leader
   exits first; a child ignoring SIGTERM cannot survive that normal leader exit.
   RSS/disk enforcement is monitored polling, not an adversarial OS memory or
