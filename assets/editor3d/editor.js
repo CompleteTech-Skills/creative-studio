@@ -132,6 +132,7 @@ function subscribeInstalled(callback) {
   return () => { record.cleanup?.(); installSubscribers.delete(callback); };
 }
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
+let activeNativeCameraId = null;
 const editorNode = Symbol("native-scene-node");
 const errors = [],
   nativeMaterials = new Map(),
@@ -961,6 +962,7 @@ async function install(snapshot) {
     visit(object);
   }
   applyNativeState(savedNativeState.nodes);
+  if ($("view").value === "camera") setView();
   for (const [id, object] of objects) {
     if ([...boneObjects.values()].some((b) => b.userData.ownerId === id)) {
       const helper = new THREE.SkeletonHelper(object);
@@ -1357,10 +1359,15 @@ function hasRequiredNativeSample(id) {
     (previewActive && lastEvaluation?.native_geometry && Object.hasOwn(lastEvaluation.native_geometry, id));
 }
 $("isolate").onclick = () => {
+  const selectedRoots = roots(selection), ancestors = new Set();
+  for (const id of selectedRoots) {
+    let parent = nodes.get(id)?.parent;
+    while (parent) { ancestors.add(parent); parent = nodes.get(parent)?.parent; }
+  }
   for (const [id, obj] of objects)
     obj.visible = evaluatedStates.get(id).editor_visible && hasRequiredNativeSample(id) && (
-      selection.has(id) ||
-      roots(selection).some((root) => {
+      ancestors.has(id) || selection.has(id) ||
+      selectedRoots.some((root) => {
         let p = nodes.get(id)?.parent;
         while (p) {
           if (p === root) return true;
@@ -1448,28 +1455,34 @@ $("recall").onclick = () => {
   if (bookmark) {
     $("view").value = bookmark.view;
     setView();
-    camera.position.fromArray(bookmark.position);
-    orbit.target.fromArray(bookmark.target);
-    orbit.update();
+    if ($("view").value !== "camera") {
+      camera.position.fromArray(bookmark.position);
+      orbit.target.fromArray(bookmark.target);
+      orbit.update();
+    }
   }
 };
 function setView() {
-  const value = $("view").value;
+  let value = $("view").value;
   const center = orbit.target.clone(),
     distance = Math.max(camera.position.distanceTo(center), 1);
   camera = value === "perspective" ? perspective : orthographic;
   if (value === "camera") {
-    const node = doc.nodes.find((n) => n.type === "camera");
+    const node = doc.nodes.find((n) => n.type === "camera" &&
+      (activeNativeCameraId === null || n.id === activeNativeCameraId));
     if (!node) {
       diagnostic("No native camera is available.");
-      $("view").value = "perspective";
+      $("view").value = value = "perspective";
+      activeNativeCameraId = null;
       camera = perspective;
     } else {
       content.updateMatrixWorld(true);
       const actual = objects.get(node.id).children.find((o) => o.isCamera);
       camera = actual;
+      activeNativeCameraId = node.id;
     }
   } else {
+    activeNativeCameraId = null;
     const directions = {
       front: [0, 0, 1],
       back: [0, 0, -1],
@@ -1622,7 +1635,7 @@ function cancelDrag() {
   for (const [id, record] of drag.records)
     setTransform(objects.get(id), record.local);
   drag = null;
-  orbit.enabled = true;
+  orbit.enabled = $("view").value !== "camera";
   gizmo.reset();
   inspect();
 }
@@ -1644,7 +1657,7 @@ function initialize() {
     gizmo = new TransformControls(camera, renderer.domElement);
     world.add(gizmo.getHelper());
     gizmo.addEventListener("dragging-changed", (e) => {
-      orbit.enabled = !e.value;
+      orbit.enabled = $("view").value !== "camera" && !e.value;
       if (e.value) {
         content.updateMatrixWorld(true);
         drag = {
@@ -1809,7 +1822,7 @@ function frame() {
     $("time").value = animationTime;
     $("clock").textContent = animationTime.toFixed(2) + " s";
   }
-  orbit.update();
+  if ($("view").value !== "camera") orbit.update();
   for (const h of helpers) h.update?.();
   selectionHelpers.forEach((h) => h.update());
   renderer.render(world, camera);
