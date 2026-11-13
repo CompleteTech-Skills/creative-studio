@@ -283,23 +283,44 @@ def _check_constraint(node):
                 'ANIMATION_CONSTRAINT','Constraint limits are reversed.',stage='animation3d')
 
 
+def _check_placement(placement):
+    require(placement['blend_in_frames']+placement['blend_out_frames']<=placement['duration_frames'],
+        'ANIMATION_INTERVAL','Placement blends exceed its duration.',stage='animation3d')
+    require('source_out_frame' not in placement or placement['source_in_frame']<placement['source_out_frame'],
+        'ANIMATION_INTERVAL','Source trim is empty/reversed.',stage='animation3d')
+
+
 def _check_layer(node):
     _unique(node['placements'])
     for placement in node['placements']:
         require(placement['layer_id']==node['id'],'ANIMATION_REFERENCE','Placement references a different layer.',stage='animation3d')
-        require(placement['blend_in_frames']+placement['blend_out_frames']<=placement['duration_frames'],
-            'ANIMATION_INTERVAL','Placement blends exceed its duration.',stage='animation3d')
-        require('source_out_frame' not in placement or placement['source_in_frame']<placement['source_out_frame'],
-            'ANIMATION_INTERVAL','Source trim is empty/reversed.',stage='animation3d')
+        _check_placement(placement)
     mask=node.get('bone_mask',{})
     included=mask.get('included_bones',[]); excluded=mask.get('excluded_bones',[])
     require(len(included)==len(set(included)) and len(excluded)==len(set(excluded)) and not set(included)&set(excluded),
         'ANIMATION_MASK','Bone mask repeats or contradicts a bone.',stage='animation3d')
 
 
+def _check_interaction(value):
+    actors=_unique(value['participants'],'actor_id'); previous=-1; holder=None; initialized=False
+    for transfer in value.get('ownership_changes',[]):
+        require(value['start_frame']<=transfer['frame']<value['end_frame'] and transfer['frame']>previous,
+            'ANIMATION_INTERVAL','Ownership events must be unique, ordered and inside interaction.',stage='animation3d')
+        previous=transfer['frame']
+        for key in ('previous_owner','next_owner'):
+            require(key not in transfer or transfer[key] in actors,'ANIMATION_REFERENCE','Ownership actor is not a participant.',stage='animation3d')
+        require(not initialized or transfer.get('previous_owner')==holder,'ANIMATION_OWNERSHIP','Broken ownership chain.',stage='animation3d')
+        holder=transfer.get('next_owner'); initialized=True
+
+
 def _walk(value, *, container=False):
     if isinstance(value,dict):
-        if not container: yield value
+        if container:
+            # These keys are arbitrary record names, even when they happen to
+            # match an annotation field. Only the typed values are traversed.
+            for child in value.values(): yield from _walk(child)
+            return
+        yield value
         for key,child in value.items():
             # These schema-declared scalar maps are opaque annotations, not
             # embedded clocks, constraints or executable animation records.
@@ -397,19 +418,12 @@ def _semantic(value):
         _unique(value['mappings'],'source_bone'); _unique(value['mappings'],'target_bone')
         require(('explicit_scale' in value)==(value['scale_policy']=='explicit'),'ANIMATION_RETARGET','Explicit scale policy needs exactly one value.',stage='animation3d')
     elif kind==KINDS['interaction']:
-        actors=_unique(value['participants'],'actor_id'); previous=-1; holder=None; initialized=False
-        for transfer in value.get('ownership_changes',[]):
-            require(value['start_frame']<=transfer['frame']<value['end_frame'] and transfer['frame']>previous,
-                'ANIMATION_INTERVAL','Ownership events must be unique, ordered and inside interaction.',stage='animation3d')
-            previous=transfer['frame']
-            for key in ('previous_owner','next_owner'):
-                require(key not in transfer or transfer[key] in actors,'ANIMATION_REFERENCE','Ownership actor is not a participant.',stage='animation3d')
-            require(not initialized or transfer.get('previous_owner')==holder,'ANIMATION_OWNERSHIP','Broken ownership chain.',stage='animation3d')
-            holder=transfer.get('next_owner'); initialized=True
+        _check_interaction(value)
     elif kind==KINDS['sequence']:
         _unique(value['shots']); _unique(value['markers'])
         end=0
         for index,shot in enumerate(value['shots']):
+            for placement in shot['clip_placements']: _check_placement(placement)
             require(shot['start_frame']==end,'ANIMATION_SEQUENCE','Shots must form a contiguous non-overlapping partition.',stage='animation3d')
             require(shot.get('transition_to_next',{'type':'cut'})['type']=='cut','ANIMATION_TRANSITION','Dissolve sampling requires downstream sequencing support.',stage='animation3d')
             end+=shot['duration_frames']
@@ -417,8 +431,11 @@ def _semantic(value):
             'ANIMATION_SEQUENCE','Sequence duration/marker mismatch.',stage='animation3d')
     elif kind==KINDS['scene']:
         _unique(value['actors'],'actor_id'); _unique(value['interactions']); _unique(value['markers'])
+        for interaction in value['interactions']: _check_interaction(interaction)
         for field,targetkind in [('object_tracks','node'),('environment_tracks','environment'),('camera_tracks','camera'),('lighting_tracks','light')]:
             _unique(value[field]); require(all(t['target']['kind']==targetkind for t in value[field]),'ANIMATION_TARGET','Track in wrong owner domain.',stage='animation3d')
+            channels=[target_key(track['target']) for track in value[field]]
+            require(len(set(channels))==len(channels),'ANIMATION_DUPLICATE','Duplicate scene target channel.',stage='animation3d')
     elif kind==KINDS['render']:
         require(value['start_frame']<value['end_frame_exclusive'],'ANIMATION_INTERVAL','Render interval must be nonempty.',stage='animation3d')
         portable_name(value['output_directory'])

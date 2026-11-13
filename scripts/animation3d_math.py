@@ -5,7 +5,7 @@ column vectors, T @ R @ S, XYZW unit quaternions, meters, right-handed Y-up.
 """
 import math
 import numpy as np
-from rig_errors import require
+from rig_errors import RigError, require
 from rig_math import (compose, decompose, vector, quaternion, qmul, qinverse,
                       slerp, qmatrix, matrix_quaternion, BLENDER_FROM_CANONICAL, unit)
 
@@ -20,8 +20,10 @@ def _bounded(value):
 def inverse(matrix):
     m = _bounded(matrix)
     require(m.shape == (4, 4) and np.isfinite(m).all(), 'ANIMATION_MATRIX', 'Expected finite 4x4 matrix.')
-    require(abs(np.linalg.det(m)) > 1e-12, 'ANIMATION_MATRIX', 'Singular matrix cannot be inverted.')
-    result = np.linalg.inv(m)
+    try:
+        result = np.linalg.inv(m)
+    except np.linalg.LinAlgError as exc:
+        raise RigError('ANIMATION_MATRIX', 'Singular matrix cannot be inverted.') from exc
     require(np.isfinite(result).all(), 'ANIMATION_MATRIX', 'Inverse is nonfinite.')
     return result
 

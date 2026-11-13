@@ -158,3 +158,86 @@ else:raise AssertionError('missing dependency accepted')
         for key,content in [('include_audio',True),('output_directory','../outside'),('end_frame_exclusive',0)]:
             value=samples()['render'];value[key]=content
             with self.assertRaises(RigError):validate_contract(value)
+
+
+class AnimationReviewRegressions(unittest.TestCase):
+    def test_named_record_keys_cannot_bypass_track_or_asset_validation(self):
+        from animation3d_test_helpers import TRACK,ASSET
+        for name in ('actor','metadata','payload','tool_versions','per_bone_weights','initial_state_parameters','parameters'):
+            value=samples()['sequence']
+            track=deepcopy(TRACK)
+            value['shots'][0]['actor_overrides']={name:[track]}
+            validate_contract(value)
+            track['keys'][0]['interpolation']='bezier'
+            with self.subTest(name=name,record='track'):
+                with self.assertRaises(RigError) as raised:validate_contract(value)
+                self.assertEqual(raised.exception.report['code'],'ANIMATION_INTERPOLATION')
+            value=samples()['project'];asset=deepcopy(ASSET)
+            value['character_state_bindings']={name:asset}
+            validate_contract(value)
+            asset['path']='../outside.json'
+            with self.subTest(name=name,record='asset'),self.assertRaises(RigError):
+                validate_contract(value)
+
+    def test_small_valid_scales_remain_invertible(self):
+        import numpy as np
+        import animation3d_math as am
+        for scale in (1e-5,1e-6,1e-7):
+            parent=am.compose(scale=[scale]*3)
+            np.testing.assert_allclose(am.inverse(parent) @ parent,np.eye(4),atol=1e-12)
+            np.testing.assert_allclose(am.world_to_local(parent,parent),np.eye(4),atol=1e-12)
+        with self.assertRaises(RigError) as raised:am.inverse(np.diag([1,0,1,1]))
+        self.assertEqual(raised.exception.report['code'],'ANIMATION_MATRIX')
+
+    def test_embedded_interactions_apply_standalone_ownership_rules(self):
+        base=samples()['interaction']
+        base['ownership_changes']=[dict(frame=2,previous_owner='a',next_owner='b',world_pose_policy='preserve'),
+                                   dict(frame=4,previous_owner='b',next_owner='a',world_pose_policy='preserve')]
+        scene=samples()['scene'];scene['interactions']=[base]
+        validate_contract(base);validate_contract(scene)
+        for case in ('broken-chain','duplicate-participant','nonparticipant','outside-interval'):
+            interaction=deepcopy(base)
+            if case=='broken-chain':interaction['ownership_changes'][1]['previous_owner']='a'
+            elif case=='duplicate-participant':interaction['participants'].append(deepcopy(interaction['participants'][0]))
+            elif case=='nonparticipant':interaction['ownership_changes'][0]['next_owner']='other'
+            else:interaction['ownership_changes'][1]['frame']=interaction['end_frame']
+            scene['interactions']=[interaction]
+            for document in (interaction,scene):
+                with self.subTest(case=case,kind=document['kind']),self.assertRaises(RigError):validate_contract(document)
+
+    def test_shot_placements_apply_the_same_interval_rules_as_layers(self):
+        from animation3d_test_helpers import ASSET
+        placement=dict(id='placement',clip=deepcopy(ASSET),start_frame=0,duration_frames=12,
+            source_in_frame=0,source_out_frame=12,playback_rate=dict(numerator=1,denominator=1),
+            blend_in_frames=2,blend_out_frames=2,weight=1,layer_id='body',enabled=True)
+        sequence=samples()['sequence'];sequence['shots'][0]['clip_placements']=[placement]
+        layer=samples()['layer'];layer['value']['placements']=[placement]
+        validate_contract(sequence);validate_contract(layer)
+        for changes in (dict(source_in_frame=12,source_out_frame=6),
+                        dict(source_in_frame=12,source_out_frame=12),
+                        dict(blend_in_frames=7,blend_out_frames=6)):
+            candidate={**placement,**changes}
+            sequence['shots'][0]['clip_placements']=[candidate];layer['value']['placements']=[candidate]
+            for document in (sequence,layer):
+                with self.subTest(changes=changes,kind=document['kind']),self.assertRaises(RigError):validate_contract(document)
+
+    def test_scene_track_collections_reject_duplicate_channels(self):
+        from animation3d_test_helpers import TRACK
+        for field,target in [('object_tracks',dict(kind='node',node_id='node',property='translation')),
+                             ('camera_tracks',dict(kind='camera',camera_id='camera',property='translation')),
+                             ('lighting_tracks',dict(kind='light',light_id='light',property='translation')),
+                             ('environment_tracks',dict(kind='environment',property='sky_rotation'))]:
+            track=deepcopy(TRACK);track['target']=target
+            if field=='environment_tracks':
+                track['value_type']='float';track['default_value']=0
+                for key in track['keys']:key['value']=0
+            scene=samples()['scene'];scene[field]=[track]
+            validate_contract(scene)
+            other=deepcopy(track);other['id']='other';scene[field].append(other)
+            with self.subTest(field=field):
+                with self.assertRaises(RigError) as raised:validate_contract(scene)
+                self.assertEqual(raised.exception.report['code'],'ANIMATION_DUPLICATE')
+            # A different channel remains allowed within the same owner domain.
+            if field=='environment_tracks':other['target']['property']='ambient_intensity'
+            else:other['target'][next(k for k in target if k.endswith('_id'))]='another'
+            validate_contract(scene)
