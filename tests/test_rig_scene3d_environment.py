@@ -1,6 +1,7 @@
 """Real generated geometry, spatial limits and immutable save/reopen regressions."""
 from copy import deepcopy
 import json
+import hashlib
 import math
 from pathlib import Path
 import tempfile
@@ -9,8 +10,8 @@ import numpy as np
 from rig_errors import RigError
 from scene3d_geometry import Mesh, primitive, wall, extrude, curve, polygon
 from scene3d_terrain import Heightfield, scatter
-from scene3d_environment import plan, create_environment, apply_recipe, apply_recipes, fingerprint
-from scene3d_contracts import load_project
+from scene3d_environment import plan, create_environment, apply_recipe, apply_recipes, load_meshes, fingerprint
+from scene3d_contracts import load_project, canonical_bytes
 from scene3d_graph import SceneGraph
 from scene3d_snapshot import snapshot_project
 
@@ -166,6 +167,39 @@ class EnvironmentTests(unittest.TestCase):
         with self.assertRaises(RigError):plan(recipe(width=1,door_width=2))
         with self.assertRaises(RigError):plan(dict(recipe(),budget=2))
         with self.assertRaises(RigError):plan(recipe('caves'))
+
+    def test_schema_valid_malformed_history_is_a_typed_atomic_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'source'
+            r=recipe('primitive',kind='box',dimensions={});create_environment(source,r)
+            b=load_project(source);path=b['project']['scenes'][-1]['path']
+            for i,(key,value) in enumerate((('generator_nodes_test','{'),('generator_deleted_test','{'),('generator_nodes_test',2))):
+                scene=deepcopy(b['documents'][path]);scene['metadata'][key]=value
+                staged=root/f'staged-{i}';snapshot_project(source,staged,SceneGraph(scene),scene_path=path)
+                staged_bundle=load_project(staged);selected=staged_bundle['project']['scenes'][-1]['path']
+                with self.assertRaises(RigError):apply_recipe(staged,root/f'output-{i}',selected,r)
+                self.assertFalse((root/f'output-{i}').exists())
+
+    def test_hash_verified_malformed_obj_numbers_are_typed_failures(self):
+        from scene3d_materials import obj_material_bindings
+        payloads=[b'\xff',b'v bogus 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n',b'v 0 0 0\nv 1 0 0\nv 0 1 0\nf bogus 2 3\n']
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'source';create_environment(source,recipe('primitive',kind='box',dimensions={}))
+            b=load_project(source);path=b['project']['scenes'][-1]['path']
+            original_node=next(n for n in b['documents'][path]['nodes'] if n['id']=='test-mesh')
+            for i,raw in enumerate(payloads):
+                asset=deepcopy(b['documents'][original_node['asset']['path']]);asset['id']=f'malformed-{i}'
+                file=dict(path=f'generated/malformed-{i}.obj',sha256=hashlib.sha256(raw).hexdigest())
+                asset.update(content=file,source=file,meshes=[file],material_bindings=obj_material_bindings(asset['id']))
+                asset['resources']['bytes']=len(raw);asset_path=f'generated/malformed-{i}.json'
+                ref=dict(id=asset['id'],kind='scene3d-asset',version=asset['version'],path=asset_path,sha256=hashlib.sha256(canonical_bytes(asset)).hexdigest())
+                scene=deepcopy(b['documents'][path]);n=deepcopy(original_node);n.update(id=f'malformed-node-{i}',asset=ref)
+                scene['nodes'].append(n);scene['roots'].append(n['id']);scene['dependencies'].append(ref)
+                staged=root/f'malformed-{i}'
+                snapshot_project(source,staged,SceneGraph(scene),scene_path=path,derived_documents={asset_path:asset},extra_payloads={file['path']:raw})
+                verified=load_project(staged);selected=verified['project']['scenes'][-1]['path']
+                with self.assertRaises(RigError) as failure:load_meshes(staged,selected)
+                self.assertIsNotNone(failure.exception.__cause__)
 
     def test_actual_terrain_lod_dependency_closure_survives_reopen(self):
         with tempfile.TemporaryDirectory() as temp:

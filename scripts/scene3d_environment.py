@@ -11,6 +11,7 @@ from pathlib import Path
 import tempfile
 
 from scene3d_contracts import COORDINATES, canonical_bytes, load_project, validate_document
+from rig_errors import RigError, decode_json
 from scene3d_example import node, build_example
 from scene3d_geometry import primitive, wall, count, positive
 from scene3d_graph import SceneGraph, require, _inventories
@@ -130,6 +131,19 @@ def _mesh_resource(mesh,bundle,documents,payloads,*,lods=()):
     return reference
 
 
+def _generator_history(scene,key):
+    raw=scene['metadata'].get(key,'[]')
+    require(isinstance(raw,str) and len(raw)<=4096,'Generator history must be bounded JSON text.','SCENE3D_GENERATOR_HISTORY')
+    try:
+        entries=decode_json(raw)
+    except RigError as exc:
+        raise RigError('SCENE3D_GENERATOR_HISTORY','Invalid generator history: '+str(exc),stage='scene3d-generator') from exc
+    require(isinstance(entries,list) and len(entries)<=1000 and
+            all(isinstance(i,str) and 1<=len(i)<=128 for i in entries) and len(entries)==len(set(entries)),
+            'Generator history must contain distinct bounded node IDs.','SCENE3D_GENERATOR_HISTORY')
+    return entries
+
+
 def _prepare_recipe(bundle,scene,recipe,*,policy='preserve',offset=None,parent=None):
     """Prepare one recipe entirely in memory; publication is owned by apply_recipes."""
     require(policy in ('preserve','reject'),'Regeneration policy must be preserve or reject.')
@@ -139,11 +153,9 @@ def _prepare_recipe(bundle,scene,recipe,*,policy='preserve',offset=None,parent=N
     require(parent is None or isinstance(parent,str),'Parent must be a node ID or null.')
     require(scene['kind']=='scene3d-scene','Select a scene manifest.')
     rid=recipe['id'];old={n['id']:n for n in scene['nodes'] if n['metadata'].get('generator_id')==rid}
-    records=scene['metadata'].get('generator_nodes_'+rid,'[]');previous=json.loads(records)
-    require(isinstance(previous,list) and all(isinstance(i,str) for i in previous),'Invalid generator node history.')
+    previous=_generator_history(scene,'generator_nodes_'+rid)
     modified={i for i,n in old.items() if fingerprint(n)!=n['metadata'].get('generated_fingerprint')}
-    tombstones=json.loads(scene['metadata'].get('generator_deleted_'+rid,'[]'))
-    require(isinstance(tombstones,list) and all(isinstance(i,str) for i in tombstones),'Invalid generator deletion history.')
+    tombstones=_generator_history(scene,'generator_deleted_'+rid)
     deleted=(set(previous)|set(tombstones))-set(old)
     conflicts=sorted(modified|deleted)
     require(policy!='reject' or not conflicts,'Generated nodes contain manual overrides: '+', '.join(conflicts),'SCENE3D_GENERATOR_CONFLICT')
@@ -252,16 +264,19 @@ def load_meshes(root, scene_path):
         raw=read_source_bytes(root/content['path'],record['bytes'])
         require(len(raw)==record['bytes'] and hashlib.sha256(raw).hexdigest()==content['sha256'],'Geometry changed after validation.')
         vertices=[];triangles=[]
-        for line in raw.decode('ascii').splitlines():
-            parts=line.split()
-            if not parts or parts[0]=='#':continue
-            if parts[0]=='v':
-                require(len(parts)==4,'Malformed generated vertex.')
-                vertices.append([float(x) for x in parts[1:]])
-            elif parts[0]=='f':
-                require(len(parts)==4,'Generated mesh must be triangular.')
-                triangles.append([int(x.split('/')[0])-1 for x in parts[1:]])
-            else:require(parts[0] in ('vn','vt'),'Unexpected generated OBJ record.')
-        mesh=Mesh(vertices,triangles).validate()
+        try:
+            for line in raw.decode('ascii').splitlines():
+                parts=line.split()
+                if not parts or parts[0]=='#':continue
+                if parts[0]=='v':
+                    require(len(parts)==4,'Malformed generated vertex.')
+                    vertices.append([float(x) for x in parts[1:]])
+                elif parts[0]=='f':
+                    require(len(parts)==4,'Generated mesh must be triangular.')
+                    triangles.append([int(x.split('/')[0])-1 for x in parts[1:]])
+                else:require(parts[0] in ('vn','vt'),'Unexpected generated OBJ record.')
+            mesh=Mesh(vertices,triangles).validate()
+        except (ValueError,UnicodeError,OverflowError) as exc:
+            raise RigError('SCENE3D_GEOMETRY','Malformed generated OBJ: '+str(exc),stage='scene3d-generator') from exc
         result[n['id']]=dict(vertices=mesh.vertices,triangles=mesh.triangles)
     return result
