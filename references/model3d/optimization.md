@@ -32,7 +32,9 @@ explicit selected cleanup/orientation flags to the existing native copy-based
 topology operations. Hole filling remains the explicitly selected native
 `fill_planar_hole` workflow. Robust self-intersection detection is unavailable.
 
-Quality reports include symmetric sampled vertex-to-triangle surface distances
+Quality reports retain the selected distance/silhouette thresholds, normal
+replacement policy, runtime/per-part budgets, protected indices and native limits.
+They include symmetric sampled vertex-to-triangle surface distances
 and front/side/top pixel silhouette IoUs in one common per-pair viewport. Opposite
 orthographic views have the same silhouette. Sampling and pixel resolution are
 bounded; these measurements are not a continuous Hausdorff bound, all-view
