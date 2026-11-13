@@ -98,6 +98,8 @@
                         "scalar",
                         "depth",
                         "vector",
+                        "normal",
+                        "matte",
                         "cryptomatte"
                       ]
                     }
@@ -126,6 +128,8 @@
                         "scalar",
                         "depth",
                         "vector",
+                        "normal",
+                        "matte",
                         "cryptomatte"
                       ]
                     }

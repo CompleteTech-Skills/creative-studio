@@ -25,6 +25,19 @@ BOOL = dict(type='boolean')
 SCOPES = ('scene', 'shot', 'object')
 
 
+def pass_contracts():
+    """Canonical pass semantics; adapters must convert or reject native output."""
+    return {
+        'rgba': {'unit': 'scene-linear-srgb', 'alpha': 'document-color-alpha'},
+        'scalar': {'unit': 'dimensionless'},
+        'depth': {'unit': 'meters', 'meaning': 'euclidean-camera-distance'},
+        'vector': {'unit': 'pixels-per-frame', 'axes': '+x-right,+y-up', 'timebase': 'document-fps'},
+        'normal': {'unit': 'unit-vector', 'space': 'canonical-world'},
+        'matte': {'unit': 'coverage', 'range': [0, 1]},
+        'cryptomatte': {'unit': 'identifier-coverage', 'encoding': 'cryptomatte-exr-manifest'},
+    }
+
+
 def number(low, high):
     return dict(type='number', minimum=low, maximum=high)
 
@@ -120,7 +133,7 @@ def _definitions():
         max_pixels=integer(1, 268435456), output=enum('png', 'exr', 'mp4', 'webm'), audio_streams={'const': 0},
         policy=policy))
     # V1 describes a typed routing DAG. Pixel node execution is owned by #252.
-    port = obj(dict(name=ID, type=enum('rgba', 'scalar', 'depth', 'vector', 'cryptomatte')))
+    port = obj(dict(name=ID, type=enum(*pass_contracts())))
     node = obj(dict(id=ID, operation=enum('input', 'effect', 'output'),
                     effect={'anyOf': [typed('cinematics3d-effect'), {'type': 'null'}]},
                     inputs=arr(port, maximum=16), outputs=arr(port, maximum=16)))
@@ -405,7 +418,7 @@ def main():
     group.add_argument('--check', action='store_true')
     args = parser.parse_args()
     try:
-        if args.registry: output = dict(version='1.0.0', effects=effect_registry(), executed=False)
+        if args.registry: output = dict(version='1.0.0', effects=effect_registry(), passes=pass_contracts(), executed=False)
         elif args.validate:
             with args.validate.open('rb') as stream: data = stream.read(MAX_BYTES + 1)
             require(len(data) <= MAX_BYTES, 'CINEMATICS_LIMIT', 'Input exceeds 2 MiB.')
