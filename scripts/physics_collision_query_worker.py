@@ -28,6 +28,7 @@ def main():
     if client < 0:
         raise RuntimeError('Query connection failed.')
     try:
+        p.setPhysicsEngineParameter(collisionFilterMode=0,physicsClientId=client)
         world = job['world']
         poses = {body['id']:body for body in job['state']['bodies']}
         materials = {material['id']:material for material in world['materials']}
@@ -53,6 +54,8 @@ def main():
             p.changeDynamics(native,-1,collisionMargin=materials[collider['material']]['collision_margin'],physicsClientId=client)
             identifiers[native] = body['id']
             p.setCollisionFilterGroupMask(native,-1,collision_signed_mask(collider['group']),collision_signed_mask(collider['mask']),physicsClientId=client)
+        # Synchronize broadphase AABBs for newly reconstructed static poses.
+        p.performCollisionDetection(physicsClientId=client)
         results = []
         for ray in job['queries']:
             hit = collision_raycast(p,client,ray['start'],ray['end'],ray['mask'])
