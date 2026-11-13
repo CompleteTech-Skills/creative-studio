@@ -1935,6 +1935,120 @@
         },
         "review": {
           "$ref": "#/$defs/review"
+        },
+        "material_bindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "slot": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+              },
+              "material_index": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 65535
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "primitives": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "mesh": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}(?![\\s\\S])"
+                    },
+                    "encoding": {
+                      "enum": [
+                        "normalized-glb",
+                        "obj"
+                      ]
+                    },
+                    "source_mesh": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "source_primitive": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 1000000
+                    },
+                    "source_material_index": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 65535
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "normalized_mesh": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "normalized_primitive": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "const": 0
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "mesh",
+                    "encoding",
+                    "source_mesh",
+                    "source_primitive",
+                    "source_material_index",
+                    "normalized_mesh",
+                    "normalized_primitive"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 10000
+              }
+            },
+            "required": [
+              "slot",
+              "material_index",
+              "primitives"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 65536
         }
       },
       "required": [
