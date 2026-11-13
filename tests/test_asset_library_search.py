@@ -65,6 +65,26 @@ class SearchTests(unittest.TestCase):
         self.assert_code('CURSOR',lambda:self.index.search('other',cursor=first['next_cursor']))
         self.assert_code('CURSOR',lambda:self.index.search(cursor='###'))
 
+    def test_native_catalog_refresh_and_explicit_subset_have_distinct_scope(self):
+        first=self.register('first',keywords=['common'])
+        initial=self.index.rebuild()
+        self.assertEqual(initial['indexed'],1)
+        self.register('second',keywords=['common'])
+        self.assert_code('STALE',lambda:self.index.search('common'))
+        self.assertEqual(self.index.rebuild()['indexed'],2)
+        self.assertEqual(self.index.search('common')['total'],2)
+        self.index.rebuild([first])
+        self.register('third',keywords=['common'])
+        self.assertEqual(self.index.search('common')['total'],1)
+
+    def test_index_relocation_reopens_against_relocated_library(self):
+        self.register('portable',keywords=['portable'])
+        self.index.rebuild()
+        self.library.root.rename(self.root/'moved-library')
+        self.index.root.rename(self.root/'moved-index')
+        reopened=SearchIndex(self.root/'moved-index',{'local':AssetLibrary(self.root/'moved-library')})
+        self.assertEqual(reopened.search('portable')['total'],1)
+
     def test_versions_are_exact_and_semver_sort_is_numeric(self):
         self.register('robot',version='2.0.0');self.register('robot',version='10.0.0')
         self.index.rebuild(self.refs)
@@ -180,8 +200,6 @@ class SearchTests(unittest.TestCase):
         with self.assertRaises(RigError):self.index.search('Find characters compatible with this animation rig.')
 
 
-if __name__=='__main__':unittest.main()
-
 class LocalEmbeddingAdmissionTests(unittest.TestCase):
     def test_unknown_model_and_unpinned_revision_reject_before_runtime(self):
         from asset_search_embeddings import LocalSentenceTransformer
@@ -204,3 +222,6 @@ class LocalEmbeddingAdmissionTests(unittest.TestCase):
             provider=LocalSentenceTransformer('.',expected_sha256='0'*64)
         self.assertFalse(provider.runtime_available)
         with self.assertRaises(RigError):provider.encode(['private name'])
+
+
+if __name__=='__main__':unittest.main()
