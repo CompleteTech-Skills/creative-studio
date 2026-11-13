@@ -9,6 +9,7 @@ from copy import deepcopy
 from fractions import Fraction
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from rig_errors import RigError, finite_json
@@ -226,6 +227,28 @@ def evaluate_timeline(repository, body):
     return result
 
 
+def select_scene(repository, body):
+    """Persist the editor's active scene without changing native document bytes."""
+    _keys(body,{'expected_revision','expected_sha256','transaction_id','scene'})
+    selected=body['scene'];_require(isinstance(selected,str),'Select an exact registered scene path.')
+    def build(source,destination,previous_scene):
+        from asset_library import read_source_bytes
+        from scene3d_contracts import portable_path
+        bundle=load_project(source)
+        _require(any(ref['path']==selected for ref in bundle['project']['scenes']),'Scene is not selected by this project.')
+        destination=Path(destination);destination.mkdir()
+        for path,record in bundle['inventory'].items():
+            payload=read_source_bytes(Path(source)/portable_path(path),record['bytes'])
+            _require(len(payload)==record['bytes'] and hashlib.sha256(payload).hexdigest()==record['sha256'],'Native scene source changed while switching.')
+            target=destination/portable_path(path);target.parent.mkdir(parents=True,exist_ok=True)
+            with target.open('xb') as stream:
+                stream.write(payload);stream.flush();os.fsync(stream.fileno())
+        return selected
+    return repository.transact_native(body['expected_revision'],body['transaction_id'],
+        dict(adapter='editor3d-scene-select-v1',scene=selected),build,
+        expected_sha256=body['expected_sha256'],label='Open scene')
+
+
 def sample_curve(repository, body):
     """Bounded exact samples from the canonical evaluator, never a UI interpolator."""
     _keys(body,{'revision','sha256','shot','target','property','sample_count'})
@@ -260,4 +283,5 @@ def routes():
     """Fixed authenticated server dispatch; no caller-supplied Python callbacks."""
     return {'timeline/edit':lambda server,body: apply_timeline(server.repository,body),
             'timeline/evaluate':lambda server,body:evaluate_timeline(server.repository,body),
-            'timeline/curve':lambda server,body:sample_curve(server.repository,body)}
+            'timeline/curve':lambda server,body:sample_curve(server.repository,body),
+            'timeline/select-scene':lambda server,body:select_scene(server.repository,body)}

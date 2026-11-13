@@ -1,5 +1,5 @@
 /* Exact saved-revision timeline. All persistent edits receive backend acknowledgement. */
-export function mountTimeline({container,api,getSnapshot,getSelection,preview,clearPreview,reload,onSelect,registerCommitInterceptor}) {
+export function mountTimeline({container,api,getSnapshot,getSelection,preview,clearPreview,reload,onSelect,registerCommitInterceptor,registerPreviewEditAuthorizer,refreshPreviewEditState}) {
   let snapshot=null,shotPath='',request=0,disposed=false,playing=false,clock=0,firstFrame=0,raf=0;
   const root=document.createElement('section');root.setAttribute('aria-label','Animation timeline');
   const status=document.createElement('p');status.setAttribute('role','status');
@@ -12,8 +12,18 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   for(const mode of ['linear','step','slerp']){const o=document.createElement('option');o.value=mode;o.textContent=mode;interpolation.append(o);}
   const autokey=document.createElement('input');autokey.type='checkbox';autokey.setAttribute('aria-label','Autokey transforms at selected frame');autokey.disabled=typeof registerCommitInterceptor!=='function';
   const autoLabel=document.createElement('label');autoLabel.append(autokey,document.createTextNode(' Autokey transforms'));
+  const unregisterPreview=registerPreviewEditAuthorizer?.(({snapshot:current,evaluation})=>{
+    const at=Number(frame.value);
+    return !playing&&autokey.checked&&Number.isSafeInteger(at)&&current.project.shots.some(ref=>ref.path===shotPath)&&
+      current.documents[shotPath].scene.path===current.scene_path&&evaluation?.shot?.path===shotPath&&
+      evaluation.revision===current.revision&&evaluation.snapshot_sha256===current.sha256&&
+      evaluation.scene?.path===current.scene_path&&evaluation.frame?.numerator===at*evaluation.frame?.denominator;
+  });
+  autokey.addEventListener('change',()=>refreshPreviewEditState?.());
+  frame.addEventListener('input',()=>{stop();++request;refreshPreviewEditState?.();});
   const unregister=registerCommitInterceptor?.(({commands,expected_revision,expected_sha256,transaction_id,snapshot:current})=>{
     if(!autokey.checked||!commands.some(c=>c.operation==='transform'))return null;
+    if(playing)throw Error('Pause timeline playback before autokey editing.');
     if(commands.some(c=>c.operation!=='transform'))throw Error('Autokey requires a transform-only transaction.');
     if(!current.project.shots.some(ref=>ref.path===shotPath))throw Error('Reload and select the current shot before autokey.');
     if(current.documents[shotPath].scene.path!==current.scene_path)throw Error('Switch to the shot scene before autokey.');
@@ -43,16 +53,16 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
     if(!snapshot||!shotPath)return;const serial=++request;const s=getSnapshot();
     if(s.documents[shotPath]?.scene.path!==s.scene_path)throw Error('Switch to the shot scene before preview.');
     const result=await api('timeline/evaluate',{revision:s.revision,sha256:s.sha256,shot:shotPath,frame:at});
-    if(disposed||serial!==request)return;if(result.scene.path!==getSnapshot().scene_path)throw Error('Preview scene changed; reload before scrubbing.');preview(result);message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
+    if(disposed||serial!==request)return;if(result.scene.path!==getSnapshot().scene_path)throw Error('Preview scene changed; reload before scrubbing.');preview(result);refreshPreviewEditState?.();message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
   }
-  function stop(){playing=false;cancelAnimationFrame(raf);play.textContent='Play';}
+  function stop(){playing=false;cancelAnimationFrame(raf);play.textContent='Play';refreshPreviewEditState?.();}
   async function tick(now){if(!playing||disposed)return;const doc=snapshot.documents[shotPath],fps=doc.fps.numerator/doc.fps.denominator;
     const current=firstFrame+Math.floor((now-clock)*fps/1000);
     if(current>=doc.duration_frames){stop();return;}frame.value=String(current);
     try{await scrub(current);}catch(e){stop();message(e.message);return;}
     if(playing)raf=requestAnimationFrame(tick);
   }
-  const play=button('Play',()=>{if(playing){stop();return;}playing=true;play.textContent='Pause';clock=performance.now();firstFrame=Number(frame.value);raf=requestAnimationFrame(tick);});
+  const play=button('Play',()=>{if(playing){stop();return;}playing=true;play.textContent='Pause';refreshPreviewEditState?.();clock=performance.now();firstFrame=Number(frame.value);raf=requestAnimationFrame(tick);});
   const move=document.createElement('input');move.type='number';move.min='0';move.step='1';move.value='1';move.setAttribute('aria-label','Move selected key to frame');
   const duration=document.createElement('input');duration.type='number';duration.min='1';duration.step='1';duration.setAttribute('aria-label','Shot duration in frames');
   const camera=document.createElement('select');camera.setAttribute('aria-label','Shot camera');
@@ -68,6 +78,11 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   const clip=document.createElement('select');clip.setAttribute('aria-label','Reusable clip');
   const speed=document.createElement('input');speed.type='number';speed.min='0.001';speed.step='any';speed.value='1';speed.setAttribute('aria-label','Clip playback speed');
   const loop=document.createElement('input');loop.type='checkbox';loop.setAttribute('aria-label','Loop clip');
+  const sceneSelect=document.createElement('select');sceneSelect.setAttribute('aria-label','Project scene');
+  root.insertBefore(sceneSelect,status);root.insertBefore(button('Open scene',async()=>{stop();const s=getSnapshot();await api('timeline/select-scene',{expected_revision:s.revision,expected_sha256:s.sha256,transaction_id:crypto.randomUUID(),scene:sceneSelect.value});await reload();message('Scene opened from saved native project.');}),status);
+  for(const [label,operation] of [['Duplicate scene','scene-duplicate'],['Create empty scene','scene-create']])root.insertBefore(button(label,()=>edit([{operation,source:snapshot.scene_path,id:resourceID.value,name:resourceName.value}])),status);
+  root.insertBefore(button('Rename scene',()=>edit([{operation:'scene-rename',document:snapshot.scene_path,name:resourceName.value}])),status);
+  root.insertBefore(button('Delete scene',()=>edit([{operation:'scene-delete',document:snapshot.scene_path}])),status);
   root.insertBefore(resourceID,status);root.insertBefore(resourceName,status);
   for(const [label,operation] of [['Duplicate shot','shot-duplicate'],['Create empty shot','shot-create'],['Create reusable clip','clip-create']])root.insertBefore(button(label,()=>edit([{operation,source:shotPath,id:resourceID.value,...(operation==='clip-create'?{}:{name:resourceName.value})}])),status);
   root.insertBefore(clip,status);root.insertBefore(speed,status);root.insertBefore(loop,status);
@@ -82,5 +97,5 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   }
   property.addEventListener('change',()=>{++request;curve.replaceChildren();curveLegend.textContent='Choose Evaluate channel curve to sample this channel.';});
   shot.addEventListener('change',()=>{stop();++request;clearPreview();shotPath=shot.value;renderShot();});
-  return {refresh(next){stop();++request;const previous=snapshot?.documents[shotPath];snapshot=next;clip.replaceChildren();for(const ref of next.project.animations){const option=document.createElement('option');option.value=ref.path;option.textContent=ref.id+' '+ref.version;clip.append(option);}shot.replaceChildren();for(const ref of next.project.shots){const o=document.createElement('option');o.value=ref.path;o.textContent=next.documents[ref.path].name;shot.append(o);}if(!next.documents[shotPath]||!next.project.shots.some(r=>r.path===shotPath))shotPath=next.project.shots.find(ref=>ref.id===previous?.id&&next.documents[ref.path].scene.id===previous?.scene.id)?.path||next.project.shots[0]?.path||'';shot.value=shotPath;renderShot();},dispose(){disposed=true;stop();++request;unregister?.();root.remove();}};
+  return {refresh(next){stop();++request;const previous=snapshot?.documents[shotPath],previousActive=snapshot?.scene_path;snapshot=next;sceneSelect.replaceChildren();for(const ref of next.project.scenes){const option=document.createElement('option');option.value=ref.path;option.textContent=next.documents[ref.path].name;sceneSelect.append(option);}sceneSelect.value=next.scene_path;clip.replaceChildren();for(const ref of next.project.animations){const option=document.createElement('option');option.value=ref.path;option.textContent=ref.id+' '+ref.version;clip.append(option);}shot.replaceChildren();for(const ref of next.project.shots){const o=document.createElement('option');o.value=ref.path;o.textContent=next.documents[ref.path].name;shot.append(o);}if(!next.documents[shotPath]||!next.project.shots.some(r=>r.path===shotPath))shotPath=next.project.shots.find(ref=>ref.id===previous?.id&&next.documents[ref.path].scene.id===previous?.scene.id)?.path||next.project.shots[0]?.path||'';if(previousActive!==next.scene_path&&next.documents[shotPath]?.scene.path!==next.scene_path)shotPath=next.project.shots.find(ref=>next.documents[ref.path].scene.path===next.scene_path)?.path||'';shot.value=shotPath;renderShot();if(autokey.checked&&shotPath)queueMicrotask(()=>scrub().catch(e=>message(e.message)));},dispose(){disposed=true;stop();++request;unregisterPreview?.();unregister?.();root.remove();}};
 }
