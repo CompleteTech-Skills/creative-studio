@@ -23,6 +23,7 @@ from rig_errors import RigError, decode_json
 
 MAX_BODY = 65536
 MAX_MODEL = 32 * 1024**2
+MAX_RESPONSE = 4 * 1024**2
 ACTIONS = frozenset(('import', 'preview', 'thumbnail', 'turntable', 'export', 'index', 'bundle.create', 'bundle.restore', 'version', 'replace', 'repair'))
 UI = Path(__file__).resolve().parents[1] / 'assets' / 'asset-browser'
 VENDOR = Path(__file__).resolve().parents[1] / 'assets' / 'rig-viewer' / 'vendor'
@@ -166,6 +167,9 @@ class AssetBrowserHandler(BaseHTTPRequestHandler):
     def respond(self, status, payload, mime='application/json'):
         if mime == 'application/json':
             payload = canonical_bytes(payload)
+            if len(payload)>MAX_RESPONSE:
+                status=413
+                payload=canonical_bytes(dict(error={'code':'LIBRARY_BROWSER_RESPONSE_LIMIT','message':'Native report exceeds the four MiB browser response budget; inspect a narrower scope with the native CLI.'}))
         self.send_response(status)
         self.send_header('Content-Type', mime)
         self.send_header('Content-Length', str(len(payload)))
