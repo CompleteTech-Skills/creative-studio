@@ -11,7 +11,7 @@ A recipe contains exactly `id`, `version` (currently integer 1), `seed`
 emitted nodes). The same recipe produces the same geometry and node IDs.
 `primitive` accepts `kind` and `dimensions`; the available kinds are box, plane,
 cylinder, cone, sphere, capsule, torus, stairs, ramp, pipe, beam, platform, door,
-window, extrude (strictly convex XZ polygon), and curve (capped straight spans).
+window, polygon (simple convex or concave XZ polygon), extrude (simple XZ polygon), and curve (capped straight spans).
 Meshes use meters, right-handed Y-up coordinates and counterclockwise exterior
 triangles. OBJ resources contain actual triangles, explicit flat normals and
 per-triangle UVs; they are not textured material demonstrations.
@@ -60,6 +60,5 @@ must hold the native validation flock for its entire execution. Saved receipts
 report actual runtime versions and exact hashes.
 
 Remaining issue #61 acceptance: full architectural/themed catalogs, material
-assignment through the lookdev owner, masks/blending/LOD policies, arbitrary
-custom polygon support and richer layout policies still need implementation
+assignment through the lookdev owner, masks/blending/LOD policies, polygon holes and richer layout policies still need implementation
 and review. Neither these APIs nor the example claim whole-issue completion.

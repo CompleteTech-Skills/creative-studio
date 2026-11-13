@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import numpy as np
 from rig_errors import RigError
-from scene3d_geometry import primitive, wall, extrude, curve
+from scene3d_geometry import primitive, wall, extrude, curve, polygon
 from scene3d_terrain import Heightfield, scatter
 from scene3d_environment import plan, create_environment, apply_recipe, fingerprint
 from scene3d_contracts import load_project
@@ -29,6 +29,16 @@ class GeometryTests(unittest.TestCase):
                 self.assertIn(b'\nvn ',mesh.obj())
         extrude([[0,0],[1,0],[1,1],[0,1]]).validate()
         curve([[0,0,0],[1,1,0],[2,1,1]]).validate()
+
+    def test_concave_custom_polygon_and_closed_extrusion(self):
+        points=[[0,0],[3,0],[3,1],[1,1],[1,3],[0,3]]
+        mesh=polygon(points);v=np.array(mesh.vertices);f=np.array(mesh.triangles)
+        self.assertAlmostEqual(sum(np.linalg.norm(np.cross(v[b]-v[a],v[c]-v[a]))/2 for a,b,c in f),5)
+        for profile in (points,list(reversed(points))):
+            solid=extrude(profile,height=2);v=np.array(solid.vertices);f=np.array(solid.triangles)
+            volume=np.einsum('ij,ij->i',v[f[:,0]],np.cross(v[f[:,1]],v[f[:,2]])).sum()/6
+            self.assertAlmostEqual(volume,10)
+        with self.assertRaises(RigError):polygon([[0,0],[2,2],[0,2],[2,0]])
 
     def test_closed_shapes_outward_winding(self):
         for kind in ('box','sphere','cylinder','cone','torus','pipe','capsule'):

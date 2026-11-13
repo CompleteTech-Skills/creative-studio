@@ -111,6 +111,9 @@ def revolve(profile, segments=24):
 
 def primitive(kind, **p):
     """All dimensions are meters. Unknown parameters fail instead of being ignored."""
+    if kind == 'polygon':
+        require(set(p)=={'points'},'Polygon requires points.')
+        return polygon(**p)
     if kind == 'extrude':
         require(not set(p)-{'points','height'} and 'points' in p,'Invalid extrusion parameters.')
         return extrude(**p)
@@ -187,23 +190,57 @@ def wall(width, height, thickness, openings=()):
     return combine(parts)
 
 
-def extrude(points, height=1):
-    """Extrude a strictly convex XZ polygon; reject concave/self-intersecting profiles."""
-    h=positive(height,'height'); p=numeric_array(points,'points')
-    require(p.ndim==2 and p.shape[1]==2 and 3<=len(p)<=256 and np.isfinite(p).all(),'Invalid polygon profile.')
-    edges=np.roll(p,-1,axis=0)-p
-    crosses=edges[:,0]*np.roll(edges,-1,axis=0)[:,1]-edges[:,1]*np.roll(edges,-1,axis=0)[:,0]
-    require((crosses>1e-10).all() or (crosses< -1e-10).all(),'Profile must be strictly convex and ordered.')
-    # A convex profile must place every remaining point on the same edge side.
-    for i,e in enumerate(edges):
-        deltas=p-p[i]
-        side=e[0]*deltas[:,1]-e[1]*deltas[:,0]
-        require((side>=-1e-10).all() or (side<=1e-10).all(),'Profile self-intersects.')
-    if crosses[0]<0: p=p[::-1]
-    n=len(p); v=[[x,y,z] for y in (0,h) for x,z in p]; f=[]
-    for i in range(1,n-1): f.extend([[0,i,i+1],[n,n+i+1,n+i]])
+def polygon_triangles(points):
+    """Triangulate a bounded simple polygon with deterministic ear clipping."""
+    p=numeric_array(points,'points')
+    require(p.ndim==2 and p.shape[1]==2 and 3<=len(p)<=256,'Invalid polygon profile.')
+    def cross(a,b,c):
+        u=b-a;v=c-a
+        return float(u[0]*v[1]-u[1]*v[0])
+    n=len(p);edges=np.roll(p,-1,axis=0)-p
+    require((np.linalg.norm(edges,axis=1)>1e-8).all(),'Polygon has repeated adjacent points.')
+    require(all(abs(cross(p[i-1],p[i],p[(i+1)%n]))>1e-10 for i in range(n)),
+            'Polygon has a collinear or repeated corner.')
+    def on(a,b,c):
+        return abs(cross(a,b,c))<=1e-10 and (np.minimum(a,b)-1e-10<=c).all() and (c<=np.maximum(a,b)+1e-10).all()
     for i in range(n):
-        j=(i+1)%n; f.extend([[i,n+i,n+j],[i,n+j,j]])
+        for j in range(i+1,n):
+            if j==i+1 or (i==0 and j==n-1):continue
+            a,b,c,d=p[i],p[(i+1)%n],p[j],p[(j+1)%n]
+            intersects=(cross(a,b,c)*cross(a,b,d)<0 and cross(c,d,a)*cross(c,d,b)<0) or any((on(a,b,c),on(a,b,d),on(c,d,a),on(c,d,b)))
+            require(not intersects,'Polygon profile self-intersects.')
+    area=sum(p[i,0]*p[(i+1)%n,1]-p[(i+1)%n,0]*p[i,1] for i in range(n))
+    require(abs(area)>1e-10,'Polygon profile has no area.')
+    indices=list(range(n)) if area>0 else list(reversed(range(n)))
+    faces=[]
+    while len(indices)>3:
+        found=False
+        for k,b in enumerate(indices):
+            a=indices[k-1];c=indices[(k+1)%len(indices)]
+            if cross(p[a],p[b],p[c])<=1e-10:continue
+            if any(all(cross(p[x],p[y],p[q])>=-1e-10 for x,y in ((a,b),(b,c),(c,a)))
+                   for q in indices if q not in (a,b,c)):continue
+            faces.append([a,b,c]);indices.pop(k);found=True;break
+        require(found,'Polygon cannot be triangulated without degeneracy.')
+    faces.append(indices)
+    return p,faces
+
+
+def polygon(points):
+    p,faces=polygon_triangles(points)
+    return Mesh([[x,0,z] for x,z in p],[[a,c,b] for a,b,c in faces]).validate()
+
+
+def extrude(points, height=1):
+    """Extrude a simple concave or convex XZ polygon into an actual closed solid."""
+    h=positive(height,'height');p,cap=polygon_triangles(points);n=len(p)
+    v=[[x,y,z] for y in (0,h) for x,z in p];f=[]
+    for a,b,c in cap:f.extend([[a,b,c],[n+a,n+c,n+b]])
+    area=sum(p[i,0]*p[(i+1)%n,1]-p[(i+1)%n,0]*p[i,1] for i in range(n))
+    for i in range(n):
+        j=(i+1)%n
+        sides=[[i,n+i,n+j],[i,n+j,j]]
+        f.extend(sides if area>0 else [list(reversed(face)) for face in sides])
     return Mesh(v,f).validate()
 
 
