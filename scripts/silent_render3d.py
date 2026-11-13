@@ -17,16 +17,64 @@ from atomic_publish import _rename_no_replace
 import silent_video as video
 
 
+def _background(background):
+    if (not isinstance(background, list) or len(background) != 3 or
+            any(type(value) is not int or not 0 <= value <= 255 for value in background)):
+        raise ValueError('explicit background must be three 8-bit sRGB integers')
+
+
+def _preflight(request, result):
+    if not isinstance(request, dict) or not isinstance(request.get('settings'), dict):
+        raise ValueError('native request settings required')
+    settings = request['settings']
+    resolution = settings.get('resolution')
+    if (not isinstance(resolution, list) or len(resolution) != 2 or
+            any(type(value) is not int or not 2 <= value <= 4096 or value % 2 for value in resolution) or
+            resolution[0] * resolution[1] > video.MAX_PIXELS):
+        raise ValueError('native source dimensions exceed silent export limits')
+    output = settings.get('output')
+    if (not isinstance(output, dict) or output.get('format') != 'png' or
+            type(output.get('bit_depth')) is not int or output['bit_depth'] != 8 or
+            output.get('color_space') != 'srgb' or output.get('passes') != ['combined'] or
+            output.get('alpha') not in ('straight', 'opaque')):
+        raise ValueError('silent SDR adapter requires actual sRGB PNG8 combined; EXR/HDR needs an explicit separate transform')
+    video.fps_fraction(request.get('fps'))
+    frame_range = request.get('frame_range')
+    if (not isinstance(frame_range, dict) or set(frame_range) != {'start', 'end'} or
+            any(type(frame_range[key]) is not int for key in ('start', 'end')) or
+            not 0 <= frame_range['start'] < frame_range['end'] <= 100000 or
+            frame_range['end'] - frame_range['start'] > video.MAX_FRAMES):
+        raise ValueError('native frame range exceeds silent export limits')
+    images = result.get('images') if isinstance(result, dict) else None
+    count = frame_range['end'] - frame_range['start']
+    if not isinstance(images, list) or len(images) != count:
+        raise ValueError('complete bounded combined image inventory required')
+    file_schema = video._obj({key: video.FILE['properties'][key] for key in ('path', 'sha256', 'bytes')})
+    seen, total = set(), 0
+    for item in images:
+        if (not isinstance(item, dict) or item.get('pass_name') != 'combined' or
+                type(item.get('frame')) is not int or item['frame'] in seen or
+                not frame_range['start'] <= item['frame'] < frame_range['end']):
+            raise ValueError('invalid native frame inventory')
+        seen.add(item['frame'])
+        video._structural(item.get('file'), file_schema, 'native source file')
+        if (item['file']['path'] != 'frames/%06d.png' % item['frame'] or
+                item.get('format') != 'png' or type(item.get('bit_depth')) is not int or
+                item['bit_depth'] != 8 or item.get('resolution') != resolution):
+            raise ValueError('native image declaration differs from supported source')
+        total += item['file']['bytes']
+        if total > video.MAX_SOURCE_BYTES:
+            raise ValueError('native source exceeds aggregate byte budget')
+
+
 def composite_srgb(image, background):
     """Flatten straight RGBA8 using sRGB EOTF, linear over, inverse EOTF.
 
     Row blocks bound temporary floating-point arrays independently of film size.
     Alpha is linear coverage, never passed through the sRGB transfer function.
     """
+    _background(background)
     import numpy as np
-    if (not isinstance(background, list) or len(background) != 3 or
-            any(type(value) is not int or not 0 <= value <= 255 for value in background)):
-        raise ValueError('explicit background must be three 8-bit sRGB integers')
     rgba = image.convert('RGBA')
     result = Image.new('RGB', rgba.size)
     values = np.arange(256, dtype=np.float64) / 255
@@ -52,16 +100,16 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
     """
     if cancel is not None and cancel():
         raise ValueError('silent source preparation cancelled')
-    resolution = request.get('settings', {}).get('resolution') if isinstance(request, dict) else None
-    if (not isinstance(resolution, list) or len(resolution) != 2 or
-            any(type(value) is not int or not 2 <= value <= 4096 or value % 2 for value in resolution) or
-            resolution[0] * resolution[1] > video.MAX_PIXELS):
-        raise ValueError('native source dimensions exceed silent export limits')
+    _preflight(request, result)
+    if background is not None:
+        _background(background)
+    destination = video._destination(destination)
     try:
         from render3d_verify import verify_result
     except ImportError as exc:
         raise ValueError('canonical Render3D verifier is unavailable') from exc
     request, result = copy.deepcopy(request), copy.deepcopy(result)
+    _preflight(request, result)
     verification = verify_result(request, result, render_root,
                                  snapshot_root=snapshot_root, expected_backend=expected_backend)
     if cancel is not None and cancel():
@@ -69,14 +117,9 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
     output = request['settings']['output']
     if output['format'] != 'png' or output['bit_depth'] != 8 or output['color_space'] != 'srgb':
         raise ValueError('silent SDR adapter requires actual sRGB PNG8; EXR/HDR needs an explicit separate transform')
-    if background is not None:
-        # Validate even for an empty/malformed inventory before publication.
-        probe = composite_srgb(Image.new('RGBA', (1, 1)), background)
-        probe.close()
     combined = sorted((item for item in result['images'] if item['pass_name'] == 'combined'), key=lambda item: item['frame'])
     if not combined or len(combined) > video.MAX_FRAMES:
         raise ValueError('complete bounded combined image inventory required')
-    destination = video._destination(destination)
     with video._pin_directory(destination.parent) as parent_fd:
         with tempfile.TemporaryDirectory(prefix='.silent-render3d-', dir=Path('/proc/self/fd') / str(parent_fd)) as tmp:
             stage = Path(tmp)
