@@ -171,7 +171,11 @@ canonical material plans still reject until that bridge is implemented.
 filtering and repeat/clamp wrapping. `configure_blender_sampler(node, Texture3D)`
 requires a native image shader node whose installed image source hash, role and
 encoding match the document, then sets Closest/Linear and REPEAT/EXTEND explicitly.
-It never relies on the node defaults. Mirrored wrapping and explicit mipmap
+Callers must first verify original bytes and metadata through
+`verify_texture_document` or `load_library_texture`, then install through the
+image/cache owner. Sampler schema and installed-image custom properties alone
+do not authenticate pixels; derived dimensions may legitimately differ from
+source dimensions. It never relies on the node defaults. Mirrored wrapping and explicit mipmap
 filtering reject until their coordinate/filter implementations are verified.
 This helper owns sampler settings only; direct canonical material-slot composition
 remains with the PBR adapter. A returned plan records exact document and helper

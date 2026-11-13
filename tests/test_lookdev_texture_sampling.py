@@ -34,14 +34,15 @@ class ActualSamplerTests(unittest.TestCase):
     def test_canonical_modes_change_real_shader_samples(self):
         import numpy as np
         from PIL import Image
-        from lookdev_textures import encode_png,decode_texture
+        from lookdev_textures import encode_png,verify_texture_document
         root=Path(__file__).resolve().parents[1]
         output=Path(os.environ['HATCH_LOOKDEV_SAMPLING_EVIDENCE']);output.mkdir(parents=True,exist_ok=True)
         self.assertFalse((output/'job.json').exists())
         pixels=np.zeros((4,4,4),np.float32);pixels[:,:2,0]=1;pixels[:,2:,2]=1;pixels[:,:,3]=1
-        encoded=encode_png(pixels,encoding='srgb');decoded=decode_texture(encoded,role='base-color',encoding='srgb')
+        encoded=encode_png(pixels,encoding='srgb')
         document=SamplerAdmissionTests().document();document.update(width=4,height=4)
         document['file'].update(bytes=len(encoded),sha256=hashlib.sha256(encoded).hexdigest())
+        decoded=verify_texture_document(document,encoded)
         (output/'original.png').write_bytes(encoded)
         (output/'job.json').write_text(json.dumps(dict(scripts=str(root/'scripts'),output=str(output),
                                                        document=document,pixels=decoded.pixels.tolist())))

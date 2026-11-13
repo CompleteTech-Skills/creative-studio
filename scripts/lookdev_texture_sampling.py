@@ -24,7 +24,12 @@ def sampler_plan(document):
 
 
 def configure_blender_sampler(node,document):
-    """Apply canonical sampling only after image provenance and all settings admit."""
+    """Apply settings after caller verifies original bytes via the texture owner.
+
+    Metadata matching binds the already installed image; it cannot authenticate
+    source pixels. Call verify_texture_document/load_library_texture before cache
+    installation. Derived dimensions intentionally differ from source dimensions.
+    """
     plan=sampler_plan(document)
     require(getattr(node,'bl_idname',None)=='ShaderNodeTexImage','TEXTURE_SAMPLER',
             'Canonical sampling requires an image texture shader node.')
