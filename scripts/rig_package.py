@@ -9,9 +9,10 @@ import shutil
 import stat
 import tempfile
 import zipfile
+import zlib
 from atomic_publish import _rename_no_replace
 from rig_contracts import DEFAULT_LIMITS
-from rig_errors import MAX_JSON_BYTES, atomic_bytes, decode_json, job_lock, open_payload, portable_name, require, safe_path, sha256
+from rig_errors import RigError, MAX_JSON_BYTES, atomic_bytes, decode_json, job_lock, open_payload, portable_name, require, safe_path, sha256
 from rig_models import load_rig, rig_signature
 
 
@@ -125,6 +126,17 @@ def package_rig(root, destination):
                 expanded_bytes=total, rig_sha256=inventory['rig_sha256'])
 
 
+def _open_restore_member(archive, name, archive_path):
+    """Translate only the ZIP reader's unsupported-codec boundary."""
+    try:
+        return archive.open(name)
+    except NotImplementedError as exc:
+        raise RigError('RIG_ARCHIVE_CODEC', 'Archive member uses an unsupported ZIP compression method.',
+                       stage='restore', asset=name, observed=str(exc),
+                       correction='Repack the original input using a supported ZIP compression method.',
+                       preserved=str(archive_path)) from exc
+
+
 def restore_rig(archive_path,destination,*,limits=None):
     limits=limits or DEFAULT_LIMITS;archive_path=Path(archive_path);destination=Path(destination).absolute()
     require(archive_path.is_file() and not archive_path.is_symlink(),'RIG_ARCHIVE','Archive must be a regular file.')
@@ -147,7 +159,7 @@ def restore_rig(archive_path,destination,*,limits=None):
             require('inventory.json' in names.values(),'RIG_ARCHIVE_INVENTORY','Archive inventory is missing or uses an aliased name.')
             require(archive.getinfo('inventory.json').file_size <= MAX_JSON_BYTES,
                     'RIG_ARCHIVE_INVENTORY', 'Package inventory exceeds its JSON byte budget.')
-            with archive.open('inventory.json') as source:
+            with _open_restore_member(archive, 'inventory.json', archive_path) as source:
                 inventory = decode_json(source.read(MAX_JSON_BYTES + 1))
             require(isinstance(inventory, dict) and
                     set(inventory) == {'schema_version', 'kind', 'rig_sha256', 'files'} and
@@ -176,7 +188,7 @@ def restore_rig(archive_path,destination,*,limits=None):
                 require(type(entry['bytes']) is int and entry['bytes']==info.file_size,'RIG_ARCHIVE_SIZE','Inventory size mismatch.')
                 target=safe_path(temporary,name);target.parent.mkdir(parents=True,exist_ok=True)
                 digest=hashlib.sha256();written=0
-                with archive.open(name) as source,target.open('xb') as output:
+                with _open_restore_member(archive, name, archive_path) as source,target.open('xb') as output:
                     while True:
                         chunk=source.read(1024*1024)
                         if not chunk:break
@@ -186,5 +198,10 @@ def restore_rig(archive_path,destination,*,limits=None):
         rig=load_rig(temporary);require(rig_signature(rig.manifest)==inventory['rig_sha256'],'RIG_ARCHIVE_HASH','Restored rig signature differs.')
         _rename_no_replace(temporary,destination)
         return dict(path=str(destination),rig_sha256=inventory['rig_sha256'],files=len(entries),verified=True)
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, zlib.error) as exc:
+        raise RigError('RIG_ARCHIVE_FORMAT', 'Archive or its restored native ZIP payload is corrupt or incomplete.',
+                       stage='restore', asset=str(archive_path), observed=type(exc).__name__+': '+str(exc)[:1000],
+                       correction='Restore a complete package with valid ZIP data and checksums; preserve the original for diagnosis.',
+                       preserved=str(archive_path)) from exc
     finally:
         if temporary.exists():shutil.rmtree(temporary)

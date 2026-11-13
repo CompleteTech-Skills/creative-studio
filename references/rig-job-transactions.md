@@ -42,3 +42,13 @@ Validation uses real subprocess exits during action, after preparation, and afte
 active-pointer publication; it also checks retry budgets, stale-revision refusal,
 invalid result admission, and immutable report reuse. See
 `tests/test_rig_transactions.py` and the existing `operations-archive` gate.
+
+Restore format diagnostics are distinct from transaction or semantic failures.
+Malformed/truncated ZIP containers, CRC/decompression failures and corrupt native
+ZIP bundles inside an otherwise hash-consistent package report
+`RIG_ARCHIVE_FORMAT` at the restore boundary. An unsupported outer member ZIP
+codec reports `RIG_ARCHIVE_CODEC`. These diagnostics preserve the original archive
+path and describe corrective action; the destination is not published, and only
+the attempt's private staging directory is removed. Existing semantic RigError
+codes remain intact. Unrelated programming exceptions are not reclassified as
+corrupt input.
