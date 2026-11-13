@@ -153,6 +153,26 @@ class ImportTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],0)
 
     @unittest.skipUnless(os.environ.get('HATCH_BLENDER'),'Pinned Blender optional integration not configured')
+    def test_masked_native_shape_keys_reject_before_publication(self):
+        source=self.root/'masked-shapes.blend'
+        script=self.root/'make_masked_shapes.py'
+        script.write_text('import bpy\nbpy.ops.object.select_all(action="SELECT");bpy.ops.object.delete(use_global=False)\n'
+            'bpy.ops.mesh.primitive_cube_add()\no=bpy.context.object\no.shape_key_add(name="Basis")\n'
+            'tall=o.shape_key_add(name="Tall")\nfor p in tall.data:p.co.z*=3\n'
+            'group=o.vertex_groups.new(name="Mask");group.add(list(range(len(o.data.vertices))),.25,"REPLACE")\n'
+            'tall.vertex_group="Mask";tall.value=1\n'
+            'bpy.ops.wm.save_as_mainfile(filepath='+repr(str(source))+')\n')
+        workspace=self.root/'masked-shapes-fixture';workspace.mkdir()
+        self.pipeline.blender._run([str(self.pipeline.blender.executable),'--background','--factory-startup',
+            '--disable-autoexec','--python',str(script)],workspace)
+        before=source.read_bytes()
+        with self.assertRaisesRegex(RigError,'Masked shape keys'):
+            self.pipeline.import_asset(source,**self.request(trusted_packed_blend=True))
+        self.assertEqual(source.read_bytes(),before)
+        with sqlite3.connect(self.library.database) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0],0)
+
+    @unittest.skipUnless(os.environ.get('HATCH_BLENDER'),'Pinned Blender optional integration not configured')
     def test_actual_eight_weight_blender_associations(self):
         import numpy as np
         from rig_gltf import GltfBuilder

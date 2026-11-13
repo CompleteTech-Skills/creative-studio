@@ -107,6 +107,8 @@ def enforce_conversion_profile():
         if obj.type=='MESH' and obj.data.shape_keys:
             if not obj.data.shape_keys.use_relative:
                 fail('Absolute shape keys require a verified evaluated-geometry baking adapter.')
+            if any(key.vertex_group for key in obj.data.shape_keys.key_blocks):
+                fail('Masked shape keys require a verified evaluated-geometry baking adapter.')
             owner_animation(obj.data.shape_keys,'shape')
         if obj.rigid_body or obj.rigid_body_constraint or (obj.type=='ARMATURE' and any(b.constraints for b in obj.pose.bones)):
             fail('Native physics/pose constraints require a separately verified baking adapter.')
