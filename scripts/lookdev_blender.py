@@ -34,6 +34,12 @@ def _bpy():
     return bpy
 
 
+def _features(engine):
+    require(engine in ('CYCLES', 'BLENDER_EEVEE_NEXT'), 'LOOKDEV_BLENDER_ENGINE',
+            'Choose Cycles or EEVEE.')
+    return BASE_FEATURES if engine == 'CYCLES' else BASE_FEATURES - {'subsurface', 'transmission', 'iridescence'}
+
+
 def probe():
     """Probe actual RNA sockets without rendering or changing the active scene."""
     bpy = _bpy()
@@ -44,7 +50,7 @@ def probe():
         missing = REQUIRED_SOCKETS - {x.name for x in node.inputs}
         require(not missing, 'LOOKDEV_BLENDER_SOCKET', 'Missing Principled inputs: ' + ', '.join(sorted(missing)))
         return {'adapter': VERSION, 'blender': bpy.app.version_string,
-                'features': sorted(BASE_FEATURES), 'engine': bpy.context.scene.render.engine,
+                'features': sorted(_features(bpy.context.scene.render.engine)), 'engine': bpy.context.scene.render.engine,
                 'scope': 'surface construction; rendering must be independently verified',
                 'unsupported': ['volume-attenuation', 'textures-until-resolved', 'material-graph-until-compiled']}
     finally:
@@ -59,13 +65,15 @@ def material_plan(registry, reference, *, engine='CYCLES'):
     """
     require(engine in ('CYCLES', 'BLENDER_EEVEE_NEXT'), 'LOOKDEV_BLENDER_ENGINE', 'Choose Cycles or EEVEE.')
     effective = registry.effective_material(reference)
-    features = BASE_FEATURES if engine == 'CYCLES' else BASE_FEATURES - {'subsurface', 'transmission', 'iridescence'}
+    features = _features(engine)
     compatibility = registry.check_material_compatibility(reference, features)
     require(not compatibility['missing'], 'LOOKDEV_BLENDER_UNSUPPORTED',
             'Material requires unimplemented mappings: ' + ', '.join(compatibility['missing']))
     require(not effective['texture_slots'] and not effective.get('graph'),
             'LOOKDEV_BLENDER_UNSUPPORTED', 'Texture and graph execution require their dedicated adapters.')
     surface = effective['surface']
+    require(not surface.get('subsurface', {}).get('weight', 0) or (surface['metallic'] == 0 and surface.get('transmission', 0) == 0),
+            'LOOKDEV_BLENDER_UNSUPPORTED', 'Subsurface scattering with metallic or transmission mixtures requires a separate verified closure adapter.')
     def contains_map(value):
         if isinstance(value, dict):
             return 'texture' in value or any(contains_map(v) for v in value.values())

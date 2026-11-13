@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from lookdev_contracts import Registry, canonical_bytes, content_hash
-from lookdev_blender import _validate_plan, material_plan
+from lookdev_blender import _features, _validate_plan, gltf_material, material_plan
 from rig_errors import RigError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,6 +94,39 @@ class BlenderMaterialAdmissionTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(RigError):
                 _validate_plan(altered)
 
+    def test_engine_capabilities_match_admission(self):
+        self.assertTrue({'subsurface', 'transmission', 'iridescence'} <= _features('CYCLES'))
+        self.assertFalse({'subsurface', 'transmission', 'iridescence'} & _features('BLENDER_EEVEE_NEXT'))
+        with self.assertRaises(RigError):
+            _features('UNKNOWN')
+
+    def test_subsurface_mixtures_reject_instead_of_changing_other_responses(self):
+        for changes in ({'metallic': 0.5}, {'transmission': 0.5}):
+            with self.subTest(changes=changes), self.assertRaises(RigError):
+                plan(surface_resource(**changes, subsurface={'weight': 0.8,
+                    'radius_meters': [0.1, 0.2, 0.3], 'color': [0.2, 0.3, 0.4], 'method': 'random-walk'}))
+
+    def test_gltf_factors_and_extensions_preserve_supported_values(self):
+        value = surface_resource(base_color=[0.2, 0.3, 0.4, 0.5], opacity=0.6,
+            alpha_mode='MASK', alpha_cutoff=0.4, ior=1.7,
+            specular={'strength': 0.6, 'color': [0.8, 0.7, 0.6]}, transmission=0.2,
+            clearcoat={'weight': 0.7, 'roughness': 0.3},
+            sheen={'weight': 0.5, 'color': [0.8, 0.4, 0.2], 'roughness': 0.4},
+            emission={'color': [0.1, 0.2, 0.3], 'strength_watts_per_square_meter': 4})
+        result = gltf_material(plan(value))
+        self.assertEqual(result['pbrMetallicRoughness']['baseColorFactor'], [0.2, 0.3, 0.4, 0.3])
+        self.assertEqual(result['alphaCutoff'], 0.4)
+        extensions = result['extensions']
+        self.assertEqual(extensions['KHR_materials_ior'], {'ior': 1.7})
+        self.assertEqual(extensions['KHR_materials_transmission'], {'transmissionFactor': 0.2})
+        self.assertEqual(extensions['KHR_materials_specular']['specularFactor'], 0.6)
+        self.assertEqual(extensions['KHR_materials_sheen']['sheenColorFactor'], [0.4, 0.2, 0.1])
+        self.assertEqual(extensions['KHR_materials_emissive_strength']['emissiveStrength'], 4)
+        self.assertEqual(extensions['KHR_materials_clearcoat']['clearcoatFactor'], 0.7)
+        with self.assertRaises(RigError):
+            gltf_material(plan(surface_resource(subsurface={'weight': 0.8,
+                'radius_meters': [0.1, 0.2, 0.3], 'color': [0.2, 0.3, 0.4], 'method': 'random-walk'})))
+
     def test_malformed_and_nonfinite_plans_fail(self):
         for value in (None, {}, [], {'adapter_version': '1.0.0'}):
             with self.subTest(value=value), self.assertRaises(RigError):
@@ -107,6 +140,42 @@ class BlenderMaterialAdmissionTests(unittest.TestCase):
 @unittest.skipUnless(os.environ.get('HATCH_LOOKDEV_BLENDER_TEST') == '1',
                      'Enable HATCH_LOOKDEV_BLENDER_TEST=1 for actual pinned Blender rendering.')
 class ActualBlenderMaterialTests(unittest.TestCase):
+    def test_actual_eevee_supported_surfaces_and_capabilities(self):
+        from PIL import Image, ImageChops, ImageStat
+        blender = os.environ.get('HATCH_BLENDER')
+        self.assertTrue(blender and Path(blender).is_file())
+        evidence = os.environ.get('HATCH_LOOKDEV_EVIDENCE')
+        temporary = None if evidence else tempfile.TemporaryDirectory(prefix='lookdev-eevee-')
+        if temporary:
+            self.addCleanup(temporary.cleanup)
+        target = Path(evidence) / 'eevee' if evidence else Path(temporary.name)
+        target.mkdir(parents=True, exist_ok=True)
+        self.assertFalse((target / 'job.json').exists(), 'Use a new evidence directory.')
+        values = [surface_resource('glossy', roughness=0.08), surface_resource('rough', roughness=0.9)]
+        def eevee_plan(value):
+            registry = Registry([(value['id'] + '.json', canonical_bytes(value))])
+            return material_plan(registry, registry.reference(value['id'], value['version']), engine='BLENDER_EEVEE_NEXT')
+        job = {'scripts': str(ROOT / 'scripts'), 'destination': str(target),
+               'engine': 'BLENDER_EEVEE_NEXT', 'plans': [eevee_plan(v) for v in values],
+               'advanced': eevee_plan(surface_resource('advanced'))}
+        job_path = target / 'job.json'
+        job_path.write_text(json.dumps(job), encoding='utf-8')
+        command = [blender, '--background', '--factory-startup', '--disable-autoexec', '--threads', '1',
+                   '--python-exit-code', '1', '--python', str(ROOT / 'tests/fixtures/lookdev_blender_probe.py'),
+                   '--', str(job_path), 'render']
+        result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, timeout=240, check=False)
+        (target / 'render.log').write_text(result.stdout, encoding='utf-8')
+        self.assertEqual(result.returncode, 0, result.stdout[-8000:])
+        report = json.loads((target / 'report.json').read_text())
+        self.assertEqual(report['engine'], 'BLENDER_EEVEE_NEXT')
+        self.assertFalse({'subsurface', 'transmission', 'iridescence'} & set(report['probe']['features']))
+        a = Image.open(target / 'glossy.png').convert('RGB')
+        b = Image.open(target / 'rough.png').convert('RGB')
+        mean = sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3
+        self.assertGreater(mean, 0.5)
+        (target / 'measured-comparisons.json').write_text(json.dumps({'glossy/rough': mean}), encoding='utf-8')
+
     def test_actual_cycles_material_changes_and_saved_scene_reopen(self):
         from PIL import Image, ImageChops, ImageStat
         blender = os.environ.get('HATCH_BLENDER')

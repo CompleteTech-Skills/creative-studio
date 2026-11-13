@@ -31,7 +31,7 @@ if mode == 'render':
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
     scene = bpy.context.scene
-    scene.render.engine = 'CYCLES'
+    scene.render.engine = job.get('engine', 'CYCLES')
     scene.cycles.device = 'CPU'
     scene.cycles.samples = 8
     scene.cycles.seed = 4242
@@ -79,7 +79,7 @@ if mode == 'render':
         light.data.size = size
         aim(light, (0, 0, 0.8))
     invalid = deepcopy(job['plans'][0])
-    invalid['engine'] = 'BLENDER_EEVEE_NEXT'
+    invalid['engine'] = 'BLENDER_EEVEE_NEXT' if scene.render.engine == 'CYCLES' else 'CYCLES'
     invalid['sha256'] = content_hash({k: v for k, v in invalid.items() if k != 'sha256'})
     before_count = len(bpy.data.materials)
     try:
@@ -91,10 +91,10 @@ if mode == 'render':
     advanced = build_material(job['advanced'])
     advanced.use_fake_user = True
     advanced_bsdf = next(n for n in advanced.node_tree.nodes if n.bl_idname == 'ShaderNodeBsdfPrincipled')
-    for socket, expected in [('Specular IOR Level', 0.3), ('Coat Weight', 0.7),
+    for socket, expected in ([] if job.get('engine') == 'BLENDER_EEVEE_NEXT' else [('Specular IOR Level', 0.3), ('Coat Weight', 0.7),
                              ('Coat Roughness', 0.2), ('Sheen Weight', 0.3),
                              ('Sheen Roughness', 0.6), ('Emission Strength', 2.0),
-                             ('Transmission Weight', 0.25), ('Anisotropic', 0.4)]:
+                             ('Transmission Weight', 0.25), ('Anisotropic', 0.4)]):
         assert abs(advanced_bsdf.inputs[socket].default_value - expected) < 1e-6, socket
     result = {'blender': bpy.app.version_string, 'engine': scene.render.engine,
               'samples': scene.cycles.samples, 'probe': probe(), 'materials': {}}
