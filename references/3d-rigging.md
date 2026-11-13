@@ -357,3 +357,11 @@ request. An unsupported requested side fails rather than inventing a wing. A
 one-sided pose does not automatically mirror to the other side. Finger spread and
 tail phase follow parent-to-child hierarchy, so reordering the serialized bone
 array does not change those authored motions.
+
+State-map discovery includes a `work_estimate` for one export cycle of each unique
+existing clip used by the selected executable recipes. It reports clip duration,
+keyframe/scalar counts, samples at the declared clip frame rates, and uncompressed
+float64 position-buffer sizes. Missing-animation/capability results add no work.
+These figures exclude normals, textures, renderer memory, repeated playback,
+encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
+zero model calls and does not generate the catalog's missing animations.
