@@ -18,6 +18,16 @@ def png(array):
 
 
 class TextureTests(unittest.TestCase):
+    def test_public_scalar_admission_reports_structured_numeric_errors(self):
+        invalid=(10**400,-10**400,True,float('inf'),float('nan'),'1',None)
+        for argument in ('scale','frequency','variation','turbulence','strength','rotation'):
+            for value in invalid:
+                with self.subTest(argument=argument,value_type=type(value).__name__),self.assertRaises(RigError) as caught:
+                    if argument=='strength':t.normal_from_height(np.zeros((2,2),np.float32),strength=value)
+                    elif argument=='rotation':t.transform_uv([[0,0]],rotation=value)
+                    else:t.procedural_maps('clay',width=1,height=1,**{argument:value})
+                self.assertEqual(caught.exception.report['code'],'TEXTURE_NUMBER')
+
     def test_srgb_is_decoded_once_and_alpha_is_linear(self):
         data=png(np.array([[[128,128,128,64]]],dtype=np.uint8))
         image=t.decode_texture(data,role='base-color',encoding='srgb')
