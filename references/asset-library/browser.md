@@ -61,9 +61,27 @@ the native managed-operation protocol, rather than a new
 browser scheduler: `submit(operation, request)`, `list_jobs()`, `job_status(id)`
 and `cancel_job(id)`. Native job submitters validate their own operation schema,
 revision checks, resource budgets, staging and recovery. Without this authority,
-managed actions are unavailable and no success is fabricated. The standalone CLI
-currently opens a read/annotation browser; construct the server from the operations
-CLI/API to enable managed conversion/version/export/replace/repair jobs.
+managed actions are unavailable and no success is fabricated. To enable the existing scoped managed adapters from the standalone CLI, supply
+all three roots together:
+
+```bash
+python scripts/asset_library_browser.py --library /private/library --index /private/search-index \
+  --jobs-root /private/output/jobs --intake-root /private/intake --output-root /private/output
+```
+
+Only the native authority's supported adapters are listed. Currently these are
+import, preview/thumbnail/turntable, export, index rebuild and package create/restore.
+Version creation, replacement and repair are explicitly unavailable through this
+managed bridge until their native transactional adapters are connected. Browser
+annotation and collection repairs already use their actual canonical CAS owners.
+
+Submitting a job records a bounded durable request; it does not run a second browser
+scheduler. Execute it with the existing native worker command, then refresh its
+status in the browser:
+
+```bash
+python scripts/assets.py jobs run --library /private/library --jobs-root /private/output/jobs --job JOB_ID --apply
+```
 
 All JSON routes use POST, `Content-Type: application/json`, a bearer token, an
 exact same-origin/Host check, and a maximum 64 KiB body. API access with another

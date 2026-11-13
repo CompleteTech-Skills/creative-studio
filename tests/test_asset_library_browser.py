@@ -111,6 +111,25 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(self.request('/api/jobs/cancel',{'id':'native-job'})[1]['status'],'cancelled')
         self.assertEqual(self.request('/api/jobs/status',{'id':'../private'})[0],400)
 
+    def test_actual_scoped_managed_jobs_are_confined_and_reopen_after_publish(self):
+        from asset_library_operations import AssetOperations, ScopedAssetOperations
+        intake=self.root/'intake';intake.mkdir();output=self.root/'output';output.mkdir()
+        owner=AssetOperations(self.library,jobs_root=output/'jobs')
+        self.server.operations=ScopedAssetOperations(owner,intake_root=intake,output_root=output)
+        target=output/'managed-index'
+        status,job,_=self.request('/api/actions/index',{'index':str(target)})
+        self.assertEqual(status,200,job)
+        self.assertEqual(self.request('/api/jobs/status',{'id':job['id']})[1]['status'],'queued')
+        result=owner.run_job(job['id']);self.assertEqual(result['status'],'published')
+        reopened=SearchIndex(target,{'local':self.library})
+        self.assertEqual(reopened.search('triangle')['total'],1)
+        self.assertEqual(self.request('/api/jobs/status',{'id':job['id']})[1]['status'],'published')
+        self.assertEqual(self.request('/api/actions/index',{'index':str(output/'..'/'outside-index')})[0],400)
+        self.assertEqual(self.request('/api/actions/preview',{'reference':self.reference,'cache_root':str(output/'preview'),'executable':'/usr/bin/python'})[0],400)
+        self.assertEqual(self.request('/api/actions/version',{})[0],400)
+        status,detail,_=self.request('/api/inspect',self.location)
+        self.assertEqual(status,200);self.assertIn('index',detail['managed_operations']);self.assertNotIn('version',detail['managed_operations'])
+
     def animated_asset(self):
         from rig_test_helpers import fixture
         from rig_gltf import export_gltf

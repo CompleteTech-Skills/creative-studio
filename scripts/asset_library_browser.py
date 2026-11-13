@@ -290,13 +290,24 @@ def main(argv=None):
     parser.add_argument('--library', required=True)
     parser.add_argument('--index', required=True)
     parser.add_argument('--port', type=int, default=8768)
+    parser.add_argument('--jobs-root', help='Enable managed jobs in this explicit output directory.')
+    parser.add_argument('--intake-root', help='Existing authorized import/package intake directory.')
+    parser.add_argument('--output-root', help='Existing authorized managed output directory.')
     args=parser.parse_args(argv)
     from asset_library import AssetLibrary
     from asset_library_search import SearchIndex
     from asset_library_versions import AssetVersions
     libraries={'local': AssetLibrary(args.library)}
     index=SearchIndex(args.index,libraries,versions={"local":AssetVersions(libraries["local"])})
-    server=AssetBrowserServer(libraries,index,port=args.port)
+    roots=(args.jobs_root,args.intake_root,args.output_root)
+    if any(roots) and not all(roots):
+        parser.error('Managed jobs require --jobs-root, --intake-root and --output-root together.')
+    operations=None
+    if all(roots):
+        from asset_library_operations import AssetOperations, ScopedAssetOperations
+        operations=ScopedAssetOperations(AssetOperations(libraries['local'],jobs_root=args.jobs_root),
+                                        intake_root=args.intake_root,output_root=args.output_root)
+    server=AssetBrowserServer(libraries,index,port=args.port,operations=operations)
     print(json.dumps(dict(url=f'http://127.0.0.1:{server.server_port}/',token=server.token)),flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
