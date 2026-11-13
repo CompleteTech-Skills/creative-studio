@@ -155,6 +155,7 @@ class EditorNativeStateTests(unittest.TestCase):
                                 self.assertEqual(page.evaluate('window.hatchEditor.selection'),[])
                             elif mode == 'constructor':
                                 page.locator('[data-id="constructor"]').click()
+                                self.assertNotIn('transform read-only',page.locator('#selected-type').inner_text())
                                 self.assertFalse(page.get_by_label('translation X',exact=True).is_disabled())
                                 page.get_by_label('translation X',exact=True).fill('-3')
                                 page.get_by_label('translation X',exact=True).press('Tab')
