@@ -1966,7 +1966,7 @@
                   "properties": {
                     "mesh": {
                       "type": "string",
-                      "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}(?![\\s\\S])"
                     },
                     "encoding": {
                       "enum": [
