@@ -129,6 +129,24 @@ class LightAdmission(unittest.TestCase):
         self.assertEqual(environment_strength(pixels*0, 0.), 0.)
         with self.assertRaises(RigError):environment_strength(pixels*0, 1.)
 
+    def test_rig_policy_cannot_be_bypassed_by_supported_children(self):
+        from lookdev_lighting import rig_plan
+        child = source()
+        initial = Registry([('light.json', canonical_bytes(child))])
+        reference = initial.reference(child['id'], child['version'])
+        rig = {key: copy.deepcopy(child[key]) for key in
+               ('schema_version', 'version', 'provenance', 'validation_status', 'capabilities', 'render_policy')}
+        rig.update(id='rig', kind='lighting-rig3d', dependencies=[reference], lights=[reference])
+        for engine, feature in (('CYCLES', 'spectral-renderer'),
+                                ('BLENDER_EEVEE_NEXT', 'light-linking')):
+            rig['render_policy']['required_features'] = [feature]
+            registry = Registry([('light.json', canonical_bytes(child)), ('rig.json', canonical_bytes(rig))])
+            with self.subTest(engine=engine), self.assertRaises(RigError):
+                rig_plan(registry, registry.reference('rig', rig['version']), engine=engine)
+        rig['render_policy']['required_features'] = ['light-linking']
+        registry = Registry([('light.json', canonical_bytes(child)), ('rig.json', canonical_bytes(rig))])
+        self.assertEqual(len(rig_plan(registry, registry.reference('rig', rig['version']))['lights']), 1)
+
     def test_sixteen_presets_are_real_light_documents(self):
         self.assertEqual(len(preset_names()),16)
         for name in preset_names():

@@ -473,6 +473,14 @@ def rig_plan(registry, reference, *, engine='CYCLES', options=None, max_lights=6
     require(type(max_lights) is int and 1 <= max_lights <= 256, 'LIGHT_LIMIT', 'Invalid light count budget.')
     rig = registry.get(reference)
     require(rig['kind'] == 'lighting-rig3d', 'LIGHT_KIND', 'Expected a lighting rig.')
+    require(engine in ENGINES, 'LIGHT_ENGINE', 'Choose Cycles or EEVEE.')
+    validate_resource(rig)
+    from lookdev_contracts import check_compatibility
+    supported = LOCAL_FEATURES | ({'light-environment', 'indirect-lighting', 'light-linking'}
+                                  if engine == 'CYCLES' else set())
+    compatibility = check_compatibility(rig, supported)
+    require(not compatibility['missing'], 'LIGHT_UNSUPPORTED',
+            'Required lighting-rig features are unsupported: ' + ', '.join(compatibility['missing']))
     require(len(rig['lights']) <= max_lights, 'LIGHT_LIMIT', 'Lighting rig exceeds active-light budget.')
     options = {} if options is None else options
     require(isinstance(options, dict) and not set(options) - {r['id'] for r in rig['lights']},
