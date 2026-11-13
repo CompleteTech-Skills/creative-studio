@@ -276,7 +276,7 @@ def _validate_output(root,world,payloads=None):
             'PHYSICS_CACHE_CORRUPT','Native soft-body properties differ from requested settings')
     pins=report.get('pin_settings')
     expected_pins=dict(default=1.,minimum=0.,maximum=1.,spring=.999,friction=0.,weights=[1. if i in comp['pins'] else 0. for i in range(comp['vertex_count'])]) if comp['pins'] else None
-    require(pins==expected_pins or (comp['pins'] and isinstance(pins,dict) and set(pins)==set(expected_pins) and pins['weights']==expected_pins['weights'] and all(abs(pins[k]-expected_pins[k])<1e-5 for k in expected_pins if k!='weights')),'PHYSICS_CACHE_CORRUPT','Native source pin weights or goal settings disagree')
+    require(pins is None if not comp['pins'] else isinstance(pins,dict) and set(pins)==set(expected_pins) and isinstance(pins.get('weights'),list) and len(pins['weights'])==comp['vertex_count'] and all(type(x) in (int,float) and math.isfinite(x) and x==y for x,y in zip(pins['weights'],expected_pins['weights'])) and all(type(pins[k]) in (int,float) and math.isfinite(pins[k]) and abs(pins[k]-expected_pins[k])<1e-5 for k in expected_pins if k!='weights'),'PHYSICS_CACHE_CORRUPT','Native source pin weights or goal settings disagree')
     require(set(samples)=={'component','samples'} and samples['component']==comp['id'] and len(samples['samples'])==world['frame_range']['end'],
         'PHYSICS_CACHE_CORRUPT','Invalid deformation samples')
     for frame,sample in enumerate(samples['samples']):
