@@ -12,6 +12,8 @@ from rig_skinning import evaluate_deformation
 from rig_math import decompose,axis_angle
 from rig_errors import RigError
 from rig_states import rig_capabilities
+from rig_models import Geometry,Mesh,RigAsset,SkinWeights
+from rig_skeleton import skeleton_from_heads,validate_skeleton
 
 
 class RigSpecializationTests(unittest.TestCase):
@@ -61,6 +63,20 @@ class RigSpecializationTests(unittest.TestCase):
             with self.assertRaises(RigError):appendage_controls(rig,neutral,wing_twist=value)
         with self.assertRaises(RigError):appendage_controls(rig,neutral,wing_side='front')
         with self.assertRaises(RigError):appendage_controls(self.humanoid,neutral_pose(self.humanoid.skeleton),wing_twist=.5)
+    def test_imported_wing_twist_uses_authored_length_not_local_y(self):
+        skeleton=skeleton_from_heads([dict(id='wing-root.left',role='wing-root.left',
+            parent=None,head=[0,0,0],tail=[1,0,0])])
+        skeleton['bones'][0]['rest']['rotation']=[0,0,0,1]
+        validate_skeleton(skeleton)
+        positions=np.array([[0.,0.,0.],[1.,0.,0.],[.5,.2,0.]])
+        mesh=Mesh('wing',positions,np.array([[0,1,2]]))
+        weights=SkinWeights('wing',['wing-root.left'],np.zeros((3,1),dtype=np.int64),
+                            np.ones((3,1)),np.eye(4)[None,:,:])
+        rig=RigAsset({'skeleton':skeleton,'controllers':{'constraints':[]}},Geometry([mesh]),{'wing':weights})
+        pose=appendage_controls(rig,neutral_pose(skeleton),wing_twist=.7,wing_side='left')
+        actual=evaluate_deformation(rig,pose)['wing']['positions']
+        np.testing.assert_allclose(actual[:2],positions[:2],atol=1e-12)
+        self.assertGreater(abs(actual[2,2]),.05)
     def test_expression_conflicts_and_unavailable_controls_fail(self):
         r=deepcopy(self.humanoid);r.manifest['facial']['expressions']['blink']['incompatible']=['squint']
         r.manifest['facial']['expressions']['squint']=dict(schema_version=1,morphs={'blink':.5},bones={},incompatible=['blink'])
