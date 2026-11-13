@@ -116,6 +116,18 @@ class RigExternalIntegrationTests(unittest.TestCase):
         self.assertTrue(report['ok']);self.assertFalse(report['reopened'])
         self.assertEqual(report['schema_version'],1);self.assertEqual(report['format'],'blend')
         self.assertNotIn('roundtrip_sha256',report);self.assertNotIn('compared_vertices',report)
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_preview_rejects_a_different_embedded_rig_revision(self):
+        from rig_blender import export_blender,render_blender_preview
+        blend=Path(self.temp.name)/'source.blend'
+        export_blender(self.rig,blend,verify=False)
+        self.rig.manifest['source']['attribution']+=' changed revision'
+        destination=Path(self.temp.name)/'wrong-rig-preview'
+        with self.assertRaisesRegex(RigError,'Blender failed'):
+            render_blender_preview(self.rig,destination,clip='bend',blend_path=blend,width=96,height=96)
+        self.assertFalse(destination.exists())
+        self.assertTrue(blend.is_file())
+
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for actual Blender CPU rendering.')
     def test_blender_cpu_preview_renders_distinct_transparent_poses(self):
         from rig_blender import render_blender_preview
@@ -182,3 +194,20 @@ class RigBlenderPublicationTests(unittest.TestCase):
             raise
         with self.assertRaises(RigError):export_blender(self.rig,link)
         self.assertEqual(real.read_bytes(),b'preserved');self.assertTrue(link.is_symlink())
+
+    def test_supplied_blend_is_frozen_before_worker_and_receipt_hashing(self):
+        from unittest.mock import patch
+        from rig_blender import render_blender_preview
+        original=self.root/'supplied.blend';original.write_bytes(b'original saved source')
+        destination=self.root/'frozen-preview'
+        def inspect(job,**kwargs):
+            self.assertNotEqual(Path(job['input']),original)
+            self.assertEqual(Path(job['input']).read_bytes(),b'original saved source')
+            original.write_bytes(b'changed live source')
+            self.assertEqual(Path(job['input']).read_bytes(),b'original saved source')
+            raise RigError('TEST_DONE','Snapshot inspection complete.')
+        with patch('rig_blender._run',side_effect=inspect):
+            with self.assertRaisesRegex(RigError,'Snapshot inspection complete'):
+                render_blender_preview(self.rig,destination,clip='bend',blend_path=original)
+        self.assertFalse(destination.exists())
+        self.assertEqual(original.read_bytes(),b'changed live source')

@@ -1,6 +1,7 @@
 """Trusted Blender-only worker. Input JSON selects data operations, never code."""
 from __future__ import annotations
 import json
+import hashlib
 import math
 from pathlib import Path
 import sys
@@ -184,6 +185,13 @@ def main():
         bpy.ops.wm.save_as_mainfile(filepath=job['output'],compress=True)
     elif mode in ('reopen','import','render'):
         bpy.ops.wm.open_mainfile(filepath=job['input'],load_ui=False,use_scripts=False)
+        if mode=='render':
+            text=bpy.data.texts.get('HATCH_RIG_MANIFEST.json')
+            if text is None:raise ValueError('Blender project has no bound native rig manifest')
+            manifest=json.loads(text.as_string())
+            core={key:value for key,value in manifest.items() if key not in ('review','validation')}
+            digest=hashlib.sha256(json.dumps(core,sort_keys=True,separators=(',',':'),allow_nan=False).encode('utf-8')).hexdigest()
+            if digest!=job['rig_sha256']:raise ValueError('Blender project belongs to a different native rig revision')
         if mode=='import':
             if bpy.data.libraries:raise ValueError('Make linked Blender libraries local before portable import.')
             if any(image.source=='FILE' and not image.packed_file for image in bpy.data.images):

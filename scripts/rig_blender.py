@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import stat
+import hashlib
 import numpy as np
 from rig_contracts import validate_contract
 from rig_errors import RigError, atomic_json, read_json, require, sha256
@@ -162,10 +163,22 @@ def render_blender_preview(rig,destination,*,clip=None,times=None,pose=None,blen
                 'RIG_RENDER_TIME','Render samples must lie inside an available clip.')
         if blend_path is None:
             blend_path=root/'render.blend';export_blender(working,blend_path,executable=executable,verify=False)
-        blend_path=Path(blend_path).absolute();require(blend_path.is_file(),'RIG_BLENDER_INPUT','Saved Blender project is missing.')
+        blend_path=Path(blend_path).absolute()
+        from rig_errors import open_payload
+        snapshot=root/'input.blend';digest=hashlib.sha256();written=0
+        with open_payload(blend_path.parent,blend_path.name) as (source,info):
+            require(info.st_size<=rig.manifest['limits']['source_bytes'],'RIG_LIMIT_SOURCE','Blender input exceeds its byte budget.')
+            with snapshot.open('xb') as output:
+                while True:
+                    block=source.read(1024*1024)
+                    if not block:break
+                    written+=len(block)
+                    require(written<=rig.manifest['limits']['source_bytes'],'RIG_LIMIT_SOURCE','Blender input exceeds its byte budget.')
+                    output.write(block);digest.update(block)
+        blend_digest=digest.hexdigest()
         requests=[dict(time=float(t),path=str(p)) for t,p in zip(times,staged_outputs)]
-        report=_run(dict(mode='render',input=str(blend_path),clip=clip,frames=requests,width=width,height=height,camera=camera,
-                         report=str(root/'report.json'),samples=[]),executable=executable,timeout=rig.manifest['limits']['timeout_seconds'])
+        report=_run(dict(mode='render',input=str(snapshot),clip=clip,frames=requests,width=width,height=height,camera=camera,
+                         report=str(root/'report.json'),samples=[],rig_sha256=rig_signature(working.manifest)),executable=executable,timeout=rig.manifest['limits']['timeout_seconds'])
         require(all(p.is_file() and not p.is_symlink() and p.stat().st_size>100 for p in staged_outputs),'RIG_RENDER_OUTPUT','Blender did not create every requested PNG.')
         from PIL import Image
         for path in staged_outputs:
@@ -179,7 +192,7 @@ def render_blender_preview(rig,destination,*,clip=None,times=None,pose=None,blen
                 raise RigError('RIG_RENDER_OUTPUT','Blender output is not a complete decodable PNG.') from exc
         result=dict(schema_version=1,blender_version=report['blender_version'],engine='Cycles CPU',samples=16,
                     rig_sha256=rig_signature(rig.manifest),source_sha256=rig.manifest['source']['sha256'],
-                    blend_sha256=sha256(blend_path),fixture=rig.manifest['source']['fixture'],clip=clip,camera=camera,
+                    blend_sha256=blend_digest,fixture=rig.manifest['source']['fixture'],clip=clip,camera=camera,
                     width=width,height=height,transparent=True,review_status='pending',
                     frames=[dict(path=str(p),time=float(t),sha256=sha256(source)) for t,p,source in zip(times,outputs,staged_outputs)])
         if not single_file:atomic_json(staged/'frames.json',result)
