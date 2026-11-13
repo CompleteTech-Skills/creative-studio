@@ -41,9 +41,9 @@ jobs:
           git rev-parse HEAD | tee scene3d-evidence/head.txt
           python scripts/generate_schemas.py --check 2>&1 | tee scene3d-evidence/schemas.log
           python scripts/generate_rig_templates.py --check 2>&1 | tee scene3d-evidence/templates.log
-          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service -v 2>&1 | tee scene3d-evidence/service.log
           PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_evaluate -v 2>&1 | tee scene3d-evidence/evaluation.log
           PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_pose -v 2>&1 | tee scene3d-evidence/poses.log
+          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service test_rig_scene3d_capture -v 2>&1 | tee scene3d-evidence/service.log
         env:
           HATCH_SCENE3D_EVIDENCE: ${{ github.workspace }}/scene3d-evidence/native
           HATCH_RIG_BLENDER_TEST: '1'

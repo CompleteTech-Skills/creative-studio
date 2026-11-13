@@ -614,6 +614,43 @@ class SceneServiceTests(unittest.TestCase):
         self.assertTrue(library.upgrade(graph, 'instance', r1, resolutions={'node:prefab-mesh:transform': 'source'})['applied'])
         self.assertEqual(library.resolve(r2)['nodes'][1]['transform']['translation'], [5, 0, 0])
 
+    def test_prefab_animation_expansion_accounts_combined_bytes_and_inflight_files(self):
+        library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+        clip = deepcopy(self.bundle['documents']['example-animation.json'])
+        clip['id'] = 'budget-child'
+        clip['tracks'][0]['target'] = 'prefab-mesh'
+        child = library.register(clip)
+        parent = deepcopy(clip)
+        parent['id'] = 'budget-parent'
+        parent['bindings'] = [dict(target='prefab-mesh', clip=child, start_frame=0,
+                                   end_frame=24, speed=1., loop=False)]
+        parent['dependencies'] = [child]
+        reference = library.register(parent)
+        prefab = deepcopy(self.bundle['documents']['example-prefab.json'])
+        prefab['id'] = 'budget-prefab'
+        prefab['nodes'][1]['animation_bindings'] = [dict(target='prefab-mesh', clip=reference,
+            start_frame=0, end_frame=24, speed=1., loop=False)]
+        prefab['dependencies'].append(reference)
+        prefab_reference = library.register(prefab)
+        graph = self.graph()
+        for index in range(3):
+            library.instantiate(graph, prefab_reference, 'budget-instance-'+str(index))
+        scene, sources = graph.document(), library.payloads()
+        baseline = library.expand(scene)
+        derived = baseline['derived_documents']
+        self.assertEqual(len(derived), 6)
+        exact_count = len(sources) + len(derived)
+        exact_bytes = sum(map(len, sources.values())) + sum(len(canonical_bytes(d)) for d in derived.values())
+        for name, bound in [('MAX_TOTAL_BYTES', exact_bytes-1), ('MAX_FILES', exact_count-1),
+                            ('MAX_FILES', len(sources)+1)]:
+            with self.subTest(name=name, bound=bound), patch('scene3d_prefabs.'+name, bound):
+                with self.assertRaises(RigError):
+                    library.expand(scene)
+            self.assertEqual(graph.document(), scene)
+            self.assertEqual(library.payloads(), sources)
+        with patch('scene3d_prefabs.MAX_FILES', exact_count), patch('scene3d_prefabs.MAX_TOTAL_BYTES', exact_bytes):
+            self.assertEqual(library.expand(scene), baseline)
+
     def test_nested_prefabs_detach_and_derived_animation_preserve_source_bytes(self):
         library = PrefabLibrary.from_files(self.root/'source', self.bundle)
         original = deepcopy(self.bundle['documents']['example-prefab.json'])
@@ -929,6 +966,56 @@ class RealSceneImportTests(unittest.TestCase):
     def do_import(self, path, asset_id='imported', **kwargs):
         return import_gltf(path, self.library, asset_id=asset_id, attribution='Test author',
                            license_file=self.license, **kwargs)
+
+    def test_native_evaluation_uses_private_verified_closure_after_source_replacement(self):
+        imported = self.do_import(self.source('gltf'))
+        materialize(self.library, imported.library_reference, self.root/'admitted-package')
+        native = self.root/'admitted-package/imports/imported/1.0.0/native'
+        graph = SceneGraph.from_bundle(build_example(self.root/'admitted-project'), 'example-scene.json')
+        add_import(graph, imported, 'model')
+        expected = evaluate_imported_vertices(graph, imported, native)
+        from rig_models import load_rig
+        def replace_source_then_load(private_root):
+            self.assertNotEqual(Path(private_root), native)
+            (native/'rig.json').write_bytes(b'changed after admission')
+            return load_rig(private_root)
+        with patch('rig_models.load_rig', side_effect=replace_source_then_load):
+            self.assertEqual(evaluate_imported_vertices(graph, imported, native), expected)
+        with self.assertRaises(RigError):
+            evaluate_imported_vertices(graph, imported, native)
+
+    @unittest.skipUnless(os.name == 'posix' and hasattr(os, 'mkfifo'), 'Real POSIX FIFO admission regression.')
+    def test_native_evaluation_rejects_fifo_manifest_and_dependency_without_hanging(self):
+        import multiprocessing
+        imported = self.do_import(self.source('gltf'))
+        materialize(self.library, imported.library_reference, self.root/'fifo-package')
+        native = self.root/'fifo-package/imports/imported/1.0.0/native'
+        graph = SceneGraph.from_bundle(build_example(self.root/'fifo-project'), 'example-scene.json')
+        add_import(graph, imported, 'model')
+        context = multiprocessing.get_context('fork')
+        for name in ('rig.json', 'identity.json'):
+            with self.subTest(name=name):
+                target = native/name
+                original = target.read_bytes()
+                target.unlink()
+                os.mkfifo(target)
+                def evaluate_fifo():
+                    try:
+                        evaluate_imported_vertices(graph, imported, native)
+                    except RigError:
+                        return
+                    raise AssertionError('FIFO was accepted as a registered native file.')
+                child = context.Process(target=evaluate_fifo)
+                child.start()
+                child.join(3)
+                hung = child.is_alive()
+                if hung:
+                    child.terminate()
+                    child.join(3)
+                target.unlink()
+                target.write_bytes(original)
+                self.assertFalse(hung, 'Native evaluation blocked on a FIFO.')
+                self.assertEqual(child.exitcode, 0)
 
     def test_real_hierarchical_external_gltf_registration_and_component_edits(self):
         path = self.source('gltf')
