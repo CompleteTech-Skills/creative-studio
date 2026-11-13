@@ -246,7 +246,7 @@ def assign_material(obj, material, *, slots=None):
             face.material_index = index
     else:
         for i in slots:
-            obj.data.materials[i] = material
+            obj.material_slots[i].material = material
     return {'mesh': obj.name, 'material': material.name,
             'plan_sha256': material['hatch_plan_sha256'], 'polygons': len(obj.data.polygons)}
 

@@ -99,13 +99,16 @@ if mode == 'render':
     result = {'blender': bpy.app.version_string, 'engine': scene.render.engine,
               'samples': scene.cycles.samples, 'probe': probe(), 'materials': {}}
     # Linked Blender objects must retain independent per-instance looks.
-    for explicit_slots in (False, True):
+    for explicit_slots, object_link in ((False, False), (True, False), (True, True)):
         source = sphere.data.copy()
         sentinel = bpy.data.materials.new('untouched-linked-material')
         source.materials.append(sentinel)
         selected = bpy.data.objects.new('selected-linked-instance', source)
         sibling = bpy.data.objects.new('untouched-linked-instance', source)
         scene.collection.objects.link(selected); scene.collection.objects.link(sibling)
+        if object_link:
+            selected.material_slots[0].link = 'OBJECT'
+            selected.material_slots[0].material = sentinel
         original_indices = [face.material_index for face in source.polygons]
         try:
             assign_material(selected, advanced, slots=[99])
@@ -115,6 +118,8 @@ if mode == 'render':
         assert selected.data == source and sibling.data == source
         assign_material(selected, advanced, slots=[0] if explicit_slots else None)
         assert selected.data != source and sibling.data == source
+        selected_slot = 0 if explicit_slots else len(selected.material_slots) - 1
+        assert selected.material_slots[selected_slot].material == advanced
         assert len(source.materials) == 1 and source.materials[0] == sentinel
         assert [face.material_index for face in source.polygons] == original_indices
         selected_data = selected.data
