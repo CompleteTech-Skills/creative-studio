@@ -402,7 +402,8 @@ The [Director baseline audit](references/director-baseline.md) records the exact
 ## Render3D contracts and source snapshots
 
 The additive [Render3D foundation](references/render3d-contracts.md) validates typed
-render requests and freezes actual native rig source closures for later preview
-consumption. It preserves existing 2D rendering and does not yet implement the
-full Scene3D adapter or the planned production renderer. See the guide for exact
+render requests and freezes native rig or owner-validated Scene3D project source
+closures for later consumption. Scene requests bind the frozen project, scene,
+shot and camera identities. It preserves existing 2D rendering; the planned
+production renderer remains separate unfinished work. See the guide for exact
 commands, ownership boundaries and remaining acceptance gates.

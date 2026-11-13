@@ -6,6 +6,7 @@ supply a full Scene3D evaluator or establish that any frame has been rendered.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from fractions import Fraction
 import hashlib
 import os
 from pathlib import Path
@@ -43,6 +44,53 @@ must not execute imported code, mutate input, or infer missing dependencies.
     id: str
     version: str
     def describe(self, root: Path) -> SourceDescription: ...
+
+
+class Scene3DAdapter:
+    """Freeze the Scene3D owner's complete project closure without rendering.
+
+    The owner validates document identities, references and dependency bytes.
+    This does not promote its declared geometry metrics to decoded geometry or
+    imply that any scene property is supported by a rendering backend.
+    """
+    id = 'scene3d-project'
+    version = VERSION
+
+    def describe(self, root):
+        from scene3d_contracts import load_project
+        result = load_project(root)
+        project = result['project']
+        return SourceDescription(project['id'], project['version'], 'project.json',
+            tuple(sorted((path, item['sha256']) for path, item in result['inventory'].items())),
+            project['provenance']['fixture'], 'scene3d')
+
+    def validate_request(self, root, request, snapshot):
+        """Require the selected shot/camera to exist in the frozen project."""
+        from scene3d_contracts import load_project
+        result = load_project(root)
+        require(result['inventory'] == {item['path']: dict(sha256=item['sha256'], bytes=item['bytes'])
+                                      for item in snapshot['files']},
+                'stale-asset', 'Scene changed while binding the requested shot.')
+        project = result['project']
+        identity = lambda value: dict(id=value['id'], version=value['version'])
+        require(identity(project) == request['project'], 'stale-asset',
+                'Request project identity differs from the frozen project.')
+        scenes = [result['documents'][ref['path']] for ref in project['scenes']
+                  if identity(ref) == request['scene']]
+        shots = [result['documents'][ref['path']] for ref in project['shots']
+                 if identity(ref) == request['shot']]
+        require(len(scenes) == 1 and len(shots) == 1, 'missing-asset',
+                'Request scene and shot must identify frozen project members.')
+        scene, shot = scenes[0], shots[0]
+        require(identity(shot['scene']) == identity(scene), 'invalid-input',
+                'Request shot belongs to another scene.')
+        require(request['camera'] == shot['camera'] and request['camera'] in scene['cameras'],
+                'missing-asset', 'Request camera differs from the frozen shot camera.')
+        last_local = request['frame_range']['end'] - request['frame_range']['start'] - 1
+        last_source = (Fraction(**request['source_start'])
+                       + last_local / Fraction(**request['fps']) * Fraction(**request['playback_rate']))
+        require(last_source < Fraction(shot['duration_frames'], 1) / Fraction(**shot['fps']),
+                'invalid-input', 'Requested samples exceed the frozen shot duration.')
 
 
 class NativeRigAdapter:

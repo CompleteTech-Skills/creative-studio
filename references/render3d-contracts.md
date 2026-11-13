@@ -1,6 +1,6 @@
 # Render3D contract and snapshot foundation
 
-This is the bounded foundation for [issue #91](https://github.com/CompleteTech-Skills/creative-studio/issues/91), based on main `bb5a6810afd06cf57185ffdfe2234e0fdc6e6240`. It does not complete #91 or the full renderer mission #16. The current executable source adapter freezes an existing native rig for preview consumption. Full Scene3D snapshot adaptation awaits the Scene3D owner in #59; real Blender rendering, scheduling, image decoding and output publication belong to #92–#98.
+This is the bounded foundation for [issue #91](https://github.com/CompleteTech-Skills/creative-studio/issues/91), based on main `bb5a6810afd06cf57185ffdfe2234e0fdc6e6240`. It does not complete the full renderer mission #16. Executable source adapters freeze an existing native rig or the Scene3D owner's complete project closure. Real Blender rendering, scheduling, image decoding and output publication belong to #92–#98.
 
 ## Current ownership audit
 
@@ -12,7 +12,7 @@ This is the bounded foundation for [issue #91](https://github.com/CompleteTech-S
 | `atomic_publish.py` | Cross-platform exclusive directory publication | Reused directly; existing destinations, even empty ones, are never replaced |
 | `rig_models.py`, `rig_contracts.py` | Native geometry, skins, animation, source identity and review evidence | `NativeRigAdapter` calls `load_rig` before and after copying the complete referenced closure |
 | `rig_math.py` | +Y-up, +Z-forward, meters, XYZW, column-vector transforms | Reused for explicit canonical-to-Blender conjugation |
-| Scene3D #59, Camera3D #75, LookDev #83, Animation3D #67 | Separate upstream scene/camera/look/animation authorities | No duplicate scene, material, light or camera schema; absent adapters remain unsupported |
+| Scene3D #59, Camera3D #75, LookDev #83, Animation3D #67 | Separate upstream scene/camera/look/animation authorities | Scene3D project closure reuses `load_project`; no duplicate scene, material, light or camera schema |
 | `doctor.py`, `rig_blender.py` | Current optional dependency discovery and rig preview Blender execution | New capability documents separate discovery, initialization and execution; no availability is asserted by schema validity |
 
 The source-delivery report currently records recovered original production source, speech and review transports. The historical missing-source condition in the original #16 prompt is not the current documented state. This change does not regenerate, modify or reapprove that material. Baseline source and references were read directly in this checkout; hosted CI is outside this local validation.
@@ -33,6 +33,8 @@ the supported resource budgets, while unavailable measurements remain null.
 
 ```bash
 python scripts/render3d.py snapshot-rig --source PATH_TO_NATIVE_RIG --destination NEW_SNAPSHOT_DIR
+python scripts/render3d.py snapshot-scene --source PATH_TO_SCENE3D_PROJECT --destination NEW_SCENE_SNAPSHOT_DIR
+python scripts/render3d.py verify-snapshot NEW_SCENE_SNAPSHOT_DIR --adapter scene3d
 python scripts/render3d.py verify-snapshot NEW_SNAPSHOT_DIR
 python scripts/render3d.py validate request.json
 python scripts/render3d.py frame --request request.json --snapshot NEW_SNAPSHOT_DIR/snapshot.json --index 0
@@ -40,7 +42,7 @@ python scripts/render3d.py frame --request request.json --snapshot NEW_SNAPSHOT_
 
 A snapshot includes original source/identity, native geometry, skin arrays, animations and all referenced validation/review/evidence files. `NativeRigAdapter` validates actual source semantics, copies at most 4,096 files / 1 GiB total / 256 MiB each into private staging, revalidates the copied source and publishes with the existing exclusive primitive. Snapshot metadata binds each exact file hash and byte count and the source/adapter versions. No hardlink to mutable source data is used. The output can move or the original can change without changing the snapshot. Reuse checks all file bytes and reruns the owner validator. Symlinks, path traversal, cross-platform path aliases, metadata-path collisions, changed bytes, existing destinations and incomplete closures reject. No metadata-only snapshot counts as a valid native rig.
 
-`SceneAdapter.describe` is the extension boundary for a trusted in-process owner. It must return a complete hash-bound closure and validate the same scope from frozen staging. A user-supplied document cannot register executable code. The only adapter exposed by the CLI is native rig preview. This adapter does not synthesize a camera, lights, full scene or scene-level animation.
+`SceneAdapter.describe` is the extension boundary for a trusted in-process owner. It must return a complete hash-bound closure and validate the same scope from frozen staging. A user-supplied document cannot register executable code. `Scene3DAdapter` delegates closure and document semantics to `scene3d_contracts.load_project`, freezes all inventoried files, and repeats the owner validation on the copied bytes. Frame planning binds the request's project, scene and shot versions and its camera to that frozen project. A moved snapshot remains usable after the original is removed. The Scene3D owner verifies hashes and document semantics; declared geometry counts do not establish decoded mesh correctness, backend support or rendered pixels. Neither adapter synthesizes missing cameras, lights, geometry or animation.
 
 Frame planning verifies the request-bound snapshot file bytes and the full owner-validated frozen closure first. Output index `n` has presentation time `n/fps`; source time uses the request's explicit source start and its local selection index. Blender frame one represents zero seconds; integer frame and subframe remain exact rational values until the backend API boundary. Frame fingerprints bind timing, camera ID, source closure, snapshot and settings. Destination is excluded from the pixel identity, so relocation does not invalidate the semantic cache key. This foundation does not read or accept cached pixels.
 
@@ -60,11 +62,11 @@ The dedicated tests use labeled synthetic contract data and an actual generated 
 | --- | --- |
 | Audit existing locks, provenance, jobs, frame timing, FFmpeg and delivery | Audited; legacy ownership preserved |
 | Strict request/job/frame/result, source assets and errors | Implemented as additive schemas with structural and semantic validation |
-| Immutable snapshots, shared scene adapters and exact conversions | Native rig closure and exact conversions implemented; full Scene3D adapter remains blocked on its owner |
+| Immutable snapshots, shared scene adapters and exact conversions | Native rig and Scene3D project closures plus exact conversions implemented; owner validation is preserved |
 | Backend identities, output ownership, independent verifier contracts | Typed protocol/contract boundary implemented; executing workers and verifiers remain downstream |
 | Actual affected workflows and legacy regression | Local source snapshot workflow and selected regressions run; no hosted/native render acceptance claimed |
 
-Rollback removes only the new Render3D modules/schemas, their test registration and documentation. Existing source formats, outputs, cache ownership and review receipts do not require migration. Keep #91 and #16 open until their remaining mandatory gates actually pass.
+Rollback removes only the new Render3D modules/schemas, their test registration and documentation. Existing source formats, outputs, cache ownership and review receipts do not require migration. Keep #16 open until downstream renderer acceptance passes. #91 requires current-head independent review, relevant regression checks and the source workflows documented here; these foundations do not establish rendering acceptance.
 
 The local [validation receipt](../tests/results/render3d-foundation-20261025.json)
 records 39 foundation tests, 31 production-contract tests, 20 production-render

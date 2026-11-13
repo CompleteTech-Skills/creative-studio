@@ -337,7 +337,7 @@ def frame_hash(value):
 
 def make_frame_spec(request, index, snapshot_path, *, adapter=None):
     """Plan from a request-bound exact snapshot file and verified source closure."""
-    from render3d_snapshot import verify_snapshot, NativeRigAdapter
+    from render3d_snapshot import verify_snapshot, NativeRigAdapter, Scene3DAdapter
     validate(request, 'RenderRequest')
     snapshot_path = Path(snapshot_path)
     reference = request['snapshot']
@@ -357,11 +357,14 @@ def make_frame_spec(request, index, snapshot_path, *, adapter=None):
         raise Render3DError('invalid-input',str(exc)) from exc
     require(snapshot_path.name == 'snapshot.json', 'invalid-input', 'Use the frozen snapshot.json entrypoint.')
     if adapter is None:
-        require(snapshot['scope'] == 'native-rig-preview', 'unsupported-feature',
-                'Scene3D source planning requires its explicit owner adapter.')
-        adapter = NativeRigAdapter()
+        adapter = Scene3DAdapter() if snapshot['scope'] == 'scene3d' else NativeRigAdapter()
     verified = verify_snapshot(snapshot_path.parent, adapter)
     require(verified==snapshot,'stale-asset','Owner-verified snapshot differs from request-authorized bytes.')
+    if isinstance(adapter, Scene3DAdapter):
+        try:
+            adapter.validate_request(snapshot_path.parent, request, snapshot)
+        except RigError as exc:
+            raise Render3DError('stale-asset', str(exc)) from exc
     presentation, source = frame_times(request, index)
     frame = dict(schema_version=1, kind='render3d-frame', index=index,
                  local_index=index - request['frame_range']['start'],

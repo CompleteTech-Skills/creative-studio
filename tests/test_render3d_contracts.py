@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from render3d_contracts import (Render3DError, definitions, validate, schemas, load,
     frame_times, blender_frame, make_frame_spec, snapshot_hash)
-from render3d_snapshot import NativeRigAdapter, create_snapshot, verify_snapshot
+from render3d_snapshot import NativeRigAdapter, Scene3DAdapter, create_snapshot, verify_snapshot
 
 
 def file(path='snapshot.json', payload=b'fixture'):
@@ -384,3 +384,61 @@ class OutputBoundaryRegressions(unittest.TestCase):
             self.assertEqual(load(path,'RenderResult'),value)
             path.write_bytes(json.dumps(request()).encode()+b' '*(32*1024**2))
             with self.assertRaises(Render3DError):load(path)
+
+
+class SceneSnapshot(unittest.TestCase):
+    def test_real_scene_closure_relocation_and_exact_frame_plan(self):
+        from scene3d_example import build_example
+        import shutil
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary); source=root/'source'; destination=root/'snapshot'
+            original=build_example(source)
+            snapshot=create_snapshot(source,destination,Scene3DAdapter())
+            self.assertEqual(snapshot['scope'],'scene3d')
+            self.assertEqual(len(snapshot['files']),len(original['inventory']))
+            self.assertTrue(snapshot['fixture'])
+            self.assertIn('triangle.obj',[item['path'] for item in snapshot['files']])
+            self.assertEqual(verify_snapshot(destination,Scene3DAdapter()),snapshot)
+            moved=root/'moved';shutil.move(destination,moved);shutil.rmtree(source)
+            value=request();value['scene']['id']='example-scene';value['shot']['id']='example-shot'
+            value['snapshot']=file(payload=(moved/'snapshot.json').read_bytes())
+            frame=make_frame_spec(value,5,moved/'snapshot.json')
+            self.assertEqual(frame['snapshot_sha256'],snapshot['snapshot_sha256'])
+            self.assertEqual(frame['source_time'],{'numerator':1,'denominator':2})
+            self.assertEqual(frame['dependencies'],[item['sha256'] for item in snapshot['files']])
+            (moved/'triangle.obj').write_bytes(b'corrupt')
+            with self.assertRaises(Render3DError):make_frame_spec(value,5,moved/'snapshot.json')
+
+    def test_missing_dependencies_invalid_bindings_and_existing_destination(self):
+        from scene3d_example import build_example
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'source';destination=root/'snapshot'
+            build_example(source)
+            create_snapshot(source,destination,Scene3DAdapter())
+            with self.assertRaises(Render3DError):create_snapshot(source,destination,Scene3DAdapter())
+            value=request();value['scene']['id']='example-scene';value['shot']['id']='example-shot'
+            value['snapshot']=file(payload=(destination/'snapshot.json').read_bytes())
+            for identity in ('project','scene','shot'):
+                bad=deepcopy(value);bad[identity]['version']='2.0.0'
+                with self.subTest(identity=identity),self.assertRaises(Render3DError):
+                    make_frame_spec(bad,5,destination/'snapshot.json')
+            bad=deepcopy(value);bad['camera']='missing'
+            with self.assertRaises(Render3DError):make_frame_spec(bad,5,destination/'snapshot.json')
+            bad=deepcopy(value);bad['source_start']={'numerator':1,'denominator':1}
+            with self.assertRaises(Render3DError):make_frame_spec(bad,5,destination/'snapshot.json')
+            (source/'triangle.obj').unlink()
+            with self.assertRaises(Render3DError):create_snapshot(source,root/'missing',Scene3DAdapter())
+            self.assertFalse((root/'missing').exists())
+
+    def test_scene_cli_snapshot_and_verification(self):
+        from scene3d_example import build_example
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'source';destination=root/'snapshot'
+            build_example(source)
+            capture=subprocess.run([sys.executable,str(ROOT/'scripts/render3d.py'),'snapshot-scene',
+                '--source',str(source),'--destination',str(destination)],capture_output=True,text=True)
+            self.assertEqual(capture.returncode,0,capture.stderr+capture.stdout)
+            verify=subprocess.run([sys.executable,str(ROOT/'scripts/render3d.py'),'verify-snapshot',
+                str(destination),'--adapter','scene3d'],capture_output=True,text=True)
+            self.assertEqual(verify.returncode,0,verify.stderr+verify.stdout)
+            self.assertEqual(json.loads(capture.stdout),json.loads(verify.stdout))

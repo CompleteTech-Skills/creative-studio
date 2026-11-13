@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from render3d_contracts import Render3DError, load, make_frame_spec
-from render3d_snapshot import NativeRigAdapter, create_snapshot, verify_snapshot
+from render3d_snapshot import NativeRigAdapter, Scene3DAdapter, create_snapshot, verify_snapshot
 
 
 def main():
@@ -16,8 +16,12 @@ def main():
     snapshot = commands.add_parser('snapshot-rig')
     snapshot.add_argument('--source', type=Path, required=True)
     snapshot.add_argument('--destination', type=Path, required=True)
+    scene = commands.add_parser('snapshot-scene')
+    scene.add_argument('--source', type=Path, required=True)
+    scene.add_argument('--destination', type=Path, required=True)
     verify = commands.add_parser('verify-snapshot')
     verify.add_argument('root', type=Path)
+    verify.add_argument('--adapter', choices=('native-rig', 'scene3d'), default='native-rig')
     frame = commands.add_parser('frame')
     frame.add_argument('--request', type=Path, required=True)
     frame.add_argument('--snapshot', type=Path, required=True)
@@ -29,8 +33,10 @@ def main():
             result = dict(valid=True, kind=value['kind'], evidence='contract-only')
         elif args.command == 'snapshot-rig':
             result = create_snapshot(args.source, args.destination, NativeRigAdapter())
+        elif args.command == 'snapshot-scene':
+            result = create_snapshot(args.source, args.destination, Scene3DAdapter())
         elif args.command == 'verify-snapshot':
-            result = verify_snapshot(args.root, NativeRigAdapter())
+            result = verify_snapshot(args.root, Scene3DAdapter() if args.adapter == 'scene3d' else NativeRigAdapter())
         else:
             result = make_frame_spec(load(args.request), args.index, args.snapshot)
         print(json.dumps(result, indent=2, allow_nan=False))
