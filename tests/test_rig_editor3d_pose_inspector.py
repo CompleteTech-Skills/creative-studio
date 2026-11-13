@@ -31,7 +31,8 @@ class PoseInspectorTests(unittest.TestCase):
         license=self.root/'license.txt';license.write_text('CC0-1.0 self-authored engineering fixture')
         self.imported=import_gltf(source,library,asset_id='character',attribution='Self-authored engineering fixture',license_file=license)
         original=build_example(self.root/'source');graph=SceneGraph.from_bundle(original,'example-scene.json')
-        add_import(graph,self.imported,'actor');add_import(graph,self.imported,'other')
+        self.actor_mapping=add_import(graph,self.imported,'actor')['mapping']
+        self.other_mapping=add_import(graph,self.imported,'other')['mapping']
         manifest=library.resolve(self.imported.library_reference)
         payloads={item['path']:library.read_file(self.imported.library_reference,item['path']) for item in manifest['files'] if item['path']!=self.imported.asset_reference['path']}
         saved=snapshot_project(self.root/'source',self.root/'portable',graph,scene_path='example-scene.json',
@@ -68,7 +69,8 @@ class PoseInspectorTests(unittest.TestCase):
         self.assertEqual(apply_pose_edit(self.repository,request)['sha256'],after['sha256'])
         evaluation=self.evaluation(after)
         posed=evaluation['nodes']['actor']['native_pose_components'];self.assertTrue(posed)
-        self.assertTrue(all(not identifier.startswith('other') for identifier in posed))
+        self.assertLessEqual(set(posed),set(self.actor_mapping.values()))
+        self.assertFalse(set(posed)&set(self.other_mapping.values()))
         difference=max(float(np.linalg.norm(np.asarray(evaluation['native_geometry'][identifier][mesh])-np.asarray(baseline[identifier][mesh])))
             for identifier in posed for mesh in evaluation['native_geometry'][identifier])
         self.assertGreater(difference,.01)
@@ -111,12 +113,11 @@ class PoseInspectorTests(unittest.TestCase):
         self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
         clip=self.imported.asset['animations'][0]
         # A real native clip on this imported subtree has no declared pose blend.
-        command=dict(operation='animation-bindings',parameters=dict(identifier='actor',bindings=[dict(target='actor',clip=clip,start_frame=0,end_frame=1,speed=1,loop=False)]))
-        from scene3d_edit import apply_commands
+        bindings=[dict(target='actor',clip=clip,start_frame=0,end_frame=1,speed=1,loop=False)]
         # Use the graph's canonical binding field rather than a fabricated clip.
         native=self.repository.native_snapshot(before['revision'],before['sha256'])
         bundle=load_project(native['root']);graph=SceneGraph.from_bundle(bundle,before['scene_path'],source_root=native['root'])
-        scene=graph.document();next(n for n in scene['nodes'] if n['id']=='actor')['animation_bindings']=command['parameters']['bindings']
+        scene=graph.document();next(n for n in scene['nodes'] if n['id']=='actor')['animation_bindings']=bindings
         graph=SceneGraph(scene)
         saved=snapshot_project(native['root'],self.root/'with-clip',graph,scene_path=before['scene_path'])
         self.repository=EditorRepository.create(self.root/'with-clip',self.root/'clip-repository',scene_path=saved['active_scene']['path'])

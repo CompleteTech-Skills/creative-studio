@@ -6,9 +6,10 @@ configuration. Preview timing remains owned by the selected-shot scene evaluator
 from contextlib import contextmanager
 from copy import deepcopy
 import hashlib
+import json
 
-from rig_errors import RigError,decode_json,finite_json
-from scene3d_contracts import canonical_bytes,validate_document
+from rig_errors import RigError,decode_json,finite_json,object_hash
+from scene3d_contracts import validate_document
 
 
 def _fail(message):
@@ -135,13 +136,14 @@ def apply_pose_edit(repository,request):
                         if not isinstance(change,dict):_fail('Each native bone or mesh edit must be a map.')
                         if field=='bones' and 'rotation' in change:quaternion(change['rotation'],strict=True)
                         pose[field].setdefault(key,{}).update(deepcopy(change))
-            pose['id']='editor-pose-'+hashlib.sha256(canonical_bytes(request)).hexdigest()[:32]
+            pose['id']='editor-pose-'+object_hash(request)[:32]
             validate_contract(pose,'Pose')
             # Validation evaluates constraints and real morph/bone deformation once;
             # the unsolved authored values are saved so canonical playback applies
             # native constraints exactly once when the frame is evaluated.
             evaluate_deformation(rig,pose_operation(rig,{'pose':pose}))
-            raw=canonical_bytes(pose);digest=hashlib.sha256(raw).hexdigest()
+            raw=(json.dumps(pose,sort_keys=True,separators=(',',':'),ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+            digest=hashlib.sha256(raw).hexdigest()
             path='poses/editor/'+pose['id']+'-'+digest+'.json'
             binding=dict(schema_version=1,rig=context['rig_reference'],pose=dict(id=pose['id'],
                 rig_version=pose['rig_version'],file=dict(path=path,sha256=digest)))
