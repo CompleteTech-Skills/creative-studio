@@ -539,6 +539,10 @@ class SceneGraph:
     def derived_documents(self):
         return deepcopy(self._derived_documents)
 
+    def animation_payloads(self):
+        """Return exact immutable animation bytes for downstream owner admission."""
+        return dict(self._animation_payloads)
+
     def _map_clip(self, reference, mapping, context, derived, depth=0, state=None):
         if reference['kind'] != 'scene3d-animation':
             return deepcopy(reference)

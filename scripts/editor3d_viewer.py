@@ -28,6 +28,7 @@ from rig_errors import RigError, decode_json, require, safe_path
 MAX_BODY = 4 * 1024 * 1024
 MAX_PREVIEW_BYTES = 64 * 1024 * 1024
 MAX_PREVIEW_VERTICES = 500_000
+MAX_PREVIEW_DECODED_VERTICES = 500_000
 MAX_COMPONENT_RESOURCE_BYTES = 64 * 1024 * 1024
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -69,6 +70,7 @@ def preview_snapshot(repository, snapshot):
     require(len(scene['nodes']) <= 1000, 'EDITOR3D_VIEW_LIMIT',
             'The interactive preview supports at most 1,000 scene nodes.')
     projected_vertices = 0
+    decoded_vertices = 0
     inventory = snapshot['inventory']
     total = sum(item['bytes'] for item in inventory.values())
     require(total <= MAX_PREVIEW_BYTES, 'EDITOR3D_VIEW_LIMIT',
@@ -87,16 +89,20 @@ def preview_snapshot(repository, snapshot):
                 continue
             identifier = asset_identity(dict(id=document['id'], version=document['version'],
                 path=document_path, sha256=inventory[document_path]['sha256']))
+            instances = sum(asset_identity(node['asset']) == identifier
+                            for node in scene['nodes'] if node.get('asset') and
+                            'source_component' not in node.get('metadata', {}))
+            if not instances:
+                continue
             path = safe_path(root, document['content']['path'], exists=True)
             try:
                 require(path.suffix.lower() in ('.obj', '.glb'), 'EDITOR3D_VIEW_FORMAT',
                         'Preview currently supports verified GLB and OBJ geometry.')
                 limits = dict(DEFAULT_LIMITS)
-                limits['vertices'] = min(limits['vertices'], MAX_PREVIEW_VERTICES)
+                require(decoded_vertices < MAX_PREVIEW_DECODED_VERTICES, 'EDITOR3D_VIEW_LIMIT', 'Decoded geometry exceeds the viewport budget.')
+                limits['vertices'] = min(limits['vertices'], MAX_PREVIEW_VERTICES, MAX_PREVIEW_DECODED_VERTICES-decoded_vertices)
                 imported = load_character_model(path, limits=limits)
-                instances = sum(asset_identity(node['asset']) == identifier
-                                for node in scene['nodes'] if node.get('asset') and
-                                'source_component' not in node.get('metadata', {}))
+                decoded_vertices += imported.geometry.vertex_count
                 projected_vertices += imported.geometry.vertex_count * instances
                 require(projected_vertices <= MAX_PREVIEW_VERTICES, 'EDITOR3D_VIEW_LIMIT',
                         'Instanced geometry exceeds the 500,000-vertex viewport budget.')
@@ -128,7 +134,13 @@ def preview_snapshot(repository, snapshot):
                 assets[identifier] = dict(format='unavailable', message=str(error))
         from editor3d_components import project_components
         components, component_vertices = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices,
-            max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES,defer_poses=True)
+            max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES, max_decoded_vertices=MAX_PREVIEW_DECODED_VERTICES-decoded_vertices,defer_poses=True)
+        from editor3d_state import project_editor_state
+        try:
+            result['viewport_state'] = project_editor_state(snapshot, root)
+        except RigError as error:
+            result['viewport_state'] = dict(schema_version=1, available=False, revision=snapshot['revision'],
+                sha256=snapshot['sha256'], error=error.report)
     result['viewport_nodes'] = components
     result['viewport_assets'] = assets
     if (ROOT / 'scripts/editor3d_inspectors.py').is_file():

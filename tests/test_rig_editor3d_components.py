@@ -25,6 +25,8 @@ class EditorImportedComponentTests(unittest.TestCase):
         graph = SceneGraph.from_bundle(bundle, 'example-scene.json')
         add_import(graph, imported, 'model')
         materialize(case.library, imported.library_reference, case.root/'materialized')
+        self.imported = imported
+        self.native_root = case.root/'materialized/imports/imported/1.0.0/native'
         self.expected = evaluate_imported_vertices(graph, imported,
             case.root/'materialized/imports/imported/1.0.0/native')['nodes']
         manifest = case.library.resolve(imported.library_reference)
@@ -64,6 +66,60 @@ class EditorImportedComponentTests(unittest.TestCase):
         unavailable = [value for value in projections if value['format'] == 'unavailable']
         self.assertEqual(len(unavailable), 1)
         self.assertIn('payload budget', unavailable[0]['message'])
+
+    def test_aggregate_decoded_budget_counts_full_sparse_assets_once(self):
+        from unittest.mock import patch
+        case = scene_service_tests.RealSceneImportTests(); case.setUp(); self.addCleanup(case.doCleanups)
+        source = case.source('gltf')
+        imports = [case.do_import(source, asset_id=name) for name in ('first', 'second')]
+        bundle = build_example(case.root/'project'); graph = SceneGraph.from_bundle(bundle, 'example-scene.json')
+        for index, imported in enumerate(imports): add_import(graph, imported, 'model-'+str(index))
+        document = graph.document(); keep=[]; retained=[]
+        for node in document['nodes']:
+            if 'source_component' in node.get('metadata', {}):
+                key = node['asset']['path']
+                if key in keep: continue
+                keep.append(key); retained.append(node['id'])
+            # Each asset retains only one three-vertex component, but its
+            # cached native geometry still contains six decoded vertices.
+        document['nodes'] = [node for node in document['nodes'] if
+            'source_component' not in node.get('metadata', {}) or node['id'] in retained]
+        graph.replace_document(document, expected_revision=graph.revision)
+        payloads={};documents={}
+        for imported in imports:
+            manifest=case.library.resolve(imported.library_reference)
+            documents[imported.asset_reference['path']]=imported.asset
+            payloads.update({record['path']:case.library.read_file(imported.library_reference,record['path'])
+                for record in manifest['files'] if record['path'] != imported.asset_reference['path']})
+        saved=snapshot_project(case.root/'project',case.root/'portable',graph,scene_path='example-scene.json',
+            derived_documents=documents,extra_payloads=payloads)
+        repository=EditorRepository.create(case.root/'portable',case.root/'repo',scene_path=saved['active_scene']['path'])
+        # Projected vertices total nine; decoded vertices total fifteen:
+        # original triangle three + two distinct six-vertex native assets.
+        with patch('editor3d_viewer.MAX_PREVIEW_DECODED_VERTICES',14):
+            value=preview_snapshot(repository,repository.snapshot())
+        projections=[value['viewport_nodes'][identifier] for identifier in retained]
+        self.assertEqual(sum(item['format']=='geometry' for item in projections),1)
+        rejected=next(item for item in projections if item['format']=='unavailable')
+        self.assertIn('decoded-vertex budget',rejected['message'])
+
+    def test_generic_instance_does_not_poison_same_asset_component_projection(self):
+        from copy import deepcopy
+        snapshot=self.repository.snapshot()
+        native=self.repository.native_snapshot(snapshot['revision'],snapshot['sha256'])
+        graph=SceneGraph.from_bundle(snapshot,snapshot['scene_path'],source_root=native['root'])
+        document=graph.document()
+        imported=next(node for node in document['nodes'] if 'source_component' in node.get('metadata',{}))
+        generic=deepcopy(next(node for node in document['nodes'] if node['id']=='mesh'))
+        generic.update(id='whole-model',name='Independent whole-model instance',asset=deepcopy(imported['asset']),metadata={})
+        generic['transform']['translation']=[10,0,0];document['nodes'].append(generic)
+        graph.replace_document(document,expected_revision=graph.revision)
+        saved=snapshot_project(native['root'],self.repository.root.parent/'mixed-portable',graph,scene_path=snapshot['scene_path'])
+        repository=EditorRepository.create(self.repository.root.parent/'mixed-portable',self.repository.root.parent/'mixed-repo',scene_path=saved['active_scene']['path'])
+        value=preview_snapshot(repository,repository.snapshot())
+        from editor3d_viewer import asset_identity
+        self.assertEqual(value['viewport_assets'][asset_identity(imported['asset'])]['format'],'glb')
+        self.assertTrue(all(value['viewport_nodes'][identifier]['format']=='geometry' for identifier in self.expected))
 
     def test_unknown_component_mapping_is_explicitly_unavailable(self):
         snapshot = self.repository.snapshot()

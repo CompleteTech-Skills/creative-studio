@@ -131,6 +131,7 @@ function subscribeInstalled(callback) {
   }
   return () => { record.cleanup?.(); installSubscribers.delete(callback); };
 }
+let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
 const editorNode = Symbol("native-scene-node");
 const errors = [],
   nativeMaterials = new Map(),
@@ -361,12 +362,58 @@ function restoreNativeGeometry() {
     geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
   });
 }
+function nodeLocked(id) { return evaluatedStates.get(id)?.locked !== false; }
+function nodeSelectable(id) { return evaluatedStates.get(id)?.selectable === true; }
+function transformReason(id) {
+  if (nodeLocked(id)) return "Object is locked by native scene state.";
+  if (!nodeSelectable(id)) return "Object is not selectable in native scene state.";
+  return Object.hasOwn(nativeTransformReadonly, id) ? nativeTransformReadonly[id] : null;
+}
+function transformSelectionAllowed() { return roots().length > 0 && roots().every(id => !transformReason(id)); }
+function applyNativeState(value, sampledGeometry = {}) {
+  const state = Array.isArray(value) ? new Map(value.map(node => [node.id, node])) : new Map(Object.entries(value));
+  if (state.size !== nodes.size || [...nodes.keys()].some(id => !state.has(id)))
+    throw Error("The evaluated native graph has no exact viewport node mapping.");
+  const matrices = new Map();
+  for (const [id, item] of state) {
+    if (!Array.isArray(item.world_matrix) || item.world_matrix.length !== 4 ||
+        item.world_matrix.some(row => !Array.isArray(row) || row.length !== 4 || row.some(number => !Number.isFinite(number))) ||
+        ["editor_visible", "locked", "selectable", "cast_shadow", "receive_shadow"].some(field => typeof item[field] !== "boolean"))
+      throw Error("The native viewport state is incomplete for " + id);
+    matrices.set(id, new THREE.Matrix4().set(...item.world_matrix.flat()));
+  }
+  content.updateWorldMatrix(true, false);
+  const local = new Map();
+  for (const [id, object] of objects) {
+    const parentId = object.parent?.[editorNode], parent = parentId ? matrices.get(parentId) : object.parent.matrixWorld;
+    if (!parent || parent.determinant() === 0) throw Error("The native parent matrix cannot be represented in this viewport.");
+    local.set(id, parent.clone().invert().multiply(matrices.get(id)));
+  }
+  evaluatedStates = state;
+  for (const [id, object] of objects) {
+    object.matrixAutoUpdate = false;
+    object.matrix.copy(local.get(id));
+    object.matrix.decompose(object.position, object.quaternion, object.scale);
+    object.visible = state.get(id).editor_visible && (!object.userData.requiresTimelinePreview || Object.hasOwn(sampledGeometry, id));
+    function visit(child) {
+      if (child !== object && child[editorNode]) return;
+      if (child.isMesh) {
+        child.castShadow = state.get(id).cast_shadow;
+        child.receiveShadow = state.get(id).receive_shadow;
+      }
+      child.children.forEach(visit);
+    }
+    visit(object);
+  }
+  content.updateMatrixWorld(true);
+}
 function preview(scene) {
   if (scene.world && (!Number.isFinite(scene.world.exposure) || scene.world.exposure < -20 || scene.world.exposure > 20))
     throw Error("Evaluated preview exposure is supported from -20 to +20 stops.");
   if (scene.revision !== undefined && (scene.revision !== revision || scene.snapshot_sha256 !== sha256 ||
       scene.scene?.path !== currentSnapshot.scene_path)) throw Error("Evaluation belongs to another saved scene revision.");
   const geometryUpdates = nativeGeometryUpdates(scene);
+  applyNativeState(scene.nodes, scene.native_geometry || {});
   restoreNativeGeometry();
   for (const {target, positions} of geometryUpdates) {
     const geometry = target.geometry;
@@ -376,52 +423,24 @@ function preview(scene) {
     geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
   }
   lastEvaluation = structuredClone(scene);
-  playing = false;
   previewActive = true;
+  playing = false;
   gizmo.detach();
-  const evaluated = Array.isArray(scene.nodes)
-    ? new Map(scene.nodes.map((node) => [node.id, node]))
-    : new Map(Object.entries(scene.nodes));
-  content.updateMatrixWorld(true);
-  for (const [id, node] of evaluated) {
-    const object = objects.get(id);
-    if (!object) continue;
-    if (node.world_matrix) {
-      const worldMatrix = new THREE.Matrix4().set(...node.world_matrix.flat());
-      const parentId = nodes.get(id)?.parent,
-        parent = evaluated.get(parentId);
-      const parentWorld = parent?.world_matrix
-        ? new THREE.Matrix4().set(...parent.world_matrix.flat())
-        : object.parent.matrixWorld;
-      object.matrix.copy(parentWorld.clone().invert().multiply(worldMatrix));
-      object.matrixAutoUpdate = false;
-      object.matrix.decompose(object.position, object.quaternion, object.scale);
-    } else if (node.transform) {
-      object.matrixAutoUpdate = true;
-      setTransform(object, node.transform);
-    }
-    if (typeof node.visible === "boolean") object.visible = node.visible;
-    applyNativeProperties(object, node);
-  }
+  for (const [id, state] of Array.isArray(scene.nodes) ? scene.nodes.map(node => [node.id, node]) : Object.entries(scene.nodes))
+    applyNativeProperties(objects.get(id), state);
   if (scene.world) renderer.toneMappingExposure = 2 ** scene.world.exposure;
-  content.updateMatrixWorld(true);
+  refreshSelection();
   refreshPreviewEditState();
 }
 function clearPreview() {
   restoreNativeGeometry();
   lastEvaluation = null;
+  applyNativeState(savedNativeState.nodes);
   previewActive = false;
-  for (const node of doc.nodes) {
-    const object = objects.get(node.id);
-    object.matrixAutoUpdate = true;
-    setTransform(object, node.transform);
-    object.visible = node.visible && !object.userData.requiresTimelinePreview;
-    applyNativeProperties(object, node);
-  }
+  for (const node of doc.nodes) applyNativeProperties(objects.get(node.id), node);
   renderer.toneMappingExposure = 2 ** doc.world.exposure;
-  content.updateMatrixWorld(true);
-  attach();
-  inspect();
+  refreshSelection();
+  refreshPreviewEditState();
 }
 function roots(ids = selection) {
   return [...ids].filter((id) => {
@@ -513,7 +532,7 @@ function setBusy(value) {
   document.querySelectorAll("#group,#ungroup,#duplicate,#delete,#show-all,#collections input")
     .forEach((control) => { control.disabled = busy; });
   document.querySelectorAll("#outliner [data-id]")
-    .forEach((control) => { control.draggable = !busy && !nodes.get(control.dataset.id)?.locked; });
+    .forEach((control) => { control.draggable = !busy && !nodeLocked(control.dataset.id); });
 }
 function rejectPendingEdit() {
   if (!busy) return false;
@@ -528,6 +547,10 @@ async function commit(commands) {
   try {
     const envelope = {expected_revision: revision, expected_sha256: sha256,
       transaction_id: crypto.randomUUID(), commands: nativeCommands(commands), snapshot: structuredClone(currentSnapshot)};
+    for (const command of envelope.commands) {
+      if (command.operation === "transform" && transformReason(command.parameters.identifier))
+        throw Error(transformReason(command.parameters.identifier));
+    }
     const previewEdit = previewActive;
     if (previewEdit && (!canEditPreview() || envelope.commands.some(command => command.operation !== "transform" || !roots().includes(command.parameters?.identifier))))
       throw Error("Evaluated preview edits require authorized atomic transform autokey.");
@@ -552,7 +575,8 @@ async function commit(commands) {
         throw Error("The acknowledged extension revision changed before reload.");
     } else result = await api("commands", {...envelope, snapshot: undefined,
       commands: {schema_version: 1, commands: envelope.commands}});
-    await install(result);
+    const displayed = await install(result);
+    if (displayed === false) return;
     clearDiagnostic();
     $("status").textContent = "Saved revision " + revision;
   } catch (error) {
@@ -566,13 +590,13 @@ function select(id, add = false, toggle = false) {
   selectedBone = null;
   if (!add && !toggle) selection.clear();
   if (toggle && selection.has(id)) selection.delete(id);
-  else if (objects.has(id) && nodes.get(id)?.selectable !== false)
+  else if (objects.has(id) && nodeSelectable(id))
     selection.add(id);
   refreshSelection();
 }
 function selectBone(id) {
   const bone = boneObjects.get(id);
-  if (!bone) return;
+  if (!bone || !nodeSelectable(bone.userData.ownerId)) return;
   select(bone.userData.ownerId);
   selectedBone = id;
   refreshSelection();
@@ -588,6 +612,7 @@ function boneSelection() {
     : null;
 }
 function refreshSelection() {
+  selection = new Set([...selection].filter(id => objects.has(id) && nodeSelectable(id)));
   for (const row of $("outliner").querySelectorAll("[data-bone]"))
     row.setAttribute(
       "aria-selected",
@@ -617,14 +642,14 @@ function refreshSelection() {
   inspect();
 }
 function attach() {
-  if (!gizmo || busy || lost || (previewActive && !canEditPreview()) || selectedBone) {
+  if (!gizmo || busy || lost || (previewActive && !canEditPreview()) || selectedBone || !transformSelectionAllowed()) {
     gizmo?.detach();
     return;
   }
-  const id = roots().find((id) => !nodes.get(id).locked),
+  const id = roots().find((id) => !transformReason(id)),
     object = objects.get(id);
   if (object) {
-    if (previewActive) for (const identifier of roots()) objects.get(identifier).matrixAutoUpdate = true;
+    for (const identifier of roots()) objects.get(identifier).matrixAutoUpdate = true;
     gizmo.attach(object);
     gizmo.enabled = true;
   } else {
@@ -779,6 +804,19 @@ async function install(snapshot) {
   doc = snapshot.scene;
   revision = snapshot.revision;
   sha256 = snapshot.sha256;
+  savedNativeState = snapshot.viewport_state;
+  if (!savedNativeState || savedNativeState.revision !== revision || savedNativeState.sha256 !== sha256)
+    throw Error("The repository supplied no exact native viewport evaluation.");
+  nativeTransformReadonly = savedNativeState.transform_readonly || {};
+  if (savedNativeState.available === false) {
+    disposeContent(); evaluatedStates.clear(); selection.clear(); selectedBone = null;
+    $("outliner").replaceChildren(); $("collections").replaceChildren();
+    $("revision").textContent = "Revision " + revision + " · " + String(sha256).slice(0, 10);
+    diagnostic(savedNativeState.error?.message || "Native viewport evaluation is unavailable.");
+    $("status").textContent = "Saved revision " + revision + "; viewport unavailable.";
+    window.editorReady = false;
+    return false;
+  }
   if (!doc?.nodes)
     throw Error("The repository supplied no native Scene3D scene.");
   disposeContent();
@@ -906,7 +944,7 @@ async function install(snapshot) {
     }
     visit(object);
   }
-  content.updateMatrixWorld(true);
+  applyNativeState(savedNativeState.nodes);
   for (const [id, object] of objects) {
     if ([...boneObjects.values()].some((b) => b.userData.ownerId === id)) {
       const helper = new THREE.SkeletonHelper(object);
@@ -916,7 +954,7 @@ async function install(snapshot) {
     }
   }
   selectedBone = null;
-  selection = new Set([...selection].filter((id) => objects.has(id)));
+  selection = new Set([...selection].filter((id) => objects.has(id) && nodeSelectable(id)));
   buildOutliner();
   buildCollections();
   buildClips();
@@ -941,8 +979,9 @@ async function install(snapshot) {
 }
 async function reload(frame = false) {
   const snapshot = await api("snapshot");
-  await install(snapshot);
-  if (frame) frameScene();
+  const displayed = await install(snapshot);
+  if (frame && displayed !== false) frameScene();
+  return displayed;
 }
 function buildOutliner() {
   const root = $("outliner");
@@ -957,20 +996,21 @@ function buildOutliner() {
       const button = document.createElement("button");
       button.type = "button";
       button.dataset.id = node.id;
-      button.dataset.hidden = String(!node.visible);
+      button.dataset.hidden = String(!evaluatedStates.get(node.id).editor_visible);
       button.setAttribute("role", "treeitem");
       button.setAttribute("aria-level", String(depth + 1));
       button.setAttribute("aria-selected", String(selection.has(node.id)));
       button.style.paddingLeft = 8 + depth * 14 + "px";
       button.textContent =
-        (node.locked ? "🔒 " : node.visible ? "" : "◌ ") +
+        (nodeLocked(node.id) ? "🔒 " : evaluatedStates.get(node.id).editor_visible ? "" : "◌ ") +
         node.name +
         " · " +
         node.type;
       button.title = node.id;
       button.onclick = (e) =>
         select(node.id, e.shiftKey, e.ctrlKey || e.metaKey);
-      button.draggable = !busy && !node.locked;
+      button.draggable = !busy && !nodeLocked(node.id);
+      button.setAttribute("aria-disabled", String(!nodeSelectable(node.id)));
       button.ondragstart = (e) => e.dataTransfer.setData("text/plain", node.id);
       button.ondragover = (e) => e.preventDefault();
       button.ondrop = (e) => {
@@ -1050,7 +1090,9 @@ function inspect() {
         !e.closest("#overlay-controls") &&
         !["clip", "play", "time", "show-all"].includes(e.id)
       )
-        e.disabled = !node || busy || node.locked || (previewActive && (!e.closest("#transform-fields") || !previewAllowed));
+        e.disabled = !node || busy || nodeLocked(id) ||
+          (previewActive && (!e.closest("#transform-fields") || !previewAllowed)) ||
+          ((e.closest("#transform-fields") || ["parent", "reset", "paste", "ground"].includes(e.id)) && !transformSelectionAllowed());
     });
   $("locked").disabled = !node || busy || previewActive;
   if (!node) {
@@ -1061,11 +1103,11 @@ function inspect() {
   }
   $("selected-name").textContent =
     selection.size > 1 ? selection.size + " objects" : node.name;
-  $("selected-type").textContent = node.type;
+  $("selected-type").textContent = node.type + (Object.hasOwn(nativeTransformReadonly, id) ? " · transform read-only" : "");
   $("name").value = node.name;
   $("visible").checked = node.visible;
   $("render-visible").checked = node.render.visible;
-  $("locked").checked = node.locked;
+  $("locked").checked = nodeLocked(id);
   if (selectedBone) {
     const bone = boneObjects.get(selectedBone);
     $("selected-name").textContent = bone.name;
@@ -1078,11 +1120,12 @@ function inspect() {
     $("details").textContent = JSON.stringify(boneSelection(), null, 2);
     return;
   }
-  const euler = new THREE.Euler().setFromQuaternion(object.quaternion, "XYZ");
+  const channels = drag && !transformReason(id) ? localTransform(object) : node.transform;
+  const euler = new THREE.Euler().setFromQuaternion(new THREE.Quaternion().fromArray(channels.rotation), "XYZ");
   const values = {
-    translation: object.position.toArray(),
+    translation: channels.translation,
     rotation: [euler.x, euler.y, euler.z].map(THREE.MathUtils.radToDeg),
-    scale: object.scale.toArray(),
+    scale: channels.scale,
   };
   for (const kind of Object.keys(fields))
     fields[kind].forEach(
@@ -1100,12 +1143,16 @@ function inspect() {
       collections: node.collections,
       animation_bindings: node.animation_bindings,
       constraints: node.constraints,
+      authored_transform: node.transform,
+      native_world_matrix: evaluatedStates.get(id).world_matrix,
+      transform_readonly: transformReason(id),
     },
     null,
     2,
   );
 }
 function numeric(kind, index, value) {
+  if (!transformSelectionAllowed()) { diagnostic("Selected transforms are read-only in the native viewport."); return; }
   const number = Number(value);
   if (
     !Number.isFinite(number) ||
@@ -1120,7 +1167,7 @@ function numeric(kind, index, value) {
   }
   const commands = [];
   for (const id of roots()) {
-    if (nodes.get(id).locked) continue;
+    if (nodeLocked(id)) continue;
     const object = objects.get(id),
       transform = localTransform(object);
     if (kind === "rotation") {
@@ -1134,7 +1181,7 @@ function numeric(kind, index, value) {
 }
 function selectedPatch(patch) {
   return roots()
-    .filter((id) => !nodes.get(id).locked)
+    .filter((id) => !nodeLocked(id))
     .map((id) => ({ op: "set-node", id, patch }));
 }
 $("group").onclick = () => {
@@ -1261,7 +1308,7 @@ $("reset").onclick = () =>
   );
 $("copy").onclick = () => {
   const id = [...selection][0];
-  if (id) copied = localTransform(objects.get(id));
+  if (id) copied = structuredClone(nodes.get(id).transform);
 };
 $("paste").onclick = () => {
   if (copied)
@@ -1289,9 +1336,13 @@ $("ground").onclick = () => {
   commit(commands);
 };
 $("hide").onclick = () => commit(selectedPatch({ visible: false }));
+function hasRequiredNativeSample(id) {
+  return !objects.get(id).userData.requiresTimelinePreview ||
+    (previewActive && lastEvaluation?.native_geometry && Object.hasOwn(lastEvaluation.native_geometry, id));
+}
 $("isolate").onclick = () => {
   for (const [id, obj] of objects)
-    obj.visible =
+    obj.visible = evaluatedStates.get(id).editor_visible && hasRequiredNativeSample(id) && (
       selection.has(id) ||
       roots(selection).some((root) => {
         let p = nodes.get(id)?.parent;
@@ -1300,14 +1351,14 @@ $("isolate").onclick = () => {
           p = nodes.get(p)?.parent;
         }
         return false;
-      });
+      }));
   $("status").textContent = "Temporary isolation; saved visibility unchanged.";
 };
 $("show-all").onclick = () => {
-  for (const [id, obj] of objects) obj.visible = nodes.get(id).visible;
+  for (const [id, obj] of objects) obj.visible = evaluatedStates.get(id).editor_visible && hasRequiredNativeSample(id);
 };
 $("all").onclick = () => {
-  selection = new Set(doc.nodes.filter((n) => n.selectable).map((n) => n.id));
+  selection = new Set(doc.nodes.filter((n) => nodeSelectable(n.id)).map((n) => n.id));
   refreshSelection();
 };
 $("none").onclick = () => {
@@ -1317,26 +1368,26 @@ $("none").onclick = () => {
 $("invert").onclick = () => {
   selection = new Set(
     doc.nodes
-      .filter((n) => n.selectable && !selection.has(n.id))
+      .filter((n) => nodeSelectable(n.id) && !selection.has(n.id))
       .map((n) => n.id),
   );
   refreshSelection();
 };
 $("children").onclick = () => {
   for (const id of [...selection])
-    for (const n of doc.nodes) if (n.parent === id) selection.add(n.id);
+    for (const n of doc.nodes) if (n.parent === id && nodeSelectable(n.id)) selection.add(n.id);
   refreshSelection();
 };
 $("parent-select").onclick = () => {
   selection = new Set(
-    [...selection].map((id) => nodes.get(id).parent).filter(Boolean),
+    [...selection].map((id) => nodes.get(id).parent).filter(id => id && nodeSelectable(id)),
   );
   refreshSelection();
 };
 $("same-type").onclick = () => {
   const types = new Set([...selection].map((id) => nodes.get(id).type));
   selection = new Set(
-    doc.nodes.filter((n) => types.has(n.type)).map((n) => n.id),
+    doc.nodes.filter((n) => types.has(n.type) && nodeSelectable(n.id)).map((n) => n.id),
   );
   refreshSelection();
 };
@@ -1517,14 +1568,14 @@ async function historyCommand(name) {
   if (rejectPendingEdit()) return;
   setBusy(true);
   try {
-    await install(
+    const displayed = await install(
       await api(name, {
         expected_revision: revision,
         expected_sha256: sha256,
         transaction_id: crypto.randomUUID(),
       }),
     );
-    clearDiagnostic();
+    if (displayed !== false) clearDiagnostic();
   } catch (e) {
     diagnostic(e);
   } finally {
@@ -1595,9 +1646,14 @@ function initialize() {
       } else if (drag) {
         const current = drag;
         drag = null;
+        if ([...current.records.keys()].some(id => transformReason(id))) {
+          applyNativeState(savedNativeState.nodes);
+          diagnostic("Selected transforms are read-only in the native viewport.");
+          return;
+        }
         commit(
           [...current.records.keys()]
-            .filter((id) => !nodes.get(id).locked)
+            .filter((id) => !transformReason(id))
             .map((id) => ({
               op: "set-transform",
               id,
@@ -1614,7 +1670,7 @@ function initialize() {
           .clone()
           .multiply(drag.records.get(drag.primary).world.clone().invert());
         for (const [id, record] of drag.records) {
-          if (id === drag.primary || nodes.get(id).locked) continue;
+          if (id === drag.primary || transformReason(id)) continue;
           const object = objects.get(id),
             matrix = object.parent.matrixWorld
               .clone()
@@ -1651,17 +1707,18 @@ function initialize() {
         camera,
       );
       const hit = ray.intersectObjects(content.children, true).find((h) => {
-        let object = h.object;
+        let object = h.object, identifier = null;
         while (object) {
           if (!object.visible) return false;
+          if (!identifier && object[editorNode]) identifier = object[editorNode];
           object = object.parent;
         }
-        return true;
+        return identifier !== null && nodeSelectable(identifier);
       });
       if (hit) {
         let object = hit.object;
         while (object && !object[editorNode]) object = object.parent;
-        if (object && nodes.get(object[editorNode]).selectable)
+        if (object && nodeSelectable(object[editorNode]))
           select(object[editorNode], e.shiftKey, e.ctrlKey || e.metaKey);
       } else if (!e.shiftKey) select(null);
     });
@@ -1677,7 +1734,8 @@ function initialize() {
     renderer.domElement.addEventListener("webglcontextrestored", () => {
       lost = false;
       reload()
-        .then(() => {
+        .then((displayed) => {
+          if (displayed === false) return;
           clearDiagnostic();
           $("status").textContent = "WebGL restored; saved scene reloaded.";
         })
@@ -1705,7 +1763,7 @@ window.addEventListener("keydown", (e) => {
     ];
     gizmo.setMode($("tool").value);
   } else if (
-    (!previewActive || canEditPreview()) &&
+    (!previewActive || canEditPreview()) && transformSelectionAllowed() &&
     ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
   ) {
     e.preventDefault();
@@ -1714,7 +1772,7 @@ window.addEventListener("keydown", (e) => {
       step = e.shiftKey ? 1 : 0.1;
     commit(
       roots()
-        .filter((id) => !nodes.get(id).locked)
+        .filter((id) => !nodeLocked(id))
         .map((id) => {
           const transform = localTransform(objects.get(id));
           transform.translation[axis] += step * sign;
@@ -1788,6 +1846,7 @@ window.hatchEditor = {
       getCamera: () => camera,
       reload,
       preview,
+      applyNativeState,
       clearPreview,
       getSnapshot: () => structuredClone(currentSnapshot),
       getSelection: () => [...selection],
@@ -1809,6 +1868,7 @@ window.hatchEditor = {
   downloadArtifact,
   subscribeInstalled,
   commit,
+  applyNativeState,
   preview,
   clearPreview,
   reload,

@@ -54,6 +54,14 @@ jobs:
         run: PYTHONPATH=scripts:tests python -m unittest test_rig_editor3d_pose_inspector -v 2>&1 | tee scene3d-evidence/editor-poses.log
         env:
           HATCH_EDITOR_BROWSER_TEST: '1'
+      - name: Editor native component and persistence browser acceptance
+        run: PYTHONPATH=scripts:tests python -m unittest test_rig_editor3d_viewer test_rig_editor3d_components test_rig_editor3d_state -v 2>&1 | tee scene3d-evidence/editor-browser.log
+        env:
+          HATCH_EDITOR_BROWSER_TEST: '1'
+          OPENBLAS_NUM_THREADS: '1'
+          OMP_NUM_THREADS: '1'
+          MKL_NUM_THREADS: '1'
+          NUMEXPR_NUM_THREADS: '1'
       - name: Real robotic scene and portable snapshot
         run: python scripts/demonstrate_scene3d_service.py --destination scene3d-evidence/demo 2>&1 | tee scene3d-evidence/demo.log
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
