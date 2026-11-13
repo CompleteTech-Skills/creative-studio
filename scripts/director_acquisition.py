@@ -276,6 +276,9 @@ class AcquisitionGateway:
             pinned=selected.get('director_spec_binding')
             require(pinned is None or pinned==spec_ref,'DIRECTOR_ACQUISITION_SPEC',
                     'This native job is bound to a different exact Director specification.')
+            require(pinned is not None or selected['status'] in ('pending','failed'),
+                    'DIRECTOR_ACQUISITION_SPEC',
+                    'An existing active or generated acquisition cannot be relabeled with a new Director specification.')
             require(pinned is not None or method in ('AcquisitionGateway.prepare','AcquisitionGateway.claim'),
                     'DIRECTOR_ACQUISITION_SPEC','Prepare or claim must establish the exact specification binding first.')
             duplicate_claim=(method=='AcquisitionGateway.claim' and selected['status']=='running' and

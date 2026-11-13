@@ -270,3 +270,12 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         result=self.adapter.fail(fail)
         self.assertEqual(result['value']['native_state'],'failed')
         self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['status'],'failed')
+
+    def test_canonical_spec_cannot_adopt_existing_unbound_native_claim(self):
+        token=self.gateway.claim('base')['claim_id']
+        with self.assertRaisesRegex(RigError,'cannot be relabeled'):
+            self.adapter.claim(self.request('claim','running',token))
+        data=hatch.manifest(self.root);job=hatch.job_for(data,'base')
+        self.assertNotIn('director_spec_binding',job)
+        self.assertEqual(job['token'],token)
+        self.assertEqual(job['attempts'],1)

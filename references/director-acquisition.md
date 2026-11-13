@@ -31,7 +31,9 @@ as follows:
 
 - `spec` is an exact Director AssetSpec whose `logical_id` is the native job and
   whose `asset_type` is `raster`. The first prepare/claim pins the exact spec
-  reference in native job history and metadata. A different specification cannot
+  reference in native job history and metadata before work starts. Existing
+  unbound running/generated native jobs cannot be adopted or relabeled.
+  A different specification cannot
   adopt that active acquisition, including changes to design or licensing.
 - `input_sha256` is `gateway.input_sha256()`, the canonical object hash of the
   current native input hash mapping. It is checked under the native lock.
