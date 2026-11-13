@@ -42,7 +42,7 @@ def build_collision_inputs(*, frames=97):
     add('excluded',dict(type='sphere',radius=.4),[5,3,0])
     world['collision_exclusions']=[['excluded','floor']]
     add('thin-wall',dict(type='box',size=[.02,3,2]),[0,2,5],static=True)
-    add('projectile',dict(type='sphere',radius=.05),[-7,2,5],velocity=[50,0,0])
+    add('projectile',dict(type='sphere',radius=.05),[-7,2,5],velocity=[40,0,0])
     vertices,triangles=_box([.8,.8,.8])
     add('hull',dict(type='convex-hull',source='ball-asset',vertices=[list(v) for v in vertices],triangles=[list(t) for t in triangles]),[7,3,-3])
     add('compound',dict(type='compound',children=[dict(transform=dict(translation=[x,0,0],rotation=[0,0,0,1]),

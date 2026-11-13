@@ -30,6 +30,7 @@ def main():
     try:
         world = job['world']
         poses = {body['id']:body for body in job['state']['bodies']}
+        materials = {material['id']:material for material in world['materials']}
         identifiers = {}
         for index, body in enumerate(world['bodies']):
             collider = body['colliders'][0]
@@ -49,6 +50,7 @@ def main():
             pose = poses[body['id']]
             native = p.createMultiBody(baseMass=0,baseCollisionShapeIndex=shape,baseVisualShapeIndex=visual,
                 basePosition=pose['translation'],baseOrientation=pose['rotation'],physicsClientId=client)
+            p.changeDynamics(native,-1,collisionMargin=materials[collider['material']]['collision_margin'],physicsClientId=client)
             identifiers[native] = body['id']
             p.setCollisionFilterGroupMask(native,-1,collision_signed_mask(collider['group']),collision_signed_mask(collider['mask']),physicsClientId=client)
         results = []

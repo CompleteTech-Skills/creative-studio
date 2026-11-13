@@ -1416,8 +1416,8 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
         wrapped=controls is not None and (any(controls['inertial_position']) or abs(abs(controls['inertial_rotation'][3])-1)>1e-10)
         expected_margin=(0 if wrapped else shape['radius']) if shape['type']=='sphere' else material['collision_margin']
         explicit_proxies=world.get('collision_profile')=='explicit-proxies-v1'
-        if explicit_proxies: expected_margin=material['collision_margin']
-        expected_semantics='explicit proxy margin' if explicit_proxies else (('transformed primitive wrapper margin' if wrapped else 'inherent sphere radius') if shape['type']=='sphere' else 'explicit box collision margin')
+        if explicit_proxies: expected_margin=(0 if wrapped else shape['radius']) if shape['type']=='sphere' else material['collision_margin']
+        expected_semantics=('inherent sphere radius' if shape['type']=='sphere' and not wrapped else 'explicit proxy margin') if explicit_proxies else (('transformed primitive wrapper margin' if wrapped else 'inherent sphere radius') if shape['type']=='sphere' else 'explicit box collision margin')
         require(actual['margin_semantics']==expected_semantics,'PHYSICS_BAKE_FAILED','Native margin semantics differ from the admitted child representation.',category='backend-crash')
         require(type(actual.get('center_of_mass')) is list and len(actual['center_of_mass'])==3 and all(type(a) in (int,float) and math.isfinite(a) and abs(a-b)<=1e-6 for a,b in zip(actual['center_of_mass'],body['mass']['center_of_mass'])),
                 'PHYSICS_BAKE_FAILED','DIRECT observed center of mass differs.',category='backend-crash')

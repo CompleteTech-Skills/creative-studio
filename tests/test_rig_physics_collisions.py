@@ -144,6 +144,21 @@ class CollisionNativeTests(unittest.TestCase):
                 self.assertAlmostEqual(observed,height,delta=.06)
                 self.assertTrue(any(frame['contacts'] for frame in contacts['samples']))
 
+    def test_real_query_preserves_zero_margin_hull_boundary(self):
+        from physics_collision_query import raycast_cache
+        world,payloads=self.base()
+        points,triangles=_box([1,1,1])
+        body=world['bodies'][0]
+        body['colliders'][0]['shape']=dict(type='convex-hull',source='ball-asset',vertices=[list(v) for v in points],triangles=[list(v) for v in triangles])
+        body['colliders'][0]['group']=2
+        world['bodies'][1]['colliders'][0]['group']=1
+        cache,_,_=self.run_world(world,payloads,'query-margin')
+        x,y,z=body['transform']['translation']
+        query=raycast_cache(cache,0,[dict(start=[x+.49,y+2,z],end=[x+.49,y-2,z],mask=2),
+            dict(start=[x+.5005,y+2,z],end=[x+.5005,y-2,z],mask=2)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'])
+        self.assertTrue(query['results'][0]['hit'])
+        self.assertFalse(query['results'][1]['hit'])
+
     def test_real_masks_and_pair_exclusions_remove_response(self):
         heights={}
         for mode in ['colliding','mask','pair']:
