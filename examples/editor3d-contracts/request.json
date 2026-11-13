@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "kind": "editor3d-request",
+  "id": "request",
+  "operation": "scenes.command",
+  "project_id": "project",
+  "target_id": "scene",
+  "expected_revision": 0,
+  "expected_project_sha256": "62ca33b39a103db474de2a1e5f285a7bdc95d4d6d90550a2c716ca2826a57562",
+  "argument": {
+    "path": "examples/editor3d-contracts/command.json",
+    "sha256": "477b45ef3132e99e3246ac4240b7c1f392b20dffcbb245f8fc2d68824ab893e4",
+    "bytes": 724,
+    "media_type": "application/json"
+  },
+  "idempotency_key": "operation"
+}

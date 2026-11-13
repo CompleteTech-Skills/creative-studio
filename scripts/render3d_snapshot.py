@@ -21,7 +21,7 @@ from typing import Protocol
 
 from atomic_publish import _rename_no_replace
 from render3d_contracts import (COORDINATES, MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES,
-                                Render3DError, require, validate, load, snapshot_hash, VERSION)
+                                Render3DError, require, validate, load, snapshot_hash, VERSION, open_regular)
 from rig_errors import RigError, atomic_json, safe_path, sha256
 
 
@@ -100,10 +100,13 @@ class NativeRigAdapter:
 
     def describe(self, root):
         from rig_models import load_rig
-        from rig_errors import read_json
+        from rig_errors import decode_json
         from rig_contracts import validate_contract
-        manifest = validate_contract(read_json(safe_path(root, 'rig.json', exists=True)), 'Rig')
-        refs = [('rig.json', sha256(root / 'rig.json')),
+        manifest_path = safe_path(root, 'rig.json', exists=True)
+        with open_regular(manifest_path, 32 * 1024**2) as stream:
+            manifest_bytes = stream.read(32 * 1024**2 + 1)
+        manifest = validate_contract(decode_json(manifest_bytes, max_bytes=32 * 1024**2), 'Rig')
+        refs = [('rig.json', hashlib.sha256(manifest_bytes).hexdigest()),
                 ('identity.json', manifest['character']['identity_sha256'])]
         refs.extend((r['path'], r['sha256']) for r in manifest['source']['dependencies'])
         refs.append((manifest['geometry']['data']['path'], manifest['geometry']['data']['sha256']))
@@ -111,7 +114,8 @@ class NativeRigAdapter:
         for item in manifest['animations'] + manifest['review']['receipts'] + manifest['validation']:
             refs.append((item['path'], item['sha256']))
         for receipt in manifest['review']['receipts']:
-            record = validate_contract(read_json(safe_path(root, receipt['path'], exists=True)), 'RigReviewReceipt')
+            with open_regular(safe_path(root, receipt['path'], exists=True), 32 * 1024**2) as stream:
+                record = validate_contract(decode_json(stream.read(32 * 1024**2 + 1), max_bytes=32 * 1024**2), 'RigReviewReceipt')
             refs.extend((r['path'], r['sha256']) for r in record['evidence'])
         distinct = {}
         for path, digest in refs:
@@ -122,46 +126,59 @@ class NativeRigAdapter:
         require(all(size <= MAX_FILE_BYTES for size in sizes) and sum(sizes) <= MAX_TOTAL_BYTES,
                 'storage-exhaustion', 'Native rig source closure exceeds byte budget.')
         # Enforce snapshot admission before loading binary geometry/skin payloads.
-        rig = load_rig(root)
-        # Loading authenticates storage; the existing semantic validators own
-        # executable skeleton/controller/skin/clip correctness. Missing optional
-        # rigging is allowed for static imports, but present declarations must
-        # not freeze malformed data as validated source.
-        from rig_skeleton import validate_skeleton
-        from rig_ik import validate_controllers
-        from rig_skinning import validate_skin
-        from rig_animation import validate_animation
-        skeleton = rig.manifest['skeleton']
-        if skeleton is None:
-            require(not rig.weights and not rig.clips
-                    and not any(rig.manifest['controllers'].values()),
-                    'invalid-input', 'Skin, animation and controllers require a skeleton.')
-        else:
-            validate_skeleton(skeleton, rig.manifest['limits'])
-            validate_controllers(skeleton, rig.manifest['controllers'])
-            meshes = rig.geometry.by_id()
-            for name, skin in rig.weights.items():
-                require(name in meshes, 'invalid-input', 'Skin targets a missing mesh.')
-                validate_skin(skin, meshes[name], skeleton, rig.manifest['limits'])
-            for clip in rig.clips.values():
-                validate_animation(rig, clip)
-        return SourceDescription(manifest['id'], manifest['version'], 'rig.json',
-                                 tuple(sorted(distinct.items())), manifest['source']['fixture'], 'native-rig-preview')
+        # Native validators may reopen payloads using their legacy readers.
+        # Give them private, bounded regular files rather than caller-mutable paths.
+        with tempfile.TemporaryDirectory(prefix='render3d-native-admission-') as temporary:
+            private_root = Path(temporary)
+            copied_bytes = 0
+            for path, digest in distinct.items():
+                copied = _copy_verified(root, private_root, path, digest,
+                                        remaining=MAX_TOTAL_BYTES - copied_bytes)
+                copied_bytes += copied['bytes']
+            rig = load_rig(private_root)
+            # Loading authenticates storage; the existing semantic validators own
+            # executable skeleton/controller/skin/clip correctness. Missing optional
+            # rigging is allowed for static imports, but present declarations must
+            # not freeze malformed data as validated source.
+            from rig_skeleton import validate_skeleton
+            from rig_ik import validate_controllers
+            from rig_skinning import validate_skin
+            from rig_animation import validate_animation
+            skeleton = rig.manifest['skeleton']
+            if skeleton is None:
+                require(not rig.weights and not rig.clips
+                        and not any(rig.manifest['controllers'].values()),
+                        'invalid-input', 'Skin, animation and controllers require a skeleton.')
+            else:
+                validate_skeleton(skeleton, rig.manifest['limits'])
+                validate_controllers(skeleton, rig.manifest['controllers'])
+                meshes = rig.geometry.by_id()
+                for name, skin in rig.weights.items():
+                    require(name in meshes, 'invalid-input', 'Skin targets a missing mesh.')
+                    validate_skin(skin, meshes[name], skeleton, rig.manifest['limits'])
+                for clip in rig.clips.values():
+                    validate_animation(rig, clip)
+            return SourceDescription(manifest['id'], manifest['version'], 'rig.json',
+                                     tuple(sorted(distinct.items())), manifest['source']['fixture'], 'native-rig-preview')
 
 
-def _copy_verified(root, stage, path, expected):
+def _copy_verified(root, stage, path, expected, *, remaining=None):
     try:
         source = safe_path(root, path, exists=True)
         target = safe_path(stage, path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0)
+        # The source can change after safe_path. Never block opening a FIFO
+        # substituted at that boundary; fstat below rejects nonregular files.
+        flags = (os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
+                 | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
         fd = os.open(source, flags)
         digest, count = hashlib.sha256(), 0
+        limit = MAX_FILE_BYTES if remaining is None else min(MAX_FILE_BYTES, remaining)
         with os.fdopen(fd, 'rb') as stream, target.open('xb') as output:
             require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), 'missing-asset', 'Source must be a regular file.', path=path)
-            for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            for chunk in iter(lambda: stream.read(min(1024 * 1024, limit - count + 1)), b''):
                 count += len(chunk)
-                require(count <= MAX_FILE_BYTES, 'storage-exhaustion', 'Source exceeds snapshot per-file budget.', path=path)
+                require(count <= limit, 'storage-exhaustion', 'Source exceeds remaining snapshot byte budget.', path=path)
                 digest.update(chunk); output.write(chunk)
             output.flush(); os.fsync(output.fileno())
         require(digest.hexdigest() == expected, 'stale-asset', 'Source bytes differ from owner hash.', path=path)
@@ -204,7 +221,11 @@ No source revision or output cache is overwritten or pruned.
         destination.parent.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix='.render3d-snapshot-', dir=destination.parent))
         try:
-            copied = [_copy_verified(source_root, stage, path, digest) for path, digest in description.files]
+            copied, copied_bytes = [], 0
+            for path, digest in description.files:
+                item = _copy_verified(source_root, stage, path, digest,
+                                      remaining=MAX_TOTAL_BYTES - copied_bytes)
+                copied.append(item); copied_bytes += item['bytes']
             require(copied == inventory, 'stale-asset', 'Source inventory changed during snapshot creation.')
             require(adapter.describe(stage) == description, 'stale-asset', 'Frozen source failed its owner validation.')
             atomic_json(stage / 'snapshot.json', document)
@@ -234,7 +255,13 @@ def verify_snapshot(root, adapter: SceneAdapter):
                 'unsupported-feature', 'Snapshot requires a different source adapter.')
         for item in document['files']:
             path = safe_path(root, item['path'], exists=True)
-            require(path.stat().st_size == item['bytes'] and sha256(path) == item['sha256'],
+            digest, count = hashlib.sha256(), 0
+            with open_regular(path, MAX_FILE_BYTES) as stream:
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    count += len(block)
+                    require(count <= MAX_FILE_BYTES, 'storage-exhaustion', 'Frozen source exceeds byte budget.')
+                    digest.update(block)
+            require(count == item['bytes'] and digest.hexdigest() == item['sha256'],
                     'stale-asset', 'Frozen source changed.', path=item['path'])
         description = adapter.describe(root)
         require(description.files == tuple((f['path'], f['sha256']) for f in document['files'])
