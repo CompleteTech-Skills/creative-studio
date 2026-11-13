@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import unittest
 from contextlib import closing
 from unittest.mock import patch
@@ -171,6 +172,92 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
         self.assertEqual(reopened.annotations(reference)['note'], 'before migration')
         self.assertEqual(reopened.read_own_file(reference, 'mesh/triangle.obj'), self.fixture.mesh.read_bytes())
 
+    def legacy_handles(self):
+        reference = self.register()
+        shutil.rmtree(self.library.storage.root)
+        with closing(sqlite3.connect(self.library.database)) as db, db:
+            db.execute('DROP TABLE durability')
+        return reference, [AssetLibrary(self.library.root) for _ in range(3)]
+
+    def test_preupgrade_handles_publish_versions_and_annotations_durably(self):
+        reference, (migrator, old_writer, old_annotations) = self.legacy_handles()
+        migrator.upgrade_storage()
+        manifest = deepcopy(self.fixture.manifest)
+        manifest['version'] = '2.0.0'
+        newer = old_writer.register(seal(manifest), self.fixture.sources)
+        old_annotations.update_annotations(reference, expected_revision=0, tags=['retained'],
+                                           favorite=True, note='after another handle migrated')
+        migrator.recover()
+        self.assertEqual(migrator.resolve(newer), seal(manifest))
+        self.assertEqual(migrator.annotations(reference)['note'], 'after another handle migrated')
+        self.assertTrue(old_writer.storage_status()['durable'])
+        # A second explicit upgrade on a pre-upgrade handle is idempotent.
+        untouched = AssetLibrary(self.library.root)
+        self.assertEqual(untouched.upgrade_storage()['versions'], 2)
+
+    def test_preupgrade_readers_cannot_hide_damaged_canonical_payloads(self):
+        reference, handles = self.legacy_handles()
+        stale_readers = [AssetLibrary(self.library.root) for _ in range(4)]
+        handles[0].upgrade_storage()
+        digest = self.fixture.files[0]['sha256']
+        (handles[0].storage.root / 'blobs' / digest).write_bytes(b'damaged')
+        for stale, name in zip(stale_readers, ('resolve', 'inspect', 'read_file', 'read_own_file')):
+            # Each handle was opened before the ordinary migration.
+            with self.subTest(api=name), self.assertRaises(RigError):
+                method = getattr(stale, name)
+                if name.startswith('read_'):
+                    method(reference, 'mesh/triangle.obj')
+                else:
+                    method(reference)
+
+    def test_writer_waiting_for_migration_refreshes_mode_after_lock(self):
+        from asset_library_storage import Storage
+        reference, (migrator, old_writer, old_annotations) = self.legacy_handles()
+        migration_ready, release, writer_started = (threading.Event() for _ in range(3))
+        failures, result = [], []
+        original_ready = Storage.ready
+        original_begin = old_writer._begin_writer
+        def paused_ready(storage):
+            original_ready(storage)
+            migration_ready.set()
+            if not release.wait(5):
+                raise RuntimeError('migration release timed out')
+        def waiting_begin(db):
+            writer_started.set()
+            original_begin(db)
+        def migrate():
+            try:
+                migrator.upgrade_storage()
+            except BaseException as exc:
+                failures.append(exc)
+        def publish():
+            try:
+                manifest = deepcopy(self.fixture.manifest)
+                manifest['version'] = '2.0.0'
+                result.append(old_writer.register(seal(manifest), self.fixture.sources))
+                old_annotations.update_annotations(reference, expected_revision=0, tags=[],
+                                                   favorite=False, note='waited migration')
+            except BaseException as exc:
+                failures.append(exc)
+        with patch.object(Storage, 'ready', paused_ready), patch.object(old_writer, '_begin_writer', waiting_begin):
+            a = threading.Thread(target=migrate)
+            b = threading.Thread(target=publish)
+            a.start()
+            try:
+                self.assertTrue(migration_ready.wait(5))
+                b.start()
+                self.assertTrue(writer_started.wait(5))
+            finally:
+                release.set()
+                a.join(10)
+                if b.ident is not None:
+                    b.join(10)
+        self.assertFalse(a.is_alive() or b.is_alive())
+        self.assertEqual(failures, [])
+        migrator.recover()
+        self.assertEqual(migrator.resolve(result[0])['version'], '2.0.0')
+        self.assertEqual(migrator.annotations(reference)['note'], 'waited migration')
+
     def test_verified_own_reads_and_exact_blob_repair(self):
         reference = self.register()
         self.assertEqual(self.library.list_references(), [reference])
@@ -216,6 +303,49 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
         self.assertEqual(AssetLibrary(self.library.root).events('lifecycle.triangle'), [first, second])
         with self.assertRaises(RigError):
             self.library.append_event('../escape', expected_revision=0, document={})
+
+    def test_readers_wait_for_active_durable_annotation_and_event_commits(self):
+        reference = self.register()
+        for kind in ('annotation', 'event'):
+            with self.subTest(kind=kind):
+                committed = threading.Event()
+                release = threading.Event()
+                reader_started = threading.Event()
+                results = []
+                errors = []
+                original = self.library.storage.append
+                def paused(*args, **kwargs):
+                    original(*args, **kwargs)
+                    committed.set()
+                    self.assertTrue(release.wait(5))
+                def writer():
+                    try:
+                        if kind == 'annotation':
+                            self.library.update_annotations(reference, expected_revision=0, tags=[], favorite=False, note='committed')
+                        else:
+                            self.library.append_event('concurrency', expected_revision=0, document={'ok': True})
+                    except BaseException as error:
+                        errors.append(error)
+                def reader():
+                    reader_started.set()
+                    try:
+                        results.append(self.library.annotations(reference) if kind == 'annotation' else self.library.events('concurrency'))
+                    except BaseException as error:
+                        errors.append(error)
+                with patch.object(self.library.storage, 'append', paused):
+                    a = threading.Thread(target=writer)
+                    a.start()
+                    self.assertTrue(committed.wait(5))
+                    b = threading.Thread(target=reader)
+                    b.start()
+                    self.assertTrue(reader_started.wait(5))
+                    b.join(.1)
+                    release.set()
+                    a.join(5)
+                    b.join(5)
+                self.assertFalse(a.is_alive() or b.is_alive())
+                self.assertEqual(errors, [])
+                self.assertTrue(results)
 
 
 if __name__ == '__main__':
