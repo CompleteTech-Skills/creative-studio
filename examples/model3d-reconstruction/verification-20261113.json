@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "scope": "Issue46 bounded local reconstruction; central integration and full parent10 acceptance remain open.",
+  "base": "0226b6f3b2c37ff76d06a60df67fba37b3494dde",
+  "commands": {
+    "regression": "python -m unittest discover -s tests -p 'test_model3d_*.py' -v",
+    "focused": "python -m unittest discover -s tests -p 'test_model3d_reconstruction*.py' -v",
+    "demo": "python scripts/model3d_reconstruction_demo.py --destination NEW"
+  },
+  "validation": {
+    "model3d_final": {
+      "tests": 206,
+      "passed": true,
+      "seconds": 21.331,
+      "log": "reconstruction46-model-final-e1e0a88.log"
+    },
+    "independent_review_tests": {
+      "tests": 31,
+      "passed": true,
+      "seconds": 1.653,
+      "decisive_five_finding_probe": "pass"
+    },
+    "demo": {
+      "generated_files": 32,
+      "acceptance_sha256": "7a61fbfc1d0ba550286e881bcd5bced35ba97443f3df7dee7084a47d3a558d03",
+      "methods": [
+        "C-artwork-limited-extrusion",
+        "D-contour-with-hole",
+        "D-revolution",
+        "D-relief",
+        "E-calibrated-visual-hull",
+        "F-redundant-views"
+      ],
+      "hull_reprojection": [
+        {
+          "view": "front",
+          "calibration": "known",
+          "iou": 1.0,
+          "foreground_pixels": 576,
+          "rendered_pixels": 576,
+          "missing_foreground_pixels": 0,
+          "excess_background_pixels": 0,
+          "centroid_residual_px": 0.0,
+          "contradicts_observation": false
+        },
+        {
+          "view": "side",
+          "calibration": "known",
+          "iou": 1.0,
+          "foreground_pixels": 576,
+          "rendered_pixels": 576,
+          "missing_foreground_pixels": 0,
+          "excess_background_pixels": 0,
+          "centroid_residual_px": 0.0,
+          "contradicts_observation": false
+        },
+        {
+          "view": "top",
+          "calibration": "known",
+          "iou": 1.0,
+          "foreground_pixels": 576,
+          "rendered_pixels": 576,
+          "missing_foreground_pixels": 0,
+          "excess_background_pixels": 0,
+          "centroid_residual_px": 0.0,
+          "contradicts_observation": false
+        }
+      ],
+      "occupancy": {
+        "path": "occupancy.bin",
+        "shape": [
+          16,
+          16,
+          16
+        ],
+        "encoding": "uint8-bool-C-order-XYZ",
+        "bytes": 4096,
+        "sha256": "2ad79c9167b3eba1849e78b60d7cc90a3fd8b1457c0d9b5c140c63e4a4fd4f1e"
+      },
+      "rejected_evidence": {
+        "unknown-calibration": {
+          "code": "MODEL3D_HULL_CALIBRATION",
+          "stage": "rig",
+          "message": "Supply known or explicitly estimated calibration; unknown views cannot carve a precise hull.",
+          "asset": null,
+          "expected": null,
+          "observed": null,
+          "retryable": false,
+          "correction": "Correct the indicated input and retry.",
+          "preserved": null
+        },
+        "contradiction": {
+          "code": "MODEL3D_HULL_CONTRADICTION",
+          "stage": "rig",
+          "message": "No cell satisfies all calibrated observations within the supplied volume.",
+          "asset": null,
+          "expected": null,
+          "observed": [
+            {
+              "view": "left",
+              "remaining_voxels": 384
+            },
+            {
+              "view": "right",
+              "remaining_voxels": 0
+            }
+          ],
+          "retryable": false,
+          "correction": "Correct the indicated input and retry.",
+          "preserved": null
+        }
+      },
+      "incomplete_uncertainties": [
+        "Hidden concavities and internal surfaces remain unknown; no observed anatomy is inferred.",
+        "Voxel faces are derived boundaries of an approximate silhouette intersection, not directly measured surface samples.",
+        "Some views share the same calibration and add no independent geometric constraint.",
+        "Viewing axes are collinear; depth constraints depend on projection and camera baselines, and completeness is unproven."
+      ]
+    }
+  },
+  "source_hashes": {
+    "scripts/model3d_reconstruction.py": "8e9a49d2a6bc9e51ef2a70eef2e78421409259301705262aad555983fb8ffe16",
+    "scripts/model3d_reconstruction_demo.py": "aa633c822ee1bbe25592631cb4a6d5668721aee556fb68df986abbba53f7f9bf",
+    "scripts/model3d_reconstruction_solids.py": "e1a3127b16ca79163a8e16c965952186e6a74eeab141043b7452cdbb3db45393",
+    "scripts/model3d_reconstruction_views.py": "de25bc2387a097c1a18a8193823c7d27ed39c7759ed56739e07743a9a0c91ce8"
+  },
+  "limits": [
+    "Central CLI/schema/capability/job integration remains pending shared owner.",
+    "No provider, automatic calibration, bilateral symmetry completion, Blender authoring, production approval or parent10 completion claimed."
+  ],
+  "review": {
+    "result": "clean",
+    "head": "e1e0a882b078e8c4f15f0de39802b01110ffbb29",
+    "base": "0226b6f3b2c37ff76d06a60df67fba37b3494dde",
+    "resolved_findings": [
+      "Stale geometry/report/occupancy publication",
+      "Strict JPEG entropy and PNG raster verification",
+      "Signed integer minimum metric bound overflow",
+      "Mixed boolean numerical admission",
+      "UV seam vertex allocation budget"
+    ]
+  },
+  "implementation_head": "e1e0a882b078e8c4f15f0de39802b01110ffbb29"
+}
