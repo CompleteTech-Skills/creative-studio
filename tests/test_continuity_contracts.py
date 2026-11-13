@@ -145,6 +145,26 @@ class ContractTests(unittest.TestCase):
         bad=sample('prop-state');bad['owner_socket_id']='hand'
         with self.assertRaisesRegex(ValueError,'owner'):validate_document(bad)
 
+    def test_semantics_follow_declared_types_not_mapping_keys(self):
+        identity = sample('identity')
+        identity['proportions'] = {'minimum': 0.5, 'maximum': 2, 'confidence': 0.7}
+        self.assertEqual(validate_document(identity)['proportions'], identity['proportions'])
+        link = sample('link')
+        link['entity_mapping'] = {'created_at': 'actor-2', 'path': 'actor-3',
+                                  'origin': 'procedural-fixture', 'expires_at': 'actor-4'}
+        self.assertEqual(validate_document(link)['entity_mapping'], link['entity_mapping'])
+        bad = sample('revision'); bad['bounds'] = {'minimum': [2, 0, 0], 'maximum': [1, 1, 1]}
+        with self.assertRaisesRegex(ValueError, 'inverted bounds'):
+            validate_document(bad)
+        bad = sample('identity'); bad['created_at'] = '2026-02-30T00:00:00Z'
+        with self.assertRaises(ValueError):
+            validate_document(bad)
+        bad = sample('identity')
+        bad['visual_spec']['constraints'] = [dict(id='height', category='proportion', description='Measured height',
+            measurement=1, unit='meter', tolerance=0.1, confidence=0.9, evidence=[], uncertainty=None)]
+        with self.assertRaisesRegex(ValueError, 'CONFIDENCE'):
+            validate_document(bad)
+
     def test_schema_integer_equivalent_floats_remain_exact_and_structured(self):
         from jsonschema import Draft202012Validator
         def float_integers(value):
@@ -273,6 +293,42 @@ class RegistryTests(unittest.TestCase):
         review=review_for(self.assets,revision,name=f'review{version}')
         self.registry.promote(f'draft{version}',expected_sha256=checksum,review=review,select=select)
         return revision,checksum
+
+    def test_repeated_pins_verify_each_revision_once_per_operation(self):
+        revision, checksum = self.promote()
+        pin = dict(identity_id='robot', revision_id='robot-r1', semantic_version='1.0.0', sha256=checksum)
+        bindings = dict(schema_version='1.0.0', project_id='many', project_revision=pointer(),
+            instances=[dict(instance_id=f'instance-{i}', entity_id=f'entity-{i}', shot_id='shot',
+                            revision=deepcopy(pin)) for i in range(100)])
+        import continuity_registry
+        with patch('continuity_registry.verify_references', wraps=continuity_registry.verify_references) as verify:
+            self.registry.register_bindings(bindings)
+            self.assertEqual(verify.call_count, 3)
+            self.registry.bindings('many')
+            self.assertEqual(verify.call_count, 6)
+        invalid = deepcopy(bindings); invalid['project_id'] = 'invalid'
+        invalid['instances'][-1]['revision']['sha256'] = '0' * 64
+        with self.assertRaisesRegex(ValueError, 'pin disagrees'):
+            self.registry.register_bindings(invalid)
+        (self.assets/'review1.json').write_bytes(b'corrupt')
+        with self.assertRaisesRegex(ValueError, 'HASH'):
+            self.registry.bindings('many')
+
+    def test_selection_recovers_from_missing_old_receipt_with_cas_intact(self):
+        self.promote(select=True)
+        _, checksum = self.promote(2, 'robot-r1')
+        (self.assets/'review1.json').unlink()
+        with self.assertRaises(OSError):
+            self.registry.identity('robot')
+        before = list(self.registry.db.iterdump())
+        with self.assertRaisesRegex(ValueError, 'stale identity selection'):
+            self.registry.select('robot', 'robot-r2', expected_revision_id=None)
+        self.assertEqual(list(self.registry.db.iterdump()), before)
+        self.assertEqual(self.registry.select('robot', 'robot-r2', expected_revision_id='robot-r1'), checksum)
+        self.assertEqual(self.registry.identity('robot')['selected_revision'], 'robot-r2')
+        (self.assets/'review2.json').write_bytes(b'corrupt')
+        with self.assertRaisesRegex(ValueError, 'HASH'):
+            self.registry.select('robot', 'robot-r2', expected_revision_id='robot-r2')
 
     def test_draft_isolation_promotion_reload_compare_pin_and_rollback(self):
         r1,h1=self.promote(select=True)

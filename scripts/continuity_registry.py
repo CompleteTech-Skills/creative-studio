@@ -153,6 +153,9 @@ class IdentityRegistry:
         return checksum
 
     def identity(self, identity_id):
+        return self._identity(identity_id)
+
+    def _identity(self, identity_id, *, verify_selected=True):
         row = self.db.execute('SELECT document,hash,selected FROM identities WHERE id=?', (_id(identity_id),)).fetchone()
         if not row:
             raise ValueError('CONTINUITY_REFERENCE: unknown identity')
@@ -161,7 +164,7 @@ class IdentityRegistry:
             raise ValueError('CONTINUITY_HASH: corrupted identity document')
         pin = None
         if row[2] is not None:
-            selected = self.revision(row[2])
+            selected = self.revision(row[2], verify=verify_selected)
             if selected['document']['identity_id'] != identity_id:
                 raise ValueError('CONTINUITY_REFERENCE: selected revision belongs to another identity')
             pin = dict(identity_id=identity_id, revision_id=row[2],
@@ -321,7 +324,7 @@ class IdentityRegistry:
             revision = self.revision(revision_id)
             if revision['deprecated']:
                 raise ValueError('CONTINUITY_DEPRECATED: revision deprecated during selection')
-            current = self.identity(identity_id)
+            current = self._identity(identity_id, verify_selected=False)
             if current['selected_revision'] != expected_revision_id:
                 raise ValueError('CONTINUITY_CONFLICT: stale identity selection')
             self.db.execute('UPDATE identities SET selected=? WHERE id=?', (revision_id, identity_id))
@@ -357,9 +360,14 @@ class IdentityRegistry:
                     geometry_compared=False, visual_approval=False)
 
     def _validate_pins(self, bindings, *, allow_deprecated=False):
+        # Cache only within this operation; every later operation rereads payloads.
+        verified = {}
         for instance in bindings['instances']:
             pin = instance['revision']
-            revision = self.revision(pin['revision_id'])
+            revision_id = pin['revision_id']
+            if revision_id not in verified:
+                verified[revision_id] = self.revision(revision_id)
+            revision = verified[revision_id]
             doc = revision['document']
             if (pin['identity_id'] != doc['identity_id'] or pin['semantic_version'] != doc['semantic_version']
                     or pin['sha256'] != revision['sha256']):

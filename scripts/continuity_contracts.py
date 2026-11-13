@@ -283,6 +283,28 @@ def _walk(value):
             yield from _walk(child)
 
 
+def _typed_objects(value, schema, name=None):
+    """Walk declared object types, never infer types from user-selected keys."""
+    if '$ref' in schema:
+        name = schema['$ref'].split('/')[-1]
+        schema = definitions()[name]
+    if 'anyOf' in schema:
+        if value is None:
+            return
+        yield from _typed_objects(value, schema['anyOf'][0], name)
+    elif isinstance(value, dict):
+        yield name, schema, value
+        properties = schema.get('properties', {})
+        additional = schema.get('additionalProperties')
+        for key, child in value.items():
+            child_schema = properties.get(key, additional)
+            if isinstance(child_schema, dict):
+                yield from _typed_objects(child, child_schema)
+    elif isinstance(value, list) and 'items' in schema:
+        for child in value:
+            yield from _typed_objects(child, schema['items'])
+
+
 def validate_document(value, kind=None):
     # Enforce resource bounds before recursive copying of programmatic inputs.
     canonical_bytes(value)
@@ -297,33 +319,32 @@ def validate_document(value, kind=None):
     errors = sorted(Draft202012Validator(schema).iter_errors(value), key=lambda e: str(list(e.path)))
     if errors:
         raise ValueError('CONTINUITY_SCHEMA: ' + str(list(errors[0].path)) + ': ' + errors[0].message)
-    for item in _walk(value):
-        if 'path' in item:
+    for declared_type, item_schema, item in _typed_objects(value, ref(kind)):
+        if 'path' in item_schema.get('properties', {}):
             portable_path(item['path'])
-        if 'confidence' in item and item['confidence'] is not None and not item.get('evidence'):
+        if declared_type == 'constraint' and item['confidence'] is not None and not item.get('evidence'):
             raise ValueError('CONTINUITY_CONFIDENCE: confidence requires documented evidence')
-        if set(item) == {'numerator', 'denominator'}:
+        if declared_type == 'rational':
             # JSON Schema integer means a number with zero fractional part;
             # normalize exact validated values before Python integer arithmetic.
             item['numerator'], item['denominator'] = int(item['numerator']), int(item['denominator'])
             if math.gcd(item['numerator'], item['denominator']) != 1:
                 raise ValueError('CONTINUITY_TIME: rational times must be reduced')
-        if set(item) == {'translation', 'rotation', 'scale'}:
+        if declared_type == 'transform':
             if abs(sum(x*x for x in item['rotation']) - 1) > 1e-8:
                 raise ValueError('CONTINUITY_TRANSFORM: quaternion must be normalized')
-        if set(item) == {'minimum', 'maximum'}:
+        if declared_type == 'bounds':
             if any(a > b for a, b in zip(item['minimum'], item['maximum'])):
                 raise ValueError('CONTINUITY_BOUNDS: inverted bounds')
-        if set(item) == {'start', 'end', 'project_id', 'world_id', 'timeline_id', 'branch_id', 'entity_ids', 'shot_ids'}:
+        if declared_type == 'scope':
             from fractions import Fraction
             if Fraction(int(item['start']['numerator']), int(item['start']['denominator'])) >= Fraction(int(item['end']['numerator']), int(item['end']['denominator'])):
                 raise ValueError('CONTINUITY_SCOPE: interval must be nonempty and half-open')
-        if item.get('origin') == 'procedural-fixture' and not item['fixture']:
+        if declared_type == 'provenance' and item.get('origin') == 'procedural-fixture' and not item['fixture']:
             raise ValueError('CONTINUITY_PROVENANCE: procedural fixtures cannot become original artwork')
-        if 'created_at' in item:
-            datetime.strptime(item['created_at'], '%Y-%m-%dT%H:%M:%SZ')
-        if item.get('expires_at') is not None:
-            datetime.strptime(item['expires_at'], '%Y-%m-%dT%H:%M:%SZ')
+        for key, field in item_schema.get('properties', {}).items():
+            if (field == STAMP or field == nullable(STAMP)) and item.get(key) is not None:
+                datetime.strptime(item[key], '%Y-%m-%dT%H:%M:%SZ')
     for key in ('components', 'attachments', 'morphs', 'facts', 'instances', 'constraints'):
         if key in value:
             ids = [x['instance_id'] if key == 'instances' else x['id'] for x in value[key]]
