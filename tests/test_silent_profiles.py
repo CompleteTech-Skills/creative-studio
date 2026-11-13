@@ -31,6 +31,74 @@ class ProfileControlTests(unittest.TestCase):
         controls = deepcopy(base); controls['audio'] = 'forbidden'
         with self.assertRaises(ValueError): profiles.validate_encoding(video.PROFILES['h264-mp4'], controls)
 
+    def test_excessive_numeric_controls_have_typed_admission_errors(self):
+        base = profiles.quality_settings(video.PROFILES['h264-mp4'])
+        for field in ('threads', 'gop'):
+            controls = deepcopy(base)
+            controls[field] = 10 ** 400
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'numeric/nesting'):
+                profiles.validate_encoding(video.PROFILES['h264-mp4'], controls)
+        for field in ('value', 'bitrate', 'maxrate', 'bufsize'):
+            controls = deepcopy(base)
+            controls['rate_control'] = {'mode': 'constrained', 'bitrate': 100000,
+                                        'maxrate': 200000, 'bufsize': 400000}
+            if field == 'value':
+                controls['rate_control'] = {'mode': 'quality', 'value': 10 ** 400}
+            else:
+                controls['rate_control'][field] = 10 ** 400
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                profiles.validate_encoding(video.PROFILES['h264-mp4'], controls)
+
+    def test_named_profiles_capture_exact_versioned_controls_and_detect_tampering(self):
+        for name, profile in video.PROFILES.items():
+            for quality in profiles.QUALITY[profile['codec']]:
+                captured = profiles.capture_quality_profile(profile, quality,
+                    fps={'numerator': 30000, 'denominator': 1001}, threads=2)
+                self.assertEqual(profiles.validate_quality_profile(captured), captured)
+                self.assertEqual(captured['schema_version'], 1)
+                self.assertEqual(captured['encoder'], profile['encoder'])
+                changed = deepcopy(captured)
+                changed['encoding']['gop'] += 1
+                with self.assertRaises(ValueError): profiles.validate_quality_profile(changed)
+                changed = deepcopy(captured); changed['schema_version'] = True
+                with self.assertRaises(ValueError): profiles.validate_quality_profile(changed)
+                changed = deepcopy(captured); changed['encoder'] = 'unprobed-hardware'
+                with self.assertRaises(ValueError): profiles.validate_quality_profile(changed)
+        captured['encoding']['threads'] = 1
+        self.assertEqual(profiles.capture_quality_profile(video.PROFILES['av1-webm'], threads=2)['encoding']['threads'], 2)
+
+    def test_named_profiles_reject_malformed_selection_and_rate(self):
+        for field in ('codec', 'encoder'):
+            for value in ([], {}, None, True):
+                profile = deepcopy(video.PROFILES['h264-mp4']); profile[field] = value
+                with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                    profiles.capture_quality_profile(profile)
+        for rate in ([], None, {}, {'numerator': 10 ** 400, 'denominator': 1},
+                     {'numerator': 24, 'denominator': 0}):
+            if rate is None:
+                continue  # None explicitly selects the default rate.
+            with self.subTest(rate=rate), self.assertRaises(ValueError):
+                profiles.capture_quality_profile(video.PROFILES['h264-mp4'], fps=rate)
+
+    def test_storage_estimates_preserve_rational_duration_and_honest_uncertainty(self):
+        profile = video.PROFILES['h264-mp4']
+        settings = profiles.quality_settings(profile)
+        estimate = profiles.estimate_storage(profile, settings, frame_count=30,
+            fps={'numerator': 30000, 'denominator': 1001}, max_output_bytes=100000)
+        self.assertIsNone(estimate['nominal_video_bytes'])
+        self.assertIsNone(estimate['measured_sample'])
+        self.assertEqual(estimate['duration'], {'numerator': 1001, 'denominator': 1000})
+        self.assertEqual(estimate['output_byte_range'], {'minimum': 0, 'maximum': 100000})
+        settings['rate_control'] = {'mode': 'two-pass', 'bitrate': 1000000}
+        estimate = profiles.estimate_storage(profile, settings, frame_count=30,
+            fps={'numerator': 30000, 'denominator': 1001}, max_output_bytes=100000)
+        self.assertEqual(estimate['nominal_video_bytes'], 125125)
+        self.assertTrue(estimate['nominal_target_exceeds_budget'])
+        for count in (True, 0, 18001, 10 ** 400):
+            with self.assertRaises(ValueError):
+                profiles.estimate_storage(profile, settings, frame_count=count,
+                    fps={'numerator': 24, 'denominator': 1})
+
     def test_generated_arguments_are_typed_and_never_accept_extra_flags(self):
         for name, profile in video.PROFILES.items():
             controls = profiles.quality_settings(profile)
@@ -43,50 +111,3 @@ class ProfileControlTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
-
-
-import os
-import tempfile
-from PIL import Image
-
-
-@unittest.skipUnless(os.environ.get('HATCH_SILENT_MEDIA_TEST') == '1', 'explicit actual FFmpeg control gate')
-class ActualEncoderControls(unittest.TestCase):
-    def test_all_codecs_quality_bitrate_constrained_two_pass_and_real_progress(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            paths = []
-            for index in range(6):
-                name = '%06d.png' % index
-                image = Image.new('RGB', (64, 48), (30 + 15 * index, 40, 90))
-                image.paste((220, 180, 40), (index * 5, 12, index * 5 + 10, 32))
-                image.save(root / name)
-                paths.append(name)
-            source = video.build_source(root, paths, {'numerator': 24, 'denominator': 1})
-            capabilities = video.capabilities()
-            for name, profile in video.PROFILES.items():
-                if capabilities['profiles'][name]['status'] != 'supported':
-                    if name == 'av1-webm':
-                        continue  # Optional, honestly reported by capabilities.
-                    self.fail('required encoder unavailable: ' + name)
-                for control in ({'mode':'quality','value':20 if name=='h264-mp4' else 30},
-                                {'mode':'bitrate','bitrate':100000},
-                                {'mode':'constrained','bitrate':100000,'maxrate':200000,'bufsize':400000},
-                                {'mode':'two-pass','bitrate':100000}):
-                    with self.subTest(profile=name, mode=control['mode']):
-                        settings = profiles.quality_settings(profile, 'preview')
-                        settings['rate_control'] = control
-                        request = video.make_request(source, name, encoding=settings)
-                        output = root / (name + '-' + control['mode'] + profile['extension'])
-                        events = []
-                        receipt = video.encode(request, root, output, progress=events.append)
-                        self.assertEqual(receipt['frame_count'], 6)
-                        self.assertEqual(receipt['audio_stream_count'], 0)
-                        actual = [event for event in events if event['phase'] == 'encoding']
-                        self.assertTrue(actual)
-                        self.assertEqual(actual[-1]['frame'], 6)
-                        self.assertEqual(actual[-1]['status'], 'end')
-                        if control['mode'] == 'two-pass':
-                            self.assertEqual(len(receipt['passes']), 2)
-                            self.assertTrue(any(event['phase'] == 'encode-pass-1' for event in events))
-                        video.validate_receipt(receipt, output, request, root)

@@ -58,6 +58,8 @@ Use the existing optional rig dependencies below. The [executable example](examp
 reuses unchanged source and animated GLB files; missing or corrupt required content
 fails verification. Structural-only checks explicitly leave payloads unverified.
 
+The additive [cinematic authoring contracts](references/cinematics3d-contracts.md) define versioned effect stacks, immutable references and explicit capability admission. These are authoring contracts; effect execution and final silent cinematic delivery remain separate acceptance work.
+
 ## Explicit silent video exports
 
 The [silent-video API](references/silent-video.md) encodes exact opaque PNG inventories to independently verified video-only H.264 MP4 or VP9 WebM. It rejects every audio stream, checks actual decoded frames and timestamps, and publishes exclusively after verification. Existing H.264/AAC production review movies retain their audio behavior. This media layer does not claim completed 3D rendering or HDR/EXR delivery.
@@ -80,7 +82,7 @@ Read the [complete 3D guide](references/3d-rigging.md) for fitting uncertainty, 
 
 The 3D contracts are additive. Existing Codex atlas geometry/timing, 2D profiles/playback, decomposition and the 416-state catalog retain their original contracts. Selected actual clips map to catalog definitions; missing anatomy or animation remains explicit. Blender, WebGL and the optional 3D Python packages are unnecessary for ordinary 2D use.
 
-The additive [Scene3D contract foundation](references/scene3d-contracts.md) defines strict project, scene, shot, asset and prefab documents, verifies actual dependency bytes, and evaluates static hierarchical transforms with explicit Blender/glTF conversions. It preserves production v1. Scene construction, editing and rendering remain separate unfinished work; the included triangle is an engineering fixture.
+The additive [Scene3D contract foundation](references/scene3d-contracts.md) defines strict project, scene, shot, asset and prefab documents, verifies actual dependency bytes, and evaluates static hierarchical transforms with explicit Blender/glTF conversions. It preserves production v1. The [Scene3D service](references/scene3d-service.md) adds transactional hierarchy editing, real GLB/glTF import, immutable nested prefabs and complete dependency snapshots through CLI/API. Interactive editing, scene geometry construction and scene rendering remain separate work; included geometry is an engineering fixture.
 
 The [physics integration audit](references/physics-3d-audit.md) records current subsystem ownership, coordinate and timing decisions, and the executed compatibility baseline for future simulation work. No physics solver is implemented by that audit.
 

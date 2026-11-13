@@ -106,7 +106,15 @@ publication. The output directory is opened without following symlinks and pinne
 by descriptor through staging, subprocesses and the final rename. A concurrent
 parent rename retains that original directory identity; a substituted pathname
 cannot redirect publication elsewhere. An existing destination, including a racing empty directory or
-symlink, is preserved. Private partials are removed after failures. The returned
+symlink, is preserved. The private staging directory is also pinned before any
+frame or encoded bytes are written; its replaceable basename is never reopened
+for publication or recursive cleanup. Cleanup preserves a foreign replacement.
+The shared [private staging authority](atomic-publication.md) clears only its
+owned contents and retains tiny empty outer wrappers for explicit maintenance;
+it never deletes a possibly replaced outer basename. Cancellation callbacks run
+during encoding and verification, with no callback
+between the final original-byte recheck and exclusive publication. Private
+partials are removed after failures. The returned
 receipt binds the actual artifact, source manifest and request hashes and
 retains commands, raw probe output, timeline and decode evidence. Persist it in
 the enclosing renderer's existing transaction; this low-level API does not
@@ -132,7 +140,14 @@ Real acceptance tests create labeled synthetic PNGs and run installed media
 binaries. They do not claim 3D geometry or production-art approval. See
 `tests/results/silent-video-foundations.json` for executed results, source
 revision, versions, logs and limitations. Run focused acceptance with
-`python -m unittest discover -s tests -p test_silent_video.py -v`.
+`python -m unittest discover -s tests -p test_silent_video.py -v` runs the
+portable contract checks without optional skips. The dedicated Linux media
+gate runs `HATCH_SILENT_MEDIA_TEST=1 python -m unittest discover -s tests/optional
+-p test_silent_video_native.py -v` with real FFmpeg/ffprobe and descriptor
+publication tests. Its optional directory is intentionally not a package, so
+portable required discovery does not misreport unsupported native encoding as
+executed or relax its unexpected-skip policy.
+
 
 ## Exact multi-shot frame assembly
 
@@ -266,3 +281,26 @@ actual transformed pixel against the declared operation. The strict
 [transform](../schemas/silent-frame-transform-v1.schema.json) schemas describe
 this separate conversion artifact. PNG8 opacity/color rules remain unchanged;
 transparent or HDR input needs its own explicit verified preparation step.
+
+For descriptor-owned job directories, `encode(request, source_root, 'movie.mp4',
+destination_dir_fd=attempt_fd)` uses a validated, duplicated directory handle
+and a portable basename. It checks collisions and available storage through that
+handle and publishes from the same encoder used by ordinary path exports. Both
+passes inherit the pinned staging descriptor. No procfd alias is converted back
+to a mutable destination pathname. The caller retains ownership of its original
+handle and must keep any source capabilities alive for the call.
+
+Named codec presets can be retained independently of the compatible request
+schema with `silent_profiles.capture_quality_profile(profile, level, fps=rate)`.
+The version-1 manifest records the selected software encoder, level, exact frame
+rate, resolved controls and a content digest. Retain it beside the request, pass
+its `encoding` field to `make_request`, and use `validate_quality_profile` when
+reopening it; altered controls, unknown versions and mislabeled encoders fail.
+
+`silent_profiles.estimate_storage(profile, controls, frame_count=N, fps=rate,
+max_output_bytes=budget)` reports exact rational duration and, for bitrate modes,
+a nominal elementary-video byte target. Quality-mode size remains unknown.
+Both modes disclose source/codec/container uncertainty and the enforced output
+cap as a broad range, rather than a statistical confidence claim. No measured
+sample or hardware execution is implied. A target exceeding the cap is flagged;
+the existing encoder still enforces actual output and pass-log byte limits.

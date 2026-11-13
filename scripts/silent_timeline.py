@@ -14,8 +14,7 @@ from pathlib import Path
 import re
 import shutil
 
-from atomic_publish import _rename_no_replace
-from silent_staging import payload_stage
+from atomic_publish import _rename_no_replace, private_stage
 from production_contracts import read_json, MAX_MANIFEST_BYTES
 from production_render import fps_fraction
 import silent_video as video
@@ -100,7 +99,9 @@ def assemble(shots, destination, *, cancel=None):
     if shutil.disk_usage(destination.parent).free < total_bytes + 1024 * 1024:
         raise ValueError('insufficient free storage for timeline')
     with video._pin_directory(destination.parent) as parent_fd:
-        with payload_stage(parent_fd, '.silent-timeline-') as (stage, wrapper_fd):
+        with private_stage(parent_fd, prefix='.silent-timeline-') as (private_path, wrapper_fd):
+            stage = private_path / 'payload'
+            stage.mkdir(mode=0o700)
             frames = stage / 'frames'
             frames.mkdir()
             inventory, mapping, retained = [], [], []

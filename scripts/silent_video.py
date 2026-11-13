@@ -23,8 +23,10 @@ import tempfile
 import time
 
 from PIL import Image
-from atomic_publish import _rename_no_replace
-from production_contracts import _structural, safe_path, read_json
+from atomic_publish import (_rename_no_replace, pinned_directory, private_stage,
+                            private_stage_supported)
+from production_contracts import _structural, read_json
+from rig_errors import directory_capability, normalize_root, open_payload, safe_path
 from production_render import fps_fraction, file_hash
 from silent_profiles import encoding_schema, validate_encoding, arguments as encoding_arguments
 
@@ -116,7 +118,7 @@ def _digest(value):
 
 
 def _path(root, relative):
-    path = safe_path(root, relative)
+    path = safe_path(root, relative, exists=True)
     # Cross-platform alias and control-character rejection before native I/O.
     for part in relative.split('/'):
         if (part[-1:] in (' ', '.') or any(ord(c) < 32 for c in part) or
@@ -125,29 +127,13 @@ def _path(root, relative):
     return path
 
 
+@contextmanager
 def _open_source(root, relative):
-    """Walk directory descriptors without following replaceable symlinks."""
-    path = _path(root, relative)
-    if os.name == 'posix' and hasattr(os, 'O_NOFOLLOW'):
-        fd = os.open(Path(root).resolve(), os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            parts = relative.split('/')
-            for part in parts[:-1]:
-                next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
-                os.close(fd)
-                fd = next_fd
-            result = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
-        finally:
-            os.close(fd)
-        if not stat.S_ISREG(os.fstat(result).st_mode):
-            os.close(result)
-            raise ValueError('frame source must be a regular file')
-        return os.fdopen(result, 'rb')
-    stream = path.open('rb')
-    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode) or path.is_symlink():
-        stream.close()
-        raise ValueError('frame source must be a regular file')
-    return stream
+    """Use the shared descriptor authority for both frames and staged movies."""
+    root = normalize_root(root)
+    _path(root, relative)
+    with open_payload(root, relative) as (stream, _):
+        yield stream
 
 
 def _read_frame(root, relative):
@@ -685,34 +671,50 @@ def _destination(path):
     return path
 
 
+def _destination_name(value):
+    value = os.fspath(value)
+    if (not isinstance(value, str) or not 1 <= len(value) <= 255 or value in ('.', '..') or
+            any(character in value for character in ('/', '\\', ':')) or value[-1] in (' ', '.') or
+            any(ord(character) < 32 for character in value) or
+            re.match(r'(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)', value)):
+        raise ValueError('descriptor destination requires one portable filename')
+    return value
+
+
 def secure_publication_supported():
     # The current subprocess path adapter uses Linux procfs and inherited FDs.
     # The shared primitive also supports macOS dirfds, but no untested fdescfs
     # subprocess adapter is advertised as working.
-    return sys.platform.startswith('linux') and Path('/proc/self/fd').is_dir()
+    return private_stage_supported()
 
 
 @contextmanager
 def _pin_directory(path):
     if not secure_publication_supported():
         raise ValueError('secure silent encoding currently requires Linux procfs; verification remains portable')
-    path = Path(path).absolute()
-    descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        for part in path.parts[1:]:
-            current = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = current
+    with pinned_directory(path) as descriptor:
         yield descriptor
-    finally:
-        os.close(descriptor)
 
+
+@contextmanager
+def _private_stage(parent_fd, prefix='.silent-export-'):
+    with private_stage(parent_fd, prefix=prefix) as (_, descriptor):
+        # Explicit registration retains this directory across owner namespace
+        # changes. Unregistered procfd strings remain untrusted inputs.
+        with directory_capability(descriptor) as capability:
+            yield capability.path, capability.fd
 
 
 def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
     validate_request(request)
     request = copy.deepcopy(request)
-    destination = _destination(destination)
+    destination = Path(_destination_name(destination))
+    try:
+        os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        pass
+    else:
+        raise ValueError('destination must be new')
     profile = PROFILES[request['profile']]
     if destination.suffix != profile['extension']:
         raise ValueError('destination extension differs from explicit profile')
@@ -721,10 +723,10 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
     caps = capabilities(ffmpeg=ffmpeg, ffprobe=ffprobe)
     if caps['status'] != 'available' or caps['profiles'][request['profile']]['status'] != 'supported':
         raise ValueError('requested media profile unavailable/unsupported; no fallback')
-    if shutil.disk_usage(destination.parent).free < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
+    filesystem = os.fstatvfs(parent_fd)
+    if filesystem.f_bavail * filesystem.f_frsize < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
         raise ValueError('insufficient free storage for bounded snapshot and output')
-    with tempfile.TemporaryDirectory(prefix='.silent-export-', dir=Path('/proc/self/fd')/str(parent_fd)) as tmp:
-        stage = Path(tmp)
+    with _private_stage(parent_fd) as (stage, source_fd):
         inputs = stage/'frames'; inputs.mkdir()
         _snapshot(request, root, inputs)
         output = stage/('output.partial'+profile['extension'])
@@ -753,27 +755,26 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
             if progress is not None:
                 progress({'phase': 'encode-pass-1', 'total_frames': len(request['source']['frames'])})
             passes.append(_run(command + ['-pass', '1', '-passlogfile', str(passlog), '-f', 'null', '-'],
-                request['limits'], cancel=cancel, pass_fds=(parent_fd,), progress=progress, scratch_prefix=passlog))
+                request['limits'], cancel=cancel, pass_fds=(source_fd,), progress=progress, scratch_prefix=passlog))
             command += ['-pass', '2', '-passlogfile', str(passlog)]
         if profile['container'] == 'mp4':
             command += ['-movflags', '+faststart']
         command += [str(output)]
         if progress is not None:
             progress({'phase': 'encode', 'total_frames': len(request['source']['frames'])})
-        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(parent_fd,),
+        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(source_fd,),
                          progress=progress, scratch_prefix=passlog if two_pass else None)
-        receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
         if cancel is not None and cancel():
-            raise ValueError('silent export cancelled before publication')
+            raise ValueError('silent export cancelled before verification')
+        receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
+        # Verification rechecks original bytes after its final cancellation
+        # callback. No user callback may mutate staging between that check and
+        # publication.
         # Never replace a file or even an empty directory created by another writer.
         # Source and destination basenames resolve relative to pinned directory
         # descriptors, never a path a concurrent writer can replace by a symlink.
-        source_fd = os.open(stage.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
-        try:
-            _rename_no_replace(output.name, destination.name,
-                               source_dir_fd=source_fd, destination_dir_fd=parent_fd)
-        finally:
-            os.close(source_fd)
+        _rename_no_replace(output.name, destination.name,
+                           source_dir_fd=source_fd, destination_dir_fd=parent_fd)
         receipt['encode'] = execution
         if two_pass:
             receipt['passes'] = passes + [execution]
@@ -783,11 +784,23 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         return receipt
 
 
-def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
+def encode(request, root, destination, *, destination_dir_fd=None, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
     validate_request(request)
+    if destination_dir_fd is not None:
+        name = _destination_name(destination)
+        if type(destination_dir_fd) is not int or destination_dir_fd < 0:
+            raise ValueError('destination descriptor must identify an open directory')
+        descriptor = os.dup(destination_dir_fd)
+        try:
+            if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                raise ValueError('destination descriptor must identify an open directory')
+            return _encode_pinned(request, root, name, descriptor, ffmpeg=ffmpeg,
+                                  ffprobe=ffprobe, cancel=cancel, progress=progress)
+        finally:
+            os.close(descriptor)
     destination = _destination(destination)
     with _pin_directory(destination.parent) as parent_fd:
-        return _encode_pinned(request, root, destination, parent_fd, ffmpeg=ffmpeg,
+        return _encode_pinned(request, root, destination.name, parent_fd, ffmpeg=ffmpeg,
                               ffprobe=ffprobe, cancel=cancel, progress=progress)
 
 
