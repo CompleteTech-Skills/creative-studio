@@ -56,6 +56,8 @@ class UploadCacheTests(unittest.TestCase):
         for field,value in [('source_sha256',42),('role',[]),('encoding',None)]:
             malformed=self.texture();setattr(malformed,field,value)
             with self.subTest(field=field),self.assertRaises(RigError):cache.prepare(malformed)
+        malformed=self.texture();malformed.pixels[:,:,3]=1.1
+        with self.assertRaises(RigError):cache.prepare(malformed)
         for budget in (True,0,-1):
             with self.assertRaises(RigError):DerivedTextureCache(budget)
 

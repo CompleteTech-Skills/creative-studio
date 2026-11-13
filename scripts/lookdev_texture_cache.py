@@ -68,7 +68,7 @@ class DerivedTextureCache:
         h,w=pixels.shape[:2]
         require(0<h<=16384 and 0<w<=16384 and h*w<=Limits().pixels,
                 'TEXTURE_LIMIT','Upload source exceeds decoded pixel bounds.')
-        require(np.isfinite(pixels).all() and (pixels>=0).all(),
+        require(np.isfinite(pixels).all() and (pixels>=0).all() and (pixels[:,:,3]<=1).all(),
                 'TEXTURE_CACHE','Upload pixels must remain finite and nonnegative.')
         dimensions=[]
         while True:
