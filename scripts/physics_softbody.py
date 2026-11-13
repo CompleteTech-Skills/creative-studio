@@ -274,6 +274,9 @@ def _validate_output(root,world,payloads=None):
     require(set(settings)==set(expected) and all(type(settings[k]) is bool and settings[k]==v if type(v) is bool
             else type(settings[k]) in (int,float) and math.isfinite(settings[k]) and abs(settings[k]-v)<=1e-5 for k,v in expected.items()),
             'PHYSICS_CACHE_CORRUPT','Native soft-body properties differ from requested settings')
+    pins=report.get('pin_settings')
+    expected_pins=dict(default=1.,minimum=0.,maximum=1.,spring=.999,friction=0.,weights=[1. if i in comp['pins'] else 0. for i in range(comp['vertex_count'])]) if comp['pins'] else None
+    require(pins==expected_pins or (comp['pins'] and isinstance(pins,dict) and set(pins)==set(expected_pins) and pins['weights']==expected_pins['weights'] and all(abs(pins[k]-expected_pins[k])<1e-5 for k in expected_pins if k!='weights')),'PHYSICS_CACHE_CORRUPT','Native source pin weights or goal settings disagree')
     require(set(samples)=={'component','samples'} and samples['component']==comp['id'] and len(samples['samples'])==world['frame_range']['end'],
         'PHYSICS_CACHE_CORRUPT','Invalid deformation samples')
     for frame,sample in enumerate(samples['samples']):
@@ -344,7 +347,7 @@ def _read_verified_cache(root,*,expected_world_sha256=None):
             'PHYSICS_CACHE_CORRUPT','Fixture status differs from admitted source')
     samples=_validate_output(root,world,payloads)
     recorded=parse(payloads['simulate-report.json'])
-    fields=('application_version','application_build','sample_count','vertex_count','native_settings','fps','fps_base','time_scale','disk_cache','capabilities')
+    fields=('application_version','application_build','sample_count','vertex_count','native_settings','fps','fps_base','time_scale','disk_cache','capabilities','pin_settings')
     require(all(replay.get(field)==recorded.get(field) for field in fields),'PHYSICS_CACHE_CORRUPT','Reopened native settings and identity differ from bake')
     require(manifest['usage']['solver_steps']==(world['frame_range']['end']-1)*world['solver']['iterations']*world['solver']['substeps'] and
             manifest['usage']['peak_memory_bytes']<=world['budgets']['memory_bytes'] and manifest['usage']['elapsed_seconds']<=world['budgets']['timeout_seconds'],

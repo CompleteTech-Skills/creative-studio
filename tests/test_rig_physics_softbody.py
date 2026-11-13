@@ -177,4 +177,5 @@ class NativeSoftBodyTests(unittest.TestCase):
             self.assertLess(abs(measured['soft']['final_center'][1]-.5),.1)
             self.assertLess(measured['soft']['maximum_tail_vertex_step'],.05)
             self.assertLess(measured['pinned']['maximum_pin_error'],.03)
-            self.assertLess(measured['pinned']['maximum_tail_vertex_step'],.001)
+            self.assertGreater(measured['pinned']['maximum_centered_radius_change'],.02)
+            self.assertGreater(3.-measured['pinned']['final_center'][1],.1)

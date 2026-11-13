@@ -84,7 +84,7 @@ def execute(root,job):
         settings.use_goal=bool(component['pins'])
         if component['pins']:
             group=obj.vertex_groups.new(name='source-pins');group.add(component['pins'],1.,'REPLACE')
-            settings.vertex_group_goal=group.name;settings.goal_default=0.;settings.goal_min=0.;settings.goal_max=1.;settings.goal_spring=.999;settings.goal_friction=50.
+            settings.vertex_group_goal=group.name;settings.goal_default=1.;settings.goal_min=0.;settings.goal_max=1.;settings.goal_spring=.999;settings.goal_friction=0.
         cache=modifier.point_cache;cache.frame_start=1;cache.frame_end=count
         bpy.ops.wm.save_as_mainfile(filepath=str(root/'softbody.blend'))
         cache.use_disk_cache=True
@@ -123,6 +123,7 @@ def execute(root,job):
         'fps':scene.render.fps,'fps_base':scene.render.fps_base,'time_scale':settings.speed,'disk_cache':cache.use_disk_cache,
         'application_version':bpy.app.version_string,'application_build':bpy.app.build_hash.decode(),'is_baked':cache.is_baked,'is_outdated':cache.is_outdated,
         'native_settings':{key:getattr(settings,key) for key in ('mass','friction','pull','push','damping','step_min','step_max','use_auto_step','use_goal')},
+        'pin_settings':({'default':settings.goal_default,'minimum':settings.goal_min,'maximum':settings.goal_max,'spring':settings.goal_spring,'friction':settings.goal_friction,'weights':[next((g.weight for g in v.groups if g.group==obj.vertex_groups[settings.vertex_group_goal].index),0.) for v in obj.data.vertices]} if component['pins'] else None),
         'capabilities':{'surface_deformation':True,'volume_preservation':False,'pressure':False,'two_way_rigid_coupling':False}}
     if job['mode']=='reopen':report.update(maximum_vertex_error=error,changed_gravity_cache_consumption=True)
     (root/(job['mode']+'-report.json')).write_bytes(canonical(report))

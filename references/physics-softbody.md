@@ -49,6 +49,4 @@ At 1,000 native steps per frame, its 100-frame measured final center is about
 The matched stiffness-0.7 control deforms less but continues bouncing at frame 99;
 it is not labeled settled. Reducing damping from 0.2 to 0.05 at stiffness 0.7
 increases the measured tail vertex step (about 0.118 to 0.163 m). These are
-pinned-environment comparisons, not universal material calibrations. The source
-goal pin is approximate: the measured 0.024 m residual is explicitly retained,
-with a 0.03 m test tolerance rather than a hard positional-lock claim.
+pinned-environment comparisons, not universal material calibrations. An earlier goal-pin control was invalid: zero native default goal weight disabled every pin while global goal friction slowed freefall. That failed evidence is retained, not accepted as pin proof. The corrected mapper uses default weight1, explicit selected vertex weights and zero goal friction; selected and unselected vertex motion must be distinguished by real native tests. Pins remain approximate solver goals rather than hard positional locks.
