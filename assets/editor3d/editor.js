@@ -37,6 +37,7 @@ let renderer,
   previewActive = false;
 const collapsed = new Set();
 const extensions = [];
+let pendingCommit = null, lastCommitResult = true, guardedAction = false, lifecycleGeneration = 0;
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
 const editorNode = Symbol("native-scene-node");
 const errors = [],
@@ -264,12 +265,19 @@ function setBusy(value) {
     .forEach((control) => { control.draggable = !busy && !nodeLocked(control.dataset.id); });
 }
 function rejectPendingEdit() {
-  if (!busy) return false;
+  if (!busy && !guardedAction) return false;
   $("status").textContent = "Save in progress; retry this edit when saving finishes.";
   return true;
 }
-async function commit(commands) {
-  if (rejectPendingEdit() || !commands.length) return;
+function commit(commands) {
+  if (rejectPendingEdit() || !commands.length) return Promise.resolve(false);
+  const task = performCommit(commands);
+  pendingCommit = task;
+  task.then(() => { if (pendingCommit === task) pendingCommit = null; },
+    () => { if (pendingCommit === task) pendingCommit = null; });
+  return task;
+}
+async function performCommit(commands) {
   setBusy(true);
   gizmo?.detach();
   $("status").textContent = "Saving command…";
@@ -286,14 +294,55 @@ async function commit(commands) {
       commands: { schema_version: 1, commands: batch },
     });
     const displayed = await install(result);
-    if (displayed === false) return;
+    if (displayed === false) { lastCommitResult = false; return false; }
     clearDiagnostic();
     $("status").textContent = "Saved revision " + revision;
+    lastCommitResult = true;
+    return true;
   } catch (error) {
+    lastCommitResult = false;
     diagnostic(error);
     await reload(false);
+    return false;
   } finally {
     setBusy(false);
+  }
+}
+async function runGuardedAction(callback) {
+  if (typeof callback !== "function") throw Error("An editor action must be a function.");
+  if (guardedAction) throw Error("Another editor action is in progress.");
+  const usable = () => !disposed && !lost && window.editorReady && !drag && !previewActive;
+  if (!usable()) throw Error("Finish the active viewport interaction before this action.");
+  // Blur dispatches the ordinary field change handler before we claim the action.
+  // All persistence still goes through the canonical command transaction.
+  const generation = lifecycleGeneration;
+  const beforeErrors = errors.length;
+  const focused = document.activeElement;
+  if (focused?.matches("#inspector input, #inspector select")) focused.blur();
+  if (errors.length !== beforeErrors) throw Error("The pending field edit was rejected.");
+  const pending = pendingCommit;
+  if (!pending && !lastCommitResult) throw Error("The last edit was not saved; retry the edit before this action.");
+  if (busy && !pending) throw Error("The editor is busy.");
+  guardedAction = true;
+  let ownsBusy = false;
+  try {
+    if (pending && await pending !== true) throw Error("The pending edit was not saved.");
+    if (!usable() || lifecycleGeneration !== generation) throw Error("The viewport changed while saving the pending edit.");
+    setBusy(true); ownsBusy = true; gizmo?.detach();
+    const assertCurrent = () => {
+      if (!usable() || lifecycleGeneration !== generation) throw Error("The editor action was cancelled by the viewport lifecycle.");
+    };
+    const value = await callback({
+      snapshot: structuredClone(currentSnapshot),
+      api: async (...args) => { assertCurrent(); const result = await api(...args); assertCurrent(); return result; },
+      reload: async (...args) => { assertCurrent(); const result = await reload(...args); assertCurrent(); return result; },
+      isCurrent: () => usable() && lifecycleGeneration === generation,
+    });
+    assertCurrent();
+    return value;
+  } finally {
+    guardedAction = false;
+    if (ownsBusy) setBusy(false);
   }
 }
 function select(id, add = false, toggle = false) {
@@ -1382,7 +1431,7 @@ function initialize() {
     });
     renderer.domElement.addEventListener("webglcontextlost", (e) => {
       e.preventDefault();
-      lost = true;
+      lost = true; lifecycleGeneration++;
       cancelDrag();
       diagnostic(
         "WebGL context lost. Saved scene is preserved; waiting for GPU recovery.",
@@ -1456,7 +1505,7 @@ function frame() {
   renderer.render(world, camera);
 }
 window.addEventListener("pagehide", () => {
-  disposed = true;
+  disposed = true; lifecycleGeneration++;
   for (const extension of extensions) extension.dispose?.();
   disposeContent();
   gizmo?.dispose();
@@ -1489,6 +1538,7 @@ window.hatchEditor = {
       container,
       api,
       upload,
+      runGuardedAction,
       reload,
       preview,
       applyNativeState,
