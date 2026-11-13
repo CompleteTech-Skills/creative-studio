@@ -23,7 +23,7 @@ def main(argv=None):
         if args.command=='capabilities':
             result=dict(schema_version=1,contracts=True,exact_frame_time=True,
                 target_adapters=['native-rig-bone','native-rig-morph','scene3d-node','camera3d-persisted-property','lookdev-material','lookdev-light'],
-                exact_project_admission=True, unsupported_target_domains=['environment','unrepresented-native-properties'],
+                exact_project_admission=True, animated_weight_controllers=False, unsupported_target_domains=['environment','unrepresented-native-properties'],
                 interpolation=['step','linear','hermite','quaternion-slerp'],
                 constraints_executed=False,scene_evaluation=False,rendering=False,visual_approval=False)
         elif args.command=='admit-project':
