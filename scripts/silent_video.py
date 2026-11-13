@@ -760,7 +760,16 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         if two_pass:
             if progress is not None:
                 progress({'phase': 'encode-pass-1', 'total_frames': len(request['source']['frames'])})
-            passes.append(_run(command + ['-pass', '1', '-passlogfile', str(passlog), '-f', 'null', '-'],
+            # The private snapshot contains exactly the admitted finite input
+            # inventory. Let pass one reach its natural EOF: FFmpeg 6.1 writes
+            # duplicate/incomplete libvpx statistics when -frames:v terminates
+            # this stats-only pass, causing pass two to reject its EOS packet.
+            # The final encode retains the explicit frame limit and every
+            # timeout/output/log/statistics budget remains enforced.
+            first_pass = list(command)
+            frame_limit = first_pass.index('-frames:v')
+            del first_pass[frame_limit:frame_limit + 2]
+            passes.append(_run(first_pass + ['-pass', '1', '-passlogfile', str(passlog), '-f', 'null', '-'],
                 request['limits'], cancel=cancel, pass_fds=(source_fd,), progress=progress, scratch_prefix=passlog))
             command += ['-pass', '2', '-passlogfile', str(passlog)]
         if profile['container'] == 'mp4':
