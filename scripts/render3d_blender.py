@@ -208,6 +208,8 @@ def _prepare_scene(request,snapshot_root,workspace):
             state=evaluate_scene(bundle,scene_ref['path'],shot_ref['path'],shot_frame,source_root=snapshot_root)
         for entry in nodes:
             node_state=state['nodes'][entry['id']]
+            require(not node_state.get('native_pose'),'unsupported-feature',
+                    'Bound native Pose rendering requires the authoritative rig pose adapter.')
             matrix=np.asarray(node_state['world_matrix'])
             converted=BLENDER_FROM_CANONICAL @ matrix if entry['type'] in ('camera','light') else to_blender(matrix)
             clip=node_state.get('native_clip')
