@@ -103,5 +103,8 @@ class ActualSequenceJobs(unittest.TestCase):
                     adapter.create(self.source,self.source_root,self.root/'job',self.root/'out',
                         provenance={'fixture':'budget rejection'},budget=budget)
                 self.assertFalse((self.root/'job').exists())
+        with mock.patch.object(adapter.shutil,'disk_usage',return_value=type('Disk',(),{'free':0})()):
+            with self.assertRaisesRegex(ValueError,'free.*storage'):self.create()
+        self.assertFalse((self.root/'job').exists())
 
 if __name__=='__main__':unittest.main()

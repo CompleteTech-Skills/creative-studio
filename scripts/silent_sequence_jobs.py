@@ -11,6 +11,7 @@ import importlib.metadata
 import os
 from pathlib import Path
 import stat
+import shutil
 import time
 
 from atomic_publish import pinned_directory, private_stage, _rename_no_replace
@@ -114,11 +115,17 @@ def create(source,source_root,job_root,destination,*,provenance,budget=None):
     source_root=Path(source_root).absolute()
     with pinned_directory(source_root):pass
     job_root=sequence.media._destination(job_root);destination=sequence.media._destination(destination)
+    peak=3*sum(frame['bytes'] for frame in source['frames'])+sequence.MAX_JSON_BYTES
+    with pinned_directory(destination.parent) as parent:
+        if shutil.disk_usage(Path('/proc/self/fd')/str(parent)).free<peak:
+            raise ValueError('insufficient free sequence export storage')
     plan={'schema_version':1,'kind':'silent-sequence-job','source':source,'source_root':str(source_root),
         'destination':str(destination),'provenance':copy.deepcopy(provenance),'budget':budget,'implementation':_implementation()}
     plan['id']=sequence.media._digest(plan);jobs._bytes(plan,sequence.MAX_JSON_BYTES)
     state={'schema_version':1,'job':plan['id'],'phase':'queued','runs':0,'progress':{},'error':None,'receipt_sha256':None}
     with pinned_directory(job_root.parent) as parent:
+        if shutil.disk_usage(Path('/proc/self/fd')/str(parent)).free<sequence.MAX_JSON_BYTES:
+            raise ValueError('insufficient free sequence checkpoint storage')
         with private_stage(parent,prefix='.sequence-job-') as (_,wrapper):
             os.mkdir('payload',mode=0o700,dir_fd=wrapper)
             fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=wrapper)
