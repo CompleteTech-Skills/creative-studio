@@ -14,25 +14,28 @@ def _parser():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("capabilities")
     sub.add_parser("doctor")
-    for name in ("validate", "inspect", "snapshot", "plan", "describe", "revise", "apply-plan"):
+    for name in ("validate", "inspect", "snapshot", "plan", "describe", "revise", "apply-plan", "edit", "scene-state"):
         command = sub.add_parser(name)
         command.add_argument("--project", required=True, type=Path)
-        if name in ("plan", "describe", "revise", "apply-plan"):
+        if name in ("plan", "describe", "revise", "apply-plan", "edit", "scene-state"):
             command.add_argument("--scene", required=True, help="Exact project-relative scene manifest")
         if name in ("plan", "describe", "revise"):
             command.add_argument("--text", required=True, help="Semicolon-separated supported offline statements")
-        if name == "apply-plan":
+        if name in ("apply-plan", "edit"):
             command.add_argument("--file", required=True, type=Path)
-        if name in ("snapshot", "revise", "apply-plan"):
+        if name in ("snapshot", "revise", "apply-plan", "edit"):
             command.add_argument("--destination", required=True, type=Path, help="New immutable snapshot directory")
             command.add_argument("--dry-run", action="store_true")
+        if name == "edit":
+            command.add_argument("--expected-revision", required=True, type=int)
+            command.add_argument("--expected-sha256", required=True)
     return parser
 
 
 def capabilities():
     return {"schema_version": 1, "kind": "scene3d-cli-capabilities", "language_backend": "offline-grammar-v1",
             "supported": ["validated-closure-inspection", "immutable-snapshot", "language-plan",
-                          "exact-target-transform", "visibility-lock", "subtree-duplicate", "reparent", "safe-delete"],
+                          "atomic-typed-batch", "exact-target-transform", "visibility-lock", "subtree-duplicate", "reparent", "safe-delete"],
             "language_statements": ["move TARGET 2 meters east", "position TARGET at 1, 0, 3",
                                     "scale TARGET by 2", "rotate TARGET 30 degrees around y", "hide TARGET",
                                     "show TARGET", "lock TARGET", "unlock TARGET", "duplicate TARGET as new-id",
@@ -66,6 +69,27 @@ def execute(args):
         return snapshot_project(args.project, args.destination)
     from scene3d_language import compile_description, apply_plan
     graph = SceneGraph.from_bundle(bundle, args.scene, source_root=args.project)
+    if args.command == "scene-state":
+        return {"scene": args.scene, "revision": graph.revision, "scene_sha256": graph.digest,
+                "document": graph.document(), "base_pose": graph.evaluate_base()}
+    if args.command == "edit":
+        from asset_library import read_source_bytes
+        from rig_errors import decode_json
+        from scene3d_edit import apply_commands
+        from scene3d_graph import require
+        require(type(args.expected_revision) is int and args.expected_revision >= 0 and
+                graph.revision == args.expected_revision and graph.digest == args.expected_sha256,
+                "Scene changed after the source revision was inspected.", "SCENE3D_CONFLICT")
+        commands = decode_json(read_source_bytes(args.file, 1024 * 1024))
+        library = PrefabLibrary.from_files(args.project, bundle)
+        applied = apply_commands(graph, library, commands)
+        if args.dry_run:
+            return {"dry_run": True, "revision": graph.revision, "scene_sha256": graph.digest,
+                    "operations": len(applied["results"]), "destination": str(args.destination)}
+        result = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
+                                  derived_documents=applied["derived_documents"])
+        result["operations"] = len(applied["results"])
+        return result
     if args.command == "apply-plan":
         from asset_library import read_source_bytes
         from rig_errors import decode_json

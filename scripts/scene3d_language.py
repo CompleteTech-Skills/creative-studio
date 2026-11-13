@@ -12,7 +12,7 @@ import json
 import math
 import re
 
-from rig_errors import RigError, finite_json
+from rig_errors import RigError
 from scene3d_contracts import ID
 
 MAX_TEXT = 16384

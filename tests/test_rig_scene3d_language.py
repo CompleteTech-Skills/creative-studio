@@ -143,6 +143,43 @@ class LanguagePlanTests(unittest.TestCase):
         self.assertEqual(again.returncode, 2)
         self.assertTrue(load_project(target))
 
+    def test_cli_typed_batch_rejects_stale_and_rolls_back_then_reopens(self):
+        root = Path(__file__).resolve().parents[1]
+        command = [sys.executable, str(root / "scripts/scene3d.py")]
+        common = ["--project", str(self.source), "--scene", "example-scene.json"]
+        state = subprocess.run(command + ["scene-state"] + common, capture_output=True, text=True)
+        self.assertEqual(state.returncode, 0, state.stderr)
+        state = json.loads(state.stdout)
+        self.assertEqual(state["revision"], 0)
+        batch = self.directory / "batch.json"
+        target = self.directory / "batch-output"
+        batch.write_text(json.dumps({"schema_version": 1, "commands": [
+            {"operation": "rename", "parameters": {"identifier": "mesh", "name": "Renamed"}},
+            {"operation": "delete", "parameters": {"identifier": "absent"}}
+        ]}))
+        def run(digest=state["scene_sha256"]):
+            return subprocess.run(command + ["edit"] + common + ["--file", str(batch),
+                "--expected-revision", "0", "--expected-sha256", digest,
+                "--destination", str(target)], capture_output=True, text=True)
+        stale = run("0" * 64)
+        self.assertEqual(stale.returncode, 2)
+        self.assertEqual(json.loads(stale.stderr)["error"]["code"], "SCENE3D_CONFLICT")
+        invalid = run()
+        self.assertEqual(invalid.returncode, 2)
+        self.assertFalse(target.exists())
+        self.assertEqual(SceneGraph.from_bundle(load_project(self.source), "example-scene.json",
+                         source_root=self.source).digest, state["scene_sha256"])
+        content = json.loads(batch.read_text())
+        content["commands"].pop()
+        batch.write_text(json.dumps(content))
+        success = run()
+        self.assertEqual(success.returncode, 0, success.stderr)
+        receipt = json.loads(success.stdout)
+        graph = SceneGraph.from_bundle(load_project(target), receipt["active_scene"]["path"], source_root=target)
+        self.assertEqual(graph.revision, 1)
+        self.assertEqual(next(n for n in graph.document()["nodes"] if n["id"] == "mesh")["name"], "Renamed")
+        self.assertEqual((target / "triangle.obj").read_bytes(), (self.source / "triangle.obj").read_bytes())
+
     def test_cli_dry_run_does_not_publish_and_unresolved_is_nonzero(self):
         root = Path(__file__).resolve().parents[1]
         command = [sys.executable, str(root / "scripts/scene3d.py")]
