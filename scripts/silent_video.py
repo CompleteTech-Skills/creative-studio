@@ -22,9 +22,10 @@ import tempfile
 import time
 
 from PIL import Image
-from atomic_publish import (_rename_no_replace, pinned_directory as _pin_directory,
-                            private_stage as _private_stage, private_stage_supported)
-from production_contracts import _structural, safe_path, read_json
+from atomic_publish import (_rename_no_replace, pinned_directory, private_stage,
+                            private_stage_supported)
+from production_contracts import _structural, read_json
+from rig_errors import directory_capability, normalize_root, open_payload, safe_path
 from production_render import fps_fraction, file_hash
 from silent_profiles import encoding_schema, validate_encoding, arguments as encoding_arguments
 
@@ -116,7 +117,7 @@ def _digest(value):
 
 
 def _path(root, relative):
-    path = safe_path(root, relative)
+    path = safe_path(root, relative, exists=True)
     # Cross-platform alias and control-character rejection before native I/O.
     for part in relative.split('/'):
         if (part[-1:] in (' ', '.') or any(ord(c) < 32 for c in part) or
@@ -125,30 +126,13 @@ def _path(root, relative):
     return path
 
 
+@contextmanager
 def _open_source(root, relative):
-    """Walk directory descriptors without following replaceable symlinks."""
-    root = Path(root).absolute()
-    path = _path(root, relative)
-    if os.name == 'posix' and hasattr(os, 'O_NOFOLLOW'):
-        fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            parts = relative.split('/')
-            for part in parts[:-1]:
-                next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
-                os.close(fd)
-                fd = next_fd
-            result = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
-        finally:
-            os.close(fd)
-        if not stat.S_ISREG(os.fstat(result).st_mode):
-            os.close(result)
-            raise ValueError('frame source must be a regular file')
-        return os.fdopen(result, 'rb')
-    stream = path.open('rb')
-    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode) or path.is_symlink():
-        stream.close()
-        raise ValueError('frame source must be a regular file')
-    return stream
+    """Use the shared descriptor authority for both frames and staged movies."""
+    root = normalize_root(root)
+    _path(root, relative)
+    with open_payload(root, relative) as (stream, _):
+        yield stream
 
 
 def _read_frame(root, relative):
@@ -703,6 +687,23 @@ def secure_publication_supported():
     return private_stage_supported()
 
 
+@contextmanager
+def _pin_directory(path):
+    if not secure_publication_supported():
+        raise ValueError('secure silent encoding currently requires Linux procfs; verification remains portable')
+    with pinned_directory(path) as descriptor:
+        yield descriptor
+
+
+@contextmanager
+def _private_stage(parent_fd, prefix='.silent-export-'):
+    with private_stage(parent_fd, prefix=prefix) as (_, descriptor):
+        # Explicit registration retains this directory across owner namespace
+        # changes. Unregistered procfd strings remain untrusted inputs.
+        with directory_capability(descriptor) as capability:
+            yield capability.path, capability.fd
+
+
 def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
     validate_request(request)
     request = copy.deepcopy(request)
@@ -724,7 +725,7 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
     filesystem = os.fstatvfs(parent_fd)
     if filesystem.f_bavail * filesystem.f_frsize < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
         raise ValueError('insufficient free storage for bounded snapshot and output')
-    with _private_stage(parent_fd, prefix='.silent-export-') as (stage, source_fd):
+    with _private_stage(parent_fd) as (stage, source_fd):
         inputs = stage/'frames'; inputs.mkdir()
         _snapshot(request, root, inputs)
         output = stage/('output.partial'+profile['extension'])

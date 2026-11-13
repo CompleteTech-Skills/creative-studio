@@ -109,7 +109,10 @@ cannot redirect publication elsewhere. An existing destination, including a raci
 symlink, is preserved. The private staging directory is also pinned before any
 frame or encoded bytes are written; its replaceable basename is never reopened
 for publication or recursive cleanup. Cleanup preserves a foreign replacement.
-Cancellation callbacks run during encoding and verification, with no callback
+The shared [private staging authority](atomic-publication.md) clears only its
+owned contents and retains tiny empty outer wrappers for explicit maintenance;
+it never deletes a possibly replaced outer basename. Cancellation callbacks run
+during encoding and verification, with no callback
 between the final original-byte recheck and exclusive publication. Private
 partials are removed after failures. The returned
 receipt binds the actual artifact, source manifest and request hashes and
@@ -137,7 +140,14 @@ Real acceptance tests create labeled synthetic PNGs and run installed media
 binaries. They do not claim 3D geometry or production-art approval. See
 `tests/results/silent-video-foundations.json` for executed results, source
 revision, versions, logs and limitations. Run focused acceptance with
-`python -m unittest discover -s tests -p test_silent_video.py -v`.
+`python -m unittest discover -s tests -p test_silent_video.py -v` runs the
+portable contract checks without optional skips. The dedicated Linux media
+gate runs `HATCH_SILENT_MEDIA_TEST=1 python -m unittest discover -s tests/optional
+-p test_silent_video_native.py -v` with real FFmpeg/ffprobe and descriptor
+publication tests. Its optional directory is intentionally not a package, so
+portable required discovery does not misreport unsupported native encoding as
+executed or relax its unexpected-skip policy.
+
 
 ## Exact multi-shot frame assembly
 
