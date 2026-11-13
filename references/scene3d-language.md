@@ -217,3 +217,10 @@ NEW_REPOSITORY` delegate verified all-revision archives and exclusive restore.
 `impact --project SOURCE --file TARGET_PATHS_JSON --purpose LABEL` delegates exact
 transitive dependency receipts. None creates a competing persistence format.
 Future schema conversion remains unsupported and fails under native validation.
+
+`export-glb --project SOURCE --scene PATH --shot PATH --frame 5/2 --destination
+NEW_DIRECTORY` delegates to `scene3d_export.export_scene_frame`. The exporter
+samples actual geometry and writes independently validated `scene.glb` plus
+`report.json` through exclusive atomic publication. This is one baked static
+frame: animation/light/world format losses remain explicit in the native report.
+Existing destinations fail, and authored project bytes remain unchanged.

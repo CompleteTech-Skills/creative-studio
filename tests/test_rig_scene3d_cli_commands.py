@@ -71,6 +71,17 @@ class NativeCommandCLITests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
         self.assertEqual(load_project(self.source)['inventory'], self.bundle['inventory'])
 
+    def test_export_cli_real_glb_and_format_losses(self):
+        target = self.directory / 'export'
+        result = self.run_cli('export-glb', '--project', str(self.source), '--scene', 'example-scene.json',
+            '--shot', 'example-shot.json', '--frame', '1/2', '--destination', str(target))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((target / 'scene.glb').read_bytes()[:4], b'glTF')
+        self.assertTrue((target / 'report.json').is_file())
+        again = self.run_cli('export-glb', '--project', str(self.source), '--scene', 'example-scene.json',
+            '--shot', 'example-shot.json', '--frame', '1/2', '--destination', str(target))
+        self.assertEqual(again.returncode, 2)
+
 
 if __name__ == '__main__':
     unittest.main()

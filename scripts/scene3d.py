@@ -41,6 +41,13 @@ def _parser():
     evaluate.add_argument("--shot", required=True)
     evaluate.add_argument("--frame", required=True, help="Exact integer or rational frame, for example 5/2")
     evaluate.add_argument("--sample-geometry", action="store_true")
+    for name in ("export-glb",):
+        export = sub.add_parser(name, help="Export an actual evaluated scene frame to independently validated GLB")
+        export.add_argument("--project", required=True, type=Path)
+        export.add_argument("--scene", required=True)
+        export.add_argument("--shot", required=True)
+        export.add_argument("--frame", required=True, help="Exact integer or rational frame")
+        export.add_argument("--destination", required=True, type=Path)
     return parser
 
 
@@ -72,7 +79,7 @@ def execute(args):
     if args.command in ("scene", "asset", "object", "prefab", "camera", "shot", "lighting", "environment", "terrain", "room", "building", "layout"):
         from scene3d_cli_commands import execute as execute_native
         return execute_native(args)
-    if args.command == "evaluate":
+    if args.command in ("evaluate", "export-glb"):
         from fractions import Fraction
         from rig_errors import RigError
         from scene3d_evaluate import evaluate_scene
@@ -80,6 +87,9 @@ def execute(args):
             frame = Fraction(args.frame)
         except (ValueError, ZeroDivisionError) as exc:
             raise RigError("SCENE3D_FRAME", "Frame must be an exact integer or rational.", stage="scene3d-cli") from exc
+        if args.command == "export-glb":
+            from scene3d_export import export_scene_frame
+            return export_scene_frame(args.project, args.scene, args.shot, frame, args.destination)
         return evaluate_scene(args.project, args.scene, args.shot, frame, sample_geometry=args.sample_geometry)
     from scene3d_contracts import load_project
     from scene3d_graph import SceneGraph
