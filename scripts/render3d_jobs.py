@@ -44,7 +44,7 @@ def _alive(pid):
 def _copy_artifact(source, target, ref):
     """Bound growing inputs and hash the exact bytes copied, not a later read."""
     target.parent.mkdir(parents=True,exist_ok=True)
-    fd=os.open(source,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_BINARY',0))
+    fd=os.open(source,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_BINARY',0))
     digest=hashlib.sha256();count=0
     with os.fdopen(fd,'rb') as inp,target.open('xb') as out:
         require(stat.S_ISREG(os.fstat(inp.fileno()).st_mode),'invalid-input','Artifact is not a regular file.')

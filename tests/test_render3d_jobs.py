@@ -58,6 +58,23 @@ class JobTests(unittest.TestCase):
                 image.load();self.assertEqual(image.size,tuple(req['settings']['resolution']))
         return {'decoded':True,'verifier':dict(id='test-pillow',version='1.0.0',code_sha256='0'*64,platform='test')}
 
+    def test_artifact_replaced_with_fifo_does_not_block_copy(self):
+        import os
+        if not hasattr(os,'mkfifo'):self.skipTest('FIFO race applies to POSIX')
+        source=self.root/'fifo';os.mkfifo(source)
+        code="""import sys
+sys.path.insert(0,sys.argv[1])
+from render3d_jobs import _copy_artifact
+from render3d_contracts import Render3DError
+try:_copy_artifact(sys.argv[2],__import__('pathlib').Path(sys.argv[3]),dict(bytes=1,sha256='0'*64))
+except Render3DError as error:
+ assert error.report['category']=='invalid-input'
+else:raise AssertionError('FIFO input accepted')
+"""
+        child=subprocess.run([sys.executable,'-c',code,str(ROOT/'scripts'),str(source),
+                              str(self.root/'copy')],capture_output=True,text=True,timeout=20)
+        self.assertEqual(child.returncode,0,child.stderr)
+
     def test_idempotent_submission_and_destination_ownership(self):
         job=self.submit();self.assertEqual(job,self.submit())
         changed=deepcopy(self.request);changed['id']='different'
