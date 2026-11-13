@@ -1,0 +1,8 @@
+Fri Nov 13 13:27:35 UTC 2026
+test_real_worker_cancel_resume_and_tampered_cache_repair (test_rig_director_reliability_native.NativeReliabilityTests.test_real_worker_cancel_resume_and_tampered_cache_repair) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 2717.503s
+
+OK
+Fri Nov 13 14:12:53 UTC 2026

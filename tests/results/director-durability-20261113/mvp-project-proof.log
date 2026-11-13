@@ -1,0 +1,6 @@
+test_actual_robot_source_identity_review_reopen_stale_revision_and_rollback (test_rig_director_reliability_mvp.MvpProjectRevisionTests.test_actual_robot_source_identity_review_reopen_stale_revision_and_rollback) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 21.168s
+
+OK

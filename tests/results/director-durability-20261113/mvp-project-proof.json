@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "kind": "director-mvp-project-reliability",
+  "source_scene_project": "/home/complete/.cache/hatch-coordination-20261112/director29-recovery-performance/scene-project",
+  "source_identities": {
+    "aster": {
+      "source": {
+        "path": "native/aster/source/aster.glb",
+        "sha256": "4d779a9029d9c0c9d27ac491104f362c98b80f68c861def8138c27585d3f247a"
+      },
+      "skeleton": {
+        "id": "aster",
+        "kind": "hatch-3d-rig",
+        "path": "native/aster/rig.json",
+        "sha256": "3918727a0b9e83a355bbe6cb922935086814538aa223a7b9e0cc00fe2c81431f",
+        "version": "1.0.2"
+      },
+      "animations": [
+        {
+          "id": "aster-investigation",
+          "kind": "hatch-3d-animation",
+          "path": "native/aster/animations/aster-investigation-bfb05d8fee77a0fc7a35ce85d9d67fd243e401b2581674e4eaf45ff17dcb7c2b.json",
+          "sha256": "c3d72b6f4881291b73cf5b3274e9d83b8e53844520a783d3476ee479489c0fa3",
+          "version": "1.0.0"
+        },
+        {
+          "id": "aster-establish",
+          "kind": "hatch-3d-animation",
+          "path": "native/aster/animations/aster-establish-92c1e5c8a6224b5236f86a507711f09bf368588729960e65c7e919405e66d0f1.json",
+          "sha256": "cd52cb551825e9f0746f6dc0ba6bab3a1524c0f08cdf9fafa5466bf8f47abb5d",
+          "version": "1.0.0"
+        },
+        {
+          "id": "aster-discovery",
+          "kind": "hatch-3d-animation",
+          "path": "native/aster/animations/aster-discovery-c5684ca53602035577bbe5ad6fa725e51a23282e7938b6e16bdd9aae95e93c57.json",
+          "sha256": "8e4e2a31019f845f8a2847f13a24f1cd30fb2f7554b9a84c6085a674bd386b42",
+          "version": "1.0.0"
+        }
+      ],
+      "review": {
+        "receipts": [],
+        "status": "unreviewed"
+      }
+    },
+    "moss": {
+      "source": {
+        "path": "native/moss/source/moss.glb",
+        "sha256": "72f5d219ed04eba9d23b599612cab324884af083952febb6e58ae148272d0e6c"
+      },
+      "skeleton": {
+        "id": "moss",
+        "kind": "hatch-3d-rig",
+        "path": "native/moss/rig.json",
+        "sha256": "c3cdd8674b45e8f15a00690ec87241a1ddfa6a2beae06a1621179b3c265ac598",
+        "version": "1.0.2"
+      },
+      "animations": [
+        {
+          "id": "moss-investigation",
+          "kind": "hatch-3d-animation",
+          "path": "native/moss/animations/moss-investigation-5bf90f66d6b9e16230c3f5d78483ef1715ad9de3b2f5d0b1a4ec6ac1e785aa22.json",
+          "sha256": "f72ce8ae73bab62ac077bbaa882c94a94ca2f45703b2347f33119b207dcadd09",
+          "version": "1.0.0"
+        },
+        {
+          "id": "moss-establish",
+          "kind": "hatch-3d-animation",
+          "path": "native/moss/animations/moss-establish-c14f4ecf29e8924a0dedd06dcff267e1571aca761fe6904a2d6a3f57cf73e810.json",
+          "sha256": "75217c2f441b5a6d0d6cbce671335d305379275f732a7f288e6b368674e9e72f",
+          "version": "1.0.0"
+        },
+        {
+          "id": "moss-discovery",
+          "kind": "hatch-3d-animation",
+          "path": "native/moss/animations/moss-discovery-c9151bce30a2160b3813f4111650a8ac22234a9e20dae66e3426aa07512e0080.json",
+          "sha256": "ae9e463ef3238f024e1f95abd7949766bb01906280936cda4eecdf0d540f8be1",
+          "version": "1.0.0"
+        }
+      ],
+      "review": {
+        "receipts": [],
+        "status": "unreviewed"
+      }
+    }
+  },
+  "patch": {
+    "schema_version": 1,
+    "kind": "director-component-revision",
+    "before": {
+      "revision": 0,
+      "sha256": "f15bec3f07afc1f9c6836c139a29a1a82825a51ce688e35aa2411e9772fc5ead"
+    },
+    "after": {
+      "revision": 1,
+      "sha256": "d0e0d1919dcca09d1adbf5949672509b977d5ac9f8d9a45acf9228bbc7a552c4"
+    },
+    "target": "wide",
+    "component": "camera",
+    "affected_shots": [
+      {
+        "path": "establish-shot.json",
+        "id": "establish",
+        "version": "1.0.0",
+        "frame_range": {
+          "start": 0,
+          "end": 60
+        }
+      }
+    ],
+    "asset_identities_preserved": true,
+    "independent_review_records_preserved": true,
+    "visual_review": "not-performed"
+  },
+  "rollback": {
+    "revision": 2,
+    "sha256": "f15bec3f07afc1f9c6836c139a29a1a82825a51ce688e35aa2411e9772fc5ead"
+  },
+  "stale_rejected": true,
+  "visual_review": "not-performed"
+}
