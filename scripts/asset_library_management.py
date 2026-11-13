@@ -44,9 +44,10 @@ class ManagementAdapter:
         if self.operation=='version':
             action=p.get('action')
             schemas={'create':({'action','manifest','sources'},{'previous'}),
+                'duplicate':({'action','reference','identity'},{'version'}),
                 'promote':({'action','reference','expected_revision'},{'reason','consumers'}),
                 'rollback':({'action','asset_id','expected_revision'},{'reason','consumers'})}
-            if not isinstance(action,str) or action not in schemas:fail('REQUEST','Choose create, promote or rollback version action.')
+            if not isinstance(action,str) or action not in schemas:fail('REQUEST','Choose create, duplicate, promote or rollback version action.')
             required,optional=schemas[action]
         elif self.operation=='replace':required,optional={'plan','versions'},set()
         elif self.operation=='repair':required,optional={'source','digest','expected_bytes'},set()
@@ -80,6 +81,10 @@ class ManagementAdapter:
             for name,value in p['sources'].items():
                 path=_path(value,exists=True);data=read_source_bytes(path)
                 p['sources'][name]=str(path);hashes[name]=hashlib.sha256(data).hexdigest()
+        if self.operation=='version' and action=='duplicate':
+            validate(p['reference'],'AssetRef');validate(p['identity'],'AssetIdentity')
+            p.setdefault('version','1.0.0')
+            validate(dict(id=p['identity']['id'],version=p['version'],sha256='0'*64),'AssetRef')
         if self.operation=='repair':
             path=_path(p['source'],exists=True);data=read_source_bytes(path)
             if type(p['expected_bytes']) is not int or len(data)!=p['expected_bytes'] or hashlib.sha256(data).hexdigest()!=p['digest']:fail('HASH','Repair source must match the exact expected digest and size.')
@@ -144,6 +149,8 @@ class ManagementAdapter:
                     if hashlib.sha256(payload).hexdigest()!=p['input_hashes'][name]:fail('STALE','Version source changed during staging.')
                     target=context.stage_dir/'version-sources'/name;target.parent.mkdir(parents=True,exist_ok=True);atomic_bytes(target,payload);sources[name]=target
                 result=versions.create(p['manifest'],sources,previous=p.get('previous'))
+            elif action=='duplicate':
+                result=versions.duplicate(p['reference'],identity=p['identity'],version=p['version'])
             else:
                 stream=p['lifecycle']['stream']
                 staged_events=library.events(stream)

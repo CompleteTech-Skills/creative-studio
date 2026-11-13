@@ -34,7 +34,7 @@ exports, packages, validation and storage to their canonical modules. Optional
 or missing capabilities return `LIBRARY_OPERATIONS_UNAVAILABLE`; a listed CLI
 verb alone does not imply its adapter is available. Semantic providers require
 the canonical search API's configured trusted provider; arbitrary provider code
-is not accepted in JSON. Canonical unbind and remote publication remain unavailable. Bounded native
+is not accepted in JSON. Remote publication remains unavailable. Bounded native
 box/sphere generation is documented in [managed generation](asset-managed-generation.md). Metadata writes remain bounded synchronous native transactions; version,
 replacement, repair, conversion, preview, export, index and package work use
 managed jobs.
@@ -103,3 +103,12 @@ activate native project payloads. User-owned originals remain read-only.
 canonical loopback browser server explicitly. Add all three `--jobs-root`,
 `--intake-root`, and `--output-root` flags to enable scoped managed operations.
 Starting the server does not execute a queued operation or install any asset.
+
+
+Canonical project pin removal is available through `assets project unbind` with
+an exact project/slot, expected revision and optional expected binding. Its
+receipt retains the removed exact pin, remaining dependency locks and affected
+slot. `assets project undo-unbind` requires the current CAS revision and the
+original unbind revision; it cannot overwrite a rebound slot or erase history.
+Both operations preserve immutable asset bytes and delegate scene instance
+removal to the native project adapter rather than editing unrelated documents.

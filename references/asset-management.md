@@ -64,3 +64,21 @@ replacement plans, lifecycle events and corrupt index rows. Real child processes
 exit immediately after canonical publication and resume through the journal.
 Fixtures test operational behavior; no artistic review, production approval,
 project activation or remote/provider execution is implied.
+
+## Duplicate an existing registered asset
+
+`assets version duplicate --library LIBRARY --request REQUEST.json --apply`
+queues the canonical `AssetVersions.duplicate` operation in the private managed
+stage. The request contains an exact `reference`, a complete new `identity`, and
+an optional explicit `version` (default `1.0.0`). The browser's scoped version
+endpoint accepts `action: duplicate` with the same fields, so no library-private
+filesystem paths need to be exposed to HTTP intake.
+
+The canonical lifecycle owner preserves exact payload bytes, source and license
+evidence, fixture status and the full dependency closure, and records the old
+reference as ancestry. It requires a different identity while preserving kind,
+subtype and source attribution; it clears inherited previews and integration
+selection. Native identifiers inside source payloads are retained and are not
+silently rewritten. Publication uses the same expected-identity CAS and exact
+reference crash recovery as managed version creation. Existing assets and
+unrelated scene documents remain unchanged.

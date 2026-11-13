@@ -12,9 +12,9 @@ from asset_library_operations import AssetOperations, MAX_REQUEST_BYTES, fail
 
 GROUPS={
     'library':('create','list','inspect','verify','stats'),
-    'version':('create','list','compare','promote','rollback','state'),
+    'version':('create','duplicate','list','compare','promote','rollback','state'),
     'metadata':('update',),'tags':('add','remove'),'collections':('create',),
-    'project':('bind','unbind','verify','impact','lock'),
+    'project':('bind','unbind','undo-unbind','verify','impact','lock'),
     'bundle':('create','verify','restore'),
     'storage':('stats','audit','gc','upgrade','recover'),
     'jobs':('list','status','cancel','resume','run'),

@@ -33,6 +33,19 @@ class ManagedHTTPTests(unittest.TestCase):
         self.assertEqual(self.library.resolve(reference),candidate)
         self.assertEqual(self.library.read_file(self.reference,'mesh/triangle.obj'),self.fixture.mesh.read_bytes())
 
+    def test_http_duplicate_uses_registered_source_without_filesystem_intake(self):
+        intake=self.root/'intake';intake.mkdir();output=self.root/'output';output.mkdir()
+        owner=AssetOperations(self.library,jobs_root=output/'jobs')
+        self.server.operations=ScopedAssetOperations(owner,intake_root=intake,output_root=output)
+        identity=dict(self.fixture.manifest['identity'],id='http-copy',slug='http-copy',name='HTTP copy')
+        status,job,_=self.request('/api/actions/version',dict(action='duplicate',reference=self.reference,identity=identity))
+        self.assertEqual(status,200,job)
+        result=owner.run_job(job['id']);self.assertEqual(result['status'],'published')
+        copied=result['receipt']['references'][0]
+        self.assertEqual(self.library.resolve(copied)['identity'],identity)
+        self.assertEqual(self.library.read_file(copied,'mesh/triangle.obj'),self.fixture.mesh.read_bytes())
+        self.assertEqual(self.library.resolve(self.reference),self.fixture.manifest)
+
     def test_http_management_cannot_forge_journal_baseline_or_escape_intake(self):
         intake=self.root/'intake';intake.mkdir();output=self.root/'output';output.mkdir()
         owner=AssetOperations(self.library,jobs_root=output/'jobs')

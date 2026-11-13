@@ -40,9 +40,9 @@ MODULES = {
     'browser': 'asset_library_browser', 'jobs': 'asset_library_jobs', 'management':'asset_library_management',
 }
 MUTATIONS = frozenset(('register', 'import', 'import-batch', 'generate', 'preview', 'thumbnail',
-    'turntable', 'index', 'version', 'version.create', 'version.promote', 'version.rollback',
+    'turntable', 'index', 'version', 'version.create', 'version.duplicate', 'version.promote', 'version.rollback',
     'metadata.update', 'tags.add', 'tags.remove', 'collections.create', 'project.bind',
-    'project.unbind', 'replace', 'repair', 'migrate', 'export', 'bundle.create',
+    'project.unbind', 'project.undo-unbind', 'replace', 'repair', 'migrate', 'export', 'bundle.create',
     'bundle.restore', 'storage.gc.apply', 'storage.upgrade', 'storage.recover'))
 MANAGED = frozenset(('generate','import', 'preview', 'thumbnail', 'turntable', 'export', 'index', 'bundle.create', 'bundle.restore','version','replace','repair'))
 
@@ -105,7 +105,8 @@ class AssetOperations:
             exact_versions=True, production_approval=False, implicit_publication=False,
             adapters={name: dict(available=importlib.util.find_spec(value) is not None,
                 module=value) for name,value in MODULES.items()},
-            managed_operations=sorted(MANAGED), request_bytes=MAX_REQUEST_BYTES,
+            managed_operations=sorted(MANAGED), version_actions=['create','duplicate','promote','rollback'],
+            project_pin_operations=['bind','unbind','undo-unbind'], request_bytes=MAX_REQUEST_BYTES,
             default_limits=dict(file_bytes=64*1024**2, version_bytes=256*1024**2,
                 versions=4096, source_bytes=256*1024**2, json_depth=64),
             unsupported=['remote-service', 'paid-generation', 'implicit-installation'])
@@ -126,7 +127,7 @@ class AssetOperations:
                 return dict(schema_version=1, operation=operation, result=dict(status='plan',
                     parameters=parameters, requires_apply=True, executed=False))
             if not apply: fail('APPLY', 'Mutations require an explicit apply action.')
-        if operation in ('version.create','version.promote','version.rollback'):
+        if operation in ('version.create','version.duplicate','version.promote','version.rollback'):
             if 'action' in parameters:fail('REQUEST','Version action is selected by the explicit operation.')
             result=self.submit('version',dict(action=operation.split('.')[1],**parameters))
         elif operation in MANAGED:
@@ -181,10 +182,10 @@ class AssetOperations:
             if operation=='project.verify':return call(graph.verify_lock,p)
             if operation=='project.impact':return call(graph.reverse,p)
             return call(module('dependencies').check_compatibility,dict(graph=graph,**p))
-        if operation in ('project.bind','project.unbind'):
+        if operation in ('project.bind','project.unbind','project.undo-unbind'):
             resolver=module('versions').ScopedResolver([('local',self.library)],project_library='local')
-            if operation=='project.unbind':fail('UNAVAILABLE','Canonical binding owner has no unbind operation; preserve existing binding history.')
-            return call(resolver.bind,p)
+            function={'project.bind':resolver.bind,'project.unbind':resolver.unbind,'project.undo-unbind':resolver.undo_unbind}[operation]
+            return call(function,p)
         if operation in ('search','semantic-search'):
             p=deepcopy(p);root=_path(p.pop('index',None),exists=True)
             index=module('search').SearchIndex(root,{'local':self.library})
