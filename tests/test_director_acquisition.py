@@ -261,6 +261,8 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         (self.root/'prompts/base-pet.md').unlink()
         # Reopening the API can still compute the original recovery binding.
         self.assertEqual(self.adapter.input_sha256(),reconcile['input']['input_sha256'])
+        unbound=deepcopy(reconcile);unbound['input']['claim_id']=None
+        with self.assertRaises(RigError):self.adapter.reconcile(unbound)
         result=self.adapter.reconcile(reconcile)
         self.assertEqual(result['value']['claim_id'],claim)
         self.assertEqual(result['value']['outcome'],'uncertain')
