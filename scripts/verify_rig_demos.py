@@ -8,7 +8,7 @@ import platform
 import shutil
 import tempfile
 import numpy as np
-from rig_errors import atomic_json,read_json,require,sha256,timestamp
+from rig_errors import atomic_json,read_json,require,safe_path,sha256,timestamp
 from rig_models import load_rig,rig_signature
 
 
@@ -46,6 +46,7 @@ def verify(root,*,blender=False,browser=False,validator=False,render=False,archi
     from rig_import import load_character_model
     from rig_interop import compare_imported,validate_gltf
     root=Path(root).absolute();results=[];archive_directory=None
+    archive_root = safe_path(root, 'packages') if archives else None
     for name in (*ARCHETYPES,'humanoid-retarget','quadruped-retarget'):
         rig=load_rig(root/name);numeric=validate_rig(rig,require_animation=True)
         require(numeric['ok'],'RIG_DEMO_NUMERIC','Fixture numerical acceptance failed.',asset=name,observed=numeric)
@@ -106,7 +107,7 @@ def verify(root,*,blender=False,browser=False,validator=False,render=False,archi
         if archives:
             from rig_package import package_rig,restore_rig
             if archive_directory is None:
-                package_root = root / 'packages'
+                package_root = archive_root
                 package_root.mkdir(parents=True, exist_ok=True)
                 archive_directory = Path(tempfile.mkdtemp(prefix='verification-', dir=package_root))
             path=archive_directory/(name+'.zip');package=package_rig(rig.root,path)
