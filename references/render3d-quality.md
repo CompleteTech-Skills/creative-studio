@@ -1,0 +1,13 @@
+# Render output and data-pass adapter
+
+`render3d_quality.output_plan(settings)` validates the canonical RenderSettings on the host and creates a narrow, versioned worker plan. The trusted Blender worker calls `configure_output(scene, plan)` or `render_frame(scene, plan, output_root, index)`. These calls do not install or import third-party schema packages inside Blender.
+
+The adapter owns Cycles sampling, output resolution, PNG/EXR precision, transparency, native data-pass enablement, view transform and display exposure. Materials and texture encodings remain with LookDev, optics and shutter settings with Camera3D, animation and transforms with their evaluators, and compositing effects with Cinematics3D. No visual approval follows from a valid plan.
+
+PNG output uses sRGB combined images at 8 or 16 bits. EXR output uses scene-linear combined images at half or full float precision; requested auxiliary outputs are written separately under `passes/depth`, `passes/normal` and `passes/albedo`. The original master images are retained. Display exposure and the Standard/AgX view affect displayed PNG output; EXR masters retain scene-linear values without baking display transforms.
+
+The output root must be a private staging directory. Existing frames, data passes or symlinked output parents reject. Publication, hashing and independent decoding belong to the renderer's supervisor and verifier. `render_frame` returns paths and declared formats so those owners can verify actual bytes. A successful Blender command alone is not output acceptance.
+
+An existing compositor graph requires explicit owner-provided auxiliary sockets via `pass_sockets`. This avoids silently discarding existing effects or substituting an unrelated graph. The helper adds and removes only its temporary output nodes. The combined result follows the existing Composite output when a graph is supplied.
+
+Run the native acceptance test under the repository's shared native-validation lock, with `HATCH_RENDER3D_QUALITY_TEST=1` and a tested Blender executable in `HATCH_BLENDER`. Use `HATCH_RENDER3D_QUALITY_DIR` to retain the actual render, logs and independent decode report in a new directory. The test generates labeled engineering geometry and exercises PNG8/16 and EXR16/32 plus native depth, normal and albedo outputs. Unenabled local native tests are reported as skipped, not as renderer acceptance.
