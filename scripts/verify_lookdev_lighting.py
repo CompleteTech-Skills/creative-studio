@@ -228,6 +228,9 @@ def main(destination):
     metrics['eevee_area_center']=center(eevee)
     result={'schema_version':1,'fixture':True,'visual_approval':False,'blender':bpy.app.version_string,
             'source_sha256':hashlib.sha256(Path(__file__).with_name('lookdev_lighting.py').read_bytes()).hexdigest(),
+            'source_files': {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+                             for name in ('lookdev_lighting.py', 'lookdev_textures.py',
+                                          'verify_lookdev_lighting.py')},
             'metrics':metrics,'frames':outputs}
     (destination/'report.json').write_text(json.dumps(result,indent=2)+'\n')
     print('LOOKDEV_LIGHTING_VERIFIED',json.dumps(metrics,sort_keys=True))
