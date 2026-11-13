@@ -251,6 +251,31 @@ class PoseInspectorTests(unittest.TestCase):
                 posed=[node['id'] for node in saved['scene']['nodes'] if node.get('metadata',{}).get('source_component') is not None and belongs_to_actor(node)]
                 self.assertTrue(posed)
                 for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
+                for control in ['show-all','isolate']:
+                    page.locator('#'+control).click()
+                    for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
+                timeline=page.locator('#timeline')
+                timeline.get_by_label('Exact frame',exact=True).fill('1')
+                timeline.get_by_role('button',name='Scrub',exact=True).click()
+                page.wait_for_function("() => document.querySelector('#timeline [role=status]').textContent.includes('frame 1/1')")
+                scrubbed=world_vertices()
+                for identifier,meshes in evaluated['native_geometry'].items():
+                    for mesh,points in meshes.items():np.testing.assert_allclose(scrubbed[identifier][mesh],points,atol=1e-6,rtol=1e-6)
+                for identifier in posed:self.assertTrue(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
+                timeline.get_by_role('button',name='Return to authored scene',exact=True).click()
+                for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
+                timeline.get_by_role('button',name='Play',exact=True).click()
+                page.wait_for_function('(ids) => ids.every(id=>window.hatchEditor.objects.get(id).visible)',posed)
+                if timeline.get_by_role('button',name='Pause',exact=True).count():
+                    timeline.get_by_role('button',name='Pause',exact=True).click()
+                page.reload();page.wait_for_function('() => window.editorReady === true')
+                for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
+                page.locator('#show-all').click()
+                for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
+                timeline.get_by_role('button',name='Scrub',exact=True).click()
+                page.wait_for_function('(ids) => ids.every(id=>window.hatchEditor.objects.get(id).visible)',posed)
+                for identifier,meshes in evaluated['native_geometry'].items():
+                    for mesh,points in meshes.items():np.testing.assert_allclose(world_vertices()[identifier][mesh],points,atol=1e-6,rtol=1e-6)
                 reopened=EditorRepository(self.repository.root)
                 self.assertEqual(describe_pose(reopened,reopened.snapshot(),'actor')['authored_pose']['bones']['b1']['translation'][0],.35)
             finally:browser.close()
