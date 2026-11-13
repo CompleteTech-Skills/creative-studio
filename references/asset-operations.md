@@ -112,3 +112,11 @@ slot. `assets project undo-unbind` requires the current CAS revision and the
 original unbind revision; it cannot overwrite a rebound slot or erase history.
 Both operations preserve immutable asset bytes and delegate scene instance
 removal to the native project adapter rather than editing unrelated documents.
+
+
+Managed search indexes use native version collections and explicitly configured
+project pin IDs. `AssetOperations(..., project_ids=['film'])`, or the CLI
+`--project film` context, binds collection revisions and project binding state
+into queue admission; stage verification rejects an intervening metadata race.
+Index and browser readers must use the same explicit project context. The
+scoped HTTP bridge permits only the project IDs authorized in its owner.

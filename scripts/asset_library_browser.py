@@ -350,7 +350,7 @@ def main(argv=None):
     operations=None
     if all(roots):
         from asset_library_operations import AssetOperations, ScopedAssetOperations
-        operations=ScopedAssetOperations(AssetOperations(libraries['local'],jobs_root=args.jobs_root),
+        operations=ScopedAssetOperations(AssetOperations(libraries['local'],jobs_root=args.jobs_root,project_ids=args.project),
                                         intake_root=args.intake_root,output_root=args.output_root)
     server=AssetBrowserServer(libraries,index,port=args.port,operations=operations)
     print(json.dumps(dict(url=f'http://127.0.0.1:{server.server_port}/',token=server.token)),flush=True)

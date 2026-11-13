@@ -82,3 +82,10 @@ selection. Native identifiers inside source payloads are retained and are not
 silently rewritten. Publication uses the same expected-identity CAS and exact
 reference crash recovery as managed version creation. Existing assets and
 unrelated scene documents remain unchanged.
+
+
+Private staging interruption is recoverable for both initial version creation
+and duplication: the canonical owner prepares the exact duplicate manifest,
+and the managed stage reuses a byte-verified identical new reference absent
+from the original baseline. Pre-existing baseline identities and conflicting
+private candidates still fail; no semantic version or rights check is bypassed.
