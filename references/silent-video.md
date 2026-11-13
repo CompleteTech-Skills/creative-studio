@@ -14,6 +14,8 @@ The explicit API admits bounded ordered **opaque 8-bit RGB/RGBA PNG** sources.
 It supports H.264 MP4 (`libx264`, CRF 18, veryfast, `yuv420p`, `+faststart`) and
 VP9 WebM (`libvpx-vp9`, CRF 30, zero bitrate target). Required binaries are
 separately discovered and probed; unsupported codecs never select a fallback.
+Secure encoding currently requires Linux with procfs and descriptor-relative exclusive rename. Verification and contract admission remain portable, but non-Linux encoding reports unsupported rather than using untested directory-swap protection. The shared publisher also exposes macOS directory-descriptor support; a macOS media-path adapter is not claimed here.
+
 The profiles are untagged SDR; neither HDR nor color-managed transforms are
 claimed. Alpha-bearing, EXR, high-bit-depth, odd-size or oversized images fail
 instead of silently being flattened, tone-mapped, resized or padded.
@@ -100,7 +102,10 @@ decoded frames are compared to source pixels (RGB PSNR at least 18 dB, a
 conservative defect detector, not visual approval).
 
 Only successful independent verification permits exclusive native atomic
-publication. An existing destination, including a racing empty directory or
+publication. The output directory is opened without following symlinks and pinned
+by descriptor through staging, subprocesses and the final rename. A concurrent
+parent rename retains that original directory identity; a substituted pathname
+cannot redirect publication elsewhere. An existing destination, including a racing empty directory or
 symlink, is preserved. Private partials are removed after failures. The returned
 receipt binds the actual artifact, source manifest and request hashes and
 retains commands, raw probe output, timeline and decode evidence. Persist it in

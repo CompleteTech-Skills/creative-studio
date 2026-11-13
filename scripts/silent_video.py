@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from contextlib import contextmanager
 from fractions import Fraction
 import hashlib
 import json
@@ -17,6 +18,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -69,12 +71,7 @@ REQUEST = _obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-video-
 
 def schemas():
     """Standalone strict schemas. Semantic/path/hash checks remain mandatory."""
-    result = {'source': SOURCE, 'request': REQUEST, 'profile': _obj({
-        'container': {'enum': ['mp4', 'webm']}, 'codec': {'enum': ['h264', 'vp9']},
-        'encoder': {'enum': ['libx264', 'libvpx-vp9']},
-        'extension': {'enum': ['.mp4', '.webm']}, 'pixel_format': {'const': 'yuv420p'},
-        'alpha': {'const': 'opaque'}, 'color': {'const': 'untagged-sdr'}, 'precision': {'const': 8},
-        'crf': _int(0, 63), 'preset': {'enum': ['veryfast', 'good']}})}
+    result = {'source': SOURCE, 'request': REQUEST, 'profile': {'enum': list(PROFILES.values())}}
     raw = _obj({'command': {'type': 'array', 'minItems': 1, 'maxItems': 100, 'items': {'type': 'string', 'maxLength': 4096}},
                 'exit_status': {'const': 0}, 'stdout': {'type': 'string', 'maxLength': 64*1024**2},
                 'stderr': {'type': 'string', 'maxLength': 64*1024**2}})
@@ -179,7 +176,10 @@ def _image(data, expected=None):
 
 
 def validate_source(source):
-    _structural(source, SOURCE, 'silent source')
+    try:
+        _structural(source, SOURCE, 'silent source')
+    except (OverflowError, RecursionError) as exc:
+        raise ValueError('source exceeds numeric/nesting limits') from exc
     fps_fraction(source['fps'])
     if source['width']*source['height'] > MAX_PIXELS or source['width'] % 2 or source['height'] % 2:
         raise ValueError('unsupported dimensions')
@@ -263,7 +263,10 @@ def make_request(source, profile='h264-mp4'):
 
 
 def validate_request(request):
-    _structural(request, REQUEST, 'silent request')
+    try:
+        _structural(request, REQUEST, 'silent request')
+    except (OverflowError, RecursionError) as exc:
+        raise ValueError('request exceeds numeric/nesting limits') from exc
     validate_source(request['source'])
     return request
 
@@ -275,11 +278,11 @@ def _binary(name, override=None):
     return str(Path(candidate).resolve())
 
 
-def _run(command, limits, *, cancel=None, output=None):
+def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
     """Bound both process duration and captured evidence, including fast exits."""
     start = time.monotonic()
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr)
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, pass_fds=pass_fds)
         try:
             while True:
                 status = process.poll()
@@ -318,12 +321,14 @@ def capabilities(*, ffmpeg=None, ffprobe=None):
     except (ValueError, OSError) as exc:
         result.update(status='unavailable', reason=str(exc))
         return result
+    publication_supported = secure_publication_supported()
     for name, profile in PROFILES.items():
-        supported = (re.search(r'\b'+re.escape(profile['encoder'])+r'\b', lists['-encoders']) and
+        supported = (publication_supported and re.search(r'\b'+re.escape(profile['encoder'])+r'\b', lists['-encoders']) and
                      re.search(r'\b'+profile['container']+r'\b', lists['-muxers']) and
                      re.search(r'\byuv420p\b', lists['-pix_fmts']))
         result['profiles'][name] = {**profile, 'status': 'supported' if supported else 'unsupported'}
-    result.update(status='available', evidence=evidence, raw_capabilities=lists)
+    result.update(status='available', evidence=evidence, raw_capabilities=lists,
+                  secure_publication_supported=publication_supported)
     return result
 
 
@@ -341,6 +346,8 @@ def _snapshot(request, root, directory):
 
 def _fraction(value, label):
     try:
+        if not isinstance(value, str):
+            raise ValueError()
         result = Fraction(value)
         if result <= 0:
             raise ValueError()
@@ -363,7 +370,9 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
     try:
         data = json.loads(inspected['stdout'])
         streams = data['streams']
-        if isinstance(streams, list) and diagnostics is not None:
+        if not isinstance(streams, list) or any(not isinstance(x, dict) for x in streams):
+            raise ValueError('malformed stream list')
+        if diagnostics is not None:
             diagnostics.update(video_stream_count=sum(x.get('codec_type') == 'video' for x in streams),
                                audio_stream_count=sum(x.get('codec_type') == 'audio' for x in streams),
                                other_stream_count=sum(x.get('codec_type') not in ('video', 'audio') for x in streams),
@@ -527,7 +536,31 @@ def _destination(path):
     return path
 
 
-def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
+def secure_publication_supported():
+    # The current subprocess path adapter uses Linux procfs and inherited FDs.
+    # The shared primitive also supports macOS dirfds, but no untested fdescfs
+    # subprocess adapter is advertised as working.
+    return sys.platform.startswith('linux') and Path('/proc/self/fd').is_dir()
+
+
+@contextmanager
+def _pin_directory(path):
+    if not secure_publication_supported():
+        raise ValueError('secure silent encoding currently requires Linux procfs; verification remains portable')
+    path = Path(path).absolute()
+    descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.parts[1:]:
+            current = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = current
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+
+def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
     validate_request(request)
     request = copy.deepcopy(request)
     destination = _destination(destination)
@@ -541,7 +574,7 @@ def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None
         raise ValueError('requested media profile unavailable/unsupported; no fallback')
     if shutil.disk_usage(destination.parent).free < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
         raise ValueError('insufficient free storage for bounded snapshot and output')
-    with tempfile.TemporaryDirectory(prefix='.silent-export-', dir=destination.parent) as tmp:
+    with tempfile.TemporaryDirectory(prefix='.silent-export-', dir=Path('/proc/self/fd')/str(parent_fd)) as tmp:
         stage = Path(tmp)
         inputs = stage/'frames'; inputs.mkdir()
         _snapshot(request, root, inputs)
@@ -560,18 +593,32 @@ def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None
         command += [str(output)]
         if progress is not None:
             progress({'phase': 'encode', 'total_frames': len(request['source']['frames'])})
-        execution = _run(command, request['limits'], cancel=cancel, output=output)
+        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(parent_fd,))
         receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
         if cancel is not None and cancel():
             raise ValueError('silent export cancelled before publication')
         # Never replace a file or even an empty directory created by another writer.
-        _destination(destination)
-        _rename_no_replace(output, destination)
+        # Source and destination basenames resolve relative to pinned directory
+        # descriptors, never a path a concurrent writer can replace by a symlink.
+        source_fd = os.open(stage.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+        try:
+            _rename_no_replace(output.name, destination.name,
+                               source_dir_fd=source_fd, destination_dir_fd=parent_fd)
+        finally:
+            os.close(source_fd)
         receipt['encode'] = execution
         receipt['path'] = destination.name
         if progress is not None:
             progress({'phase': 'complete', 'frame_count': receipt['frame_count']})
         return receipt
+
+
+def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
+    validate_request(request)
+    destination = _destination(destination)
+    with _pin_directory(destination.parent) as parent_fd:
+        return _encode_pinned(request, root, destination, parent_fd, ffmpeg=ffmpeg,
+                              ffprobe=ffprobe, cancel=cancel, progress=progress)
 
 
 def main():

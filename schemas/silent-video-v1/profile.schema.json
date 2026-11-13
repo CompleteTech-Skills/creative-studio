@@ -1,67 +1,30 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Silent video profile v1",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "container": {
-      "enum": [
-        "mp4",
-        "webm"
-      ]
+  "enum": [
+    {
+      "container": "mp4",
+      "codec": "h264",
+      "encoder": "libx264",
+      "extension": ".mp4",
+      "pixel_format": "yuv420p",
+      "alpha": "opaque",
+      "color": "untagged-sdr",
+      "precision": 8,
+      "crf": 18,
+      "preset": "veryfast"
     },
-    "codec": {
-      "enum": [
-        "h264",
-        "vp9"
-      ]
-    },
-    "encoder": {
-      "enum": [
-        "libx264",
-        "libvpx-vp9"
-      ]
-    },
-    "extension": {
-      "enum": [
-        ".mp4",
-        ".webm"
-      ]
-    },
-    "pixel_format": {
-      "const": "yuv420p"
-    },
-    "alpha": {
-      "const": "opaque"
-    },
-    "color": {
-      "const": "untagged-sdr"
-    },
-    "precision": {
-      "const": 8
-    },
-    "crf": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 63
-    },
-    "preset": {
-      "enum": [
-        "veryfast",
-        "good"
-      ]
+    {
+      "container": "webm",
+      "codec": "vp9",
+      "encoder": "libvpx-vp9",
+      "extension": ".webm",
+      "pixel_format": "yuv420p",
+      "alpha": "opaque",
+      "color": "untagged-sdr",
+      "precision": 8,
+      "crf": 30,
+      "preset": "good"
     }
-  },
-  "required": [
-    "container",
-    "codec",
-    "encoder",
-    "extension",
-    "pixel_format",
-    "alpha",
-    "color",
-    "precision",
-    "crf",
-    "preset"
   ]
 }

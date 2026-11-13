@@ -22,7 +22,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import silent_video as video
 
-MEDIA_AVAILABLE = bool(shutil.which('ffmpeg') and shutil.which('ffprobe'))
+MEDIA_AVAILABLE = bool(shutil.which('ffmpeg') and shutil.which('ffprobe') and video.secure_publication_supported())
 if os.environ.get('HATCH_SILENT_MEDIA_TEST') == '1' and not MEDIA_AVAILABLE:
     raise RuntimeError('HATCH_SILENT_MEDIA_TEST requires real FFmpeg and ffprobe')
 
@@ -132,6 +132,19 @@ class SilentContracts(unittest.TestCase):
         with patch('silent_video.shutil.which', return_value=None):
             report = video.capabilities()
         self.assertIn('unavailable', json.dumps(report).lower())
+
+    def test_huge_integer_fails_as_contract_error(self):
+        request = deepcopy(self.request)
+        request['limits']['timeout_seconds'] = 10**1000
+        with self.assertRaises(ValueError):
+            video.validate_request(request)
+
+    def test_profile_schema_rejects_mixed_codec_and_container(self):
+        import jsonschema
+        invalid = deepcopy(video.PROFILES['h264-mp4'])
+        invalid['container'] = 'webm'
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(invalid, video.schemas()['profile'])
 
     def test_resource_limits_reject_unbounded_or_nonfinite_values(self):
         for key, value in [('max_output_bytes', 0), ('max_log_bytes', -1),
@@ -370,6 +383,24 @@ class SilentMedia(SilentContracts):
             video.encode(self.request, self.root, output)
         self.assertEqual(output.read_bytes(), b'pre-existing unrelated user data')
 
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux descriptor path adapter')
+    def test_parent_symlink_swap_cannot_redirect_publication(self):
+        destination_parent = self.root/'delivery'
+        destination_parent.mkdir()
+        outside = self.root/'outside'
+        outside.mkdir()
+        moved = self.root/'pinned-delivery'
+        original = video._rename_no_replace
+        def swap(source, target, **kwargs):
+            destination_parent.rename(moved)
+            destination_parent.symlink_to(outside, target_is_directory=True)
+            return original(source, target, **kwargs)
+        with patch.object(video, '_rename_no_replace', side_effect=swap):
+            receipt = video.encode(self.request, self.root, destination_parent/'film.mp4')
+        self.assertFalse((outside/'film.mp4').exists())
+        self.assertEqual(hashlib.sha256((moved/'film.mp4').read_bytes()).hexdigest(), receipt['artifact_sha256'])
+        self.assertEqual(list(outside.iterdir()), [])
+
     def test_output_size_budget_prevents_publication(self):
         output = self.root / 'oversize.mp4'
         request = deepcopy(self.request)
@@ -378,6 +409,36 @@ class SilentMedia(SilentContracts):
             video.encode(request, self.root, output)
         self.assertFalse(output.exists())
 
+
+
+class DescriptorPublication(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'posix', 'POSIX directory descriptors')
+    def test_shared_atomic_publisher_pins_both_parents(self):
+        from atomic_publish import _rename_no_replace
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, destination, outside = root/'source', root/'destination', root/'outside'
+            for path in (source, destination, outside): path.mkdir()
+            (source/'part').write_bytes(b'exact verified bytes')
+            oldfd = os.open(source, os.O_RDONLY | os.O_DIRECTORY)
+            newfd = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                destination.rename(root/'moved')
+                destination.symlink_to(outside, target_is_directory=True)
+                _rename_no_replace('part', 'final', source_dir_fd=oldfd, destination_dir_fd=newfd)
+                self.assertEqual((root/'moved'/'final').read_bytes(), b'exact verified bytes')
+                self.assertFalse((outside/'final').exists())
+                (source/'second').write_bytes(b'keep source')
+                (root/'moved'/'existing').mkdir()
+                with self.assertRaises(FileExistsError):
+                    _rename_no_replace('second', 'existing', source_dir_fd=oldfd, destination_dir_fd=newfd)
+                self.assertEqual((source/'second').read_bytes(), b'keep source')
+                with self.assertRaises(ValueError):
+                    _rename_no_replace('../escape', 'final', source_dir_fd=oldfd, destination_dir_fd=newfd)
+                with self.assertRaises(ValueError):
+                    _rename_no_replace('second', 'final', source_dir_fd=oldfd)
+            finally:
+                os.close(oldfd); os.close(newfd)
 
 if __name__ == '__main__':
     unittest.main()
