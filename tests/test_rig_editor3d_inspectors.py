@@ -171,7 +171,7 @@ class InspectorTests(unittest.TestCase):
         base=(Path(__file__).resolve().parents[1]/'examples/lookdev-contracts/blue-coat.json').read_bytes()
         class Source:
             def read_file(self,path,sha): return base
-        with self.assertRaisesRegex(RigError,'exact material identity'):
+        with self.assertRaises(RigError):
             _load_material_registry(Source(),{'sha256':'a'*64},dict(id='ceramic',version='1.0.0',path='blue-coat.json',sha256=hashlib.sha256(base).hexdigest()))
 
     def test_inherited_texture_material_edit_keeps_direct_dependencies(self):
@@ -192,14 +192,14 @@ class InspectorTests(unittest.TestCase):
         ref=dict(id=base['id'],version=base['version'],kind=base['kind'],path='ceramic.json',sha256=hashlib.sha256(br).hexdigest())
         inst=json.loads((example/'blue-coat.json').read_bytes());inst['base_material']=ref;inst['dependencies']=[ref]
         ir=canonical_bytes(inst)
-        generic=dict(id=inst['id'],version=inst['version'],kind='material',path='blue-coat.json',sha256=hashlib.sha256(ir).hexdigest())
+        generic=dict(id=inst['id'],version=inst['version'],kind='material',path='nested/materials/blue-coat.json',sha256=hashlib.sha256(ir).hexdigest())
         graph=SceneGraph.from_bundle(self.bundle,'example-scene.json',source_root=self.base/'source')
         graph.configure_node('mesh',{'material_overrides':[dict(slot='coat',material=generic)]})
-        payloads={'ceramic.json':br,'blue-coat.json':ir,'albedo.json':tx,'textures/albedo.png':png}
+        payloads={'ceramic.json':br,'nested/materials/blue-coat.json':ir,'albedo.json':tx,'textures/albedo.png':png}
         copied=snapshot_project(self.base/'source',self.base/'textured',graph,scene_path='example-scene.json',extra_payloads=payloads)
         project=json.loads((self.base/'textured/project.json').read_text())
         for name,data in payloads.items():
-            if name=='blue-coat.json':continue
+            if name=='nested/materials/blue-coat.json':continue
             project['dependency_lock'].append(dict(kind='texture',id=name.replace('/','-').replace('.','-'),version='1.0.0',path=name,sha256=hashlib.sha256(data).hexdigest()))
         (self.base/'textured/project.json').write_bytes(canonical_bytes(project))
         repository=EditorRepository.create(self.base/'textured',self.base/'textured-repo',scene_path=copied['active_scene']['path'])

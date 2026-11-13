@@ -47,7 +47,7 @@ def describe_inspector(snapshot, identifier=None):
         result['unavailable'].extend(['light-shape-and-size', 'light-range', 'shadow-resolution',
             'light-animation'])
     else:
-        result['unavailable'].append('native-material-version-publication')
+        result['unavailable'].append('native-material-texture-and-graph-authoring')
         result['material_overrides'] = deepcopy(node['material_overrides'])
         if node['type'] == 'skinned_character':
             result['unavailable'].extend(['persistent-bone-pose', 'persistent-morph-weights',
@@ -119,39 +119,22 @@ def _material_source(snapshot, node_id, slot):
 
 def _load_material_registry(repository, snapshot, reference):
     """Read native material closure through the repository's exact-byte API."""
-    import hashlib
     from pathlib import PurePosixPath
-    from lookdev_contracts import Registry, _references, portable_path, validate_resource
-    from rig_errors import decode_json
-    entries, payloads, seen = [], {}, set()
-    # Native LookDev dependencies are scoped to the selected resource directory.
-    prefix = PurePosixPath(reference['path']).parent
-    def read(path, expected):
+    from lookdev_contracts import portable_path
+    from lookdev import capture_closure
+    prefix=PurePosixPath(reference['path']).parent
+    def reader(path,maximum):
         portable_path(path)
-        full = str(prefix / path) if str(prefix) != '.' else path
-        raw = repository.read_file(full, snapshot['sha256'])
-        if hashlib.sha256(raw).hexdigest() != expected:
-            _fail('Material dependency bytes differ from the exact reference.')
+        raw=repository.read_file(path,snapshot['sha256'])
+        if len(raw)>maximum:
+            _fail('Native material closure exceeds the shared source budget.')
         return raw
-    def visit(path, expected, depth=0):
-        if depth > 16 or len(seen) >= 256:
-            _fail('Material dependency budget exceeded.')
-        key = (path, expected)
-        if key in seen: return
-        seen.add(key)
-        raw = read(path, expected); value = validate_resource(decode_json(raw))
-        if depth == 0 and (value.get('id') != reference['id'] or
-                value.get('version') != reference['version'] or
-                value.get('kind') not in {'material3d', 'material-instance3d', 'material-variant3d'}):
-            _fail('Bound material bytes do not match the exact material identity.')
-        entries.append((path, raw))
-        for child in _references(value): visit(child['path'], child['sha256'], depth+1)
-        if value.get('kind') == 'texture3d':
-            file = value['file'];payloads[file['path']] = read(file['path'], file['sha256'])
-    path = PurePosixPath(reference['path']).name
-    visit(path, reference['sha256'])
-    registry = Registry(entries, payloads=payloads)
-    return registry, path, prefix, entries, payloads
+    path=reference['path']
+    closure=capture_closure(reader,[reference])
+    resources={item['path'] for item in closure.all_references}
+    entries=[(name,raw) for name,raw in closure.sources.items() if name in resources]
+    payloads={name:raw for name,raw in closure.sources.items() if name not in resources}
+    return closure.registry,path,prefix,entries,payloads
 
 
 def describe_materials(repository, snapshot, node_id):
@@ -227,10 +210,10 @@ def apply_material_edit(repository, request):
     raw = canonical_bytes(candidate)
     digest = hashlib.sha256(raw).hexdigest()
     relative = f'{candidate["id"]}-{candidate["version"]}-{digest}.json'
-    # Dependencies retain their established native directory scope. A material
-    # is placed beside its original resource, in a unique content-bound path.
+    # Native dependency paths share the snapshot owner root. A new material
+    # is placed beside its original resource without rebasing dependencies.
     full = str(prefix / relative) if str(prefix) != '.' else relative
-    Registry([*entries, (relative, raw)], payloads=payloads)
+    Registry([*entries, (full, raw)], payloads=payloads)
     generic = dict(id=candidate['id'], version=candidate['version'], path=full, sha256=digest, kind='material')
     def builder(source_root, destination, scene_path):
         from scene3d_contracts import load_project
