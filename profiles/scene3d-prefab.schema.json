@@ -2046,7 +2046,7 @@
               "primitives"
             ]
           },
-          "minItems": 0,
+          "minItems": 1,
           "maxItems": 65536
         }
       },

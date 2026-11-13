@@ -199,7 +199,7 @@ def definitions():
         normalized_mesh=nullable(integer(0, 1000000)), normalized_primitive=nullable({'const': 0})))
     asset['properties']['material_bindings'] = arr(obj(dict(
         slot=ID, material_index=nullable(integer(0, 65535)),
-        primitives=arr(material_primitive, minimum=1, maximum=10000))), maximum=65536)
+        primitives=arr(material_primitive, minimum=1, maximum=10000))), minimum=1, maximum=65536)
     animation = base('animation', dict(duration_frames=integer(1, 1_000_000), fps=ref('rate'),
         tracks=arr(ref('track'), maximum=4096), bindings=arr(ref('binding'), maximum=256),
         dependencies=arr(ref('reference')), provenance=ref('provenance')))
