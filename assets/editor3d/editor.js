@@ -1484,6 +1484,15 @@ function showShortcutHelp() {
 $("keyboard-help").onclick = showShortcutHelp;
 $("shortcut-search").oninput = filterShortcuts;
 $("shortcut-close").onclick = () => $("shortcut-dialog").close();
+$("shortcut-dialog").onkeydown = event => {
+  if (event.key !== "Tab") return;
+  const first = $("shortcut-search"), last = $("shortcut-close");
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault(); last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault(); first.focus();
+  }
+};
 $("shortcut-dialog").onclose = () => {
   if (shortcutReturnFocus?.isConnected) shortcutReturnFocus.focus();
 };

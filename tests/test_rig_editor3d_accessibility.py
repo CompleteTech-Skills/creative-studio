@@ -61,7 +61,7 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
         page.locator('#viewport').focus();page.keyboard.press('Control+z')
         page.wait_for_function('() => window.hatchEditor.snapshot.revision === 3')
         page.keyboard.press('Control+Shift+Z');page.wait_for_function('() => window.hatchEditor.snapshot.revision === 4')
-        page.goto(self.server.url);page.wait_for_function('() => window.editorReady === true')
+        page.goto('about:blank');page.goto(self.server.url);page.wait_for_function('() => window.editorReady === true')
         self.assertEqual(page.evaluate('window.hatchEditor.snapshot.revision'),4)
         node=next(n for n in self.repository.snapshot()['scene']['nodes'] if n['id']==copied)
         self.assertEqual(node['transform']['translation'][0],3.25)
@@ -108,7 +108,7 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
         self.repository.apply(0,dict(schema_version=1,commands=[
             dict(operation='node-flags',parameters=dict(identifier='mesh',locked=True)),
             dict(operation='node-flags',parameters=dict(identifier='camera',visible=False))]),'accessibility-native-flags')
-        page.goto(self.server.url);page.wait_for_function('() => window.editorReady === true')
+        page.goto('about:blank');page.goto(self.server.url);page.wait_for_function('() => window.editorReady === true')
         before=self.repository.snapshot()
         root=page.locator('[data-id="root"]');root.focus();page.keyboard.press('ArrowDown')
         self.assertEqual(page.evaluate('document.activeElement.dataset.id'),'mesh')
