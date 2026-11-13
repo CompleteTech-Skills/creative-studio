@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "kind": "hatch-3d-geometry-analysis",
+  "vertices": 4,
+  "triangles": 2,
+  "meshes": [
+    {
+      "id": "strip",
+      "vertices": 4,
+      "triangles": 2,
+      "components": 1,
+      "surface_area_m2": 0.4000000059604645,
+      "boundary_edges": 4,
+      "nonmanifold_edges": 0,
+      "degenerate_triangles": 0,
+      "signed_volume_m3": null,
+      "volume_status": "unavailable-open-surface",
+      "bounds": [
+        [
+          -0.10000000149011612,
+          0.0,
+          0.0
+        ],
+        [
+          0.10000000149011612,
+          2.0,
+          0.0
+        ]
+      ],
+      "region": ""
+    }
+  ],
+  "bounds": [
+    [
+      -0.10000000149011612,
+      0.0,
+      0.0
+    ],
+    [
+      0.10000000149011612,
+      2.0,
+      0.0
+    ]
+  ],
+  "dimensions_m": [
+    0.20000000298023224,
+    2.0,
+    0.0
+  ],
+  "surface_area_m2": 0.4000000059604645,
+  "surface_centroid_m": [
+    0.0,
+    1.0,
+    0.0
+  ],
+  "center_of_mass_status": "surface-area estimate; material density and interior are unknown",
+  "principal_axes": [
+    [
+      0.0,
+      1.0,
+      0.0
+    ],
+    [
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "principal_variance": [
+    1.0,
+    0.010000000298023226,
+    0.0
+  ],
+  "symmetry_mean_error_m": 0.0,
+  "symmetry_status": "approximate geometry only; not anatomy approval",
+  "scale_status": "canonical meters; source unit ambiguity requires explicit import scale",
+  "orientation_status": "canonical orientation or explicit import conversion; PCA does not identify species",
+  "import_format": ".glb",
+  "scale_conversion": 1.0,
+  "preserved_existing_rig": false,
+  "preserved_animation_clips": 0,
+  "source_sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e",
+  "warnings": [],
+  "fixture": true
+}

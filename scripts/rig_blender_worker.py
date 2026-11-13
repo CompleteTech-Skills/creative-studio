@@ -1,6 +1,7 @@
 """Trusted Blender-only worker. Input JSON selects data operations, never code."""
 from __future__ import annotations
 import json
+import hashlib
 import math
 from pathlib import Path
 import sys
@@ -9,6 +10,14 @@ from mathutils import Vector, Matrix
 
 
 def canonical(point):return [float(point.x),float(point.z),float(-point.y)]
+
+
+BLENDER_FROM_CANONICAL = Matrix(((1,0,0,0),(0,0,-1,0),(0,1,0,0),(0,0,0,1)))
+
+
+def canonical_matrix(value):
+    result = BLENDER_FROM_CANONICAL.inverted() @ value @ BLENDER_FROM_CANONICAL
+    return [list(row) for row in result]
 def blender(point):return Vector((point[0],-point[2],point[1]))
 
 
@@ -45,11 +54,11 @@ def inspect_scene(job):
         controls=[o.name for o in bpy.data.objects if o.get('hatch_control')],
         constraints=sum(len(b.constraints) for a in armatures for b in a.pose.bones),samples=[])
     for request in job.get('samples',[]):
-        matched=activate_clip(request['clip'])
+        matched=activate_clip(None if request.get('rest') else request['clip'])
         frame=request['time']*bpy.context.scene.render.fps
         bpy.context.scene.frame_set(math.floor(frame),subframe=frame%1)
         bpy.context.view_layer.update();depsgraph=bpy.context.evaluated_depsgraph_get()
-        sample=dict(clip=request['clip'],time=request['time'],matched=matched,meshes={},bones={})
+        sample=dict(clip=request['clip'],time=request['time'],matched=matched,meshes={},bones={},sockets={})
         for obj in meshes:
             evaluated=obj.evaluated_get(depsgraph);mesh=evaluated.to_mesh()
             indices=request.get('vertices',{}).get(obj.name)
@@ -59,11 +68,17 @@ def inspect_scene(job):
         for arm in armatures:
             for name in request.get('bones',[]):
                 if name in arm.pose.bones:sample['bones'][name]=canonical(arm.matrix_world@arm.pose.bones[name].head)
+        for obj in bpy.data.objects:
+            socket_id = obj.get('hatch_socket_id')
+            if socket_id in request.get('sockets', []):
+                sample['sockets'][socket_id] = canonical_matrix(obj.evaluated_get(depsgraph).matrix_world)
         report['samples'].append(sample)
     return report
 
 
-def add_authoring_controls(manifest):
+def add_authoring_controls(manifest, socket_rest):
+    activate_clip(None)
+    bpy.context.view_layer.update()
     armatures=[o for o in bpy.data.objects if o.type=='ARMATURE']
     if not armatures:raise ValueError('Imported scene has no editable armature')
     arm=armatures[0];arm.show_in_front=True;arm.data.display_type='OCTAHEDRAL'
@@ -90,9 +105,17 @@ def add_authoring_controls(manifest):
         obj=bpy.data.objects.new('Socket '+socket['id'],None);obj.empty_display_type='ARROWS';obj.empty_display_size=.055
         obj['hatch_control']='attachment';obj['hatch_owner']=socket['owner'];obj['hatch_definition']=json.dumps(socket)
         collection.objects.link(obj)
-        # Bone parenting exposes an editable, owned socket. Exact canonical TRS remains in the manifest.
+        # Blender bone parenting uses its tail and imported bone axes. Anchor
+        # the complete native rest matrix, then preserve that offset as the
+        # parent bone animates; do not reinterpret canonical TRS as Blender TRS.
+        obj['hatch_socket_id']=socket['id']
         obj.parent=arm;obj.parent_type='BONE';obj.parent_bone=socket['bone']
-        obj.location=Vector(socket['transform']['translation'])
+        bpy.context.view_layer.update()
+        parent_matrix = arm.matrix_world @ arm.pose.bones[socket['bone']].matrix
+        parent_matrix = parent_matrix @ Matrix.Translation((0, arm.data.bones[socket['bone']].length, 0))
+        desired = BLENDER_FROM_CANONICAL @ Matrix(socket_rest[socket['id']]) @ BLENDER_FROM_CANONICAL.inverted()
+        obj.matrix_parent_inverse = parent_matrix.inverted()
+        obj.matrix_basis = desired
     text=bpy.data.texts.new('HATCH_RIG_MANIFEST.json');text.write(json.dumps(manifest,indent=2))
     info=bpy.data.texts.new('HATCH_README.txt')
     info.write('This is a real editable armature with vertex groups, skin modifiers, shape keys and named NLA actions.\n'
@@ -156,12 +179,19 @@ def main():
         bpy.context.scene.render.fps=job.get('fps',24);bpy.context.scene.frame_start=0
         bpy.ops.import_scene.gltf(filepath=job['input'],merge_vertices=False,import_pack_images=True,bone_heuristic='BLENDER',disable_bone_shape=True)
         for obj in bpy.data.objects:obj['hatch_rest_basis']=json.dumps([list(row) for row in obj.matrix_basis])
-        manifest=json.loads(Path(job['manifest']).read_text());add_authoring_controls(manifest)
+        manifest=json.loads(Path(job['manifest']).read_text());add_authoring_controls(manifest, job['socket_rest'])
         bpy.context.scene.frame_start=0;bpy.context.scene.frame_end=round(job.get('duration',2)*bpy.context.scene.render.fps)
         activate_clip('neutral');bpy.context.scene.frame_set(0)
         bpy.ops.wm.save_as_mainfile(filepath=job['output'],compress=True)
     elif mode in ('reopen','import','render'):
         bpy.ops.wm.open_mainfile(filepath=job['input'],load_ui=False,use_scripts=False)
+        if mode=='render':
+            text=bpy.data.texts.get('HATCH_RIG_MANIFEST.json')
+            if text is None:raise ValueError('Blender project has no bound native rig manifest')
+            manifest=json.loads(text.as_string())
+            core={key:value for key,value in manifest.items() if key not in ('review','validation')}
+            digest=hashlib.sha256(json.dumps(core,sort_keys=True,separators=(',',':'),allow_nan=False).encode('utf-8')).hexdigest()
+            if digest!=job['rig_sha256']:raise ValueError('Blender project belongs to a different native rig revision')
         if mode=='import':
             if bpy.data.libraries:raise ValueError('Make linked Blender libraries local before portable import.')
             if any(image.source=='FILE' and not image.packed_file for image in bpy.data.images):
