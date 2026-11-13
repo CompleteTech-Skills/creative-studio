@@ -2,6 +2,8 @@
 from copy import deepcopy
 from fractions import Fraction
 import math
+from pathlib import Path
+import tempfile
 import unittest
 
 import numpy as np
@@ -14,6 +16,62 @@ from test_rig_skinning import bound_fixture
 
 
 class RigWeightInputBoundaryTests(unittest.TestCase):
+    def test_omitted_influence_limit_adapts_to_narrow_valid_skins(self):
+        for width in (1,2,3,4):
+            rig=bound_fixture();skin=rig.weights['strip']
+            skin.indices=skin.indices[:,:width].copy();skin.weights=skin.weights[:,:width].copy()
+            before=deepcopy(skin)
+            edited=edit_weights(skin,{0:{'b1':1}})
+            validate_skin(edited,rig.geometry.meshes[0],rig.skeleton)
+            self.assertEqual(edited.weights.shape[1],width)
+            self.assertEqual(edited.joints[edited.indices[0,0]],'b1')
+            self.assert_skin_unchanged(skin,before)
+            for limit in (None,width+1):
+                with self.subTest(width=width,limit=limit),self.assertRaises(RigError):
+                    edit_weights(skin,{0:{'b1':1}},max_influences=limit)
+
+    def correction(self,rig,value):
+        from rig_errors import timestamp
+        from rig_models import rig_signature
+        return dict(schema_version=1,kind='hatch-3d-rig-correction',rig_id=rig.manifest['id'],
+            rig_version=rig.manifest['version'],expected_sha256=rig_signature(rig.manifest),
+            author='regression fixture',reason='Weight admission regression',created_at=timestamp(),
+            edits=[dict(operation='weights',target='strip',value=value)])
+
+    def test_correction_caps_profile_limit_to_stored_width_for_edit_and_mirror(self):
+        from rig_test_helpers import fixture
+        from rig_corrections import apply_rig_corrections
+        from rig_models import load_rig
+        from rig_jobs import save_rig
+        for value in ({'assignments':{'0':{'b1':1}}},{'mirror':{'pairs':{'0':1},'approved':True}}):
+            with self.subTest(value=value),tempfile.TemporaryDirectory() as directory:
+                rig=fixture(directory,animated=False);rig.manifest['limits']['influences']=8
+                save_rig(rig,bump=False)
+                self.assertEqual(rig.weights['strip'].weights.shape[1],4)
+                result,_=apply_rig_corrections(rig,self.correction(rig,value))
+                loaded=load_rig(result.root)
+                self.assertEqual(loaded.weights['strip'].weights.shape[1],4)
+                validate_skin(loaded.weights['strip'],loaded.geometry.meshes[0],loaded.skeleton,loaded.manifest['limits'])
+                self.assertEqual(loaded.weights['strip'].locked.tolist(),[0])
+
+    def test_correction_copy_sources_are_not_coerced_and_rejection_preserves_files(self):
+        from rig_test_helpers import fixture
+        from rig_corrections import apply_rig_corrections
+        from rig_errors import sha256
+        with tempfile.TemporaryDirectory() as directory:
+            rig=fixture(directory,animated=False)
+            before={p.relative_to(rig.root).as_posix():sha256(p) for p in rig.root.rglob('*') if p.is_file()}
+            skin=deepcopy(rig.weights['strip'])
+            for source in (True,False,1.5,'1',None):
+                with self.subTest(source=source):
+                    with self.assertRaises(RigError) as caught:
+                        apply_rig_corrections(rig,self.correction(rig,{'copy':{'0':source}}))
+                    self.assertEqual(caught.exception.report['code'],'RIG_VERTEX_REFERENCE')
+                    self.assertEqual(before,{p.relative_to(rig.root).as_posix():sha256(p) for p in rig.root.rglob('*') if p.is_file()})
+                    self.assert_skin_unchanged(rig.weights['strip'],skin)
+            result,_=apply_rig_corrections(rig,self.correction(rig,{'copy':{'0':1}}),persist=False)
+            self.assertEqual(result.weights['strip'].locked.tolist(),[0])
+
     def assert_skin_unchanged(self, actual, before):
         for name in ('indices', 'weights', 'inverse_bind', 'locked'):
             np.testing.assert_array_equal(getattr(actual, name), getattr(before, name))

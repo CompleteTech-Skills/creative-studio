@@ -174,7 +174,12 @@ def evaluate_deformation(rig: RigAsset, pose: dict | None = None, *, normals=Fal
     return output
 
 
-def edit_weights(skin: SkinWeights, assignments: dict[int, dict[str, float]], *, max_influences=4, lock=True) -> SkinWeights:
+_DEFAULT_INFLUENCE_LIMIT = object()
+
+
+def edit_weights(skin: SkinWeights, assignments: dict[int, dict[str, float]], *, max_influences=_DEFAULT_INFLUENCE_LIMIT, lock=True) -> SkinWeights:
+    if max_influences is _DEFAULT_INFLUENCE_LIMIT:
+        max_influences = min(4, skin.indices.shape[1])
     require(isinstance(max_influences, Integral) and not isinstance(max_influences, (bool, np.bool_)) and 1 <= max_influences <= skin.indices.shape[1],
             'RIG_WEIGHT_EDIT', 'Influence limit must be an integer within the stored skin width.')
     result = deepcopy(skin)
