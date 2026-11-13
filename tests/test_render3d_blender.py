@@ -1,5 +1,8 @@
 """Real process supervision and native source preparation for Render3D."""
 from pathlib import Path
+from copy import deepcopy
+import hashlib
+import os
 import sys
 import tempfile
 import unittest
@@ -66,6 +69,60 @@ class Supervision(unittest.TestCase):
                 self.run_child("raise RuntimeError('worker failure fixture')",root)
             self.assertEqual(caught.exception.report['category'],'worker-crash')
             self.assertIn('worker failure fixture',(root/'blender.log').read_text())
+
+
+@unittest.skipUnless(os.environ.get('HATCH_RENDER3D_REAL_TESTS') == '1',
+                     'Actual Blender gate requires HATCH_RENDER3D_REAL_TESTS=1')
+class NativeRendering(unittest.TestCase):
+    def test_native_deformation_and_actual_png_exr_precision(self):
+        from rig_test_helpers import fixture
+        from rig_jobs import save_rig
+        from rig_errors import read_json
+        from render3d_blender import BlenderBackend
+        from render3d_snapshot import create_snapshot, NativeRigAdapter
+        from render3d_verify import decode_image
+        import numpy as np
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'native').mkdir()
+            rig=fixture(root/'native');del rig.clips['neutral']
+            save_rig(rig,operation='native-render-regression')
+            create_snapshot(rig.root,root/'snapshot',NativeRigAdapter())
+            payload=(root/'snapshot'/'snapshot.json').read_bytes()
+            request=dict(schema_version=1,kind='render3d-request',id='native-regression',
+                project=dict(id='fixture',version='1.0.0'),scene=dict(id='fixture',version='1.0.0'),
+                shot=dict(id='motion',version='1.0.0'),mode='3d',
+                snapshot=dict(path='snapshot.json',bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest()),
+                fps=dict(numerator=4,denominator=1),frame_range=dict(start=0,end=3),
+                source_start=dict(numerator=0,denominator=1),playback_rate=dict(numerator=1,denominator=1),
+                camera='front',priority=0,max_attempts=1,cache_policy='verify-reuse',
+                destination=dict(path='render',owner_token='native-regression-owner'),
+                settings=dict(engine='cycles',device_policy='cpu',device='cpu',allow_cpu_fallback=False,
+                    resolution=[64,64],samples=2,seed=4,denoise=False,
+                    output=dict(format='png',bit_depth=8,passes=['combined'],alpha='straight',color_space='srgb'),
+                    exposure=0,view_transform='standard',resources=dict(memory_bytes=2*1024**3,
+                        storage_bytes=128*1024**2,timeout_seconds=120,workers=1,max_frames=10)))
+            backend=BlenderBackend()
+            result=backend.render_frames(request,root/'snapshot',root/'render')
+            self.assertEqual(result['verification']['status'],'passed')
+            worker=read_json(root/'render/worker-report.json')
+            self.assertGreater(worker['armatures'],0)
+            first=worker['samples'][0]['world_vertices'];last=worker['samples'][-1]['world_vertices']
+            self.assertGreater(max(float(np.max(np.abs(np.array(first[k])-np.array(last[k])))) for k in first),.01)
+            decoded=[]
+            for frame in (0,2):
+                _,pixels=decode_image(root/f'render/frames/{frame:06d}.png',output=request['settings']['output'],resolution=[64,64])
+                decoded.append(pixels)
+            self.assertTrue(any(np.any(decoded[0][k] != decoded[1][k]) for k in decoded[0]))
+            for name,fmt,depth,color in [('png16','png',16,'srgb'),('exr16','exr',16,'linear'),('exr32','exr',32,'linear')]:
+                with self.subTest(format=name):
+                    variant=deepcopy(request);variant['id']=name;variant['frame_range']['end']=1
+                    variant['settings']['output'].update(format=fmt,bit_depth=depth,color_space=color)
+                    variant['destination']['path']=name
+                    output=backend.render_frames(variant,root/'snapshot',root/name)
+                    self.assertEqual(output['verification']['status'],'passed')
+                    metadata,_=decode_image(root/name/output['images'][0]['file']['path'],output=variant['settings']['output'],resolution=[64,64])
+                    self.assertEqual(metadata['bit_depth'],depth)
+                    self.assertEqual(set(metadata['channels']),set('RGBA'))
 
 
 if __name__=='__main__':unittest.main()

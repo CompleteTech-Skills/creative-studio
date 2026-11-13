@@ -42,3 +42,17 @@ Blender fixture rendering is separate evidence and must run through the shared
 native validation queue documented by the coordination workspace. Keep the
 request, captured snapshot, worker report, image hashes and decoded verification
 report when reporting such a run; a unit test pass is not a render claim.
+
+Enable the real native regression in a host with the optional rig and decoder
+dependencies plus a configured Blender executable:
+
+```sh
+HATCH_RENDER3D_REAL_TESTS=1 HATCH_BLENDER=/absolute/path/to/blender \
+PYTHONPATH=scripts:tests python -m unittest test_render3d_blender -v
+```
+
+Acquire the coordination workspace's native-validation lock around that command
+when sharing a host. This regression renders a small synthetic articulated rig,
+checks actual evaluated vertex and pixel changes, and decodes PNG 8/16-bit and
+EXR half/full-float outputs. It does not establish PBR texture fidelity, data
+passes, a complete film, or production visual approval.
