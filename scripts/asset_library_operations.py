@@ -182,7 +182,7 @@ class AssetOperations:
             if operation=='project.impact':return call(graph.reverse,p)
             return call(module('dependencies').check_compatibility,dict(graph=graph,**p))
         if operation in ('project.bind','project.unbind'):
-            resolver=module('versions').ScopedResolver({'local':self.library},project_library='local')
+            resolver=module('versions').ScopedResolver([('local',self.library)],project_library='local')
             if operation=='project.unbind':fail('UNAVAILABLE','Canonical binding owner has no unbind operation; preserve existing binding history.')
             return call(resolver.bind,p)
         if operation in ('search','semantic-search'):

@@ -155,6 +155,20 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
             with self.assertRaises(RigError):self.owner.execute(operation,{},apply=True)
         self.assertEqual(self.owner.capabilities()['production_approval'],False)
 
+    def test_project_bind_uses_ordered_native_scope_and_preserves_unavailable_unbind(self):
+        from asset_library_versions import ScopedResolver
+        ref=self.fixture.register();binding=dict(library='local',reference=ref)
+        p=dict(project_id='test-project',slot='hero',binding=binding,expected_revision=0)
+        result=self.owner.execute('project.bind',p,apply=True)['result']
+        self.assertEqual(result['revision'],1)
+        resolver=ScopedResolver([('local',self.library)],project_library='local')
+        before=resolver.bindings('test-project')
+        self.assertEqual(before['bindings']['hero'],binding)
+        with self.assertRaises(RigError) as caught:self.owner.execute('project.unbind',dict(project_id='test-project',slot='hero'),apply=True)
+        self.assertEqual(caught.exception.report['code'],'LIBRARY_OPERATIONS_UNAVAILABLE')
+        self.assertEqual(resolver.bindings('test-project'),before)
+        with self.assertRaises(RigError):self.owner.execute('project.bind',p,apply=True)
+
     def test_browser_cli_delegates_explicit_loopback_server_arguments(self):
         from unittest.mock import patch
         with patch('asset_library_browser.main',return_value=0) as start:
