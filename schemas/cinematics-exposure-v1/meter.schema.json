@@ -86,7 +86,7 @@
         {
           "type": "number",
           "minimum": -40,
-          "maximum": 128
+          "maximum": 129
         },
         {
           "type": "null"
@@ -330,7 +330,7 @@
           "log2_mean_luminance": {
             "type": "number",
             "minimum": -40,
-            "maximum": 128
+            "maximum": 129
           }
         }
       }

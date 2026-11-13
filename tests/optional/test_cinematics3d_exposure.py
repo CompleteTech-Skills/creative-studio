@@ -2,6 +2,9 @@ from copy import deepcopy
 from fractions import Fraction
 import math
 import json
+import re
+import shutil
+import tempfile
 from pathlib import Path
 import sys
 import unittest
@@ -125,6 +128,38 @@ class ExposureTests(unittest.TestCase):
             exposure.advise(forged, Fraction(0))
         with self.assertRaises(ValueError):
             exposure.advise(self.meter(0.), Fraction(0), enabled=True, authored_stops=24.)
+
+    def test_floor_reduction_rounding_cannot_reject_authentic_measurement(self):
+        import jsonschema
+        pixels = np.array([[-1.,-1.,-1.,1.], [-1.,-1.,-1.,2.**-53]], dtype=np.float32)
+        meter = exposure.measure(self.root, self.inventory, self.source, pixels)
+        self.assertEqual(meter['log2_mean_luminance'], -40.)
+        jsonschema.Draft202012Validator(exposure.schemas()['meter.schema.json']).validate(meter)
+        advice = exposure.advise(meter, Fraction(0), enabled=True)
+        self.assertEqual(advice['correction_stops'], 8.)
+
+    def test_scaled_xyz_luminance_preserves_legal_extreme_dynamic_range(self):
+        import jsonschema
+        with tempfile.TemporaryDirectory(prefix='exposure-xyz-') as temporary:
+            root = Path(temporary).resolve()/'profile'
+            shutil.copytree(self.root, root)
+            config = root/'config.ocio'
+            text = config.read_text()
+            match = re.search(r'to_scene_reference: !<MatrixTransform> \{matrix: (\[[^]]+\])', text)
+            matrix = json.loads(match.group(1))
+            for index in range(12):
+                matrix[index] *= 1.0004
+            text = text[:match.start(1)] + json.dumps(matrix) + text[match.end(1):]
+            config.write_text(text)
+            inventory = color.capture_config(root)
+            source = deepcopy(self.source); source['config_closure_sha256'] = inventory['closure_sha256']
+            maximum = float(np.finfo(np.float32).max)
+            pixels = np.array([[maximum,maximum,maximum,1.]], dtype=np.float32)
+            meter = exposure.measure(root, inventory, source, pixels)
+            self.assertGreater(meter['log2_mean_luminance'], 128.)
+            self.assertLess(meter['log2_mean_luminance'], 129.)
+            jsonschema.Draft202012Validator(exposure.schemas()['meter.schema.json']).validate(meter)
+            self.assertEqual(exposure.advise(meter, Fraction(0), enabled=True)['correction_stops'], -8.)
 
     def test_forged_record_complexity_is_bounded_before_hashing(self):
         meter = self.meter()

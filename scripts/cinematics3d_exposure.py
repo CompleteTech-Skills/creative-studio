@@ -88,7 +88,7 @@ def measure(root, inventory, source, rgba, *, max_work_bytes=MAX_WORK_BYTES):
                  histogram_log2_min=-40, histogram_log2_max=24,
                  histogram_alpha_weights=histogram.tolist(), below_histogram=below, above_histogram=above,
                  visible_over_one_pixels=over_one, alpha_coverage=coverage,
-                 log2_mean_luminance=None if coverage == 0 else log_sum/coverage,
+                 log2_mean_luminance=None if coverage == 0 else max(-40., log_sum/coverage),
                  xyz_luminance_weights=weights.tolist(), color_execution=execution,
                  source_render_verified=False)
     value['meter_sha256'] = object_hash(value)
@@ -133,7 +133,7 @@ def _validate_meter(value):
     if coverage == 0:
         _need(luminance is None, 'empty exposure measurement has luminance')
     else:
-        _number(luminance, -40., 128.)
+        _number(luminance, -40., 129.)
     return luminance
 
 
@@ -209,13 +209,13 @@ def schemas():
                                     'items': number(0, MAX_PIXELS)},
         'below_histogram': integer(0, MAX_PIXELS), 'above_histogram': integer(0, MAX_PIXELS),
         'visible_over_one_pixels': integer(0, MAX_PIXELS), 'alpha_coverage': number(0, MAX_PIXELS),
-        'log2_mean_luminance': {'anyOf': [number(-40, 128), {'type': 'null'}]},
+        'log2_mean_luminance': {'anyOf': [number(-40, 129), {'type': 'null'}]},
         'xyz_luminance_weights': {'type': 'array', 'minItems': 3, 'maxItems': 3, 'items': number(0, 1.0005)},
         'color_execution': color.schemas()['execution.schema.json'],
         'source_render_verified': {'const': False}, 'meter_sha256': sha})
     meter['allOf'] = [{'if': {'properties': {'alpha_coverage': {'const': 0}}},
                        'then': {'properties': {'log2_mean_luminance': {'type': 'null'}}},
-                       'else': {'properties': {'log2_mean_luminance': number(-40, 128)}}}]
+                       'else': {'properties': {'log2_mean_luminance': number(-40, 129)}}}]
     settings = {'type': 'object', 'additionalProperties': False,
                 'required': list(policy()), 'properties': {
                     'target_gray': number(1e-6, 1), 'minimum_stops': number(-24, 0),
