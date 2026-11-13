@@ -71,6 +71,9 @@ class TimelineBrowserTests(unittest.TestCase):
                         tracks=saved['documents'][selected['path']]['tracks']
                         self.assertEqual(next(t for t in tracks if t['property']=='translation')['keys'],[dict(frame=12,value=[7,0,0]),dict(frame=13,value=[9,0,0])])
                         self.assertEqual(next(node for node in saved['scene']['nodes'] if node['id']=='mesh')['transform']['translation'],[2,0,0])
+                        context=page.evaluate('()=>window.hatchEditor.getTimelineContext()')
+                        self.assertEqual(context['revision'],baseline+2);self.assertEqual(context['sha256'],saved['sha256'])
+                        self.assertEqual(context['shot_path'],selected['path']);self.assertEqual(context['frame'],dict(numerator=13,denominator=1))
                         with page.expect_response('**/api/timeline/curve'):
                             page.get_by_role('button',name='Evaluate channel curve',exact=True).click()
                             page.get_by_label('Animated property',exact=True).select_option('rotation')
@@ -81,6 +84,7 @@ class TimelineBrowserTests(unittest.TestCase):
                         page.wait_for_function("()=>document.querySelectorAll('[aria-label=\"Evaluated channel curve\"] polyline').length===3")
 
                         page.get_by_label('Timeline shot',exact=True).select_option(label='Foreign')
+                        self.assertIsNone(page.evaluate('()=>window.hatchEditor.getTimelineContext()'))
                         page.get_by_role('button',name='Scrub',exact=True).click()
                         page.wait_for_function("()=>document.querySelector('[aria-label=\"Animation timeline\"] [role=status]').textContent.includes('Switch to the shot scene')")
                         self.assertEqual(page.evaluate("()=>window.hatchEditor.objects.get('mesh').position.x"),2)
