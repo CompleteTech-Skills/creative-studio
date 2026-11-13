@@ -5,7 +5,7 @@ import sys
 import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from cinematics3d_blender import compile_plan, validate_bound_plan, validate_configuration, validate_probe
+from cinematics3d_blender import compile_plan, validate_bound_plan, validate_configuration, validate_probe, validate_compiled
 from cinematics3d_blender_runtime import validate_plan
 from cinematics3d_contracts import default_effect, Registry, canonical_bytes
 from rig_errors import RigError
@@ -55,6 +55,18 @@ class Compiler(unittest.TestCase):
             backend.render_frames(a['request'],'unused-snapshot','unused-output')
         self.assertEqual(caught.exception.report['category'],'unsupported-feature')
 
+    def test_retained_authoring_bytes_must_compile_to_claimed_native_settings(self):
+        from rig_errors import object_hash
+        registry,stack=bundle([]);compiled=compile_plan(registry,stack,request(),inventory())
+        validate_compiled(compiled,compiled['request'])
+        forged=deepcopy(compiled);plan=forged['plan']
+        plan['fog']=dict(density_per_meter=.1,anisotropy=0)
+        forged['request']['settings']['cinematics_sha256']=object_hash({k:v for k,v in plan.items() if k!='request_sha256'})
+        plan['request_sha256']=object_hash(forged['request'])
+        # An internally consistent digest is still not an authored operation.
+        validate_bound_plan(plan,forged['request'])
+        with self.assertRaises(RigError):validate_compiled(forged,forged['request'])
+
     def test_stale_request_and_bytes_rejected(self):
         registry,stack=bundle([]);compiled=compile_plan(registry,stack,request(),inventory())
         changed=deepcopy(compiled['request']);changed['settings']['seed']+=1
@@ -83,12 +95,15 @@ class Compiler(unittest.TestCase):
         with self.assertRaises(RigError):compile_plan(registry,stack,request(),inventory())
 
     def test_dof_consumes_verified_native_optics(self):
-        optics=fixtures()['optics'];optics['depth_of_field']['enabled']=True;payload=canonical_bytes(optics)
+        optics=fixtures()['optics'];optics['depth_of_field']['enabled']=True
+        optics['projection'].update(shift_x=.2,shift_y=.3);payload=canonical_bytes(optics)
         e=default_effect('depth-of-field','dof');e['inputs']=[ref(optics)]
         registry,stack=bundle([e],{'optics.json':payload})
         compiled=compile_plan(registry,stack,request(),inventory(),input_bytes={'optics.json':payload})
         self.assertEqual(compiled['plan']['dof']['focal_length_mm'],50)
         self.assertEqual(compiled['plan']['dof']['sensor_fit'],'horizontal')
+        self.assertEqual(compiled['plan']['dof']['native_gate']['shift_x'],-.2)
+        self.assertEqual(compiled['plan']['dof']['native_gate']['shift_y'],-.3)
         for inputs in ({},{'optics.json':payload+b' '}):
             with self.assertRaises(RigError):compile_plan(registry,stack,request(),inventory(),input_bytes=inputs)
 

@@ -375,6 +375,10 @@ class Registry:
     def bytes(self):
         return dict(self._raw)
 
+    def external_bytes(self):
+        """Return retained opaque native input bytes for owner adapters."""
+        return dict(self._external)
+
 
 def default_effect(effect_type, identifier, *, scope='shot'):
     registry = effect_registry()

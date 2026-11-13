@@ -101,10 +101,10 @@ def _finite(value,low,high,label):
 def validate_plan(plan):
     """Strict small worker protocol; host also validates original owner documents."""
     keys={'schema_version','kind','request_sha256','configuration_sha256','probe_sha256',
-          'sources','camera','dof','fog','disabled','effective_settings'}
+          'adapter_sha256','stack','sources','camera','dof','fog','disabled','effective_settings'}
     _require(isinstance(plan,dict) and set(plan)==keys and type(plan['schema_version']) is int and plan['schema_version']==1
              and plan['kind']=='cinematics3d-native-plan', 'Invalid cinematic plan')
-    for key in ('request_sha256','configuration_sha256','probe_sha256'):
+    for key in ('request_sha256','configuration_sha256','probe_sha256','adapter_sha256'):
         value=plan[key]
         _require(isinstance(value,str) and len(value)==64 and all(c in '0123456789abcdef' for c in value),
                  'Invalid cinematic digest')
@@ -124,11 +124,16 @@ def validate_plan(plan):
         d=plan['dof']
         _require(isinstance(d,dict) and set(d)=={'enabled','focus_distance_m','f_stop','aperture_blades',
                    'aperture_rotation_rad','anamorphic_ratio','focal_length_mm','sensor_width_mm','sensor_height_mm',
-                   'sensor_fit','shift_x','shift_y','near_clip_m','far_clip_m'},
+                   'sensor_fit','shift_x','shift_y','near_clip_m','far_clip_m','native_gate'},
                  'Invalid DOF plan')
         _require(type(d['enabled']) is bool,'Invalid DOF enabled')
         for key in ('focus_distance_m','f_stop','anamorphic_ratio','focal_length_mm','sensor_width_mm','sensor_height_mm'):
             _finite(d[key],1e-9,1e9,key)
+        n=d['native_gate']
+        _require(isinstance(n,dict) and set(n)=={'type','lens','sensor_width','shift_x','shift_y','clip_start','clip_end'}
+                 and n['type']=='PERSP','Invalid native camera gate')
+        for key in ('lens','sensor_width','clip_start','clip_end'):_finite(n[key],1e-9,1e9,key)
+        for key in ('shift_x','shift_y'):_finite(n[key],-1e9,1e9,key)
         _require(d['sensor_fit'] in ('horizontal','vertical','auto'),'Invalid sensor fit')
         _finite(d['shift_x'],-100,100,'shift x');_finite(d['shift_y'],-100,100,'shift y')
         _finite(d['near_clip_m'],1e-9,1e9,'near clip');_finite(d['far_clip_m'],d['near_clip_m'],1e9,'far clip')
@@ -139,6 +144,11 @@ def validate_plan(plan):
         fog=plan['fog']
         _require(isinstance(fog,dict) and set(fog)=={'density_per_meter','anisotropy'},'Invalid volume plan')
         _finite(fog['density_per_meter'],0,100,'density');_finite(fog['anisotropy'],-.99,.99,'anisotropy')
+    reference=plan['stack']
+    _require(isinstance(reference,dict) and set(reference)=={'id','version','kind','path','sha256'}
+             and all(isinstance(reference[k],str) and 0<len(reference[k])<=4096 for k in reference)
+             and reference['kind']=='cinematics3d-stack' and len(reference['sha256'])==64
+             and all(c in '0123456789abcdef' for c in reference['sha256']), 'Invalid cinematic stack reference')
     for reference in plan['sources']:
         _require(all(isinstance(reference[k],str) and 0<len(reference[k])<=4096 for k in reference), 'Invalid cinematic reference')
         _require(reference['kind']=='cinematics3d-effect' and len(reference['sha256'])==64
@@ -154,17 +164,18 @@ def apply_frame(scene, plan):
     if plan['dof'] is not None:
         camera=scene.camera.data;d=plan['dof']
         _require(camera.type=='PERSP','Native optical DOF requires a perspective camera')
-        camera.sensor_fit=d['sensor_fit'].upper();camera.shift_x=d['shift_x'];camera.shift_y=d['shift_y']
-        camera.clip_start=d['near_clip_m'];camera.clip_end=d['far_clip_m'];camera.dof.focus_object=None
-        camera.lens=d['focal_length_mm'];camera.sensor_width=d['sensor_width_mm'];camera.sensor_height=d['sensor_height_mm']
+        n=d['native_gate'];camera.sensor_fit='HORIZONTAL'
+        camera.shift_x=n['shift_x'];camera.shift_y=n['shift_y']
+        camera.clip_start=n['clip_start'];camera.clip_end=n['clip_end'];camera.dof.focus_object=None
+        camera.lens=n['lens'];camera.sensor_width=n['sensor_width'];camera.sensor_height=d['sensor_height_mm']
         camera.dof.use_dof=d['enabled'];camera.dof.focus_distance=d['focus_distance_m'];camera.dof.aperture_fstop=d['f_stop']
         camera.dof.aperture_blades=d['aperture_blades'];camera.dof.aperture_rotation=d['aperture_rotation_rad'];camera.dof.aperture_ratio=d['anamorphic_ratio']
         for owner,key,wanted in [(camera.dof,'focus_distance',d['focus_distance_m']),
                 (camera.dof,'aperture_fstop',d['f_stop']),(camera.dof,'aperture_ratio',d['anamorphic_ratio']),
-                (camera.dof,'aperture_rotation',d['aperture_rotation_rad']),(camera,'lens',d['focal_length_mm']),
-                (camera,'sensor_width',d['sensor_width_mm']),(camera,'sensor_height',d['sensor_height_mm']),
-                (camera,'shift_x',d['shift_x']),(camera,'shift_y',d['shift_y']),
-                (camera,'clip_start',d['near_clip_m']),(camera,'clip_end',d['far_clip_m'])]:
+                (camera.dof,'aperture_rotation',d['aperture_rotation_rad']),(camera,'lens',n['lens']),
+                (camera,'sensor_width',n['sensor_width']),(camera,'sensor_height',d['sensor_height_mm']),
+                (camera,'shift_x',n['shift_x']),(camera,'shift_y',n['shift_y']),
+                (camera,'clip_start',n['clip_start']),(camera,'clip_end',n['clip_end'])]:
             _require(math.isclose(getattr(owner,key),wanted,rel_tol=1e-6,abs_tol=1e-8),'Blender clamped cinematic '+key)
         _require(camera.dof.aperture_blades==d['aperture_blades'] and camera.dof.use_dof==d['enabled'],
                  'Blender changed cinematic DOF settings')

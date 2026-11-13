@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 import hashlib
+from pathlib import Path
 
 from camera3d_contracts import validate as validate_camera
+from camera3d_blender import optical_plan
 from cinematics3d_contracts import Registry, canonical_bytes, effect_registry, validate_document, portable_path
 from cinematics3d_blender_runtime import validate_plan
 from rig_errors import decode_json, finite_json, object_hash, require, RigError
@@ -16,6 +18,12 @@ from render3d_contracts import validate as validate_render
 
 VERSION='1.0.0'
 MAPPED_EFFECTS={'exposure','tone-map','depth-of-field','volumetric-fog'}
+ADAPTER_SOURCES=('cinematics3d_blender.py','cinematics3d_blender_runtime.py','camera3d_blender.py','camera3d_math.py')
+
+
+def adapter_hash():
+    return object_hash({name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+                        for name in ADAPTER_SOURCES})
 
 
 def validate_probe(value):
@@ -67,14 +75,17 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
     supplied={} if input_bytes is None else input_bytes
     require(isinstance(supplied,dict) and len(supplied)<=128,'CINEMATICS_INPUT','Invalid input byte inventory.')
     configuration={'documents/'+path:data for path,data in registry.bytes().items()}
+    external=registry.external_bytes()
+    configuration.update({'inputs/'+path:data for path,data in external.items()})
     for path,data in supplied.items():
         portable_path(path)
         require(isinstance(data,bytes) and len(data)<=2*1024**2,'CINEMATICS_INPUT','Expected bounded native input bytes.')
-        configuration['inputs/'+path]=data
+        require(external.get(path)==data,'CINEMATICS_HASH','Native input differs from registry-bound bytes.')
+    require(len(configuration)<=1152,'CINEMATICS_LIMIT','Too many native configuration files.')
     require(sum(map(len,configuration.values()))<=16*1024**2,'CINEMATICS_LIMIT','Native configuration exceeds 16 MiB.')
     plan=dict(schema_version=1,kind='cinematics3d-native-plan',request_sha256='0'*64,
               configuration_sha256=object_hash({path:hashlib.sha256(data).hexdigest() for path,data in configuration.items()}),
-              probe_sha256=object_hash(probe),sources=[],camera=request['camera'],dof=None,fog=None,disabled=[],
+              probe_sha256=object_hash(probe),adapter_sha256=adapter_hash(),stack=deepcopy(stack_reference),sources=[],camera=request['camera'],dof=None,fog=None,disabled=[],
               effective_settings={})
     for effect in effects:
         validate_document(effect)
@@ -109,6 +120,20 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
                 sensor_width_mm=projection['sensor_width_mm'],sensor_height_mm=projection['sensor_height_mm'],
                 sensor_fit=projection['sensor_fit'],shift_x=projection['shift_x'],shift_y=projection['shift_y'],
                 near_clip_m=projection['near_clip_m'],far_clip_m=projection['far_clip_m'])
+            # Projection/gate/shift semantics belong to Camera3D. The worker
+            # transports its already-computed native settings without a second
+            # optics implementation or optional host packages inside Blender.
+            resolved=deepcopy(optics);resolved['depth_of_field']['enabled']=plan['dof']['enabled']
+            width,height=effective['settings']['resolution']
+            camera_render=dict(schema_version=1,kind='camera3d-render',id='cinematic-render',version='1.0.0',
+                width=width,height=height,pixel_aspect=dict(numerator=1,denominator=1),overscan=1,gate_fit='crop',
+                output=effective['settings']['output']['format'],color_space=effective['settings']['output']['color_space'],
+                transparent=effective['settings']['output']['alpha']=='straight',max_pixels=width*height)
+            try:
+                native=optical_plan(resolved,camera_render)
+            except ValueError as exc:
+                raise RigError('CINEMATICS_INPUT',str(exc)) from exc
+            plan['dof']['native_gate']={key:native[key] for key in ('type','lens','sensor_width','shift_x','shift_y','clip_start','clip_end')}
         elif name=='volumetric-fog':
             require(effect['scope']!='object','CINEMATICS_UNSUPPORTED','Object-local fog requires the LookDev volume owner.')
             require(plan['fog'] is None,'CINEMATICS_CONFLICT','Multiple world volume controls are ambiguous.')
@@ -128,7 +153,7 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
         validate_plan(plan)
     except ValueError as exc:
         raise RigError('CINEMATICS_PLAN',str(exc)) from exc
-    return dict(request=effective,plan=plan,configuration=configuration,executed=False)
+    return dict(request=effective,plan=plan,configuration=configuration,probe=probe,executed=False)
 
 
 def validate_bound_plan(plan,request):
@@ -136,6 +161,7 @@ def validate_bound_plan(plan,request):
         validate_plan(plan)
     except ValueError as exc:
         raise RigError('CINEMATICS_PLAN',str(exc)) from exc
+    require(plan['adapter_sha256']==adapter_hash(),'CINEMATICS_STALE','Native cinematic adapter changed; recompile the plan.')
     require(plan['request_sha256']==object_hash(request) and plan['camera']==request['camera'],
             'CINEMATICS_STALE','Native cinematic plan is bound to a different render request.')
     require(request['settings'].get('cinematics_sha256')==object_hash({k:v for k,v in plan.items() if k!='request_sha256'}),
@@ -172,3 +198,25 @@ def render(registry, stack_reference, request, snapshot_root, destination, *, ba
     compiled=compile_plan(registry,stack_reference,request,probe,input_bytes=input_bytes)
     return backend.render_frames(compiled['request'],snapshot_root,destination,cancelled=cancelled,
                                  cinematics=compiled)
+
+
+def validate_compiled(compiled, request):
+    """Recompile original documents before trusting claimed settings/provenance.
+
+    Digests bind bytes but do not establish that arbitrary native plan fields
+    actually follow those authoring documents. Recompilation enforces that link.
+    """
+    require(isinstance(compiled,dict) and set(compiled)=={'request','plan','configuration','probe','executed'}
+            and compiled['executed'] is False and compiled['request']==request,
+            'CINEMATICS_INPUT','Invalid compiled cinematic request.')
+    plan=validate_bound_plan(compiled['plan'],request)
+    files=validate_configuration(plan,compiled['configuration'])
+    probe=validate_probe(compiled['probe'])
+    require(object_hash(probe)==plan['probe_sha256'],'CINEMATICS_HASH','Probe differs from compiled plan.')
+    documents=[(path[len('documents/'):],payload) for path,payload in files.items() if path.startswith('documents/')]
+    inputs={path[len('inputs/'):]:payload for path,payload in files.items() if path.startswith('inputs/')}
+    restored=Registry(documents,external=inputs)
+    expected=compile_plan(restored,plan['stack'],request,probe,input_bytes=inputs)
+    require(expected['plan']==plan and expected['request']==request and expected['configuration']==files,
+            'CINEMATICS_STALE','Native settings differ from retained authoring documents.')
+    return plan,files

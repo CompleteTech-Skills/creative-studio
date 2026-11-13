@@ -30,7 +30,9 @@ field preserves existing v1 requests; ordinary requests omit it.
 
 It does not mutate caller data or render. Current mappings
 are display exposure, Standard/AgX transform, physical perspective-camera DOF
-with the referenced native Camera3D optics, and world volumetric fog. The worker
+with the referenced native Camera3D optics, and world volumetric fog.
+Projection gate and shift conversion use the canonical Camera3D `optical_plan`;
+the fixed worker transports its computed native values. The worker
 reads back mapped properties and fails on clamping. Object-local global effects,
 multiple competing optical/volume controls, unsupported engines, motion blur
 and other unmapped effects reject explicitly. Disabled effects remain in the
@@ -45,8 +47,11 @@ unavailable. GPU discovery does not authorize GPU rendering.
 Use `render(registry, stack_ref, request, snapshot_root, destination,
 backend=..., input_bytes=...)` to probe, compile and invoke the canonical backend.
 For an already obtained probe, pass the compiler result as the optional
-`cinematics=` keyword to `BlenderBackend.render_frames`. The backend validates
-the plan/request/configuration binding before creating output directories. Its
+`cinematics=` keyword to `BlenderBackend.render_frames`. The backend recompiles retained original documents and validates the resulting
+plan/request/configuration binding before creating output directories. Hashes
+alone cannot make an invented native setting follow an authored effect.
+Optional adapter and Camera3D implementation hashes also participate in plan
+and cache identity; changed code requires recompilation. Its
 normal staging, supervision, cancellation, verification and exclusive
 publication continue to apply. Failed work remains unpublished diagnostic
 staging. Successful outputs include exact original files under `cinematics/`,

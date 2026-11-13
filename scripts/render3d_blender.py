@@ -286,14 +286,10 @@ class BlenderBackend:
         validate(request,'RenderRequest')
         cinematic_plan=None; cinematic_files={}; cinematic_code={}
         if cinematics is not None:
-            from cinematics3d_blender import validate_bound_plan, validate_configuration, __file__ as compiler_file
+            from cinematics3d_blender import validate_compiled, ADAPTER_SOURCES, __file__ as compiler_file
             from cinematics3d_blender_runtime import __file__ as runtime_file
-            require(isinstance(cinematics,dict) and set(cinematics)=={'request','plan','configuration','executed'}
-                    and cinematics['executed'] is False and cinematics['request']==request,
-                    'invalid-input','Invalid compiled cinematic request.')
-            cinematic_plan=validate_bound_plan(cinematics['plan'],request)
-            cinematic_files=validate_configuration(cinematic_plan,cinematics['configuration'])
-            cinematic_code={str(Path(p).name):sha256(p) for p in (compiler_file,runtime_file)}
+            cinematic_plan,cinematic_files=validate_compiled(cinematics,request)
+            cinematic_code={name:sha256(Path(compiler_file).with_name(name)) for name in ADAPTER_SOURCES}
         require(('cinematics_sha256' in request['settings'])==(cinematic_plan is not None),
                 'unsupported-feature','Cinematic settings require their matching compiled native plan.')
         root=Path(snapshot_root).absolute();target=Path(destination).absolute()
