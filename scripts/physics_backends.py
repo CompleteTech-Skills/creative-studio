@@ -616,14 +616,27 @@ def _admit_world(value, backend):
                     'PHYSICS_SLEEP_UNSUPPORTED', 'PyBullet API exposes activation states but not configurable native sleep thresholds.', category='capability-gap')
         require(max(map(abs, body['transform']['translation'])) <= 10000 and body['mass']['kilograms'] <= 1e6,
                 'PHYSICS_SETTINGS', 'Position/mass exceeds documented native bounds.', category='invalid-input')
-        require(len(body['colliders']) == 1, 'PHYSICS_SHAPE_UNSUPPORTED', 'Exactly one box/sphere collider per body is supported.', category='capability-gap')
-        collider = body['colliders'][0]
-        require(collider['shape']['type'] in ('box', 'sphere') and not collider['sensor'] and collider['group'] == 1 and collider['mask'] == 2**32-1,
-                'PHYSICS_SHAPE_UNSUPPORTED', 'Only nonsensor box/sphere colliders with the unfiltered default group/mask are supported.', category='capability-gap')
-        require(collider['transform'] == dict(translation=[0, 0, 0], rotation=[0, 0, 0, 1]),
-                'PHYSICS_SHAPE_UNSUPPORTED', 'Offset/rotated local colliders require a later adapter.', category='capability-gap')
-        dimensions = collider['shape'].get('size', [collider['shape'].get('radius', 0)])
-        require(all(.001 <= x <= 1000 for x in dimensions), 'PHYSICS_SETTINGS', 'Primitive dimensions must be .001..1000 meters.', category='invalid-input')
+        explicit_proxies = world.get('collision_profile') == 'explicit-proxies-v1'
+        if explicit_proxies:
+            require(backend == 'pybullet', 'PHYSICS_SHAPE_UNSUPPORTED',
+                    'The explicit proxy profile currently requires the verified DIRECT adapter.', category='capability-gap')
+            from physics_collisions import validate_colliders, CollisionError
+            try:
+                proxy_vertices, proxy_triangles, _ = validate_colliders(body,
+                    source_ids={item['id'] for item in world['assets'] if item['kind'] == 'geometry'})
+            except CollisionError as exc:
+                raise BackendError('PHYSICS_GEOMETRY', str(exc), category='invalid-input') from exc
+            require(proxy_vertices <= budget['vertices'] and proxy_triangles <= budget['triangles'],
+                    'PHYSICS_RESOURCE_LIMIT', 'Collision proxy exceeds declared mesh budget.', category='resource-exhaustion')
+        else:
+            require(len(body['colliders']) == 1, 'PHYSICS_SHAPE_UNSUPPORTED', 'Exactly one box/sphere collider per body is supported.', category='capability-gap')
+            collider = body['colliders'][0]
+            require(collider['shape']['type'] in ('box', 'sphere') and not collider['sensor'] and collider['group'] == 1 and collider['mask'] == 2**32-1,
+                    'PHYSICS_SHAPE_UNSUPPORTED', 'Only nonsensor box/sphere colliders with the unfiltered default group/mask are supported.', category='capability-gap')
+            require(collider['transform'] == dict(translation=[0, 0, 0], rotation=[0, 0, 0, 1]),
+                    'PHYSICS_SHAPE_UNSUPPORTED', 'Offset/rotated local colliders require a later adapter.', category='capability-gap')
+            dimensions = collider['shape'].get('size', [collider['shape'].get('radius', 0)])
+            require(all(.001 <= x <= 1000 for x in dimensions), 'PHYSICS_SETTINGS', 'Primitive dimensions must be .001..1000 meters.', category='invalid-input')
         if body['mode'] == 'dynamic':
             require(body['mass']['kilograms'] >= .001, 'PHYSICS_MASS_UNSUPPORTED',
                     'Blender rigid-body mass has a 0.001kg lower bound.', category='capability-gap')
@@ -632,13 +645,15 @@ def _admit_world(value, backend):
             determinant=a*d*f+2*b*c*e-a*e*e-d*c*c-f*b*b
             require(scale*determinant/(a+d+f)**2 >= 1e-12 and determinant/(a+d+f)**2 >= 1e-10, 'PHYSICS_INERTIA_UNSUPPORTED',
                     'Native tensor needs minimum principal inertia at least 1e-12 kg m² and a conservative bounded condition ratio.',category='capability-gap')
-            expected = _primitive_inertia(body)
+            expected = _primitive_inertia(body) if backend == 'blender' else None
             for i in range(3) if backend == 'blender' else []:
                 for j in range(3):
                     observed = body['mass']['inertia'][i][j]
                     target = expected[i] if i == j else 0.
                     require(abs(observed-target) <= max(expected)*1e-6,
                             'PHYSICS_INERTIA_UNSUPPORTED', 'Requested inertia differs from the native uniform primitive.', category='capability-gap')
+    require(not world.get('collision_exclusions') or world.get('collision_profile') == 'explicit-proxies-v1',
+            'PHYSICS_SHAPE_UNSUPPORTED', 'Pair exclusions require the explicit proxy profile.', category='capability-gap')
     _admit_rigid_controls(world, backend)
     return world, math.ceil(steps_per_frame)
 
@@ -728,33 +743,41 @@ def _source_admission(root, world, project_manifest):
                     'PHYSICS_GEOMETRY_UNSUPPORTED', 'A body requires one independently decoded mesh and no external resources.', category='capability-gap')
             mesh = imported.geometry.meshes[0]
             points = np.asarray(mesh.positions)
-            from rig_geometry import mesh_edges, connected_components
-            _, edge_counts = mesh_edges(mesh.triangles)
-            require(np.all(edge_counts == 2) and len(connected_components(mesh)) == 1,
-                    'PHYSICS_GEOMETRY', 'Primitive source must be one closed manifold surface.', category='invalid-input')
-            faces = points[mesh.triangles]
-            normals = np.cross(faces[:,1]-faces[:,0], faces[:,2]-faces[:,0])
-            scale = max(float(np.abs(points).max()), 1e-10)
-            require(np.all(np.sum(normals*faces.mean(axis=1),axis=1) > scale**3*1e-12),
-                    'PHYSICS_GEOMETRY', 'Primitive faces must be nondegenerate and consistently outward.', category='invalid-input')
-            for group in np.array_split(np.arange(len(faces)), max(1, math.ceil(len(faces)/128))):
-                offsets = np.sum(normals[group]*faces[group,0],axis=1)
-                require(np.all(points @ normals[group].T <= offsets + scale**3*1e-7),
-                        'PHYSICS_GEOMETRY', 'Primitive source must describe a convex physical surface.', category='invalid-input')
-            shape = body['colliders'][0]['shape']
-            if shape['type'] == 'sphere':
-                require(np.allclose(np.linalg.norm(points, axis=1), shape['radius'], rtol=1e-5, atol=1e-7),
-                        'PHYSICS_GEOMETRY', 'Sphere source vertices disagree with its analytic collision proxy.', category='invalid-input')
-                expected_bounds = np.array([-np.ones(3)*shape['radius'], np.ones(3)*shape['radius']])
-            else:
-                half = np.asarray(shape['size'])/2
-                require(np.allclose(np.abs(points), half, rtol=1e-5, atol=1e-7) and len(np.unique(points, axis=0)) == 8,
-                        'PHYSICS_GEOMETRY', 'Box source must contain all eight actual box corners.', category='invalid-input')
-                expected_bounds = np.array([-half, half])
             actual_bounds = np.array([points.min(axis=0), points.max(axis=0)])
-            require(np.allclose(actual_bounds, expected_bounds, atol=1e-6, rtol=1e-5) and asset['bounds'] is not None and
-                    np.allclose([asset['bounds']['minimum'], asset['bounds']['maximum']], actual_bounds, atol=1e-6, rtol=1e-5),
-                    'PHYSICS_GEOMETRY', 'Actual mesh bounds differ from proxy/native manifest bounds.', category='invalid-input')
+            if world.get('collision_profile') == 'explicit-proxies-v1':
+                # Visual geometry remains owned by its native asset; independently
+                # admitted collision proxies deliberately need not match it.
+                require(asset['bounds'] is not None and
+                        np.allclose([asset['bounds']['minimum'],asset['bounds']['maximum']],actual_bounds,atol=1e-6,rtol=1e-5),
+                        'PHYSICS_GEOMETRY', 'Declared visual mesh bounds differ from actual geometry.', category='invalid-input')
+            else:
+                from rig_geometry import mesh_edges, connected_components
+                _, edge_counts = mesh_edges(mesh.triangles)
+                require(np.all(edge_counts == 2) and len(connected_components(mesh)) == 1,
+                        'PHYSICS_GEOMETRY', 'Primitive source must be one closed manifold surface.', category='invalid-input')
+                faces = points[mesh.triangles]
+                normals = np.cross(faces[:,1]-faces[:,0], faces[:,2]-faces[:,0])
+                scale = max(float(np.abs(points).max()), 1e-10)
+                require(np.all(np.sum(normals*faces.mean(axis=1),axis=1) > scale**3*1e-12),
+                        'PHYSICS_GEOMETRY', 'Primitive faces must be nondegenerate and consistently outward.', category='invalid-input')
+                for group in np.array_split(np.arange(len(faces)), max(1, math.ceil(len(faces)/128))):
+                    offsets = np.sum(normals[group]*faces[group,0],axis=1)
+                    require(np.all(points @ normals[group].T <= offsets + scale**3*1e-7),
+                            'PHYSICS_GEOMETRY', 'Primitive source must describe a convex physical surface.', category='invalid-input')
+                shape = body['colliders'][0]['shape']
+                if shape['type'] == 'sphere':
+                    require(np.allclose(np.linalg.norm(points, axis=1), shape['radius'], rtol=1e-5, atol=1e-7),
+                            'PHYSICS_GEOMETRY', 'Sphere source vertices disagree with its analytic collision proxy.', category='invalid-input')
+                    expected_bounds = np.array([-np.ones(3)*shape['radius'], np.ones(3)*shape['radius']])
+                else:
+                    half = np.asarray(shape['size'])/2
+                    require(np.allclose(np.abs(points), half, rtol=1e-5, atol=1e-7) and len(np.unique(points, axis=0)) == 8,
+                            'PHYSICS_GEOMETRY', 'Box source must contain all eight actual box corners.', category='invalid-input')
+                    expected_bounds = np.array([-half, half])
+                actual_bounds = np.array([points.min(axis=0), points.max(axis=0)])
+                require(np.allclose(actual_bounds, expected_bounds, atol=1e-6, rtol=1e-5) and asset['bounds'] is not None and
+                        np.allclose([asset['bounds']['minimum'], asset['bounds']['maximum']], actual_bounds, atol=1e-6, rtol=1e-5),
+                        'PHYSICS_GEOMETRY', 'Actual mesh bounds differ from proxy/native manifest bounds.', category='invalid-input')
             require(asset['resources']['vertices'] == len(points) and asset['resources']['triangles'] == len(mesh.triangles),
                     'PHYSICS_GEOMETRY', 'Declared native mesh counts differ from actual decoded geometry.', category='invalid-input')
             require(bool(asset['provenance']['fixture']) == bool(scene['provenance']['fixture']),
