@@ -177,12 +177,14 @@ def _source(root, request):
     return manifest
 
 
-def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_seconds=30,
+def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_seconds=None,
             scale_factor=1.1, min_neighbors=5, parameters=None, expected_model=None):
     root = Path(root)
     if not enabled:
         raise ValueError('analysis is disabled; explicit --enable-analysis is required')
     manifest = load_decomposition(root)
+    if max_seconds is None:
+        max_seconds = 120 if backend == 'clipseg' else 30
     model = _local_model(backend) if backend != 'external' else expected_model
     if backend == 'clipseg':
         from decomposition_clipseg import DEFAULT_PARAMETERS, DEFAULT_TAXONOMY
