@@ -81,12 +81,26 @@ def validate_grip_pose(rig, recipe):
     return recipe
 
 
+def _validate_prop_metadata(prop):
+    from jsonschema import Draft202012Validator
+    require(isinstance(prop,dict) and {'id','owner','transform'}<=set(prop),
+            'RIG_GRIP_OBJECT','Provide explicit prop identity, owner and transform metadata.')
+    fields=grip_pose_schema()['properties']['object']['properties']
+    schema=dict(type='object',properties=dict(id=fields['id'],owner=fields['expected_owner'],
+                                             transform=fields['transform']),required=['id','owner','transform'])
+    finite_json(prop)
+    error=next(Draft202012Validator(schema).iter_errors(prop),None)
+    require(error is None,'RIG_GRIP_OBJECT',error.message if error else '')
+    quaternion(prop['transform']['rotation'],strict=True)
+    require(prop['owner'] is None or isinstance(prop.get('socket'),str),
+            'RIG_GRIP_OBJECT','An owned prop requires its authored attachment socket.')
+
+
 def create_grip_pose(rig, identifier, version, prop, grips, *, expected_owner=None,
                      object_transform=None, position_tolerance_m=.001,
                      orientation_tolerance_rad=1e-5):
     """Build a reusable versioned recipe; caller supplies the intended owner explicitly."""
-    require(isinstance(prop,dict) and {'id','owner','transform'}<=set(prop),
-            'RIG_GRIP_OBJECT','Provide explicit prop identity, owner and transform metadata.')
+    _validate_prop_metadata(prop)
     require(prop.get('owner')==expected_owner,'RIG_GRIP_OWNER',
             'Prop ownership must match the explicitly expected owner before authoring.')
     transform=object_transform if object_transform is not None else prop.get('transform')
@@ -106,10 +120,7 @@ def solve_grip_pose(rig, pose, prop, recipe, *, require_success=True):
     require(pose['rig_version']==rig.skeleton['version'],'RIG_POSE_VERSION',
             'Grip input pose targets a different skeleton version.')
     require(type(require_success) is bool,'RIG_GRIP_SCHEMA','require_success must be a boolean.')
-    require(isinstance(prop,dict) and {'id','owner','transform'}<=set(prop),
-            'RIG_GRIP_OBJECT','Provide explicit prop identity, owner and transform metadata.')
-    require(prop.get('owner') is None or isinstance(prop.get('socket'),str),
-            'RIG_GRIP_OBJECT','An owned prop requires its authored attachment socket.')
+    _validate_prop_metadata(prop)
     require(prop.get('id')==recipe['object']['id'] and prop.get('owner')==recipe['object']['expected_owner'],
             'RIG_GRIP_OWNER','Prop identity or ownership changed since this grip recipe was authored.')
     object_transform=recipe['object']['transform'];object_matrix=transform_matrix(object_transform)
@@ -121,21 +132,33 @@ def solve_grip_pose(rig, pose, prop, recipe, *, require_success=True):
     for grip in ordered:
         attempt=solve_grasp(rig,result,grip['chain'],grip['socket'],object_transform,grip['transform'])
         result=attempt['pose'];attempts[grip['id']]=attempt
+    final_object=prop_world(rig,result,prop)
+    object_position=float(np.linalg.norm(final_object[:3,3]-object_matrix[:3,3]))
+    final_trs=decompose(final_object);authored_trs=decompose(object_matrix)
+    object_angular=qangle(final_trs['rotation'],authored_trs['rotation'])
+    object_scale=float(np.max(np.abs(np.asarray(final_trs['scale'])-authored_trs['scale'])))
+    object_converged=bool(object_position<=recipe['position_tolerance_m']
+                          and object_angular<=recipe['orientation_tolerance_rad'] and object_scale<=1e-8)
     contacts=[]
     for grip in ordered:
-        desired=object_matrix @ transform_matrix(grip['transform'])
+        desired=final_object @ transform_matrix(grip['transform'])
+        authored=object_matrix @ transform_matrix(grip['transform'])
         actual=socket_world(rig,result,grip['socket'])
         position=float(np.linalg.norm(actual[:3,3]-desired[:3,3]))
         angular=qangle(decompose(actual)['rotation'],decompose(desired)['rotation'])
         reachable=attempts[grip['id']]['reachable']
         contacts.append(dict(id=grip['id'],chain=grip['chain'],socket=grip['socket'],
-            residual_m=position,orientation_residual_rad=angular,reachable=reachable,
+            residual_m=position,authored_residual_m=float(np.linalg.norm(actual[:3,3]-authored[:3,3])),
+            orientation_residual_rad=angular,reachable=reachable,
             converged=bool(reachable and position<=recipe['position_tolerance_m']
                            and angular<=recipe['orientation_tolerance_rad']),
             grip_world=desired.tolist(),hand_world=actual.tolist()))
     report=dict(schema_version=1,recipe_id=recipe['id'],recipe_version=recipe['version'],
         recipe_sha256=object_hash(recipe),rig_sha256=recipe['rig_sha256'],object_id=prop['id'],owner=prop.get('owner'),
-        ownership_changed=False,contacts=contacts,converged=all(c['converged'] for c in contacts),
+        ownership_changed=False,object_world=final_object.tolist(),object_residual_m=object_position,
+        object_orientation_residual_rad=object_angular,object_scale_error=object_scale,
+        object_converged=object_converged,contacts=contacts,
+        converged=bool(object_converged and all(c['converged'] for c in contacts)),
         max_residual_m=max(c['residual_m'] for c in contacts),
         max_orientation_residual_rad=max(c['orientation_residual_rad'] for c in contacts),
         visual_review_required=True)

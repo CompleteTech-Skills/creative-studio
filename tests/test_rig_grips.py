@@ -111,8 +111,22 @@ class TwoHandGripTests(unittest.TestCase):
         held=solve_grip_pose(self.rig,result['pose'],owned,authored)
         self.assertEqual(held['prop'],owned);self.assertEqual(held['report']['owner'],owner)
         self.assertTrue(held['report']['converged'])
-        for bad in ({},'invalid',dict(owned,socket=None)):
+        for bad in ({},'invalid',dict(owned,socket=None),dict(owned,transform=None),
+                    dict(owned,transform='bad'),dict(owned,transform={'translation':[0,0,0]})):
             with self.subTest(prop=bad),self.assertRaises(RigError):solve_grip_pose(self.rig,result['pose'],bad,authored)
+
+    def test_owned_prop_motion_cannot_falsely_accept_frozen_world_grips(self):
+        pose,prop,recipe=self.recipe()
+        owned=attach_prop(self.rig,pose,prop,'grip.left',expected_owner=None)
+        authored=create_grip_pose(self.rig,'moving-held','1.0.0',owned,recipe['grips'],
+            expected_owner=self.rig.manifest['character']['id'],object_transform=decompose(np.eye(4)))
+        with self.assertRaises(RigError) as failure:solve_grip_pose(self.rig,pose,owned,authored)
+        self.assertEqual(failure.exception.report['code'],'RIG_TWO_HAND_GRIP')
+        result=solve_grip_pose(self.rig,pose,owned,authored,require_success=False)
+        self.assertFalse(result['report']['converged'])
+        self.assertGreater(result['report']['object_residual_m'],.3)
+        self.assertGreater(result['report']['max_residual_m'],.3)
+        np.testing.assert_allclose(prop_world(self.rig,result['pose'],owned)[:3,3],[.22,.15,.15],atol=1e-10)
 
     def test_impossible_target_and_constraints_report_both_final_contacts(self):
         pose,prop,recipe=self.recipe();bad=deepcopy(recipe)

@@ -414,8 +414,10 @@ unit scale is required. The two IK chains must be disjoint and neither may
 parent the other. Shared or coupled limb chains are explicitly unsupported.
 
 The helper reuses native `solve_grasp` in deterministic chain order, then
-measures **both final socket transforms** against the authored object-relative
-grips. It checks position and orientation tolerances together; unreachable or
+measures **both final socket transforms** against the actual final object-relative
+grips, and verifies that an already attached object retained its authored world
+position, orientation and scale. A moving primary attachment cannot silently
+turn a successful frozen-target solve into a false hand/prop contact claim. It checks position and orientation tolerances together; unreachable or
 constraint-conflicting grips raise `RIG_TWO_HAND_GRIP` with the complete numeric
 report. `require_success=False` returns that report and candidate pose for
 inspection. A pose or prop is never mutated or published. The report includes
