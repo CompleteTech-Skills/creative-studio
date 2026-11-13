@@ -124,6 +124,10 @@ Distinct retained native rigs share a fixed 2000000-input-vertex budget even whe
 geometry sampling is disabled. Distinct pose deformation cache entries share a
 separate fixed 2000000-vertex budget, charged before native deformation allocates
 arrays. These limits are independent of the selected component output budget.
+Imported components use `scene3d_import.project_imported_vertices` with the
+already admitted rig and cached actual deformation. Projection retains the
+importer's per-component identity checks and source transform mapping, without
+reopening or deforming the complete native rig for each component/instance.
 
 Consumers must use this state or reject pose-bound scenes; a binding is not
 permission to render the rig's rest pose. Before any native pose decoder runs,

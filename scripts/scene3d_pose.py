@@ -144,12 +144,11 @@ def _evaluate_private_poses(graph, evaluated, documents, native_clips, root, *, 
             morph_targets={mesh.id:sorted(mesh.morphs) for mesh in rig.geometry.meshes})
         if sample_geometry:
             if imported is not None:
-                from scene3d_import import evaluate_imported_vertices
+                from scene3d_import import project_imported_vertices
                 class ComponentView:
                     def document(self):return {'nodes':[node]}
                     def evaluate_base(self, selected):return graph.evaluate_base(selected)
-                positions = evaluate_imported_vertices(ComponentView(),imported,rig_path.parent,
-                    pose=decode_json(payload))['nodes'][identifier]
+                positions = project_imported_vertices(ComponentView(),imported,rig,deformed)['nodes'][identifier]
             else:
                 positions = {mesh:transform_points(world_from_rig,value['positions']).tolist()
                              for mesh,value in deformed.items()}
