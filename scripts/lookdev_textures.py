@@ -75,13 +75,14 @@ def _size(width, height, limits, multiplier=96):
 
 def _finite(value, low=None, high=None, name="value"):
     require(type(value) in (int, float), "TEXTURE_NUMBER", name + " must be finite.")
+    # Compare integer ranges before any operation can convert them to float.
+    require((low is None or value >= low) and (high is None or value <= high),
+            "TEXTURE_NUMBER", name + " is outside its supported range.")
     try:
         finite = math.isfinite(value)
     except OverflowError:
         finite = False
     require(finite, "TEXTURE_NUMBER", name + " must be finite.")
-    require((low is None or value >= low) and (high is None or value <= high),
-            "TEXTURE_NUMBER", name + " is outside its supported range.")
     return float(value)
 
 

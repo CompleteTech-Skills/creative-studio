@@ -28,6 +28,24 @@ class TextureTests(unittest.TestCase):
                     else:t.procedural_maps('clay',width=1,height=1,**{argument:value})
                 self.assertEqual(caught.exception.report['code'],'TEXTURE_NUMBER')
 
+    def test_scalar_valid_endpoints_preserve_behavior_without_publication(self):
+        from unittest.mock import patch
+        with patch.object(t,'publish_texture',side_effect=AssertionError('Unexpected publication.')) as publisher:
+            for argument,endpoints in {'scale':(.001,1000),'frequency':(.01,1024),
+                                       'variation':(0,1),'turbulence':(0,1)}.items():
+                for value in endpoints:
+                    result=t.procedural_maps('clay',width=1,height=1,**{argument:value})
+                    self.assertEqual(result['recipe'][argument],value)
+            for value in (0,1000):
+                actual=t.normal_from_height(np.zeros((2,2),np.float32),strength=value)
+                np.testing.assert_array_equal(actual,np.tile([.5,.5,1,1],(2,2,1)))
+            for value in (-1e9,1e9):
+                np.testing.assert_array_equal(t.transform_uv([[0,0]],rotation=value),[[0,0]])
+            for argument in ('scale','frequency','variation','turbulence'):
+                with self.assertRaises(RigError):
+                    t.procedural_maps('clay',width=1,height=1,**{argument:10**400})
+            publisher.assert_not_called()
+
     def test_srgb_is_decoded_once_and_alpha_is_linear(self):
         data=png(np.array([[[128,128,128,64]]],dtype=np.uint8))
         image=t.decode_texture(data,role='base-color',encoding='srgb')
