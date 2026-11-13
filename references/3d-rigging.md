@@ -377,8 +377,10 @@ the remaining twist. The calibrated driver rotation decomposes into swing and
 shortest signed twist. Swing stays on the driver; each recipient receives its
 authored share of twist, converted into its own rest-local axis. Mapped
 descendants still receive calibrated world orientations. Distributions cannot
-overlap rotational DOF restrictions. Angles use ordinary quaternion shortest
-rotations; accumulated turn counts beyond a revolution are not represented.
+overlap rotational DOF restrictions. Stateless pose calls use ordinary quaternion shortest rotations. Animation
+retargeting unwraps each sampled driver twist continuously across the ±pi boundary.
+A looping clip whose distributed local rotations do not close raises
+`RIG_RETARGET_TWIST_LOOP`; multi-turn distributed loop accumulation is unsupported.
 
 These are engineering controls for explicitly compatible anatomy. Numerical
 fixtures verify intermediate weighted vertex rotations, preserved mapped endpoint
