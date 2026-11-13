@@ -168,7 +168,7 @@ python scripts/rig.py state-map --run-dir output/character --pack PACK_ID
 python scripts/rig.py export --run-dir output/character --format frames --clip walk --destination output/walk-frames
 ```
 
-Mapping calls the actual unchanged catalog resolver and anatomy/prop compatibility rules. Definitions with no implemented channels report `requires-animation`; absent anatomy reports `requires-rig-capability`; executable unreviewed recipes report `needs-review`. Priority, interruption, recovery, cancellation and reduced-motion metadata are retained separately. No 3D clip is generated merely because a catalog definition exists. The original `running` state still means task processing.
+Mapping calls the actual unchanged catalog resolver and anatomy/prop compatibility rules. Definitions with no implemented channels report `requires-animation`; absent anatomy reports `requires-rig-capability`; executable unreviewed recipes report `needs-review`. Priority, interruption, recovery, cancellation and reduced-motion metadata are retained separately. No 3D clip is generated merely because a catalog definition exists. The optional Python `rig_state_runtime.RigStateRuntime` executes selected recipes using caller-supplied monotonic seconds: construct it with a rig, initial state, `recipes` and `selected`, then call `evaluate(now)`, `request(state, now)` or `cancel(now)`. It validates existing clips, honors legal transitions and incoming priority/interruption policy, coalesces repeats, advances completion edges at exact clip boundaries, and reports unavailable completion targets while holding the last pose. A bounded transition count fails atomically; requests rejected after an automatic completion restore the prior runtime state. Embedded root motion accumulates across clip boundaries and repeated recipes even when clips use different authored origins; in-place clips retain their declared cycle-reset behavior. A transition captures the current evaluated pose so an interrupted crossfade remains continuous, including morphs returning to authored defaults. Cancellation explicitly requires a selected executable `static-neutral` recipe. Returned poses drive the native deformation evaluator. This in-memory runtime does not persist jobs, dispatch events, apply reduced-motion preferences or provide visual approval; reconstruct it after any rig/clip change, which invalidates its hash-bound mapping. The original `running` state still means task processing.
 
 The transparent frame exporter renders actual evaluated triangles using a fixed shared camera and scene bounds, retains per-frame seconds/duration/source hashes, and provides an animated WebP preview. CPU evidence rendering shades material base colors; use Three.js or Blender for texture-complete inspection. The `frames.json` bridge declares derived origin and fixture/review status. Feed selected frames through the existing explicit image/frame import workflow and its normal profile, atlas and review gates. The 3D bridge does not change Codex geometry or automatically grant 2D artwork approval.
 
@@ -357,3 +357,45 @@ bitstream valid without a decoder warning. Exact preserved bytes and an
 independently supplied original SHA-256 remain the separate authenticity gate;
 neither codec success nor numerical checks create visual approval or close the
 broader #52/#44/#139 packages.
+
+### IK orientation goals and retargeted contacts
+
+An IK endpoint orientation is a world-space goal. Declared joint constraints remain
+in force after that goal is applied. The result reports `orientation_residual_rad`
+when an orientation was requested, and `null` for position-only solves. A solve is
+`converged` only when its positional residual meets the chain's meter tolerance
+and its requested orientation is within `1e-5` radians. A reachable position can
+therefore have `reachable: true` and `converged: false` when a joint limit prevents
+the orientation. Contact and grasp reports retain this angular residual.
+
+Retargeting transforms an authored contact orientation using the endpoint's
+calibrated rest-orientation offset. It does not replace that goal with the target
+rest pose. Position-only contacts remain position-only; their orientation is not
+silently pinned. These numerical checks do not establish visual or anatomical
+approval. Likewise, a neutral-only or zero-effect expression catalog does not
+admit states requiring an expressive face: a nonzero authored morph deformation
+or a changed weighted-bone transform must exist.
+
+Morph retargeting preserves a matching source/target mesh ID before considering a
+unique name match. Use `mesh-id::morph-name` keys and values in `morph_mapping` to
+map independently authored controls when mesh IDs differ. Unqualified names are
+accepted only when they select one target; ambiguous matches and multiple source
+controls writing the same target fail with `RIG_RETARGET_MORPH`. Missing optional
+unmapped target morphs remain omitted rather than broadcasting to unrelated faces.
+
+Appendage control parameters include `wing_twist` in `[-1, 1]` (up to 0.7 radians
+around each wing bone's local length axis) and `wing_side` (`both`, `left` or
+`right`). Existing joint constraints still apply. They are available through
+`rig_facial.appendage_controls` and the `appendages` object in a pose-operation
+request. An unsupported requested side fails rather than inventing a wing. A
+one-sided pose does not automatically mirror to the other side. Finger spread and
+tail phase follow parent-to-child hierarchy, so reordering the serialized bone
+array does not change those authored motions.
+
+State-map discovery includes a `work_estimate` for one export cycle of each unique
+existing clip used by the selected executable recipes. It reports clip duration,
+keyframe/scalar counts, samples at the declared clip frame rates, and uncompressed
+float64 position-buffer sizes. Missing-animation/capability results add no work.
+These figures exclude normals, textures, renderer memory, repeated playback,
+encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
+zero model calls and does not generate the catalog's missing animations.

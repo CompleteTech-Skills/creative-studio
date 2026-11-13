@@ -6,8 +6,8 @@ import math
 import numpy as np
 from rig_constraints import apply_constraints
 from rig_errors import require
-from rig_math import axis_angle, qmul
-from rig_skeleton import evaluate_fk, rotate_bone
+from rig_math import axis_angle, qmul, unit
+from rig_skeleton import evaluate_fk, hierarchy_order, rotate_bone
 
 
 def apply_expressions(rig, pose: dict, expressions: dict[str, float], *, reset=True) -> dict:
@@ -81,8 +81,10 @@ def finger_controls(rig, pose: dict, *, side: str, curl=0., spread=0., fingers=N
     fingers = fingers or ['thumb', 'index', 'middle', 'ring', 'pinky']
     result = deepcopy(pose)
     found = 0
+    order = {name:i for i,name in enumerate(hierarchy_order(rig.skeleton))}
     for i, finger in enumerate(fingers):
         bones = [b for b in rig.skeleton['bones'] if b['role'].startswith(finger+'.') and b['role'].endswith('.'+side)]
+        bones.sort(key=lambda bone:order[bone['id']])
         require(bones, 'RIG_FINGER_UNAVAILABLE', 'This rig has no articulated '+finger+' on '+side+'.')
         for j, bone in enumerate(bones):
             rotation = axis_angle([1, 0, 0], curl*1.35)
@@ -139,15 +141,21 @@ def edit_morph_target(mesh,name,assignments):
 
 
 def appendage_controls(rig, pose: dict, *, time=0., tail_curl=0., tail_wag=0.,
-                        wing_flap=0., wing_fold=0., seed=0, secondary=0.) -> dict:
+                        wing_flap=0., wing_fold=0., wing_twist=0., wing_side='both',
+                        seed=0, secondary=0.) -> dict:
     require(math.isfinite(time) and 0 <= time <= 120 and all(math.isfinite(v) and abs(v) <= 1 for v in
-            (tail_curl, tail_wag, wing_flap, wing_fold, secondary)), 'RIG_APPENDAGE_RANGE', 'Appendage control is outside its bounded range.')
+            (tail_curl, tail_wag, wing_flap, wing_fold, wing_twist, secondary)), 'RIG_APPENDAGE_RANGE', 'Appendage control is outside its bounded range.')
+    require(wing_side in ('both','left','right'), 'RIG_WING_SIDE', 'Wing side must be both, left or right.')
     result = deepcopy(pose)
     tails = [b for b in rig.skeleton['bones'] if b['role'].startswith('tail.')]
-    wings = [b for b in rig.skeleton['bones'] if b['role'].startswith('wing-')]
+    order = {name:i for i,name in enumerate(hierarchy_order(rig.skeleton))}
+    tails.sort(key=lambda bone:order[bone['id']])
+    wings = [b for b in rig.skeleton['bones'] if b['role'].startswith('wing-')
+             and (wing_side == 'both' or b['role'].endswith('.'+wing_side))]
     require(not (tail_curl or tail_wag or secondary) or tails, 'RIG_TAIL_UNAVAILABLE', 'Character has no tail chain.')
-    require(not (wing_flap or wing_fold) or wings, 'RIG_WING_UNAVAILABLE', 'Character has no wing joints.')
+    require(not (wing_flap or wing_fold or wing_twist) or wings, 'RIG_WING_UNAVAILABLE', 'Character has no requested wing joints.')
     phase = (int(seed) % 65536)*.013
+    rest_world = evaluate_fk(rig.skeleton) if wing_twist else {}
     for i, bone in enumerate(tails):
         angle = tail_curl*.65+tail_wag*.38*math.sin(2*math.pi*time-i*.45)
         angle += secondary*.15*math.sin(time*7-i*.6+phase)*math.exp(-.35*time)
@@ -155,5 +163,11 @@ def appendage_controls(rig, pose: dict, *, time=0., tail_curl=0., tail_wag=0.,
     for bone in wings:
         sign = -1 if bone['id'].endswith('.left') else 1
         angle = sign*(wing_flap*.7*math.sin(2*math.pi*time)+wing_fold*.7)
-        result = rotate_bone(rig.skeleton, result, bone['id'], axis_angle([0, 0, 1], angle))
+        # Imported joint frames need not point local +Y along the authored
+        # bone. Derive the length axis from rest geometry in that joint frame.
+        length_axis = (unit(np.linalg.solve(rest_world[bone['id']][:3,:3],
+                            np.asarray(bone['tail'])-np.asarray(bone['head'])))
+                       if wing_twist else [0,1,0])
+        rotation = qmul(axis_angle([0, 0, 1], angle), axis_angle(length_axis, sign*wing_twist*.7))
+        result = rotate_bone(rig.skeleton, result, bone['id'], rotation)
     return apply_constraints(rig.skeleton, result, rig.manifest['controllers']['constraints'])[0]
