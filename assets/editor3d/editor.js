@@ -242,9 +242,18 @@ function setBusy(value) {
   attach();
   $("undo").disabled = busy || !currentSnapshot?.undo_available;
   $("redo").disabled = busy || !currentSnapshot?.redo_available;
+  document.querySelectorAll("#group,#ungroup,#duplicate,#delete,#show-all,#collections input")
+    .forEach((control) => { control.disabled = busy; });
+  document.querySelectorAll("#outliner [data-id]")
+    .forEach((control) => { control.draggable = !busy && !nodes.get(control.dataset.id)?.locked; });
+}
+function rejectPendingEdit() {
+  if (!busy) return false;
+  $("status").textContent = "Save in progress; retry this edit when saving finishes.";
+  return true;
 }
 async function commit(commands) {
-  if (busy || !commands.length) return;
+  if (rejectPendingEdit() || !commands.length) return;
   setBusy(true);
   gizmo?.detach();
   $("status").textContent = "Saving command…";
@@ -618,7 +627,7 @@ function buildOutliner() {
       button.title = node.id;
       button.onclick = (e) =>
         select(node.id, e.shiftKey, e.ctrlKey || e.metaKey);
-      button.draggable = !node.locked;
+      button.draggable = !busy && !node.locked;
       button.ondragstart = (e) => e.dataTransfer.setData("text/plain", node.id);
       button.ondragover = (e) => e.preventDefault();
       button.ondrop = (e) => {
@@ -654,6 +663,7 @@ function buildCollections() {
       input = document.createElement("input");
     input.type = "checkbox";
     input.checked = collection.visible;
+    input.disabled = busy;
     input.onchange = () =>
       commit([
         { op: "set-collection", id: collection.id, visible: input.checked },
@@ -1160,7 +1170,7 @@ $("time").oninput = () => {
   $("clock").textContent = animationTime.toFixed(2) + " s";
 };
 async function historyCommand(name) {
-  if (busy) return;
+  if (rejectPendingEdit()) return;
   setBusy(true);
   try {
     await install(
