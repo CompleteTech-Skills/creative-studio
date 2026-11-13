@@ -1,0 +1,339 @@
+{
+  "bounds": [
+    [
+      -0.43999999821186064,
+      -1.4901161415892261e-09,
+      -0.22499999403953552
+    ],
+    [
+      0.43999999821186064,
+      1.9000000029802322,
+      0.26499999955296516
+    ]
+  ],
+  "dependencies": {
+    "numpy": "2.3.5",
+    "python": "3.12.15"
+  },
+  "files": {
+    "assembly.json": {
+      "bytes": 9753,
+      "sha256": "a7d47549d28f88ac72300acd5565285ed2f2424a2bc8581b0cb0e953f6c91f64"
+    },
+    "editable.json": {
+      "bytes": 44772,
+      "sha256": "bbb1bcba55c1cd093edf20a4b6e28df62e0bd3d2e90dc86fc3a4aed9c0de4c9b"
+    },
+    "model.glb": {
+      "bytes": 40956,
+      "sha256": "8e8a547d200c1d240d3750d570bf39253b84e4bd31d12ba0c902c02cd006875c"
+    }
+  },
+  "fixture": true,
+  "format": "glb",
+  "generator_version": "1.0.0",
+  "kind": "hatch-model3d-assembly-acceptance",
+  "limitations": [
+    "Finite recipe/IR language; no free-form learned inference.",
+    "Separate editable surfaces may overlap; no Boolean union or collision/intersection certification.",
+    "Curve sweeps are polygonal approximations; self-intersection is unmeasured.",
+    "Materials are PBR scalar finishes; no generated textures or UVs.",
+    "No skin, animation, artistic approval, Blender or render verification is implied."
+  ],
+  "network_calls": 0,
+  "origin": "deterministic-procedural",
+  "parts": [
+    {
+      "bounds": [
+        [
+          -0.25999999046325684,
+          0.7999999964237212,
+          -0.22499999403953552
+        ],
+        [
+          0.25999999046325684,
+          1.4800000035762786,
+          0.22499999403953552
+        ]
+      ],
+      "id": "torso",
+      "material": "main",
+      "parent": null,
+      "semantic": "torso",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.20999999344348907,
+          1.4999999970197677,
+          -0.20000000298023224
+        ],
+        [
+          0.20999999344348907,
+          1.9000000029802322,
+          0.20000000298023224
+        ]
+      ],
+      "id": "head",
+      "material": "main",
+      "parent": "torso",
+      "semantic": "head",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.07000000029802322,
+          1.3799999997019767,
+          -0.07000000029802322
+        ],
+        [
+          0.07000000029802322,
+          1.5200000002980232,
+          0.07000000029802322
+        ]
+      ],
+      "id": "neck",
+      "material": "main",
+      "parent": "torso",
+      "semantic": "neck",
+      "triangles": 60,
+      "vertices": 32
+    },
+    {
+      "bounds": [
+        [
+          -0.4249999976158142,
+          0.7799999964237214,
+          -0.09000000357627869
+        ],
+        [
+          -0.2950000023841858,
+          1.4600000035762788,
+          0.09000000357627869
+        ]
+      ],
+      "id": "left_arm",
+      "material": "main",
+      "parent": "torso",
+      "semantic": "left_arm",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.43999999821186064,
+          0.5200000035762787,
+          -0.07999999821186066
+        ],
+        [
+          -0.28000000178813933,
+          0.8399999964237214,
+          0.07999999821186066
+        ]
+      ],
+      "id": "left_hand",
+      "material": "main",
+      "parent": "left_arm",
+      "semantic": "left_hand",
+      "triangles": 224,
+      "vertices": 114
+    },
+    {
+      "bounds": [
+        [
+          -0.23999999821186066,
+          0.22000000834465028,
+          -0.10000000149011612
+        ],
+        [
+          -0.08000000178813935,
+          0.7999999916553497,
+          0.10000000149011612
+        ]
+      ],
+      "id": "left_leg",
+      "material": "main",
+      "parent": "torso",
+      "semantic": "left_leg",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.2750000020861626,
+          -1.4901161415892261e-09,
+          -0.11000000178813935
+        ],
+        [
+          -0.044999997913837436,
+          0.2000000014901161,
+          0.23000000178813934
+        ]
+      ],
+      "id": "left_foot",
+      "material": "main",
+      "parent": "left_leg",
+      "semantic": "left_foot",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.13500000014901162,
+          1.6499999997019767,
+          0.17499999985098838
+        ],
+        [
+          -0.0649999998509884,
+          1.7900000002980232,
+          0.2450000001490116
+        ]
+      ],
+      "id": "left_eye",
+      "material": "main",
+      "parent": "head",
+      "semantic": "left_eye",
+      "triangles": 224,
+      "vertices": 114
+    },
+    {
+      "bounds": [
+        [
+          0.2950000023841858,
+          0.7799999964237214,
+          -0.09000000357627869
+        ],
+        [
+          0.4249999976158142,
+          1.4600000035762788,
+          0.09000000357627869
+        ]
+      ],
+      "id": "right_arm",
+      "material": "main",
+      "parent": "torso",
+      "semantic": "right_arm",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          0.28000000178813933,
+          0.5200000035762787,
+          -0.07999999821186066
+        ],
+        [
+          0.43999999821186064,
+          0.8399999964237214,
+          0.07999999821186066
+        ]
+      ],
+      "id": "right_hand",
+      "material": "main",
+      "parent": "right_arm",
+      "semantic": "right_hand",
+      "triangles": 224,
+      "vertices": 114
+    },
+    {
+      "bounds": [
+        [
+          0.08000000178813935,
+          0.22000000834465028,
+          -0.10000000149011612
+        ],
+        [
+          0.23999999821186066,
+          0.7999999916553497,
+          0.10000000149011612
+        ]
+      ],
+      "id": "right_leg",
+      "material": "main",
+      "parent": "torso",
+      "semantic": "right_leg",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          0.044999997913837436,
+          -1.4901161415892261e-09,
+          -0.11000000178813935
+        ],
+        [
+          0.2750000020861626,
+          0.2000000014901161,
+          0.23000000178813934
+        ]
+      ],
+      "id": "right_foot",
+      "material": "main",
+      "parent": "right_leg",
+      "semantic": "right_foot",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          0.0649999998509884,
+          1.6499999997019767,
+          0.17499999985098838
+        ],
+        [
+          0.13500000014901162,
+          1.7900000002980232,
+          0.2450000001490116
+        ]
+      ],
+      "id": "right_eye",
+      "material": "main",
+      "parent": "head",
+      "semantic": "right_eye",
+      "triangles": 224,
+      "vertices": 114
+    },
+    {
+      "bounds": [
+        [
+          -0.054999999701976776,
+          1.1850000002980232,
+          0.2250000004470348
+        ],
+        [
+          0.054999999701976776,
+          1.2949999997019768,
+          0.26499999955296516
+        ]
+      ],
+      "id": "chest_button",
+      "material": "main",
+      "parent": "torso",
+      "semantic": "chest_button",
+      "triangles": 60,
+      "vertices": 32
+    }
+  ],
+  "provider_calls": 0,
+  "request_sha256": "0d974728c022116a9cb37e951bbbb01505542a580ac0cdc20e958e59d56bc316",
+  "review_state": "not-reviewed",
+  "schema_version": 1,
+  "seed": 7,
+  "triangles": 1112,
+  "validation": {
+    "hierarchy_exported": true,
+    "materials_verified": true,
+    "native_reimport": true
+  },
+  "vertices": 584
+}

@@ -1,0 +1,209 @@
+{
+  "description": "table seed=7",
+  "fixture": true,
+  "id": "table",
+  "kind": "hatch-model3d-assembly",
+  "materials": [
+    {
+      "color": [
+        0.05,
+        0.25,
+        0.8,
+        1.0
+      ],
+      "family": "plastic",
+      "id": "main",
+      "metallic": 0.0,
+      "roughness": 0.65
+    }
+  ],
+  "parts": [
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "top",
+      "material": "main",
+      "parameters": {
+        "depth": 1.0,
+        "height": 0.24,
+        "width": 1.0
+      },
+      "parent": null,
+      "primitive": "box",
+      "semantic": "top",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          1.84,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "left_front_leg",
+      "material": "main",
+      "parameters": {
+        "depth": 0.12,
+        "height": 1.7200000000000002,
+        "width": 0.12
+      },
+      "parent": "top",
+      "primitive": "box",
+      "semantic": "left_front_leg",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          -0.39,
+          -0.98,
+          0.39
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "left_back_leg",
+      "material": "main",
+      "parameters": {
+        "depth": 0.12,
+        "height": 1.7200000000000002,
+        "width": 0.12
+      },
+      "parent": "top",
+      "primitive": "box",
+      "semantic": "left_back_leg",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          -0.39,
+          -0.98,
+          -0.39
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "right_front_leg",
+      "material": "main",
+      "parameters": {
+        "depth": 0.12,
+        "height": 1.7200000000000002,
+        "width": 0.12
+      },
+      "parent": "top",
+      "primitive": "box",
+      "semantic": "right_front_leg",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.39,
+          -0.98,
+          0.39
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "right_back_leg",
+      "material": "main",
+      "parameters": {
+        "depth": 0.12,
+        "height": 1.7200000000000002,
+        "width": 0.12
+      },
+      "parent": "top",
+      "primitive": "box",
+      "semantic": "right_back_leg",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.39,
+          -0.98,
+          -0.39
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "seed": 7
+}

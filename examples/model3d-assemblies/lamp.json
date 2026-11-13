@@ -1,0 +1,176 @@
+{
+  "description": "lamp seed=7",
+  "fixture": true,
+  "id": "lamp",
+  "kind": "hatch-model3d-assembly",
+  "materials": [
+    {
+      "color": [
+        0.05,
+        0.25,
+        0.8,
+        1.0
+      ],
+      "family": "plastic",
+      "id": "main",
+      "metallic": 0.0,
+      "roughness": 0.65
+    }
+  ],
+  "parts": [
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "base",
+      "material": "main",
+      "parameters": {
+        "height": 0.16,
+        "radius": 0.45,
+        "segments": 16
+      },
+      "parent": null,
+      "primitive": "cylinder",
+      "semantic": "base",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.08,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "stem",
+      "material": "main",
+      "parameters": {
+        "height": 1.3,
+        "radius": 0.045,
+        "segments": 16
+      },
+      "parent": "base",
+      "primitive": "cylinder",
+      "semantic": "stem",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.7300000000000001,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "shade",
+      "material": "main",
+      "parameters": {
+        "height": 0.6,
+        "radius": 0.4,
+        "segments": 32
+      },
+      "parent": "stem",
+      "primitive": "cone",
+      "semantic": "shade",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.8899999999999999,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "bulb",
+      "material": "main",
+      "parameters": {
+        "radii": [
+          0.075,
+          0.075,
+          0.075
+        ],
+        "rings": 8,
+        "segments": 16
+      },
+      "parent": "shade",
+      "primitive": "ellipsoid",
+      "semantic": "bulb",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          -0.19999999999999996,
+          0.0
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "seed": 7
+}

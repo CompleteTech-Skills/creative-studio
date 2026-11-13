@@ -1,0 +1,41 @@
+{
+  "asset_sha256": "8e8a547d200c1d240d3750d570bf39253b84e4bd31d12ba0c902c02cd006875c",
+  "info": {
+    "animationCount": 0,
+    "drawCallCount": 14,
+    "generator": "Hatch Pet rigging 1.0.0",
+    "hasDefaultScene": true,
+    "hasMorphTargets": false,
+    "hasSkins": false,
+    "hasTextures": false,
+    "materialCount": 1,
+    "maxAttributes": 2,
+    "maxInfluences": 0,
+    "maxUVs": 0,
+    "resources": [
+      {
+        "byteLength": 27360,
+        "mimeType": "application/gltf-buffer",
+        "pointer": "/buffers/0",
+        "storage": "glb"
+      }
+    ],
+    "totalTriangleCount": 1112,
+    "totalVertexCount": 584,
+    "version": "2.0"
+  },
+  "issues": {
+    "messages": [],
+    "numErrors": 0,
+    "numHints": 0,
+    "numInfos": 0,
+    "numWarnings": 0,
+    "truncated": false
+  },
+  "mimeType": "model/gltf-binary",
+  "ok": true,
+  "uri": "model.glb",
+  "validatedAt": "2026-11-13T12:35:45.534Z",
+  "validator": "2.0.0-dev.3.10",
+  "validatorVersion": "2.0.0-dev.3.10"
+}

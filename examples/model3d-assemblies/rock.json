@@ -1,0 +1,188 @@
+{
+  "description": "rock seed=7",
+  "fixture": true,
+  "id": "rock",
+  "kind": "hatch-model3d-assembly",
+  "materials": [
+    {
+      "color": [
+        0.05,
+        0.25,
+        0.8,
+        1.0
+      ],
+      "family": "stone",
+      "id": "main",
+      "metallic": 0.0,
+      "roughness": 0.65
+    }
+  ],
+  "parts": [
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "rock_core",
+      "material": "main",
+      "parameters": {
+        "radii": [
+          0.44,
+          0.5792207852203706,
+          0.44
+        ],
+        "rings": 8,
+        "segments": 16
+      },
+      "parent": null,
+      "primitive": "ellipsoid",
+      "semantic": "rock_core",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.0,
+          0.5792207852203706,
+          0.0
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "stone_lobe_1",
+      "material": "main",
+      "parameters": {
+        "radii": [
+          0.28,
+          0.6350791183972723,
+          0.28
+        ],
+        "rings": 8,
+        "segments": 16
+      },
+      "parent": "rock_core",
+      "primitive": "ellipsoid",
+      "semantic": "stone_lobe_1",
+      "transform": {
+        "rotation": [
+          0.0,
+          0.4566042974416298,
+          0.0,
+          0.8896698913405104
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          -0.13682038826638632,
+          0.0558583331769017,
+          0.01148224137814055
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "stone_lobe_2",
+      "material": "main",
+      "parameters": {
+        "radii": [
+          0.28,
+          0.6527478777522203,
+          0.28
+        ],
+        "rings": 8,
+        "segments": 16
+      },
+      "parent": "rock_core",
+      "primitive": "ellipsoid",
+      "semantic": "stone_lobe_2",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.9834458170882706,
+          0.0,
+          0.18120244162699276
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          0.00237943462061449,
+          0.07352709253184975,
+          -0.14800138929856485
+        ]
+      }
+    },
+    {
+      "attachments": {
+        "origin": [
+          0.0,
+          0.0,
+          0.0
+        ]
+      },
+      "id": "stone_lobe_3",
+      "material": "main",
+      "parameters": {
+        "radii": [
+          0.28,
+          0.75498155241473,
+          0.28
+        ],
+        "rings": 8,
+        "segments": 16
+      },
+      "parent": "rock_core",
+      "primitive": "ellipsoid",
+      "semantic": "stone_lobe_3",
+      "transform": {
+        "rotation": [
+          0.0,
+          -0.9760157419822689,
+          0.0,
+          0.21769995728709068
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "translation": [
+          -0.13097183572996318,
+          0.1757607671943594,
+          -0.024153859474395523
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "seed": 7
+}

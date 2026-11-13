@@ -1,0 +1,339 @@
+{
+  "bounds": [
+    [
+      -0.46000000834465027,
+      -1.4305114870438729e-08,
+      -0.5000000000000002
+    ],
+    [
+      0.46000000834465027,
+      1.9300000083446502,
+      0.5000000000000001
+    ]
+  ],
+  "dependencies": {
+    "numpy": "2.3.5",
+    "python": "3.12.15"
+  },
+  "files": {
+    "assembly.json": {
+      "bytes": 13877,
+      "sha256": "b9e18fa1ded65995ad11dae6b94800905aa4ff1dd2a2a205942b5b636379e1eb"
+    },
+    "editable.json": {
+      "bytes": 6988,
+      "sha256": "6a5a815013e7b97cd13dd71941d133faf7e22c91ed33f54511b31b5130e3305b"
+    },
+    "model.glb": {
+      "bytes": 18136,
+      "sha256": "0768fcc4c5bcf707d5b2a72df6aed66fa3e371365a66019a718678e0712e8897"
+    }
+  },
+  "fixture": true,
+  "format": "glb",
+  "generator_version": "1.0.0",
+  "kind": "hatch-model3d-assembly-acceptance",
+  "limitations": [
+    "Finite recipe/IR language; no free-form learned inference.",
+    "Separate editable surfaces may overlap; no Boolean union or collision/intersection certification.",
+    "Curve sweeps are polygonal approximations; self-intersection is unmeasured.",
+    "Materials are PBR scalar finishes; no generated textures or UVs.",
+    "No skin, animation, artistic approval, Blender or render verification is implied."
+  ],
+  "network_calls": 0,
+  "origin": "deterministic-procedural",
+  "parts": [
+    {
+      "bounds": [
+        [
+          -0.46000000029802324,
+          -1.4305114870438729e-08,
+          -0.5
+        ],
+        [
+          -0.3199999997019768,
+          1.4700000143051146,
+          0.5
+        ]
+      ],
+      "id": "left_pier",
+      "material": "main",
+      "parent": null,
+      "semantic": "left_pier",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          0.3199999997019768,
+          -1.4305114870438729e-08,
+          -0.5
+        ],
+        [
+          0.46000000029802324,
+          1.4700000143051146,
+          0.5
+        ]
+      ],
+      "id": "right_pier",
+      "material": "main",
+      "parent": null,
+      "semantic": "right_pier",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          0.3090962767601013,
+          1.4699999999999998,
+          -0.5000000000000001
+        ],
+        [
+          0.46000000834465027,
+          1.589056761264801,
+          0.5000000000000001
+        ]
+      ],
+      "id": "voussoir_1",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          0.277128130197525,
+          1.5528220918774602,
+          -0.5000000000000001
+        ],
+        [
+          0.44432589411735535,
+          1.700000004172325,
+          0.5000000000000001
+        ]
+      ],
+      "id": "voussoir_2",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          0.22627416253089905,
+          1.629999996423721,
+          -0.5000000000000002
+        ],
+        [
+          0.39837169647216797,
+          1.7952691328525543,
+          0.5000000000000001
+        ]
+      ],
+      "id": "voussoir_3",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          0.1599999964237213,
+          1.6962741625308988,
+          -0.5000000000000002
+        ],
+        [
+          0.3252691328525543,
+          1.868371696472168,
+          0.5000000000000001
+        ]
+      ],
+      "id": "voussoir_4",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          0.08282209187746048,
+          1.7471281301975248,
+          -0.5000000000000002
+        ],
+        [
+          0.23000000417232513,
+          1.9143258941173553,
+          0.5
+        ]
+      ],
+      "id": "voussoir_5",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          1.959434864874595e-17,
+          1.779096276760101,
+          -0.5000000000000002
+        ],
+        [
+          0.11905676126480103,
+          1.9300000083446502,
+          0.5
+        ]
+      ],
+      "id": "voussoir_6",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.11905676126480103,
+          1.779096276760101,
+          -0.5000000000000002
+        ],
+        [
+          2.816687628596988e-17,
+          1.9300000083446502,
+          0.5
+        ]
+      ],
+      "id": "voussoir_7",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.23000000417232513,
+          1.7471281301975248,
+          -0.5000000000000002
+        ],
+        [
+          -0.08282209187746048,
+          1.9143258941173553,
+          0.5
+        ]
+      ],
+      "id": "voussoir_8",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.3252691328525543,
+          1.6962741625308988,
+          -0.5000000000000002
+        ],
+        [
+          -0.1599999964237213,
+          1.868371696472168,
+          0.5000000000000001
+        ]
+      ],
+      "id": "voussoir_9",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.39837169647216797,
+          1.629999996423721,
+          -0.5000000000000002
+        ],
+        [
+          -0.22627416253089905,
+          1.7952691328525543,
+          0.5000000000000001
+        ]
+      ],
+      "id": "voussoir_10",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.44432589411735535,
+          1.5528220918774602,
+          -0.5000000000000001
+        ],
+        [
+          -0.277128130197525,
+          1.700000004172325,
+          0.5000000000000001
+        ]
+      ],
+      "id": "voussoir_11",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    },
+    {
+      "bounds": [
+        [
+          -0.46000000834465027,
+          1.4699999999999998,
+          -0.5000000000000001
+        ],
+        [
+          -0.3090962767601013,
+          1.589056761264801,
+          0.5000000000000001
+        ]
+      ],
+      "id": "voussoir_12",
+      "material": "main",
+      "parent": "left_pier",
+      "semantic": "arch stone",
+      "triangles": 12,
+      "vertices": 8
+    }
+  ],
+  "provider_calls": 0,
+  "request_sha256": "77532c880d32b79b7b8853626127d719f579e30072444356d2bd150f78c0f1b2",
+  "review_state": "not-reviewed",
+  "schema_version": 1,
+  "seed": 7,
+  "triangles": 168,
+  "validation": {
+    "hierarchy_exported": true,
+    "materials_verified": true,
+    "native_reimport": true
+  },
+  "vertices": 112
+}
