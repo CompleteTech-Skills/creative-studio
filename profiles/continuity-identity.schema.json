@@ -1,0 +1,417 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/continuity-identity-v1",
+  "title": "Continuity identity v1.0.0",
+  "$defs": {
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "continuity-identity"
+        },
+        "identity_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "namespace": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "archetype": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "canonical_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/revision-pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "visual_spec": {
+          "$ref": "#/$defs/visual-spec"
+        },
+        "permitted_variations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "approved_costumes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "rig_requirements": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scale_m": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000.0
+        },
+        "proportions": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "additionalProperties": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1000000.0
+          },
+          "maxProperties": 256
+        },
+        "reference_images": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "approval_status": {
+          "enum": [
+            "unreviewed",
+            "reviewed",
+            "approved"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "identity_id",
+        "namespace",
+        "display_name",
+        "description",
+        "archetype",
+        "canonical_revision",
+        "visual_spec",
+        "permitted_variations",
+        "approved_costumes",
+        "rig_requirements",
+        "scale_m",
+        "proportions",
+        "reference_images",
+        "provenance",
+        "approval_status",
+        "created_at"
+      ]
+    },
+    "revision-pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "revision_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "semantic_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "identity_id",
+        "revision_id",
+        "semantic_version",
+        "sha256"
+      ]
+    },
+    "visual-spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/constraint"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "approved_variations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "default_pose": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "default_expressions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "description",
+        "constraints",
+        "approved_variations",
+        "default_pose",
+        "default_expressions"
+      ]
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "category": {
+          "enum": [
+            "proportion",
+            "silhouette",
+            "anatomy",
+            "face",
+            "color",
+            "material",
+            "marking",
+            "asymmetry",
+            "surface",
+            "accessory",
+            "geometry"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "measurement": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": -1000000000000.0,
+              "maximum": 1000000000000.0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tolerance": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000.0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "uncertainty": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "category",
+        "description",
+        "measurement",
+        "unit",
+        "tolerance",
+        "confidence",
+        "evidence",
+        "uncertainty"
+      ]
+    },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!.*[\\\\:<>\\\"|?*\\x00-\\x1f])(?:(?! )(?![.]{1,2}(?:/|(?![\\s\\S])))(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9¹²³]|[Ll][Pp][Tt][1-9¹²³]|[Cc][Oo][Nn][Ii][Nn]\\$|[Cc][Oo][Nn][Oo][Uu][Tt]\\$)(?:[.]|/|(?![\\s\\S])))(?![^/]*[. ](?:/|(?![\\s\\S])))[^/]+/)*(?! )(?![.]{1,2}(?:/|(?![\\s\\S])))(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9¹²³]|[Ll][Pp][Tt][1-9¹²³]|[Cc][Oo][Nn][Ii][Nn]\\$|[Cc][Oo][Nn][Oo][Uu][Tt]\\$)(?:[.]|/|(?![\\s\\S])))(?![^/]*[. ](?:/|(?![\\s\\S])))[^/]+(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "enum": [
+            "import",
+            "authored",
+            "derived",
+            "procedural-fixture"
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "attribution": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "created_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z(?![\\s\\S])"
+        },
+        "native_receipts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "origin",
+        "fixture",
+        "attribution",
+        "license",
+        "created_at",
+        "native_receipts"
+      ]
+    }
+  },
+  "$ref": "#/$defs/identity"
+}

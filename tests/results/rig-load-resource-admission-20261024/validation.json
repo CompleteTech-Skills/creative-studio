@@ -1,0 +1,32 @@
+{
+  "source_commit": "e936cb4164ee2ef20171ad8ad94c912873cafb9f",
+  "base_commit": "d932d08a781e5c37a472a595b238972799f8bbf4",
+  "python": "3.12.15",
+  "tests": {
+    "final_combined": {
+      "count": 108,
+      "seconds": 22.232,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0,
+      "command": "PYTHONPATH=scripts:tests OPENBLAS_NUM_THREADS=1 python -m unittest test_rig_load_limits test_rig_skinning test_rig_material_validation test_rig_contracts test_model3d_contracts test_rig_compatibility -v"
+    },
+    "focused": {
+      "count": 14,
+      "seconds": 2.641,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    "legacy_discovery_only": 809
+  },
+  "frozen_files": 150,
+  "source_hashes_unchanged": true,
+  "scope": "Native rig loading admission; no OS RSS/CPU/render sandbox claim, no external native backend execution, no visual or human approval.",
+  "approval": "Independent Astra review pending",
+  "artifacts": {
+    "final-source-before.json": "97351428dbbebec0ebc9e6301d552b0e5512e4c818269d911ebeb54c991838c3",
+    "final-combined.log": "27b195d820d63a2ed14aba439ad85a0f0405e5a78b5361a71b19fa032f63b7bc",
+    "final-focused.log": "0f579a85c2bd32c94dcb880f720a129e199e8fd540a907c553832812a57c4133"
+  }
+}

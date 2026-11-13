@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/continuity-temporal-timeline-v1",
+  "title": "Continuity temporal-timeline v1.0.0",
+  "$defs": {
+    "temporal-timeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "continuity-temporal-timeline"
+        },
+        "timeline_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "branch_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "project_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "project_revision": {
+          "$ref": "#/$defs/ref"
+        },
+        "world_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "ticks_per_second": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "scenes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporal-scene"
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "shots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporal-shot"
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "timeline_id",
+        "branch_id",
+        "project_id",
+        "project_revision",
+        "world_id",
+        "ticks_per_second",
+        "scenes",
+        "shots",
+        "dependencies"
+      ]
+    },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!.*[\\\\:<>\\\"|?*\\x00-\\x1f])(?:(?! )(?![.]{1,2}(?:/|(?![\\s\\S])))(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9¹²³]|[Ll][Pp][Tt][1-9¹²³]|[Cc][Oo][Nn][Ii][Nn]\\$|[Cc][Oo][Nn][Oo][Uu][Tt]\\$)(?:[.]|/|(?![\\s\\S])))(?![^/]*[. ](?:/|(?![\\s\\S])))[^/]+/)*(?! )(?![.]{1,2}(?:/|(?![\\s\\S])))(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9¹²³]|[Ll][Pp][Tt][1-9¹²³]|[Cc][Oo][Nn][Ii][Nn]\\$|[Cc][Oo][Nn][Oo][Uu][Tt]\\$)(?:[.]|/|(?![\\s\\S])))(?![^/]*[. ](?:/|(?![\\s\\S])))[^/]+(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "temporal-scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scene": {
+          "$ref": "#/$defs/ref"
+        },
+        "scene_to_world": {
+          "$ref": "#/$defs/transform"
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "entity_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "node_id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "identity_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "entity_id",
+              "node_id",
+              "identity_id"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        }
+      },
+      "required": [
+        "scene",
+        "scene_to_world",
+        "entities"
+      ]
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "translation": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/quaternion"
+        },
+        "scale": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "translation",
+        "rotation",
+        "scale"
+      ]
+    },
+    "vec3": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": -1000000000000.0,
+        "maximum": 1000000000000.0
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "quaternion": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": -1,
+        "maximum": 1
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "temporal-shot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "shot": {
+          "$ref": "#/$defs/ref"
+        },
+        "scene_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "scene_start_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "presentation_start_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "story_start_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "story_speed": {
+          "$ref": "#/$defs/rational"
+        }
+      },
+      "required": [
+        "shot",
+        "scene_id",
+        "scene_start_tick",
+        "presentation_start_tick",
+        "story_start_tick",
+        "story_speed"
+      ]
+    },
+    "rational": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ]
+    }
+  },
+  "$ref": "#/$defs/temporal-timeline"
+}

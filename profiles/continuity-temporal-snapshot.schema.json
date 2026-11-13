@@ -1,0 +1,339 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/continuity-temporal-snapshot-v1",
+  "title": "Continuity temporal-snapshot v1.0.0",
+  "$defs": {
+    "temporal-snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1.0.0"
+        },
+        "kind": {
+          "const": "continuity-temporal-snapshot"
+        },
+        "timeline_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "branch_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "project_revision": {
+          "$ref": "#/$defs/ref"
+        },
+        "world_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "scene_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shot_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "frame": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "boundary": {
+          "enum": [
+            "before",
+            "after",
+            "terminal"
+          ]
+        },
+        "event_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "story_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "scene_tick": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "presentation_tick": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ticks_per_second": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "head_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "dependencies_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "evaluator_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/temporal-entity"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "facts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fact"
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "applied_events": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 4096,
+          "uniqueItems": true
+        },
+        "unavailable_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 4096,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "timeline_id",
+        "branch_id",
+        "project_revision",
+        "world_id",
+        "scene_id",
+        "shot_id",
+        "frame",
+        "boundary",
+        "event_id",
+        "story_tick",
+        "scene_tick",
+        "presentation_tick",
+        "ticks_per_second",
+        "head_sha256",
+        "dependencies_sha256",
+        "evaluator_sha256",
+        "entities",
+        "facts",
+        "applied_events",
+        "unavailable_fields"
+      ]
+    },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!.*[\\\\:<>\\\"|?*\\x00-\\x1f])(?:(?! )(?![.]{1,2}(?:/|(?![\\s\\S])))(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9¹²³]|[Ll][Pp][Tt][1-9¹²³]|[Cc][Oo][Nn][Ii][Nn]\\$|[Cc][Oo][Nn][Oo][Uu][Tt]\\$)(?:[.]|/|(?![\\s\\S])))(?![^/]*[. ](?:/|(?![\\s\\S])))[^/]+/)*(?! )(?![.]{1,2}(?:/|(?![\\s\\S])))(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9¹²³]|[Ll][Pp][Tt][1-9¹²³]|[Cc][Oo][Nn][Ii][Nn]\\$|[Cc][Oo][Nn][Oo][Uu][Tt]\\$)(?:[.]|/|(?![\\s\\S])))(?![^/]*[. ](?:/|(?![\\s\\S])))[^/]+(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256",
+        "kind"
+      ]
+    },
+    "temporal-entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entity_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "identity_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transform": {
+          "$ref": "#/$defs/transform"
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entity_id",
+        "identity_id",
+        "transform",
+        "visible"
+      ]
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "translation": {
+          "$ref": "#/$defs/vec3"
+        },
+        "rotation": {
+          "$ref": "#/$defs/quaternion"
+        },
+        "scale": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1000000.0
+          },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "translation",
+        "rotation",
+        "scale"
+      ]
+    },
+    "vec3": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": -1000000000000.0,
+        "maximum": 1000000000000.0
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "quaternion": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": -1,
+        "maximum": 1
+      },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "value": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "id",
+        "value",
+        "evidence"
+      ]
+    }
+  },
+  "$ref": "#/$defs/temporal-snapshot"
+}

@@ -1,0 +1,46 @@
+[
+  {
+    "case": "native_review_required",
+    "outcome": "needs_visual_review",
+    "missing_fields": [],
+    "unsatisfied_gates": []
+  },
+  {
+    "case": "verification_work",
+    "checks": 4,
+    "outcome": "supported_fallback",
+    "verify_calls": 41,
+    "verified_bytes": 629,
+    "verify_cpu_seconds": 0.008071311000000136,
+    "total_cpu_seconds": 0.07106110800000004,
+    "reported_operation_cpu_seconds": 0.0011614200000000796
+  },
+  {
+    "case": "verification_work",
+    "checks": 8,
+    "outcome": "supported_fallback",
+    "verify_calls": 113,
+    "verified_bytes": 1785,
+    "verify_cpu_seconds": 0.0214686739999998,
+    "total_cpu_seconds": 0.15215285399999995,
+    "reported_operation_cpu_seconds": 0.0025414500000000007
+  },
+  {
+    "case": "verification_work",
+    "checks": 16,
+    "outcome": "supported_fallback",
+    "verify_calls": 353,
+    "verified_bytes": 5729,
+    "verify_cpu_seconds": 0.06087284899999812,
+    "total_cpu_seconds": 0.344401764,
+    "reported_operation_cpu_seconds": 0.00530925399999993
+  },
+  {
+    "case": "simulated_cpu_boundary",
+    "actual_execution": false,
+    "simulated_whole_operation_cpu_units": 8.0,
+    "reserved_cpu_units": 1,
+    "reported_operation_cpu_seconds": 1.0,
+    "outcome": "supported_fallback"
+  }
+]
