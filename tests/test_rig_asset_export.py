@@ -124,7 +124,7 @@ class ExportTests(unittest.TestCase):
             indices=builder.accessor([[0],[1],[3],[0],[3],[2]],'SCALAR',5123)
             builder.json.update(materials=[dict(pbrMetallicRoughness=dict(baseColorFactor=color))],
                 meshes=[dict(primitives=[dict(attributes=dict(POSITION=positions),indices=indices,material=0)])],
-                nodes=[dict(mesh=0)],scenes=[dict(nodes=[0])],scene=0)
+                nodes=[dict(name='Mesh',mesh=0)],scenes=[dict(nodes=[0])],scene=0)
             builder.write(path)
         source=self.root/'before.glb';output=self.root/'after.glb'
         write(source,[.2,.2,.2],[1,0,0,1])
@@ -152,18 +152,30 @@ class ExportTests(unittest.TestCase):
         # Pack an independently modified actual GLB, preserving source buffers.
         from rig_gltf import GltfBuilder
         altered=GltfBuilder();altered.json=changed;altered.binary=bytearray(doc.buffers[0])
-        # GltfBuilder stores its bytes as .data in this version.
-        altered.data=bytearray(doc.buffers[0]);output=self.root/'changed-parent.glb';altered.write(output)
+        output=self.root/'changed-parent.glb';altered.write(output)
         with self.assertRaisesRegex(RigError,'joint hierarchy'):_native_compare(source,output,DEFAULT_LIMITS)
         # Geometry shape is identical but the actual normal attribute reverses.
         def normals(path,value):
             builder=GltfBuilder();p=builder.accessor([[0,0,0],[1,0,0],[0,1,0]],'VEC3',bounds=True)
             n=builder.accessor([value]*3,'VEC3')
             builder.json.update(meshes=[dict(primitives=[dict(attributes=dict(POSITION=p,NORMAL=n))])],
-                nodes=[dict(mesh=0)],scenes=[dict(nodes=[0])],scene=0);builder.write(path)
+                nodes=[dict(name='Mesh',mesh=0)],scenes=[dict(nodes=[0])],scene=0);builder.write(path)
         before=self.root/'normal-before.glb';after=self.root/'normal-after.glb'
         normals(before,[0,0,1]);normals(after,[0,0,-1])
         with self.assertRaisesRegex(RigError,'decoded triangle geometry'):_native_compare(before,after,DEFAULT_LIMITS)
+
+    def test_native_static_nonjoint_hierarchy_changes_are_rejected(self):
+        from asset_library_export import _native_compare
+        from rig_contracts import DEFAULT_LIMITS
+        from rig_gltf import GltfBuilder
+        def write(path,grouped):
+            builder=GltfBuilder();p=builder.accessor([[0,0,0],[1,0,0],[0,1,0]],'VEC3',bounds=True)
+            builder.json.update(meshes=[dict(primitives=[dict(attributes=dict(POSITION=p))])],
+                nodes=[dict(name='Group',children=[1]) if grouped else dict(name='Group'),dict(name='Mesh',mesh=0)],
+                scenes=[dict(nodes=[0] if grouped else [0,1])],scene=0);builder.write(path)
+        before=self.root/'grouped.glb';after=self.root/'ungrouped.glb'
+        write(before,True);write(after,False)
+        with self.assertRaisesRegex(RigError,'source hierarchy'):_native_compare(before,after,DEFAULT_LIMITS)
 
     def test_optional_geometry_dependencies_have_stable_diagnostic(self):
         import subprocess,sys

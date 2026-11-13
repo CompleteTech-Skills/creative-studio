@@ -181,6 +181,39 @@ def _joint_signature(path, limits):
     for value in result.values():value['inverse_bind']=sorted(value['inverse_bind'],key=canonical_bytes)
     return result
 
+def _hierarchy_compare(source_path, output_path, limits):
+    """Preserve source named parent relationships through added backend wrappers."""
+    import numpy as np
+    from rig_gltf import read_gltf, scene_graph
+    source=read_gltf(source_path,limits);output=read_gltf(output_path,limits)
+    if len(source.json.get('scenes',[]))!=1:
+        fail('UNSUPPORTED','Native export currently verifies one selected source scene only.')
+    pa,wa,oa=scene_graph(source);pb,wb,ob=scene_graph(output)
+    def names(document,order):
+        result={}
+        for index in order:
+            name=document.json['nodes'][index].get('name')
+            if not isinstance(name,str) or not name or name in result:
+                fail('UNSUPPORTED','Native hierarchy comparison requires unique named source/output nodes.')
+            result[name]=index
+        return result
+    a=names(source,oa);b=names(output,ob)
+    if set(a)-set(b):fail('LOSS','Native reopen lost named source hierarchy nodes.')
+    source_names=set(a)
+    for name,index in a.items():
+        other=b[name]
+        parent=pa.get(index)
+        expected=source.json['nodes'][parent]['name'] if parent is not None else None
+        current=pb.get(other)
+        while current is not None and output.json['nodes'][current]['name'] not in source_names:
+            current=pb.get(current)
+        observed=output.json['nodes'][current]['name'] if current is not None else None
+        if expected!=observed or not np.allclose(wa[index],wb[other],rtol=0,atol=1e-5):
+            fail('LOSS','Native reopen changed named source hierarchy or world rest transforms.')
+        before=source.json['nodes'][index];after=output.json['nodes'][other]
+        if any((key in before)!=(key in after) for key in ('mesh','skin')):
+            fail('LOSS','Native reopen changed named source node mesh/skin roles.')
+
 def _native_compare(source_path, output_path, limits):
     """Measured rest/animation checks reuse the native model/deformation owner."""
     import numpy as np
@@ -192,6 +225,7 @@ def _native_compare(source_path, output_path, limits):
     for model in (source,output):
         estimate=sum(len(mesh.triangles)*3*(1024+128*(3+sum(array.shape[1] for array in mesh.attributes.values())+sum(array.shape[1] for target in mesh.morphs.values() for array in target.values()))) for mesh in model.geometry.meshes)
         if estimate>limits['memory_bytes']//4:fail('LIMIT','Decoded surface-comparison working set exceeds export memory budget.')
+    _hierarchy_compare(source_path,output_path,limits)
     if _joint_signature(source_path,limits) != _joint_signature(output_path,limits):
         fail('LOSS','Native reopen changed named joint hierarchy/rest matrices or inverse binds.')
     if _surface_signature(source) != _surface_signature(output):
