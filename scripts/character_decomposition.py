@@ -605,12 +605,12 @@ def _analysis_request(root, manifest):
     request = {'schema_version': 1, 'kind': 'semantic-analysis-request', 'source_sha256': manifest['source']['sha256'],
         'source': {'path': 'original.png', 'sha256': manifest['source']['normalized_sha256']},
         'foreground': manifest['foreground'], 'canvas': manifest['canvas'],
-        'semantic_model_called': False, 'status': 'awaiting-source-bound-annotations',
+        'semantic_model_called': manifest['analysis']['semantic_model_called'], 'status': 'awaiting-source-bound-annotations',
         'instructions': 'Inspect the original and foreground. Identify only visible semantic parts appropriate to this character. '
             'Use anatomical left/right relative to its stated orientation, or unknown. Return source-bound annotations with '
             'binary masks, polygons or color/seed selectors. Group disconnected pixels when they belong to one logical feature. '
             'Record confidence, occlusion and ambiguity. Never label generated or hidden pixels as observed. '
-            'No Python semantic-model API or paid inference dependency is configured. The local review desk provides a complete manual route.',
+            'Optional analysis uses decompose-analyze --analysis-backend with explicit enablement; the local review desk remains the complete manual route.',
         'annotation_schema': 'profiles/decomposition-annotations.schema.json',
         'optional_capability': 'An assistant with image understanding may inspect these images and author the annotation file. '
             'Any raster generation/edit uses the installed imagegen skill and its real interface, followed by explicit reconstruction ingestion.'}
@@ -645,8 +645,8 @@ def _build(root, source, source_info, annotation, foreground_mask, foreground_in
         'source': source_info, 'canvas': {'width': source.width, 'height': source.height, 'pixel_art': pixel_art},
         'foreground': foreground_asset, 'components': components,
         'annotation': {'path': 'annotations/current.json', 'sha256': sha(root / 'annotations/current.json')},
-        'analysis': {'mode': 'annotation-assisted' if annotations_are_semantic else 'manual-pending',
-            'semantic_model_called': False, 'candidates': candidates, 'multiple_characters_suspected': suspected,
+        'analysis': {'mode': 'model-assisted' if 'decomposition_analysis' in annotation.get('extensions', {}) else ('annotation-assisted' if annotations_are_semantic else 'manual-pending'),
+            'semantic_model_called': bool(annotation.get('extensions', {}).get('decomposition_analysis', {}).get('evidence', {}).get('execution') == 'local'), 'candidates': candidates, 'multiple_characters_suspected': suspected,
             'selection': selection, 'selection_resolved': bool(selection is not None or annotations_are_semantic or not suspected),
             'warnings': analysis_warnings},
         'quality': quality(source, foreground, pixel_art), 'rig': _rig(components),
