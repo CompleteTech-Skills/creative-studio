@@ -49,6 +49,13 @@ class SpatialTests(unittest.TestCase):
         graph.delete('mesh')
         self.assertIsNone(index.ground([4.2,8,.2]))
 
+    def test_nearest_tiny_triangle_preserves_interior(self):
+        graph = self.graph()
+        index = SpatialIndex(graph,{'mesh':dict(vertices=[[0,0,0],[0,0,.001],[.001,0,0]],triangles=[[0,1,2]])})
+        hit = index.nearest([2.00025,.001,.00025])
+        self.assertAlmostEqual(hit['distance'],.001,places=12)
+        np.testing.assert_allclose(hit['point'],[2.00025,0,.00025],atol=1e-14)
+
     def test_nearest_measures_triangle_not_origin(self):
         index = self.index(self.graph())
         hit = index.nearest([2.25,3,.25])
@@ -179,6 +186,15 @@ class SpatialTests(unittest.TestCase):
             self.assertEqual(floor['node'],'rooms-floor-0')
             self.assertAlmostEqual(floor['point'][1],0)
             self.assertEqual(graph.document(),scene)
+
+    def test_placement_rejects_driven_descendant_without_mutation(self):
+        graph = self.graph()
+        set_constraint(graph,'mesh',dict(id='follow',type='copy-transform',target='camera',influence=1))
+        index = self.index(graph)
+        before = graph.document()
+        with self.assertRaisesRegex(RigError,'driven descendants'):
+            place(graph,index,'root',[[10,0,0]])
+        self.assertEqual(graph.document(),before)
 
     def test_bounds_snap_and_explicit_follow_preserve_orientation(self):
         graph = self.graph()

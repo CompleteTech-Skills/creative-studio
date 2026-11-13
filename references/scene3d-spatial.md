@@ -37,7 +37,9 @@ the previous heading onto the tangent plane. `snap_bounds` aligns declared AABB
 faces with an explicit axis, side and nonnegative gap.
 
 `place` checks at most 1,000 candidate world positions against conservative AABBs
-and moves an entire selected subtree only after finding a valid position. Failure
+and moves an entire selected subtree only after finding a valid position. Driven
+descendants must first have their constraints/attachments resolved, because a
+rigid translation cannot predict externally driven child motion. Failure
 leaves its authored document and revision unchanged. Touching bounds count as
 collision; use an explicit clearance when separation is required.
 

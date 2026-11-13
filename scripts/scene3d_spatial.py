@@ -67,9 +67,19 @@ def _ray_box(origin, direction, low, high, limit):
 
 
 def _closest_triangle(point, triangle):
+    # Normalize scale before dot products (barycentric determinants have length^4).
+    anchor = triangle[0]
+    scale = float(np.max(np.abs(triangle-anchor)))
+    if scale == 0:
+        return anchor
+    normalized = (triangle-anchor)/scale
+    return anchor+scale*_closest_triangle_unit((point-anchor)/scale,normalized)
+
+
+def _closest_triangle_unit(point, triangle):
     # Closest point in triangle Voronoi regions, including degenerate edges.
     a, b, c = triangle
-    if np.linalg.norm(np.cross(b-a,c-a)) < EPS:
+    if np.linalg.norm(np.cross(b-a,c-a)) == 0:
         candidates = []
         for u,v in ((a,b),(b,c),(c,a)):
             edge = v-u
@@ -98,7 +108,7 @@ def _closest_triangle(point, triangle):
     if va <= 0 and d4-d3 >= 0 and d5-d6 >= 0:
         return b+((d4-d3)/((d4-d3)+(d5-d6)))*(c-b)
     total = va+vb+vc
-    if abs(total) < EPS:
+    if total == 0:
         candidates = []
         for u, v in ((a,b),(b,c),(c,a)):
             edge = v-u

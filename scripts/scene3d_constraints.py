@@ -125,6 +125,9 @@ def place(graph, index, identifier, candidates, *, clearance=0, expected_revisio
     # Whole subtree moves with the owner and must not collide against itself.
     from scene3d_graph import _subtree
     excluded = _subtree(graph._nodes(),identifier)
+    nodes = graph._nodes()
+    require(all(not nodes[i]['constraints'] and 'attachment' not in nodes[i] for i in excluded),
+            'Resolve driven descendants before rigid-subtree placement.', 'SCENE3D_SPATIAL')
     index._refresh()
     boxes = [_box(index.bounds(i)) for i in excluded if i in index._records]
     require(bool(boxes), 'Placement subtree has no geometry.', 'SCENE3D_PLACEMENT')
