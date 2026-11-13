@@ -401,3 +401,33 @@ float64 position-buffer sizes. Missing-animation/capability results add no work.
 These figures exclude normals, textures, renderer memory, repeated playback,
 encoded file sizes and wall time; unavailable costs remain `null`. Discovery makes
 zero model calls and does not generate the catalog's missing animations.
+
+
+Two-handed object grips use `rig_grips.create_grip_pose(rig, id, version, prop,
+grips, expected_owner=None)` and `solve_grip_pose(rig, pose, prop, recipe)` (also
+exported by `rig_api`). Each of the exactly two grip entries has `id`, `chain`,
+`socket` and a rigid object-relative `transform`. The standalone
+`profiles/rig-grip-pose.schema.json` records recipe ID/version, exact rig
+ID/version/hash, object ID/world transform and explicit expected owner. Object
+and grip transforms are right-handed meters in the canonical rig-root frame;
+unit scale is required. The two IK chains must be disjoint and neither may
+parent the other. Shared or coupled limb chains are explicitly unsupported.
+
+The helper reuses native `solve_grasp` in deterministic chain order, then
+measures **both final socket transforms** against the authored object-relative
+grips. It checks position and orientation tolerances together; unreachable or
+constraint-conflicting grips raise `RIG_TWO_HAND_GRIP` with the complete numeric
+report. `require_success=False` returns that report and candidate pose for
+inspection. A pose or prop is never mutated or published. The report includes
+the exact recipe hash and its version; author a new recipe version when changing
+grips, and explicitly reauthor after any rig or object-world change.
+
+Solving does not activate, transfer or release ownership. Existing `attach_prop`
+with an explicit `expected_owner`, `detach_prop` and `transfer_prop` remain the
+ownership authority; a cooperative prop still has one owner and one primary
+attachment. For an already attached prop, authoring requires the character ID as
+`expected_owner` plus its explicit current world `object_transform`. Tests prove
+both humanoid hand sockets simultaneously reach two authored grips with real
+hand-mesh displacement. Rendered hand/prop alignment, anatomy and visual quality
+remain part of the full demonstration review; numeric success is not artistic
+approval.
