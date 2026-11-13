@@ -1,0 +1,167 @@
+{
+  "backend": "pybullet",
+  "adapter_version": "1.0.0",
+  "state": "available",
+  "executable": "/home/complete/.cache/hatch-fleet/pybullet311/bin/python",
+  "application_version": "Python 3.11.17",
+  "executable_sha256": "ff9b2ac4362b81c68622ffb1730f7138eb269177d9846399c521a44c5daffb0e",
+  "discovery_verified": true,
+  "headless_smoke_verified": true,
+  "categories": {
+    "rigid-body": {
+      "state": "available",
+      "smoke_verified": true,
+      "message": "Actual DIRECT connection/step/contact/cache/export smoke passed."
+    },
+    "character": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "cloth": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "soft-body": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "hair": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "particles": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "gas": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "liquid": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    },
+    "fracture": {
+      "state": "unsupported",
+      "smoke_verified": false,
+      "message": "No adapter implementation for this category."
+    }
+  },
+  "shapes": [
+    "box",
+    "sphere"
+  ],
+  "joints": [],
+  "caches": [
+    "native-sampled-json"
+  ],
+  "exports": [
+    "native-transform-json"
+  ],
+  "hardware": {
+    "os": "Linux",
+    "architecture": "x86_64",
+    "cpu_concurrency": 20,
+    "available_memory_bytes": 915300352,
+    "available_disk_bytes": 6219718656,
+    "gpu_discovery": "not-executed",
+    "physics_gpu_support": "unsupported",
+    "physics_device": "cpu",
+    "render_gpu_execution": "not-executed"
+  },
+  "limitations": [
+    "Optional PyBullet3.2.7; not installed or imported by normal2D workflows.",
+    "DIRECT CPU only; distinct numerical behavior from Blender.",
+    "Only box/sphere rigid bodies, fixed stepping and actual contacts are implemented.",
+    "Forces, impulses, queries, joints and solver checkpoint continuation remain unsupported.",
+    "Cache export contains exact sampled transforms/contacts, not native solver checkpoint state."
+  ],
+  "evidence": {
+    "module": {
+      "available": true,
+      "solver_version": "3.2.7",
+      "api_version": 202010061,
+      "module_path": "/home/complete/.cache/hatch-fleet/pybullet311/lib/python3.11/site-packages/pybullet.cpython-311-x86_64-linux-gnu.so",
+      "module_sha256": "6ef264fe07e719a39d4e058149da9c9e3d48febd0f53261de51400bc39a494dc",
+      "python_version": "3.11.17"
+    },
+    "verification": {
+      "status": "hash-and-contract-verified",
+      "world_sha256": "d6869d7b6ffdabf1adef6bbd5732ec0b81e51f54d94b1428da2a914de0c918f2",
+      "cache_files": 16,
+      "output_bytes": 42483,
+      "sample_count": 49,
+      "backend": {
+        "adapter_version": "1.0.0",
+        "application_version": "Python 3.11.17",
+        "device": "cpu",
+        "executable_sha256": "ff9b2ac4362b81c68622ffb1730f7138eb269177d9846399c521a44c5daffb0e",
+        "id": "pybullet",
+        "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+        "precision": "mixed",
+        "solver_name": "PyBullet DIRECT (bundled Bullet)",
+        "solver_version": "PyBullet 3.2.7"
+      },
+      "fixture": true,
+      "review_status": "unreviewed",
+      "native_outdated_flag": null,
+      "evidence_authentication": "unsigned retained execution receipts, not a cryptographic identity attestation",
+      "native_continuation": "unsupported; clean restart only",
+      "numerical_recompute_guarantee": "not-established"
+    },
+    "initial_height": 3.0,
+    "final_height": 0.4999899999999703,
+    "actual_contact_frames": 31,
+    "usage": {
+      "elapsed_seconds": 1.2436437999131158,
+      "peak_memory_bytes": 184659968,
+      "output_bytes": 42483,
+      "solver_steps": 480
+    },
+    "fixture": true,
+    "additional_shape_smoke": {
+      "dynamic_shape": "box",
+      "static_shape": "sphere",
+      "actual_initial_height": 3.0,
+      "actual_final_height": 0.4999899999999702,
+      "verification": {
+        "status": "hash-and-contract-verified",
+        "world_sha256": "ffb3b5505ab8356f9c40734f4414e0cb70687df2028dbe4290d709337540fe2f",
+        "cache_files": 16,
+        "output_bytes": 42373,
+        "sample_count": 49,
+        "backend": {
+          "adapter_version": "1.0.0",
+          "application_version": "Python 3.11.17",
+          "device": "cpu",
+          "executable_sha256": "ff9b2ac4362b81c68622ffb1730f7138eb269177d9846399c521a44c5daffb0e",
+          "id": "pybullet",
+          "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+          "precision": "mixed",
+          "solver_name": "PyBullet DIRECT (bundled Bullet)",
+          "solver_version": "PyBullet 3.2.7"
+        },
+        "fixture": true,
+        "review_status": "unreviewed",
+        "native_outdated_flag": null,
+        "evidence_authentication": "unsigned retained execution receipts, not a cryptographic identity attestation",
+        "native_continuation": "unsupported; clean restart only",
+        "numerical_recompute_guarantee": "not-established"
+      },
+      "usage": {
+        "elapsed_seconds": 1.2001838819123805,
+        "peak_memory_bytes": 184627200,
+        "output_bytes": 42373,
+        "solver_steps": 480
+      },
+      "fixture": true
+    }
+  }
+}
