@@ -1,0 +1,73 @@
+{
+  "context": {
+    "attempt_id": "fixture",
+    "budget_reservation_id": null,
+    "cancellation_token": "fixture",
+    "capability_snapshot_sha256": "784a0b2417fc625de5417ea77f0425f9c6e44affeae412b1a48d5fb7e8edba93",
+    "deadline": "2026-11-13T03:00:08.398543+00:00",
+    "idempotency_key": "fixture",
+    "policy": {
+      "network": "deny",
+      "paid": "deny",
+      "policy_ref": null,
+      "providers": []
+    },
+    "project_id": "project-fixture",
+    "project_revision_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "request_id": "GraphCompiler-compile-fixture"
+  },
+  "input": {
+    "budget": {
+      "currency": null,
+      "max_amount": null,
+      "max_cpu_seconds": 60,
+      "max_gpu_seconds": 0,
+      "max_memory_bytes": 0,
+      "max_provider_calls": 0,
+      "max_storage_bytes": 0,
+      "policy_ref": null
+    },
+    "capabilities": {
+      "artifact_id": "capabilities",
+      "byte_size": 5443,
+      "dependencies": [],
+      "fixture": true,
+      "kind": "capability-snapshot",
+      "media_type": "application/json",
+      "path": "capabilities.json",
+      "provenance_ref": null,
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "sha256": "7cd3572deaa2aabf5bced8e05a80b4cab594005cbf8cb3628b70f729801e4d3f"
+    },
+    "plan": {
+      "artifact_id": "plan",
+      "byte_size": 5639,
+      "dependencies": [],
+      "fixture": true,
+      "kind": "execution-plan",
+      "media_type": "application/json",
+      "path": "plan.json",
+      "provenance_ref": null,
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "sha256": "46571da58d38b65916178014ac32f4db8cf6d41132bb137521d701f341683b50"
+    },
+    "resolution": {
+      "artifact_id": "resolution",
+      "byte_size": 25,
+      "dependencies": [],
+      "fixture": true,
+      "kind": "resolution-plan",
+      "media_type": "application/json",
+      "path": "resolution.json",
+      "provenance_ref": null,
+      "schema_version": 1,
+      "semantic_version": "1.0.0",
+      "sha256": "b7652011759662e11c9b9181f263d27a1cc9fe6d17072c16ab6d61b038406ca2"
+    }
+  },
+  "kind": "director-request",
+  "method": "GraphCompiler.compile",
+  "schema_version": 1
+}
