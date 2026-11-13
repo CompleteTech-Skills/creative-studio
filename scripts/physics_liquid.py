@@ -93,7 +93,7 @@ def verify_cache(root, *, expected_world_sha256=None):
                         rendered.load()
                         core.require(any(low!=high for low,high in rendered.convert('RGB').getextrema()),
                             'PHYSICS_CACHE_CORRUPT','Native liquid render is blank or has incorrect dimensions.')
-                except (OSError,ValueError) as exc:
+                except (OSError,ValueError,Image.DecompressionBombError) as exc:
                     raise core.BackendError('PHYSICS_CACHE_CORRUPT','Invalid native liquid PNG.') from exc
         geometry=verify_geometry(reader,world)
         return dict(status='verified',world_sha256=manifest['world_sha256'],geometry=geometry,
