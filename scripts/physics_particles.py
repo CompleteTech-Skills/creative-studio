@@ -238,7 +238,8 @@ def _read_results(root,world):
 def _verify_snapshot(root):
     root=Path(root)
     with core._Reader(root) as reader:
-        manifest=core.parse(reader.read('particle-cache.json'))
+        manifest_bytes=reader.read('particle-cache.json',1024*1024)
+        manifest=core.parse(manifest_bytes)
         core.require(set(manifest)=={'schema_version','kind','world_sha256','settings_sha256','files','fixture','review_status','project_manifest','backend','execution','usage'} and
             manifest['schema_version']==1 and manifest['kind']=='hatch-physics-particle-cache' and manifest['review_status']=='unreviewed',
             'PARTICLE_CACHE','Invalid particle manifest.')
@@ -255,8 +256,9 @@ def _verify_snapshot(root):
             'PARTICLE_CACHE','World/settings identity differs.')
         world,settings=admit(core.parse(world_data),core.parse(settings_data))
         budget=world['budgets']
-        core.require(sum(item['bytes'] for item in manifest['files'])+len(reader.read('particle-cache.json'))<=
+        core.require(sum(item['bytes'] for item in manifest['files'])+len(manifest_bytes)<=
             min(budget['cache_bytes'],budget['temporary_bytes'],core.MAX_CACHE_BYTES) and
+            len(manifest_bytes)<=budget['bake_file_bytes'] and
             all(item['bytes']<=budget['bake_file_bytes'] for item in manifest['files']),
             'PARTICLE_LIMIT','Published particle cache exceeds retained world file or aggregate budgets.')
     from physics_component_sources import admit_component_meshes
@@ -307,11 +309,27 @@ def verify(root):
             core.require(not any((Path(directory)/name).is_symlink() for name in dirs),'PARTICLE_CACHE','Linked cache directories are forbidden.')
             actual.update((Path(directory)/name).relative_to(root).as_posix() for name in files)
         core.require(actual==set(names)|{'particle-cache.json'},'PARTICLE_CACHE','Unexpected or missing cache content.')
+        # Admit the small configuration before copying bulk payloads into a snapshot.
+        entries={item['path']:item for item in manifest['files']};configuration={}
+        core.require({'world.json','settings.json'}<=set(entries),'PARTICLE_CACHE','Missing particle configuration.')
+        for name in ('world.json','settings.json'):
+            entry=entries[name];data=reader.read(name,min(entry['bytes'],1024*1024))
+            core.require(len(data)==entry['bytes'] and core.digest(data)==entry['sha256'],
+                'PARTICLE_CACHE','Changed or corrupt particle configuration.')
+            configuration[name]=data
+        world,_=admit(core.parse(configuration['world.json']),core.parse(configuration['settings.json']))
+        budget=world['budgets']
+        core.require(sum(item['bytes'] for item in manifest['files'])+len(manifest_bytes)<=
+            min(budget['cache_bytes'],budget['temporary_bytes'],core.MAX_CACHE_BYTES) and
+            len(manifest_bytes)<=budget['bake_file_bytes'] and
+            all(item['bytes']<=budget['bake_file_bytes'] for item in manifest['files']),
+            'PARTICLE_LIMIT','Published particle cache exceeds retained world file or aggregate budgets.')
         with tempfile.TemporaryDirectory(prefix='hatch-particle-verify-') as directory:
             snapshot=Path(directory)
             core._write(snapshot/'particle-cache.json',manifest_bytes)
             for item in manifest['files']:
-                data=reader.read(item['path'],core.MAX_CACHE_BYTES)
+                data=configuration.get(item['path'])
+                if data is None:data=reader.read(item['path'],item['bytes'])
                 core.require(len(data)==item['bytes'] and core.digest(data)==item['sha256'],'PARTICLE_CACHE','Changed or corrupt particle cache payload.')
                 core._write(snapshot/item['path'],data)
             return _verify_snapshot(snapshot)

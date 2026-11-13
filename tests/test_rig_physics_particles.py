@@ -180,6 +180,36 @@ class ParticleTests(unittest.TestCase):
             self.assertFalse(list(self.root.glob('.bounded-cache.particle-*')))
         finally:backend.cleanup(prepared)
 
+    def test_retained_per_file_budget_includes_manifest_before_bulk_reads(self):
+        from unittest.mock import patch
+        world,settings,payloads=fixture()
+        world['frame_range']['end']=2;world['components'][0]['count']=1
+        world['budgets']['bake_file_bytes']=40000
+        settings['world_sha256']=core.digest(core.canonical(world))
+        backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
+        destination=self.root/'manifest-budget-cache'
+        try:
+            backend.bake(backend.simulate(prepared),destination)
+            target=destination/'particle-cache.json';manifest=core.parse(target.read_bytes())
+            manifest['usage']['padding']=''
+            remaining=40000-len(core.canonical(manifest))
+            self.assertGreater(remaining,0)
+            manifest['usage']['padding']='x'*remaining
+            target.write_bytes(core.canonical(manifest))
+            self.assertEqual(target.stat().st_size,40000)
+            self.assertEqual(verify(destination)['status'],'hash-and-state-verified')
+            manifest['usage']['padding']+='x';target.write_bytes(core.canonical(manifest))
+            reads=[];original_read=core._Reader.read
+            def record_read(reader,name,*args,**kwargs):
+                reads.append(name)
+                return original_read(reader,name,*args,**kwargs)
+            with patch.object(core._Reader,'read',record_read):
+                with self.assertRaises(core.BackendError) as caught:verify(destination)
+            self.assertEqual(caught.exception.report['code'],'PARTICLE_LIMIT')
+            self.assertEqual(reads,['particle-cache.json','world.json','settings.json'])
+            self.assertEqual((destination/'world.json').read_bytes(),core.canonical(world))
+        finally:backend.cleanup(prepared)
+
     def test_display_geometry_mutation_is_rejected_even_if_rehashed(self):
         world,settings,payloads=fixture();backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
         try:
