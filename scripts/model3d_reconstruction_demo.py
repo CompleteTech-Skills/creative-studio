@@ -14,7 +14,7 @@ import tempfile
 import numpy as np
 from PIL import Image
 from atomic_publish import _rename_no_replace
-from model3d_reconstruction import read_image,mask_from_image,publish
+from model3d_reconstruction import read_image,mask_from_image,publish,_seal_result
 from model3d_reconstruction_solids import extrude_contour,extrude_mask,revolve_profile,heightfield
 from model3d_reconstruction_views import calibrated_view,carve_visual_hull,rasterize_silhouette
 from model3d_primitives import primitive
@@ -38,6 +38,8 @@ def demonstrate(destination, *, artwork=DEFAULT_ARTWORK):
             evidence=[dict(**source.descriptor(),interpretation='authored alpha>127',sampling=dict(method='point-grid',stride_px=stride,offset_px=[0,0]),scale='explicit hypothesis0.005m per original pixel; not measured')])
         artwork_result.report['fixture']=False
         artwork_result.report['source_origin']='retained canonical artwork; local extrusion does not authenticate original artwork approval'
+        # Added source-origin labels are part of the method report before delivery.
+        _seal_result(artwork_result)
         records['C-artwork-limited-extrusion']=publish(artwork_result,stage/'C-artwork',evidence=[source])
         contour=extrude_contour([[0,0],[3,0],[3,2],[2,2],[2,3],[0,3]],holes=[[[.5,.5],[1.5,.5],[1.5,1.5],[.5,1.5]]],thickness=.3,
                                evidence=[dict(origin='authored sketch profile fixture',dimensions='explicit meters')])
