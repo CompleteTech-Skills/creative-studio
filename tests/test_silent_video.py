@@ -33,7 +33,7 @@ class SilentContracts(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='silent-contract-')
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.paths = []
         for index in range(6):
             path = self.root / ('%06d.png' % index)
