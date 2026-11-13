@@ -258,7 +258,7 @@ def native_signature(graph, value, path):
     if path not in {f['path'] for f in manifest['files']}:
         fail('COMPATIBILITY','Native entry is outside the exact inventory.',path)
     with tempfile.TemporaryDirectory(prefix='hatch-dependency-native-') as temporary:
-        root=Path(temporary)
+        root=Path(temporary).resolve()
         for record in manifest['files']:
             target=root/record['path'];target.parent.mkdir(parents=True,exist_ok=True)
             target.write_bytes(library.read_own_file(value['reference'],record['path']))
@@ -292,7 +292,11 @@ def native_signature(graph, value, path):
         for name,skin in sorted(model.weights.items()):
             skins.append(dict(mesh=name,joints=skin.joints,indices_sha256=array_digest(skin.indices,'<i8'),
                               weights_sha256=array_digest(skin.weights,'<f8'),inverse_bind_sha256=array_digest(skin.inverse_bind,'<f8')))
-        morphs=[dict(mesh=m.id,targets=sorted(m.morphs)) for m in model.geometry.meshes]
+        morphs=[dict(mesh=m.id,defaults=m.morph_defaults,
+                     targets={name:{semantic:array_digest(values,'<f8')
+                                    for semantic,values in sorted(attributes.items())}
+                              for name,attributes in sorted(m.morphs.items())})
+                for m in model.geometry.meshes]
         root_modes=sorted({clip.get('root_motion','embedded') for clip in model.clips.values()})
         return dict(skeleton_sha256=object_hash(hierarchy),rest_pose_sha256=object_hash(rest),
                     skin_sha256=object_hash(skins),morph_sha256=object_hash(morphs),
@@ -317,7 +321,10 @@ def check_compatibility(graph,value,requirements,*,native_path=None):
     actual=deepcopy(manifest['compatibility']);native=None
     if set(requirements)&_NATIVE_REQUIREMENTS:
         if native_path is None:fail('COMPATIBILITY','Native requirements need an explicit inventoried native entry.')
-        native=native_signature(graph,value,native_path);actual.update(native)
+        native=native_signature(graph,value,native_path)
+        # Decoding reports the importer's canonical space, not a conversion of
+        # the asset's declared source units or coordinate contract.
+        actual.update({field:native[field] for field in _NATIVE_REQUIREMENTS})
     mismatches=[]
     for field,expected in requirements.items():
         if field in _LIST_REQUIREMENTS:
@@ -434,7 +441,7 @@ def apply_replacement(graph,plan,*,versions):
     for source,manifest,updated in prepared:
         library=graph.owner(source)
         with tempfile.TemporaryDirectory(prefix='hatch-dependency-replacement-') as temporary:
-            root=Path(temporary);files={}
+            root=Path(temporary).resolve();files={}
             for record in manifest['files']:
                 path=root/record['path'];path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_bytes(library.read_own_file(source['reference'],record['path']));files[record['path']]=path
@@ -464,7 +471,7 @@ def normalize_static_units(graph,value,path,*,version):
     if version==manifest['version']:fail('CONVERSION','Conversion needs a new immutable version.')
     scale=manifest['compatibility']['unit_scale']
     with tempfile.TemporaryDirectory(prefix='hatch-dependency-conversion-') as temporary:
-        root=Path(temporary);sources={}
+        root=Path(temporary).resolve();sources={}
         for record in manifest['files']:
             target=root/record['path'];target.parent.mkdir(parents=True,exist_ok=True)
             target.write_bytes(library.read_own_file(value['reference'],record['path']));sources[record['path']]=target

@@ -52,9 +52,13 @@ It supports full `rig.json` closures and actual GLB/glTF/OBJ inputs. Native chec
 use the optional rig dependencies; they never substitute schema validation for
 geometry decoding. Bone names alone cannot establish compatibility: hierarchy,
 roles, deformation flags, rest transforms, head/tail positions, inverse binds,
-joint mappings, weights, morph targets, material values and root-motion modes are
+joint mappings, weights, morph target semantic arrays and default weights,
+material values and root-motion modes are
 covered separately. Native rig files also expose their authored archetype;
 interchange inputs with no authoritative archetype are classified as imported.
+Native fingerprint checks preserve the manifest's declared coordinate and unit
+requirements; decoding into the importer's canonical space does not normalize
+the source asset's contract.
 
 `normalize_static_units` is an explicit deterministic conversion for static
 canonical-coordinate meshes. It loads the real source, applies its declared unit
