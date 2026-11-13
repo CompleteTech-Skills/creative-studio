@@ -438,6 +438,7 @@ async function assetObject(asset) {
         materialFromNative(asset.materials[mesh.material] || {}, asset.images),
       );
       object.name = mesh.name || mesh.id;
+      object.userData.nativeMeshId = mesh.id;
       group.add(object);
     }
     return group;
@@ -474,7 +475,14 @@ async function install(snapshot) {
     content.add(object);
     if (node.asset) {
       const reference = node.asset;
-      const asset = assets[JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])];
+      const component = node.metadata?.source_component;
+      let asset = component !== undefined ? snapshot.viewport_nodes?.[node.id] :
+        assets[JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])];
+      if (component !== undefined && asset?.format !== "unavailable" &&
+          (asset?.source_component !== component || !asset.asset_reference ||
+           JSON.stringify([asset.asset_reference.id, asset.asset_reference.version, asset.asset_reference.path, asset.asset_reference.sha256]) !==
+           JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])))
+        asset = {format: "unavailable", message: "No exact native component projection."};
       if (asset && asset.format !== "unavailable") {
         try {
           const actual = await assetObject(asset);

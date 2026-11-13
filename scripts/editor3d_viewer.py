@@ -75,7 +75,8 @@ def preview_snapshot(repository, snapshot):
                 limits['vertices'] = min(limits['vertices'], MAX_PREVIEW_VERTICES)
                 imported = load_character_model(path, limits=limits)
                 instances = sum(asset_identity(node['asset']) == identifier
-                                for node in scene['nodes'] if node.get('asset'))
+                                for node in scene['nodes'] if node.get('asset') and
+                                'source_component' not in node.get('metadata', {}))
                 projected_vertices += imported.geometry.vertex_count * instances
                 require(projected_vertices <= MAX_PREVIEW_VERTICES, 'EDITOR3D_VIEW_LIMIT',
                         'Instanced geometry exceeds the 500,000-vertex viewport budget.')
@@ -105,6 +106,9 @@ def preview_snapshot(repository, snapshot):
                                              materials=geometry.materials, images=images)
             except (RigError, ValueError, OSError) as error:
                 assets[identifier] = dict(format='unavailable', message=str(error))
+        from editor3d_components import project_components
+        components, component_vertices = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices)
+    result['viewport_nodes'] = components
     result['viewport_assets'] = assets
     result['preview'] = dict(backend='three-0.180.0', offline_render=False,
                              source_sha256=snapshot['sha256'])

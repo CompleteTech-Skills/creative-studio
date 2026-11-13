@@ -138,3 +138,20 @@ Geometry instance budgets count only nodes bound to that exact reference.
 validated native versions retain their different geometry and budget counts;
 `test_two_native_asset_versions_render_distinct_meshes` checks their actual
 browser geometry. The preview remains a derived view of the saved snapshot.
+
+### Imported component projection
+
+Canonical imported scene nodes share one normalized asset containing all imported
+mesh instances. The viewport does not attach that whole asset to each component.
+`editor3d_components` calls the native importer's `evaluate_imported_vertices`,
+uses its exact component mesh IDs and expresses the returned world positions in
+the saved node's local coordinates. The browser consumes only that node's bound
+projection and tags meshes with their native IDs. Original hierarchy transforms
+therefore apply once, and each native component contains only its own meshes.
+
+The projection verifies the immutable asset, native rig, hierarchy and import
+report identities, retains native topology/material/UV data and counts actual
+component instances against the existing viewport budget. Unknown or unsupported
+component mappings produce a diagnostic and no geometry; they never fall back
+to the full normalized GLB. This is an authored bind-pose projection; canonical
+selected-frame pose integration remains a separate adapter.
