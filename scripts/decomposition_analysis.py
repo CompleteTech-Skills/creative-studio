@@ -37,7 +37,7 @@ REQUEST = obj({'base_manifest_sha256': HASH, 'schema_version': {'const': 1}, 'ki
     'source': obj({'path': TEXT, 'sha256': HASH, 'width': {'type': 'integer', 'minimum': 1},
                    'height': {'type': 'integer', 'minimum': 1}}),
     'references': array(obj({'role': {'enum': ['foreground', 'reference']}, 'path': TEXT, 'sha256': HASH}), 16),
-    'taxonomy': array(TEXT, 128, 1), 'backend': {'enum': ['opencv-haar', 'external']},
+    'taxonomy': array(TEXT, 128, 1), 'backend': {'enum': ['opencv-haar', 'clipseg', 'external']},
     'model': {'anyOf': [MODEL, {'type': 'null'}]}, 'prompt': NOTE,
     'parameters': PARAMETERS,
     'policy': obj({'enabled': {'const': True}, 'network_allowed': {'const': False},
@@ -78,6 +78,13 @@ def _model():
             'identity_evidence': 'Installed OpenCV version and exact cascade bytes; not a remote call.'}
 
 
+def _local_model(backend):
+    if backend == 'clipseg':
+        from decomposition_clipseg import identity
+        return identity()
+    return _model()
+
+
 def capabilities():
     result = {'schema_version': 1, 'default': 'disabled', 'external': {
         'available': True, 'execution': 'verified structured-response ingest only; no automatic remote calls'},
@@ -87,6 +94,11 @@ def capabilities():
         result['opencv-haar'].update(available=True, model=_model())
     except (ImportError, ValueError, AttributeError) as exc:
         result['opencv-haar']['unavailable_reason'] = str(exc)
+    result['clipseg'] = {'available': False, 'limitations': 'Text-conditioned part-mask proposals only; uncalibrated pixel scores and possible absent-part false positives require semantic review.'}
+    try:
+        result['clipseg'].update(available=True, model=_local_model('clipseg'))
+    except (ImportError, ValueError, OSError) as exc:
+        result['clipseg']['unavailable_reason'] = str(exc)
     return result
 
 
@@ -135,7 +147,7 @@ def provenance(root, annotation, source_hash):
             record['model'] != response['model'] or record['evidence'] != response['evidence'] or
             response['status'] != 'proposed' or state['status'] not in ('proposed', 'applied')):
         raise ValueError('analysis lineage disagrees with retained source-bound job')
-    if request['backend'] == 'opencv-haar':
+    if request['backend'] != 'external':
         if record['evidence']['execution'] != 'local' or request['model'] != record['model']:
             raise ValueError('local analysis lineage disagrees with selected backend/model')
     elif record['evidence']['execution'] != 'external-assertion':
@@ -147,6 +159,9 @@ def _source(root, request):
     validate_structure(request, REQUEST, 'analysis request')
     if request['backend'] == 'opencv-haar':
         validate_structure(request['parameters'], LOCAL_PARAMETERS, 'OpenCV parameters')
+    elif request['backend'] == 'clipseg':
+        from decomposition_clipseg import validate_options
+        validate_options(request)
     manifest = load_decomposition(root)
     source = request['source']
     if (manifest['source']['sha256'] != source['sha256'] or
@@ -168,7 +183,11 @@ def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_secon
     if not enabled:
         raise ValueError('analysis is disabled; explicit --enable-analysis is required')
     manifest = load_decomposition(root)
-    model = _model() if backend == 'opencv-haar' else expected_model
+    model = _local_model(backend) if backend != 'external' else expected_model
+    if backend == 'clipseg':
+        from decomposition_clipseg import DEFAULT_PARAMETERS, DEFAULT_TAXONOMY
+        taxonomy = DEFAULT_TAXONOMY if taxonomy is None else taxonomy
+        parameters = dict(DEFAULT_PARAMETERS) if parameters is None else parameters
     request = {'base_manifest_sha256': sha(root / 'decomposition.json'), 'schema_version': 1, 'kind': 'decomposition-analysis-request',
         'source': {key: manifest['source'][key] for key in ('path', 'sha256')},
         'references': [{'role': 'foreground', **manifest['foreground']['mask']}],
@@ -208,7 +227,7 @@ def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_secon
     stage = Path(tempfile.mkdtemp(prefix='.analysis-', dir=directory))
     try:
         atomic_json(stage / 'request.json', request)
-        atomic_json(stage / 'state.json', {'status': 'ready' if backend == 'opencv-haar' else 'awaiting-external',
+        atomic_json(stage / 'state.json', {'status': 'ready' if backend != 'external' else 'awaiting-external',
             'attempts': 0, 'request_sha256': identifier, 'applied_revision': None, 'error': None})
         _rename_no_replace(stage, job)
     finally:
@@ -234,7 +253,7 @@ def _recover_retry(root, identifier):
     if hash_object(request) != identifier:
         raise ValueError('analysis retry request changed')
     expected = {key: previous[key] for key in ('attempts','request_sha256','applied_revision','error')}
-    expected.update(status='ready' if request['backend'] == 'opencv-haar' else 'awaiting-external', error=None)
+    expected.update(status='ready' if request['backend'] != 'external' else 'awaiting-external', error=None)
     if (previous['request_sha256'] != identifier or following != expected or
             (previous['status'] not in ('failed', 'cancelled', 'interrupted') and 'cancel' not in transaction['files']) or previous['attempts'] >= 3):
         raise ValueError('invalid analysis retry transition')
@@ -300,7 +319,7 @@ def _validated_response(root, identifier, response):
     _source(root, request)
     if hash_object(request) != identifier or response['request_sha256'] != identifier or response['source_sha256'] != request['source']['sha256']:
         raise ValueError('response binds a different request/source')
-    local = request['backend'] == 'opencv-haar'
+    local = request['backend'] != 'external'
     if local and (response['model'] != request['model'] or response['evidence']['execution'] != 'local'):
         raise ValueError('local response model/execution mismatch')
     if request['model'] is not None and response['model'] != request['model']:
@@ -337,7 +356,7 @@ def ingest(root, identifier, response_path):
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_RESPONSE_BYTES:
         raise ValueError('analysis response must be a bounded regular JSON file')
     request = read_json(job / 'request.json')
-    if request['backend'] == 'opencv-haar' and path.resolve() != (job / 'worker-response.json').resolve():
+    if request['backend'] != 'external' and path.resolve() != (job / 'worker-response.json').resolve():
         raise ValueError('local responses must come from the fixed worker; use external backend for imports')
     response = read_json(path)
     _validated_response(root, identifier, response)
@@ -362,7 +381,7 @@ def run(root, identifier):
     job = _job(root, identifier)
     info = status(root, identifier)
     request = info['request']
-    if request['backend'] != 'opencv-haar':
+    if request['backend'] == 'external':
         raise ValueError('external backend requires attributed response ingest; no remote dispatch')
     state = read_json(job / 'state.json')
     if state['status'] in ('proposed', 'unsupported', 'applied'):
@@ -387,7 +406,7 @@ def run(root, identifier):
         return status(root, identifier)
     if state['status'] != 'ready':
         return info
-    if _model() != request['model']:
+    if _local_model(request['backend']) != request['model']:
         raise ValueError('local model changed after request')
     if state['attempts'] >= 3:
         raise ValueError('analysis retry quota exhausted')
@@ -487,13 +506,16 @@ def retry(root, identifier):
             if name != 'state.json':
                 files[name] = sha(path)
     state = {key: info[key] for key in ('attempts','request_sha256','applied_revision','error')}
-    state.update(status='ready' if info['request']['backend'] == 'opencv-haar' else 'awaiting-external', error=None)
+    state.update(status='ready' if info['request']['backend'] != 'external' else 'awaiting-external', error=None)
     atomic_json(job / 'retry.json', {'previous': previous, 'next': state, 'files': files})
     _recover_retry(root, identifier)
     return status(root, identifier)
 
 
 def _worker(root, identifier):
+    request = read_json(_job(root, identifier) / 'request.json')
+    if request['backend'] == 'clipseg':
+        return _clipseg_worker(root, identifier, request)
     import cv2
     import numpy as np
     from PIL import Image
@@ -541,12 +563,35 @@ def _worker(root, identifier):
     atomic_json(job / 'worker-response.json', response)
 
 
+def _clipseg_worker(root, identifier, request):
+    from decomposition_clipseg import proposals
+    root = Path(root)
+    _source(root, request)
+    started = time.monotonic()
+    parts, diagnostics, model = proposals(root, request)
+    response = {'schema_version': 1, 'kind': 'decomposition-analysis-response',
+        'request_sha256': identifier, 'source_sha256': request['source']['sha256'],
+        'status': 'proposed' if parts else 'unsupported', 'model': model,
+        'annotation': {'schema_version': 1, 'source_sha256': request['source']['sha256'],
+            'author': 'Local pinned CLIPSeg model',
+            'note': 'Actual text-conditioned membership proposals; semantic correctness, anatomy presence and side remain uncertain.',
+            'orientation': 'unknown', 'components': parts,
+            'extensions': {'clipseg_diagnostics': diagnostics}},
+        'evidence': {'execution': 'local', 'call_id': None,
+            'unavailable_reason': 'Local inference does not issue provider call IDs.',
+            'elapsed_seconds': time.monotonic() - started, 'cost': 0,
+            'note': 'Executed pinned local safetensors and builtin Transformers classes. Original pixels unchanged; all labels require review.'},
+        'errors': [] if parts else ['No category survived the configured model thresholds; this does not prove anatomy absent. Manual annotations remain available.']}
+    _validated_response(root, identifier, response)
+    atomic_json(_job(root, identifier) / 'worker-response.json', response)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['capabilities','prepare','run','status','cancel','ingest','apply','retry','_worker'])
     parser.add_argument('--root', type=Path)
     parser.add_argument('--job')
-    parser.add_argument('--backend', choices=['opencv-haar','external'], default='opencv-haar')
+    parser.add_argument('--backend', choices=['opencv-haar','clipseg','external'], default='opencv-haar')
     parser.add_argument('--enable-analysis', action='store_true')
     parser.add_argument('--response', type=Path)
     parser.add_argument('--taxonomy', action='append')
