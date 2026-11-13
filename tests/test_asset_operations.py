@@ -106,6 +106,27 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
         from asset_library import AssetLibrary
         self.assertEqual(AssetLibrary(target/'library').resolve(ref),self.fixture.manifest)
 
+    def test_package_replacement_between_stage_admission_and_restore_cannot_publish(self):
+        import os
+        from unittest.mock import patch
+        from asset_library_packages import create_package,restore_package
+        from asset_library_dependencies import DependencyGraph,locator
+        ref=self.fixture.register();graph=DependencyGraph({'local':self.library})
+        package=self.root/'package';replacement=self.root/'replacement'
+        create_package(graph,[locator('local',ref)],package,package_id='original-package')
+        create_package(graph,[locator('local',ref)],replacement,package_id='changed-package')
+        target=self.root/'restored';job=self.owner.submit('bundle.restore',dict(root=str(package),destination=str(target)))
+        def replace_then_restore(root,destination):
+            os.rename(package,self.root/'preserved-original-package')
+            os.rename(replacement,package)
+            return restore_package(root,destination)
+        with patch('asset_library_packages.restore_package',side_effect=replace_then_restore):
+            with self.assertRaises(RigError) as caught:self.owner.run_job(job['id'])
+        self.assertEqual(caught.exception.report['code'],'LIBRARY_OPERATIONS_STALE')
+        self.assertFalse(target.exists())
+        self.assertTrue((self.root/'preserved-original-package').is_dir())
+        self.assertEqual(len(self.library.list_references()),1)
+
     def test_index_new_source_revision_cannot_reuse_published_job(self):
         ref=self.fixture.register();p=dict(index=str(self.root/'index'),locations=[dict(library='local',reference=ref)])
         first=self.owner.submit('index',p);self.owner.run_job(first['id'])

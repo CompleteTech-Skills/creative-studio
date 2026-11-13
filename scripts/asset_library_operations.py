@@ -353,7 +353,10 @@ class OperationAdapter:
         if self.operation=='bundle.create':
             module('packages').verify_package(context.stage_dir/'output')
         if self.operation=='bundle.restore':
-            _,manifests,_=module('packages')._verify(_path(self.parameters['root'],exists=True))
+            _,manifests,report=module('packages')._verify(_path(self.parameters['root'],exists=True))
+            expected=self.parameters['input_hashes']['package_sha256']
+            if staged.get('package_sha256')!=expected or report['package_sha256']!=expected:
+                fail('STALE','Staged or current package differs from admitted package; final publication refused.')
             restored=AssetLibrary(context.stage_dir/'output'/'library')
             if len(restored.list_references())!=len(manifests):fail('VERIFY','Restored library inventory differs.')
             for manifest in manifests:
