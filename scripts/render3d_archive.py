@@ -133,6 +133,18 @@ def _hash(path):
     return h.hexdigest()
 
 
+def _open_archive(path):
+    fd=os.open(path,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_NONBLOCK',0)|getattr(os,'O_BINARY',0))
+    stream=os.fdopen(fd,'rb')
+    try:
+        info=os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode),'invalid-input','Archive input changed file type.')
+        require(info.st_size<=MAX_TOTAL+MAX_INDEX+256*MAX_FILES,'storage-exhaustion','Archive exceeds byte budget.')
+        return stream
+    except BaseException:
+        stream.close();raise
+
+
 @_translate
 def restore_render(archive_path,destination):
     """Restore into a new directory; reject unlisted, aliased or corrupt bytes."""
@@ -144,7 +156,7 @@ def restore_render(archive_path,destination):
     try:
         with tempfile.TemporaryDirectory(prefix='.render-restore-',dir=destination.parent) as temporary:
             stage=Path(temporary)/'payload';stage.mkdir()
-            with zipfile.ZipFile(archive_path) as archive:
+            with _open_archive(archive_path) as archive_stream, zipfile.ZipFile(archive_stream) as archive:
                 infos=archive.infolist();names=[i.filename for i in infos]
                 require(len(names)<=MAX_FILES+1 and len(set(names))==len(names),'invalid-input','Archive has too many or duplicate entries.')
                 require('inventory.json' in names,'invalid-input','Archive inventory missing.')
