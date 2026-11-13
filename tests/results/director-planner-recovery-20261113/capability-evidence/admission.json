@@ -1,0 +1,176 @@
+{
+  "plan": {
+    "schema_version": 1,
+    "kind": "director-mvp-intent",
+    "project_id": "robot-laboratory",
+    "interpretation": {
+      "original_prompt": "Two robots exploring an abandoned laboratory.",
+      "parser": "restricted-two-robot-laboratory-v1",
+      "inference_kind": "deterministic",
+      "character_count": 2,
+      "setting": "abandoned laboratory",
+      "explicit": [
+        "Two robots",
+        "Explore a laboratory"
+      ],
+      "assumptions": [
+        "Five-second duration at 24 frames per second.",
+        "Two shots, persistent robot identities Aster and Moss.",
+        "Aster investigates the access key while Moss examines the console.",
+        "Silent visual storytelling; no sound track is generated."
+      ]
+    },
+    "state": "admitted",
+    "production_complete": false,
+    "audio_policy": "zero-audio-streams",
+    "frame_rate": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "duration_frames": 120,
+    "resolution": [
+      640,
+      360
+    ],
+    "characters": [
+      {
+        "id": "aster",
+        "role": "investigator",
+        "required_action": "articulated exploration"
+      },
+      {
+        "id": "moss",
+        "role": "console investigator",
+        "required_action": "independent articulated exploration"
+      }
+    ],
+    "props": [
+      {
+        "id": "access-key",
+        "motion": "lift and carry by Aster"
+      }
+    ],
+    "environment": {
+      "id": "laboratory",
+      "description": "abandoned laboratory"
+    },
+    "story": {
+      "logline": "Two robots discover an access key and inspect a laboratory console.",
+      "beginning": "Both robots enter the laboratory and inspect their surroundings.",
+      "middle": "Aster locates the key; Moss turns toward the console.",
+      "end": "Aster lifts the key while Moss signals toward the console.",
+      "communication": [
+        "body pose",
+        "head direction",
+        "arm gesture"
+      ],
+      "unresolved_assumptions": [
+        "Five-second duration at 24 frames per second.",
+        "Two shots, persistent robot identities Aster and Moss.",
+        "Aster investigates the access key while Moss examines the console.",
+        "Silent visual storytelling; no sound track is generated."
+      ]
+    },
+    "shots": [
+      {
+        "id": "establish",
+        "start_frame": 0,
+        "end_frame": 60,
+        "duration_frames": 60,
+        "camera_id": "wide",
+        "actors": [
+          "aster",
+          "moss"
+        ],
+        "props": [
+          "access-key"
+        ],
+        "actions": [
+          "aster turns and inspects access-key",
+          "moss turns toward console"
+        ],
+        "composition": "Wide view keeps both robots, key and console visible.",
+        "transition": "cut",
+        "markers": [
+          {
+            "id": "key-noticed",
+            "frame": 59,
+            "target": "aster"
+          }
+        ]
+      },
+      {
+        "id": "discovery",
+        "start_frame": 60,
+        "end_frame": 120,
+        "duration_frames": 60,
+        "camera_id": "investigation",
+        "actors": [
+          "aster",
+          "moss"
+        ],
+        "props": [
+          "access-key"
+        ],
+        "actions": [
+          "aster lifts and carries access-key",
+          "moss raises arm toward console"
+        ],
+        "composition": "Closer angled view includes the key pickup and Moss gesture.",
+        "transition": "cut",
+        "markers": [
+          {
+            "id": "key-lift",
+            "frame": 80,
+            "target": "access-key"
+          }
+        ]
+      }
+    ],
+    "required_capabilities": [
+      "model3d.procedural",
+      "scene3d.assemble",
+      "animation3d.evaluate",
+      "render3d.blender.cpu",
+      "export.silent.mp4"
+    ],
+    "estimates": {
+      "provider_calls": 0,
+      "frames": 120,
+      "pixels": 27648000
+    },
+    "admission": {
+      "input_sha256": "7490be555bc7042dc6741fb71f14798ab57c39763bfda940fb5fcda4f32254a5",
+      "capability_sha256": "cef4ea88fb1ebca06da37347b816627b75b6a83bd592070bf0606c2c7f3603f6",
+      "required_operations": [
+        "blender.cpu",
+        "codec.h264",
+        "importer.glb"
+      ],
+      "resources": {
+        "max_cpu_seconds": 3600,
+        "max_memory_bytes": 1073741824,
+        "max_storage_bytes": 536870912,
+        "max_provider_calls": 0
+      },
+      "budget_snapshot": {
+        "schema_version": 1,
+        "kind": "director-local-budget",
+        "limits": {
+          "max_cpu_seconds": 3600,
+          "max_memory_bytes": 1073741824,
+          "max_storage_bytes": 536870912,
+          "max_provider_calls": 0
+        },
+        "revision_sha256": "dba31f2e1c42a8804b49979bf65f0a6eb6ca36eaf859078762b40294e4c2fc3c"
+      }
+    }
+  },
+  "checks": {
+    "story": "rejected",
+    "budget": "rejected",
+    "resources": "rejected",
+    "false_complete": "rejected"
+  },
+  "source_sha256": "32b0d5a8e8504dced770e809b931b00a5b4937e54242344a6124fc2eea39ec6d"
+}
