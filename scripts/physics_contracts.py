@@ -180,7 +180,7 @@ def definitions() -> dict:
                        cpu_workers=dict(type='integer',minimum=1,maximum=64),
                        concurrent_jobs=dict(type='integer',minimum=1,maximum=64),
                        restart_attempts=dict(type='integer',minimum=0,maximum=99), timeout_seconds=positive))
-    solver = obj(dict(backend={'enum': ['blender', 'pybullet']}, adapter_version=version,
+    solver = obj(dict(backend={'enum': ['blender', 'pybullet', 'particles-native']}, adapter_version=version,
                       fixed_step=rate, substeps=dict(type='integer', minimum=1, maximum=1024),
                       iterations=dict(type='integer', minimum=1, maximum=1000),
                       seed=integer, quality={'enum': ['draft', 'preview', 'production', 'custom']},
@@ -199,7 +199,7 @@ def definitions() -> dict:
                      materials=arr(material, 1, 1000), bodies=arr(body, 0, 10000),
                      components=arr(component, 0, 10000), joints=arr(joint, 0, 10000),
                      forces=arr(force, 0, 10000), events=arr(event, 0, 100000)))
-    backend = obj(dict(id={'enum': ['blender', 'pybullet']}, adapter_version=version,
+    backend = obj(dict(id={'enum': ['blender', 'pybullet', 'particles-native']}, adapter_version=version,
                        solver_name=text, solver_version=text, application_version=text,
                        platform=text, precision={'enum': ['float32', 'float64', 'mixed']},
                        device={'enum': ['cpu', 'gpu']}, executable_sha256=digest))

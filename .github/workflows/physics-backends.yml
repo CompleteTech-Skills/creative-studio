@@ -63,6 +63,11 @@ jobs:
           python -B -m unittest discover -s tests -p test_physics_timing.py -v 2>&1 | tee physics-evidence/timing-tests.log
           python -B -m unittest discover -s tests -p test_rig_physics_timing_cache.py -v 2>&1 | tee physics-evidence/timing-cache-tests.log
           python -B -m unittest discover -s tests -p test_rig_physics_timing.py -v 2>&1 | tee physics-evidence/native-timing-tests.log
+      - name: Actual numerical particles and native collision acceptance
+        run: |
+          python -B -m unittest discover -s tests -p test_rig_physics_particles.py -v 2>&1 | tee physics-evidence/particle-tests.log
+          python -B scripts/physics_particle_example.py physics-evidence/fountain --kind fountain --python "$HATCH_PYBULLET_PYTHON"
+          python -B scripts/physics_particle_example.py physics-evidence/sparks --kind sparks --collision remove --python "$HATCH_PYBULLET_PYTHON"
       - name: Actual category/shape/headless probes
         run: |
           python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json
