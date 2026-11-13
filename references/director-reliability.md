@@ -32,3 +32,20 @@ backend logs, native cache and proof receipt. The test uses an engineering rig;
 this is infrastructure evidence, not acceptance of the Director 120-frame MVP.
 The complete issue #31 gate still requires running the same interruption and
 project identity checks against the actual issue #30 MVP source.
+
+`director_job_graph.RenderGraphBindings` persists immutable graph definitions,
+exact input hashes, graph revisions and native job/request/backend/snapshot
+bindings in additive tables in the same native JobStore SQLite database. The
+render owner explicitly approved using `store._transaction()` for this narrow
+Director adapter. Job/frame/lease/event state is always read from native tables;
+this adapter has no scheduler or copied execution state. Registration, status and
+resume verify exact graph inputs and native bindings. A stale graph hash/revision
+or changed snapshot fails before changing native state.
+
+The limited MVP supports independent `RenderAdapter.submit` nodes only. Its edge
+set must be empty because all source dependencies must already be materialized;
+it rejects arbitrary execution methods and pending dataflow edges. This is not an
+implementation of the broader execution service or compiler. The native proof
+reopens this same graph mapping, observes the native controller lease while an
+actual Blender worker exists, cancels and resumes through the pinned graph
+revision, and checks the final state derived from native jobs/events.

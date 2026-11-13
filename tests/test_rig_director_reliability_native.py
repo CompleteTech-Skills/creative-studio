@@ -9,7 +9,8 @@ import tempfile
 import time
 import unittest
 
-from director_reliability import resume_verified_job
+from director_job_graph import RenderGraphBindings
+from test_rig_director_job_graph import graph_for_job
 from render3d_jobs import JobStore
 from render3d_blender import BlenderBackend
 from render3d_verify import RenderArtifactVerifier
@@ -88,6 +89,10 @@ class NativeReliabilityTests(unittest.TestCase):
         verify = RenderArtifactVerifier(root/'snapshot',identity).verify
         store = JobStore(root/'jobs')
         job = store.submit(req, root/'snapshot', identity)
+        graph, bindings = graph_for_job(store,job)
+        graphs = RenderGraphBindings(store)
+        graph_receipt = graphs.register('director-mvp',graph,bindings,root)
+        self.assertEqual(RenderGraphBindings(JobStore(root/'jobs')).status('director-mvp')['state'],'queued')
         first = store.run_one(backend, verify, job=job)
         self.assertEqual(first['lease']['frame'], 0)
         code = '''import sys
@@ -124,6 +129,9 @@ raise AssertionError('Actual worker completed before cancellation')
             time.sleep(.01)
         self.assertTrue(native_pids, 'No real Blender descendant observed; cancellation not proven')
         state = store.status(job)
+        running_graph = graphs.status('director-mvp',expected_sha256=graph_receipt['graph_sha256'])
+        self.assertEqual(running_graph['state'],'running')
+        self.assertTrue(any(frame['pid']==process.pid for frame in running_graph['nodes']['render']['frames']))
         store.cancel(job,expected_revision=state['revision'])
         log,_ = process.communicate(timeout=60)
         (root/'cancel-worker.log').write_text(log)
@@ -132,7 +140,8 @@ raise AssertionError('Actual worker completed before cancellation')
         self.assertTrue(all(not Path('/proc/'+str(pid)).exists() for pid in native_pids), 'Cancelled native worker survived')
         state = store.status(job)
         self.assertEqual(state['state'],'cancelled')
-        receipt = resume_verified_job(store, job, verify, expected_revision=state['revision'])
+        receipt = graphs.resume_node('director-mvp','render',verify,graph_revision=graph_receipt['revision'],
+            graph_sha256=graph_receipt['graph_sha256'],job_revision=state['revision'])
         self.assertEqual(receipt['verified_preserved_frames'],[0])
         self.assertEqual(receipt['pending_frames'],list(range(1,count)))
         while store.run_one(backend,verify,job=job) is not None:
@@ -142,7 +151,8 @@ raise AssertionError('Actual worker completed before cancellation')
         record = json.loads((cache/'cache.json').read_text())
         (cache/record['result']['images'][0]['file']['path']).write_bytes(b'corrupt cached frame')
         state = store.status(job)
-        repaired = resume_verified_job(store,job,verify,expected_revision=state['revision'])
+        repaired = graphs.resume_node('director-mvp','render',verify,graph_revision=graph_receipt['revision'],
+            graph_sha256=graph_receipt['graph_sha256'],job_revision=state['revision'])
         self.assertEqual(repaired['verified_preserved_frames'],list(range(1,count)))
         self.assertEqual(repaired['pending_frames'],[0])
         rerendered = []
@@ -154,6 +164,7 @@ raise AssertionError('Actual worker completed before cancellation')
         self.assertEqual(decoded['decoded_frames'],count)
         atomic_json(root/'director-reliability-evidence.json', dict(schema_version=1,
             kind='director-native-reliability-proof',job=job,native_worker_pids=native_pids,
-            source_scene_project=source,frame_count=count,
+            source_scene_project=source,frame_count=count,graph=graphs.status('director-mvp'),
+            interrupted_graph=running_graph,
             cancellation_log='cancel-worker.log',resume=receipt,tamper_repair=repaired,
             rerendered_frames=rerendered,verification=decoded,fixture=True,visual_review='not-performed'))
