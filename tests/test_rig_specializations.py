@@ -11,6 +11,7 @@ from rig_skeleton import neutral_pose,evaluate_fk,mirror_pose
 from rig_skinning import evaluate_deformation
 from rig_math import decompose
 from rig_errors import RigError
+from rig_states import rig_capabilities
 
 
 class RigSpecializationTests(unittest.TestCase):
@@ -41,6 +42,18 @@ class RigSpecializationTests(unittest.TestCase):
         r.manifest['facial']['expressions']['squint']=dict(schema_version=1,morphs={'blink':.5},bones={},incompatible=['blink'])
         with self.assertRaises(RigError):apply_expressions(r,neutral_pose(r.skeleton),{'blink':1.,'squint':1.})
         with self.assertRaises(RigError):apply_expressions(r,neutral_pose(r.skeleton),{'invented-mouth':1.})
+    def test_neutral_or_inert_expression_catalog_is_not_a_facial_capability(self):
+        r=deepcopy(self.humanoid)
+        r.manifest['facial']['expressions']={'neutral':dict(schema_version=1,morphs={},bones={},incompatible=[])}
+        self.assertNotIn('expressive-face',rig_capabilities(r))
+        r.manifest['facial']['expressions']['blink']=dict(schema_version=1,morphs={'blink':0.},bones={},incompatible=[])
+        self.assertNotIn('expressive-face',rig_capabilities(r))
+        r.manifest['facial']['expressions']['blink']['morphs']['blink']=1.
+        self.assertIn('expressive-face',rig_capabilities(r))
+        for mesh in r.geometry.meshes:
+            for morph in mesh.morphs.values():
+                for values in morph.values():values[:]=0.
+        self.assertNotIn('expressive-face',rig_capabilities(r))
     def test_attach_detach_and_owner_transfer_preserve_world_space(self):
         r=self.humanoid;pose=neutral_pose(r.skeleton);matrix=socket_world(r,pose,'grip.right')
         prop=dict(id='cube',owner=None,socket=None,transform=decompose(matrix))
