@@ -100,10 +100,13 @@ class NativeRigAdapter:
 
     def describe(self, root):
         from rig_models import load_rig
-        from rig_errors import read_json
+        from rig_errors import decode_json
         from rig_contracts import validate_contract
-        manifest = validate_contract(read_json(safe_path(root, 'rig.json', exists=True)), 'Rig')
-        refs = [('rig.json', sha256(root / 'rig.json')),
+        manifest_path = safe_path(root, 'rig.json', exists=True)
+        with open_regular(manifest_path, 32 * 1024**2) as stream:
+            manifest_bytes = stream.read(32 * 1024**2 + 1)
+        manifest = validate_contract(decode_json(manifest_bytes, max_bytes=32 * 1024**2), 'Rig')
+        refs = [('rig.json', hashlib.sha256(manifest_bytes).hexdigest()),
                 ('identity.json', manifest['character']['identity_sha256'])]
         refs.extend((r['path'], r['sha256']) for r in manifest['source']['dependencies'])
         refs.append((manifest['geometry']['data']['path'], manifest['geometry']['data']['sha256']))
@@ -111,7 +114,8 @@ class NativeRigAdapter:
         for item in manifest['animations'] + manifest['review']['receipts'] + manifest['validation']:
             refs.append((item['path'], item['sha256']))
         for receipt in manifest['review']['receipts']:
-            record = validate_contract(read_json(safe_path(root, receipt['path'], exists=True)), 'RigReviewReceipt')
+            with open_regular(safe_path(root, receipt['path'], exists=True), 32 * 1024**2) as stream:
+                record = validate_contract(decode_json(stream.read(32 * 1024**2 + 1), max_bytes=32 * 1024**2), 'RigReviewReceipt')
             refs.extend((r['path'], r['sha256']) for r in record['evidence'])
         distinct = {}
         for path, digest in refs:
@@ -122,31 +126,37 @@ class NativeRigAdapter:
         require(all(size <= MAX_FILE_BYTES for size in sizes) and sum(sizes) <= MAX_TOTAL_BYTES,
                 'storage-exhaustion', 'Native rig source closure exceeds byte budget.')
         # Enforce snapshot admission before loading binary geometry/skin payloads.
-        rig = load_rig(root)
-        # Loading authenticates storage; the existing semantic validators own
-        # executable skeleton/controller/skin/clip correctness. Missing optional
-        # rigging is allowed for static imports, but present declarations must
-        # not freeze malformed data as validated source.
-        from rig_skeleton import validate_skeleton
-        from rig_ik import validate_controllers
-        from rig_skinning import validate_skin
-        from rig_animation import validate_animation
-        skeleton = rig.manifest['skeleton']
-        if skeleton is None:
-            require(not rig.weights and not rig.clips
-                    and not any(rig.manifest['controllers'].values()),
-                    'invalid-input', 'Skin, animation and controllers require a skeleton.')
-        else:
-            validate_skeleton(skeleton, rig.manifest['limits'])
-            validate_controllers(skeleton, rig.manifest['controllers'])
-            meshes = rig.geometry.by_id()
-            for name, skin in rig.weights.items():
-                require(name in meshes, 'invalid-input', 'Skin targets a missing mesh.')
-                validate_skin(skin, meshes[name], skeleton, rig.manifest['limits'])
-            for clip in rig.clips.values():
-                validate_animation(rig, clip)
-        return SourceDescription(manifest['id'], manifest['version'], 'rig.json',
-                                 tuple(sorted(distinct.items())), manifest['source']['fixture'], 'native-rig-preview')
+        # Native validators may reopen payloads using their legacy readers.
+        # Give them private, bounded regular files rather than caller-mutable paths.
+        with tempfile.TemporaryDirectory(prefix='render3d-native-admission-') as temporary:
+            private_root = Path(temporary)
+            for path, digest in distinct.items():
+                _copy_verified(root, private_root, path, digest)
+            rig = load_rig(private_root)
+            # Loading authenticates storage; the existing semantic validators own
+            # executable skeleton/controller/skin/clip correctness. Missing optional
+            # rigging is allowed for static imports, but present declarations must
+            # not freeze malformed data as validated source.
+            from rig_skeleton import validate_skeleton
+            from rig_ik import validate_controllers
+            from rig_skinning import validate_skin
+            from rig_animation import validate_animation
+            skeleton = rig.manifest['skeleton']
+            if skeleton is None:
+                require(not rig.weights and not rig.clips
+                        and not any(rig.manifest['controllers'].values()),
+                        'invalid-input', 'Skin, animation and controllers require a skeleton.')
+            else:
+                validate_skeleton(skeleton, rig.manifest['limits'])
+                validate_controllers(skeleton, rig.manifest['controllers'])
+                meshes = rig.geometry.by_id()
+                for name, skin in rig.weights.items():
+                    require(name in meshes, 'invalid-input', 'Skin targets a missing mesh.')
+                    validate_skin(skin, meshes[name], skeleton, rig.manifest['limits'])
+                for clip in rig.clips.values():
+                    validate_animation(rig, clip)
+            return SourceDescription(manifest['id'], manifest['version'], 'rig.json',
+                                     tuple(sorted(distinct.items())), manifest['source']['fixture'], 'native-rig-preview')
 
 
 def _copy_verified(root, stage, path, expected):

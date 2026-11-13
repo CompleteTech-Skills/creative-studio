@@ -392,6 +392,24 @@ class Render3DIndependentTests(unittest.TestCase):
         self.assertGreater(sum(len(mesh.positions) for mesh in reopened.geometry.meshes), 0)
         self.assertEqual(set(reopened.clips), {'bend', 'neutral'})
 
+    @unittest.skipUnless(hasattr(os, 'mkfifo') and hasattr(os, 'O_NONBLOCK'),
+                         'FIFO and nonblocking file descriptors required')
+    def test_native_owner_replacement_rejects_before_legacy_payload_loading(self):
+        from unittest.mock import patch
+        import render3d_contracts as contracts
+        rig = fixture(self.root)
+        target = rig.root / 'rig.json'
+        real_open = os.open
+        def replace_before_open(name, flags, *args, **kwargs):
+            if Path(name) == target:
+                self.assertTrue(flags & os.O_NONBLOCK)
+                target.unlink(); os.mkfifo(target)
+            return real_open(name, flags, *args, **kwargs)
+        with patch.object(contracts.os, 'open', side_effect=replace_before_open):
+            with self.assertRaises(Render3DError):
+                create_snapshot(rig.root, self.root / 'rejected-native', NativeRigAdapter())
+        self.assertFalse((self.root / 'rejected-native').exists())
+
     def test_complete_result_requires_actual_verifier_identity_and_evidence(self):
         value = dict(schema_version=1, kind='render3d-result', job='job',
                      request_sha256='a' * 64, snapshot_sha256='b' * 64,
