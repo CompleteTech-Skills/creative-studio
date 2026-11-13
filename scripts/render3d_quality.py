@@ -21,7 +21,8 @@ def _directory(root, *parts):
     current = root
     for part in parts:
         current = current / part
-        require(not current.is_symlink(), 'ownership', 'Output path traverses a symlink.')
+        require(not current.is_symlink() and not getattr(current,'is_junction',lambda:False)(),
+                'ownership', 'Output path traverses a symlink or junction.')
         current.mkdir(exist_ok=True)
         require(current.is_dir(), 'ownership', 'Output parent is not a directory.')
     return current
