@@ -1,0 +1,119 @@
+{
+  "bounds": [
+    [
+      -0.30000001192092896,
+      0.09999999850988384,
+      -0.30000001192092896
+    ],
+    [
+      1.0950000262260438,
+      1.9999999761581422,
+      0.30000001192092896
+    ]
+  ],
+  "dependencies": {
+    "numpy": "2.3.5",
+    "python": "3.12.15"
+  },
+  "files": {
+    "assembly.json": {
+      "bytes": 2436,
+      "sha256": "c7dfdce5bf29465df86687809a2a82b7a3b25eefa6f6942617e44b0b9df4e23d"
+    },
+    "editable.json": {
+      "bytes": 41866,
+      "sha256": "2f32e9b2853045a8bea547153c7085467d67808b1f4333bc0b5e64baeaabc474"
+    },
+    "model.glb": {
+      "bytes": 29396,
+      "sha256": "8da9a1fcf056c501dfb3c50bf4e35d6e6ffcf145802a4b01c690b2123b0531f8"
+    }
+  },
+  "fixture": true,
+  "format": "glb",
+  "generator_version": "1.0.0",
+  "kind": "hatch-model3d-assembly-acceptance",
+  "limitations": [
+    "Finite recipe/IR language; no free-form learned inference.",
+    "Separate editable surfaces may overlap; no Boolean union or collision/intersection certification.",
+    "Curve sweeps are polygonal approximations; self-intersection is unmeasured.",
+    "Materials are PBR scalar finishes; no generated textures or UVs.",
+    "No skin, animation, artistic approval, Blender or render verification is implied."
+  ],
+  "network_calls": 0,
+  "origin": "deterministic-procedural",
+  "parts": [
+    {
+      "bounds": [
+        [
+          -0.30000001192092896,
+          0.200000023841858,
+          -0.30000001192092896
+        ],
+        [
+          0.30000001192092896,
+          1.9999999761581422,
+          0.30000001192092896
+        ]
+      ],
+      "id": "body",
+      "material": "main",
+      "parent": null,
+      "semantic": "body",
+      "triangles": 256,
+      "vertices": 128
+    },
+    {
+      "bounds": [
+        [
+          -0.30000001192092896,
+          0.09999999850988384,
+          -0.30000001192092896
+        ],
+        [
+          0.30000001192092896,
+          0.3000000014901161,
+          0.30000001192092896
+        ]
+      ],
+      "id": "bottom",
+      "material": "main",
+      "parent": "body",
+      "semantic": "bottom",
+      "triangles": 60,
+      "vertices": 32
+    },
+    {
+      "bounds": [
+        [
+          0.024999973773956352,
+          0.5249999737739562,
+          -0.07500000298023235
+        ],
+        [
+          1.0950000262260438,
+          1.5950000262260438,
+          0.07500000298023235
+        ]
+      ],
+      "id": "handle",
+      "material": "main",
+      "parent": "body",
+      "semantic": "handle",
+      "triangles": 768,
+      "vertices": 384
+    }
+  ],
+  "provider_calls": 0,
+  "request_sha256": "7601a7f4fbffd62a94c8cc73d5f46eb7ac51d3dc8225e4348f9922bf43dada43",
+  "review_state": "not-reviewed",
+  "schema_version": 1,
+  "seed": 7,
+  "triangles": 1084,
+  "validation": {
+    "hierarchy_exported": true,
+    "materials_verified": true,
+    "native_reimport": true
+  },
+  "vertices": 544
+}

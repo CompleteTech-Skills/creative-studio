@@ -1,0 +1,26 @@
+{
+  "dependency_sources": {
+    "scripts/model3d_primitives.py": "da1eb368f1746e2e101766e1bcf97bbfb33fd2d5edce9db29de3b58e08baf8f3"
+  },
+  "exports": 28,
+  "fixture": true,
+  "formats": [
+    "glb",
+    "gltf"
+  ],
+  "generator_sources": {
+    "model3d_assemblies.py": "f5eb40d4d63c732f4a9a0807ab48aa368d548c536198d121e26c584a0cd286e0",
+    "model3d_assemblies_contracts.py": "16df5c8dfeadbdf4acb5577916083a9f1351f0f5ee1649e3dc5c8e5f1d7679e3",
+    "model3d_assemblies_presets.py": "b1f79eebb0977bc917e37fe2e2691f8631410c354a150a371d04762dea3f7a17",
+    "model3d_assemblies_shapes.py": "b6a1a03daf983e8a2c389b2c0cb561536214e8084d53338b632b1c5b83cbbe76"
+  },
+  "khronos_changed_artifacts_revalidated": 14,
+  "khronos_errors": 0,
+  "khronos_exact_byte_receipts_reused": 14,
+  "khronos_validator": "2.0.0-dev.3.10",
+  "khronos_warnings": 0,
+  "recipes": 14,
+  "review_state": "not-reviewed",
+  "schema_version": 1,
+  "source_base": "0226b6f3b2c37ff76d06a60df67fba37b3494dde"
+}
