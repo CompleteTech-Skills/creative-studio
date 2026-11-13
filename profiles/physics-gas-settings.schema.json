@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Hatch native gas settings",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "hatch-3d-gas-settings"
+    },
+    "reference_density": {
+      "type": "number",
+      "minimum": 0.01,
+      "maximum": 100
+    },
+    "ambient_temperature": {
+      "type": "number",
+      "minimum": 100,
+      "maximum": 1000
+    },
+    "temperature_scale": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "fuel": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "emission_end_frame": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 47
+    },
+    "dissipation_enabled": {
+      "type": "boolean"
+    },
+    "dissipation_frames": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 250
+    },
+    "vorticity": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 4
+    },
+    "burning_rate": {
+      "type": "number",
+      "minimum": 0.01,
+      "maximum": 4
+    },
+    "density_buoyancy": {
+      "type": "number",
+      "minimum": -5,
+      "maximum": 5
+    },
+    "heat_buoyancy": {
+      "type": "number",
+      "minimum": -5,
+      "maximum": 5
+    },
+    "collision_distance": {
+      "type": "number",
+      "minimum": 0.001,
+      "maximum": 10
+    },
+    "cfl": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 10
+    },
+    "minimum_substeps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16
+    },
+    "maximum_substeps": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16
+    },
+    "render_frames": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 47
+      }
+    },
+    "render_size": {
+      "type": "integer",
+      "minimum": 64,
+      "maximum": 256
+    },
+    "render_samples": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16
+    },
+    "render_density": {
+      "type": "number",
+      "minimum": 0.01,
+      "maximum": 100
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "reference_density",
+    "ambient_temperature",
+    "temperature_scale",
+    "fuel",
+    "emission_end_frame",
+    "dissipation_enabled",
+    "dissipation_frames",
+    "vorticity",
+    "burning_rate",
+    "density_buoyancy",
+    "heat_buoyancy",
+    "collision_distance",
+    "cfl",
+    "minimum_substeps",
+    "maximum_substeps",
+    "render_frames",
+    "render_size",
+    "render_samples",
+    "render_density"
+  ]
+}
