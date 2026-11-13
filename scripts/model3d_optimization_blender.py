@@ -72,33 +72,45 @@ def _uv_error(source,target,*,samples=512,pair_budget=2_000_000,distance_toleran
     d00=np.einsum('ij,ij->i',ab,ab);d01=np.einsum('ij,ij->i',ab,ac);d11=np.einsum('ij,ij->i',ac,ac)
     den=d00*d11-d01*d01
     require(np.all(den>1e-24),'MODEL3D_DECIMATE_NUMERIC','UV metric requires stable target triangles.')
-    uv=target.attributes['TEXCOORD_0'][target.triangles];errors=[];surface_distances=[]
-    coordinate_scale=max(1e-12,float(np.max(np.abs(target.positions))),float(np.max(np.abs(source.positions))))
-    tie_tolerance=coordinate_scale*np.finfo(np.float64).eps*128
+    uv=target.attributes['TEXCOORD_0'][target.triangles];errors=[];surface_distances=[];ambiguity_bounds=[]
+    normal=np.cross(ab,ac);normal_squared=np.einsum('ij,ij->i',normal,normal)
+    require(np.all(den>np.maximum(1e-24,d00*d11*1e-8)),
+            'MODEL3D_DECIMATE_NUMERIC','UV projection needs well-conditioned target triangles.')
     for i in indices:
-        point=source.positions[i];ap=point-a
+        point=source.positions[i].astype(np.float64);relative_a=a-point;ap=-relative_a
         d20=np.einsum('ij,ij->i',ap,ab);d21=np.einsum('ij,ij->i',ap,ac)
         v=(d11*d20-d01*d21)/den;w=(d00*d21-d01*d20)/den;u=1-v-w
-        projected=a+v[:,None]*ab+w[:,None]*ac
+        # Compute offsets relative to the sample, never reconstruct a large
+        # world coordinate and subtract it again. Coplanar offsets are zero.
+        projected=(np.einsum('ij,ij->i',relative_a,normal)/normal_squared)[:,None]*normal
         inside=(u>=0)&(v>=0)&(w>=0)
-        distances=np.where(inside,np.sum((projected-point)**2,axis=1),np.inf)
+        distances=np.where(inside,np.sum(projected**2,axis=1),np.inf)
+        closest_offsets=projected.copy()
         mapped=u[:,None]*uv[:,0]+v[:,None]*uv[:,1]+w[:,None]*uv[:,2]
-        # Outside a triangle, its nearest surface point lies on an edge. Keep
-        # that edge's interpolated UV so vertex/edge samples are also exact.
         for left,right in ((0,1),(1,2),(2,0)):
-            x=tri[:,left];edge=tri[:,right]-x
-            t=np.clip(np.einsum('ij,ij->i',point-x,edge)/np.einsum('ij,ij->i',edge,edge),0,1)
-            closest=x+t[:,None]*edge;edge_distance=np.sum((closest-point)**2,axis=1)
+            relative=tri[:,left]-point;edge=tri[:,right]-tri[:,left]
+            t=np.clip(-np.einsum('ij,ij->i',relative,edge)/np.einsum('ij,ij->i',edge,edge),0,1)
+            closest=relative+t[:,None]*edge;edge_distance=np.sum(closest**2,axis=1)
             better=edge_distance<distances
             mapped[better]=((1-t)[:,None]*uv[:,left]+t[:,None]*uv[:,right])[better]
+            closest_offsets[better]=closest[better]
             distances=np.minimum(distances,edge_distance)
-        distances=np.sqrt(distances);nearest=float(distances.min())
+        distances=np.sqrt(distances);nearest_index=int(distances.argmin());nearest=float(distances[nearest_index])
         require(nearest<=distance_tolerance,'MODEL3D_DECIMATE_UV','Source UV sample no longer lies on a corresponding target surface.')
-        candidate=distances<=nearest+tie_tolerance
-        errors.append(float(np.linalg.norm(mapped[candidate]-source.attributes['TEXCOORD_0'][i],axis=1).min()))
-        surface_distances.append(nearest)
+        uv_errors=np.linalg.norm(mapped-source.attributes['TEXCOORD_0'][i],axis=1)
+        coincident=np.all(closest_offsets==closest_offsets[nearest_index],axis=1)
+        exact=(distances==nearest)&coincident
+        error=float(uv_errors[exact].min())
+        local_scale=np.maximum.reduce([np.max(np.abs(relative_a),axis=1),np.max(np.abs(ab),axis=1),np.max(np.abs(ac),axis=1)])
+        numeric_bound=np.maximum(local_scale,np.finfo(float).tiny)*np.finfo(float).eps*128
+        ambiguous=(distances<=nearest+numeric_bound+numeric_bound[nearest_index])&~coincident
+        # A separate nearby surface can NEVER improve UV agreement. When local
+        # arithmetic cannot distinguish it confidently, use its worst UV error
+        # too, failing closed instead of authenticating from the wrong chart.
+        if ambiguous.any():error=max(error,float(uv_errors[ambiguous].max()))
+        errors.append(error);surface_distances.append(nearest);ambiguity_bounds.append(float(numeric_bound[nearest_index]))
     return dict(samples=len(indices),max_error=max(errors),surface_distance_max=max(surface_distances),
-                geometric_tie_tolerance_m=tie_tolerance,available=True)
+                numeric_ambiguity_bound_max_m=max(ambiguity_bounds),matching='point-relative closest surface; noncoincident ambiguity cannot lower error',available=True)
 
 
 def _material_signature(geometry,index):

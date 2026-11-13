@@ -66,6 +66,14 @@ class BlenderOptimizationTests(unittest.TestCase):
                         np.array([[0,1,2],[3,4,5]]),attributes={'TEXCOORD_0':np.concatenate([uv,uv+2])})
             target=copy.deepcopy(source);target.attributes['TEXCOORD_0']=np.concatenate([uv+2,uv])
             self.assertGreater(_uv_error(source,target,distance_tolerance=.001)['max_error'],2.8)
+    def test_translated_oblique_adjacent_sheets_cannot_swap_uv_charts(self):
+        positions=np.array([[9998.,0.,0.],[9999.,0.,.5],[9998.,1.,0.]])
+        uv=np.array([[0.,0.],[1.,0.],[0.,1.]])
+        source=Mesh('sheets',np.concatenate([positions,positions+[0.,0.,1e-10]]),np.array([[0,1,2],[3,4,5]]),
+                    attributes={'TEXCOORD_0':np.concatenate([uv,uv+2])})
+        target=copy.deepcopy(source);target.attributes['TEXCOORD_0']=np.concatenate([uv+2,uv])
+        self.assertGreater(_uv_error(source,target,distance_tolerance=.001)['max_error'],2.8)
+        self.assertLess(_uv_error(source,source,distance_tolerance=.001)['max_error'],1e-8)
     def test_unsigned_positions_have_identical_geometric_hard_edges(self):
         positions=np.array([[10,10,10],[20,10,10],[10,20,11],[10,0,11]],dtype=np.uint32)
         triangles=np.array([[0,1,2],[1,0,3]])

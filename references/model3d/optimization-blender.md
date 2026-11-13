@@ -35,9 +35,11 @@ Resource ceilings apply before geometry copies/native work; protected-point and
 metric comparisons have explicit finite work budgets. The source must be clean,
 static nonflat geometry within 10,000 canonical meters with stable triangles.
 UV interpolation samples are source vertices projected onto output triangles;
-only the closest geometric surface can authenticate a sample, with ties bounded
-by 128 float64 epsilons at the coordinate magnitude (no absolute matching-distance
-floor). This profile can reject curved or numerically unstable surfaces instead of
+nearest-surface distances use point-relative arithmetic. Exact coincident seam
+positions can match either chart, while numerically ambiguous noncoincident
+surfaces can only increase the reported UV error; they never authenticate a
+wrong nearest chart. The ambiguity bound uses local triangle/sample offsets,
+not global position. This profile can reject curved or numerically unstable surfaces instead of
 inventing texture fidelity. Metric samples and three raster views are not global
 continuous bounds or aesthetic approval. Rich shaders, custom samplers, JPEG
 re-encoding, other UV sets, tangents, colors, morphs and rigs reject explicitly.
