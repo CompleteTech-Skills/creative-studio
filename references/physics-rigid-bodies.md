@@ -81,6 +81,23 @@ frame-end evaluation is accounted for when keying the half-open force interval.
 
 ## Explicit gaps
 
+The backend boundary is explicit:
+
+| Control | Blender Bullet | PyBullet DIRECT |
+| --- | --- | --- |
+| Static, dynamic and authored kinematic translation | Implemented | Implemented |
+| Gravity, native material response, linear/angular damping | Implemented | Implemented |
+| Sleep and initial sleeping state | Implemented, including native thresholds | Implemented; explicit thresholds rejected |
+| Center force | Global native effectors affecting all dynamic bodies | Native per-body external force |
+| Off-center force, torque, linear/angular impulse | Rejected | Native external wrench; impulses integrated for one solver step |
+| Explicit initial linear/angular velocity | Rejected | Native initial state, before stepping |
+| Custom center of mass and inertia tensor | Rejected; native shape-centered mass properties | Native inertial frame and verified principal moments |
+
+Support in the DIRECT column does not imply support in Blender. The rendered
+DIRECT replay is a view of separately solved states, not a second Blender
+simulation of those controls. Both backends retain actual state, settings and
+source records for the supported operations.
+
 Blender 4.5.3's public rigid-body API does not expose direct off-center wrench,
 torque, impulse, arbitrary initial velocity, shifted inertial-frame or custom
 inertia setters. These requests fail explicitly on that backend. They are not
