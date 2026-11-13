@@ -299,6 +299,43 @@
         "default_duration_ns",
         "nominal_period_error"
       ]
+    },
+    "passes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          "exit_status": {
+            "const": 0
+          },
+          "stdout": {
+            "type": "string",
+            "maxLength": 67108864
+          },
+          "stderr": {
+            "type": "string",
+            "maxLength": 67108864
+          }
+        },
+        "required": [
+          "command",
+          "exit_status",
+          "stdout",
+          "stderr"
+        ]
+      }
     }
   },
   "required": [

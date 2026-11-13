@@ -213,3 +213,27 @@ quantization proof. All frame-count, timestamp, duration, stream and pixel check
 remain mandatory. MP4 still requires exact rational nominal rate equality.
 A real60fps file is rejected for60000/1001 even when a short clip's millisecond
 frame timestamps happen to coincide; generic frame-rate tolerance is not used.
+
+## Typed encoder controls
+
+`silent_profiles.quality_settings(PROFILES[name], level, fps=rate)` supplies
+versioned code-owned draft, preview, standard, high and master settings. Pass the
+result as `make_request(source, name, encoding=settings)`. H.264 uses x264
+software presets and CRF0–51; VP9/AV1 use their own CQ/CRF scales and bounded
+integer CPU speed. Each has separate quality defaults. All profiles remain
+lossy, including the quality level named master.
+
+The strict optional encoding object accepts1–2 threads, GOP1–600 and one
+explicit rate-control object: quality, average bitrate, constrained bitrate with
+maxrate/buffer size, or two-pass bitrate. It accepts no arbitrary FFmpeg flags.
+Two-pass exports retain both real command receipts, bound private statistics
+files by the evidence-byte budget, restart from source on failure, and publish
+only after the second pass independently verifies. Unsupported controls fail
+before subprocess work. No hardware encoder or fallback is selected implicitly.
+
+An optional `progress` callback receives actual FFmpeg `-progress` frame, speed,
+output-time and completion records, alongside phase notifications. `out_time_us`
+can be null while an encoder cannot yet report muxed time; it is encoder
+progress, not authoritative presentation timing. Independent final timestamps
+remain authoritative. Statistics parsing uses position-preserving reads of a
+bounded private log, so progress observation does not alter child output.

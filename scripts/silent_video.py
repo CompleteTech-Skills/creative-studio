@@ -26,6 +26,7 @@ from PIL import Image
 from atomic_publish import _rename_no_replace
 from production_contracts import _structural, safe_path, read_json
 from production_render import fps_fraction, file_hash
+from silent_profiles import encoding_schema, validate_encoding, arguments as encoding_arguments
 
 MAX_FRAMES = 18000
 MAX_SOURCE_BYTES = 2 * 1024**3
@@ -70,6 +71,7 @@ LIMITS = _obj({'timeout_seconds': _int(1, 3600), 'max_output_bytes': _int(1024, 
 REQUEST = _obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-video-request'},
                 'source': SOURCE, 'profile': {'enum': list(PROFILES)},
                 'audio': _obj({'policy': {'const': 'forbidden'}}), 'limits': LIMITS})
+REQUEST['properties']['encoding'] = encoding_schema()
 
 
 def schemas():
@@ -92,6 +94,7 @@ def schemas():
     result['artifact']['properties']['rate_quantization'] = _obj({
         'kind': {'enum': ['exact', 'matroska-nanosecond-rational']},
         'default_duration_ns': _int(0, 10**9), 'nominal_period_error': fraction})
+    result['artifact']['properties']['passes'] = {'type': 'array', 'minItems': 1, 'maxItems': 2, 'items': raw}
     result['job'] = _obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-video-job'},
         'request_sha256': SHA, 'source_manifest_sha256': SHA,
         'status': {'enum': ['queued', 'running', 'verifying', 'complete', 'failed', 'cancelled']},
@@ -273,10 +276,13 @@ def source_from_blender_manifest(root, manifest):
     return source
 
 
-def make_request(source, profile='h264-mp4'):
-    return validate_request({'schema_version': 1, 'kind': 'silent-video-request',
+def make_request(source, profile='h264-mp4', *, encoding=None):
+    request = {'schema_version': 1, 'kind': 'silent-video-request',
                              'source': copy.deepcopy(source), 'profile': profile,
-                             'audio': {'policy': 'forbidden'}, 'limits': dict(DEFAULT_LIMITS)})
+                             'audio': {'policy': 'forbidden'}, 'limits': dict(DEFAULT_LIMITS)}
+    if encoding is not None:
+        request['encoding'] = copy.deepcopy(encoding)
+    return validate_request(request)
 
 
 def validate_request(request):
@@ -285,6 +291,8 @@ def validate_request(request):
     except (OverflowError, RecursionError) as exc:
         raise ValueError('request exceeds numeric/nesting limits') from exc
     validate_source(request['source'])
+    if 'encoding' in request:
+        validate_encoding(PROFILES[request['profile']], request['encoding'])
     return request
 
 
@@ -295,11 +303,12 @@ def _binary(name, override=None):
     return str(Path(candidate).resolve())
 
 
-def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
+def _run(command, limits, *, cancel=None, output=None, pass_fds=(), progress=None, scratch_prefix=None):
     """Bound both process duration and captured evidence, including fast exits."""
     start = time.monotonic()
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, pass_fds=pass_fds)
+        offset, pending, fields = 0, b'', {}
         try:
             while True:
                 status = process.poll()
@@ -311,6 +320,33 @@ def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
                     raise ValueError('media command exceeded evidence byte budget')
                 if output is not None and output.exists() and output.stat().st_size > limits['max_output_bytes']:
                     raise ValueError('encoded output exceeds byte budget')
+                if scratch_prefix is not None:
+                    files = list(scratch_prefix.parent.glob(scratch_prefix.name + '*'))
+                    if len(files) > 16 or sum(path.stat().st_size for path in files) > limits['max_log_bytes']:
+                        raise ValueError('encoder pass statistics exceed byte budget')
+                if progress is not None:
+                    # pread preserves the file offset shared with the child.
+                    size = os.fstat(stdout.fileno()).st_size
+                    chunk = os.pread(stdout.fileno(), size - offset, offset)
+                    offset += len(chunk)
+                    pending += chunk
+                    while b'\n' in pending:
+                        line, pending = pending.split(b'\n', 1)
+                        if len(line) > 4096:
+                            raise ValueError('encoder progress line exceeds byte budget')
+                        key, separator, value = line.decode('ascii', 'strict').partition('=')
+                        if separator:
+                            fields[key] = value
+                        if key == 'progress':
+                            frame = int(fields.get('frame', '0'))
+                            if not 0 <= frame <= MAX_FRAMES or value not in ('continue', 'end'):
+                                raise ValueError('invalid encoder progress')
+                            raw_time = fields.get('out_time_us', '0')
+                            progress({'phase': 'encoding', 'frame': frame, 'speed': fields.get('speed', ''),
+                                      'out_time_us': None if raw_time == 'N/A' else int(raw_time), 'status': value})
+                            fields = {}
+                    if len(pending) > 4096:
+                        raise ValueError('encoder progress line exceeds byte budget')
                 if status is not None:
                     break
                 time.sleep(.02)
@@ -697,18 +733,35 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
                    '-framerate', str(fps), '-start_number', '0', '-i', str(inputs/'%06d.png'),
                    '-map', '0:v:0', '-an', '-sn', '-dn', '-map_metadata', '-1', '-map_chapters', '-1',
                    '-frames:v', str(len(request['source']['frames'])), '-c:v', profile['encoder'],
-                   '-pix_fmt', profile['pixel_format'], '-vf', 'setsar=1', '-crf', str(profile['crf']),
-                   '-threads', '1']
-        if request['profile'] == 'h264-mp4':
-            command += ['-preset', profile['preset'], '-g', str(max(1, round(fps*2))), '-movflags', '+faststart']
-        elif request['profile'] == 'vp9-webm':
-            command += ['-deadline', 'good', '-b:v', '0']
+                   '-pix_fmt', profile['pixel_format'], '-vf', 'setsar=1']
+        if 'encoding' in request:
+            command += encoding_arguments(profile, request['encoding'])
         else:
-            command += ['-cpu-used', profile['preset'], '-row-mt', '1', '-b:v', '0']
+            command += ['-crf', str(profile['crf']), '-threads', '1']
+            if request['profile'] == 'h264-mp4':
+                command += ['-preset', profile['preset'], '-g', str(max(1, round(fps*2)))]
+            elif request['profile'] == 'vp9-webm':
+                command += ['-deadline', 'good', '-b:v', '0']
+            else:
+                command += ['-cpu-used', profile['preset'], '-row-mt', '1', '-b:v', '0']
+        if progress is not None:
+            command += ['-progress', 'pipe:1', '-nostats']
+        passes = []
+        two_pass = request.get('encoding', {}).get('rate_control', {}).get('mode') == 'two-pass'
+        passlog = stage / 'encoder-pass'
+        if two_pass:
+            if progress is not None:
+                progress({'phase': 'encode-pass-1', 'total_frames': len(request['source']['frames'])})
+            passes.append(_run(command + ['-pass', '1', '-passlogfile', str(passlog), '-f', 'null', '-'],
+                request['limits'], cancel=cancel, pass_fds=(parent_fd,), progress=progress, scratch_prefix=passlog))
+            command += ['-pass', '2', '-passlogfile', str(passlog)]
+        if profile['container'] == 'mp4':
+            command += ['-movflags', '+faststart']
         command += [str(output)]
         if progress is not None:
             progress({'phase': 'encode', 'total_frames': len(request['source']['frames'])})
-        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(parent_fd,))
+        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(parent_fd,),
+                         progress=progress, scratch_prefix=passlog if two_pass else None)
         receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
         if cancel is not None and cancel():
             raise ValueError('silent export cancelled before publication')
@@ -722,6 +775,8 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         finally:
             os.close(source_fd)
         receipt['encode'] = execution
+        if two_pass:
+            receipt['passes'] = passes + [execution]
         receipt['path'] = destination.name
         if progress is not None:
             progress({'phase': 'complete', 'frame_count': receipt['frame_count']})
