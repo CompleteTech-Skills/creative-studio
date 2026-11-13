@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 import numpy as np
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from model3d_mesh_import import import_mesh, import_canonical
+from model3d_mesh_import import import_mesh, import_canonical, select_canonical_geometry
 from rig_errors import RigError
 from rig_gltf import export_geometry
 from rig_models import Geometry, Mesh
@@ -169,6 +169,63 @@ class MeshImportTests(unittest.TestCase):
             read.assert_not_called()
         with patch.object(library,'read_file',return_value=b'corrupt'):
             with self.assertRaises(RigError):import_canonical(library,ref)
+
+    def test_public_canonical_selector_returns_independent_exact_active_record(self):
+        library,manifest,ref=self.canonical()
+        selected=select_canonical_geometry(manifest)
+        self.assertEqual(selected,manifest['files'][0]);selected['path']='changed.obj'
+        self.assertEqual(manifest['files'][0]['path'],'mesh/triangle.obj')
+        for compatibility in ({},dict(manifest['compatibility'],unit_scale=True),dict(manifest['compatibility'],unit_scale=.01)):
+            wrong=dict(manifest,compatibility=compatibility)
+            with self.subTest(compatibility=compatibility),self.assertRaises(RigError):select_canonical_geometry(wrong)
+        from copy import deepcopy
+        for field,value in [('bytes',True),('sha256','A'*64),('format','glb'),('mime_type','image/png')]:
+            wrong=deepcopy(manifest);wrong['files'][0][field]=value
+            with self.subTest(field=field),self.assertRaises(RigError):select_canonical_geometry(wrong)
+
+    def normalized_canonical(self):
+        from copy import deepcopy
+        from asset_library import AssetLibrary
+        from asset_library_contracts import seal
+        from rig_import import load_character_model
+        root=Path(__file__).resolve().parents[1]/'examples/asset-library-foundation'
+        manifest=json.loads((root/'manifest.json').read_text())
+        original=manifest['files'][0];original['role']='source'
+        for item in manifest['provenance']['sources']:
+            if item['path']==original['path']:item['role']='source'
+        source_files={f['path']:root/f['path'] for f in manifest['files']}
+        geometry=load_character_model(source_files[original['path']]).geometry
+        for mesh in geometry.meshes:mesh.positions*=.01
+        normalized=self.root/'unit-normalized.glb';export_geometry(geometry,normalized,provenance={'fixture':True})
+        data=normalized.read_bytes();name='derived/unit-normalized.glb'
+        manifest['files'].append(dict(path=name,sha256=hashlib.sha256(data).hexdigest(),bytes=len(data),role='runtime',format='glb',mime_type='model/gltf-binary',required=True))
+        manifest['publication']['inventory'].append(name);manifest['compatibility']['formats'].append('glb')
+        manifest=seal(manifest);source_files[name]=normalized
+        library=AssetLibrary(self.root/'normalized-library',create=True);ref=library.register(manifest,source_files)
+        return library,manifest,ref,original['path'],name
+
+    def test_default_canonical_entry_is_active_normalized_geometry_and_original_rejects_before_read(self):
+        library,manifest,ref,original,normalized=self.normalized_canonical()
+        with import_canonical(library,ref) as result:
+            np.testing.assert_allclose(result.model.report['dimensions_m'],[.01,.01,0],atol=1e-9)
+            self.assertEqual(result.provenance['source_entry'],normalized)
+            self.assertEqual(result.provenance['manifest'],manifest)
+            self.assertIn(original,{r['path'] for r in result.source_records})
+        with import_canonical(library,ref,entry=normalized) as result:
+            np.testing.assert_allclose(result.model.report['dimensions_m'],[.01,.01,0],atol=1e-9)
+        with patch.object(library,'read_file',wraps=library.read_file) as read:
+            with self.assertRaises(RigError) as caught:import_canonical(library,ref,entry=original)
+            self.assertEqual(caught.exception.report['code'],'MODEL3D_ENTRY');read.assert_not_called()
+
+    def test_canonical_active_path_format_mismatch_is_rejected_before_read(self):
+        from copy import deepcopy
+        from asset_library_contracts import seal
+        library,manifest,ref,original,normalized=self.normalized_canonical()
+        wrong=deepcopy(manifest);next(item for item in wrong['files'] if item['path']==normalized)['format']='obj';wrong=seal(wrong)
+        wrong_ref=dict(ref,sha256=wrong['manifest_sha256'])
+        with patch.object(library,'resolve',return_value=wrong),patch.object(library,'read_file',wraps=library.read_file) as read:
+            with self.assertRaises(RigError) as caught:import_canonical(library,wrong_ref,entry=normalized)
+            self.assertEqual(caught.exception.report['code'],'MODEL3D_ENTRY');read.assert_not_called()
 
     def test_actual_external_gltf_binary_image_closure(self):
         import base64,io

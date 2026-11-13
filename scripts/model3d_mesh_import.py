@@ -66,6 +66,47 @@ def import_mesh(path, *, scale=1., limits=None, blender=None):
     return import_snapshot(path, scale=scale, limits=limits, blender=blender)
 
 
+def select_canonical_geometry(manifest, *, entry=None):
+    """Select one active normalized canonical file without reading any payload.
+
+    Registry/manifest authentication remains the caller's responsibility. The
+    returned independent record binds the actual inventory path/hash/size/format;
+    retained source-role files cannot be promoted to active geometry by a caller.
+    A unique active entry is the legacy default; otherwise select its exact path.
+    """
+    from rig_errors import portable_name
+    require(isinstance(manifest,dict),'MODEL3D_ENTRY','Canonical manifest must be an object.')
+    compatibility=manifest.get('compatibility')
+    require(isinstance(compatibility,dict)
+            and compatibility.get('coordinate_system')=='right-handed-y-up-z-forward'
+            and type(compatibility.get('unit_scale')) in (int,float) and compatibility['unit_scale']==1,
+            'MODEL3D_COORDINATES','Canonical geometry requires normalized Y-up meter compatibility.')
+    files=manifest.get('files')
+    require(isinstance(files,list) and 1<=len(files)<=256
+            and all(isinstance(item,dict) and isinstance(item.get('path'),str) for item in files),
+            'MODEL3D_ENTRY','Canonical inventory must contain bounded named file records.')
+    require(len({item['path'] for item in files})==len(files),'MODEL3D_ENTRY','Canonical inventory repeats a path.')
+    active=[item for item in files if item.get('role') in ('geometry','runtime') and item.get('format') in ('glb','gltf','obj')]
+    if entry is None:
+        require(len(active)==1,'MODEL3D_ENTRY','Select one active geometry/runtime inventory path explicitly.')
+        selected=active[0]
+    else:
+        require(isinstance(entry,str),'MODEL3D_ENTRY','Canonical entry must be an exact inventory path.')
+        portable_name(entry)
+        matches=[item for item in active if item['path']==entry]
+        require(len(matches)==1,'MODEL3D_ENTRY','Entry must name active supported geometry/runtime, not retained source evidence.')
+        selected=matches[0]
+    name=portable_name(selected['path']);count=selected.get('bytes');digest=selected.get('sha256')
+    media={'glb':'model/gltf-binary','gltf':'model/gltf+json','obj':'model/obj'}
+    require(Path(name).suffix.lower()=='.'+selected['format']
+            and ('mime_type' not in selected or selected['mime_type']==media[selected['format']]),
+            'MODEL3D_ENTRY','Canonical active entry path, format or media type disagree.')
+    require(type(count) in (int,float) and 1<=count<=64*1024**2 and count==int(count)
+            and isinstance(digest,str) and len(digest)==64 and all(c in '0123456789abcdef' for c in digest),
+            'MODEL3D_ENTRY','Canonical active entry needs a valid exact byte count and SHA256.')
+    return copy.deepcopy(selected)
+
+
 def import_canonical(library, ref, *, entry=None, limits=None):
     """Decode an exact canonical-library version through its public reader.
 
@@ -74,25 +115,16 @@ def import_canonical(library, ref, *, entry=None, limits=None):
     original source provenance and uncertainty), and applies no second coordinate
     conversion to an already canonical asset. Legacy-2D records are rejected.
     """
-    from asset_library_contracts import validate, load_manifest, canonical_bytes, portable_path
+    from asset_library_contracts import validate, load_manifest, canonical_bytes
     limits = _limits(limits)
     validate(ref, 'AssetRef')
     manifest = load_manifest(canonical_bytes(library.resolve(copy.deepcopy(ref))))
     require(manifest['manifest_sha256'] == ref['sha256'] and
             manifest['identity']['id'] == ref['id'] and manifest['version'] == ref['version'],
             'MODEL3D_REFERENCE', 'Registry returned a different immutable version.')
-    require(manifest['compatibility']['coordinate_system'] == 'right-handed-y-up-z-forward'
-            and manifest['compatibility']['unit_scale'] == 1,
-            'MODEL3D_COORDINATES', 'Canonical mesh import requires normalized Y-up meter geometry.')
+    selected=select_canonical_geometry(manifest,entry=entry)
+    entry=selected['path']
     inventory = {item['path']: item for item in manifest['files']}
-    if entry is None:
-        candidates = [item['path'] for item in manifest['files']
-                      if item['role'] in ('geometry', 'runtime') and item['format'] in ('glb','gltf','obj')]
-        require(len(candidates) == 1, 'MODEL3D_ENTRY', 'Select one inventoried geometry entry explicitly.')
-        entry = candidates[0]
-    portable_path(entry)
-    require(entry in inventory and inventory[entry]['format'] in ('glb','gltf','obj'),
-            'MODEL3D_ENTRY', 'Entry must name an inventoried supported geometry file.')
     require(len(inventory) <= limits['archive_files'] and
             sum(int(item['bytes']) for item in inventory.values()) <= min(limits['dependency_bytes'], limits['memory_bytes']//3) and
             all(item['bytes'] <= limits['source_bytes'] for item in inventory.values()),
