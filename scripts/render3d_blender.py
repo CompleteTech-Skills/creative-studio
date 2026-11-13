@@ -327,6 +327,7 @@ class BlenderBackend:
                     path=safe_path(stage/'cinematics',name); path.parent.mkdir(parents=True,exist_ok=True)
                     atomic_bytes(path,payload)
                 atomic_json(stage/'cinematics'/'plan.json',cinematic_plan)
+                atomic_json(stage/'cinematics'/'probe.json',cinematics['probe'])
             atomic_json(source/'job.json',job)
             command=[self.executable,'--background','--factory-startup','--disable-autoexec','--python-exit-code','1','--python',str(WORKER),'--',str(source/'job.json')]
             log,usage=_supervise(command,cwd=stage,timeout=resources['timeout_seconds'],memory_bytes=resources['memory_bytes'],storage_bytes=resources['storage_bytes'],cancelled=cancelled)

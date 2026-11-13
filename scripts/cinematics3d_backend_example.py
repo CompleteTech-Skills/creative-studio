@@ -105,7 +105,7 @@ def run(destination,executable):
         if name!='exr':pixels[name]=decoded['_pixels']
         # Reopen retained original config bytes and require exact reconstruction.
         retained=destination/name/'cinematics'
-        restored={p.relative_to(retained).as_posix():p.read_bytes() for p in retained.rglob('*.json') if p.relative_to(retained).as_posix()!='plan.json'}
+        restored={p.relative_to(retained).as_posix():p.read_bytes() for p in retained.rglob('*.json') if p.relative_to(retained).parts[0] in ('documents','inputs')}
         from cinematics3d_blender import validate_configuration
         validate_configuration(compiled['plan'],restored)
     import numpy as np
