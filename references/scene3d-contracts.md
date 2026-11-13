@@ -63,7 +63,10 @@ match their references; every typed reference must be in the dependency lock.
 Reference and transform traversal follows authoritative schema positions, so
 annotation keys resembling paths/bounds/transforms never become resources or
 geometry. The public project-relative manifest filename uses the same scalar/
-portable spelling checks as document references.
+portable spelling checks as document references. Its rejection test invokes the
+real loader before any invalid-name filesystem operation on every OS; malformed
+byte-name materialization is an additional Linux case, not a prerequisite on
+hosts such as macOS that reject the filename themselves.
 Conflicting hashes, duplicate version identities, portable aliases, dangling
 shot/camera/node references, dependency cycles and missing/corrupt files fail.
 Asset byte estimates are checked against actual content; vertex/triangle counts
