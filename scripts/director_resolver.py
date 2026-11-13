@@ -109,8 +109,12 @@ class AssetResolver:
             if rigfiles:
                 with tempfile.TemporaryDirectory(prefix='director-rig-resolve-') as directory:
                     path=Path(directory)/'rig.glb';path.write_bytes(self.library.read_file(exact,rigfiles[0]['path']))
+                    asset=read_gltf(path,limits=limits).json.get('asset')
+                    extras=asset.get('extras') if isinstance(asset,dict) else None
+                    binding=extras.get('hatchRig') if isinstance(extras,dict) else None
+                    require(isinstance(binding,dict),'DIRECTOR_RESOLVER_RIG_BINDING',
+                            'Native rig export requires an object source binding.')
                     rig=load_character_model(path,limits=limits)
-                    binding=read_gltf(path,limits=limits).json.get('asset',{}).get('extras',{}).get('hatchRig',{})
                 require(binding.get('id')==manifest['identity']['id'] and
                         binding.get('source_sha256')==payload['sha256'] and
                         _same_geometry(rig.geometry,imported.geometry),
@@ -145,7 +149,7 @@ class AssetResolver:
             reasons.extend(['Exact immutable version, license, bytes, geometry and requested capabilities verified.',
                             'No generation, import, purchase or source mutation was performed.'])
             return 'reusable',score,reasons,[]
-        except (RigError,OSError,ValueError,KeyError) as exc:
+        except (RigError,OSError,ValueError,KeyError,TypeError,AttributeError) as exc:
             code=exc.report['code'] if isinstance(exc,RigError) else type(exc).__name__
             return 'unavailable',0,['Candidate cannot be independently verified: '+code+'.'],[]
 
@@ -166,6 +170,7 @@ class AssetResolver:
         registry=snapshot['candidates']
         for ref in registry:
             require(isinstance(ref,dict),'DIRECTOR_RESOLVER_REGISTRY','Candidate must be an ArtifactRef.')
+            _validate_ref(ref)
         require(len({object_hash(ref) for ref in registry})==len(registry),
                 'DIRECTOR_RESOLVER_REGISTRY','Registry contains duplicate candidate references.')
         requirements=[]

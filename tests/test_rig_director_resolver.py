@@ -162,3 +162,36 @@ class ResolverTests(unittest.TestCase):
             self.assertEqual(result['disposition'],'unavailable')
             self.assertEqual(result['candidates'][0]['artifact_id'],'aster')
         finally:path.write_bytes(original)
+
+    def test_malformed_registry_reference_is_structured_error(self):
+        for ref in ({},{'artifact_id':'aster'}):
+            with self.subTest(reference=ref), self.assertRaises(RigError) as error:
+                self.resolver.resolve(self.request(refs=[ref]))
+            self.assertEqual(error.exception.report['code'],'DIRECTOR_RESOLVER_REFERENCE')
+
+    def test_malformed_rig_binding_remains_unavailable(self):
+        import struct
+        from asset_library_contracts import seal, file_record
+        manifest=json.loads((self.root/'aster-asset.json').read_text())
+        rig=next(f for f in manifest['files'] if f['role']=='rig')
+        original=(self.root/rig['path']).read_bytes()
+        size=struct.unpack_from('<I',original,12)[0]
+        document=json.loads(original[20:20+size]);document['asset']['extras']['hatchRig']='malformed'
+        encoded=json.dumps(document,separators=(',',':')).encode()
+        encoded+=b' '*((-len(encoded))%4)
+        tail=original[20+size:]
+        payload=struct.pack('<4sII',b'glTF',2,20+len(encoded)+len(tail))+struct.pack('<I4s',len(encoded),b'JSON')+encoded+tail
+        with tempfile.TemporaryDirectory() as folder:
+            folder=Path(folder);path=folder/'rig.glb';path.write_bytes(payload)
+            replacement=file_record(path,rig['path'],'rig')
+            manifest['version']='3.0.0'
+            manifest['files']=[replacement if f['role']=='rig' else f for f in manifest['files']]
+            manifest['provenance']['sources']=[deepcopy(f) for f in manifest['files'] if f['role']!='license']
+            manifest=seal(manifest)
+            library=AssetLibrary(folder/'library',create=True)
+            library.register(manifest,{f['path']:path if f['role']=='rig' else self.root/f['path'] for f in manifest['files']})
+            specpath=self.root/'malformed-rig-asset.json';atomic_json(specpath,manifest)
+            ref=artifact(specpath,self.root,identifier='aster');ref['semantic_version']='3.0.0'
+            result=AssetResolver(library,self.root).resolve(self.request(refs=[ref]))['value']['requirements'][0]
+            self.assertEqual(result['disposition'],'unavailable')
+            self.assertTrue(any('RIG_BINDING' in reason for reason in result['reasons']))
