@@ -14,7 +14,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFile
 from atomic_publish import _rename_no_replace
 from rig_errors import RigError, finite_json, open_payload, portable_name, require
 from rig_models import Geometry, Mesh, validate_geometry
@@ -55,12 +55,18 @@ def read_image(path, *, role='source'):
         require(0 < info.st_size <= MAX_IMAGE_BYTES, 'RECON_SOURCE_LIMIT', 'Encoded image exceeds64MiB.')
         payload=stream.read(MAX_IMAGE_BYTES+1)
         require(len(payload)==info.st_size,'RECON_SOURCE','Source changed while reading.')
+    require(not ImageFile.LOAD_TRUNCATED_IMAGES,'RECON_SOURCE_POLICY','Strict source admission requires truncated image recovery disabled.')
     try:
         with Image.open(io.BytesIO(payload)) as image:
             require(image.format in ('PNG','JPEG','WEBP') and getattr(image,'n_frames',1)==1,
                     'RECON_SOURCE','Only single-frame PNG/JPEG/WebP observations are supported.')
             require(0 < image.width*image.height <= MAX_IMAGE_PIXELS,'RECON_SOURCE_LIMIT','Observation exceeds4million pixels.')
-            width,height=image.size;image.verify()
+            width,height=image.size;image_format=image.format;image.verify()
+        if image_format in ('PNG','JPEG'):
+            # Reuse the warning-aware JPEG entropy and complete PNG raster
+            # authorities. Pillow may silently recover damaged JPEG scan data.
+            from rig_import import _decode_texture
+            _decode_texture(payload,dict(DEFAULT_LIMITS,source_bytes=MAX_IMAGE_BYTES,memory_bytes=128*1024**2))
         with Image.open(io.BytesIO(payload)) as image:image.load()
     except (OSError,ValueError,Image.DecompressionBombError) as exc:
         if isinstance(exc,RigError):raise
@@ -203,7 +209,11 @@ def publish(result, destination, *, evidence=(), format='glb'):
     require(hasattr(result,'geometry') and isinstance(result.report,dict),'RECON_RESULT','Expected a reconstruction result.')
     require(getattr(result,'_reconstruction_signature',None)==_result_signature(result),
             'RECON_STALE','Reconstruction geometry, occupancy or evidence changed; regenerate/recompute reconstruction evidence before publication.')
-    require(isinstance(evidence,(list,tuple)) and len(evidence)<=64 and all(isinstance(e,Evidence) for e in evidence),
+    # Snapshot mutable native arrays and receipts before exporting; later caller
+    # edits cannot race the geometry/report pair used for this publication.
+    result=deepcopy(result)
+    require(result._reconstruction_signature==_result_signature(result),'RECON_STALE','Result changed while capturing its publication snapshot.')
+    require(isinstance(evidence,(list,tuple)) and len(evidence)<=64 and all(isinstance(e,Evidence) and type(e.payload) is bytes for e in evidence),
             'RECON_SOURCE','Supply at most64captured observations.')
     require(sum(len(e.payload) for e in evidence)<=256*1024**2,'RECON_SOURCE_LIMIT','Evidence total exceeds256MiB.')
     destination=Path(destination).absolute();parent=destination.parent.resolve(strict=True);destination=parent/destination.name
