@@ -75,6 +75,9 @@ Binding pointers use the canonical semantic JSON hash returned by `contract_hash
 file references use SHA-256 of actual file bytes. These hashes are intentionally
 different and must not be substituted. A native format with only `schema_version`
 uses its format version `N.0.0`; formats carrying `version` retain that version.
+Production2D `shot` records carry neither field and use the explicit v1 format
+version `1.0.0`. Their ID and exact file hash/byte length remain mandatory, so
+this convention does not treat different shot contents as the same resource.
 
 The fixture project binds the real retained Model3D robotic manifest. Its
 scene3d reference deliberately names an unavailable owner and nonexistent file.

@@ -115,7 +115,12 @@ An unmerged owner is unavailable, never silently parsed as a different format.
     native_id = value.get('id', value.get('project_id'))
     if native_id != reference['id']:
         _error('IDENTITY', 'Native ID differs from the bound identity.')
-    native_version = value.get('version', str(value.get('schema_version')) + '.0.0')
+    # Production shots are embedded v1 records with neither version field.
+    # Bind their format version explicitly; the exact bytes still bind content.
+    if owner == 'production2d' and kind == 'shot':
+        native_version = '1.0.0'
+    else:
+        native_version = value.get('version', str(value.get('schema_version')) + '.0.0')
     if native_version != reference['version']:
         _error('VERSION', 'Native version differs from the exact reference.')
     return {'status': 'valid-native-contract', 'owner': owner, 'id': native_id,

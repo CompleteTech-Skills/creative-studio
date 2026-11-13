@@ -414,6 +414,28 @@ class EditorAdapterTests(unittest.TestCase):
             verify_native_reference(reference, ROOT)
         self.assertEqual(raised.exception.report['code'], 'EDITOR3D_UNAVAILABLE')
 
+    def test_unversioned_production_shots_use_explicit_format_version(self):
+        from production_contracts import load_project
+        from production_fixture import build_fixture_project
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            scene=load_project(build_fixture_project(root))['scenes'][0]
+            shot=scene['shots'][0]
+            self.assertNotIn('version',shot)
+            self.assertNotIn('schema_version',shot)
+            path=root/'shot.json';payload=json.dumps(shot).encode();path.write_bytes(payload)
+            reference=dict(owner='production2d',id=shot['id'],version='1.0.0',native_kind='shot',
+                file=dict(path=path.name,sha256=hashlib.sha256(payload).hexdigest(),bytes=len(payload),media_type='application/json'))
+            report=verify_native_reference(reference,root)
+            self.assertEqual(report['status'],'valid-native-contract')
+            self.assertFalse(report['transitive_resources_verified'])
+            for field,bad in (('version','2.0.0'),('id','other-shot')):
+                candidate=deepcopy(reference);candidate[field]=bad
+                with self.subTest(field=field),self.assertRaises(RigError):
+                    verify_native_reference(candidate,root)
+            reference['file']['sha256']='0'*64
+            with self.assertRaises(RigError):verify_native_reference(reference,root)
+
     def test_native_paths_reject_symlinks_without_reading_target(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); path = root / 'manifest.json'
