@@ -281,6 +281,21 @@ class AssetTechnicalTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError, 'missing node in the consuming graph'):
             validate_asset(self.library, ref)
 
+        # A nested clip's closure is admitted before traversing its bindings,
+        # including when its consuming scene was registered first.
+        clip['tracks'] = []
+        clip['bindings'] = [{'target': 'prefab-root',
+                             'clip': {**clip_ref, 'path': 'missing.json', 'id': 'missing'},
+                             'start_frame': 0, 'end_frame': 24, 'speed': 1, 'loop': False}]
+        clip_path.write_text(json.dumps(clip))
+        clip_ref['sha256'] = hashlib.sha256(clip_path.read_bytes()).hexdigest()
+        document['dependencies'][-1] = clip_ref
+        document['nodes'][0]['animation_bindings'][0]['clip'] = clip_ref
+        path.write_text(json.dumps(document))
+        ref = self.register(files, 'prefab', '3.0.0')
+        with self.assertRaisesRegex(RigError, 'absent'):
+            validate_asset(self.library, ref)
+
     def test_obj_is_geometry_only_and_reports_repairable_topology(self):
         path=self.root/'open.obj';path.write_text('v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 0\nf 1 2 3\n')
         item=inspect_geometry(path)
