@@ -45,7 +45,9 @@ export function mountInspectors({container, getSnapshot, getSelection, api, relo
   const status = element("p", "", {role: "status", "aria-live": "polite"});
   async function apply(commands, button) {
     if (busy || disposed) return;
-    busy = true; button.disabled = true; status.textContent = "Saving native properties…";
+    busy = true;
+    container.querySelectorAll("fieldset,button").forEach(control => { control.disabled = true; });
+    status.textContent = "Saving native properties…";
     try {
       const snapshot = getSnapshot();
       await api("commands", {
