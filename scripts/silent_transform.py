@@ -9,9 +9,8 @@ from pathlib import Path
 import shutil
 
 from PIL import Image, __version__ as PILLOW_VERSION
-from atomic_publish import _rename_no_replace
+from atomic_publish import _rename_no_replace, private_stage
 from production_contracts import MAX_MANIFEST_BYTES, read_json
-from silent_staging import payload_stage
 import silent_video as video
 
 
@@ -30,11 +29,11 @@ def profile(width, height, fps, *, fit='preserve', fps_policy='preserve', backgr
 
 
 def profile_schema():
-    return video._obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-frame-profile'},
+    return copy.deepcopy(video._obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-frame-profile'},
         'width': video._int(2, 4096), 'height': video._int(2, 4096), 'fps': video.FPS,
         'fit': {'enum': ['preserve', 'letterbox', 'fill', 'stretch']},
         'fps_policy': {'enum': ['preserve', 'nearest']},
-        'background': {'type': 'array', 'minItems': 3, 'maxItems': 3, 'items': video._int(0, 255)}})
+        'background': {'type': 'array', 'minItems': 3, 'maxItems': 3, 'items': video._int(0, 255)}}))
 
 
 def validate_profile(value):
@@ -49,7 +48,7 @@ def validate_profile(value):
 
 def schema():
     ratio = video._obj({'numerator': video._int(-10**12, 10**12), 'denominator': video._int(1, 10**12)})
-    return video._obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-frame-transform'},
+    return copy.deepcopy(video._obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-frame-transform'},
         'input_source': video.SOURCE, 'input_source_sha256': video.SHA, 'profile': profile_schema(), 'profile_sha256': video.SHA,
         'source': video.SOURCE, 'mapping': {'type': 'array', 'minItems': 1, 'maxItems': video.MAX_FRAMES,
             'items': video._obj({'index': video._int(0, video.MAX_FRAMES - 1),
@@ -57,7 +56,7 @@ def schema():
         'input_duration': ratio, 'output_duration': ratio, 'duration_delta': ratio,
         'implementation': video._obj({'id': {'const': 'pillow-lanczos-center'},
             'pillow_version': {'type': 'string', 'minLength': 1, 'maxLength': 64}, 'code_sha256': video.SHA}),
-        'visual_review': {'const': 'not-performed'}})
+        'visual_review': {'const': 'not-performed'}}))
 
 
 def plan(source, settings):
@@ -111,7 +110,9 @@ def transform(source, root, settings, destination, *, cancel=None):
         raise ValueError('insufficient free storage for bounded transform')
     video._snapshot(video.make_request(source), root, None)
     with video._pin_directory(destination.parent) as parent_fd:
-        with payload_stage(parent_fd, '.silent-transform-') as (stage, wrapper_fd):
+        with private_stage(parent_fd, prefix='.silent-transform-') as (private_path, wrapper_fd):
+            stage = private_path / 'payload'
+            stage.mkdir(mode=0o700)
             (stage / 'frames').mkdir()
             inventory, total = [], 0
             for record in mapping:

@@ -106,7 +106,12 @@ publication. The output directory is opened without following symlinks and pinne
 by descriptor through staging, subprocesses and the final rename. A concurrent
 parent rename retains that original directory identity; a substituted pathname
 cannot redirect publication elsewhere. An existing destination, including a racing empty directory or
-symlink, is preserved. Private partials are removed after failures. The returned
+symlink, is preserved. The private staging directory is also pinned before any
+frame or encoded bytes are written; its replaceable basename is never reopened
+for publication or recursive cleanup. Cleanup preserves a foreign replacement.
+Cancellation callbacks run during encoding and verification, with no callback
+between the final original-byte recheck and exclusive publication. Private
+partials are removed after failures. The returned
 receipt binds the actual artifact, source manifest and request hashes and
 retains commands, raw probe output, timeline and decode evidence. Persist it in
 the enclosing renderer's existing transaction; this low-level API does not
@@ -266,3 +271,11 @@ actual transformed pixel against the declared operation. The strict
 [transform](../schemas/silent-frame-transform-v1.schema.json) schemas describe
 this separate conversion artifact. PNG8 opacity/color rules remain unchanged;
 transparent or HDR input needs its own explicit verified preparation step.
+
+For descriptor-owned job directories, `encode(request, source_root, 'movie.mp4',
+destination_dir_fd=attempt_fd)` uses a validated, duplicated directory handle
+and a portable basename. It checks collisions and available storage through that
+handle and publishes from the same encoder used by ordinary path exports. Both
+passes inherit the pinned staging descriptor. No procfd alias is converted back
+to a mutable destination pathname. The caller retains ownership of its original
+handle and must keep any source capabilities alive for the call.

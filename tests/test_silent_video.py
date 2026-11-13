@@ -26,14 +26,14 @@ import silent_video as video
 
 MEDIA_AVAILABLE = bool(shutil.which('ffmpeg') and shutil.which('ffprobe') and video.secure_publication_supported())
 if os.environ.get('HATCH_SILENT_MEDIA_TEST') == '1' and not MEDIA_AVAILABLE:
-    raise RuntimeError('HATCH_SILENT_MEDIA_TEST requires real FFmpeg and ffprobe')
+    raise RuntimeError('HATCH_SILENT_MEDIA_TEST requires real FFmpeg/ffprobe and tested secure publication support')
 
 
 class SilentContracts(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='silent-contract-')
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.paths = []
         for index in range(6):
             path = self.root / ('%06d.png' % index)
@@ -189,8 +189,21 @@ class SilentContracts(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     video.validate_request(request)
 
+    def test_descriptor_destinations_reject_nonbasename_and_invalid_handles(self):
+        for name in ('../escape.mp4', 'nested/movie.mp4', 'CON.mp4', 'movie:.mp4', 'movie.mp4 '):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                video.encode(self.request, self.root, name, destination_dir_fd=-1)
+        with self.assertRaises(ValueError):
+            video.encode(self.request, self.root, 'movie.mp4', destination_dir_fd=True)
+        descriptor = os.open(self.root / self.paths[0], os.O_RDONLY)
+        try:
+            with self.assertRaises(ValueError):
+                video.encode(self.request, self.root, 'movie.mp4', destination_dir_fd=descriptor)
+        finally:
+            os.close(descriptor)
 
-@unittest.skipUnless(MEDIA_AVAILABLE, 'FFmpeg/ffprobe integration tools unavailable')
+
+@unittest.skipUnless(MEDIA_AVAILABLE, 'FFmpeg/ffprobe or tested secure publication adapter unavailable')
 class SilentMedia(SilentContracts):
     def ffmpeg(self, *arguments):
         result = subprocess.run([shutil.which('ffmpeg'), '-hide_banner',
@@ -219,6 +232,31 @@ class SilentMedia(SilentContracts):
                          hashlib.sha256(path.read_bytes()).hexdigest())
         for key in ('source_manifest_sha256', 'request_sha256'):
             self.assertRegex(receipt[key], r'^[0-9a-f]{64}$')
+
+    def test_private_destination_fd_survives_parent_swap_through_both_passes(self):
+        request = video.make_request(self.source, 'vp9-webm', encoding={
+            'speed': 6, 'threads': 1, 'gop': 24, 'rate_control': {'mode': 'two-pass', 'bitrate': 100000}})
+        foreign = []
+        with video._pin_directory(self.root) as parent_fd:
+            with video._private_stage(parent_fd, prefix='.job-attempt-') as (private, private_fd):
+                (private / 'attempt').mkdir()
+                attempt_fd = os.open('attempt', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=private_fd)
+                try:
+                    def replace_parent(event):
+                        if event['phase'] == 'encode-pass-1' and not foreign:
+                            wrapper = Path(os.readlink('/proc/self/fd/' + str(private_fd)))
+                            wrapper.rename(wrapper.with_name(wrapper.name + '-retained'))
+                            replacement = wrapper / 'attempt'; replacement.mkdir(parents=True)
+                            sentinel = replacement / 'movie.webm'; sentinel.write_bytes(b'unrelated replacement')
+                            foreign.append(sentinel)
+                    receipt = video.encode(request, self.root, 'movie.webm', destination_dir_fd=attempt_fd,
+                                           progress=replace_parent)
+                    artifact = private / 'attempt/movie.webm'
+                    video.validate_receipt(receipt, artifact, request, self.root)
+                    self.assertEqual(len(receipt['passes']), 2)
+                finally:
+                    os.close(attempt_fd)
+        self.assertEqual(foreign[0].read_bytes(), b'unrelated replacement')
 
     def test_actual_h264_all_required_rates_and_adjacent_wav(self):
         with wave.open(str(self.root / 'speech.wav'), 'wb') as audio:
@@ -462,6 +500,44 @@ class SilentMedia(SilentContracts):
         self.assertEqual(hashlib.sha256((moved/'film.mp4').read_bytes()).hexdigest(), receipt['artifact_sha256'])
         self.assertEqual(list(outside.iterdir()), [])
 
+    def test_verified_stage_replacement_cannot_publish_or_delete_foreign_bytes(self):
+        output = self.root/'stage-race.mp4'
+        original_verify = video.verify_export
+        state = {'verified': False, 'replaced': False}
+        replacement = []
+        def verified(*args, **kwargs):
+            result = original_verify(*args, **kwargs)
+            state['verified'] = True
+            stage = next(self.root.glob('.silent-export-*'))
+            stage.rename(self.root/'original-verified-stage')
+            stage.mkdir()
+            (stage/'output.partial.mp4').write_bytes(b'unverified replacement movie')
+            (stage/'foreign.txt').write_bytes(b'unrelated original content')
+            replacement.append(stage)
+            state['replaced'] = True
+            return result
+        with patch.object(video, 'verify_export', side_effect=verified):
+            receipt = video.encode(self.request, self.root, output)
+        self.assertTrue(state['replaced'])
+        self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(), receipt['artifact_sha256'])
+        self.assertEqual((replacement[0]/'output.partial.mp4').read_bytes(), b'unverified replacement movie')
+        self.assertEqual((replacement[0]/'foreign.txt').read_bytes(), b'unrelated original content')
+
+    def test_no_cancellation_callback_after_final_byte_verification(self):
+        original_verify = video.verify_export
+        state = {'verified': False}
+        def verified(*args, **kwargs):
+            result = original_verify(*args, **kwargs)
+            state['verified'] = True
+            return result
+        def cancel():
+            if state['verified']:
+                self.fail('user callback ran between final byte verification and publication')
+            return False
+        with patch.object(video, 'verify_export', side_effect=verified):
+            receipt = video.encode(self.request, self.root, self.root/'no-late-callback.mp4', cancel=cancel)
+        self.assertTrue(receipt['verified'])
+
     def test_output_size_budget_prevents_publication(self):
         output = self.root / 'oversize.mp4'
         request = deepcopy(self.request)
@@ -473,6 +549,23 @@ class SilentMedia(SilentContracts):
 
 
 class DescriptorPublication(unittest.TestCase):
+    @unittest.skipUnless(video.secure_publication_supported(), 'Linux descriptor path adapter')
+    def test_stage_cleanup_does_not_follow_replaced_basename(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            outside = root/'outside'
+            outside.mkdir()
+            sentinel = outside/'original.txt'
+            sentinel.write_bytes(b'unrelated original bytes')
+            with video._pin_directory(root) as parent_fd:
+                with video._private_stage(parent_fd, prefix='.silent-export-') as (stage, descriptor):
+                    (stage/'owned.txt').write_bytes(b'owned temporary bytes')
+                    name = next(root.glob('.silent-export-*'))
+                    name.rename(root/'moved-owned-stage')
+                    name.symlink_to(outside, target_is_directory=True)
+            self.assertEqual(sentinel.read_bytes(), b'unrelated original bytes')
+            self.assertEqual(list((root/'moved-owned-stage').iterdir()), [])
+
     @unittest.skipUnless(os.name == 'posix', 'POSIX directory descriptors')
     def test_shared_atomic_publisher_pins_both_parents(self):
         from atomic_publish import _rename_no_replace

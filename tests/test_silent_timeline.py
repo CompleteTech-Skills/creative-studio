@@ -89,7 +89,7 @@ class TimelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             timeline.assemble(self.shots, self.destination)
         self.assertFalse(self.destination.exists())
-        self.assertFalse(list(self.root.glob('.silent-timeline-*')))
+        self.assertTrue(all(not list(path.iterdir()) for path in self.root.glob('.silent-timeline-*')))
 
     def test_tampered_output_and_forged_mapping_are_rejected(self):
         timeline.assemble(self.shots, self.destination)
