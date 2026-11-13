@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "kind": "decomposition-quality-candidate-inventory",
+  "created_utc": "2026-11-13T16:38:37.232754+00:00",
+  "status": "incomplete-no-held-out-acceptance",
+  "protocol": "references/decomposition-quality-protocol.md",
+  "accepted_held_out_cases": 0,
+  "model_training_overlap": "unknown for all pre-trained models; no guaranteed training exclusion",
+  "sources": [
+    {
+      "id": "milo-construction-source",
+      "asset": {
+        "path": "examples/production-pilot/acquisition/milo/decoded/base.png",
+        "sha256": "29b857963c2d5b3ffceaa0231f49da394aabe897a9a60734cb30d7da0f83c41f"
+      },
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "availability": "repository-original",
+      "origin_evidence": "examples/production-pilot/acquisition/README.md",
+      "rights_status": "existing-authorized-project-artwork; no new redistribution license asserted",
+      "evaluation_role": "development-only-already-observed",
+      "held_out": false,
+      "categories": [
+        "illustrated-mascot",
+        "multi-view-sheet",
+        "fractional-alpha",
+        "costume"
+      ],
+      "ground_truth_status": "not-annotated; visual observations are not reference masks",
+      "observations": "Brown bear mascot, scarf, distinct eyes; multiple views must be explicitly selected without resampling.",
+      "semantic_approval": false
+    },
+    {
+      "id": "luma-construction-source",
+      "asset": {
+        "path": "examples/production-pilot/acquisition/luma/decoded/base.png",
+        "sha256": "e96b5277966d7ffd52371580647ad120937dbdad226470726e56329ab7c72e96"
+      },
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "availability": "repository-original",
+      "origin_evidence": "examples/production-pilot/acquisition/README.md",
+      "rights_status": "existing-authorized-project-artwork; no new redistribution license asserted",
+      "evaluation_role": "development-only-already-observed",
+      "held_out": false,
+      "categories": [
+        "illustrated-mascot",
+        "multi-view-sheet",
+        "fractional-alpha",
+        "costume"
+      ],
+      "ground_truth_status": "not-annotated; visual observations are not reference masks",
+      "observations": "Teal long-eared rabbit-like mascot wearing an ochre vest, four standing views; visible ears, feet and tail require reviewer-defined references.",
+      "semantic_approval": false
+    },
+    {
+      "id": "noto-emoji-pilot",
+      "availability": "external-pilot-not-bundled-here",
+      "source_revision": "99701e07d3d1fe1bdbcdb14964547f0fd592966f",
+      "origin": "https://github.com/googlefonts/noto-emoji/tree/99701e07d3d1fe1bdbcdb14964547f0fd592966f",
+      "evaluation_role": "development-only-already-observed",
+      "held_out": false,
+      "rights_status": "unresolved publisher README says most image resources Apache-2.0 but root LICENSE at same revision is OFL-1.1; retain both statements, obtain applicable image grant before promoting to accepted corpus",
+      "categories": [
+        "flat-art",
+        "nonhuman",
+        "fantasy",
+        "robot-face",
+        "partial-body"
+      ],
+      "ground_truth_status": "pilot visibility hypotheses only; no reviewed pixel masks",
+      "semantic_approval": false
+    },
+    {
+      "id": "nasa-astronaut-pilot",
+      "availability": "on PR292; not in this base",
+      "origin": "NASA Eileen Collins portrait via retained OpenCV example",
+      "evaluation_role": "development-only-already-observed",
+      "held_out": false,
+      "rights_status": "existing example records NASA public-domain attribution; preserve original provenance before corpus promotion",
+      "categories": [
+        "photograph",
+        "human",
+        "complex-background",
+        "partial-body"
+      ],
+      "ground_truth_status": "coarse face and eye pilot regions, not full semantic reference",
+      "semantic_approval": false
+    },
+    {
+      "id": "penn-fudan-pilot",
+      "availability": "external local research dataset, not redistributed here",
+      "origin": "https://www.cis.upenn.edu/~jshi/ped_html/",
+      "evaluation_role": "development-only-already-observed",
+      "held_out": false,
+      "rights_status": "research dataset; archive and retain exact license/consent terms before approved held-out redistribution",
+      "categories": [
+        "photograph",
+        "multiple-people",
+        "cropped",
+        "overlap",
+        "complex-background"
+      ],
+      "ground_truth_status": "dataset instance masks exist; semantic parts not annotated",
+      "semantic_approval": false
+    }
+  ],
+  "missing_required_categories": [
+    "pixel-art",
+    "textured-art",
+    "abstract-body-plan",
+    "unusual-proportions",
+    "disconnected-markings",
+    "separate-props",
+    "difficult-occlusion"
+  ],
+  "required_before_acceptance": [
+    "rights-cleared previously unobserved sources frozen before evaluation",
+    "independently reviewed reference labels/masks/uncertainty",
+    "complete automatic workflow233",
+    "fresh independent semantic review",
+    "all functional/security/forward-generation gates234"
+  ]
+}
