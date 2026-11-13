@@ -302,6 +302,33 @@ class NativeLoadLimitTests(unittest.TestCase):
         self.assertTrue(all(request is not None and request <= 64 * 1024 and output <= 64 * 1024
                             for request, output in observations), observations)
 
+    def test_forged_numpy_header_length_rejected_before_large_read(self):
+        path = Path(self.temp.name) / 'forged-header-length.npz'
+        fake = b'\x93NUMPY\x02\x00' + struct.pack('<I', 8 * 1024**2) + b' ' * (8 * 1024**2)
+        with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('metadata.json', '{}')
+            archive.writestr('data.npy', fake)
+        data = bytearray(path.read_bytes())
+        cursor = data.index(b'PK\x01\x02')
+        while True:
+            name_size, extra_size, comment_size = struct.unpack_from('<3H', data, cursor + 28)
+            if data[cursor + 46:cursor + 46 + name_size] == b'data.npy': break
+            cursor += 46 + name_size + extra_size + comment_size
+        struct.pack_into('<I', data, cursor + 24, 200)
+        path.write_bytes(data)
+        real = zipfile.ZipExtFile.read
+        requests = []
+        def observed(stream, size=-1):
+            requests.append(size)
+            self.assertGreaterEqual(size, 0)
+            self.assertLessEqual(size, 10032)
+            return real(stream, size)
+        with patch.object(zipfile.ZipExtFile, 'read', observed):
+            with self.assertRaises(RigError) as caught:
+                _read_bundle(path, dict(DEFAULT_LIMITS, memory_bytes=5 * 1024**2))
+            self.assertEqual(caught.exception.report['code'], 'RIG_BINARY')
+        self.assertTrue(requests)
+
     def test_prefixed_decoy_directory_rejected_before_zipinfo_allocation(self):
         path = Path(self.temp.name) / 'decoy-directory.npz'
         with zipfile.ZipFile(path, 'w') as archive:

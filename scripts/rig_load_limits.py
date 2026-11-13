@@ -164,6 +164,23 @@ def read_bundle_member(archive, info):
     return bytes(chunks)
 
 
+class _HeaderReader:
+    """Bound NumPy header reads before its parser consumes declared lengths."""
+    def __init__(self, stream):
+        self.stream = stream
+        self.total = 0
+
+    def read(self, size):
+        require(type(size) is int and 0 <= size <= 10000 and self.total + size <= 10032,
+                'RIG_BINARY', 'Native NumPy header exceeds its bounded profile.')
+        data = self.stream.read(size)
+        self.total += len(data)
+        return data
+
+    def tell(self):
+        return self.stream.tell()
+
+
 def scan_bundle(path: Path, limits: dict, budget: LoadBudget, expected_hash=None):
     """Inspect all headers and image dimensions without allocating NumPy arrays."""
     size = budget.file(path)
@@ -199,7 +216,8 @@ def scan_bundle(path: Path, limits: dict, budget: LoadBudget, expected_hash=None
             for info in infos:
                 if not info.filename.endswith('.npy'):
                     continue
-                with archive.open(info) as stream:
+                with archive.open(info) as raw:
+                    stream = _HeaderReader(raw)
                     version = np.lib.format.read_magic(stream)
                     require(version in ((1, 0), (2, 0)), 'RIG_BINARY', 'Unsupported NumPy array format.')
                     shape, fortran, dtype = (np.lib.format.read_array_header_1_0(stream) if version == (1, 0)
