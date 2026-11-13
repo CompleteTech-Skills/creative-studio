@@ -33,6 +33,37 @@ class ClipSegContracts(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'byte bound'):clip._hash(path)
             self.assertEqual(clip._hash(path), __import__('hashlib').sha256(b'123456789').hexdigest())
 
+    def test_capture_binds_immutable_bytes_and_rejects_later_replacement(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);path=root/'config.json';path.write_bytes(b'{"fixture":true}')
+            pinned={'config.json':hashlib.sha256(path.read_bytes()).hexdigest()}
+            with patch.object(clip,'FILES',pinned):
+                captured=clip._capture_model(root)
+                path.write_bytes(b'{"fixture":false}')
+                self.assertEqual(captured['config.json'],b'{"fixture":true}')
+                with self.assertRaisesRegex(ValueError,'differs from pinned'):clip._capture_model(root)
+
+    def test_capture_rejects_symlink_directory_instead_of_resolving_it(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as temp:
+            base=Path(temp);root=base/'actual';root.mkdir()
+            path=root/'config.json';path.write_bytes(b'{}')
+            alias=base/'alias';alias.symlink_to(root,target_is_directory=True)
+            with patch.object(clip,'FILES',{'config.json':hashlib.sha256(b'{}').hexdigest()}):
+                with self.assertRaises(ValueError):clip._capture_model(alias)
+
+    def test_capture_enforces_configuration_and_aggregate_bounds(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);path=root/'config.json';path.write_bytes(b'123456789')
+            pinned={'config.json':hashlib.sha256(path.read_bytes()).hexdigest()}
+            with patch.object(clip,'FILES',pinned):
+                with patch.object(clip,'MAX_CONFIG_FILE_BYTES',8),self.assertRaisesRegex(ValueError,'byte bound'):
+                    clip._capture_model(root)
+                with patch.object(clip,'MAX_CAPTURE_BYTES',8),self.assertRaisesRegex(ValueError,'byte bound'):
+                    clip._capture_model(root)
+
     def test_invalid_thresholds_duplicate_taxonomy_and_prompt_rejected(self):
         request={'taxonomy':['anatomy/head'],'prompt':'','parameters':dict(clip.DEFAULT_PARAMETERS)}
         clip.validate_options(request)

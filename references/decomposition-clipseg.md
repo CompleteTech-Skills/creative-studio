@@ -21,6 +21,16 @@ environment, then set `HATCH_CLIPSEG_MODEL_DIR` to the local snapshot directory.
 The accepted file digests live in `scripts/decomposition_clipseg.py`. The full
 checkpoint digest is
 `d00ca85d6b859f9d07b7cfb8ef26fe9771cb275b34c9368f2ecf603139307f55`.
+Execution captures the exact pinned files through the canonical descriptor reader
+before constructing any model or tokenizer. Configuration files are bounded to
+4 MB each, weights to 610 MB, and the aggregate capture to 614 MB. Builtin CLIP
+configuration and upstream CLIP tokenizer conversion consume the captured bytes;
+safetensors decodes those same verified weight bytes. Parameter loading remains
+strict. The checkpoint's two legacy position-ID buffers must exactly match the
+builtin nonpersistent buffers before omission from parameter loading. There are
+no later `from_pretrained` reads of replaceable external filenames. Input images
+are likewise hashed and decoded from one bounded admitted byte sequence.
+
 Discovery and execution use the local files only; a missing dependency or changed
 snapshot leaves the manual annotation route available. Requests also bind the
 exact adapter/controller source hashes, so changed preprocessing or execution
