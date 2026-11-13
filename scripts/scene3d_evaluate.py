@@ -236,6 +236,7 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
     for identifier, state in evaluated.items():
         node = nodes[identifier]
         state.update(type=node['type'], visible=state['render_visible'],
+                     channels=deepcopy(node['transform']),
                      medium='projected-2d' if node['type'] == 'billboard_2d' else '3d',
                      material_overrides=deepcopy(node['material_overrides']),
                      base_pose_only=False, animation_evaluated=True)
@@ -269,7 +270,7 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
                                        max_geometry_vertices) if sample_geometry else None
     from scene3d_pose import evaluate_poses
     pose_geometry = evaluate_poses(graph,evaluated,documents,native,source_root,
-        sample_geometry=sample_geometry,max_vertices=max_geometry_vertices)
+        verified_inventory=bundle['inventory'],sample_geometry=sample_geometry,max_vertices=max_geometry_vertices)
     if geometry is not None:
         geometry.update(pose_geometry)
         require(sum(len(points) for meshes in geometry.values() for points in meshes.values()) <=
@@ -439,6 +440,18 @@ def resolve_materials(evaluation, registry):
         if materials:
             result[identifier] = materials
     return result
+
+
+def frame_camera(evaluation, render, targets, **options):
+    """Frame exact evaluated target bounds through the canonical camera owner."""
+    require(isinstance(targets,(list,tuple)) and 1 <= len(targets) <= 128 and
+            all(isinstance(target,str) and target in evaluation['nodes'] for target in targets),
+            'Framing requires 1..128 evaluated node IDs.')
+    from camera3d_constraints import frame_subject
+    mapped = camera_matrices(evaluation,render)
+    resolved = [dict(position=[evaluation['nodes'][target]['world_matrix'][axis][3] for axis in range(3)],
+                     bounds=deepcopy(evaluation['nodes'][target]['world_bounds'])) for target in targets]
+    return frame_subject(mapped['world_matrix'],mapped['optics'],mapped['render'],resolved,**options)
 
 
 def light_instances(evaluation, registry):
