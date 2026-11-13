@@ -116,7 +116,7 @@ def _load_material_registry(repository, snapshot, reference):
     """Read native material closure through the repository's exact-byte API."""
     import hashlib
     from pathlib import PurePosixPath
-    from lookdev_contracts import Registry, _references, portable_path
+    from lookdev_contracts import Registry, _references, portable_path, validate_resource
     from rig_errors import decode_json
     entries, payloads, seen = [], {}, set()
     # Native LookDev dependencies are scoped to the selected resource directory.
@@ -134,7 +134,7 @@ def _load_material_registry(repository, snapshot, reference):
         key = (path, expected)
         if key in seen: return
         seen.add(key)
-        raw = read(path, expected); value = decode_json(raw)
+        raw = read(path, expected); value = validate_resource(decode_json(raw))
         if depth == 0 and (value.get('id') != reference['id'] or
                 value.get('version') != reference['version'] or
                 value.get('kind') not in {'material3d', 'material-instance3d', 'material-variant3d'}):

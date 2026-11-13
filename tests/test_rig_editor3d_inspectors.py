@@ -87,6 +87,15 @@ class InspectorTests(unittest.TestCase):
         self.assertEqual(describe_materials(None,snapshot,'camera'),[])
         self.assertEqual(describe_materials(None,snapshot,'root'),[])
 
+    def test_material_resource_requires_typed_native_json(self):
+        import hashlib
+        from editor3d_inspectors import _load_material_registry
+        for raw in (b'[]',b'null',b'1',b'{"kind":"material3d"}'):
+            class Source:
+                def read_file(self,path,sha):return raw
+            with self.subTest(raw=raw),self.assertRaises(RigError):
+                _load_material_registry(Source(),{'sha256':'a'*64},dict(id='ceramic',version='1.0.0',path='material.json',sha256=hashlib.sha256(raw).hexdigest()))
+
     def test_bound_material_root_cannot_alias_a_dependency(self):
         from editor3d_inspectors import _load_material_registry
         import hashlib
@@ -176,7 +185,11 @@ class InspectorBrowserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             build_example(root/'source')
-            repository=EditorRepository.create(root/'source',root/'repository',scene_path='example-scene.json')
+            graph=SceneGraph.from_bundle(load_project(root/'source'),'example-scene.json',source_root=root/'source')
+            light=node('key-light','light','root');light['light']=dict(type='point',color=[1,1,1],intensity=10)
+            graph.create(light)
+            saved=snapshot_project(root/'source',root/'with-light',graph,scene_path='example-scene.json')
+            repository=EditorRepository.create(root/'with-light',root/'repository',scene_path=saved['active_scene']['path'])
             server=EditorServer(repository)
             thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
             try:
@@ -205,7 +218,13 @@ class InspectorBrowserTests(unittest.TestCase):
                         panel.get_by_role('button',name='Save camera optics',exact=True).click()
                         panel.get_by_role('status').filter(has_text='far').wait_for()
                         self.assertEqual(repository.snapshot()['sha256'],previous)
-                        page.reload();page.wait_for_function('() => window.editorReady === true')
+                        page.evaluate("window.hatchEditor.select('key-light')")
+                        panel.get_by_label('Native intensity',exact=True).fill('25')
+                        panel.get_by_role('button',name='Save light',exact=True).click()
+                        page.wait_for_function("() => window.hatchEditor.snapshot.scene.nodes.find(n=>n.id==='key-light').light.intensity === 25")
+                        page.goto('about:blank');page.goto(server.url)
+                        page.wait_for_function('() => window.editorReady === true')
+                        self.assertEqual(next(n for n in repository.snapshot()['scene']['nodes'] if n['id']=='key-light')['light']['intensity'],25)
                         self.assertEqual(EditorRepository(root/'repository').snapshot()['scene']['world']['exposure'],1.5)
                     finally:browser.close()
             finally:
