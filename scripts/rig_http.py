@@ -12,12 +12,33 @@ import uuid
 from rig_errors import RigError,decode_json,require,safe_path,sha256,slug
 
 
+MAX_TOKEN_CHARACTERS=4096
+
+
+def _installed_template(identifier):
+    """Resolve an exact installed public ID without passing user paths to the loader."""
+    from rig_templates import ROOT,load_rig_template
+    require(isinstance(identifier,str),
+            'RIG_API_TEMPLATE','Use an exact installed template ID, not a template object or file path.')
+    installed={}
+    for path in sorted(ROOT.glob('*.json')):
+        if not path.is_file() or path.is_symlink():continue
+        canonical=load_rig_template(path)['id']
+        require(canonical not in installed,'RIG_API_TEMPLATE','Installed template IDs must be unambiguous.')
+        installed[canonical]=path.resolve()
+    require(identifier in installed,'RIG_API_TEMPLATE','Use an exact installed template ID, not a template object or file path.')
+    return str(installed[identifier])
+
+
 class RigServer(ThreadingHTTPServer):
     daemon_threads=True
     def __init__(self,root,intake,*,port=0,token=None,workers=2):
         self.root=Path(root).resolve();self.root.mkdir(parents=True,exist_ok=True)
         self.intake=Path(intake).resolve();require(self.intake.is_dir(),'RIG_API_INTAKE','Intake must be an existing directory.')
-        self.token=token or secrets.token_urlsafe(32);require(len(self.token)>=24,'RIG_API_TOKEN','Use a token of at least 24 characters.')
+        self.token=secrets.token_urlsafe(32) if token is None else token
+        require(isinstance(self.token,str) and 24<=len(self.token)<=MAX_TOKEN_CHARACTERS
+                and all(0x21<=ord(character)<=0x7e for character in self.token),
+                'RIG_API_TOKEN','Use a printable ASCII token of 24–4096 characters without whitespace.')
         require(1<=workers<=4,'RIG_API_WORKERS','Use 1–4 bounded workers.');self.budget=threading.BoundedSemaphore(workers)
         super().__init__(('127.0.0.1',port),RigHandler)
 
@@ -41,7 +62,11 @@ class RigHandler(BaseHTTPRequestHandler):
         root=safe_path(self.server.root,identifier);require(root.is_dir(),'RIG_API_NOT_FOUND','Job does not exist.');return root
     def _run(self):
         authorized=self.headers.get('Authorization','')
-        if not hmac.compare_digest(authorized,'Bearer '+self.server.token):self._respond(401,dict(ok=False,error=dict(code='RIG_API_AUTH',message='A valid local bearer token is required.')));return
+        valid_authorization=(isinstance(authorized,str) and len(authorized)<=MAX_TOKEN_CHARACTERS+7
+                             and authorized.isascii() and hmac.compare_digest(authorized,'Bearer '+self.server.token))
+        if not valid_authorization:
+            self._respond(401,dict(ok=False,error=dict(code='RIG_API_AUTH',message='A valid local bearer token is required.')))
+            return
         origin=self.headers.get('Origin')
         allowed={f'http://127.0.0.1:{self.server.server_port}',f'http://localhost:{self.server.server_port}'}
         if origin and origin not in allowed:self._respond(403,dict(ok=False,error=dict(code='RIG_API_ORIGIN',message='Cross-origin API calls are refused.')));return
@@ -74,13 +99,22 @@ class RigHandler(BaseHTTPRequestHandler):
         if self.command=='GET' and len(parts)==4 and parts[3]=='artifacts':
             return dict(artifacts=[dict(path=p.relative_to(root).as_posix(),bytes=p.stat().st_size,sha256=sha256(p)) for p in sorted(root.rglob('*')) if p.is_file() and not p.is_symlink()])
         body=self._body()
-        if self.command=='PATCH' and parts[1]=='rigs' and len(parts)==3:return mutate(root,'correct',dict(correction=body))
+        if self.command=='PATCH' and parts[1]=='rigs' and len(parts)==3:
+            edits=body.get('edits')
+            if isinstance(edits,list):
+                for edit in edits:
+                    if isinstance(edit,dict) and edit.get('operation')=='template':
+                        value=edit.get('value')
+                        require(isinstance(value,dict) and 'template' in value,'RIG_API_TEMPLATE',
+                                'Template corrections require an exact installed template ID.')
+                        value['template']=_installed_template(value['template'])
+            return mutate(root,'correct',dict(correction=body))
         require(self.command=='POST' and len(parts)==4,'RIG_API_NOT_FOUND','Unsupported route or method.')
         operation=parts[3]
         aliases={'generate':'auto','skin':'weights','test-motion':'test-motion','validate':'validate','analyze':'analyze','state-map':'state-map','animate':'animate','configure':'configure'}
         if operation in aliases:
             # Template paths are deliberately restricted to installed IDs in HTTP.
-            if operation=='generate':require('/' not in body.get('template','') and '\\' not in body.get('template',''),'RIG_API_TEMPLATE','Use an installed template ID.')
+            if operation=='generate':body['template']=_installed_template(body.get('template','humanoid'))
             return mutate(root,aliases[operation],body)
         if operation=='pose':return pose_operation(rig,body)
         if operation=='solve-ik':return solve_operation(rig,body)
