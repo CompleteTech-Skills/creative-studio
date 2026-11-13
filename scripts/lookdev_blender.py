@@ -21,7 +21,8 @@ REQUIRED_SOCKETS = {'Base Color', 'Metallic', 'Roughness', 'IOR', 'Alpha',
     'Specular IOR Level', 'Specular Tint', 'Transmission Weight', 'Coat Weight',
     'Coat Roughness', 'Sheen Weight', 'Sheen Tint', 'Sheen Roughness',
     'Anisotropic', 'Anisotropic Rotation', 'Emission Color', 'Emission Strength',
-    'Thin Film IOR', 'Thin Film Thickness'}
+    'Thin Film IOR', 'Thin Film Thickness', 'Subsurface Weight',
+    'Subsurface Radius', 'Subsurface Scale'}
 
 
 def _bpy():
@@ -202,7 +203,7 @@ def build_material(plan):
             scatter.inputs['Subsurface Weight'].default_value = 1.0
             scatter.inputs['Subsurface Scale'].default_value = 1.0
             scatter.inputs['Subsurface Radius'].default_value = tuple(sss['radius_meters'])
-            scatter.inputs['Subsurface IOR'].default_value = s['ior']
+            # Blender 4.5 uses the copied Principled IOR for subsurface transport.
             mix = nodes.new('ShaderNodeMixShader')
             mix.inputs[0].default_value = sss['weight']
             links.new(shader, mix.inputs[1]); links.new(scatter.outputs['BSDF'], mix.inputs[2])
