@@ -29,6 +29,24 @@ class NativeCLI(unittest.TestCase):
             self.assertEqual(result['verification']['fps'],source['fps'])
             self.assertEqual(result['verification']['frame_count'],3)
 
+    def test_cli_legacy_source_explicit_preparation_admission(self):
+        # Malformed preparation fails before media execution; a complete legacy
+        # source is validated by its authority rather than invented here.
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp).resolve(); Image.new('RGB',(64,48),(10,50,80)).save(root/'0.png')
+            source=media.build_source(root,['0.png'],{'numerator':24,'denominator':1})
+            output=io.StringIO()
+            with patch.object(media,'source_from_production',return_value=source), contextlib.redirect_stdout(output):
+                status=production.main(['export-video','--render-dir',str(root),'--destination',str(root/'film.mp4'),
+                    '--silent','--resolution','32x24','--fit','letterbox','--fps','30','--fps-policy','nearest',
+                    '--prepared-dir',str(root/'prepared')])
+            self.assertEqual(status,0)
+            result=json.loads(output.getvalue())
+            self.assertEqual(result['verification']['audio_stream_count'],0)
+            self.assertEqual(result['preparation']['source']['width'],32)
+            self.assertEqual(result['verification']['fps'],{'numerator':30,'denominator':1})
+
     def test_request_encode_and_independent_verify(self):
         self.assertTrue(media.secure_publication_supported())
         self.assertTrue(shutil.which('ffmpeg'))

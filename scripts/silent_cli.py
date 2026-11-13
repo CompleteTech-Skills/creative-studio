@@ -146,7 +146,10 @@ def dispatch(args):
             if args.fps:
                 if not re.fullmatch(r'[0-9]{1,6}(?:/[0-9]{1,5})?', args.fps):
                     raise ValueError('--fps requires an exact positive integer or P/Q')
-                value = Fraction(args.fps)
+                try:
+                    value = Fraction(args.fps)
+                except ZeroDivisionError as exc:
+                    raise ValueError('--fps denominator must be positive') from exc
                 rate = {'numerator': value.numerator, 'denominator': value.denominator}
                 if rate != source['fps'] and args.fps_policy != 'nearest':
                     raise ValueError('changed FPS requires explicit --fps-policy nearest')
