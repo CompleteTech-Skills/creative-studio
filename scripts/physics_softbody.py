@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Mapping
 from physics_backends import (BlenderBackend,BackendError,PreparedSimulation,SimulationResult,ResourceEstimate,
     _world,_ratio,_Reader,_paths,_write,_inventory,_source_admission,_new_destination,_publish,_run_process,
-    _remaining,canonical,digest,parse,require,MAX_INPUT_BYTES,MAX_CACHE_BYTES,MAX_DOCUMENT_BYTES)
+    _remaining,canonical,digest,parse,require,MAX_INPUT_BYTES,MAX_CACHE_BYTES,MAX_DOCUMENT_BYTES,CapabilityReport,FeatureCapability,ALL_CATEGORIES,hardware,_failure_state)
 
 
 def cache_schema():
@@ -41,12 +41,13 @@ def admit(world):
     require(not world['joints'] and not world['forces'] and not world['events'],'PHYSICS_CAPABILITY_UNAVAILABLE','Coupling, forces and events are unsupported')
     require(solver['reproducibility'] in ('verified-cache-replay','not-guaranteed') and not solver.get('stability'),
         'PHYSICS_CAPABILITY_UNAVAILABLE','Only saved-state replay is qualified; rigid solver stability controls do not apply')
-    require(world['frame_range']['start']==0 and 2<=world['frame_range']['end']<=256 and 1<=_ratio(world['fps'])<=120,
-        'PHYSICS_TIME_UNSUPPORTED','Soft-body outputs require zero origin and2..256 samples at1..120fps')
+    require(world['frame_range']['start']==0 and 2<=world['frame_range']['end']<=128 and 1<=_ratio(world['fps'])<=120 and world['fps']['numerator']<=32767,
+        'PHYSICS_TIME_UNSUPPORTED','Soft-body outputs require zero origin and2..128 samples at1..120fps with a Blender-representable numerator')
     steps=solver['iterations']*solver['substeps']
     require(1<=steps<=1000 and _ratio(solver['fixed_step'])/solver['substeps']==1/(_ratio(world['fps'])*steps),
         'PHYSICS_TIME_UNSUPPORTED','Native fixed min/max integration steps must equal iterations*substeps per output frame')
     comp=components[0]
+    comp['vertex_count']=int(comp['vertex_count']);comp['pins']=[int(v) for v in comp['pins']]
     require(comp['parent'] is None and 4<=comp['vertex_count']<=4096 and .01<=comp['stiffness']<=.99 and .01<=comp['mass']<=1000,
         'PHYSICS_SETTINGS','Unsupported soft-body parent, mesh size, stiffness or mass')
     require(1<=len(world['bodies'])<=16 and set(comp['colliders'])=={b['id'] for b in world['bodies']},
@@ -77,6 +78,9 @@ def _component_meshes(root,world):
     from physics_component_sources import admit_component_meshes
     admitted=admit_component_meshes(root,world,bundle)
     comp=world['components'][0];mesh=admitted['components'][comp['id']]
+    node=next(n for n in bundle['documents'][world['scene']['path']]['nodes'] if n['id']==comp['id'])
+    require(not node.get('animation_bindings') and not node.get('constraints') and not node.get('attachment') and not node.get('material_overrides'),
+            'PHYSICS_CAPABILITY_UNAVAILABLE','Animated, constrained, attached or material-overridden soft-body source nodes are unsupported')
     import numpy as np
     from rig_geometry import mesh_edges
     points=np.asarray(mesh['positions'],dtype=float);triangles=np.asarray(mesh['triangles'],dtype=int)
@@ -108,6 +112,64 @@ def _component_meshes(root,world):
 
 
 class SoftBodyBackend(BlenderBackend):
+    def _discover(self, **kwargs):
+        identity = super()._discover(**kwargs)
+        identity['solver_name'] = 'Blender native soft-body surface spring solver'
+        return identity
+
+    def estimate_resources(self,world,*,source_bytes=0,mesh_vertices=0,mesh_triangles=0):
+        world=admit(world)
+        require(all(type(v) is int and v>=0 for v in (source_bytes,mesh_vertices,mesh_triangles)) and source_bytes<=MAX_INPUT_BYTES,
+                'PHYSICS_RESOURCE_LIMIT','Invalid geometry resource counts')
+        frames=world['frame_range']['end']
+        memory=512*1024**2+source_bytes*8+mesh_vertices*128
+        output=8*1024**2+source_bytes*2+mesh_vertices*frames*128
+        require(memory<=world['budgets']['memory_bytes'] and output<=min(world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']),
+                'PHYSICS_RESOURCE_LIMIT','Native soft-body resource estimate exceeds admission')
+        return ResourceEstimate(source_bytes,mesh_vertices,mesh_triangles,frames,
+            (frames-1)*world['solver']['iterations']*world['solver']['substeps'],memory,output,min(300.,world['budgets']['timeout_seconds']))
+
+    def verify(self,cache,*,expected_world_sha256=None):
+        return verify_cache(cache,expected_world_sha256=expected_world_sha256)
+
+    def validate_cache(self,cache,*,expected_world_sha256=None):
+        return self.verify(cache,expected_world_sha256=expected_world_sha256)
+
+    def inspect(self,cache,frame):
+        return inspect_cache(cache,frame)
+
+    def export_animation(self,cache,destination,*,format='native-transform-json'):
+        raise BackendError('PHYSICS_CAPABILITY_UNAVAILABLE','Soft-body animation export is unsupported; inspect evaluated mesh samples instead')
+
+    def probe(self,*,smoke=False):
+        require(type(smoke) is bool,'PHYSICS_REQUEST','smoke must be boolean')
+        categories={name:FeatureCapability('unsupported',False,'No soft-body adapter implementation for this category') for name in ALL_CATEGORIES}
+        limitations=('Closed connected triangulated surface spring mesh and static sphere/box collider meshes only.',
+                     'No pressure, volume preservation, self-collision, moving colliders, two-way coupling or animation export.',
+                     'Cache verification checks bytes and recorded observations; it is not fresh simulation or authenticated provenance.')
+        identity=None;evidence=None;verified=False
+        try:
+            identity=self._discover();state='experimental'
+            categories['soft-body']=FeatureCapability(state,False,'Executable discovered; native smoke not executed')
+            if smoke:
+                from physics_softbody_example import build_softbody_inputs
+                world,payloads=build_softbody_inputs();prepared=self.prepare(world,payloads)
+                try:
+                    result=self.simulate(prepared)
+                    with tempfile.TemporaryDirectory(prefix='hatch-softbody-smoke-') as name:
+                        cache=Path(name)/'cache';self.bake(result,cache)
+                        evidence=dict(verification=self.verify(cache),metrics=metrics(cache),usage=result.usage)
+                        require(evidence['metrics']['maximum_centered_radius_change']>.02,'PHYSICS_SMOKE_FAILED','No measured deformation')
+                finally:self.cleanup(prepared)
+                state='available';verified=True
+                categories['soft-body']=FeatureCapability(state,True,'Actual deformation and native reopened bake verified')
+        except BackendError as exc:
+            state=_failure_state(exc.report['code']);evidence=exc.report
+            categories['soft-body']=FeatureCapability(state,False,str(exc))
+        return CapabilityReport('blender','1.0.0',state,self.executable,identity.get('application_version') if identity else None,
+            identity.get('executable_sha256') if identity else None,identity is not None,verified,categories,(),(),
+            ('native-softbody-point-cache',) if verified else (),(),hardware(),limitations,evidence)
+
     def validate_scene(self,world):
         value=admit(world)
         return dict(status='configuration-valid',native_scene_verified=False,solver_executed=False,world_sha256=digest(canonical(value)))
@@ -127,14 +189,15 @@ class SoftBodyBackend(BlenderBackend):
             require(set(bundle['inventory'])==set(source_payloads),'PHYSICS_INPUTS','Source mapping differs from native closure')
             vertex_count=sum(len(m['positions']) for m in meshes.values());frames=world['frame_range']['end']
             require(vertex_count*frames*128<world['budgets']['cache_bytes'],'PHYSICS_RESOURCE_LIMIT','Estimated vertex cache exceeds budget')
-            estimate=ResourceEstimate(sum(map(len,source_payloads.values())),vertex_count,sum(len(m['triangles']) for m in meshes.values()),frames,
-                (frames-1)*world['solver']['iterations']*world['solver']['substeps'],512*1024**2,vertex_count*frames*128,min(300.,world['budgets']['timeout_seconds']))
+            estimate=self.estimate_resources(world,source_bytes=sum(map(len,source_payloads.values())),mesh_vertices=vertex_count,mesh_triangles=sum(len(m['triangles']) for m in meshes.values()))
             worker_path=Path(__file__).with_name('physics_softbody_worker.py')
             require(worker_path.is_file() and not worker_path.is_symlink(),'PHYSICS_WORKER_TRUST','Worker must be a regular package file')
             worker=worker_path.read_bytes();_write(root/'worker.py',worker)
             _write(root/'world.json',canonical(world));token=uuid.uuid4().hex
             job=dict(protocol=1,world=world,world_sha256=digest(canonical(world)),meshes=meshes,worker_sha256=digest(worker),mode='simulate')
             _write(root/'softbody-job.json',canonical(job))
+            replay_job=deepcopy(job);replay_job['mode']='reopen'
+            _write(root/'softbody-reopen-job.json',canonical(replay_job))
             fixture=bundle['project']['provenance']['fixture'];inventory=deepcopy(bundle['inventory'])
             prepared=PreparedSimulation(token,root,job['world_sha256'],'blender-soft-body',estimate,inventory,fixture)
             info=root.stat();self._owned[token]=dict(prepared=prepared,prepared_snapshot=deepcopy(prepared),root=root,inode=(info.st_dev,info.st_ino),
@@ -142,9 +205,9 @@ class SoftBodyBackend(BlenderBackend):
             return prepared
         except BaseException:shutil.rmtree(root);raise
 
-    def _command(self,root):
+    def _command(self,root,*,reopen=False):
         return [self.executable,'--background','--factory-startup','--disable-autoexec','--threads','1','--python-exit-code','2',
-            '--python',str(root/'worker.py'),'--',str(root/'softbody-job.json')]
+            '--python',str(root/'worker.py'),'--',str(root/('softbody-reopen-job.json' if reopen else 'softbody-job.json'))]
 
     def simulate(self,prepared,progress=None,cancel_token=None):
         require(isinstance(prepared,PreparedSimulation) and (progress is None or callable(progress)) and
@@ -153,7 +216,8 @@ class SoftBodyBackend(BlenderBackend):
         owner=self._claim_attempt(prepared);root=owner['root'];world=owner['world'];start=time.monotonic();deadline=start+prepared.estimate.timeout_seconds
         with _Reader(root) as reader:
             require(reader.read('world.json')==canonical(world) and digest(reader.read('worker.py'))==owner['worker_hash'] and
-                reader.read('softbody-job.json')==canonical(owner['job']),'PHYSICS_INPUT_CHANGED','Prepared native job changed')
+                reader.read('softbody-job.json')==canonical(owner['job']) and
+                reader.read('softbody-reopen-job.json')==canonical(dict(owner['job'],mode='reopen')),'PHYSICS_INPUT_CHANGED','Prepared native job changed')
         with _Reader(root/'inputs') as reader:
             for path,expected in owner['inventory'].items():
                 payload=reader.read(path);require(digest(payload)==expected['sha256'],'PHYSICS_INPUT_CHANGED','Prepared source changed')
@@ -161,12 +225,10 @@ class SoftBodyBackend(BlenderBackend):
         kwargs=dict(memory_bytes=world['budgets']['memory_bytes'],output_bytes=world['budgets']['temporary_bytes'],cancel_token=cancel_token,progress=progress)
         usage=_run_process(self._command(root),root,timeout=_remaining(deadline),**kwargs)
         _validate_output(root,world)
-        job=deepcopy(owner['job']);job['mode']='reopen';_write(root/'softbody-job.json',canonical(job))
-        replay_usage=_run_process(self._command(root),root,timeout=_remaining(deadline),label='reopen',**kwargs)
+        replay_usage=_run_process(self._command(root,reopen=True),root,timeout=_remaining(deadline),label='reopen',**kwargs)
         replay=parse((root/'reopen-report.json').read_bytes())
         require(replay.get('ok') is True and replay.get('maximum_vertex_error',1)>-1 and replay['maximum_vertex_error']<=1e-5,
             'PHYSICS_CACHE_CORRUPT','Native deformation replay failed')
-        _write(root/'softbody-job.json',canonical(owner['job']))
         files=tuple(_inventory(root));total=sum(f['bytes'] for f in files)
         require(total<=world['budgets']['cache_bytes'],'PHYSICS_RESOURCE_LIMIT','Final native cache exceeds budget')
         usage=dict(elapsed_seconds=time.monotonic()-start,peak_memory_bytes=max(usage['peak_memory_bytes'],replay_usage['peak_memory_bytes']),
@@ -189,11 +251,23 @@ class SoftBodyBackend(BlenderBackend):
             if stage.exists():shutil.rmtree(stage)
 
 
-def _validate_output(root,world):
-    report=parse((root/'simulate-report.json').read_bytes());comp=world['components'][0]
+def _validate_output(root,world,payloads=None):
+    if payloads is None:
+        with _Reader(root) as reader:
+            payloads={name:reader.read(name) for name in ('simulate-report.json','deformation.json')}
+    report=parse(payloads['simulate-report.json']);samples=parse(payloads['deformation.json'])
+    comp=world['components'][0]
     require(report.get('ok') is True and report.get('is_baked') is True and report.get('world_sha256')==digest(canonical(world)) and
         report.get('application_version','').startswith('4.5.3'),'PHYSICS_BAKE_FAILED','Native soft-body bake missing or inconsistent')
-    samples=parse((root/'deformation.json').read_bytes())
+    require(report.get('fps')==world['fps']['numerator'] and report.get('fps_base')==world['fps']['denominator'] and report.get('time_scale')==1 and report.get('disk_cache') is True,
+            'PHYSICS_CACHE_CORRUPT','Native clock or disk cache differs from requested settings')
+    steps=world['solver']['iterations']*world['solver']['substeps']
+    settings=report.get('native_settings',{})
+    expected=dict(mass=comp['mass']/comp['vertex_count'],friction=0.,pull=comp['stiffness'],push=comp['stiffness'],
+                  damping=comp['damping']*50,step_min=steps,step_max=steps,use_auto_step=False,use_goal=bool(comp['pins']))
+    require(set(settings)==set(expected) and all(type(settings[k]) is bool and settings[k]==v if type(v) is bool
+            else type(settings[k]) in (int,float) and math.isfinite(settings[k]) and abs(settings[k]-v)<=1e-5 for k,v in expected.items()),
+            'PHYSICS_CACHE_CORRUPT','Native soft-body properties differ from requested settings')
     require(set(samples)=={'component','samples'} and samples['component']==comp['id'] and len(samples['samples'])==world['frame_range']['end'],
         'PHYSICS_CACHE_CORRUPT','Invalid deformation samples')
     for frame,sample in enumerate(samples['samples']):
@@ -204,33 +278,63 @@ def _validate_output(root,world):
     return samples
 
 
-def verify_cache(root):
+def _load_verified_cache(root,*,expected_world_sha256=None):
     root=Path(root)
     with _Reader(root) as reader:
         manifest=parse(reader.read('cache.json'));validate_manifest(manifest)
         require(manifest.get('schema_version')==1 and manifest.get('kind')=='hatch-softbody-cache','PHYSICS_CACHE_CORRUPT','Unsupported soft-body cache')
+        require(expected_world_sha256 is None or manifest['world_sha256']==expected_world_sha256,'PHYSICS_STALE_CACHE','Cache belongs to another world')
         files=manifest.get('files');require(type(files) is list and len(files)<=256,'PHYSICS_CACHE_CORRUPT','Invalid cache inventory')
         paths=[r['path'] for r in files];_paths(paths)
-        require(len(paths)==len(set(paths)) and set(paths)=={r['path'] for r in _inventory(root) if r['path']!='cache.json'},
+        require(len(paths)==len(set(paths)) and set(paths)==reader.names()-{'cache.json'},
             'PHYSICS_CACHE_CORRUPT','Cache file inventory differs')
+        payloads={};total=0
         for record in files:
-            payload=reader.read(record['path']);require(len(payload)==record['bytes'] and digest(payload)==record['sha256'],'PHYSICS_CACHE_CORRUPT','Changed cache bytes')
-        world=admit(parse(reader.read('world.json')))
+            require(record['bytes']<=MAX_CACHE_BYTES-total,'PHYSICS_RESOURCE_LIMIT','Aggregate cache byte bound exceeded')
+            payload=reader.read(record['path'],record['bytes']);total+=len(payload);payloads[record['path']]=payload;require(len(payload)==record['bytes'] and digest(payload)==record['sha256'],'PHYSICS_CACHE_CORRUPT','Changed cache bytes')
+        world=admit(parse(payloads['world.json']))
+        require(total==manifest['usage']['output_bytes'] and total<=world['budgets']['cache_bytes'],
+                'PHYSICS_CACHE_CORRUPT','Cache usage and byte budgets differ from retained files')
         require(digest(canonical(world))==manifest['world_sha256'],'PHYSICS_CACHE_CORRUPT','Changed world hash')
-    _component_meshes(root/'inputs',world);samples=_validate_output(root,world)
-    return dict(status='hash-and-native-source-verified',sample_count=len(samples['samples']),fixture=manifest['fixture'],review_status='unreviewed')
+        required={'world.json','worker.py','softbody-job.json','softbody-reopen-job.json','softbody.blend','deformation.json',
+                  'simulate-report.json','reopen-report.json','initial.png','impact.png','final.png'}
+        require(required<=set(paths),'PHYSICS_CACHE_CORRUPT','Missing required native soft-body artifacts')
+        require(any(p.endswith('.bphys') and p.startswith('blendcache_') for p in paths),
+                'PHYSICS_CACHE_CORRUPT','Missing native deformation point cache')
+        replay=parse(payloads['reopen-report.json'])
+        require(replay.get('ok') is True and replay.get('operation')=='reopen' and
+                replay.get('world_sha256')==manifest['world_sha256'] and replay.get('is_baked') is True and
+                replay.get('changed_gravity_cache_consumption') is True and
+                type(replay.get('maximum_vertex_error')) in (int,float) and
+                0<=replay['maximum_vertex_error']<=1e-5,
+                'PHYSICS_CACHE_CORRUPT','Missing or inconsistent native replay evidence')
+    with tempfile.TemporaryDirectory(prefix='hatch-softbody-verify-') as name:
+        source_root=Path(name)
+        for path,payload in payloads.items():
+            if path.startswith('inputs/'):_write(source_root/path[7:],payload)
+        bundle,meshes=_component_meshes(source_root,world)
+    require(manifest['fixture']==bundle['project']['provenance']['fixture'],
+            'PHYSICS_CACHE_CORRUPT','Fixture status differs from admitted source')
+    samples=_validate_output(root,world,payloads)
+    initial=samples['samples'][0]['positions'];source=meshes[world['components'][0]['id']]['positions']
+    require(len(initial)==len(source) and max(abs(a-b) for pa,pb in zip(initial,source) for a,b in zip(pa,pb))<=1e-5,
+            'PHYSICS_CACHE_CORRUPT','Initial evaluated vertices differ from admitted geometry')
+    return dict(status='hash-and-native-source-verified',sample_count=len(samples['samples']),fixture=manifest['fixture'],review_status='unreviewed'),samples,world
+
+
+def verify_cache(root,*,expected_world_sha256=None):
+    return _load_verified_cache(root,expected_world_sha256=expected_world_sha256)[0]
 
 
 def inspect_cache(root,frame):
-    report=verify_cache(root)
+    report,samples,_=_load_verified_cache(root)
     require(type(frame) is int and 0<=frame<report['sample_count'],'PHYSICS_TIME_UNSUPPORTED','Frame outside cached interval')
-    return parse((Path(root)/'deformation.json').read_bytes())['samples'][frame]
+    return samples['samples'][frame]
 
 
 def metrics(root):
-    verify_cache(root)
-    samples=parse((Path(root)/'deformation.json').read_bytes())['samples']
-    world=parse((Path(root)/'world.json').read_bytes());comp=world['components'][0]
+    _,data,world=_load_verified_cache(root)
+    samples=data['samples'];comp=world['components'][0]
     initial=samples[0]['positions']
     def center(points):return [sum(p[i] for p in points)/len(points) for i in range(3)]
     def distance(a,b):return math.sqrt(sum((x-y)**2 for x,y in zip(a,b)))

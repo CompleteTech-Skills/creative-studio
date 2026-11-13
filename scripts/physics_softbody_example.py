@@ -46,6 +46,6 @@ def build_softbody_inputs(*,frames=100,stiffness=.7,damping=.2,pins=False):
     world['bodies']=world['bodies'][1:]
     world['components']=[dict(id='ball',category='soft-body',geometry='ball-asset',material='engineering',parent=None,
         pins=[2] if pins else [],vertex_count=len(points),stiffness=stiffness,damping=damping,mass=1.,colliders=['floor'])]
-    world['solver']['required_categories']=['rigid-body','soft-body'];world['solver']['iterations']=10
+    world['solver']['required_categories']=['rigid-body','soft-body'];world['solver']['iterations']=100;world['solver']['fixed_step']['denominator']=2400
     world['budgets']['soft_body_vertices']=4096
     return world,payloads

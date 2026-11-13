@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from physics_backends import BackendError,canonical,parse,digest
-from physics_softbody import SoftBodyBackend,admit,_component_meshes,verify_cache
+from physics_softbody import SoftBodyBackend,admit,_component_meshes,verify_cache,_validate_output
 from physics_softbody_example import build_softbody_inputs
 
 
@@ -24,6 +24,30 @@ class SoftBodyAdmissionTests(unittest.TestCase):
                      lambda w:w['bodies'][0].update(mode='dynamic'),lambda w:w['gravity'].__setitem__(0,float('nan'))):
             changed=deepcopy(world);edit(changed)
             with self.assertRaises(BackendError):admit(changed)
+
+    def test_native_clock_limits_and_integer_pin_normalization(self):
+        world,_=build_softbody_inputs(pins=True)
+        world['components'][0]['pins']=[2.0]
+        self.assertIs(type(admit(world)['components'][0]['pins'][0]),int)
+        world['fps']={'numerator':48000,'denominator':1001}
+        world['solver']['fixed_step']={'numerator':1001,'denominator':4800000}
+        with self.assertRaises(BackendError):admit(world)
+
+    def test_native_report_rejects_false_clock_and_requested_properties(self):
+        world,_=build_softbody_inputs();world['frame_range']['end']=2
+        comp=world['components'][0]
+        report=dict(ok=True,is_baked=True,world_sha256=digest(canonical(world)),application_version='4.5.3 LTS',
+            fps=24,fps_base=1,time_scale=1,disk_cache=True,native_settings=dict(mass=comp['mass']/comp['vertex_count'],
+            friction=0,pull=comp['stiffness'],push=comp['stiffness'],damping=comp['damping']*50,
+            step_min=100,step_max=100,use_auto_step=False,use_goal=False))
+        data=dict(component='ball',samples=[dict(frame=f,positions=[[0,0,0]]*66) for f in range(2)])
+        payloads={'simulate-report.json':canonical(report),'deformation.json':canonical(data)}
+        _validate_output(None,world,payloads)
+        for key,value in [('fps',23),('disk_cache',False),('time_scale',.5)]:
+            altered=deepcopy(report);altered[key]=value
+            with self.assertRaises(BackendError):_validate_output(None,world,dict(payloads,**{'simulate-report.json':canonical(altered)}))
+        altered=deepcopy(report);altered['native_settings']['pull']=.1
+        with self.assertRaises(BackendError):_validate_output(None,world,dict(payloads,**{'simulate-report.json':canonical(altered)}))
 
     def test_actual_component_geometry_and_unchanged_sources(self):
         world,payloads=build_softbody_inputs()
@@ -44,6 +68,22 @@ class SoftBodyAdmissionTests(unittest.TestCase):
             root=Path(name)
             for path,data in payloads.items():(root/path).write_bytes(data)
             with self.assertRaises(BackendError):_component_meshes(root,world)
+
+    def test_softbody_protocol_reports_own_category_and_rejects_export(self):
+        backend=SoftBodyBackend('/missing');world,_=build_softbody_inputs()
+        with patch.object(backend,'_discover',return_value={'id':'blender','application_version':'test','executable_sha256':'0'*64}):
+            report=backend.probe()
+        self.assertEqual(report.categories['soft-body'].state,'experimental')
+        self.assertEqual(report.categories['rigid-body'].state,'unsupported')
+        self.assertFalse(report.headless_smoke_verified)
+        self.assertGreater(backend.estimate_resources(world,mesh_vertices=66).solver_steps,0)
+        with self.assertRaises(BackendError):backend.export_animation('/missing','/missing')
+        with patch('physics_softbody.verify_cache',return_value={'status':'ok'}) as verify:
+            backend.verify('cache',expected_world_sha256='expected')
+            verify.assert_called_once_with('cache',expected_world_sha256='expected')
+        with patch('physics_softbody.inspect_cache',return_value={'frame':2}) as inspect:
+            self.assertEqual(backend.inspect('cache',2),{'frame':2})
+            inspect.assert_called_once_with('cache',2)
 
     def test_mutated_prepared_worker_is_rejected_before_launch(self):
         world,payloads=build_softbody_inputs();backend=SoftBodyBackend('/missing')

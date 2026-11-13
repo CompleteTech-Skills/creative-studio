@@ -16,7 +16,7 @@ def canonical(value):
 def load_job():
     root=Path(__file__).resolve().parent
     path=Path(sys.argv[sys.argv.index('--')+1])
-    if path.name!='softbody-job.json' or path.is_symlink() or path.resolve().parent!=root:
+    if path.name not in ('softbody-job.json','softbody-reopen-job.json') or path.is_symlink() or path.resolve().parent!=root:
         raise ValueError('Expected owned softbody-job.json beside worker')
     if path.stat().st_size>32*1024*1024:raise ValueError('Oversized job')
     def pairs(items):
@@ -33,6 +33,7 @@ def load_job():
     if hashlib.sha256(Path(__file__).read_bytes()).hexdigest()!=job['worker_sha256']:
         raise ValueError('Changed trusted worker')
     if job['mode'] not in ('simulate','reopen'):raise ValueError('Invalid operation')
+    if (path.name=='softbody-reopen-job.json') != (job['mode']=='reopen'):raise ValueError('Job mode and filename disagree')
     return root,job
 
 
@@ -84,8 +85,9 @@ def execute(root,job):
         if component['pins']:
             group=obj.vertex_groups.new(name='source-pins');group.add(component['pins'],1.,'REPLACE')
             settings.vertex_group_goal=group.name;settings.goal_default=0.;settings.goal_min=0.;settings.goal_max=1.;settings.goal_spring=.999;settings.goal_friction=50.
-        cache=modifier.point_cache;cache.frame_start=1;cache.frame_end=count;cache.use_disk_cache=True
+        cache=modifier.point_cache;cache.frame_start=1;cache.frame_end=count
         bpy.ops.wm.save_as_mainfile(filepath=str(root/'softbody.blend'))
+        cache.use_disk_cache=True
         with bpy.context.temp_override(scene=scene,object=obj,active_object=obj,point_cache=cache):
             outcome=bpy.ops.ptcache.bake(bake=True)
         if outcome!={'FINISHED'} or not cache.is_baked:raise ValueError('Native soft-body bake failed')
@@ -118,6 +120,7 @@ def execute(root,job):
         error=max(abs(a-b) for sample in samples for pa,pb in zip(sample['positions'],reference[sample['frame']]['positions']) for a,b in zip(pa,pb))
         if error>1e-5:raise ValueError('Reopened native bake disagrees with retained vertices')
     report={'ok':True,'operation':job['mode'],'world_sha256':job['world_sha256'],'sample_count':count,'vertex_count':len(obj.data.vertices),
+        'fps':scene.render.fps,'fps_base':scene.render.fps_base,'time_scale':settings.speed,'disk_cache':cache.use_disk_cache,
         'application_version':bpy.app.version_string,'application_build':bpy.app.build_hash.decode(),'is_baked':cache.is_baked,'is_outdated':cache.is_outdated,
         'native_settings':{key:getattr(settings,key) for key in ('mass','friction','pull','push','damping','step_min','step_max','use_auto_step','use_goal')},
         'capabilities':{'surface_deformation':True,'volume_preservation':False,'pressure':False,'two_way_rigid_coupling':False}}
