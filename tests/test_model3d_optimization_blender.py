@@ -14,7 +14,7 @@ from PIL import Image
 from rig_models import Mesh,Geometry,TextureImage,load_geometry
 from rig_errors import RigError
 from model3d_optimization import mesh_hash
-from model3d_optimization_blender import decimate_blender,_uv_error,_preflight
+from model3d_optimization_blender import decimate_blender,_uv_error,_preflight,_protected_points
 from rig_contracts import DEFAULT_LIMITS
 
 
@@ -65,6 +65,13 @@ class BlenderOptimizationTests(unittest.TestCase):
                     np.array([[0,1,2],[3,4,5]]),attributes={'TEXCOORD_0':np.concatenate([uv,uv+2])})
         target=copy.deepcopy(source);target.attributes['TEXCOORD_0']=np.concatenate([uv+2,uv])
         self.assertGreater(_uv_error(source,target,distance_tolerance=.001)['max_error'],2.8)
+    def test_unsigned_positions_have_identical_geometric_hard_edges(self):
+        positions=np.array([[10,10,10],[20,10,10],[10,20,11],[10,0,11]],dtype=np.uint32)
+        triangles=np.array([[0,1,2],[1,0,3]])
+        unsigned=Mesh('fold',positions,triangles);floating=copy.deepcopy(unsigned);floating.positions=positions.astype(float)
+        a=_protected_points(unsigned,[],30);b=_protected_points(floating,[],30)
+        self.assertEqual(len(a['edges']),4)
+        np.testing.assert_array_equal(a['edges'],b['edges']);np.testing.assert_array_equal(a['points'],b['points'])
     def test_resource_and_numeric_admission(self):
         g=textured_cube(2)
         with self.assertRaises(RigError):_preflight(g,dict(DEFAULT_LIMITS,memory_bytes=1))

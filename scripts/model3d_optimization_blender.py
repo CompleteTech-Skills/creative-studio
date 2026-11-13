@@ -45,7 +45,7 @@ def _protected_points(mesh,indices,sharp_angle):
     """Protect explicit features and vertices on geometric hard/boundary edges."""
     require(isinstance(indices,(list,tuple)) and len(indices)<=len(mesh.positions) and all(type(i) is int and 0<=i<len(mesh.positions) for i in indices),
             'MODEL3D_DECIMATE_FEATURE','Protected vertices must be native source indices.')
-    points=mesh.positions[mesh.triangles];cross=np.cross(points[:,1]-points[:,0],points[:,2]-points[:,0])
+    points=mesh.positions[mesh.triangles].astype(np.float64);cross=np.cross(points[:,1]-points[:,0],points[:,2]-points[:,0])
     length=np.linalg.norm(cross,axis=1)
     require(np.all(length>1e-14),'MODEL3D_DECIMATE_NUMERIC','Planar decimation needs stable nondegenerate source triangles.')
     normals=cross/length[:,None];edges={}
@@ -68,7 +68,7 @@ def _uv_error(source,target,*,samples=512,pair_budget=2_000_000,distance_toleran
     require('TEXCOORD_0' in target.attributes,'MODEL3D_DECIMATE_UV','Target lost UV0.')
     indices=np.unique(np.linspace(0,len(source.positions)-1,min(samples,len(source.positions)),dtype=int))
     require(len(indices)*len(target.triangles)<=pair_budget,'MODEL3D_DECIMATE_METRIC_BUDGET','UV sample pair budget exceeded.')
-    tri=target.positions[target.triangles];a=tri[:,0];ab=tri[:,1]-a;ac=tri[:,2]-a
+    tri=target.positions[target.triangles].astype(np.float64);a=tri[:,0];ab=tri[:,1]-a;ac=tri[:,2]-a
     d00=np.einsum('ij,ij->i',ab,ab);d01=np.einsum('ij,ij->i',ab,ac);d11=np.einsum('ij,ij->i',ac,ac)
     den=d00*d11-d01*d01
     require(np.all(den>1e-24),'MODEL3D_DECIMATE_NUMERIC','UV metric requires stable target triangles.')
