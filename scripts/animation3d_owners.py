@@ -9,8 +9,13 @@ from rig_errors import require
 
 
 def resolve_property(root, entry):
+    return _resolve_property(entry, verify_native(root, entry['source']))
+
+
+def _resolve_property(entry, admitted):
+    """Internal projection of data already admitted in a private snapshot."""
     target, source = entry['target'], entry['source']
-    kind, native = verify_native(root, source)
+    kind, native = admitted
     domain, prop = target['kind'], target['property']
     owner = entry['owner']
     if owner == 'scene3d':

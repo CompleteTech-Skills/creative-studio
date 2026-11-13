@@ -1,14 +1,10 @@
-"""Exact-byte target registry using the native rig loader as target authority.
-
-The document can describe other owner domains, but this adapter only resolves
-actual rig bones/morphs. Camera/light/material/scene owners are never guessed.
-"""
+"""Exact-byte target registry delegating closure and property authority to native owners."""
 from copy import deepcopy
 from pathlib import Path
 
 from animation3d_contracts import KINDS, target_key, validate_contract
 from animation3d_time import frame_position
-from rig_errors import RigError, require, safe_path, sha256
+from rig_errors import RigError, require, safe_path, decode_json
 
 
 def _load_rig():
@@ -31,11 +27,16 @@ class TargetRegistry:
 
     @classmethod
     def from_rig(cls, root, actor_id):
-        load_rig=_load_rig()
-        root=Path(root).resolve(); rig=load_rig(root)
-        from rig_skeleton import validate_skeleton
-        validate_skeleton(rig.skeleton,rig.manifest['limits'])
-        source=dict(id=rig.manifest['id'],version=rig.manifest['version'],path='rig.json',sha256=sha256(root/'rig.json'),kind='rig')
+        _load_rig()  # Preserve the optional-dependency diagnostic before file IO.
+        from animation3d_assets import verify_native
+        root=Path(root).resolve(); path=safe_path(root,'rig.json',exists=True)
+        require(path.stat().st_size<=16*1024**2,'ANIMATION_LIMIT','Rig manifest exceeds document budget.')
+        payload=path.read_bytes(); manifest=decode_json(payload)
+        require(isinstance(manifest,dict),'ANIMATION_KIND','Rig manifest must be an object.')
+        import hashlib
+        source=dict(id=manifest.get('id'),version=manifest.get('version'),path='rig.json',
+                    sha256=hashlib.sha256(payload).hexdigest(),kind='rig')
+        _,rig=verify_native(root,source)
         entries=[]
         for bone in rig.skeleton['bones']:
             for prop in ('translation','rotation','scale'):
@@ -54,15 +55,10 @@ class TargetRegistry:
             return deepcopy(entry)
         require(entry['source']['kind']=='rig','ANIMATION_OWNER',
             'Rig entry needs a native rig source.',stage='animation3d')
-        load_rig=_load_rig()
         source=entry['source']; path=safe_path(self.root,source['path'],exists=True)
         require(path.name=='rig.json','ANIMATION_OWNER','Rig source must be a native rig.json.',stage='animation3d')
-        require(path.stat().st_size<=32*1024**2 and sha256(path)==source['sha256'],'ANIMATION_HASH','Rig source hash changed.',stage='animation3d')
-        rig=load_rig(path.parent)
-        from rig_skeleton import validate_skeleton
-        validate_skeleton(rig.skeleton,rig.manifest['limits'])
-        require(sha256(path)==source['sha256'] and rig.manifest['id']==source['id'] and rig.manifest['version']==source['version'],
-            'ANIMATION_IDENTITY','Loaded rig identity/version differs from registry.',stage='animation3d')
+        from animation3d_assets import verify_native
+        _,rig=verify_native(self.root,source)
         if target['kind']=='bone':
             require(target['bone_id'] in {b['id'] for b in rig.skeleton['bones']},'ANIMATION_TARGET','Bone is absent from rig.',stage='animation3d')
         elif target['kind']=='morph':

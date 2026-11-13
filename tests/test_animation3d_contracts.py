@@ -322,6 +322,7 @@ class AnimationClosureTests(unittest.TestCase):
         reference=self.write('clip.json',clip); reference['kind']='clip'
         project=values['project']; project['clips']=[reference]
         project['budgets']['max_work_bytes']=1000000
+        project['budgets']['max_memory_bytes']=1000000
         self.write('animation-project.json',project)
         result=load_project(self.root)
         self.assertTrue(result['source_ready'])
@@ -336,6 +337,7 @@ class AnimationClosureTests(unittest.TestCase):
         reference=self.write('clip.json',clip); reference['kind']='clip'
         project=values['project']; project['clips']=[reference]
         project['budgets']['max_work_bytes']=1000000
+        project['budgets']['max_memory_bytes']=1000000
         self.write('animation-project.json',project)
         reference['id']='wrong'; self.write('animation-project.json',project)
         with self.assertRaisesRegex(RigError,'identity'): load_project(self.root)
