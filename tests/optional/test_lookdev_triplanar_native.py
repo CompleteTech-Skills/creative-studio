@@ -36,6 +36,8 @@ class NativeTriplanarTests(unittest.TestCase):
         report=json.loads((output/'report.json').read_text())
         self.assertEqual(len(report['cases']), 9)
         self.assertTrue(report['saved_and_reopened'])
+        self.assertTrue(report['rollback_preserved_caller_nodes_and_images'])
+        self.assertEqual(report['alpha_sha256'],hashlib.sha256((output/'alpha.exr').read_bytes()).hexdigest())
         self.assertEqual(report['source_sha256'], hashlib.sha256(encoded).hexdigest())
         for case in report['cases']:
             self.assertEqual(case['sha256'],hashlib.sha256((output/(case['label']+'.exr')).read_bytes()).hexdigest())
