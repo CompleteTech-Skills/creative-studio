@@ -1,0 +1,279 @@
+{
+  "source": {
+    "schema_version": 1,
+    "kind": "silent-sequence-source",
+    "origin": "blender3d",
+    "identity_sha256": "cd3dabf7ef91f4b9c9ce56a8f449360dc82f4cfa4dd0100a40f8fd29fa80b38c",
+    "resolution": [
+      64,
+      64
+    ],
+    "fps": {
+      "numerator": 4,
+      "denominator": 1
+    },
+    "output": {
+      "format": "png",
+      "bit_depth": 16,
+      "passes": [
+        "combined"
+      ],
+      "alpha": "straight",
+      "color_space": "srgb"
+    },
+    "frames": [
+      {
+        "index": 0,
+        "source_index": 0,
+        "source_path": "frames/000000.png",
+        "path": "frames/000000.png",
+        "sha256": "2710ad3e096f0887585e20b943d9721a47089bf76944208a06c03cfd66c0ff10",
+        "bytes": 1262
+      }
+    ]
+  },
+  "provenance": {
+    "request": {
+      "schema_version": 1,
+      "kind": "render3d-request",
+      "id": "png16",
+      "project": {
+        "id": "fixture",
+        "version": "1.0.0"
+      },
+      "scene": {
+        "id": "fixture",
+        "version": "1.0.0"
+      },
+      "shot": {
+        "id": "motion",
+        "version": "1.0.0"
+      },
+      "mode": "3d",
+      "snapshot": {
+        "path": "snapshot.json",
+        "bytes": 1733,
+        "sha256": "20e172024463cc2ed4fcccfdd1e7a218c4330b099e36481cc13d1dff5721dde4"
+      },
+      "fps": {
+        "numerator": 4,
+        "denominator": 1
+      },
+      "frame_range": {
+        "start": 0,
+        "end": 1
+      },
+      "source_start": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "playback_rate": {
+        "numerator": 1,
+        "denominator": 1
+      },
+      "camera": "front",
+      "priority": 0,
+      "max_attempts": 1,
+      "cache_policy": "verify-reuse",
+      "destination": {
+        "path": "png16",
+        "owner_token": "backend-recovery-owner"
+      },
+      "settings": {
+        "engine": "cycles",
+        "device_policy": "cpu",
+        "device": "cpu",
+        "allow_cpu_fallback": false,
+        "resolution": [
+          64,
+          64
+        ],
+        "samples": 2,
+        "seed": 4,
+        "denoise": false,
+        "output": {
+          "format": "png",
+          "bit_depth": 16,
+          "passes": [
+            "combined"
+          ],
+          "alpha": "straight",
+          "color_space": "srgb"
+        },
+        "exposure": 0,
+        "view_transform": "standard",
+        "resources": {
+          "memory_bytes": 2147483648,
+          "storage_bytes": 134217728,
+          "timeout_seconds": 120,
+          "workers": 1,
+          "max_frames": 10
+        }
+      }
+    },
+    "result": {
+      "schema_version": 1,
+      "kind": "render3d-result",
+      "job": "png16",
+      "request_sha256": "ad6b5d122a001836b5c5f79ec384660b809a0a9d069f66902daf5a401fe38d39",
+      "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "status": "complete",
+      "requested_frames": [
+        0
+      ],
+      "successful": [
+        0
+      ],
+      "failed": [],
+      "skipped": [],
+      "reused": [],
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.png",
+            "sha256": "2710ad3e096f0887585e20b943d9721a47089bf76944208a06c03cfd66c0ff10",
+            "bytes": 1262
+          },
+          "format": "png",
+          "bit_depth": 16,
+          "pass_name": "combined",
+          "resolution": [
+            64,
+            64
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "usage": {
+        "elapsed_seconds": 0.810839762998512,
+        "peak_memory_bytes": 339492864,
+        "output_bytes": 31074,
+        "measurement": "measured"
+      },
+      "logs": [
+        {
+          "path": "blender.log",
+          "sha256": "a212eb19cd4331710caa9bb60d525221ee712f908ea5708c1cdcf78754bf2e4b",
+          "bytes": 5418
+        }
+      ],
+      "manifest": {
+        "path": "manifest.json",
+        "sha256": "fa62df35195e853830a48938509424811f2f18701049a710c4cfef22cfe54795",
+        "bytes": 2952
+      },
+      "verification": {
+        "status": "passed",
+        "verifier": {
+          "id": "render3d-independent-pixels",
+          "version": "1.0.0",
+          "code_sha256": "0903f4ff8555d08e0851d082724944cfd1eade62cf94a487d2fb989595246097",
+          "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+        },
+        "evidence": {
+          "path": "verification.json",
+          "sha256": "0d61917e1ea4692b9f2109ca73b329b4a16086a5b0ed124ea32e51fec6cc61b0",
+          "bytes": 2263
+        }
+      }
+    },
+    "expected_backend": {
+      "id": "blender",
+      "adapter_version": "1.0.0",
+      "application_version": "Blender 4.5.3 LTS",
+      "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+      "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+      "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+      "engine": "cycles",
+      "device": "cpu"
+    },
+    "verification": {
+      "schema_version": 1,
+      "kind": "render3d-verification",
+      "status": "passed",
+      "verifier": {
+        "id": "render3d-independent-pixels",
+        "version": "1.0.0",
+        "code_sha256": "60d2b870206734319637c30a6be176404c92042a3093da5bc80ef2a0f9fba357",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+      },
+      "request_sha256": "ad6b5d122a001836b5c5f79ec384660b809a0a9d069f66902daf5a401fe38d39",
+      "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+      "settings_sha256": "b64f321be0806b4680990f0a0aaf3600ae3bed1e2e74406c9c6d3b4582635014",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "path": "frames/000000.png",
+          "presentation_time": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "source_time": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "bytes": 1262,
+          "sha256": "2710ad3e096f0887585e20b943d9721a47089bf76944208a06c03cfd66c0ff10",
+          "channels": {
+            "R": {
+              "type": "uint16",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "G": {
+              "type": "uint16",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "uint16",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "A": {
+              "type": "uint16",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          },
+          "decoder": "pypng",
+          "decoder_version": "0.20220715.0",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 16,
+          "format": "png",
+          "pass_name": "combined",
+          "requested_color_space": "srgb",
+          "requested_alpha": "straight"
+        }
+      ],
+      "decoded_frames": 1,
+      "decoded_images": 1,
+      "output_bytes": 1262,
+      "limitation": "Decoded integrity and input binding do not establish semantic scene correctness or visual approval."
+    }
+  }
+}
