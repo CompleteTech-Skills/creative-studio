@@ -393,6 +393,9 @@ class BlenderBackend:
                 job=dict(schema_version=1,mode='render',settings=settings,scene=scene,output='../frames',report='../worker-report.json')
                 if cinematic_plan is not None:
                     job['cinematics']=cinematic_plan
+                    # The canonical capability reader requires an existing root.
+                    # Create this owned directory before checking relative names.
+                    (stage/'cinematics').mkdir()
                     pending=helper_bytes
                     for name,payload in cinematic_payloads.items():
                         _check_storage(stage,resources['storage_bytes'],reserve=pending+snapshot['total_bytes']+_output_storage_estimate(request))
