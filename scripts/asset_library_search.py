@@ -81,8 +81,8 @@ def parse_query(query):
     reasons = []
     kinds = {'characters':'character','character':'character','materials':'material',
              'material':'material','textures':'texture','texture':'texture',
-             'cameras':'camera','camera':'camera','lights':'light','lighting':'light',
-             'environments':'environment','environment':'environment','props':'prop'}
+             'cameras':'camera','camera':'camera','lights':'light','light':'light','lighting':'light',
+             'environments':'environment','environment':'environment','props':'prop','prop':'prop'}
     tokens = re.findall(r'[\w]+', normalized, re.UNICODE)
     found = sorted({kinds[t] for t in tokens if t in kinds})
     if len(found) == 1:
