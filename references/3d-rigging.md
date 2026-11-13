@@ -341,3 +341,10 @@ silently pinned. These numerical checks do not establish visual or anatomical
 approval. Likewise, a neutral-only or zero-effect expression catalog does not
 admit states requiring an expressive face: a nonzero authored morph deformation
 or a changed weighted-bone transform must exist.
+
+Morph retargeting preserves a matching source/target mesh ID before considering a
+unique name match. Use `mesh-id::morph-name` keys and values in `morph_mapping` to
+map independently authored controls when mesh IDs differ. Unqualified names are
+accepted only when they select one target; ambiguous matches and multiple source
+controls writing the same target fail with `RIG_RETARGET_MORPH`. Missing optional
+unmapped target morphs remain omitted rather than broadcasting to unrelated faces.

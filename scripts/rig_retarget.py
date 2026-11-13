@@ -66,11 +66,29 @@ def retarget_pose(source, target, pose: dict, profile: dict) -> dict:
             values['translation'] = (np.asarray(bone['rest']['translation'])+delta*scale).tolist()
         if 'scale' in incoming:
             values['scale'] = (np.asarray(bone['rest']['scale'])*np.asarray(incoming['scale'])/src_bones[original]['rest']['scale']).tolist()
-    for weights in pose.get('morphs', {}).values():
+    assigned_morphs = set()
+    for source_mesh, weights in pose.get('morphs', {}).items():
         for name, amount in weights.items():
-            mapped = profile['morph_mapping'].get(name, name)
-            for mesh in target.geometry.meshes:
-                if mapped in mesh.morphs:result['morphs'].setdefault(mesh.id, {})[mapped] = amount
+            qualified = source_mesh+'::'+name
+            mapped = profile['morph_mapping'].get(qualified, profile['morph_mapping'].get(name))
+            if mapped is not None:
+                qualifier, morph = mapped.split('::', 1) if '::' in mapped else (None, mapped)
+                matches = [mesh for mesh in target.geometry.meshes if morph in mesh.morphs
+                           and (qualifier is None or mesh.id == qualifier)]
+                require(matches, 'RIG_RETARGET_MORPH', 'Explicit morph mapping has no target.', asset=mapped)
+            else:
+                morph = name
+                matches = [mesh for mesh in target.geometry.meshes if morph in mesh.morphs]
+                same_mesh = [mesh for mesh in matches if mesh.id == source_mesh]
+                if same_mesh:matches = same_mesh
+            require(len(matches) <= 1, 'RIG_RETARGET_MORPH',
+                    'Morph target is ambiguous; use a mesh::morph mapping.', asset=qualified)
+            for mesh in matches:
+                key = (mesh.id, morph)
+                require(key not in assigned_morphs, 'RIG_RETARGET_MORPH',
+                        'Multiple source morphs cannot overwrite one target control.', asset=mesh.id+'::'+morph)
+                assigned_morphs.add(key)
+                result['morphs'].setdefault(mesh.id, {})[morph] = amount
     return apply_constraints(target.skeleton, result, target.manifest['controllers']['constraints'])[0]
 
 
