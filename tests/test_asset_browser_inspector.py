@@ -30,6 +30,8 @@ class InspectorBrowserTests(unittest.TestCase):
             expect(page.locator('#model-status')).to_contain_text('Actual verified GLB')
             checkbox=page.get_by_role('checkbox',name='Show mesh strip',exact=True)
             expect(checkbox).to_be_checked()
+            # The existing single-sided fixture faces -Z (its authored winding).
+            page.get_by_label('Camera preset',exact=True).select_option('back')
             canvas=page.locator('#viewport canvas')
             page.evaluate('assetBrowser.renderer.render(assetBrowser.scene,assetBrowser.camera)')
             before=Image.open(io.BytesIO(canvas.screenshot())).convert('RGB')
@@ -37,7 +39,15 @@ class InspectorBrowserTests(unittest.TestCase):
             self.assertFalse(page.evaluate("assetBrowser.model.getObjectByName('strip').visible"))
             page.evaluate('assetBrowser.renderer.render(assetBrowser.scene,assetBrowser.camera)')
             hidden=Image.open(io.BytesIO(canvas.screenshot())).convert('RGB')
-            self.assertIsNotNone(ImageChops.difference(before,hidden).getbbox())
+            difference=ImageChops.difference(before,hidden)
+            evidence=os.environ.get('HATCH_ASSET_BROWSER_INSPECTOR_EVIDENCE')
+            if evidence:
+                from pathlib import Path
+                import json
+                output=Path(evidence);output.mkdir(parents=True,exist_ok=True)
+                before.save(output/'visible.png');hidden.save(output/'hidden.png');difference.save(output/'difference.png')
+                (output/'visibility.json').write_text(json.dumps(dict(pixel_difference_box=difference.getbbox(),camera=page.evaluate('assetBrowser.camera.position.toArray()'),visible_meshes=page.evaluate("assetBrowser.model.children.map(o=>({name:o.name,type:o.type,visible:o.visible}))"),renderer=page.evaluate('assetBrowser.renderer.info.render')),indent=2)+'\n')
+            self.assertIsNotNone(difference.getbbox())
             checkbox.check()
             page.get_by_role('checkbox',name='Bounding box',exact=True).check()
             page.get_by_role('checkbox',name='Coordinate axes',exact=True).check()
