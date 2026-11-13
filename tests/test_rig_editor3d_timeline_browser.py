@@ -83,6 +83,7 @@ class TimelineBrowserTests(unittest.TestCase):
                         page.get_by_label('translation X',exact=True).fill('11');page.get_by_label('translation X',exact=True).press('Tab')
                         page.wait_for_function("()=>window.hatchEditor.errors.some(text=>text.includes('selected timeline or evaluated preview changed'))&&window.hatchEditor.objects.get('mesh').position.x===9")
                         page.evaluate('()=>{window.__removeTimelineRace();delete window.__removeTimelineRace;}')
+                        page.wait_for_function("()=>!document.querySelector('[aria-label=\"translation X\"]').disabled")
                         self.assertEqual(repo.snapshot()['revision'],baseline+2)
                         self.assertEqual(repo.snapshot()['documents'][selected['path']]['tracks'],tracks)
                         with page.expect_response('**/api/timeline/curve'):
