@@ -9,7 +9,7 @@ from rig_skeleton import neutral_pose,rotate_bone,evaluate_fk
 from rig_math import decompose
 from rig_math import axis_angle,qangle
 from rig_facial import apply_expressions
-from rig_retarget import build_retarget_profile,retarget_animation
+from rig_retarget import build_retarget_profile,retarget_animation,retarget_pose
 from rig_skinning import evaluate_deformation
 from rig_errors import RigError
 
@@ -88,3 +88,24 @@ class RigAnimationTests(unittest.TestCase):
         self.assertLess(report['residual_m'],1e-8)
         self.assertAlmostEqual(report['orientation_residual_rad'],1.)
         self.assertFalse(report['converged'])
+
+    def test_retarget_keeps_independent_same_named_morphs_on_their_meshes(self):
+        source=self.rig;target=fixture(self.temp.name,name='morph-target')
+        for rig in (source,target):
+            other=deepcopy(rig.geometry.meshes[0]);other.id='strip-right'
+            rig.geometry.meshes.append(other)
+        pose=neutral_pose(source.skeleton)
+        pose['morphs']={'strip':{'blink':.2},'strip-right':{'blink':.8}}
+        profile=build_retarget_profile(source,target)
+        result=retarget_pose(source,target,pose,profile)
+        self.assertEqual(result['morphs'],pose['morphs'])
+        profile['morph_mapping']={'strip::blink':'strip-right::blink','strip-right::blink':'strip::blink'}
+        swapped=retarget_pose(source,target,pose,profile)
+        self.assertEqual(swapped['morphs'],{'strip':{'blink':.8},'strip-right':{'blink':.2}})
+        for mapping in ({'blink':'blink'},
+                        {'strip::blink':'strip::blink','strip-right::blink':'strip::blink'},
+                        {'strip::blink':'missing::blink'}):
+            with self.subTest(mapping=mapping):
+                profile['morph_mapping']=mapping
+                with self.assertRaises(RigError) as caught:retarget_pose(source,target,pose,profile)
+                self.assertEqual(caught.exception.report['code'],'RIG_RETARGET_MORPH')
