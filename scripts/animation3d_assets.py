@@ -260,7 +260,10 @@ def _validate_bindings(project, documents, native, snapshot_root):
                 require(frame_position(node) <= budgets['max_frames'], 'ANIMATION_LIMIT',
                         'Exact frame/subframe coordinate exceeds project frame budget.')
             for name, value in node.items():
-                if type(value) is int and (name == 'frame' or name.endswith(('_frame', '_frames')) or name == 'end_frame_exclusive'):
+                # Nodes have already passed their closed schema: compare every
+                # declared clock value, including JSON Schema integer-valued
+                # floats. Exact Python type checks would silently skip them.
+                if name == 'frame' or name.endswith(('_frame', '_frames')) or name == 'end_frame_exclusive':
                     require(value <= budgets['max_frames'], 'ANIMATION_LIMIT', 'Nested timeline coordinate exceeds project frame budget.')
             if 'frame' in node and 'transfer_duration_frames' in node:
                 require(node['frame'] + node['transfer_duration_frames'] <= budgets['max_frames'],

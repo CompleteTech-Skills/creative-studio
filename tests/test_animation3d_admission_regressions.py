@@ -381,3 +381,49 @@ class ReleaseAdmissionRegressions(unittest.TestCase):
         finally:
             if process.is_alive():process.terminate();process.join(5)
             receive.close()
+
+    def _set_numeric_budget_case(self, family, value):
+        self.scene['markers']=[];self.scene['interactions']=[];self.actor['constraints']=[];self.layer['placements']=[]
+        self.f.project['state_machines']=[];self.f.project['sequences']=[]
+        if family=='marker':
+            self.scene['markers']=[dict(id='boundary',name='boundary',frame=value,type='marker')]
+        elif family=='constraint-end':
+            constraint=self.constraint('bounded');constraint.update(start_frame=0,end_frame=value)
+            self.actor['constraints']=[constraint]
+        elif family in ('interaction-end','ownership-duration'):
+            interaction=deepcopy(self.f.values['interaction'])
+            interaction.update(participants=[dict(actor_id='actor',role='participant')],end_frame=value)
+            if family=='ownership-duration':
+                interaction['ownership_changes']=[dict(frame=0,next_owner='actor',world_pose_policy='blend_to_receiver',transfer_duration_frames=value)]
+            self.scene['interactions']=[interaction]
+        elif family=='transition-duration':
+            machine=deepcopy(self.f.values['state-machine']);machine['states'][0]['clip']=self.f.project['clips'][0]
+            machine['parameters']=[dict(name='go',type='bool',default=False)]
+            machine['transitions']=[dict(id='loop',from_state='idle',to_state='idle',conditions=[dict(parameter='go',operator='eq',value=True)],
+                condition_mode='all',priority=0,duration_frames=value,blend_curve='linear',interruption_policy='none')]
+            self.f.project['state_machines']=[self.f.put('bounded-machine.json',machine,'state-machine')]
+        elif family=='sequence-duration':
+            sequence=deepcopy(self.f.values['sequence']);sequence['total_frames']=value;sequence['shots'][0]['duration_frames']=value
+            self.f.project['sequences']=[self.f.put('bounded-sequence.json',sequence,'sequence')]
+        elif family=='placement-end':
+            placement=self.placement();placement.update(start_frame=value-24,duration_frames=24.0)
+            self.layer['placements']=[placement]
+        elif family=='placement-offset':
+            placement=self.placement();placement['time_offset_frames']=value;self.layer['placements']=[placement]
+        else:raise AssertionError(family)
+
+    def test_integer_and_whole_float_frame_budget_boundaries_match(self):
+        for family in ('marker','constraint-end','interaction-end','ownership-duration','transition-duration','sequence-duration','placement-end','placement-offset'):
+            for encoding in (int,float):
+                self.f.project['budgets']['max_frames']=encoding(100)
+                for boundary,accepted in ((100,True),(101,False)):
+                    self._set_numeric_budget_case(family,encoding(boundary))
+                    with self.subTest(family=family,encoding=encoding.__name__,boundary=boundary):
+                        if accepted:self.assertTrue(self.check()['source_ready'])
+                        else:self.assert_code('ANIMATION_LIMIT')
+
+    def test_boolean_and_fractional_interval_encodings_remain_rejected(self):
+        for family in ('marker','constraint-end','interaction-end','ownership-duration','transition-duration','sequence-duration','placement-offset'):
+            for value in (True,100.5):
+                self._set_numeric_budget_case(family,value)
+                with self.subTest(family=family,value=value):self.assert_code('ANIMATION_SCHEMA')
