@@ -241,7 +241,14 @@ class PoseInspectorTests(unittest.TestCase):
                 self.assertIn('topology',page.evaluate('(value)=>{try{window.hatchEditor.preview(value);return "accepted";}catch(error){return error.message;}}',damaged))
                 self.assertEqual(observed,world_vertices())
                 page.evaluate('window.hatchEditor.clearPreview()')
-                posed=[node['id'] for node in saved['scene']['nodes'] if node.get('metadata',{}).get('source_component') is not None and node['id'].startswith('actor')]
+                native_nodes={node['id']:node for node in saved['scene']['nodes']}
+                def belongs_to_actor(node):
+                    identifier=node['id']
+                    while identifier is not None:
+                        if identifier=='actor':return True
+                        identifier=native_nodes[identifier]['parent']
+                    return False
+                posed=[node['id'] for node in saved['scene']['nodes'] if node.get('metadata',{}).get('source_component') is not None and belongs_to_actor(node)]
                 self.assertTrue(posed)
                 for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
                 reopened=EditorRepository(self.repository.root)
