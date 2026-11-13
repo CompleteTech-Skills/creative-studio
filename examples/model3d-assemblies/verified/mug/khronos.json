@@ -1,5 +1,5 @@
 {
-  "asset_sha256": "16991c80c02ac96e5b83d44350d4d165be1120872ea028b7b3eb6538a02d306d",
+  "asset_sha256": "8da9a1fcf056c501dfb3c50bf4e35d6e6ffcf145802a4b01c690b2123b0531f8",
   "info": {
     "animationCount": 0,
     "drawCallCount": 3,
@@ -35,7 +35,7 @@
   "mimeType": "model/gltf-binary",
   "ok": true,
   "uri": "model.glb",
-  "validatedAt": "2026-11-13T12:35:45.407Z",
+  "validatedAt": "2026-11-13T12:39:58.327Z",
   "validator": "2.0.0-dev.3.10",
   "validatorVersion": "2.0.0-dev.3.10"
 }

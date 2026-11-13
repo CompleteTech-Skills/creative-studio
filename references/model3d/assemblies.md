@@ -130,12 +130,12 @@ acceptance can be claimed. No network, model download or paid call is made.
 
 ## Executed evidence
 
-The complete Model3D test selection passed 184 tests on the candidate before the
-final allocation-order-only validator hardening. The final assembly selection
-passed 11 tests after that change; an independent core reviewer also rechecked
-its affected validation/revision cases. The executable demo produced 28 real
-GLB/glTF exports, each reimported and numerically checked. All 28 additionally
-passed Khronos validator 2.0.0-dev.3.10 with zero errors and zero warnings.
+The complete Model3D selection passed 186 tests on the corrected mesh-foundation
+base. The focused assembly selection independently passed 11 tests. The
+executable demo produced 28 real GLB/glTF exports on that same base, each
+reimported and numerically checked. All 28 additionally passed Khronos validator
+2.0.0-dev.3.10 with zero errors and zero warnings; 14 unchanged artifacts reused
+existing validator receipts authenticated by their exact byte hashes.
 Three actual GLB fixtures and their exact source/receipts are retained under
 `examples/model3d-assemblies/verified/`. Source module hashes and evidence scope
 are recorded in `examples/model3d-assemblies/evidence.json`. Native engine,

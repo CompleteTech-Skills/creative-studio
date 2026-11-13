@@ -16,7 +16,7 @@ python scripts/model3d_assemblies.py demo --destination output/new-assemblies-de
 The demo executes all fourteen recipes in both GLB/glTF, reimports each real
 artifact, checks part/world geometry and material assignments, and writes exact
 hashes in its `acceptance.json`. The executed demonstration is retained at
-`/home/complete/.cache/hatch-coordination-20261112/model-evidence/assemblies45-demo`.
+`/home/complete/.cache/hatch-coordination-20261112/model-evidence/assemblies45-demo-0226`.
 All 28 artifacts passed official Khronos validator `2.0.0-dev.3.10` with zero
 errors and zero warnings. `evidence.json` pins generator module bytes for those
 artifacts. Independent pygltflib tests additionally decode real accessors and
