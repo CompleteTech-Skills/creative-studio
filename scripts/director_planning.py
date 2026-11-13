@@ -25,7 +25,7 @@ from jsonschema import Draft202012Validator, ValidationError
 
 from atomic_publish import _rename_no_replace
 from director_contracts import _read_artifact, validate_method_request, validate_method_result
-from director_schema import schemas
+from director_schema import schemas, ID, TEXT
 from rig_errors import RigError, decode_json, job_lock, object_hash, require
 
 MAX_RESPONSE = 2 * 1024**2
@@ -100,8 +100,8 @@ def _endpoint(config):
     if not (type(config.timeout_seconds) in (int, float) and 0 < config.timeout_seconds <= 60 and
             type(config.max_output_tokens) is int and 1 <= config.max_output_tokens <= 16384):
         _fail('blocked_capability', 'LIMIT', 'Invalid provider timeout or output limit.')
-    if not config.provider_id or not config.model:
-        _fail('blocked_capability', 'CONFIGURATION', 'An explicit provider and model are required.')
+    if not Draft202012Validator(ID).is_valid(config.provider_id) or not Draft202012Validator(TEXT).is_valid(config.model):
+        _fail('blocked_capability', 'CONFIGURATION', 'An explicit valid provider and model are required.')
     if local and not config.fixture_transport:
         # Local models are possible; caller must explicitly say this is not model proof
         # unless a native model identity verifier is supplied in a future adapter.
@@ -275,8 +275,13 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
                         _fail('failed', 'USAGE', 'Provider usage must be an object.')
                     for field in ('input_tokens', 'output_tokens'):
                         observed = usage.get(field)
-                        if type(observed) is int and observed >= 0:
-                            counts[field] = (counts[field] or 0) + observed
+                        if observed is not None and (type(observed) is not int or not 0 <= observed <= 1e15):
+                            _fail('failed', 'USAGE', 'Provider usage is outside the native measurement bounds.')
+                        if type(observed) is int:
+                            total = (counts[field] or 0) + observed
+                            if total > 1e15:
+                                _fail('failed', 'USAGE', 'Aggregate usage exceeds native measurement bounds.')
+                            counts[field] = total
                         else:
                             complete_usage[field] = False
                     pending_usage = False
@@ -294,11 +299,14 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
                             _fail('failed', 'SCHEMA', 'Provider output failed schema/semantic validation; repair allowance exhausted.')
                         user['validation_failure'] = 'Previous response failed schema/semantic validation. Preserve original constraints and return valid JSON.'
                         continue
+                    reported_model = response.get('model')
+                    if reported_model is not None and not Draft202012Validator(TEXT).is_valid(reported_model):
+                        _fail('failed', 'MODEL', 'Provider model identity has invalid metadata.')
                     output_ref = _ref(_write(stage, 'content.json', content), stage, data['output_schema_id'])
                     output_ref['fixture'] = configuration.fixture_transport
                     artifacts.append(output_ref)
                     value = {'content': output_ref, 'assumptions': [], 'provider': configuration.provider_id,
-                             'model': response.get('model') if isinstance(response.get('model'), str) else None,
+                             'model': reported_model,
                              'template_sha256': spec['sha256'], 'raw_response': response_ref, 'repair_history': repairs}
                     status = 'succeeded'
                     break
