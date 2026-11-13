@@ -4,6 +4,8 @@ from copy import deepcopy
 import hashlib
 import os
 import signal
+import subprocess
+import json
 import time
 import sys
 import tempfile
@@ -94,6 +96,58 @@ class Supervision(unittest.TestCase):
                 self.run_child("raise RuntimeError('worker failure fixture')",root)
             self.assertEqual(caught.exception.report['category'],'worker-crash')
             self.assertIn('worker failure fixture',(root/'blender.log').read_text())
+
+
+@unittest.skipUnless(hasattr(os,'mkfifo'),'FIFO boundary tests require POSIX')
+class SnapshotMetadataAdmission(unittest.TestCase):
+    def run_boundary_child(self,root,second_read=False):
+        code = """
+import sys,json,os
+from pathlib import Path
+from unittest.mock import patch
+from render3d_blender import BlenderBackend
+import render3d_blender as module
+from render3d_contracts import Render3DError
+root=Path(sys.argv[1]);spec=json.loads((root/'request.json').read_text())
+backend=object.__new__(BlenderBackend)
+original=module.create_snapshot
+def substituted(*args,**kwargs):
+    result=original(*args,**kwargs)
+    metadata=root/'snapshot/snapshot.json';metadata.unlink();os.mkfifo(metadata)
+    return result
+try:
+    with patch.object(module,'create_snapshot',substituted if sys.argv[2]=='second' else original):
+        backend.render_frames(spec,root/'snapshot',root/'output')
+except Render3DError as error:
+    assert error.report['category'] in ('missing-asset','stale-asset','invalid-input'),error.report
+    assert not (root/'output').exists()
+    print('typed rejection',error.report['category'])
+else:raise AssertionError('Nonregular metadata must be rejected before worker execution')
+"""
+        environment=dict(os.environ,PYTHONPATH=str(ROOT/'scripts'))
+        result=subprocess.run([sys.executable,'-c',code,str(root),'second' if second_read else 'initial'],
+                              capture_output=True,text=True,timeout=20,env=environment)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('typed rejection',result.stdout)
+
+    def test_initial_fifo_snapshot_is_bounded_public_admission(self):
+        from test_render3d_contracts import request
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'snapshot').mkdir();os.mkfifo(root/'snapshot/snapshot.json')
+            (root/'request.json').write_text(json.dumps(request()))
+            self.run_boundary_child(root)
+
+    def test_fifo_substitution_after_capture_rejects_without_publication(self):
+        from rig_test_helpers import fixture
+        from render3d_snapshot import create_snapshot,NativeRigAdapter
+        from test_render3d_contracts import request,file
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'native').mkdir()
+            rig=fixture(root/'native',animated=False)
+            create_snapshot(rig.root,root/'snapshot',NativeRigAdapter())
+            spec=request();spec['snapshot']=file(payload=(root/'snapshot/snapshot.json').read_bytes())
+            (root/'request.json').write_text(json.dumps(spec))
+            self.run_boundary_child(root,second_read=True)
 
 
 @unittest.skipUnless(os.environ.get('HATCH_RENDER3D_REAL_TESTS') == '1',
