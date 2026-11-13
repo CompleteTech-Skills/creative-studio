@@ -11,8 +11,10 @@ jobs:
     name: Existing 2D compatibility
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-delivery.txt
@@ -20,7 +22,7 @@ jobs:
       - run: python scripts/test_rig_gate.py compatibility 2>&1 | tee rig-compatibility-2d.log
         env:
           HATCH_DECOMPOSITION_BROWSER_TEST: '1'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: rig-compatibility-2d-test-log
@@ -29,15 +31,17 @@ jobs:
     name: 3D contracts and mathematical expectations
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: python scripts/generate_schemas.py --check
       - run: python scripts/generate_rig_templates.py --check
       - run: python scripts/test_rig_gate.py schema-math 2>&1 | tee rig-schema-math.log
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: rig-schema-math-test-log
@@ -46,14 +50,16 @@ jobs:
     name: Rig generation and real skinning
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: python scripts/test_rig_gate.py skinning 2>&1 | tee rig-rig-generation-skinning.log
       - run: python scripts/rig.py demo --archetype robotic --destination /tmp/rig-mechanical
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: rig-rig-generation-skinning-test-log
@@ -62,13 +68,15 @@ jobs:
     name: Animation, constraints, contacts and IK
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: python scripts/test_rig_gate.py animation-ik 2>&1 | tee rig-animation-ik.log
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: rig-animation-ik-test-log
@@ -77,11 +85,13 @@ jobs:
     name: Import/export and Khronos interoperability
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22.16.0'
       - run: python -m pip install -r requirements-rig-test.txt
@@ -89,7 +99,7 @@ jobs:
       - run: python scripts/test_rig_gate.py interoperability 2>&1 | tee rig-interchange.log
         env:
           HATCH_RIG_INTEROP_TEST: '1'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: rig-interchange-test-log
@@ -98,16 +108,18 @@ jobs:
     name: Blender headless save/reopen and deformation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22.16.0'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: npm ci --ignore-scripts --prefix tools/rig
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         id: blender-cache
         with:
           path: /tmp/blender-4.5.3-linux-x64
@@ -122,7 +134,7 @@ jobs:
       - run: python scripts/verify_rig_demos.py --generate --destination /tmp/rig-blender-gate --blender
       - name: Actual asset import and generation acceptance
         run: PYTHONPATH=scripts:tests python -m unittest tests/test_rig_asset_import.py -v 2>&1 | tee asset-import.log
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: blender-evidence
@@ -134,14 +146,16 @@ jobs:
     # Playwright 1.55.0 supports Ubuntu 24.04; ubuntu-latest now selects 26.04.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: python -m playwright install --with-deps chromium
       - run: python scripts/verify_rig_demos.py --generate --destination /tmp/rig-browser-gate --browser
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: browser-evidence
@@ -152,17 +166,19 @@ jobs:
     name: Three-character and mechanical demonstrations
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22.16.0'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: npm ci --ignore-scripts --prefix tools/rig
       - run: python scripts/verify_rig_demos.py --generate --destination /tmp/rig-demo-gate --validator --render
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: demo-evidence
@@ -173,14 +189,16 @@ jobs:
     name: Operations, local API and archive restoration
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: python scripts/test_rig_gate.py operations-archive 2>&1 | tee rig-artifact-integrity.log
       - run: python scripts/verify_rig_demos.py --destination examples/rig-3d --archives
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: rig-artifact-integrity-test-log
