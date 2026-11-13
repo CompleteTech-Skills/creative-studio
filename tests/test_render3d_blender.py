@@ -205,6 +205,8 @@ class NativeRendering(unittest.TestCase):
             backend=BlenderBackend()
             result=backend.render_frames(request,root/'snapshot',root/'render')
             self.assertEqual(result['verification']['status'],'passed')
+            self.assertEqual(result['usage']['output_bytes'],
+                sum(p.stat().st_size for p in (root/'render').rglob('*') if p.is_file()))
             worker=read_json(root/'render/worker-report.json')
             self.assertGreater(worker['armatures'],0)
             first=worker['samples'][0]['world_vertices'];last=worker['samples'][-1]['world_vertices']
@@ -221,6 +223,8 @@ class NativeRendering(unittest.TestCase):
                     variant['destination']['path']=name
                     output=backend.render_frames(variant,root/'snapshot',root/name)
                     self.assertEqual(output['verification']['status'],'passed')
+                    self.assertEqual(output['usage']['output_bytes'],
+                        sum(p.stat().st_size for p in (root/name).rglob('*') if p.is_file()))
                     metadata,_=decode_image(root/name/output['images'][0]['file']['path'],output=variant['settings']['output'],resolution=[64,64])
                     self.assertEqual(metadata['bit_depth'],depth)
                     self.assertEqual(set(metadata['channels']),set('RGBA'))

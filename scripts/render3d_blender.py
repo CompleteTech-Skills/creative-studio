@@ -9,6 +9,7 @@ from __future__ import annotations
 from copy import deepcopy
 from fractions import Fraction
 import hashlib
+import json
 import os
 from pathlib import Path
 import platform
@@ -337,9 +338,18 @@ class BlenderBackend:
             verification=verify_result(request,result,stage,snapshot_root=frozen,expected_backend=backend)
             atomic_json(stage/'verification.json',verification)
             result['verification']=dict(status='passed',verifier=verification['verifier'],evidence=artifact('verification.json'))
-            validate(result,'RenderResult');atomic_json(stage/'result.json',result)
-            require(sum(p.stat().st_size for p in stage.rglob('*') if p.is_file())<=resources['storage_bytes'],
+            # Include verification evidence and the self-describing result JSON
+            # in the measured published byte count, including its own digits.
+            base_bytes=sum(p.stat().st_size for p in stage.rglob('*') if p.is_file())
+            for _ in range(8):
+                payload=(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+                total_bytes=base_bytes+len(payload)
+                if result['usage']['output_bytes']==total_bytes:break
+                result['usage']['output_bytes']=total_bytes
+            else:raise Render3DError('invalid-input','Unable to encode stable delivery usage.')
+            require(total_bytes<=resources['storage_bytes'],
                     'storage-exhaustion','Verified delivery exceeds storage budget.')
+            validate(result,'RenderResult');atomic_bytes(stage/'result.json',payload)
             _rename_no_replace(stage,target)
             return result
         except Exception as exc:
