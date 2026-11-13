@@ -74,7 +74,7 @@ class NativeLiquidTests(unittest.TestCase):
                 with self.subTest(case=case):
                     root=stack.enter_context(self.workspace(case))
                     world,payloads,settings=build_liquid_inputs(**options)
-                    if case=='uncontained':settings['boundaries']['bottom']=False
+                    if case in ('baseline','viscous','uncontained'):settings['boundaries']['bottom']=False
                     report=simulate(world,payloads,root,settings=settings)
                     self.assertTrue(report['geometry']['reopened_geometry_verified'])
                     results[case]=[x['mesh_sha256'] for x in report['geometry']['samples']]

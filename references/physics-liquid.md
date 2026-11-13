@@ -45,8 +45,9 @@ The matched 48-frame, resolution-24 pouring experiment additionally runs
 and uncontained/open-bottom caches. It verifies the complete native cache
 inventories and exact fixture world, settings and source meshes before
 independently decoding every BOBJ surface. All other viscosity-pair inputs
-are identical. The open control changes only the container geometry and
-bottom boundary required to let fluid drain. The stationary/moving paddle
+are identical. The domain bottom is open in all three acceptance cases, so
+the domain boundary cannot mask leakage through the container floor. The
+uncontained control changes only the container geometry. The stationary/moving paddle
 experiment remains a separate geometry-response check.
 
 The quantitative acceptance profile uses canonical metres and h=3/24=.125 m:
@@ -60,7 +61,7 @@ The quantitative acceptance profile uses canonical metres and h=3/24=.125 m:
 - Clip actual surface triangles to the interior observation box, x/z +/- .8 m,
   y from floor-top minus h to rim minus 2h. Require an initially absent pool
   (area <=h²) and a retained patch >=16h² (.25 m², a 4x4-cell equivalent)
-  in every final-quarter frame (36–47). The uncontained control must have
+  in both viscosity cases in every final-quarter frame (36–47). The uncontained control must have
   <=h² in those same frames. This distinguishes visible retained liquid
   from immediate drainage without interpreting interface area as mass.
 - Detect first contact when the lowest surface reaches floor-top plus h in
@@ -69,6 +70,8 @@ The quantitative acceptance profile uses canonical metres and h=3/24=.125 m:
   maximum radial extent of surface vertices below rim minus 2h. Higher
   viscosity must reduce mean impact spread by >2h, allowing one cell per
   independently meshed radial interface, with positive reduction at every sample.
+  Both cases must retain a >=16h² surface patch at each spread sample;
+  disappearing high-viscosity fluid cannot establish reduced spread.
   The window follows contact, not whichever frames happen to maximize the
   difference. Zero response, a reversed effect and a sub-cell effect fail.
 
@@ -107,6 +110,14 @@ the failed report must remain visible to independent review. It is not a new
 solver execution or a claim of current-head CI success. Those immutable native
 caches were produced at d8c2ae44bc5d9bb1e88f249692a94cf18977d3c9, with
 historical directory name `physics180/final-d91cabf`.
+
+Those historical contained cases used a closed domain bottom coincident
+with the container floor. They establish preliminary surface measurements,
+but cannot isolate floor retention from the domain boundary. The final
+profile requires the same **open bottom in all three controls** and rejects
+those closed-bottom caches as mismatched inputs. Fresh native CI must
+establish final acceptance; neither historical report is a pass for the
+revised experiment. All original failed and preliminary results are retained.
 
 Mass conservation, production liquid appearance, robust splashes, secondary
 particles, two-way coupling, arbitrary complex moving obstacles and the full

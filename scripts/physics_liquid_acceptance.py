@@ -77,13 +77,18 @@ def assess_series(series, *, cell_size, emission_end_frame):
     # Two independently meshed radial interfaces each receive one cell of
     # ambiguity. A hash change, a sub-cell effect, or a reversed effect fails.
     viscosity_threshold = 2*h
+    surfaces_present = valid_window and all(
+        samples[i]['pool_surface_area_m2'] >= minimum_patch
+        for samples in (low, high) for i in window)
     checks = dict(
         contained_leakage_envelope=max(s['exterior_excursion_m'] for s in low) <= leakage_envelope,
         initial_pool_absent=max(s['pool_surface_area_m2'] for s in low[:min(6, len(low))]) <= h*h,
         accumulated_surface_retained=min(low[i]['pool_surface_area_m2'] for i in late) >= minimum_patch,
+        viscous_surface_retained=min(high[i]['pool_surface_area_m2'] for i in late) >= minimum_patch,
         uncontained_control_drains=max(open_[i]['pool_surface_area_m2'] for i in late) <= h*h,
+        viscosity_surfaces_present=surfaces_present,
         viscosity_reduces_impact_spread=(valid_window and mean_difference > viscosity_threshold
-                                       and min(differences) > 0),
+                                       and min(differences) > 0 and surfaces_present),
     )
     return dict(status='passed' if all(checks.values()) else 'failed', checks=checks,
         cell_size_m=h, leakage_envelope_m=leakage_envelope,
@@ -93,6 +98,7 @@ def assess_series(series, *, cell_size, emission_end_frame):
         viscosity_comparison_tolerance_m=viscosity_threshold,
         maximum_exterior_excursion_m=max(s['exterior_excursion_m'] for s in low),
         minimum_late_contained_surface_m2=min(low[i]['pool_surface_area_m2'] for i in late),
+        minimum_late_viscous_surface_m2=min(high[i]['pool_surface_area_m2'] for i in late),
         maximum_late_uncontained_surface_m2=max(open_[i]['pool_surface_area_m2'] for i in late))
 
 
@@ -110,8 +116,9 @@ def evaluate_caches(caches):
         # timing, radii, obstacles, and settings require a different experiment.
         expected, inputs, expected_settings = build_liquid_inputs(
             viscosity=.01 if case == 'viscous' else 0., container=case != 'uncontained')
-        if case == 'uncontained':
-            expected_settings['boundaries']['bottom'] = False
+        # A closed domain floor coincident with the container floor could mask
+        # container leakage. Keep it OPEN in both contained cases and control.
+        expected_settings['boundaries']['bottom'] = False
         if world != expected or settings != expected_settings or any(
                 (root/'inputs'/name).read_bytes() != payload for name, payload in inputs.items()):
             raise ValueError('Cache is not the matched 48-frame resolution-24 engineering control: '+case)

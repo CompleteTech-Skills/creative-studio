@@ -66,6 +66,15 @@ class LiquidAcceptanceTests(unittest.TestCase):
         samples['viscous'][19]['pool_radial_extent_m'] = .71
         self.assertFalse(self.assess(samples)['checks']['viscosity_reduces_impact_spread'])
 
+    def test_disappearing_viscous_fluid_cannot_look_like_reduced_spread(self):
+        samples = self.series()
+        for frame in samples['viscous'][19:]:
+            frame.update(lowest_surface_m=None, pool_radial_extent_m=0., pool_surface_area_m2=0.)
+        checks = self.assess(samples)['checks']
+        self.assertFalse(checks['viscosity_surfaces_present'])
+        self.assertFalse(checks['viscous_surface_retained'])
+        self.assertFalse(checks['viscosity_reduces_impact_spread'])
+
 
 if __name__ == '__main__':
     unittest.main()
