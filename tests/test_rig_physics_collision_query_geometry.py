@@ -16,3 +16,32 @@ class QueryGeometryTests(unittest.TestCase):
         report=json.loads(result.stdout.splitlines()[-1])
         self.assertEqual(report['count'],648)
         self.assertLessEqual(report['max_position_error'],1e-8)
+
+    def test_native_capsule_axes_and_compound_frames_match_physical_proxy(self):
+        source=(Path(__file__).resolve().parents[1]/'scripts'/'physics_collision_native.py').read_text()
+        program = r"""
+import pybullet as p
+import tempfile
+from pathlib import Path
+for axis in ['X','Y','Z']:
+ for nested in [False,True]:
+  for angles in [[0,0,0],[.3,.7,.4]]:
+   client=p.connect(p.DIRECT);q=p.getQuaternionFromEuler(angles);center=[.2,.3,-.4]
+   shape=dict(type='capsule',radius=.25,height=1,axis=axis)
+   if nested:shape=dict(type='compound',children=[dict(shape=shape,transform=dict(translation=[0,0,0],rotation=[0,0,0,1]))])
+   collider=dict(shape=shape,transform=dict(translation=center,rotation=q))
+   matrix=p.getMatrixFromQuaternion(q);j=['X','Y','Z'].index(axis);direction=[matrix[3*i+j] for i in range(3)]
+   start=[center[i]+2*direction[i] for i in range(3)]
+   with tempfile.TemporaryDirectory() as directory:
+    for query in [False,True]:
+     native=collision_build_query_shapes(p,client,collider,Path(directory))[0] if query else collision_build_shape(p,client,collider,Path(directory))
+     body=p.createMultiBody(baseMass=0,baseCollisionShapeIndex=native,physicsClientId=client)
+     p.changeDynamics(body,-1,collisionMargin=0,physicsClientId=client)
+     hit=p.rayTest(start,center,physicsClientId=client)[0]
+     assert hit[0]>=0,(axis,nested,angles,query,'miss')
+     assert abs(hit[2]-.625)<1e-8,(axis,nested,angles,query,hit)
+     p.removeBody(body,physicsClientId=client)
+   p.disconnect(client)
+"""
+        result=subprocess.run([os.environ['HATCH_PYBULLET_PYTHON'],'-I','-c',source+'\n'+program],capture_output=True,text=True,timeout=60)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
