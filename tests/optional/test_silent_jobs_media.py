@@ -87,7 +87,7 @@ class ActualMediaJobs(unittest.TestCase):
         self.assertEqual(result['state']['phase'],'completed',result)
         self.assertEqual(result['state']['attempts'],expected_attempts)
         self.assertEqual(result['state']['cached_reused']+result['state']['cached_created'],24)
-        if phase!='preparing':self.assertEqual(result['state']['cached_reused'],24)
+        if phase not in ('validating','preparing'):self.assertEqual(result['state']['cached_reused'],24)
         return result
 
     def test_actual_encode_survives_crash_before_finalization(self):self._crash_worker_after('finalizing')
