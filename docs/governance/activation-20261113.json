@@ -155,14 +155,106 @@
   },
   "verification": {
     "required_contexts": "All15names and GitHub Actions app15368 independently matched successful checks on merged policy mainbab0f28",
-    "rule_evaluation": "Readback confirms required PR policy, strict checks and admin enforcement; no direct ref mutation attempted",
+    "rule_evaluation": "Effective protection readback plus GitHub computed BLOCKED state for non-draft conflict-free current-base PR346 while required checks were incomplete; no direct ref mutation attempted.",
     "preservation": "Historical branches, commits and artifacts retained; only five reviewed inactive workflow registrations disabled"
   },
   "limitations": [
     "No second independent GitHub reviewer identity exists; required approving review count is zero. Independent agent full-head review remains an additional procedural merge gate.",
-    "No direct-update rejection is claimed. Configuration readback is the retained equivalent rule evaluation evidence.",
     "Secret scanning is enabled; this activation report does not claim a completed secret scan or no outstanding findings.",
     "Historical workflow artifacts may have expired; retained source hashes and source branches are not re-execution claims.",
-    "Issue216 remains open pending independent activation-evidence review and all acceptance verification."
-  ]
+    "Issue216 remains open pending independent activation-evidence review and all acceptance verification.",
+    "No direct-update rejection is claimed; effective-policy readback and GitHub mergeability evaluation are the retained equivalent rule evidence."
+  ],
+  "before_observations": {
+    "source": "Observed live CLI/API response values retained in the coordinator conversation; transcribed here, not a recovered raw-response archive. Initial repository policy documents independently record the earlier same baseline.",
+    "main_protection": {
+      "http_status": 404,
+      "message": "Branch not protected"
+    },
+    "private_vulnerability_reporting": {
+      "enabled": false
+    },
+    "security_and_analysis": {
+      "secret_scanning": {
+        "status": "disabled"
+      },
+      "secret_scanning_push_protection": {
+        "status": "disabled"
+      }
+    },
+    "limitations": "The full original raw before-settings responses were not archived as files; no reconstructed raw response is claimed."
+  },
+  "effective_rule_evaluation": {
+    "pull_request": 346,
+    "head": "c8ef9bf52921fa723caaeeed1d0495f79f2ff2ec",
+    "base": "4d83833d5d45a8f43842d924132925d8c631ea0f",
+    "is_draft": false,
+    "mergeable": "MERGEABLE",
+    "merge_state_status": "BLOCKED",
+    "check_count": 28,
+    "successful_check_count": 16,
+    "non_success_checks": [
+      {
+        "name": "Existing 2D compatibility",
+        "status": "QUEUED",
+        "conclusion": ""
+      },
+      {
+        "name": "Existing 2D compatibility",
+        "status": "IN_PROGRESS",
+        "conclusion": ""
+      },
+      {
+        "name": "Delivery (ubuntu-latest)",
+        "status": "IN_PROGRESS",
+        "conclusion": ""
+      },
+      {
+        "name": "Delivery (windows-latest)",
+        "status": "IN_PROGRESS",
+        "conclusion": ""
+      },
+      {
+        "name": "Delivery (macos-latest)",
+        "status": "IN_PROGRESS",
+        "conclusion": ""
+      },
+      {
+        "name": "Import/export and Khronos interoperability",
+        "status": "IN_PROGRESS",
+        "conclusion": ""
+      },
+      {
+        "name": "Blender headless save/reopen and deformation",
+        "status": "IN_PROGRESS",
+        "conclusion": ""
+      },
+      {
+        "name": "Blender headless save/reopen and deformation",
+        "status": "IN_PROGRESS",
+        "conclusion": ""
+      },
+      {
+        "name": "Three.js browser playback and vertex comparison",
+        "status": "IN_PROGRESS",
+        "conclusion": ""
+      },
+      {
+        "name": "Three-character and mechanical demonstrations",
+        "status": "QUEUED",
+        "conclusion": ""
+      },
+      {
+        "name": "Three-character and mechanical demonstrations",
+        "status": "IN_PROGRESS",
+        "conclusion": ""
+      },
+      {
+        "name": "Operations, local API and archive restoration",
+        "status": "QUEUED",
+        "conclusion": ""
+      }
+    ],
+    "interpretation": "GitHub evaluated this non-draft conflict-free, up-to-date candidate as BLOCKED while required current-head checks were incomplete. No merge or ref update was attempted for the demonstration."
+  }
 }
