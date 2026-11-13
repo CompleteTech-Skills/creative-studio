@@ -14,6 +14,7 @@ import zipfile
 import numpy as np
 
 from rig_contracts import COORDINATES, DEFAULT_LIMITS, validate_contract
+from rig_zip import zip_read_scope, open_zip_reader
 from rig_errors import (atomic_bytes, decode_json, finite_json, object_hash, read_json, require,
                         safe_path, sha256)
 
@@ -288,7 +289,8 @@ def _binary_bundle(metadata: dict, arrays: dict[str, np.ndarray]) -> bytes:
 
 def _read_bundle(path: Path, limits: dict) -> tuple[dict, dict]:
     require(path.stat().st_size <= limits['dependency_bytes'], 'RIG_LIMIT_BINARY', 'Binary asset exceeds its byte budget.')
-    with zipfile.ZipFile(path) as archive:
+    archive = open_zip_reader(path)
+    with archive:
         infos = archive.infolist()
         require(len(infos) <= limits['archive_files'], 'RIG_LIMIT_BINARY', 'Too many binary members.')
         names = [i.filename for i in infos]
@@ -301,23 +303,26 @@ def _read_bundle(path: Path, limits: dict) -> tuple[dict, dict]:
                     and '\\' not in info.filename and (info.filename == 'metadata.json'
                     or info.filename.endswith('.npy')) and stat.S_IFMT(info.external_attr >> 16) != stat.S_IFLNK,
                     'RIG_BINARY', 'Unsafe binary member name or type.')
-        metadata = decode_json(archive.read('metadata.json'))
+        with zip_read_scope(path, member='metadata.json', compression=archive.getinfo('metadata.json').compress_type):
+            metadata = decode_json(archive.read('metadata.json'))
         arrays = {}
         for name in names:
             if name.endswith('.npy'):
-                with archive.open(name) as raw:
-                    version = np.lib.format.read_magic(raw)
-                    require(version in ((1, 0), (2, 0)), 'RIG_BINARY', 'Unsupported NumPy array format.')
-                    shape, _, dtype = (np.lib.format.read_array_header_1_0(raw) if version == (1, 0)
-                                       else np.lib.format.read_array_header_2_0(raw))
-                    count = 1
-                    for size in shape:
-                        require(isinstance(size, int) and 0 <= size <= 2_000_000, 'RIG_BINARY', 'Invalid array dimensions.')
-                        count *= size
-                    require(not dtype.hasobject and dtype.kind in 'fiu' and count * dtype.itemsize <= limits['memory_bytes'] // 3,
-                            'RIG_LIMIT_MEMORY', 'Unsafe or oversized NumPy array header.')
-                with archive.open(name) as raw:
-                    arrays[name[:-4]] = np.lib.format.read_array(raw, allow_pickle=False)
+                with zip_read_scope(path, member=name, compression=archive.getinfo(name).compress_type):
+                    with archive.open(name) as raw:
+                        version = np.lib.format.read_magic(raw)
+                        require(version in ((1, 0), (2, 0)), 'RIG_BINARY', 'Unsupported NumPy array format.')
+                        shape, _, dtype = (np.lib.format.read_array_header_1_0(raw) if version == (1, 0)
+                                           else np.lib.format.read_array_header_2_0(raw))
+                        count = 1
+                        for size in shape:
+                            require(isinstance(size, int) and 0 <= size <= 2_000_000, 'RIG_BINARY', 'Invalid array dimensions.')
+                            count *= size
+                        require(not dtype.hasobject and dtype.kind in 'fiu' and count * dtype.itemsize <= limits['memory_bytes'] // 3,
+                                'RIG_LIMIT_MEMORY', 'Unsafe or oversized NumPy array header.')
+                with zip_read_scope(path, member=name, compression=archive.getinfo(name).compress_type):
+                    with archive.open(name) as raw:
+                        arrays[name[:-4]] = np.lib.format.read_array(raw, allow_pickle=False)
     return metadata, arrays
 
 

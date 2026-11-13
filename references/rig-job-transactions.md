@@ -47,7 +47,7 @@ Restore format diagnostics are distinct from transaction or semantic failures.
 Malformed/truncated ZIP containers, CRC/decompression failures and corrupt native
 ZIP bundles inside an otherwise hash-consistent package report
 `RIG_ARCHIVE_FORMAT` at the restore boundary. An unsupported outer member ZIP
-codec reports `RIG_ARCHIVE_CODEC`. These diagnostics preserve the original archive
+codec or a selected optional Python codec that is unavailable reports `RIG_ARCHIVE_CODEC`. Valid stored, deflated, BZIP2 and LZMA package/native ZIP inputs retain their existing support; optional codecs load only when selected. Narrow shared input-read scopes translate documented decoder errors while errno-bearing filesystem failures remain distinct. These diagnostics preserve the original archive
 path and describe corrective action; the destination is not published, and only
 the attempt's private staging directory is removed. Existing semantic RigError
 codes remain intact. Unrelated programming exceptions are not reclassified as
