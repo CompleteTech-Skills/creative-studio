@@ -191,3 +191,27 @@ def collision_native_observations(p, client, body_id):
 
 def collision_query(p, client, start, end, mask=-1):
     return collision_raycast(p,client,start,end,0xffffffff if mask == -1 else mask)
+
+
+def collision_query_collider(collider):
+    """Exact closed box surfaces for native rays; solver proxies stay unchanged.
+
+    Bullet 3.2.7 zero-margin box support shapes can falsely miss rays. A static
+    twelve-triangle surface preserves the declared box boundary, including local
+    frames, without adding a collision skin. Other admitted proxies stay native.
+    """
+    result = json.loads(json.dumps(collider))
+    def convert(shape):
+        if shape['type'] == 'compound':
+            for child in shape['children']:
+                convert(child['shape'])
+        elif shape['type'] == 'box':
+            size = shape['size']
+            vertices = [[x*size[0]/2,y*size[1]/2,z*size[2]/2] for x,y,z in
+                [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),(-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)]]
+            triangles = [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],
+                         [3,7,6],[3,6,2],[0,4,7],[0,7,3],[1,2,6],[1,6,5]]
+            shape.clear()
+            shape.update(type='triangle-mesh',source='internal-query-box-surface',vertices=vertices,triangles=triangles)
+    convert(result['shape'])
+    return result

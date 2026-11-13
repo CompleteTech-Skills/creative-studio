@@ -35,7 +35,7 @@ def main():
         identifiers = {}
         for index, body in enumerate(world['bodies']):
             collider = body['colliders'][0]
-            shape = collision_build_shape(p,client,collider,root)
+            shape = collision_build_shape(p,client,collision_query_collider(collider),root)
             visual = -1
             if job['preview']:
                 leaves = collision_leaves(collider)
@@ -69,7 +69,8 @@ def main():
             rgb = bytes(channel for row in pixels for pixel in row for channel in pixel[:3])
             (root/'query-preview.ppm').write_bytes(b'P6\n320 240\n255\n'+rgb)
         output = dict(ok=True,operation='collision-query',world_sha256=job['world_sha256'],
-            worker_sha256=job['worker_sha256'],frame=job['frame'],backend=identity,results=results)
+            worker_sha256=job['worker_sha256'],frame=job['frame'],backend=identity,results=results,
+            representation='exact-box-triangle-surface-v1;native-other-proxies-v1')
         (root/'query-result.json').write_bytes(canonical(output))
     finally:
         p.disconnect(client)
