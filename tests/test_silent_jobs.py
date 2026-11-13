@@ -14,6 +14,12 @@ import silent_jobs as jobs
 
 
 class PortableJobContracts(unittest.TestCase):
+    def test_committed_schema_parity(self):
+        root=Path(__file__).resolve().parents[1]
+        for name,schema in jobs.schemas().items():
+            with self.subTest(name=name):
+                self.assertEqual(json.loads((root/f'profiles/silent-video-job-{name}.schema.json').read_text()),schema)
+
     def test_schemas_are_strict_and_checkpoints_have_explicit_terminal_states(self):
         schemas=jobs.schemas()
         for schema in schemas.values():

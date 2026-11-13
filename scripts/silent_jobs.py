@@ -255,8 +255,9 @@ def _state(fd,plan):
         raise ValueError('invalid job checkpoint diagnostic')
     if state['receipt'] is not None and not isinstance(state['receipt'],dict) or state['artifact'] is not None and not isinstance(state['artifact'],dict):
         raise ValueError('invalid job artifact checkpoint')
-    receipt_schema=media._obj({'sha256':media.SHA,'bytes':media._int(1,MAX_RECEIPT_BYTES)})
-    artifact_schema=media._obj({'sha256':media.SHA,'bytes':media._int(1,plan['request']['limits']['max_output_bytes']),
+    exact_sha={'type':'string','pattern':'^[0-9a-f]{64}$'}
+    receipt_schema=media._obj({'sha256':exact_sha,'bytes':media._int(1,MAX_RECEIPT_BYTES)})
+    artifact_schema=media._obj({'sha256':exact_sha,'bytes':media._int(1,plan['request']['limits']['max_output_bytes']),
                                'path':{'const':'video'+media.PROFILES[plan['request']['profile']]['extension']}})
     if state['receipt'] is not None:media._structural(state['receipt'],receipt_schema,'job receipt checkpoint')
     if state['artifact'] is not None:media._structural(state['artifact'],artifact_schema,'job artifact checkpoint')
@@ -673,7 +674,9 @@ def schemas():
         'phase':{'enum':sorted(STATES)},'attempts':media._int(0,3),'runs':media._int(0,8),
         'cached_created':media._int(0,media.MAX_FRAMES),'cached_reused':media._int(0,media.MAX_FRAMES),
         'progress':{'type':'object'},'error':{'type':['string','null'],'maxLength':4096},
-        'receipt':{'type':['object','null']},'artifact':{'type':['object','null']},
+        'receipt':{'anyOf':[{'type':'null'},media._obj({'sha256':sha,'bytes':media._int(1,MAX_RECEIPT_BYTES)})]},
+        'artifact':{'anyOf':[{'type':'null'},media._obj({'sha256':sha,'bytes':media._int(1,2*1024**3),
+             'path':{'enum':sorted({'video'+value['extension'] for value in media.PROFILES.values()})}})]},
         'elapsed_seconds':{'type':'number','minimum':0,'maximum':86400}})
     return {name:{'$schema':'https://json-schema.org/draft/2020-12/schema',**copy.deepcopy(value)} for name,value in [('plan',plan),('state',state)]}
 

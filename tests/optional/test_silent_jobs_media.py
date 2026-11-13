@@ -57,13 +57,19 @@ class ActualMediaJobs(unittest.TestCase):
             receipt=json.loads((self.root/(label+'-delivery')/'receipt.json').read_text())
             self.assertEqual(receipt['media']['audio_stream_count'],0)
 
-    def _crash_worker_after(self,phase,cancel_before_resume=False):
+    def _crash_worker_after(self,phase,cancel_before_resume=False,expected_attempts=1):
         self.create()
         with jobs._locked(self.root/'job') as (fd,lock,plan):
             state=jobs._state(fd,plan);state['runs']=1;jobs._save(fd,state,'validating')
             read_fd,write_fd=os.pipe();pid=os.fork()
             if pid==0:
                 os.close(write_fd);os.setsid();real_save=jobs._save
+                if phase=='independent-probe':
+                    def interrupted_probe(path,*args,**kwargs):
+                        if not Path(path).is_file() or Path(path).stat().st_size==0:os._exit(75)
+                        (self.root/'probe-interrupted.txt').write_text('actual encoded artifact reached independent probe')
+                        os._exit(74)
+                    media.verify_export=interrupted_probe
                 def interrupted(descriptor,checkpoint,next_phase=None,**values):
                     if next_phase==phase:
                         if phase=='completed':os._exit(74)
@@ -79,13 +85,18 @@ class ActualMediaJobs(unittest.TestCase):
             jobs.cancel(self.root/'job');result=jobs.retry(self.root/'job')
         else:result=jobs.resume(self.root/'job')
         self.assertEqual(result['state']['phase'],'completed',result)
-        self.assertEqual(result['state']['attempts'],1)
+        self.assertEqual(result['state']['attempts'],expected_attempts)
         self.assertEqual(result['state']['cached_reused']+result['state']['cached_created'],24)
         if phase!='preparing':self.assertEqual(result['state']['cached_reused'],24)
         return result
 
     def test_actual_encode_survives_crash_before_finalization(self):self._crash_worker_after('finalizing')
     def test_actual_delivery_survives_crash_before_checkpoint_ack(self):self._crash_worker_after('completed')
+    def test_preflight_interruption_resumes(self):self._crash_worker_after('validating')
+    def test_encoding_interruption_restarts_complete_attempt(self):self._crash_worker_after('encoding',expected_attempts=2)
+    def test_independent_probe_interruption_restarts_complete_attempt(self):
+        self._crash_worker_after('independent-probe',expected_attempts=2)
+        self.assertTrue((self.root/'probe-interrupted.txt').is_file())
 
     def test_preparation_interrupt_cancellation_retry_and_cache_reuse(self):
         self._crash_worker_after('preparing',cancel_before_resume=True)

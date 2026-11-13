@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "silent-video-job-state"
+    },
+    "job": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "phase": {
+      "enum": [
+        "blocked",
+        "cancelled",
+        "completed",
+        "encoding",
+        "failed",
+        "finalizing",
+        "interrupted",
+        "preparing",
+        "queued",
+        "stale",
+        "validating",
+        "verifying"
+      ]
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "runs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 8
+    },
+    "cached_created": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18000
+    },
+    "cached_reused": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18000
+    },
+    "progress": {
+      "type": "object"
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 4096
+    },
+    "receipt": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 67108864
+            }
+          },
+          "required": [
+            "sha256",
+            "bytes"
+          ]
+        }
+      ]
+    },
+    "artifact": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483648
+            },
+            "path": {
+              "enum": [
+                "video.mp4",
+                "video.webm"
+              ]
+            }
+          },
+          "required": [
+            "sha256",
+            "bytes",
+            "path"
+          ]
+        }
+      ]
+    },
+    "elapsed_seconds": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 86400
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "job",
+    "phase",
+    "attempts",
+    "runs",
+    "cached_created",
+    "cached_reused",
+    "progress",
+    "error",
+    "receipt",
+    "artifact",
+    "elapsed_seconds"
+  ]
+}
