@@ -144,6 +144,7 @@ def render_frame(scene, settings, output_root, index, *, pass_sockets=None):
                     # this call. Never clear a pre-existing disabled graph.
                     for node in list(tree.nodes): tree.nodes.remove(node)
                     layers = tree.nodes.new('CompositorNodeRLayers');created.append(layers)
+                    layers.scene = scene
                     layers.layer = scene.view_layers[0].name
                     sources = {name: layers.outputs[socket] for name,socket in PASS_SOCKETS.items() if name in auxiliary}
                     composite = tree.nodes.new('CompositorNodeComposite');created.append(composite)
