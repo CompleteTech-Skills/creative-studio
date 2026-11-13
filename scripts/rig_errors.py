@@ -229,6 +229,32 @@ def _directory_anchor(root):
     return None, root, ()
 
 
+
+@contextmanager
+def scoped_directory_descriptor(root: str | Path):
+    """Borrow an owned directory FD only from an explicitly active capability.
+
+    Yield None for ordinary or unregistered roots, so callers retain their
+    existing strict path-opening policy. Every descendant is opened nofollow;
+    this context owns and closes all duplicates, not the original capability.
+    """
+    cap,_,suffix = _directory_anchor(root)
+    if cap is None:
+        yield None
+        return
+    opened = []
+    try:
+        try:
+            opened.append(os.dup(cap.fd))
+            for part in suffix:
+                opened.append(os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=opened[-1]))
+        except OSError as exc:
+            raise RigError('RIG_DIRECTORY_PATH','Capability directory descendant is missing or unsafe.') from exc
+        yield opened[-1]
+    finally:
+        for fd in reversed(opened):os.close(fd)
+
+
 def normalize_root(root: str | Path) -> Path:
     """Retain explicit scoped directory authority; otherwise use ordinary resolve."""
     cap,path,suffix = _directory_anchor(root)
