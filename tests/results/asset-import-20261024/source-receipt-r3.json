@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "scope": "R2 correction candidate, notapproval",
+  "previous_reviewed_head": "26481d1c1f406eda900607fa37bcf684009fe55e",
+  "source_sha256": {
+    "scripts/asset_library_import.py": "fab6e2580066390b40f681e8c1fc737ec4d2868ac1b464ac738285c4a477e525",
+    "scripts/asset_import_worker.py": "2cd317d9d0bfb3a0b1fe334a29ad21b6d51f7cca927a8cca8cbe26df30ec72bc",
+    "scripts/test_rig_gate.py": "2ddf8a8cbabc7989046c8094a1327a935c21087be900d9916d634e44c888cc5d",
+    "tests/test_rig_asset_import.py": "dd6cd61fd2774d1b2a71a25c57e821efe4ffc8c071c58ba50718de68c0850c7b",
+    ".github/workflows/rig-3d.yml": "04889f8b49d0d51271f55fe5c932cf569f1e6d7804af1464b6905860f0caf252",
+    "references/asset-library/import.md": "aa41637546bcd235c22d09b3be44f11e6f8d36bd01f32db5bffbd6b53d308403"
+  },
+  "observed": "13actualtestsPASS32.158s pinnedBlender/Khronos",
+  "corrections": [
+    "strictunsupportedPrincipledsocket defaults with stableidentifiers, onlyknownPBR+IORmapping editable",
+    "reservedfixturemarkers scanallboundedglTFJSON including scenes",
+    "boundedactualworkerfailure diagnostics exposed"
+  ],
+  "remaining": [
+    "freshAstra review",
+    "finalsharedtexturedecoder",
+    "currentheadCI",
+    "predecessormerges",
+    "supervisorlease"
+  ]
+}
