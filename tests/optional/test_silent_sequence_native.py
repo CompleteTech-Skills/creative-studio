@@ -87,6 +87,25 @@ class SequenceImages(unittest.TestCase):
         self.assertTrue(stage.exists())  # persistent verified cache remains reusable
         with self.assertRaises(ValueError):sequence.export_sequence(source,self.root,destination,provenance=self.identity)
 
+    def test_rgb_png_eight_and_sixteen_bit_sources_preserve_channels_and_bytes(self):
+        for bits in (8,16):
+            with self.subTest(bits=bits):
+                maximum=2**bits-1
+                path=self.root/f'rgb-{bits}.png'
+                row=[maximum,0,0,0,maximum,0,0,0,maximum,maximum//2,maximum//2,maximum//2]
+                with path.open('wb') as stream:
+                    png.Writer(4,2,alpha=False,greyscale=False,bitdepth=bits).write(stream,[row,row])
+                output={'format':'png','bit_depth':bits,'passes':['combined'],
+                        'alpha':'opaque','color_space':'srgb'}
+                source=sequence.build_source(self.root,[path.name],fps=self.fps,
+                                             output=output,identity=self.identity)
+                destination=self.root/f'rgb-output-{bits}'
+                report=sequence.export_sequence(source,self.root,destination,provenance=self.identity)
+                self.assertEqual(sequence.verify_sequence(destination),report)
+                self.assertEqual(set(report['decoded'][0]['channels']),set('RGB'))
+                self.assertEqual(report['decoded'][0]['bit_depth'],bits)
+                self.assertEqual((destination/'frames/000000.png').read_bytes(),path.read_bytes())
+
     def test_foreign_staging_directory_is_not_modified_even_with_lock_file(self):
         source=self.source(count=1);foreign=self.root/'foreign-stage';foreign.mkdir()
         (foreign/'user.txt').write_text('unrelated user data')
