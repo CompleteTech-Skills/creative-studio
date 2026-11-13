@@ -191,6 +191,15 @@ def definitions():
         dependencies=arr(ref('reference')), resources=obj(dict(vertices=integer(0, 1000000),
         triangles=integer(0, 2000000), bytes=integer(1, MAX_TOTAL_BYTES))),
         validation=arr(ref('file')), review=ref('review')))
+    # Optional canonical mapping preserves compatibility with authored assets that
+    # predate native primitive projection. Original and normalized indexes differ.
+    material_primitive = obj(dict(mesh=ID, encoding=enum('normalized-glb', 'obj'),
+        source_mesh=nullable(integer(0, 1000000)), source_primitive=integer(0, 1000000),
+        source_material_index=nullable(integer(0, 65535)),
+        normalized_mesh=nullable(integer(0, 1000000)), normalized_primitive=nullable({'const': 0})))
+    asset['properties']['material_bindings'] = arr(obj(dict(
+        slot=ID, material_index=nullable(integer(0, 65535)),
+        primitives=arr(material_primitive, minimum=1, maximum=10000))), maximum=65536)
     animation = base('animation', dict(duration_frames=integer(1, 1_000_000), fps=ref('rate'),
         tracks=arr(ref('track'), maximum=4096), bindings=arr(ref('binding'), maximum=256),
         dependencies=arr(ref('reference')), provenance=ref('provenance')))
@@ -611,6 +620,26 @@ def validate_document(value, kind=None):
             require(c['start_frame'] < c['end_frame'] <= value['duration_frames'], 'Invalid temporal constraint interval.')
             require(c['target'] != c['constraint']['target'], 'Self-referential temporal constraint.')
     elif kind == 'asset':
+        bindings = value.get('material_bindings', [])
+        _unique(bindings, 'native material slot', lambda x: x['slot'])
+        _unique(bindings, 'native material index', lambda x: x['material_index'])
+        primitives = [p for b in bindings for p in b['primitives']]
+        _unique(primitives, 'native material mesh', lambda x: x['mesh'])
+        _unique([p for p in primitives if p['encoding'] == 'normalized-glb'],
+                'normalized material primitive', lambda x: x['normalized_mesh'])
+        for binding in bindings:
+            for p in binding['primitives']:
+                require((p['encoding'] == 'normalized-glb' and p['source_mesh'] is not None and
+                         p['normalized_mesh'] is not None and p['normalized_primitive'] == 0 and
+                         binding['material_index'] is not None) or
+                        (p['encoding'] == 'obj' and p['source_mesh'] is None and
+                         p['normalized_mesh'] is None and p['normalized_primitive'] is None and
+                         p['source_material_index'] is None and binding['material_index'] is None),
+                        'Material projection indexes disagree with its geometry encoding.')
+        require(all(b['primitives'] for b in bindings), 'Material slots need actual primitive bindings.')
+        component_meshes = {m for meshes in value['components'].values() for m in meshes}
+        require(not bindings or {p['mesh'] for p in primitives} == (component_meshes or {value['id']}),
+                'Material bindings must cover exactly the native component meshes.')
         _unique(value['sockets'], 'asset socket', lambda x: x['id'])
         require(value['review']['status'] == 'unreviewed' or bool(value['review']['receipts']),
                 'A review status needs retained evidence receipts.')
