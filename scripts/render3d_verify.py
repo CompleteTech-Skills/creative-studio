@@ -293,7 +293,10 @@ class RenderArtifactVerifier:
         adapter=Scene3DAdapter() if snapshot['scope']=='scene3d' else NativeRigAdapter()
         require(verify_snapshot(self.snapshot_root,adapter)==snapshot,'stale-asset','Snapshot changed during independent verification.')
         if isinstance(adapter,Scene3DAdapter):
-            adapter.validate_request(self.snapshot_root,request,snapshot)
+            try:
+                adapter.validate_request(self.snapshot_root,request,snapshot)
+            except (RigError,OSError) as exc:
+                raise Render3DError('stale-asset',str(exc)) from exc
         require(result['snapshot_sha256']==snapshot['snapshot_sha256'] and result['request_sha256']==object_hash(request),
                 'stale-asset','Result request or snapshot identity differs.')
         require(result['backend']==self.expected_backend,'verification-failed','Result backend differs from executed backend identity.')

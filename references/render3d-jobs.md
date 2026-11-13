@@ -74,3 +74,16 @@ publication, source changes, relocatable cache reuse and portable assembly.
 Synthetic Pillow images test storage/verifier contracts only; these tests alone
 do not establish execution of a 3D renderer. Real Blender end-to-end acceptance
 is recorded separately by the Render3D backend and acceptance owners.
+
+The optional native job workflow can be reproduced with an installed Blender
+4.5 LTS and the independent verifier dependencies:
+
+```sh
+HATCH_BLENDER=/path/to/blender HATCH_RENDER3D_REAL_TESTS=1 \
+  PYTHONPATH=scripts:tests python -m unittest test_render3d_jobs.RealJobWorkflow -v
+```
+
+It executes actual per-frame native rig rendering, independently decodes the
+portable delivery, reuses verified pixels without a renderer, repairs one
+corrupted frame while retaining its bytes, and cancels a real worker through the
+durable job callback. The fixture is synthetic and carries no visual approval.

@@ -205,3 +205,57 @@ class JobTests(unittest.TestCase):
         changed=deepcopy(self.request);changed['id']='refresh';changed['destination']['path']='fresh';changed['cache_policy']='refresh'
         other=self.submit(changed);second=self.store.claim(other)
         self.assertFalse(self.store.reuse(second,self.verify))
+
+
+@unittest.skipUnless(__import__('os').environ.get('HATCH_RENDER3D_REAL_TESTS') == '1',
+                     'Dedicated real-render gate requires HATCH_RENDER3D_REAL_TESTS=1')
+class RealJobWorkflow(unittest.TestCase):
+    def test_native_render_delivery_cache_repair_and_worker_cancellation(self):
+        from rig_test_helpers import fixture
+        from rig_jobs import save_rig
+        from render3d_snapshot import NativeRigAdapter
+        from render3d_blender import BlenderBackend
+        from render3d_verify import RenderArtifactVerifier
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);(root/'native').mkdir()
+            rig=fixture(root/'native');del rig.clips['neutral']
+            save_rig(rig,operation='single-clip-jobs-native-test')
+            create_snapshot(rig.root,root/'snapshot',NativeRigAdapter())
+            req=request();req['snapshot']=file(payload=(root/'snapshot/snapshot.json').read_bytes())
+            req['frame_range']=dict(start=0,end=2);req['source_start']=dict(numerator=0,denominator=1)
+            req['fps']=dict(numerator=4,denominator=1);req['playback_rate']=dict(numerator=1,denominator=1)
+            req['camera']='front';req['max_attempts']=3
+            req['settings']['resolution']=[32,32];req['settings']['samples']=1
+            req['settings']['resources']['memory_bytes']=2*1024**3
+            backend_adapter=BlenderBackend();identity=backend_adapter.inspect_version()
+            verify=RenderArtifactVerifier(root/'snapshot',identity).verify
+            store=JobStore(root/'jobs');job=store.submit(req,root/'snapshot',identity)
+            while store.run_one(backend_adapter,verify,job=job) is not None:pass
+            delivered=store.materialize(job,root/'delivery',verify)
+            self.assertEqual(verify(req,delivered,root/'delivery')['decoded_frames'],2)
+            reused=deepcopy(req);reused['id']='reused';reused['destination']['path']='reused'
+            reuse_job=store.submit(reused,root/'snapshot',identity)
+            class NoRender:
+                def render_frames(self,*args,**kwargs):
+                    raise AssertionError('Valid independently decoded cache should be reused')
+            while store.run_one(NoRender(),verify,job=reuse_job) is not None:pass
+            self.assertEqual(store.status(reuse_job)['state'],'complete')
+            frame=store.status(job)['frames'][0]
+            cache=root/'jobs/cache'/frame['cache_key']
+            record=json.loads((cache/'cache.json').read_text())
+            (cache/record['result']['images'][0]['file']['path']).write_bytes(b'corrupt-cache')
+            store.resume(job,verifier=verify)
+            self.assertEqual([item['state'] for item in store.status(job)['frames']],['queued','complete'])
+            while store.run_one(backend_adapter,verify,job=job) is not None:pass
+            self.assertEqual(store.status(job)['state'],'complete')
+            self.assertEqual(len(list((root/'jobs/staging').glob('corrupt-*'))),1)
+            cancelled=deepcopy(req);cancelled['id']='cancelled';cancelled['destination']['path']='cancelled'
+            cancelled['cache_policy']='refresh';cancel_job=store.submit(cancelled,root/'snapshot',identity)
+            class CancelRender:
+                def render_frames(self,*args,**kwargs):
+                    store.cancel(cancel_job)
+                    return backend_adapter.render_frames(*args,**kwargs)
+            with self.assertRaises(Render3DError) as caught:
+                store.run_one(CancelRender(),verify,job=cancel_job)
+            self.assertEqual(caught.exception.report['category'],'cancelled')
+            self.assertEqual(store.status(cancel_job)['state'],'cancelled')
