@@ -2,7 +2,7 @@
 import math
 import random
 import numpy as np
-from scene3d_geometry import Mesh, positive, count
+from scene3d_geometry import Mesh, positive, count, numeric_array
 from scene3d_graph import require
 
 
@@ -21,17 +21,26 @@ class Heightfield:
             self.heights=np.array([[elevation*sum(a*math.sin(phase+x*kx/(n-1)*math.pi)*math.cos(z*kz/(n-1)*math.pi)
                                 for phase,kx,kz,a in waves)/norm for x in range(n)] for z in range(n)])
         else:
-            self.heights=np.asarray(heights,dtype=float).copy()
+            self.heights=numeric_array(heights,'heightmap').copy()
             require(self.heights.shape==(n,n) and np.isfinite(self.heights).all() and (np.abs(self.heights)<=elevation).all(),
                     'Heightmap dimensions/elevations violate bounds.')
+        self.max_slope=max_slope
         if max_slope is not None:
             require(type(max_slope) in (int,float) and 0<=max_slope<89,'Slope limit must be degrees in [0,89).')
             dx=self.width/(n-1); dz=self.depth/(n-1)
-            gradient=np.gradient(self.heights,dz,dx)
-            steepest=float(np.max(np.hypot(*gradient)))
+            steepest=self._steepest()
             if steepest: self.heights*=min(1,math.tan(math.radians(max_slope))/steepest)
 
+    def _steepest(self):
+        h=self.heights; dx=self.width/(self.resolution-1); dz=self.depth/(self.resolution-1)
+        first=np.hypot((h[:-1,1:]-h[:-1,:-1])/dx,(h[1:,:-1]-h[:-1,:-1])/dz)
+        second=np.hypot((h[1:,1:]-h[1:,:-1])/dx,(h[1:,1:]-h[:-1,1:])/dz)
+        return float(max(first.max(),second.max()))
+
     def mesh(self):
+        if self.max_slope is not None:
+            require(self._steepest() <= math.tan(math.radians(self.max_slope))+1e-12,
+                    'Terrain edits exceed the configured triangle slope limit.')
         n=self.resolution
         vertices=[[x*self.width/(n-1)-self.width/2,self.heights[z,x],z*self.depth/(n-1)-self.depth/2] for z in range(n) for x in range(n)]
         triangles=[]
@@ -62,30 +71,38 @@ class Heightfield:
 
     def path(self, points, width, elevation=0):
         """Flatten a bounded polyline corridor into this actual heightfield."""
-        positive(width,'path width'); p=np.asarray(points,dtype=float)
+        positive(width,'path width'); p=numeric_array(points,'path')
         require(p.ndim==2 and p.shape[1]==2 and 2<=len(p)<=256 and np.isfinite(p).all(),'Invalid path.')
-        require(np.isfinite(elevation) and abs(elevation)<=10000,'Invalid path elevation.')
+        require(type(elevation) in (int,float) and math.isfinite(elevation) and abs(elevation)<=10000,'Invalid path elevation.')
         require((np.abs(p[:,0])<=self.width/2).all() and (np.abs(p[:,1])<=self.depth/2).all(),'Path exceeds terrain.')
         require((np.linalg.norm(np.diff(p,axis=0),axis=1)>1e-9).all(),'Path has empty spans.')
-        for z in range(self.resolution):
-            for x in range(self.resolution):
-                q=np.array([x*self.width/(self.resolution-1)-self.width/2,z*self.depth/(self.resolution-1)-self.depth/2])
-                distance=min(np.linalg.norm(q-(a+np.clip(np.dot(q-a,b-a)/np.dot(b-a,b-a),0,1)*(b-a))) for a,b in zip(p,p[1:]))
-                if distance<=width/2: self.heights[z,x]=elevation
+        axis_x=np.linspace(-self.width/2,self.width/2,self.resolution)
+        axis_z=np.linspace(-self.depth/2,self.depth/2,self.resolution)
+        grid_x,grid_z=np.meshgrid(axis_x,axis_z)
+        distance=np.full(grid_x.shape,np.inf)
+        for a,b in zip(p,p[1:]):
+            delta=b-a
+            t=np.clip(((grid_x-a[0])*delta[0]+(grid_z-a[1])*delta[1])/np.dot(delta,delta),0,1)
+            distance=np.minimum(distance,np.hypot(grid_x-a[0]-t*delta[0],grid_z-a[1]-t*delta[1]))
+        self.heights[distance<=width/2]=elevation
         return self
 
 
-def scatter(terrain, total, spacing=1, seed=0, max_slope=30, exclusions=(), retries=50):
+def scatter(terrain, total, spacing=1, seed=0, max_slope=30, exclusions=(), retries=50, clearance=0):
     """Poisson-like rejection sampling with grid broad phase and bounded failure."""
     count(total,'placement count',0,10000);positive(spacing,'spacing');count(retries,'retries',1,1000)
     require(type(seed) is int and 0<=seed<2**32 and type(max_slope) in (int,float) and 0<=max_slope<=90,'Invalid placement seed/slope.')
+    require(isinstance(exclusions,(list,tuple)) and len(exclusions)<=128,'At most 128 exclusion rectangles are supported.')
     for rect in exclusions:
-        require(len(rect)==4 and all(type(x) in (int,float) and math.isfinite(x) for x in rect) and rect[0]<=rect[2] and rect[1]<=rect[3],'Invalid exclusion rectangle.')
+        require(isinstance(rect,(list,tuple)) and len(rect)==4 and all(type(x) in (int,float) and math.isfinite(x) for x in rect) and rect[0]<=rect[2] and rect[1]<=rect[3],'Invalid exclusion rectangle.')
+    require(type(clearance) in (int,float) and math.isfinite(clearance) and 0<=clearance<min(terrain.width,terrain.depth)/2,
+            'Invalid placement clearance.')
+    require(spacing>=2*clearance,'Spacing must accommodate the complete prop footprint.')
     rng=random.Random(seed);grid={};points=[]
-    for _ in range(total*retries):
+    for _ in range(min(total*retries,200000)):
         if len(points)==total: break
-        x=rng.uniform(-terrain.width/2,terrain.width/2);z=rng.uniform(-terrain.depth/2,terrain.depth/2)
-        if any(a<=x<=c and b<=z<=d for a,b,c,d in exclusions): continue
+        x=rng.uniform(-terrain.width/2+clearance,terrain.width/2-clearance);z=rng.uniform(-terrain.depth/2+clearance,terrain.depth/2-clearance)
+        if any(a-clearance<=x<=c+clearance and b-clearance<=z<=d+clearance for a,b,c,d in exclusions): continue
         sample=terrain.sample(x,z)
         if sample['slope']>max_slope:continue
         key=(math.floor(x/spacing),math.floor(z/spacing))

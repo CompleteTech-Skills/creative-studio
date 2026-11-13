@@ -15,8 +15,8 @@ from scene3d_graph import SceneGraph
 from scene3d_snapshot import snapshot_project
 
 
-def recipe(kind='rooms',**parameters):
-    return dict(id='test',version=1,seed=7,generator=kind,parameters=parameters,budget=100)
+def recipe(generator='rooms',**parameters):
+    return dict(id='test',version=1,seed=7,generator=generator,parameters=parameters,budget=100)
 
 
 class GeometryTests(unittest.TestCase):
@@ -60,6 +60,13 @@ class TerrainTests(unittest.TestCase):
         self.assertAlmostEqual(t.sample(.5,.5)['height'],2.75)
         with self.assertRaises(RigError):t.sample(2,0)
 
+    def test_triangle_slope_bound_and_edited_slope_failure(self):
+        heights=np.zeros((5,5));heights[2,2]=1
+        terrain=Heightfield(width=4,depth=4,resolution=5,elevation=1,heights=heights,max_slope=10)
+        self.assertLessEqual(terrain.sample(.25,.25)['slope'],10+1e-9)
+        terrain.heights[2,2]=4
+        with self.assertRaises(RigError):terrain.mesh()
+
     def test_flatten_path_and_spatial_scatter(self):
         a=Heightfield(seed=8).path([[-10,0],[10,0]],width=2,elevation=0)
         self.assertEqual(a.sample(0,0)['height'],0)
@@ -72,12 +79,48 @@ class TerrainTests(unittest.TestCase):
 
 
 class EnvironmentTests(unittest.TestCase):
+    def test_tree_geometry_fits_bounds_and_does_not_overlap(self):
+        objects=plan(dict(recipe('terrain',elevation=0,scatter_count=100),budget=300))
+        crowns=[o for o in objects if 'crown' in o['id']]
+        for i,a in enumerate(crowns):
+            self.assertLessEqual(abs(a['position'][0])+.65,10)
+            self.assertLessEqual(abs(a['position'][2])+.65,10)
+            for b in crowns[i+1:]:
+                self.assertGreaterEqual(math.hypot(a['position'][0]-b['position'][0],a['position'][2]-b['position'][2]),1.3)
+
+    def test_malformed_parameters_are_structured_errors(self):
+        for p in ({'kind':[],'dimensions':{}},{'kind':'box','dimensions':[]}):
+            with self.assertRaises(RigError):plan(recipe('primitive',**p))
+        for data in ('not a heightmap',[[object()]]):
+            with self.assertRaises(RigError):Heightfield(heights=data)
+        with self.assertRaises(RigError):extrude([['a','b']])
+
     def test_rooms_are_connected_and_bounded(self):
         items=plan(recipe(rooms=3))
         self.assertEqual(len([x for x in items if 'partition' in x['id']]),4)
         with self.assertRaises(RigError):plan(recipe(width=1,door_width=2))
         with self.assertRaises(RigError):plan(dict(recipe(),budget=2))
         with self.assertRaises(RigError):plan(recipe('caves'))
+
+    def test_deleted_nodes_stay_deleted_across_generator_switch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);first=root/'first'
+            original=recipe('primitive',kind='box',dimensions={})
+            create_environment(first,original)
+            b=load_project(first);path=b['project']['scenes'][-1]['path']
+            graph=SceneGraph(b['documents'][path]);graph.delete('test-mesh')
+            snapshot_project(first,root/'deleted',graph,scene_path=path)
+            b=load_project(root/'deleted');path=b['project']['scenes'][-1]['path']
+            apply_recipe(root/'deleted',root/'rooms',path,recipe(rooms=1))
+            b=load_project(root/'rooms');path=b['project']['scenes'][-1]['path']
+            result=apply_recipe(root/'rooms',root/'back',path,original)
+            b=load_project(root/'back');scene=b['documents'][b['project']['scenes'][-1]['path']]
+            self.assertIn('test-mesh',result['conflicts'])
+            self.assertNotIn('test-mesh',[n['id'] for n in scene['nodes']])
+
+    def test_preprocessing_collections_are_bounded(self):
+        with self.assertRaises(RigError):plan(recipe('terrain',paths=[{}]*9))
+        with self.assertRaises(RigError):scatter(Heightfield(),1,exclusions=[[0,0,1,1]]*129)
 
     def test_real_save_reopen_and_manual_edit_survive_regeneration(self):
         with tempfile.TemporaryDirectory() as temp:

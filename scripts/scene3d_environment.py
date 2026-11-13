@@ -46,20 +46,25 @@ def plan(recipe):
     def add(label,mesh,position=(0,0,0),rotation=None):
         require(len(objects)<recipe['budget'],'Generator node budget exceeded.','SCENE3D_LAYOUT')
         mesh.validate();objects.append(dict(id=identifier+'-'+label,mesh=mesh,position=list(position),rotation=rotation))
-    kind=recipe['generator']
+    kind=recipe['generator'];require(isinstance(kind,str),'Generator must be text.')
     if kind=='primitive':
-        require(set(p)=={'kind','dimensions'},'Primitive requires kind and dimensions.')
+        require(set(p)=={'kind','dimensions'} and isinstance(p['kind'],str) and isinstance(p['dimensions'],dict),
+                'Primitive requires a text kind and dimensions object.')
         add('mesh',primitive(p['kind'],**p['dimensions']))
     elif kind=='terrain':
         allowed={'width','depth','resolution','elevation','max_slope','heights','smooth','paths','scatter_count','spacing','scatter_slope','exclusions'}
         require(not set(p)-allowed,'Unknown terrain parameter.')
         terrain=Heightfield(seed=recipe['seed'],**{k:v for k,v in p.items() if k in {'width','depth','resolution','elevation','max_slope','heights'}})
         if p.get('smooth',0):terrain.smooth(p['smooth'])
-        for path in p.get('paths',[]):
+        paths=p.get('paths',[])
+        require(isinstance(paths,list) and len(paths)<=8,'Terrain supports at most eight paths.')
+        require(all(isinstance(path,dict) and isinstance(path.get('points'),list) for path in paths)
+                and sum(len(path['points']) for path in paths)<=64,'Path vertex budget exceeded.')
+        for path in paths:
             require(isinstance(path,dict) and set(path)=={'points','width','elevation'},'Invalid terrain path.')
             terrain.path(**path)
         add('ground',terrain.mesh())
-        for i,position in enumerate(scatter(terrain,p.get('scatter_count',0),spacing=p.get('spacing',1),seed=recipe['seed'],
+        for i,position in enumerate(scatter(terrain,p.get('scatter_count',0),spacing=p.get('spacing',1.3),seed=recipe['seed'],clearance=.65,
                         max_slope=p.get('scatter_slope',30),exclusions=p.get('exclusions',()))):
             # Reusable low-polygon tree: actual trunk and crown meshes, separately editable.
             add(f'trunk-{i}',primitive('cylinder',radius=.12,height=1.2,segments=8),[position[0],position[1]+.6,position[2]])
@@ -107,7 +112,9 @@ def apply_recipe(source,destination,scene_path,recipe,*,policy='preserve'):
     records=scene['metadata'].get('generator_nodes_'+rid,'[]');previous=json.loads(records)
     require(isinstance(previous,list) and all(isinstance(i,str) for i in previous),'Invalid generator node history.')
     modified={i for i,n in old.items() if fingerprint(n)!=n['metadata'].get('generated_fingerprint')}
-    deleted=set(previous)-set(old)
+    tombstones=json.loads(scene['metadata'].get('generator_deleted_'+rid,'[]'))
+    require(isinstance(tombstones,list) and all(isinstance(i,str) for i in tombstones),'Invalid generator deletion history.')
+    deleted=(set(previous)|set(tombstones))-set(old)
     conflicts=sorted(modified|deleted)
     require(policy!='reject' or not conflicts,'Generated nodes contain manual overrides: '+', '.join(conflicts),'SCENE3D_GENERATOR_CONFLICT')
     scene['nodes']=[n for n in scene['nodes'] if n['id'] not in old or n['id'] in modified]
@@ -139,6 +146,8 @@ def apply_recipe(source,destination,scene_path,recipe,*,policy='preserve'):
     old_recipe=scene['metadata'].get('generator_recipe_'+rid)
     scene['recipes']=[r for r in scene['recipes'] if r['path']!=old_recipe]+[dict(path=recipe_path,sha256=digest(recipe))]
     scene['metadata']['generator_recipe_'+rid]=recipe_path
+    scene['metadata']['generator_deleted_'+rid]=json.dumps(sorted(deleted),separators=(',',':'))
+    require(len(scene['metadata']['generator_deleted_'+rid])<=4096,'Generator deletion history exceeds metadata budget.')
     scene['metadata']['generator_nodes_'+rid]=json.dumps([o['id'] for o in objects],separators=(',',':'))
     require(len(scene['metadata']['generator_nodes_'+rid])<=4096,'Generator history exceeds metadata budget.')
     existing={(r['id'],r['version']):r for r in scene['dependencies']}

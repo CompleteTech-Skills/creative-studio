@@ -7,6 +7,15 @@ from scene3d_graph import require
 MAX_TRIANGLES = 200000
 
 
+def numeric_array(value, label):
+    try:
+        result=np.asarray(value,dtype=float)
+    except (TypeError, ValueError, OverflowError):
+        require(False,label+' must be a finite numeric array.','SCENE3D_GEOMETRY')
+    require(np.isfinite(result).all(),label+' must be a finite numeric array.','SCENE3D_GEOMETRY')
+    return result
+
+
 def positive(value, name):
     require(type(value) in (int, float) and math.isfinite(value) and 0 < value <= 10000,
             name + ' must be finite, positive and at most 10000.', 'SCENE3D_GEOMETRY')
@@ -25,8 +34,11 @@ class Mesh:
 
     def validate(self, budget=MAX_TRIANGLES):
         count(budget, 'triangle budget', 1, MAX_TRIANGLES)
-        v = np.asarray(self.vertices, dtype=float)
-        f = np.asarray(self.triangles)
+        v = numeric_array(self.vertices,'vertices')
+        try:
+            f = np.asarray(self.triangles)
+        except (TypeError,ValueError,OverflowError):
+            require(False,'Triangles must be integer triples.','SCENE3D_GEOMETRY')
         require(v.ndim == 2 and v.shape[1] == 3 and 3 <= len(v) <= 200000 and np.isfinite(v).all(),
                 'Invalid or excessive mesh vertices.', 'SCENE3D_GEOMETRY')
         require(f.ndim == 2 and f.shape[1] == 3 and 1 <= len(f) <= budget and f.dtype.kind in 'iu'
@@ -99,6 +111,12 @@ def revolve(profile, segments=24):
 
 def primitive(kind, **p):
     """All dimensions are meters. Unknown parameters fail instead of being ignored."""
+    if kind == 'extrude':
+        require(not set(p)-{'points','height'} and 'points' in p,'Invalid extrusion parameters.')
+        return extrude(**p)
+    if kind == 'curve':
+        require(not set(p)-{'points','radius','segments'} and 'points' in p,'Invalid curve parameters.')
+        return curve(**p)
     options = {
         'box': {'width','height','depth'}, 'plane': {'width','depth'},
         'cylinder': {'radius','height','segments'}, 'cone': {'radius','height','segments'},
@@ -107,7 +125,7 @@ def primitive(kind, **p):
         'stairs': {'width','height','depth','steps'}, 'pipe': {'radius','inner_radius','height','segments'},
         'beam': {'width','height','depth'}, 'platform': {'width','height','depth'},
         'door': {'width','height','depth'}, 'window': {'width','height','depth'}}
-    require(kind in options and not set(p)-options[kind], 'Unknown primitive or parameter.', 'SCENE3D_GEOMETRY')
+    require(isinstance(kind,str) and kind in options and not set(p)-options[kind], 'Unknown primitive or parameter.', 'SCENE3D_GEOMETRY')
     if kind in ('box','beam','platform','door','window'): return box(**p)
     if kind == 'plane': return plane(**p)
     segments=count(p.get('segments',24),'segments')
@@ -171,7 +189,7 @@ def wall(width, height, thickness, openings=()):
 
 def extrude(points, height=1):
     """Extrude a strictly convex XZ polygon; reject concave/self-intersecting profiles."""
-    h=positive(height,'height'); p=np.asarray(points,dtype=float)
+    h=positive(height,'height'); p=numeric_array(points,'points')
     require(p.ndim==2 and p.shape[1]==2 and 3<=len(p)<=256 and np.isfinite(p).all(),'Invalid polygon profile.')
     edges=np.roll(p,-1,axis=0)-p
     crosses=edges[:,0]*np.roll(edges,-1,axis=0)[:,1]-edges[:,1]*np.roll(edges,-1,axis=0)[:,0]
@@ -191,7 +209,7 @@ def extrude(points, height=1):
 
 def curve(points, radius=.1, segments=12):
     """Piecewise linear tube, using independent capped spans as editable solid geometry."""
-    p=np.asarray(points,dtype=float); r=positive(radius,'radius'); count(segments,'segments')
+    p=numeric_array(points,'points'); r=positive(radius,'radius'); count(segments,'segments')
     require(p.ndim==2 and p.shape[1]==3 and 2<=len(p)<=256 and np.isfinite(p).all(),'Invalid curve points.')
     parts=[]
     for a,b in zip(p,p[1:]):
