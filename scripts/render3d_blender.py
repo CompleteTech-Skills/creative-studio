@@ -278,15 +278,16 @@ class BlenderBackend:
         require(not target.parent.resolve().joinpath(target.name).is_relative_to(root.resolve()),'ownership','Output cannot be nested in source snapshot.')
         snapshot=load(root/'snapshot.json','RenderSnapshot');self.validate(snapshot,request['settings'])
         adapter=Scene3DAdapter() if snapshot['scope']=='scene3d' else NativeRigAdapter()
-        verify_snapshot(root,adapter)
-        make_frame_spec(request,request['frame_range']['start'],root/'snapshot.json')
-        # Admission precedes creating output paths and importing expensive assets.
+        # Metadata-only admission must precede owner verification: the native
+        # owner decodes full geometry while verifying the source closure.
         settings=request['settings'];resources=settings['resources'];width,height=settings['resolution']
         frame_count=request['frame_range']['end']-request['frame_range']['start']
         estimate=width*height*64+snapshot['total_bytes']*8+frame_count*16384
         require(estimate<=resources['memory_bytes'],'system-memory','Scene/image admission exceeds memory budget.')
         require(width*height*16*(request['frame_range']['end']-request['frame_range']['start'])<=resources['storage_bytes'],
                 'storage-exhaustion','Conservative uncompressed output estimate exceeds storage budget.')
+        verify_snapshot(root,adapter)
+        make_frame_spec(request,request['frame_range']['start'],root/'snapshot.json')
         target.parent.mkdir(parents=True,exist_ok=True)
         stage=Path(tempfile.mkdtemp(prefix='.render3d-',dir=target.parent))
         try:
