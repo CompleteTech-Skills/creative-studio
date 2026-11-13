@@ -69,6 +69,32 @@ class SceneLifecycleTests(unittest.TestCase):
         self.assertEqual(len({r['path'] for r in promoted['project']['shots']}),5)
         self.assertEqual(len([d for d in promoted['documents'].values() if d['kind']=='scene3d-shot']),5)
 
+    def test_derived_existing_scene_shot_version_does_not_enter_original_promotion(self):
+        from scene3d_contracts import load_project
+        extra=deepcopy(self.bundle['documents']['example-shot.json']);extra['version']='1.2.0'
+        graph=SceneGraph.from_bundle(self.bundle,'example-scene.json',source_root=self.source)
+        snapshot_project(self.source,self.root/'extra-version',graph,scene_path='example-scene.json',
+                         derived_documents={'new-shot.json':extra})
+        bundle=load_project(self.root/'extra-version')
+        self.assertEqual(bundle['documents']['new-shot.json']['scene']['path'],'example-scene.json')
+        self.assertEqual(len(bundle['project']['shots']),3)
+        self.assertEqual(len({r['path'] for r in bundle['project']['shots']}),3)
+
+    def test_inspection_expands_saved_prefabs_without_mutating_revision(self):
+        from editor3d_repository import EditorRepository
+        from scene3d_prefabs import PrefabLibrary
+        graph=SceneGraph.from_bundle(self.bundle,'example-scene.json',source_root=self.source)
+        library=PrefabLibrary.from_files(self.source,self.bundle)
+        library.instantiate(graph,self.bundle['project']['prefabs'][0],'instance')
+        result=snapshot_project(self.source,self.root/'prefab-source',graph,scene_path='example-scene.json')
+        repository=EditorRepository.create(self.root/'prefab-source',self.root/'repository',scene_path=result['active_scene']['path'])
+        before=repository.snapshot()
+        report=inspect_revision(repository.root)
+        self.assertGreater(len(report['nodes']),len(before['scene']['nodes']))
+        self.assertEqual(before,repository.snapshot())
+        self.assertEqual(report['evaluation'],'authored-base-pose')
+        self.assertFalse(report['production_approved'])
+
     def test_repository_edit_restore_and_new_process_reopen(self):
         try:
             from editor3d_repository import EditorRepository

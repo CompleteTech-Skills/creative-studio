@@ -168,7 +168,7 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         project['scenes'].append(active_scene)
         # Existing shots remain valid against the retained old scene; new exact
         # shot versions bind the edited scene without overwriting their originals.
-        for reference in list(project['shots']):
+        for reference in bundle['project']['shots']:
             old_shot = bundle['documents'][reference['path']]
             if old_shot['scene']['path'] != scene_path:
                 continue
