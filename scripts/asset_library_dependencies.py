@@ -468,6 +468,9 @@ def normalize_static_units(graph,value,path,*,version):
         fail('CONVERSION','This adapter only converts units in canonical 3D coordinates.')
     if Path(path).suffix.lower() not in ('.obj','.gltf','.glb'):
         fail('CONVERSION','Choose a static OBJ, glTF or GLB payload.')
+    selected=next((f for f in manifest['files'] if f['path']==path),None)
+    if selected is None or selected['role'] not in ('geometry','runtime'):
+        fail('CONVERSION','Choose an active geometry or runtime entry; retained source evidence is not canonical geometry.')
     if version==manifest['version']:fail('CONVERSION','Conversion needs a new immutable version.')
     scale=manifest['compatibility']['unit_scale']
     with tempfile.TemporaryDirectory(prefix='hatch-dependency-conversion-') as temporary:
@@ -480,7 +483,9 @@ def normalize_static_units(graph,value,path,*,version):
         if model.skeleton or model.weights or model.clips:
             fail('CONVERSION','Rigged or animated content requires its native conversion owner.')
         output='derived/unit-normalized.glb'
-        if output in sources:fail('CONVERSION','Reserved normalized output already exists; preserve it in a separate version plan.')
+        evidence='derived/unit-normalization.json'
+        if output in sources or evidence in sources:
+            fail('CONVERSION','Reserved normalized output/evidence already exists; preserve it in a separate version plan.')
         target=root/output;target.parent.mkdir(parents=True,exist_ok=True)
         export_geometry(model.geometry,target,provenance=dict(fixture=manifest['provenance']['fixture'],
                                                             operation='explicit-unit-normalization',source_sha256=value['reference']['sha256']))
@@ -491,12 +496,35 @@ def normalize_static_units(graph,value,path,*,version):
             if not np.array_equal(expected.triangles,actual.triangles) or not np.allclose(expected.positions,actual.positions,rtol=1e-6,atol=1e-7):
                 fail('CONVERSION','Independent reopened geometry differs from normalized coordinates.')
         record=file_record(target,output,'runtime');sources[output]=target
-        updated=deepcopy(manifest);updated['version']=version;updated['files'].append(record)
+        updated=deepcopy(manifest);updated['version']=version
+        originals=[deepcopy(f) for f in manifest['files'] if f['role'] in ('geometry','runtime')]
+        retained={f['path']:{**deepcopy(f),'role':'source'} for f in originals}
+        # All evidence references must remain identical to their inventoried
+        # records after demotion. Exact original bytes and metadata stay intact.
+        def retain_sources(node):
+            if isinstance(node,dict):
+                if {'path','role','sha256','bytes'}<=node.keys() and node['path'] in retained:
+                    replacement=deepcopy(retained[node['path']]);node.clear();node.update(replacement)
+                else:
+                    for child in node.values():retain_sources(child)
+            elif isinstance(node,list):
+                for child in node:retain_sources(child)
+        retain_sources(updated)
+        provenance=updated['provenance']
+        known_sources={f['path'] for f in provenance['sources']}
+        provenance['sources'].extend(deepcopy(f) for name,f in retained.items() if name not in known_sources)
+        evidence_path=root/evidence
+        evidence_path.write_bytes(canonical_bytes(dict(schema_version=1,kind='asset-static-unit-normalization',
+            source=value['reference'],selected_entry=path,original_compatibility=manifest['compatibility'],
+            original_active_files=originals,normalized_output=record)))
+        evidence_record=file_record(evidence_path,evidence,'evidence',False);sources[evidence]=evidence_path
+        updated['files'].extend([record,evidence_record])
         updated['compatibility']['unit_scale']=1;updated['compatibility']['formats']=['glb']
-        updated['publication']['inventory'].append(output)
-        provenance=updated['provenance'];provenance['method']='derived';provenance['parents'].append(value['reference'])
+        updated['publication']['inventory'].extend([output,evidence])
+        provenance['method']='derived';provenance['parents'].append(value['reference'])
         provenance['conversions']=provenance.get('conversions',[])+[dict(tool='asset-dependency-static-units',version='1.0.0',timestamp=timestamp(),
-            operation='Explicit canonical static unit normalization; reopened geometry verified.',inputs=[next(f for f in manifest['files'] if f['path']==path)],outputs=[record])]
+            operation='Explicit canonical static unit normalization; selected geometry reopened and verified; original units retained in conversion evidence.',
+            inputs=[retained[path]],outputs=[record,evidence_record])]
         derived=library.register(seal(updated),sources)
     graph.closure([locator(value['library'],derived)])
     return dict(asset=locator(value['library'],derived),native_path=output,source=value,

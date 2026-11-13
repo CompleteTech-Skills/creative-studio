@@ -106,8 +106,78 @@ class UnitConversionTests(unittest.TestCase):
             result=normalize_static_units(graph,locator('local',original),'mesh/triangle.obj',version='2.0.0')
             self.assertTrue(result['geometry_verified'])
             self.assertEqual(library.read_file(original,'mesh/triangle.obj'),before)
-            self.assertEqual(library.resolve(result['asset']['reference'])['compatibility']['unit_scale'],1)
+            normalized=result['asset']['reference'];manifest=library.resolve(normalized)
+            self.assertEqual(manifest['compatibility']['unit_scale'],1)
+            self.assertEqual([(f['path'],f['role']) for f in manifest['files']
+                              if f['role'] in ('geometry','runtime')],[(result['native_path'],'runtime')])
+            self.assertEqual(library.read_file(normalized,'mesh/triangle.obj'),before)
+            evidence=json.loads(library.read_file(normalized,'derived/unit-normalization.json'))
+            self.assertEqual(evidence['original_compatibility']['unit_scale'],.01)
+            self.assertEqual(evidence['source'],original)
+            self.assertEqual(evidence['original_active_files'],template['files'][:1])
+            from model3d_mesh_import import import_canonical
+            from rig_errors import RigError
+            with import_canonical(library,normalized) as snapshot:
+                self.assertEqual(snapshot.provenance['source_entry'],result['native_path'])
+                maximum=max(float(mesh.positions.max()) for mesh in snapshot.model.geometry.meshes)
+                self.assertAlmostEqual(maximum,.01,places=7)
+            with self.assertRaises(RigError) as caught:
+                import_canonical(library,normalized,entry='mesh/triangle.obj')
+            self.assertEqual(caught.exception.report['code'],'MODEL3D_ENTRY')
             self.assertTrue(graph.closure([result['asset']])['complete'])
+
+    def test_all_retained_active_entries_and_nested_evidence_preserve_original_bytes(self):
+        from asset_library_dependencies import normalize_static_units
+        from rig_import import load_character_model
+        from rig_gltf import export_geometry
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp).resolve();library=AssetLibrary(root/'library',create=True)
+            base=ROOT/'examples/asset-library-foundation'
+            template=json.loads((base/'manifest.json').read_text())
+            template['compatibility']['unit_scale']=.01
+            template['files'][0]['technical_metadata']={'field'+str(i):i for i in range(64)}
+            template['provenance']['sources']=[deepcopy(template['files'][0])]
+            runtime=root/'original.glb'
+            export_geometry(load_character_model(base/'mesh/triangle.obj').geometry,runtime)
+            runtime_record=file_record(runtime,'runtime/original.glb','runtime')
+            template['files'].append(runtime_record)
+            template['publication']['inventory'].append(runtime_record['path'])
+            template['provenance']['conversions']=[dict(tool='fixture-export',version='1',timestamp='2026-11-13T00:00:00Z',
+                operation='Retained unnormalized source export.',inputs=[deepcopy(template['files'][0])],outputs=[runtime_record])]
+            sources={f['path']:base/f['path'] for f in template['files'] if f['path']!=runtime_record['path']}
+            sources[runtime_record['path']]=runtime
+            original=library.register(seal(template),sources);original_manifest=library.resolve(original)
+            before={f['path']:library.read_file(original,f['path']) for f in template['files']}
+            result=normalize_static_units(DependencyGraph({'local':library}),locator('local',original),
+                                          'mesh/triangle.obj',version='2.0.0')
+            manifest=library.resolve(result['asset']['reference']);files={f['path']:f for f in manifest['files']}
+            self.assertEqual(library.resolve(original),original_manifest)
+            for record in template['files']:
+                self.assertEqual(library.read_file(result['asset']['reference'],record['path']),before[record['path']])
+            for path in ['mesh/triangle.obj','runtime/original.glb']:
+                self.assertEqual(files[path]['role'],'source')
+            self.assertEqual(files['mesh/triangle.obj']['technical_metadata'],template['files'][0]['technical_metadata'])
+            for conversion in manifest['provenance']['conversions']:
+                for record in conversion['inputs']+conversion['outputs']:
+                    self.assertEqual(record,files[record['path']])
+            self.assertEqual([f['path'] for f in manifest['files'] if f['role'] in ('geometry','runtime')],
+                             ['derived/unit-normalized.glb'])
+
+    def test_retained_source_geometry_cannot_be_normalized_as_active_runtime(self):
+        from asset_library_dependencies import normalize_static_units
+        from rig_errors import RigError
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp).resolve();library=AssetLibrary(root/'library',create=True)
+            base=ROOT/'examples/asset-library-foundation'
+            template=json.loads((base/'manifest.json').read_text())
+            template['files'][0]['role']='source'
+            template['provenance']['sources']=[deepcopy(template['files'][0])]
+            original=library.register(seal(template),{f['path']:base/f['path'] for f in template['files']})
+            with self.assertRaises(RigError) as caught:
+                normalize_static_units(DependencyGraph({'local':library}),locator('local',original),
+                                       'mesh/triangle.obj',version='2.0.0')
+            self.assertEqual(caught.exception.report['code'],'LIBRARY_DEPENDENCY_CONVERSION')
+            self.assertEqual(library.list_references(),[original])
 
 
 if __name__=='__main__':unittest.main()

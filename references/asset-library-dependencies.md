@@ -65,7 +65,14 @@ canonical-coordinate meshes. It loads the real source, applies its declared unit
 scale through the native importer, exports a GLB, independently reopens the GLB
 and compares coordinates/topology. It registers a new derived immutable version,
 retaining original files and exact parent/conversion provenance. The result names
-the new native entry. Skins, skeletons and animation reject this narrow adapter;
+the sole active native entry, `derived/unit-normalized.glb`. Previous geometry and
+runtime files become retained source evidence with their exact bytes and technical
+metadata. `derived/unit-normalization.json` binds their original roles, full unit
+and coordinate declarations, selected input, and normalized output. Nested source
+and conversion records remain identical to their inventoried file records. The
+original immutable version keeps its original roles and units. Retained sources
+cannot be selected as normalized active geometry or normalized again through
+this adapter. Skins, skeletons and animation reject this narrow adapter;
 they require a real owner-provided retarget/conversion instead of silently losing
 channels. No provider, rendered preview or production approval is claimed.
 
