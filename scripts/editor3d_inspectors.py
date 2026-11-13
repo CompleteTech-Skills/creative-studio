@@ -135,6 +135,10 @@ def _load_material_registry(repository, snapshot, reference):
         if key in seen: return
         seen.add(key)
         raw = read(path, expected); value = decode_json(raw)
+        if depth == 0 and (value.get('id') != reference['id'] or
+                value.get('version') != reference['version'] or
+                value.get('kind') not in {'material3d', 'material-instance3d', 'material-variant3d'}):
+            _fail('Bound material bytes do not match the exact material identity.')
         entries.append((path, raw))
         for child in _references(value): visit(child['path'], child['sha256'], depth+1)
         if value.get('kind') == 'texture3d':
@@ -172,7 +176,7 @@ def apply_material_edit(repository, request):
     """
     from pathlib import PurePosixPath
     import hashlib
-    from lookdev_contracts import canonical_bytes, validate_resource, Registry
+    from lookdev_contracts import canonical_bytes, validate_resource, Registry, _references
     from rig_errors import timestamp
     allowed = {'node_id', 'slot', 'surface', 'texture_slots', 'expected_revision',
                'expected_sha256', 'transaction_id'}
@@ -201,6 +205,8 @@ def apply_material_edit(repository, request):
     if 'texture_slots' in request:
         if not isinstance(request['texture_slots'], dict): _fail('Texture slots must be a map.')
         candidate['texture_slots'] = deepcopy(request['texture_slots'])
+    references = list(_references(candidate['surface'])) + list(_references(candidate['texture_slots']))
+    candidate['dependencies'] = list({canonical_bytes(item): item for item in references}.values())
     major, minor, patch = map(int, candidate['version'].split('.'))
     candidate['version'] = f'{major}.{minor}.{patch+1}'
     candidate['provenance'] = dict(candidate['provenance'], origin='derived',

@@ -87,6 +87,51 @@ class InspectorTests(unittest.TestCase):
         self.assertEqual(describe_materials(None,snapshot,'camera'),[])
         self.assertEqual(describe_materials(None,snapshot,'root'),[])
 
+    def test_bound_material_root_cannot_alias_a_dependency(self):
+        from editor3d_inspectors import _load_material_registry
+        import hashlib
+        base=(Path(__file__).resolve().parents[1]/'examples/lookdev-contracts/blue-coat.json').read_bytes()
+        class Source:
+            def read_file(self,path,sha): return base
+        with self.assertRaisesRegex(RigError,'exact material identity'):
+            _load_material_registry(Source(),{'sha256':'a'*64},dict(id='ceramic',version='1.0.0',path='blue-coat.json',sha256=hashlib.sha256(base).hexdigest()))
+
+    def test_inherited_texture_material_edit_keeps_direct_dependencies(self):
+        import hashlib
+        from PIL import Image
+        from editor3d_repository import EditorRepository
+        from editor3d_inspectors import apply_material_edit, describe_materials
+        from lookdev_contracts import canonical_bytes
+        example=Path(__file__).resolve().parents[1]/'examples/lookdev-contracts'
+        base=json.loads((example/'ceramic.json').read_bytes())
+        tex=json.loads((example/'albedo.json').read_bytes())
+        image=self.base/'albedo.png'; Image.new('RGBA',(2,2),'blue').save(image)
+        png=image.read_bytes();tex['file']['sha256']=hashlib.sha256(png).hexdigest();tex['file']['bytes']=len(png)
+        tx=canonical_bytes(tex)
+        tr=dict(id=tex['id'],version=tex['version'],kind=tex['kind'],path='albedo.json',sha256=hashlib.sha256(tx).hexdigest())
+        base['texture_slots']={'base_color':dict(texture=tr,texcoord=0,channels='rgba',scale=[1,1,1],offset=[0,0,0],rotation_radians=0,strength=1)}
+        base['dependencies']=[tr];br=canonical_bytes(base)
+        ref=dict(id=base['id'],version=base['version'],kind=base['kind'],path='ceramic.json',sha256=hashlib.sha256(br).hexdigest())
+        inst=json.loads((example/'blue-coat.json').read_bytes());inst['base_material']=ref;inst['dependencies']=[ref]
+        ir=canonical_bytes(inst)
+        generic=dict(id=inst['id'],version=inst['version'],kind='material',path='blue-coat.json',sha256=hashlib.sha256(ir).hexdigest())
+        graph=SceneGraph.from_bundle(self.bundle,'example-scene.json',source_root=self.base/'source')
+        graph.configure_node('mesh',{'material_overrides':[dict(slot='coat',material=generic)]})
+        payloads={'ceramic.json':br,'blue-coat.json':ir,'albedo.json':tx,'textures/albedo.png':png}
+        copied=snapshot_project(self.base/'source',self.base/'textured',graph,scene_path='example-scene.json',extra_payloads=payloads)
+        project=json.loads((self.base/'textured/project.json').read_text())
+        for name,data in payloads.items():
+            if name=='blue-coat.json':continue
+            project['dependency_lock'].append(dict(kind='texture',id=name.replace('/','-').replace('.','-'),version='1.0.0',path=name,sha256=hashlib.sha256(data).hexdigest()))
+        (self.base/'textured/project.json').write_bytes(canonical_bytes(project))
+        repository=EditorRepository.create(self.base/'textured',self.base/'textured-repo',scene_path=copied['active_scene']['path'])
+        snap=repository.snapshot()
+        after=apply_material_edit(repository,dict(node_id='mesh',slot='coat',surface={'roughness':.4},expected_revision=snap['revision'],expected_sha256=snap['sha256'],transaction_id='inherited-edit'))
+        effective=describe_materials(repository,after,'mesh')[0]['effective']
+        self.assertEqual(effective['surface']['roughness'],.4)
+        self.assertEqual(effective['texture_slots']['base_color']['texture'],tr)
+        self.assertEqual(repository.read_file('textures/albedo.png',after['sha256']),png)
+
     def test_material_edit_publishes_new_native_version_and_preserves_source(self):
         import hashlib
         from editor3d_repository import EditorRepository
