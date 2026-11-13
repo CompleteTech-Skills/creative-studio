@@ -133,7 +133,7 @@ class RetargetControlTests(unittest.TestCase):
         profile = build_retarget_profile(self.source, target, supported_dofs={'b1': dof('locked')})
         with self.assertRaises(RigError) as caught:
             retarget_pose(self.source, target, neutral_pose(self.source.skeleton), profile)
-        self.assertEqual(caught.exception.code, 'RIG_RETARGET_DOF_CONFLICT')
+        self.assertEqual(caught.exception.report['code'], 'RIG_RETARGET_DOF_CONFLICT')
 
     def test_restricted_contact_chain_is_explicitly_unsupported_and_profile_report_is_retained(self):
         source = self.source;target = deepcopy(source);target.manifest['id'] = 'target'
@@ -142,7 +142,7 @@ class RetargetControlTests(unittest.TestCase):
         clip['contacts'] = [dict(schema_version=1, id='hold', chain='arm', start=0., end=1.,
                                   target=[0., 2., 0.], kind='hand')]
         with self.assertRaises(RigError) as caught:retarget_animation(source, target, clip, profile=profile)
-        self.assertEqual(caught.exception.code, 'RIG_RETARGET_DOF_CONTACT')
+        self.assertEqual(caught.exception.report['code'], 'RIG_RETARGET_DOF_CONTACT')
         clip['contacts'] = []
         report = retarget_animation(source, target, clip, profile=profile)['report']
         self.assertEqual(report['supported_dofs'], profile['supported_dofs'])
