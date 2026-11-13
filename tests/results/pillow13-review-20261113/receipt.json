@@ -1,0 +1,29 @@
+{
+  "source_commit": "af2bd9e4bc5aaa013f6ccfa0776f1f4ca29e6c18",
+  "python": "3.14.8",
+  "pillow": "13.0.0",
+  "checks": [
+    {
+      "command": "python -m unittest discover -s tests -p test_model3d_contracts.py -v",
+      "tests": 54,
+      "result": "passed",
+      "log": "model3d-tests.log"
+    },
+    {
+      "command": "python scripts/model3d.py validate --file examples/model3d-contracts/robotic.json --root .",
+      "result": "passed",
+      "log": "model3d-verification.json"
+    }
+  ],
+  "artifacts": {
+    "model3d-tests.log": {
+      "sha256": "3c49576dcd27bfbe4368a3a995b0616624f6a24bcd0dfd93d3b4789400377bb4",
+      "bytes": 8771
+    },
+    "model3d-verification.json": {
+      "sha256": "e8795b32832f98550831a63b5785be4bf92a25064d184c73ea0d92d5e03eb8ef",
+      "bytes": 24490
+    }
+  },
+  "historical_evidence": "Earlier local logs and independent reports named in pillow13-validation-20261025.json are not present in this checkout or the recovered repository. Their hashes and conclusions are historical reported metadata, not independently retrievable evidence. No durable coordinator archive URL is known."
+}
