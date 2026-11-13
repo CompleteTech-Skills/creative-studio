@@ -145,6 +145,15 @@ class SilentContracts(unittest.TestCase):
                     video.build_source(self.root, [path.name],
                                        fps={'numerator': 24, 'denominator': 1})
 
+    def test_rgb_png_transparency_is_not_silently_discarded(self):
+        path = self.root / 'transparent-rgb.png'
+        Image.new('RGB', (2, 2), (10, 20, 30)).save(path, transparency=(10, 20, 30))
+        with Image.open(path) as im:
+            self.assertEqual(im.mode, 'RGB')
+            self.assertEqual(im.convert('RGBA').getchannel('A').getextrema(), (0, 0))
+        with self.assertRaisesRegex(ValueError, 'transparency'):
+            video.build_source(self.root, [path.name], fps={'numerator': 24, 'denominator': 1})
+
     def test_mismatched_frame_dimensions_are_rejected(self):
         Image.new('RGB', (32, 48)).save(self.root / self.paths[-1])
         with self.assertRaises(ValueError):

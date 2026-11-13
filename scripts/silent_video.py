@@ -170,6 +170,8 @@ def _image_unchecked(data, expected=None):
         if expected is not None and im.size != expected:
             raise ValueError('frame dimensions differ from source inventory')
         im.load()
+        if 'transparency' in im.info:
+            raise ValueError('opaque profile rejects PNG transparency; composite explicitly first')
         if im.mode == 'RGBA' and im.getchannel('A').getextrema() != (255, 255):
             raise ValueError('opaque profile rejects nonopaque source alpha; composite explicitly first')
         return im.convert('RGB')
