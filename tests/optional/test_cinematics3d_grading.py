@@ -2,6 +2,7 @@
 from copy import deepcopy
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -30,6 +31,26 @@ class GradingTests(unittest.TestCase):
 
     def pixels(self):
         return np.array([[.1, .2, .4, 0.], [.18, .18, .18, .5], [2., 3., 4., 1.]], np.float32)
+
+    def test_module_import_does_not_load_optional_pixel_libraries(self):
+        script = Path(__file__).resolve().parents[2]/'scripts'
+        code = ('import sys;sys.path.insert(0,'+repr(str(script))+');'
+                'import cinematics3d_grading;'
+                'assert not any(x in sys.modules for x in ["numpy","PIL","yaml","PyOpenColorIO"])')
+        result = subprocess.run([sys.executable, '-S', '-c', code], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_persisted_schema_parity_and_malformed_types(self):
+        import json
+        import jsonschema
+        for name, schema in grade.schemas().items():
+            self.assertEqual(json.loads((Path(__file__).resolve().parents[2]/'schemas/cinematics-grade-v1'/name).read_text()), schema)
+            validator = jsonschema.Draft202012Validator(schema)
+            validator.validate(self.plan([self.operation('contrast', {'contrast': 1., 'pivot': .18})]))
+            invalid = self.plan([]); invalid['intensity'] = True
+            self.assertFalse(validator.is_valid(invalid))
+        for kind in ({}, [], 1, None):
+            with self.assertRaises(ValueError): self.plan([self.operation(kind, {})])
 
     def test_identity_and_disabled_operations_preserve_hdr_alpha_and_source(self):
         source = self.pixels(); retained = source.copy()

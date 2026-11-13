@@ -22,7 +22,7 @@ Operations execute in document order:
 | curves | `rgb`: three ordered piecewise-linear curves, 2–64 control pairs each; unit-slope extension outside domains preserves HDR differences |
 | lut | `inventory`: admitted versioned CUBE record |
 
-The optional mask is a finite floating array matching the pixel dimensions, bounded to [0,1]. It controls blending between the untouched input and the complete grade, multiplied by grade intensity. It does not invent or infer an object/semantic matte. Alpha remains unchanged. Output float32 precision is explicit; RGB is never silently clipped to SDR. Overflow and unsupported inputs fail before publication.
+The optional mask is a finite floating array matching the pixel dimensions, bounded to [0,1]. It controls blending between the untouched input and the complete grade, multiplied by grade intensity. It does not invent or infer an object/semantic matte. Alpha is carried through the explicit final float32 conversion without grading. Input/output dtypes are retained in the receipt; RGB is never silently clipped to SDR. Overflow and unsupported inputs fail before publication.
 
 `import_cube(root, path, working_space=..., interpolation='linear')` admits bounded `.cube` 1D/3D LUT bytes through the existing color validator. Its record includes source path, exact bytes/hash, dimensions, grid, domain, same input/output working-space declaration and interpolation. LUTs requiring color-space changes are rejected. Actual LUT application uses OCIO's file processor on a private copy of the admitted bytes. Domain clamping is the explicit CUBE/OCIO behavior; use non-LUT curves when unit-slope HDR extension is needed. Changing the original LUT invalidates the grade rather than silently executing a newer look.
 

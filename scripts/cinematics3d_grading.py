@@ -58,7 +58,7 @@ def import_cube(root, path, *, working_space, interpolation='linear'):
 def _validate_operation(operation):
     color._exact(operation, ['id', 'enabled', 'kind', 'parameters'], 'grade operation')
     color._name(operation['id'])
-    _need(type(operation['enabled']) is bool and operation['kind'] in KINDS, 'invalid grade kind/enabled')
+    _need(type(operation['enabled']) is bool and type(operation['kind']) is str and operation['kind'] in KINDS, 'invalid grade kind/enabled')
     p = operation['parameters']; kind = operation['kind']
     if kind == 'exposure':
         color._exact(p, ['stops'], kind); _number(p['stops'], -24, 24)
@@ -240,8 +240,43 @@ def apply_grade(root, grade, rgba, *, source_context, mask=None, max_work_bytes=
                'input_pixels_sha256': color._hash(memoryview(rgba).cast('B')),
                'output_pixels_sha256': color._hash(memoryview(output).cast('B')),
                'mask_sha256': None if mask is None else color._hash(mask.tobytes()), 'shape': list(rgba.shape),
+               'input_dtype': str(rgba.dtype), 'output_dtype': str(output.dtype),
                'alpha_mode': 'straight', 'working_space': grade['working_space'],
                'source_context_sha256': object_hash(source_context),
                'source_render_verified': False, 'grade_executed': True, 'diagnostics': diagnostics(rgba, output)}
     receipt['execution_sha256'] = object_hash(receipt)
     return output, receipt
+
+
+def schemas():
+    """Portable persisted-grade schema; runtime also validates numeric semantics."""
+    def number(low, high): return {'type': 'number', 'minimum': low, 'maximum': high}
+    def vector(length, low, high): return {'type': 'array', 'minItems': length, 'maxItems': length, 'items': number(low, high)}
+    def obj(properties): return {'type': 'object', 'required': list(properties), 'properties': properties, 'additionalProperties': False}
+    def constant(value): return {'const': value}
+    sha = {'type': 'string', 'pattern': '^[0-9a-f]{64}$'}
+    name = {'type': 'string', 'minLength': 1, 'maxLength': 256}
+    lut = obj({'kind': constant('cinematics-grade-lut'), 'schema_version': constant(1), 'path': {'type': 'string', 'minLength': 1, 'maxLength': 512},
+               'bytes': {'type': 'integer', 'minimum': 1, 'maximum': color.MAX_FILE_BYTES}, 'sha256': sha,
+               'input_space': name, 'output_space': name, 'dimensions': {'enum': [1, 3]},
+               'grid_size': {'type': 'integer', 'minimum': 2, 'maximum': 65536},
+               'domain_min': vector(3, -1e12, 1e12), 'domain_max': vector(3, -1e12, 1e12),
+               'interpolation': constant('linear'), 'lut_sha256': sha})
+    params = {
+        'exposure': obj({'stops': number(-24, 24)}),
+        'lift-gamma-gain': obj({'lift': vector(3, -16, 16), 'gamma': vector(3, .05, 20), 'gain': vector(3, 0, 32)}),
+        'contrast': obj({'contrast': number(0, 8), 'pivot': number(.0001, 16)}),
+        'saturation': obj({'amount': number(0, 4)}), 'vibrance': obj({'amount': number(0, 4)}),
+        'temperature-tint': obj({'temperature': number(-2, 2), 'tint': number(-2, 2)}),
+        'hue': obj({'degrees': number(-180, 180)}),
+        'channel-matrix': obj({'matrix': {'type': 'array', 'minItems': 3, 'maxItems': 3, 'items': vector(3, -8, 8)}, 'offset': vector(3, -16, 16)}),
+        'tonal-balance': obj({k: vector(3, -4, 4) for k in ('shadows', 'midtones', 'highlights')}),
+        'curves': obj({'rgb': {'type': 'array', 'minItems': 3, 'maxItems': 3, 'items': {'type': 'array', 'minItems': 2, 'maxItems': 64, 'items': vector(2, -64, 64)}}}),
+        'lut': obj({'inventory': lut}),
+    }
+    operation = {'oneOf': [obj({'id': name, 'enabled': {'type': 'boolean'}, 'kind': constant(kind), 'parameters': spec}) for kind, spec in params.items()]}
+    document = obj({'kind': constant('cinematics-grade'), 'schema_version': constant(1), 'working_space': name,
+                    'scope': {'enum': ['shot', 'scene']}, 'source_id': name, 'intensity': number(0, 1),
+                    'operations': {'type': 'array', 'maxItems': MAX_OPERATIONS, 'items': operation}, 'grade_sha256': sha})
+    document['$schema'] = 'https://json-schema.org/draft/2020-12/schema'
+    return {'grade.schema.json': document}
