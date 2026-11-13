@@ -142,6 +142,12 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
         parent = next(b['parent'] for b in skeleton['bones'] if b['id'] == names[-1])
         parent_q = decompose(world[parent])['rotation'] if parent else [0, 0, 0, 1]
         result['bones'].setdefault(names[-1], {})['rotation'] = quaternion(qmul(qinverse(parent_q), quaternion(orientation))).tolist()
+        # The endpoint orientation is a requested pose, not permission to bypass
+        # its joint limits. Apply the same ordered constraints after this final
+        # write, and measure the result after any resulting spatial changes.
+        if constrained:
+            result, current = apply_constraints(skeleton, result, constrained, ordered=True)
+            changes.extend(current)
     final = evaluate_fk(skeleton, result)[names[-1]][:3, 3]
     error = float(np.linalg.norm(final-target))
     return IKResult(result, error, bool(reachable), bool(reachable and error <= tolerance), iterations, changes)
