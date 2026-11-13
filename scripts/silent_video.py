@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from contextlib import contextmanager
 from fractions import Fraction
 import hashlib
 import json
