@@ -275,10 +275,10 @@ def _animations(document, ids, node_meshes, geometry, parents, scale):
     return clips
 
 
-def _gltf_model(path, *, scale=1., limits=None) -> ImportedModel:
-    document = read_gltf(path, limits)
+def _gltf_model(path, *, scale=1., limits=None, source_reader=None) -> ImportedModel:
+    document = read_gltf(path, limits, source_reader=source_reader)
     require(np.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'Import scale must be finite and positive.')
-    parents, world, order = scene_graph(document)
+    parents, world, order = scene_graph(document, import_scale=scale)
     skeleton, ids, normalized = _import_skeleton(document, parents, world, order, scale)
     geometry = Geometry([], deepcopy(document.json.get('materials', [])), _images(document),
                         deepcopy(document.json.get('textures', [])), deepcopy(document.json.get('samplers', [])),
@@ -387,21 +387,22 @@ def _gltf_model(path, *, scale=1., limits=None) -> ImportedModel:
     report = analyze_geometry(geometry, document.limits)
     report.update(import_format=Path(path).suffix.lower(), scale_conversion=scale,
                   preserved_existing_rig=skeleton is not None, preserved_animation_clips=len(clips),
-                  source_sha256=sha256(path), warnings=document.warnings)
+                  source_sha256=document.source_sha256, warnings=document.warnings)
     extra = document.json.get('asset', {}).get('extras', {})
     report['fixture'] = bool(extra.get('hatchSource', {}).get('fixture', False) or extra.get('hatchRig', {}).get('fixture', False))
     return ImportedModel(geometry, document.dependencies, skeleton, weights, clips, report)
 
 
-def load_character_model(path: str | Path, *, scale=1., limits=None, blender=None) -> ImportedModel:
+def load_character_model(path: str | Path, *, scale=1., limits=None, blender=None, source_reader=None) -> ImportedModel:
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'RIG_SOURCE', 'Choose a regular model file.')
     suffix = path.suffix.lower()
     if suffix == '.obj':
         from rig_obj import import_obj
-        return import_obj(path, scale=scale, limits=limits)
+        return import_obj(path, scale=scale, limits=limits, source_reader=source_reader)
     if suffix == '.blend':
+        require(source_reader is None, 'RIG_SOURCE_READER', 'Controlled source readers support GLB, glTF and OBJ only.')
         from rig_blender import import_blend
         return import_blend(path, scale=scale, limits=limits, executable=blender)
     require(suffix in ('.gltf', '.glb'), 'RIG_FORMAT', 'Supported model inputs are GLB, glTF, OBJ and Blender.')
-    return _gltf_model(path, scale=scale, limits=limits)
+    return _gltf_model(path, scale=scale, limits=limits, source_reader=source_reader)

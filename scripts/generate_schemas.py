@@ -55,6 +55,7 @@ def build():
     from decomposition_spec import schemas as decomposition_schemas
     from rig_contracts import schemas as rig_schemas
     from model3d_contracts import schemas as model3d_schemas
+    from model3d_mesh_contracts import schemas as model3d_mesh_schemas
     from lookdev_contracts import schemas as lookdev_schemas
     from scene3d_contracts import schemas as scene3d_schemas
     return {ROOT/'profiles/profile.schema.json':profile,ROOT/'profiles/asset-inputs.schema.json':inputs,
@@ -62,6 +63,7 @@ def build():
             **{ROOT / 'profiles' / name: value for name, value in decomposition_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in rig_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in model3d_schemas().items()},
+            **{ROOT / 'profiles' / name: value for name, value in model3d_mesh_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in lookdev_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in scene3d_schemas().items()}}
 

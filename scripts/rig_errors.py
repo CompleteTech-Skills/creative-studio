@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import stat
 import tempfile
 from typing import Any, Iterator
 
@@ -145,6 +146,81 @@ def safe_path(root: str | Path, name: str, *, exists: bool = False) -> Path:
         require(target.is_file(), 'RIG_MISSING_ASSET', 'Referenced regular file is missing.', asset=name)
     return target
 
+
+
+@contextmanager
+def open_payload(root: str | Path, name: str, *, root_identity=None):
+    """Open an admitted regular payload without following replaceable parents.
+
+    Reads remain the caller's responsibility and must be bounded. Descriptor and
+    path identity are rechecked after the caller finishes. POSIX retains each
+    directory descriptor; Windows checks the opened handle's canonical path.
+    """
+    # The caller selects the trusted root. Canonicalize its platform aliases
+    # once (/var on macOS, DOS short paths on Windows); descendants still
+    # traverse no-follow descriptors and cannot redirect outside that root.
+    root = Path(root).resolve()
+    target = safe_path(root, name, exists=True)
+    def check_root(info):
+        require(root_identity is None or (info.st_dev, info.st_ino) == root_identity,
+                'RIG_PAYLOAD_CHANGED', 'Selected source directory changed.', asset=name)
+    check_root(root.stat())
+    flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0)
+    descriptors = []
+    try:
+        if os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW'):
+            directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            # Begin at the filesystem root rather than a replaceable ancestor.
+            descriptors.append(os.open(root.anchor, directory_flags))
+            for part in root.parts[1:]:
+                descriptors.append(os.open(part, directory_flags, dir_fd=descriptors[-1]))
+            check_root(os.fstat(descriptors[-1]))
+            parts = PurePosixPath(name).parts
+            for part in parts[:-1]:
+                descriptors.append(os.open(part, directory_flags, dir_fd=descriptors[-1]))
+            descriptor = os.open(parts[-1], flags | os.O_NOFOLLOW, dir_fd=descriptors[-1])
+        else:
+            descriptor = os.open(target, flags)
+        with os.fdopen(descriptor, 'rb') as stream:
+            before = os.fstat(stream.fileno())
+            require(stat.S_ISREG(before.st_mode), 'RIG_PAYLOAD_TYPE',
+                    'Payload must be a regular file.', asset=name)
+            if os.name == 'nt':
+                import ctypes
+                from ctypes import wintypes
+                import msvcrt
+                operation = ctypes.WinDLL('kernel32', use_last_error=True).GetFinalPathNameByHandleW
+                operation.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
+                operation.restype = wintypes.DWORD
+                buffer = ctypes.create_unicode_buffer(32768)
+                length = operation(wintypes.HANDLE(msvcrt.get_osfhandle(stream.fileno())), buffer, len(buffer), 0)
+                require(0 < length < len(buffer), 'RIG_PAYLOAD_PATH',
+                        'Cannot verify the opened source location.', asset=name)
+                actual = buffer.value
+                if actual.startswith('\\\\?\\UNC\\'):
+                    actual = '\\\\' + actual[8:]
+                elif actual.startswith('\\\\?\\'):
+                    actual = actual[4:]
+                require(os.path.normcase(actual) == os.path.normcase(os.path.abspath(target)),
+                        'RIG_PAYLOAD_PATH', 'Opened source was redirected.', asset=name)
+            check_root(root.stat())
+            current = safe_path(root, name, exists=True).stat()
+            require((current.st_dev, current.st_ino) == (before.st_dev, before.st_ino),
+                    'RIG_PAYLOAD_CHANGED', 'Payload changed while opening.', asset=name)
+            yield stream, before
+            after = os.fstat(stream.fileno())
+            check_root(root.stat())
+            current = safe_path(root, name, exists=True).stat()
+            def fingerprint(info):
+                fields = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+                return fields if os.name == 'nt' else fields + (info.st_ctime_ns,)
+            require(fingerprint(before) == fingerprint(after) == fingerprint(current),
+                    'RIG_PAYLOAD_CHANGED', 'Payload changed during reading.', asset=name)
+    except OSError as exc:
+        raise RigError('RIG_PAYLOAD_IO', 'Cannot safely read the payload: ' + str(exc), asset=name) from exc
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 def slug(text: str) -> str:
     value = re.sub('[^a-z0-9._-]+', '-', str(text).lower()).strip('-._')[:100]
