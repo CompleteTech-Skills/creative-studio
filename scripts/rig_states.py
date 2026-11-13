@@ -4,7 +4,7 @@ from copy import deepcopy
 import math
 import numpy as np
 from rig_animation import validate_animation
-from rig_errors import require
+from rig_errors import object_hash, require
 from rig_math import qangle
 from state_catalog import load_library
 
@@ -51,6 +51,51 @@ def rig_capabilities(rig):
     library=load_library();return sorted(capabilities & set(library.capabilities))
 
 
+
+def _state_discovery(rig, state, requested, executable, capabilities, archetype, approved_props):
+    """Separate catalog requirements from evidence in a validated executable recipe."""
+    available=set(capabilities);anatomy=state['anatomy']
+    present=[name for name in dict.fromkeys(requested) if name in rig.clips]
+    missing=[name for name in dict.fromkeys(requested) if name not in rig.clips]
+    inventory=dict(requested_clips=list(requested),available_clips=present,missing_clips=missing,
+                   validated_complete_recipe=bool(executable),required_bones=None,
+                   required_morph_targets=None,bone_channels=None,morph_channels=None,
+                   contact_chains=None,skinned_joints=None,
+                   required_accessories=deepcopy(state['props']['required']),
+                   accessory_binding_status='Catalog prop approval only; no automatic socket or ownership binding is inferred.')
+    if executable:
+        meshes=rig.geometry.by_id();chains={chain['id']:chain for chain in rig.manifest['controllers']['ik']}
+        bone_channels=set();morph_channels={};contact_ids=set()
+        for name in dict.fromkeys(executable):
+            clip=rig.clips[name]
+            for track in clip['tracks']:
+                if track['path']=='weights':morph_channels[track['target']]=list(meshes[track['target']].morphs)
+                else:bone_channels.add((track['target'],track['path']))
+            contact_ids.update(contact['chain'] for contact in clip['contacts'])
+        skinned={skin.joints[int(index)] for skin in rig.weights.values()
+                 for index in set(skin.indices[skin.weights>0].tolist())}
+        required=skinned|{bone for bone,path in bone_channels}
+        required.update(bone for name in contact_ids for bone in chains[name]['bones'])
+        parents={bone['id']:bone['parent'] for bone in rig.skeleton['bones']}
+        for bone in list(required):
+            parent=parents[bone]
+            while parent is not None and parent not in required:
+                required.add(parent);parent=parents[parent]
+        inventory.update(required_bones=sorted(required),
+            required_morph_targets=sorted(mesh+'::'+morph for mesh,names in morph_channels.items() for morph in names),
+            bone_channels=[dict(bone=bone,path=path) for bone,path in sorted(bone_channels)],
+            morph_channels=[dict(mesh=mesh,morphs=names) for mesh,names in sorted(morph_channels.items())],
+            contact_chains=[dict(id=name,bones=list(chains[name]['bones'])) for name in sorted(contact_ids)],
+            skinned_joints=sorted(skinned))
+    return dict(catalog_requirements=dict(anatomy=deepcopy(anatomy),archetypes=list(state['archetypes']),props=deepcopy(state['props'])),
+        compatibility=dict(missing_all=sorted(set(anatomy['requires_all'])-available),
+            missing_any=[] if not anatomy['requires_any'] or available.intersection(anatomy['requires_any']) else list(anatomy['requires_any']),
+            excluded_present=sorted(set(anatomy['excludes'])&available),
+            missing_approved_props=sorted(set(state['props']['required'])-set(approved_props)),
+            archetype_applicable=state['archetypes']==['any'] or archetype in state['archetypes']),
+        recipe=inventory,provenance_refs=dict(rig=rig.manifest['id'],clips=list(dict.fromkeys(executable))))
+
+
 def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
     library=load_library();recipes=DEFAULT_RECIPES if recipes is None else recipes
     resolved={library.resolve(name):([clips] if isinstance(clips,str) else clips) for name,clips in recipes.items()}
@@ -61,7 +106,8 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
     mapping={};compiled={};events={}
     for name in names:
         reasons=library.incompatibilities(name,archetype,capabilities,approved_props)
-        clips=resolved.get(name,[])
+        requested=resolved.get(name,[])
+        clips=requested
         if reasons:status='requires-rig-capability';reason='; '.join(reasons);clips=[]
         elif not clips or any(c not in rig.clips for c in clips):
             status='requires-animation';reason='No complete executable 3D clip recipe is available for this state.';clips=[]
@@ -75,7 +121,9 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
                 legal_transitions=state['legal_transitions'],completion=state['completion'],recovery=state['recovery'],
                 reduced_motion=deepcopy(state['reduced_motion']),events=deepcopy(state['events']),cancel_state='static-neutral',
                 anatomical_adaptation='Uses only existing weighted anatomy; no invented body parts.',semantic_review=state['semantic_review'])
-        mapping[name]=dict(status=status,clips=clips,reason=reason)
+        mapping[name]=dict(status=status,clips=clips,reason=reason,
+            discovery=_state_discovery(rig,library.states[name],requested,clips if name in compiled else [],
+                                       capabilities,archetype,approved_props))
         if name in compiled:
             for event in dict.fromkeys([*library.states[name]['events'], 'state:'+name,
                                        *('state:'+alias for alias in library.states[name]['aliases'])]):
@@ -96,4 +144,10 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
         limitations='Position buffers only; excludes normals, textures, pose matrices, renderer memory, encoded output and repeated runtime loops.')
     return dict(schema_version=1,catalog_version=library.version,catalog_sha256=library.sha256,total_catalog_states=len(library.states),
                 selected_states=len(names),capabilities=capabilities,mapping=mapping,recipes=compiled,
-                counts=dict(Counter(v['status'] for v in mapping.values())),events=events,work_estimate=estimate,all_416_animated=False)
+                counts=dict(Counter(v['status'] for v in mapping.values())),events=events,work_estimate=estimate,
+                asset_provenance=dict(rig=dict(id=rig.manifest['id'],version=rig.manifest['version'],
+                    manifest_sha256=object_hash(rig.manifest),source=deepcopy(rig.manifest['source']),
+                    provenance=deepcopy(rig.manifest['provenance'])),
+                    clips={name:dict(id=name,version=rig.clips[name]['version'],sha256=object_hash(rig.clips[name]),
+                                     provenance=deepcopy(rig.clips[name]['provenance'])) for name in clip_ids}),
+                all_416_animated=False)
