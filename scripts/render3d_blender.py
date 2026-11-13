@@ -236,6 +236,8 @@ def _prepare_scene(request,snapshot_root,workspace):
             converted=BLENDER_FROM_CANONICAL @ matrix if entry['type'] in ('camera','light') else to_blender(matrix)
             clip=node_state.get('native_clip')
             if clip:
+                require(not clip.get('loop',False),'unsupported-feature',
+                        'Looping native clips require the authoritative cyclic-time adapter.')
                 clip=dict(id=clip['reference']['id'],time=float(Fraction(**clip['time'])))
             entry['frames'].append(dict(index=index,matrix=_plain(converted),
                 visible=bool(node_state['visible']),clip=clip,light=node_state.get('light'),camera=node_state.get('camera')))

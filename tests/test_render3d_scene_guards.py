@@ -42,7 +42,7 @@ def plan(source, parent, scene=None, shot=None, frame_end=1):
     create_snapshot(source, parent / 'snapshot', Scene3DAdapter())
     payload = (parent / 'snapshot/snapshot.json').read_bytes()
     r = request()
-    r.update(project={k: b['project'][k] for k in ('id', 'version')}, scene={k: sr[k] for k in ('id', 'version')}, shot={k: sh[k] for k in ('id', 'version')}, fps=dict(numerator=24, denominator=1), frame_range=dict(start=0, end=frame_end), source_start=dict(numerator=0, denominator=1), playback_rate=dict(numerator=1, denominator=1), snapshot=dict(path='snapshot.json', bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest()))
+    r.update(camera=b['documents'][sh['path']]['camera'],project={k: b['project'][k] for k in ('id', 'version')}, scene={k: sr[k] for k in ('id', 'version')}, shot={k: sh[k] for k in ('id', 'version')}, fps=dict(numerator=24, denominator=1), frame_range=dict(start=0, end=frame_end), source_start=dict(numerator=0, denominator=1), playback_rate=dict(numerator=1, denominator=1), snapshot=dict(path='snapshot.json', bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest()))
     w = parent / 'workspace'
     w.mkdir()
     return (_prepare_scene(r, parent / 'snapshot', w), w, evaluate_scene(source, sr['path'], sh['path'], 0))
