@@ -79,6 +79,9 @@ class TerrainTests(unittest.TestCase):
 
 
 class EnvironmentTests(unittest.TestCase):
+    def test_small_terrain_without_trees_has_no_prop_clearance_requirement(self):
+        self.assertEqual(len(plan(dict(recipe('terrain',width=1,depth=1,scatter_count=0),budget=1))),1)
+
     def test_tree_geometry_fits_bounds_and_does_not_overlap(self):
         objects=plan(dict(recipe('terrain',elevation=0,scatter_count=100),budget=300))
         crowns=[o for o in objects if 'crown' in o['id']]

@@ -64,8 +64,10 @@ def plan(recipe):
             require(isinstance(path,dict) and set(path)=={'points','width','elevation'},'Invalid terrain path.')
             terrain.path(**path)
         add('ground',terrain.mesh())
-        for i,position in enumerate(scatter(terrain,p.get('scatter_count',0),spacing=p.get('spacing',1.3),seed=recipe['seed'],clearance=.65,
-                        max_slope=p.get('scatter_slope',30),exclusions=p.get('exclusions',()))):
+        total=count(p.get('scatter_count',0),'scatter count',0,10000)
+        positions=[] if total==0 else scatter(terrain,total,spacing=p.get('spacing',1.3),seed=recipe['seed'],clearance=.65,
+                        max_slope=p.get('scatter_slope',30),exclusions=p.get('exclusions',()))
+        for i,position in enumerate(positions):
             # Reusable low-polygon tree: actual trunk and crown meshes, separately editable.
             add(f'trunk-{i}',primitive('cylinder',radius=.12,height=1.2,segments=8),[position[0],position[1]+.6,position[2]])
             add(f'crown-{i}',primitive('cone',radius=.65,height=1.6,segments=8),[position[0],position[1]+1.8,position[2]])
