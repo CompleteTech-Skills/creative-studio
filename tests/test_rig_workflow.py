@@ -7,10 +7,12 @@ import zipfile
 from unittest.mock import patch
 from rig_test_helpers import fixture
 import rig_package
+import rig_jobs
+import rig_source_snapshot
 from rig_contracts import validate_contract
 from rig_corrections import apply_rig_corrections
 from rig_errors import RigError,atomic_json,job_lock,read_json,sha256,timestamp
-from rig_jobs import run_step
+from rig_jobs import create_run,run_step
 from rig_models import load_rig,rig_signature
 from rig_package import package_rig,restore_rig
 from rig_review import apply_review
@@ -27,6 +29,19 @@ class RigWorkflowTests(unittest.TestCase):
         r=self.rig;self.assertTrue(r.manifest['source']['fixture']);self.assertEqual(sha256(r.root/r.manifest['source']['path']),r.manifest['source']['sha256'])
         (r.root/'identity.json').write_text('{}')
         with self.assertRaises(RigError):load_rig(r.root)
+    def test_hash_consistent_malformed_identity_has_structured_diagnostics(self):
+        original=read_json(self.rig.root/'identity.json')
+        malformed=[{},[],None,dict(original,schema_version=2),dict(original,fixture=1),
+                   dict(original,import_scale=True),dict(original,import_scale=-1),
+                   dict(original,coordinate_system={}),dict(original,attribution='')]
+        for value in malformed:
+            with self.subTest(value=value):
+                atomic_json(self.rig.root/'identity.json',value)
+                manifest=deepcopy(self.rig.manifest)
+                manifest['character']['identity_sha256']=sha256(self.rig.root/'identity.json')
+                atomic_json(self.rig.root/'rig.json',manifest)
+                with self.assertRaises(RigError) as caught:load_rig(self.rig.root)
+                self.assertEqual(caught.exception.report['code'],'RIG_IDENTITY_SCHEMA')
     def test_strict_schema_rejects_unknown_and_nonfinite(self):
         for mutate in (lambda v:v.update(extra=True),lambda v:v['skeleton']['bones'][0]['head'].__setitem__(0,float('nan'))):
             value=deepcopy(self.rig.manifest);mutate(value)
@@ -147,3 +162,56 @@ class RigWorkflowTests(unittest.TestCase):
         self.assertEqual(result['total_catalog_states'],416);self.assertFalse(result['all_416_animated'])
         self.assertEqual(result['mapping']['waving']['status'],'requires-rig-capability')
         self.assertEqual(result['mapping']['static-neutral']['status'],'needs-review')
+
+
+class RigImportTransactionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.home=Path(self.temp.name)
+        self.rig=fixture(self.home)
+        self.source=self.rig.root/self.rig.manifest['source']['path']
+        self.destination=self.home/'new-import'
+
+    def test_source_changed_after_capture_cannot_change_published_provenance(self):
+        expected=self.source.read_bytes();original=rig_source_snapshot.import_snapshot
+        def captured(*args, **kwargs):
+            result=original(*args, **kwargs)
+            self.source.write_bytes(b'changed original after decoding')
+            return result
+        with patch.object(rig_source_snapshot,'import_snapshot',side_effect=captured):
+            created=create_run(self.source,self.destination)
+        retained=created.root/created.manifest['source']['path']
+        self.assertEqual(retained.read_bytes(),expected)
+        self.assertEqual(created.manifest['source']['sha256'],sha256(retained))
+        self.assertEqual(created.geometry.vertex_count,self.rig.geometry.vertex_count)
+        load_rig(self.destination)
+
+    def test_failed_staging_does_not_leave_partial_run(self):
+        original=rig_jobs.atomic_json
+        def failing(path, value):
+            if Path(path).name=='import.json':raise OSError('injected disk failure')
+            return original(path,value)
+        with patch.object(rig_jobs,'atomic_json',side_effect=failing):
+            with self.assertRaises(OSError):create_run(self.source,self.destination)
+        self.assertFalse(self.destination.exists())
+        self.assertFalse(list(self.home.glob('.rig-import-*')))
+        load_rig(self.rig.root)
+
+    def test_existing_empty_destination_is_preserved(self):
+        self.destination.mkdir();before=self.destination.stat()
+        with self.assertRaises(RigError) as caught:create_run(self.source,self.destination)
+        self.assertEqual(caught.exception.report['code'],'RIG_RUN_EXISTS')
+        after=self.destination.stat()
+        self.assertEqual((before.st_dev,before.st_ino),(after.st_dev,after.st_ino))
+        self.assertEqual(list(self.destination.iterdir()),[])
+
+    def test_racing_destination_is_preserved_and_stage_removed(self):
+        original=rig_jobs._rename_no_replace
+        def racing(stage,target):
+            target.mkdir();(target/'keep').write_bytes(b'other writer')
+            return original(stage,target)
+        with patch.object(rig_jobs,'_rename_no_replace',side_effect=racing):
+            with self.assertRaises(RigError) as caught:create_run(self.source,self.destination)
+        self.assertEqual(caught.exception.report['code'],'RIG_RUN_EXISTS')
+        self.assertEqual((self.destination/'keep').read_bytes(),b'other writer')
+        self.assertFalse(list(self.home.glob('.rig-import-*')))
