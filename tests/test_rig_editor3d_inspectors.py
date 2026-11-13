@@ -22,6 +22,10 @@ def mapped_repository(root):
     from scene3d_materials import obj_material_bindings
     import hashlib
     build_example(root/'source')
+    # The generic example winds its XZ triangle downward. This pixel fixture
+    # authors the same triangle upward so the above-ground preview sees it.
+    triangle=root/'source/triangle.obj'
+    triangle.write_text(triangle.read_text().replace('f 1 2 3','f 1 3 2'))
     asset=json.loads((root/'source/triangle.json').read_text())
     asset['material_bindings']=obj_material_bindings(asset['id'])
     (root/'source/triangle.json').write_text(json.dumps(asset))
@@ -351,11 +355,14 @@ class InspectorBrowserTests(unittest.TestCase):
                         for label_name,value in [('R','1'),('G','0'),('B','0')]:field.get_by_label(label_name,exact=True).fill(value)
                         field.get_by_role('button',name='Assign new authored material',exact=True).click()
                         page.wait_for_function("""() => {let mesh;window.hatchEditor.objects.get('mesh').traverse(o=>{if(o.isMesh)mesh=o});return mesh?.userData.nativeMaterialReference && mesh.material.color.r===1 && mesh.material.color.g===0;}""")
-                        after=page.locator('canvas').first.screenshot();self.assertNotEqual(before,after)
+                        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+                        after=page.locator('canvas').first.screenshot()
                         evidence=os.environ.get('HATCH_EDITOR_EVIDENCE_DIR')
                         if evidence:
                             Path(evidence).mkdir(parents=True,exist_ok=True)
                             (Path(evidence)/'material-before.png').write_bytes(before);(Path(evidence)/'material-after.png').write_bytes(after)
+                        import hashlib
+                        self.assertNotEqual(hashlib.sha256(before).hexdigest(),hashlib.sha256(after).hexdigest(),'Visible material pixels did not change.')
                         page.goto('about:blank');page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
                         state=EditorRepository(root/'repository').snapshot()
                         self.assertEqual(state['revision'],1)
