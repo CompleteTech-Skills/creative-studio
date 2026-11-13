@@ -320,3 +320,77 @@ class EditorNativeStateTests(unittest.TestCase):
                     self.assertTrue(page.locator('#diagnostic').is_hidden())
                 finally:browser.close()
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
+    @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
+    def test_isolation_keeps_selected_ancestor_path_and_restores_native_visibility(self):
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with sync_playwright() as runtime:
+            browser=launch_chromium(runtime)
+            try:
+                for mode,selected,hidden in [('plain','mesh','camera'),('collection-hidden','peer','mesh')]:
+                    repository,_=self.fixture(mode)
+                    server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+                    try:
+                        page=browser.new_page();page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
+                        before=repository.snapshot()
+                        page.locator('[data-id="'+selected+'"]').click();page.click('#isolate')
+                        value=page.evaluate('''({selected,hidden}) => {
+                            const object=window.hatchEditor.objects.get(selected);let effective=true;
+                            for(let parent=object;parent;parent=parent.parent)effective=effective&&parent.visible;
+                            return {effective,hidden:window.hatchEditor.objects.get(hidden).visible};
+                        }''',dict(selected=selected,hidden=hidden))
+                        self.assertTrue(value['effective']);self.assertFalse(value['hidden'])
+                        page.click('#show-all')
+                        native=SceneGraph(before['scene']).evaluate_base()
+                        actual=page.evaluate('() => Object.fromEntries([...window.hatchEditor.objects].map(([id,object])=>[id,object.visible]))')
+                        self.assertEqual(actual,{identifier:state['editor_visible'] for identifier,state in native.items()})
+                        self.assertEqual(repository.snapshot()['sha256'],before['sha256'])
+                        page.close()
+                    finally:server.shutdown();server.server_close();thread.join(timeout=5)
+            finally:browser.close()
+
+    @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
+    def test_active_native_camera_rebinds_after_save_refresh_history_and_reopen(self):
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        repository,_=self.fixture('plain')
+        server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            with sync_playwright() as runtime:
+                browser=launch_chromium(runtime)
+                try:
+                    page=browser.new_page();page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
+                    page.select_option('#view','camera')
+                    def assert_camera(expected_x):
+                        actual=page.evaluate('''() => {
+                            const current=window.hatchEditor.objects.get('camera').children.find(object=>object.isCamera);
+                            window.hatchEditor.camera.updateWorldMatrix(true,false);
+                            return {same:current===window.hatchEditor.camera,matrix:window.hatchEditor.camera.matrixWorld.elements,
+                                native:window.hatchEditor.snapshot.viewport_state.nodes.camera.world_matrix,
+                                mode:document.querySelector('#view').value};
+                        }''')
+                        self.assertTrue(actual['same']);self.assertEqual(actual['mode'],'camera')
+                        np.testing.assert_allclose(np.asarray(actual['matrix']).reshape(4,4).T,actual['native'],atol=1e-7)
+                        self.assertAlmostEqual(actual['matrix'][12],expected_x)
+                    assert_camera(0)
+                    page.locator('[data-id="camera"]').click()
+                    page.get_by_label('translation X',exact=True).fill('10');page.get_by_label('translation X',exact=True).press('Tab')
+                    page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1 && document.querySelector("#status").textContent.includes("Saved revision")')
+                    assert_camera(10)
+                    page.click('#refresh');page.wait_for_function('() => window.editorReady === true')
+                    assert_camera(10)
+                    page.click('#undo');page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2')
+                    assert_camera(0)
+                    page.click('#redo');page.wait_for_function('() => window.hatchEditor.snapshot.revision === 3')
+                    assert_camera(10)
+                    page.reload();page.wait_for_function('() => window.editorReady === true')
+                    page.select_option('#view','camera');assert_camera(10)
+                    page.locator('[data-id="camera"]').click();page.click('#delete')
+                    page.wait_for_function('() => window.hatchEditor.snapshot.revision === 4')
+                    self.assertEqual(page.locator('#view').input_value(),'perspective')
+                    self.assertEqual(page.locator('#view-label').inner_text(),'perspective')
+                    self.assertFalse(page.evaluate('window.hatchEditor.camera.parent !== null'))
+                    self.assertEqual(page.evaluate('window.hatchEditor.errors'),[])
+                finally:browser.close()
+        finally:server.shutdown();server.server_close();thread.join(timeout=5)

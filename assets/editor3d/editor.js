@@ -38,6 +38,7 @@ let renderer,
 const collapsed = new Set();
 const extensions = [];
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
+let activeNativeCameraId = null;
 const editorNode = Symbol("native-scene-node");
 const errors = [],
   nativeMaterials = new Map(),
@@ -611,6 +612,7 @@ async function install(snapshot) {
     visit(object);
   }
   applyNativeState(savedNativeState.nodes);
+  if ($("view").value === "camera") setView();
   for (const [id, object] of objects) {
     if ([...boneObjects.values()].some((b) => b.userData.ownerId === id)) {
       const helper = new THREE.SkeletonHelper(object);
@@ -999,10 +1001,15 @@ $("ground").onclick = () => {
 };
 $("hide").onclick = () => commit(selectedPatch({ visible: false }));
 $("isolate").onclick = () => {
+  const selectedRoots = roots(selection), ancestors = new Set();
+  for (const id of selectedRoots) {
+    let parent = nodes.get(id)?.parent;
+    while (parent) { ancestors.add(parent); parent = nodes.get(parent)?.parent; }
+  }
   for (const [id, obj] of objects)
     obj.visible = evaluatedStates.get(id).editor_visible && (
-      selection.has(id) ||
-      roots(selection).some((root) => {
+      ancestors.has(id) || selection.has(id) ||
+      selectedRoots.some((root) => {
         let p = nodes.get(id)?.parent;
         while (p) {
           if (p === root) return true;
@@ -1096,22 +1103,26 @@ $("recall").onclick = () => {
   }
 };
 function setView() {
-  const value = $("view").value;
+  let value = $("view").value;
   const center = orbit.target.clone(),
     distance = Math.max(camera.position.distanceTo(center), 1);
   camera = value === "perspective" ? perspective : orthographic;
   if (value === "camera") {
-    const node = doc.nodes.find((n) => n.type === "camera");
+    const node = doc.nodes.find((n) => n.type === "camera" &&
+      (activeNativeCameraId === null || n.id === activeNativeCameraId));
     if (!node) {
       diagnostic("No native camera is available.");
-      $("view").value = "perspective";
+      $("view").value = value = "perspective";
+      activeNativeCameraId = null;
       camera = perspective;
     } else {
       content.updateMatrixWorld(true);
       const actual = objects.get(node.id).children.find((o) => o.isCamera);
       camera = actual;
+      activeNativeCameraId = node.id;
     }
   } else {
+    activeNativeCameraId = null;
     const directions = {
       front: [0, 0, 1],
       back: [0, 0, -1],
