@@ -1,0 +1,38 @@
+{
+  "tested_head": "c899e05ccba89cc20f67b22c9d305223062539c3",
+  "lifecycle": {
+    "tests": 46,
+    "failures": 0,
+    "skips": 0,
+    "seconds": 36.568,
+    "exit_code": 0
+  },
+  "prior_validation": "../validation.json binds ea52cff; final-delta/lifecycle.log binds final source c899e05, with no source edits during execution",
+  "dependencies": {
+    "physics167": "8379a53d543022b5fd490bb2d14552bd464eced0",
+    "scene59": "fbbb340761c8136f8f1de08baccc62bddca4c9c6",
+    "atomic198": "bae65356567a10915658a6371c14ee9a4553db36"
+  },
+  "files": {
+    ".github/workflows/physics-backends.yml": "53ebaed92f6961be1cfa84ae9d2df94a2f51029530cbedc07ae75292c6b095d1",
+    "references/physics-backends.md": "5c94598b3e84f5bace552b7afcace6e9f1963913237cb2658a88f53a5beee33b",
+    "scripts/physics_backend_evidence.py": "a9498ed4b6b9163a56e074f243037e74a3ce899e0d8ee1d990d04286667d581b",
+    "scripts/physics_backend_example.py": "274f9cd0488f66932a55ca797e97ec0a4d97e5cfc3fbd8ae55275b208754a605",
+    "scripts/physics_backends.py": "be6298375bae2a5ec4c62f16f115c8275c1510377b237d2b238d19886d701506",
+    "scripts/physics_blender_worker.py": "bb5acec20ceb5210c48e29c1dc7f0247c82264d133c84b158ac867f68e58d7d5",
+    "scripts/physics_contracts.py": "f1dae20e3fd423732a3952d9c218a2ba1a3c424853dfd637b4d24b14b1dff222",
+    "scripts/physics_pybullet_worker.py": "93536f325e1eac20343f8a99eca629a57b9dee8b00bc2dcbf7b8fa688f89fca0",
+    "tests/test_rig_physics_backends.py": "daa5a60602d8bd68b9e944ca5fa034dbb19700b4e9a74a99b537968fdd65504c"
+  },
+  "diagnostic_visual_inspection": {
+    "path": "blender-demo/cache/preview.png",
+    "observer": "implementation assistant visual inspection",
+    "observation": "Small cyan fixture above gray plane on black background; diagnostic 128x128 render only. No human production approval or visual acceptance receipt."
+  },
+  "limitations": [
+    "Unsigned receipts provide structural and hash consistency, not authenticated provenance.",
+    "Native is_outdated flag remains true; reverse baked replay/consumption control established; continuation beyond baked samples unsupported.",
+    "Nonzero requested additional contact skin rejected for box and sphere; actual extra-margin control disproves property-only mapping.",
+    "Later physics categories, arbitrary imported meshes, joints/forces, restart recovery and production approval remain unsupported."
+  ]
+}
