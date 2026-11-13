@@ -50,15 +50,16 @@ python scripts/test_rig_gate.py skinning
 python scripts/test_rig_gate.py animation-ik
 python scripts/test_rig_gate.py operations-archive
 HATCH_RIG_INTEROP_TEST=1 HATCH_RIG_BROWSER_TEST=1 python scripts/test_rig_gate.py interoperability
-HATCH_DECOMPOSITION_BROWSER_TEST=1 python scripts/test_rig_gate.py compatibility
 ```
 
 Khronos verification requires the unchanged `tools/rig` npm lock installed
 with `npm ci --ignore-scripts --prefix tools/rig`; browser verification requires
 the Chromium build selected by the pinned Playwright release.
 
-The exact commands, counts, skips, log hashes, independent review evidence and
-source-preservation result are retained in the receipt and coordinator archive.
+The earlier receipt records commands, counts and hashes, but its referenced
+local logs, independent reports and coordinator archive are not published or
+recoverable here. Treat those historical results as reported, not independently
+verifiable from this checkout. No archive location is claimed.
 No existing test or skip condition was changed for this update.
 
 | Local check | Observed result |
@@ -102,3 +103,26 @@ binaries, or prove all supported platforms. Public `requirements-test.txt`
 continues to permit older Pillow releases; raising that runtime support floor
 requires its own compatibility decision. A normal revert restores the prior
 pin; no source asset or historical evidence needs rewriting.
+
+## Review follow-up validation
+
+Fresh validation under Python 3.12.15 and Pillow 13.0.0 passed all 54 Model3D
+contract tests and the workflow's robotic-model validation command. The complete
+logs and source-bound receipt are committed in
+[`pillow13-review-20261113`](../tests/results/pillow13-review-20261113/receipt.json).
+This fills the missing Model3D coverage; it does not recreate unavailable earlier
+security reports or browser baselines.
+
+The passing compatibility configuration uses a **separate** environment:
+
+```sh
+python3.12 -m venv .venv-delivery
+.venv-delivery/bin/python -m pip install -r requirements-delivery.txt
+.venv-delivery/bin/python -m playwright install chromium
+HATCH_DECOMPOSITION_BROWSER_TEST=1 .venv-delivery/bin/python scripts/test_rig_gate.py compatibility
+```
+
+The rig-test environment instead installs `requirements-rig-test.txt` and must
+run its own `python -m playwright install chromium`. Do not reuse its pinned
+Playwright browser build for the delivery environment. Historical passing and
+failing browser results above retain their original environment attribution.
