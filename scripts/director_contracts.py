@@ -16,6 +16,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import stat
 import unicodedata
 
@@ -115,6 +116,10 @@ def _range(value):
 def _semantics(value):
     for x in _walk(value):
         if not isinstance(x,dict):continue
+        if 'check' in x and 'diagnostics' in x and 'status' in x:
+            _require(x['status'] != 'passed' or (x['evidence'] and
+                     not any(d['severity']=='error' for d in x['diagnostics'])),
+                     'EVIDENCE','Passing validation requires evidence and no error diagnostics.')
         if set(x)=={'start_frame','end_frame'}:_range(x)
         if set(x)=={'numerator','denominator'}:
             _require(x['denominator']>0,'TIME','Rational denominator must be positive.')
@@ -182,6 +187,30 @@ def _semantics(value):
             _require(x['status']!='passed' or bool(x['evidence']),'EVIDENCE','Passed milestones require evidence.')
             _require(not (x['name']=='visual_qa' and x['status']=='passed' and x['authority']=='automated'),
                      'REVIEW','Automated validation cannot grant visual approval.')
+            if x.get('schema_version') == 2:
+                _require(re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}'
+                         r'(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})',x['timestamp']) is not None,
+                         'MILESTONE','Milestone timestamp must be RFC3339 with an explicit timezone.')
+                try:
+                    timestamp=datetime.fromisoformat(x['timestamp'].upper().replace('Z','+00:00'))
+                except ValueError:
+                    _require(False,'MILESTONE','Milestone timestamp must be RFC3339.')
+                _require(timestamp.tzinfo is not None,'MILESTONE','Milestone timestamp requires a timezone.')
+                _require(x['evidence'] == x['evidence_refs'], 'MILESTONE',
+                         'Legacy evidence alias must equal the explicit evidence references.')
+                _require(x['status'] != 'failed' or bool(x['failure_reason']), 'MILESTONE',
+                         'Failed milestones require an explicit failure reason.')
+                _require(x['status'] not in ('unverified','blocked') or bool(x['remaining_work']),
+                         'MILESTONE', 'Unfinished milestones require remaining work.')
+                if x['status'] == 'passed':
+                    _require(x['required_inputs'] and x['artifact_refs'] and x['validation_results']
+                             and not x['remaining_work'] and x['failure_reason'] is None,
+                             'MILESTONE','Passed milestones need inputs, artifacts and validation without unfinished work.')
+                    _require(all(check['status']=='passed' and check['evidence']
+                                 for check in x['validation_results']), 'MILESTONE',
+                             'Passed milestones require passing evidence-bound validations.')
+        if 'execution_metadata' in x:
+            validate_execution_metadata(x['execution_metadata'])
     kind=value['kind']
     if kind=='director-creative-brief':
         _unique(value['characters'],'character IDs')
@@ -239,7 +268,10 @@ def _semantics(value):
             _require(value['value']['state'] in ('queued','running'),'JOB','Submission cannot report completed execution.')
         if status=='succeeded':
             output=value['value'];method=value['method']
-            if method=='AssetBuildAdapter.build':
+            if method=='GraphCompiler.compile' and output.get('schema_version')==2:
+                for node in output['nodes']:
+                    validate_execution_metadata(node['execution_metadata'],planned=True)
+            elif method=='AssetBuildAdapter.build':
                 _require(output['meshes'] and output['vertices']>0 and output['triangles']>0,
                          'EVIDENCE','A successful asset build needs actual mesh references and nonzero geometry counts.')
             elif method=='RigMotionAdapter.prepare':
@@ -264,6 +296,76 @@ def _acyclic(graph,label):
                 _require(node not in visiting,'CYCLE','Cyclic '+label+' dependencies.')
                 visiting.add(node);stack.append((node,True))
                 stack.extend((child,False) for child in graph.get(node,()))
+
+
+def validate_execution_metadata(metadata, *, planned=False):
+    """Validate declared native ownership; this never authenticates execution."""
+    from jsonschema import Draft202012Validator
+    finite_json(metadata)
+    schema = schemas()['director.schema.json']
+    error = next(Draft202012Validator({'$defs':schema['$defs'],
+        '$ref':'#/$defs/execution-metadata'}).iter_errors(metadata), None)
+    _require(error is None,'SCHEMA',error.message[:2048] if error else '')
+    _require(metadata['estimated_usage']['classification'] in ('estimated','unavailable'),
+             'USAGE','Estimated usage cannot be labeled actual.')
+    _require(metadata['actual_usage']['classification'] in ('actual','unavailable'),
+             'USAGE','Actual usage cannot be labeled estimated.')
+    for usage in (metadata['estimated_usage'],metadata['actual_usage']):
+        for metric in ('provider_calls','input_tokens','output_tokens','storage_bytes'):
+            amount = usage[metric]['value']
+            _require(amount is None or float(amount).is_integer(),'USAGE','Count measurements must be integral.')
+        _require(usage['classification'] != 'unavailable' or
+                 all(usage[name]['value'] is None for name in ('provider_calls','input_tokens',
+                     'output_tokens','cpu_seconds','gpu_seconds','storage_bytes','amount')),
+                 'USAGE','Unavailable usage cannot declare measurements.')
+        _require(all(item['value'] is not None or item['explanation']
+                     for item in (usage[name] for name in ('provider_calls','input_tokens',
+                         'output_tokens','cpu_seconds','gpu_seconds','storage_bytes','amount'))),
+                 'USAGE','Unknown measurements need explanations.')
+        _require((usage['currency'] is None) == (usage['amount']['value'] is None),
+                 'USAGE','Known currency and amount must be supplied together.')
+    if planned or metadata['execution_status'] == 'planned':
+        _require(metadata['execution_status'] == 'planned' and metadata['native_job_ref'] is None
+                 and not metadata['checkpoint_refs'] and not metadata['output_artifacts']
+                 and not metadata['validation_results'] and metadata['failure_reason'] is None
+                 and metadata['actual_usage']['classification'] == 'unavailable',
+                 'EXECUTION','Compilation cannot claim native dispatch, usage, checkpoints or outputs.')
+    elif metadata['execution_status'] in ('claimed','running','awaiting_external_result',
+                                         'artifact_available','validating','validated'):
+        _require(metadata['native_job_ref'] is not None, 'EXECUTION',
+                 'Executed states require the authoritative native job reference.')
+    if metadata['execution_status'] == 'validated':
+        _require(metadata['output_artifacts'] and metadata['validation_results'] and
+                 all(check['status']=='passed' and check['evidence'] and
+                     not any(d['severity']=='error' for d in check['diagnostics'])
+                     for check in metadata['validation_results']), 'EXECUTION',
+                 'Validated execution requires output artifacts and passing evidence.')
+    if metadata['execution_status'] == 'failed':
+        _require(bool(metadata['failure_reason']), 'EXECUTION','Failed execution requires its failure reason.')
+    return metadata
+
+
+def migrate_project_v2(project, milestone_reports, *, semantic_version):
+    """Explicit migration: callers supply observations; none are inferred."""
+    validate_document(project)
+    _require(project['kind']=='director-project' and project['schema_version']==1,
+             'MIGRATION','Migration requires a Director project v1.')
+    _require(isinstance(milestone_reports,dict) and set(milestone_reports)==set(MILESTONES),
+             'MIGRATION','Supply the complete report for every independent milestone.')
+    result = deepcopy(project)
+    result['schema_version'] = 2
+    _require(semantic_version != project['semantic_version'], 'MIGRATION',
+             'Migration must create a new exact semantic version; preserve the original project.')
+    result['semantic_version'] = semantic_version
+    for milestone in result['milestones']:
+        report = milestone_reports[milestone['name']]
+        required = {'timestamp','required_inputs','artifact_refs','validation_results',
+                    'evidence_refs','failure_reason','remaining_work'}
+        _require(isinstance(report,dict) and set(report)==required, 'MIGRATION',
+                 'Migration requires exact explicit milestone report fields.')
+        milestone.update(deepcopy(report),schema_version=2)
+    validate_document(result)
+    return result
 
 
 def validate_document(value):
