@@ -5,11 +5,13 @@ from copy import deepcopy
 from contextvars import ContextVar
 from pathlib import Path
 import shutil
+import hashlib
+import os
 import uuid
 
 from rig_contracts import COORDINATES, DEFAULT_LIMITS, validate_contract
 from rig_errors import (VERSION, RigError, atomic_bytes, atomic_json, job_lock,
-                        object_hash, read_json, require, safe_path, sha256, slug, timestamp)
+                        object_hash, read_json, decode_json, MAX_JSON_BYTES, require, safe_path, sha256, slug, timestamp)
 from rig_models import RigAsset, load_rig, rig_signature, save_geometry, save_weights
 
 
@@ -160,9 +162,11 @@ def _finish_transaction(root, name, step, job, directory, record):
             record.get('input_sha256') == step['input_sha256'],
             'RIG_TRANSACTION', 'The step transaction does not match its running journal.')
     candidate = safe_path(directory, 'manifest.json', exists=True)
-    require(sha256(candidate) == record.get('manifest_sha256'), 'RIG_TRANSACTION',
+    with candidate.open('rb') as source:
+        candidate_payload = source.read(MAX_JSON_BYTES + 1)
+    manifest = decode_json(candidate_payload)
+    require(hashlib.sha256(candidate_payload).hexdigest() == record.get('manifest_sha256'), 'RIG_TRANSACTION',
             'Prepared transaction manifest was modified.')
-    manifest = read_json(candidate)
     active = load_rig(root, manifest_override=manifest)
     prepared = record.get('step')
     require(isinstance(prepared, dict) and prepared.get('token') == step['token'] and
@@ -199,7 +203,7 @@ def _finish_transaction(root, name, step, job, directory, record):
     finished['history'] = finished['history'][-10000:]
     validate_contract(finished, 'RigJob')
     if observed != record['manifest_sha256']:
-        atomic_bytes(root / 'rig.json', candidate.read_bytes())
+        atomic_bytes(root / 'rig.json', candidate_payload)
     atomic_json(root / 'job.json', finished)
     atomic_json(directory / 'record.json', dict(record, phase='committed'))
     return finished
@@ -264,6 +268,12 @@ def run_step(root, name, parameters, action, *, status, retry=False):
         step = dict(status='running', input_sha256=current, output_sha256=None, parameters=deepcopy(parameters),
                     parameters_sha256=param_hash, code_sha256=code_hash, attempts=attempts + 1,
                     token=str(uuid.uuid4()), started_at=timestamp(), finished_at=None, error=None, artifacts=[])
+        transaction_root = safe_path(root, 'rig/transactions')
+        if transaction_root.exists():
+            with os.scandir(transaction_root) as retained:
+                for count, _ in enumerate(retained, 1):
+                    require(count < rig.manifest['limits']['archive_files'], 'RIG_TRANSACTION_LIMIT',
+                            'Retained transaction budget is exhausted; archive this run before further work.')
         directory = safe_path(root, 'rig/transactions/' + step['token'])
         directory.mkdir(parents=True, exist_ok=False)
         candidate = directory / 'manifest.json'
