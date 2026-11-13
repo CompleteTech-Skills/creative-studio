@@ -20,7 +20,8 @@ class ColorTests(unittest.TestCase):
         for kwargs in ({'temperature_kelvin':1799},{'temperature_kelvin':100001},
                        {'tint':501},{'tint':-501},{'exposure':-33},{'exposure':33},
                        {'temperature_kelvin':True},{'exposure':float('nan')},
-                       {'view':'aces'},{'output':'linear-png'}):
+                       {'view':'aces'},{'output':'linear-png'},
+                       {'temperature_kelvin':10**400},{'tint':-(10**400)},{'exposure':10**400}):
             with self.subTest(kwargs=kwargs),self.assertRaises(RigError):configuration(**kwargs)
 
     def test_authoritative_profile_hash_covers_wb_exposure_and_encoding(self):
