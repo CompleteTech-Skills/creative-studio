@@ -1,6 +1,7 @@
 from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
 from pathlib import Path
+import os
 import tempfile
 import unittest
 
@@ -209,6 +210,17 @@ class BudgetTests(unittest.TestCase):
                     execute(self.ledger,request,evidence_root=self.root)
                 self.assertEqual(self.ledger.snapshot(),before)
 
+    def assert_unsupported_adapter_preserves_ledger(self, request, evidence_root):
+        if hasattr(os,'O_NOFOLLOW') and os.open in os.supports_dir_fd:
+            return False
+        from director_budget import execute
+        before=self.ledger.snapshot()
+        with self.assertRaises(RigError) as caught:
+            execute(self.ledger,request,evidence_root=evidence_root)
+        self.assertEqual(caught.exception.report['code'],'DIRECTOR_PLATFORM')
+        self.assertEqual(self.ledger.snapshot(),before)
+        return True
+
     def test_adapter_allows_explicit_bounded_paid_work_with_evidence(self):
         from director_budget import execute
         request=self.adapter_request(amount=1)
@@ -219,6 +231,7 @@ class BudgetTests(unittest.TestCase):
         request['context']['policy'].update(paid='bounded',policy_ref=reference)
         request['context']['budget_reservation_id']='outer-authorization'
         request['input']['rate_evidence']=[reference]
+        if self.assert_unsupported_adapter_preserves_ledger(request,self.root):return
         result=execute(self.ledger,request,evidence_root=self.root)
         self.assertEqual(result['value']['state'],'reserved')
         row=next(iter(self.ledger.snapshot()['state']['reservations'].values()))
@@ -238,12 +251,20 @@ class BudgetTests(unittest.TestCase):
         request=self.adapter_request()
         request['input']['rate_evidence']=[reference]
         with patch.object(tempfile,'tempdir',str(alias)):
+            if self.assert_unsupported_adapter_preserves_ledger(request,self.root):
+                self.assertEqual(list(target.iterdir()),[])
+                return
             result=execute(self.ledger,request,evidence_root=self.root)
         self.assertEqual(result['value']['state'],'reserved')
         retained=result['value']['evidence'][0]
         self.assertEqual(retained['sha256'],proof['sha256'])
         self.assertEqual((self.root/retained['path']).read_bytes(),original)
         self.assertEqual(list(target.iterdir()),[])
+
+    def test_adapter_owned_staging_unsupported_secure_reads_fail_closed(self):
+        from unittest.mock import patch
+        with patch.object(os,'supports_dir_fd',set()):
+            self.test_adapter_owned_staging_handles_symlinked_system_temp()
 
     def test_adapter_large_storage_and_call_limits_have_valid_result(self):
         from director_budget import execute
@@ -300,6 +321,7 @@ class BudgetTests(unittest.TestCase):
         usage=settle['input']['actual_usage'];usage['classification']='actual';usage['currency']='USD'
         for key in METRICS:usage[key]={'value':0,'explanation':None}
         usage['provider_calls']['value']=1
+        if self.assert_unsupported_adapter_preserves_ledger(settle,self.root):return
         result=execute(self.ledger,settle,evidence_root=self.root)
         validate_method_result('BudgetLedger.settle',result,settle)
         self.assertEqual(result['value']['state'],'uncertain')
