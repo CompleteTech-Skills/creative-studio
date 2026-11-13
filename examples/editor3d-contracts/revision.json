@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "kind": "editor3d-revision",
+  "id": "revision",
+  "project_id": "project",
+  "number": 0,
+  "parent": null,
+  "project_sha256": "62ca33b39a103db474de2a1e5f285a7bdc95d4d6d90550a2c716ca2826a57562",
+  "command_ids": [],
+  "created_at": "2026-10-25T00:00:00Z",
+  "author": "fixture-author",
+  "snapshot": {
+    "path": "examples/editor3d-contracts/project.json",
+    "sha256": "2061ed7b6d4e7ea8b652c3a32338ddb4ec9aa36173345009055cf7645b0af3aa",
+    "bytes": 2157,
+    "media_type": "application/json"
+  }
+}
