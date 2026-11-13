@@ -93,7 +93,10 @@ python scripts/physics_liquid_acceptance.py --baseline CACHE/baseline \
 ```
 
 This command never changes the caches, and exits nonzero for failed physical
-acceptance. Analytic clipping and adversarial metric tests establish the
+acceptance. The assessor consumes the same bounded, immutable byte snapshot
+that passed cache verification, including the native mesh, source/settings,
+worker and manifest identities. Concurrent changes to caller paths after
+verification cannot replace the measured geometry or its recorded hashes. Analytic clipping and adversarial metric tests establish the
 measurement implementation; only actual decoded solver caches establish the
 native experiment. Current-head CI and independent review remain required.
 

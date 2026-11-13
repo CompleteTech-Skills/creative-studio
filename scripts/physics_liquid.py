@@ -9,13 +9,15 @@ import io
 import shutil
 import tempfile
 import time
+from types import MappingProxyType
 
 import physics_backends as core
 from physics_liquid_settings import admit
 from physics_liquid_validation import verify_geometry
 
 
-def verify_cache(root, *, expected_world_sha256=None):
+def _verify_cache_snapshot(root, *, expected_world_sha256=None):
+    """Return the public report and immutable bytes from its verified snapshot."""
     with core._Reader(root) as reader:
         manifest_bytes=reader.read('liquid-cache.json',1024*1024)
         manifest=core.parse(manifest_bytes)
@@ -113,9 +115,18 @@ def verify_cache(root, *, expected_world_sha256=None):
                 except (OSError,ValueError,Image.DecompressionBombError) as exc:
                     raise core.BackendError('PHYSICS_CACHE_CORRUPT','Invalid native liquid PNG.') from exc
         geometry=verify_geometry(reader,world)
-        return dict(status='verified',world_sha256=manifest['world_sha256'],geometry=geometry,
+        result=dict(status='verified',world_sha256=manifest['world_sha256'],geometry=geometry,
             backend=manifest['backend'],resources=manifest['resources'],review_status='unreviewed',
             limitations=['mass conservation unverified','no two-way coupling','no secondary particles','no solver continuation'])
+        # Consumers must use these same bounded, verified bytes, rather than
+        # reopening mutable caller paths after verification. Values are bytes.
+        payloads['liquid-cache.json']=manifest_bytes
+        return result, MappingProxyType(payloads)
+
+
+def verify_cache(root, *, expected_world_sha256=None):
+    report, _ = _verify_cache_snapshot(root, expected_world_sha256=expected_world_sha256)
+    return report
 
 
 def simulate(world, source_payloads, destination, *, settings, executable=None, project_manifest='project.json', cancel_token=None):

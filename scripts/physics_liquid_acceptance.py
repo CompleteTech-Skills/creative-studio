@@ -8,7 +8,7 @@ import math
 from pathlib import Path
 
 import physics_backends as core
-from physics_liquid import verify_cache
+from physics_liquid import _verify_cache_snapshot
 from physics_liquid_example import build_liquid_inputs
 from physics_liquid_mesh import canonical_vertices, decode_bobj
 
@@ -109,9 +109,9 @@ def evaluate_caches(caches):
     series = {}; identities = {}
     for case, directory in caches.items():
         root = Path(directory)
-        verified = verify_cache(root)
-        world = core.parse((root/'world.json').read_bytes())
-        settings = core.parse((root/'liquid-settings.json').read_bytes())
+        verified, payloads = _verify_cache_snapshot(root)
+        world = core.parse(payloads['world.json'])
+        settings = core.parse(payloads['liquid-settings.json'])
         # This acceptance profile is deliberately specific: arbitrary sources,
         # timing, radii, obstacles, and settings require a different experiment.
         expected, inputs, expected_settings = build_liquid_inputs(
@@ -120,18 +120,18 @@ def evaluate_caches(caches):
         # container leakage. Keep it OPEN in both contained cases and control.
         expected_settings['boundaries']['bottom'] = False
         if world != expected or settings != expected_settings or any(
-                (root/'inputs'/name).read_bytes() != payload for name, payload in inputs.items()):
+                payloads['inputs/'+name] != payload for name, payload in inputs.items()):
             raise ValueError('Cache is not the matched 48-frame resolution-24 engineering control: '+case)
         domain = world['components'][0]
         series[case] = []
         h = domain['size'][0]/domain['resolution'][0]
         for frame in range(world['frame_range']['end']):
-            payload = (root/'cache'/'mesh'/f'fluid_mesh_{frame+1:04d}.bobj.gz').read_bytes()
+            payload = payloads[f'cache/mesh/fluid_mesh_{frame+1:04d}.bobj.gz']
             mesh = decode_bobj(payload)
             series[case].append(dict(frame=frame, mesh_sha256=core.digest(payload), **measure_surface(
                 canonical_vertices(mesh, domain), mesh['triangles'], cell_size=h)))
-        identities[case] = dict(cache=str(root.resolve()), manifest_sha256=core.digest((root/'liquid-cache.json').read_bytes()),
-            worker_sha256=core.digest((root/'worker.py').read_bytes()),
+        identities[case] = dict(cache=str(root.resolve()), manifest_sha256=core.digest(payloads['liquid-cache.json']),
+            worker_sha256=core.digest(payloads['worker.py']),
             world_sha256=verified['world_sha256'], backend=verified['backend'], resources=verified['resources'],
             settings=settings, viscosity_m2_per_s=domain['viscosity'])
     result = assess_series(series, cell_size=h, emission_end_frame=expected_settings['emission_end_frame'])
