@@ -117,13 +117,16 @@ class NativeLightRendering(unittest.TestCase):
         import tempfile
         executable=os.environ.get('HATCH_BLENDER') or shutil.which('blender')
         self.assertTrue(executable, 'The enabled native lighting gate requires Blender 4.5 LTS.')
+        environment = dict(os.environ)
+        if os.environ.get('HATCH_BLENDER_PYTHONPATH'):
+            environment['PYTHONPATH'] = os.environ['HATCH_BLENDER_PYTHONPATH']
         with tempfile.TemporaryDirectory(prefix='hatch-lighting-test-') as temporary:
             destination=Path(temporary)/'evidence'
             process=subprocess.run([executable,'--background','--factory-startup','--disable-autoexec','--python-use-system-env',
                                     '--threads','2','--python-exit-code','1','--python',
                                     str(Path(__file__).resolve().parents[1]/'scripts/verify_lookdev_lighting.py'),
                                     '--',str(destination)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
-                                   timeout=300,text=True,check=False)
+                                   timeout=300,text=True,check=False,env=environment)
             self.assertEqual(process.returncode,0,process.stdout[-8000:])
             result=json.loads((destination/'report.json').read_text())
             self.assertGreater(len(result['frames']),10)

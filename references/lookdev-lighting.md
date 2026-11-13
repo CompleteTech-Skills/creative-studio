@@ -104,5 +104,8 @@ source HDR bytes and measured comparisons. It checks point distance attenuation,
 sun translation invariance, spot illumination, finite-area penumbra, diffuse red
 interreflection, emissive illumination, rotated HDR response and actual EEVEE
 rendering. An opt-in test wrapper runs the same worker when
-`HATCH_LOOKDEV_LIGHTING_TEST=1`; enabling it without Blender fails. Technical pixel
+`HATCH_LOOKDEV_LIGHTING_TEST=1`; enabling it without Blender fails. Set
+`HATCH_BLENDER_PYTHONPATH` to optional dependencies installed for Blender's own
+Python ABI when the host test interpreter differs (Blender 4.5 bundles Python
+3.11). The direct command uses `PYTHONPATH` and `--python-use-system-env`. Technical pixel
 checks do not grant aesthetic or production-art approval.
