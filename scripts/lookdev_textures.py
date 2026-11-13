@@ -76,9 +76,15 @@ def _size(width, height, limits, multiplier=96):
 
 
 def _finite(value, low=None, high=None, name="value"):
-    require(type(value) in (int, float) and math.isfinite(value), "TEXTURE_NUMBER", name + " must be finite.")
+    require(type(value) in (int, float), "TEXTURE_NUMBER", name + " must be finite.")
+    # Compare integer ranges before any operation can convert them to float.
     require((low is None or value >= low) and (high is None or value <= high),
             "TEXTURE_NUMBER", name + " is outside its supported range.")
+    try:
+        finite = math.isfinite(value)
+    except OverflowError:
+        finite = False
+    require(finite, "TEXTURE_NUMBER", name + " must be finite.")
     return float(value)
 
 
@@ -461,7 +467,19 @@ def procedural_maps(kind, *, width=256, height=256, seed=0, scale=1.0, frequency
     frequency = _finite(frequency, 0.01, 1024, "frequency")
     variation = _finite(variation, 0, 1, "variation")
     turbulence = _finite(turbulence, 0, 1, "turbulence")
-    low, high = np.asarray(color_low, np.float32), np.asarray(color_high, np.float32)
+    # Admit the three scalar components before NumPy can coerce strings/bools or
+    # convert an unbounded integer to float. No raster allocation has occurred.
+    from collections.abc import Sequence
+    from numbers import Real
+    def color_vector(value):
+        require(isinstance(value, (Sequence, np.ndarray)) and not isinstance(value, (str, bytes))
+                and (not isinstance(value, np.ndarray) or value.shape == (3,)) and len(value) == 3,
+                'TEXTURE_COLOR', 'Colors must be three numeric linear RGB components.')
+        require(all(isinstance(x, (Real, np.integer, np.floating))
+                    and not isinstance(x, (bool, np.bool_)) and 0 <= x <= 1 for x in value),
+                'TEXTURE_COLOR', 'Color components must be finite numeric values in [0,1].')
+        return np.asarray(value, np.float32)
+    low, high = color_vector(color_low), color_vector(color_high)
     require(low.shape == high.shape == (3,) and np.isfinite(low).all() and np.isfinite(high).all()
             and (low >= 0).all() and (high <= 1).all() and (high >= low).all(),
             "TEXTURE_COLOR", "Colors must be ordered linear RGB values in [0,1].")

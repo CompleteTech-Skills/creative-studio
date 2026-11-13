@@ -1,0 +1,342 @@
+{
+  "archived_at": "2026-10-24T04:29:30.877944+00:00",
+  "tested_head": "acf0531c9bbcd69dc3234b3f278d48a19ca95d94",
+  "original_prefix": "tests/results/physics-backends-20261024/",
+  "archive_prefix": "tests/results/physics-backends-20261024/historical-acf0531/",
+  "scope": "Original successful pre-review execution evidence. Superseded by stricter evidence validation and descendant cleanup fixes; no current-head PASS claim.",
+  "original_bytes_unchanged": true,
+  "files": {
+    "authored-whitespace.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "blender-cache.log": {
+      "sha256": "47c4f4c112b143d95e019850081e9cfb0bf22ba09ebfd456a1fb9c97d95edb2e",
+      "bytes": 945
+    },
+    "blender-demo/acceptance.json": {
+      "sha256": "b90d4d76e5390410325cbdd4f827088b37799b9af139dc3f46a6075ba3e197b1",
+      "bytes": 3348
+    },
+    "blender-demo/animation/export.json": {
+      "sha256": "f7b35a0373df796fb2a13220c6857247fd5b5d84c5b5237e315f567040c7c702",
+      "bytes": 274
+    },
+    "blender-demo/animation/transforms.json": {
+      "sha256": "a7f315e1161fa2adb3f81bee6cfe989d8e01f9b86988f06cdfbdab32a81052ff",
+      "bytes": 9971
+    },
+    "blender-demo/cache/.config/blender/4.5/extensions/.cache/compat.dat": {
+      "sha256": "598269c3fc6f66fca4bdd3ade9de4fb7acb393c4950b3ae04fa1e441d7990a71",
+      "bytes": 121
+    },
+    "blender-demo/cache/cache.json": {
+      "sha256": "d8b2910aeab6c91bc57986c4c93bfdd10ea99f3a9944376013694976bcde75f8",
+      "bytes": 4217
+    },
+    "blender-demo/cache/consumption-stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "blender-demo/cache/consumption-stdout.log": {
+      "sha256": "98d63641ec034452bcba7f410a6595b304c6ebc9b84630a9a64d383991c19375",
+      "bytes": 204
+    },
+    "blender-demo/cache/inputs/ball-asset.json": {
+      "sha256": "d1e6f820df1a509904502c8d0418795aa8465e793f4e213cb1327154d61d5fe0",
+      "bytes": 1172
+    },
+    "blender-demo/cache/inputs/ball.obj": {
+      "sha256": "a76c16429d620f0a129045d23c129037242e643b7b5ae97c4e9095895aa45d4d",
+      "bytes": 185
+    },
+    "blender-demo/cache/inputs/floor-asset.json": {
+      "sha256": "03340d7131b3cdbe5b3b14191ea0f0e10e91ff98d8c0114c9db4c315da9424f6",
+      "bytes": 1178
+    },
+    "blender-demo/cache/inputs/floor.obj": {
+      "sha256": "ca83b0c7a0b76f7f579536924596c3807aef1bf96e38e5c9b775e2943b8eb23a",
+      "bytes": 246
+    },
+    "blender-demo/cache/inputs/physics-scene.json": {
+      "sha256": "48b938924c4971edd764e6648d7dc966c0e4afaa80663f8125fe00aa9827011f",
+      "bytes": 2476
+    },
+    "blender-demo/cache/inputs/project.json": {
+      "sha256": "90f554eda48308c37f478ff99ab348a1b08b8d1860d522b5779a8aabb8178076",
+      "bytes": 1962
+    },
+    "blender-demo/cache/native-consumption.json": {
+      "sha256": "ad4562864f2986b53019d5c1dd2a25793ad38446a3ad9049e0c2ad6db46a8b5b",
+      "bytes": 1091
+    },
+    "blender-demo/cache/preview.png": {
+      "sha256": "a527dc5335fcd885fcba07b6f2a701cc9f92d68a1610ad1103401111d6c5c413",
+      "bytes": 10147
+    },
+    "blender-demo/cache/reopen-stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "blender-demo/cache/reopen-stdout.log": {
+      "sha256": "2f48c56774bc6a9ae3575a5a66bdac67038fa3f587151aba60caf6bca29ba202",
+      "bytes": 141
+    },
+    "blender-demo/cache/scene.blend": {
+      "sha256": "93668a6183e118460e4aca3e3a609c8eba23e74cf53315d451b9f3806a98d3c8",
+      "bytes": 412828
+    },
+    "blender-demo/cache/simulation-report.json": {
+      "sha256": "cfa5e22be5534aeea5acc5ad57f62133985f1f0676f2376261e9d90354832f24",
+      "bytes": 1918
+    },
+    "blender-demo/cache/simulation-stderr.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "blender-demo/cache/simulation-stdout.log": {
+      "sha256": "ccc1c6551789591370e5a26ebbc67cd848b8225ea64f35b380272c0ae7689522",
+      "bytes": 6409
+    },
+    "blender-demo/cache/states.json": {
+      "sha256": "71c359069788bba3a1852393cc2238c07257e14f4287b7eec34d090a21ed290f",
+      "bytes": 9569
+    },
+    "blender-demo/cache/verification.json": {
+      "sha256": "a5731e6743b0b2e677afddb83c53b69406383bcd7f16732643753129b38c857b",
+      "bytes": 4409
+    },
+    "blender-demo/cache/worker-job.json": {
+      "sha256": "509becaf042a3c31b92937ab41d07a43b5b71c2196c39e1cd26fe406480bedc4",
+      "bytes": 3840
+    },
+    "blender-demo/cache/worker-report.json": {
+      "sha256": "ad4562864f2986b53019d5c1dd2a25793ad38446a3ad9049e0c2ad6db46a8b5b",
+      "bytes": 1091
+    },
+    "blender-demo/cache/worker.py": {
+      "sha256": "bb5acec20ceb5210c48e29c1dc7f0247c82264d133c84b158ac867f68e58d7d5",
+      "bytes": 18856
+    },
+    "blender-demo/cache/world.json": {
+      "sha256": "1174afd8aa90cc3565fc7dfcde62022304cb937366755d9e9c0e515120fef692",
+      "bytes": 3164
+    },
+    "blender-demo/physics-world.json": {
+      "sha256": "1174afd8aa90cc3565fc7dfcde62022304cb937366755d9e9c0e515120fef692",
+      "bytes": 3164
+    },
+    "blender-demo/sources/ball-asset.json": {
+      "sha256": "d1e6f820df1a509904502c8d0418795aa8465e793f4e213cb1327154d61d5fe0",
+      "bytes": 1172
+    },
+    "blender-demo/sources/ball.obj": {
+      "sha256": "a76c16429d620f0a129045d23c129037242e643b7b5ae97c4e9095895aa45d4d",
+      "bytes": 185
+    },
+    "blender-demo/sources/floor-asset.json": {
+      "sha256": "03340d7131b3cdbe5b3b14191ea0f0e10e91ff98d8c0114c9db4c315da9424f6",
+      "bytes": 1178
+    },
+    "blender-demo/sources/floor.obj": {
+      "sha256": "ca83b0c7a0b76f7f579536924596c3807aef1bf96e38e5c9b775e2943b8eb23a",
+      "bytes": 246
+    },
+    "blender-demo/sources/physics-scene.json": {
+      "sha256": "48b938924c4971edd764e6648d7dc966c0e4afaa80663f8125fe00aa9827011f",
+      "bytes": 2476
+    },
+    "blender-demo/sources/project.json": {
+      "sha256": "90f554eda48308c37f478ff99ab348a1b08b8d1860d522b5779a8aabb8178076",
+      "bytes": 1962
+    },
+    "blender-demo.log": {
+      "sha256": "7b774f5734fbfef74ec8766bec22bf6bf09f38851e6bb0a424378f828635253a",
+      "bytes": 295
+    },
+    "blender-frame12.log": {
+      "sha256": "237ed2e9ae54c6696e0415e0a9a6d791adfd746f471d348263e98800625e9d7f",
+      "bytes": 693
+    },
+    "blender-probe.log": {
+      "sha256": "81a92af8d397a98972651e8adc5bb79cba4972a6dce551f29092a6e0d4177aac",
+      "bytes": 9005
+    },
+    "existing-isolation.log": {
+      "sha256": "14e03e681cf3c13a84c88f063d8e480eb652161e8712bf978ac61db2a62753d5",
+      "bytes": 967
+    },
+    "existing-schema-math.log": {
+      "sha256": "9b2b4d239527c4e6c46972cf2d39c860f55418141300b56b44323fb8c4c76c45",
+      "bytes": 6483
+    },
+    "host-versions.log": {
+      "sha256": "45fb0810d8f69b08e8e297544a7fd57a93c124034694956daa6e6339f9c6bc07",
+      "bytes": 363
+    },
+    "lifecycle.log": {
+      "sha256": "f283533d98230159860a445ef1bf22a2c18dcdc0da11a264a3e6a5a02f8e77f9",
+      "bytes": 6971
+    },
+    "optional-versions.log": {
+      "sha256": "9d9ed302333a5c6f20a802f51fcb5230ad10b1aece364e4f7bee57efcd3ecc53",
+      "bytes": 29
+    },
+    "physics-contracts.log": {
+      "sha256": "87f76816a2bba57ea957471ac32fd23d1d97d2dd1bc35b35f36016a2fdba092e",
+      "bytes": 3725
+    },
+    "physics-schema-check.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "pybullet-cache.log": {
+      "sha256": "65a3816534deb97ec4a04ed45b026eb14713cd583c214f967d1414b6a8862437",
+      "bytes": 924
+    },
+    "pybullet-demo/acceptance.json": {
+      "sha256": "9bdc15fcb18abb660f9be9d32746efa019e38cd1104bb66a0e84225c4071d42e",
+      "bytes": 2219
+    },
+    "pybullet-demo/animation/export.json": {
+      "sha256": "304d49aeda251d549c8d5258a144a4513057ba23df7bbc404a16e6a0d80d739e",
+      "bytes": 274
+    },
+    "pybullet-demo/animation/transforms.json": {
+      "sha256": "8c2a29054163de17ad7815cf31943a2d15c7da3862b7c879044c008911be4e94",
+      "bytes": 9551
+    },
+    "pybullet-demo/cache/cache.json": {
+      "sha256": "4b0e89e34f8e5cbd4f718c06a17f71f4d49fd399b8423da89aa82683d7dd82e7",
+      "bytes": 3332
+    },
+    "pybullet-demo/cache/contacts.json": {
+      "sha256": "05614262af9945e08a31c42b65fb79c52e45ae885bab42a4fa03bde20e27df5e",
+      "bytes": 8335
+    },
+    "pybullet-demo/cache/inputs/ball-asset.json": {
+      "sha256": "d1e6f820df1a509904502c8d0418795aa8465e793f4e213cb1327154d61d5fe0",
+      "bytes": 1172
+    },
+    "pybullet-demo/cache/inputs/ball.obj": {
+      "sha256": "a76c16429d620f0a129045d23c129037242e643b7b5ae97c4e9095895aa45d4d",
+      "bytes": 185
+    },
+    "pybullet-demo/cache/inputs/floor-asset.json": {
+      "sha256": "03340d7131b3cdbe5b3b14191ea0f0e10e91ff98d8c0114c9db4c315da9424f6",
+      "bytes": 1178
+    },
+    "pybullet-demo/cache/inputs/floor.obj": {
+      "sha256": "ca83b0c7a0b76f7f579536924596c3807aef1bf96e38e5c9b775e2943b8eb23a",
+      "bytes": 246
+    },
+    "pybullet-demo/cache/inputs/physics-scene.json": {
+      "sha256": "48b938924c4971edd764e6648d7dc966c0e4afaa80663f8125fe00aa9827011f",
+      "bytes": 2476
+    },
+    "pybullet-demo/cache/inputs/project.json": {
+      "sha256": "90f554eda48308c37f478ff99ab348a1b08b8d1860d522b5779a8aabb8178076",
+      "bytes": 1962
+    },
+    "pybullet-demo/cache/simulation-report.json": {
+      "sha256": "79b86a561b4d32823c5daae2cae4b269fe332e5cff82fcd711513b45dcb68715",
+      "bytes": 966
+    },
+    "pybullet-demo/cache/simulation-stderr.log": {
+      "sha256": "e35d107f1d6e99beca8bd3bf477a668f080e6dd52b8b519c32ac035fcd84d2d3",
+      "bytes": 42
+    },
+    "pybullet-demo/cache/simulation-stdout.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "pybullet-demo/cache/states.json": {
+      "sha256": "87dffd0e59f053c809bbf110dc89b9aa9b12526bbdc508796a17e3db70944d5b",
+      "bytes": 9149
+    },
+    "pybullet-demo/cache/verification.json": {
+      "sha256": "e8b1518241bf1e8706febfde023d5b81ec665775a0f85be3e0e561a63bc43561",
+      "bytes": 1871
+    },
+    "pybullet-demo/cache/worker-job.json": {
+      "sha256": "56047837a96180816cf184ecbece0d474e80a6c57f2b8d4dbf7d28103d71fd44",
+      "bytes": 3841
+    },
+    "pybullet-demo/cache/worker-report.json": {
+      "sha256": "79b86a561b4d32823c5daae2cae4b269fe332e5cff82fcd711513b45dcb68715",
+      "bytes": 966
+    },
+    "pybullet-demo/cache/worker.py": {
+      "sha256": "49a363b905a9556e84be961309e9186d0f0e9c8168dfa12cf03cea1b4ad6420f",
+      "bytes": 6929
+    },
+    "pybullet-demo/cache/world.json": {
+      "sha256": "d6869d7b6ffdabf1adef6bbd5732ec0b81e51f54d94b1428da2a914de0c918f2",
+      "bytes": 3165
+    },
+    "pybullet-demo/physics-world.json": {
+      "sha256": "d6869d7b6ffdabf1adef6bbd5732ec0b81e51f54d94b1428da2a914de0c918f2",
+      "bytes": 3165
+    },
+    "pybullet-demo/sources/ball-asset.json": {
+      "sha256": "d1e6f820df1a509904502c8d0418795aa8465e793f4e213cb1327154d61d5fe0",
+      "bytes": 1172
+    },
+    "pybullet-demo/sources/ball.obj": {
+      "sha256": "a76c16429d620f0a129045d23c129037242e643b7b5ae97c4e9095895aa45d4d",
+      "bytes": 185
+    },
+    "pybullet-demo/sources/floor-asset.json": {
+      "sha256": "03340d7131b3cdbe5b3b14191ea0f0e10e91ff98d8c0114c9db4c315da9424f6",
+      "bytes": 1178
+    },
+    "pybullet-demo/sources/floor.obj": {
+      "sha256": "ca83b0c7a0b76f7f579536924596c3807aef1bf96e38e5c9b775e2943b8eb23a",
+      "bytes": 246
+    },
+    "pybullet-demo/sources/physics-scene.json": {
+      "sha256": "48b938924c4971edd764e6648d7dc966c0e4afaa80663f8125fe00aa9827011f",
+      "bytes": 2476
+    },
+    "pybullet-demo/sources/project.json": {
+      "sha256": "90f554eda48308c37f478ff99ab348a1b08b8d1860d522b5779a8aabb8178076",
+      "bytes": 1962
+    },
+    "pybullet-demo.log": {
+      "sha256": "d06f7354c5b9efc9a6b8653ce10237c63f3c19ba7ff76de7e8a5f8440d5f8f45",
+      "bytes": 296
+    },
+    "pybullet-probe.log": {
+      "sha256": "845798b83d7985008f73c39db78b0eb42a6977e9f63c166e388523afd06dbb36",
+      "bytes": 5853
+    },
+    "scene-contracts.log": {
+      "sha256": "38f5dd567f7baf6e997f1e5bbce6e838608d9ddbfc5bd82b2e8b6e826a9ba12c",
+      "bytes": 10405
+    },
+    "schema-check.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "source-after.json": {
+      "sha256": "031908d2fcab09e33acad870537ddc091abd443e0cff7e907dbc3bdc4d3f4be7",
+      "bytes": 13396
+    },
+    "source-before.json": {
+      "sha256": "031908d2fcab09e33acad870537ddc091abd443e0cff7e907dbc3bdc4d3f4be7",
+      "bytes": 13396
+    },
+    "source-delivery.log": {
+      "sha256": "7d59ca4103d32ae90d1ba145e50d0827d9b061616ea1b560bbe3aaba76747ec8",
+      "bytes": 2916
+    },
+    "template-check.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "validation.json": {
+      "sha256": "ef45158aaa5f0cf153f4499d45cd0e0582f01bc0309182ae82f9aa2eb4536195",
+      "bytes": 10507
+    }
+  }
+}

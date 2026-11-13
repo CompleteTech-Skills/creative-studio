@@ -1,5 +1,7 @@
 from copy import deepcopy
+from contextlib import contextmanager
 import os
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -7,10 +9,12 @@ import zipfile
 from unittest.mock import patch
 from rig_test_helpers import fixture
 import rig_package
+import rig_jobs
+import rig_source_snapshot
 from rig_contracts import validate_contract
 from rig_corrections import apply_rig_corrections
 from rig_errors import RigError,atomic_json,job_lock,read_json,sha256,timestamp
-from rig_jobs import run_step
+from rig_jobs import create_run,run_step
 from rig_models import load_rig,rig_signature
 from rig_package import package_rig,restore_rig
 from rig_review import apply_review
@@ -27,6 +31,19 @@ class RigWorkflowTests(unittest.TestCase):
         r=self.rig;self.assertTrue(r.manifest['source']['fixture']);self.assertEqual(sha256(r.root/r.manifest['source']['path']),r.manifest['source']['sha256'])
         (r.root/'identity.json').write_text('{}')
         with self.assertRaises(RigError):load_rig(r.root)
+    def test_hash_consistent_malformed_identity_has_structured_diagnostics(self):
+        original=read_json(self.rig.root/'identity.json')
+        malformed=[{},[],None,dict(original,schema_version=2),dict(original,fixture=1),
+                   dict(original,import_scale=True),dict(original,import_scale=-1),
+                   dict(original,coordinate_system={}),dict(original,attribution='')]
+        for value in malformed:
+            with self.subTest(value=value):
+                atomic_json(self.rig.root/'identity.json',value)
+                manifest=deepcopy(self.rig.manifest)
+                manifest['character']['identity_sha256']=sha256(self.rig.root/'identity.json')
+                atomic_json(self.rig.root/'rig.json',manifest)
+                with self.assertRaises(RigError) as caught:load_rig(self.rig.root)
+                self.assertEqual(caught.exception.report['code'],'RIG_IDENTITY_SCHEMA')
     def test_strict_schema_rejects_unknown_and_nonfinite(self):
         for mutate in (lambda v:v.update(extra=True),lambda v:v['skeleton']['bones'][0]['head'].__setitem__(0,float('nan'))):
             value=deepcopy(self.rig.manifest);mutate(value)
@@ -73,6 +90,165 @@ class RigWorkflowTests(unittest.TestCase):
         with zipfile.ZipFile(Path(self.temp.name)/'bad.zip','w') as z:z.writestr('../escape','bad')
         with self.assertRaises(RigError):restore_rig(Path(self.temp.name)/'bad.zip',Path(self.temp.name)/'bad')
         self.assertFalse((Path(self.temp.name)/'escape').exists())
+    def test_package_preserves_existing_destination(self):
+        destination = Path(self.temp.name) / 'existing.zip'
+        destination.write_bytes(b'user-owned archive')
+        before = destination.stat()
+        with self.assertRaises(RigError) as error:
+            package_rig(self.rig.root, destination)
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_EXISTS')
+        self.assertEqual(destination.read_bytes(), b'user-owned archive')
+        self.assertEqual(destination.stat().st_ino, before.st_ino)
+
+    def test_package_exclusive_publication_preserves_racing_file(self):
+        destination = Path(self.temp.name) / 'racing.zip'
+        original = rig_package._rename_no_replace
+        def race(stage, target):
+            if Path(target) == destination:
+                target.write_bytes(b'concurrent writer')
+            return original(stage, target)
+        with patch.object(rig_package, '_rename_no_replace', side_effect=race):
+            with self.assertRaises(FileExistsError):
+                package_rig(self.rig.root, destination)
+        self.assertEqual(destination.read_bytes(), b'concurrent writer')
+        self.assertFalse(list(Path(self.temp.name).glob('.rig-package-*')))
+
+    def test_package_holds_run_writer_lock(self):
+        with job_lock(self.rig.root):
+            with self.assertRaises(RigError) as error:
+                package_rig(self.rig.root, Path(self.temp.name) / 'busy.zip')
+        self.assertEqual(error.exception.report['code'], 'RIG_BUSY')
+
+    def test_package_rejects_source_change_after_inventory(self):
+        extra = self.rig.root / 'extra.bin'
+        extra.write_bytes(b'original')
+        original = rig_package._write_package_entry
+        def changed(archive, root, entry):
+            if entry['path'] == 'extra.bin':
+                extra.write_bytes(b'modified')
+            return original(archive, root, entry)
+        destination = Path(self.temp.name) / 'changed.zip'
+        with patch.object(rig_package, '_write_package_entry', side_effect=changed):
+            with self.assertRaises(RigError) as error:
+                package_rig(self.rig.root, destination)
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_CHANGED')
+        self.assertFalse(destination.exists())
+        self.assertFalse(list(Path(self.temp.name).glob('.rig-package-*')))
+
+    def test_package_rejects_new_file_during_capture(self):
+        original = rig_package._write_package_entry
+        def changed(archive, root, entry):
+            result = original(archive, root, entry)
+            (root / 'racing-addition.bin').write_bytes(b'new')
+            return result
+        destination = Path(self.temp.name) / 'changed.zip'
+        with patch.object(rig_package, '_write_package_entry', side_effect=changed):
+            with self.assertRaises(RigError) as error:
+                package_rig(self.rig.root, destination)
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_CHANGED')
+        self.assertFalse(destination.exists())
+
+    def test_package_streams_payloads_and_is_deterministic(self):
+        extra = self.rig.root / 'large.bin'
+        extra.write_bytes(b'bounded streaming payload' * 100000)
+        original = Path.read_bytes
+        def read(path):
+            self.assertNotEqual(path, extra, 'Archive payload must be streamed')
+            return original(path)
+        first, second = (Path(self.temp.name) / name for name in ('one.zip', 'two.zip'))
+        with patch.object(Path, 'read_bytes', read):
+            package_rig(self.rig.root, first)
+            package_rig(self.rig.root, second)
+        self.assertEqual(sha256(first), sha256(second))
+        restored = Path(self.temp.name) / 'streamed'
+        restore_rig(first, restored)
+        self.assertEqual(sha256(extra), sha256(restored / 'large.bin'))
+
+    def test_package_rejects_special_files_without_blocking(self):
+        if not hasattr(os, 'mkfifo'):
+            self.skipTest('POSIX named pipes are unavailable')
+        os.mkfifo(self.rig.root / 'fifo')
+        with self.assertRaises(RigError) as error:
+            package_rig(self.rig.root, Path(self.temp.name) / 'pipe.zip')
+        self.assertEqual(error.exception.report['code'], 'RIG_MISSING_ASSET')
+
+    def test_restore_rejects_malformed_inventory_with_structured_error(self):
+        values = [[], {'schema_version': True, 'kind': 'hatch-3d-rig-package',
+                       'rig_sha256': '0' * 64, 'files': []},
+                  {'schema_version': 1, 'kind': 'hatch-3d-rig-package',
+                   'rig_sha256': '0' * 64, 'files': [None]},
+                  {'schema_version': 1, 'kind': 'hatch-3d-rig-package',
+                   'rig_sha256': '0' * 64, 'files': [{'path': 1, 'sha256': '0' * 64, 'bytes': 0}]}]
+        for index, value in enumerate(values):
+            archive = Path(self.temp.name) / ('bad-inventory-%s.zip' % index)
+            with zipfile.ZipFile(archive, 'w') as output:
+                output.writestr('inventory.json', json.dumps(value))
+            with self.subTest(value=value), self.assertRaises(RigError) as error:
+                restore_rig(archive, Path(self.temp.name) / ('bad-restore-%s' % index))
+            self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_INVENTORY')
+
+    def test_package_directory_scan_stops_at_budget(self):
+        root = Path(self.temp.name) / 'many-files'
+        root.mkdir()
+        for index in range(100):
+            (root / str(index)).write_bytes(b'')
+        original = os.scandir
+        consumed = []
+        @contextmanager
+        def counted(path):
+            with original(path) as entries:
+                def iterate():
+                    for entry in entries:
+                        consumed.append(entry.name)
+                        yield entry
+                yield iterate()
+        limits = dict(self.rig.manifest['limits'], archive_files=2)
+        with patch.object(rig_package.os, 'scandir', counted):
+            with self.assertRaises(RigError) as error:
+                rig_package._package_entries(root, limits)
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_LIMIT')
+        self.assertLessEqual(len(consumed), 3)
+
+    def test_restore_rejects_aliased_inventory_name(self):
+        archive = Path(self.temp.name) / 'aliased-inventory.zip'
+        with zipfile.ZipFile(archive, 'w') as output:
+            output.writestr('INVENTORY.JSON', '{}')
+        with self.assertRaises(RigError) as error:
+            restore_rig(archive, Path(self.temp.name) / 'aliased-restore')
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_INVENTORY')
+
+    def test_restore_bounds_inventory_before_decompression(self):
+        archive = Path(self.temp.name) / 'oversized-inventory.zip'
+        with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as output:
+            output.writestr('inventory.json', b' ' * 65)
+        with patch.object(rig_package, 'MAX_JSON_BYTES', 64):
+            with self.assertRaises(RigError) as error:
+                restore_rig(archive, Path(self.temp.name) / 'too-large')
+        self.assertEqual(error.exception.report['code'], 'RIG_ARCHIVE_INVENTORY')
+
+    def test_repeated_demo_verification_preserves_retained_archives(self):
+        import verify_rig_demos
+        root = Path(self.temp.name) / 'demo-verification'
+        root.mkdir()
+        for name in ('humanoid-retarget', 'quadruped-retarget'):
+            fixture(root, name=name)
+        packages = root / 'packages'
+        packages.mkdir()
+        retained = packages / 'humanoid-retarget.zip'
+        retained.write_bytes(b'previous retained archive')
+        with patch.object(verify_rig_demos, 'ARCHETYPES', ()):
+            first = verify_rig_demos.verify(root, archives=True)
+            second = verify_rig_demos.verify(root, archives=True)
+        self.assertEqual(retained.read_bytes(), b'previous retained archive')
+        first_paths = [item['archive']['path'] for item in first['fixtures']]
+        second_paths = [item['archive']['path'] for item in second['fixtures']]
+        self.assertTrue(set(first_paths).isdisjoint(second_paths))
+        for report in (first, second):
+            for item in report['fixtures']:
+                path = root / item['archive']['path']
+                self.assertEqual(sha256(path), item['archive']['sha256'])
+                self.assertTrue(item['archive']['restored_and_evaluated'])
+
     def test_restore_rejects_dangling_destination_symlink_before_extraction(self):
         home = Path(self.temp.name)
         archive = home / 'rig.zip'
@@ -147,3 +323,56 @@ class RigWorkflowTests(unittest.TestCase):
         self.assertEqual(result['total_catalog_states'],416);self.assertFalse(result['all_416_animated'])
         self.assertEqual(result['mapping']['waving']['status'],'requires-rig-capability')
         self.assertEqual(result['mapping']['static-neutral']['status'],'needs-review')
+
+
+class RigImportTransactionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.home=Path(self.temp.name)
+        self.rig=fixture(self.home)
+        self.source=self.rig.root/self.rig.manifest['source']['path']
+        self.destination=self.home/'new-import'
+
+    def test_source_changed_after_capture_cannot_change_published_provenance(self):
+        expected=self.source.read_bytes();original=rig_source_snapshot.import_snapshot
+        def captured(*args, **kwargs):
+            result=original(*args, **kwargs)
+            self.source.write_bytes(b'changed original after decoding')
+            return result
+        with patch.object(rig_source_snapshot,'import_snapshot',side_effect=captured):
+            created=create_run(self.source,self.destination)
+        retained=created.root/created.manifest['source']['path']
+        self.assertEqual(retained.read_bytes(),expected)
+        self.assertEqual(created.manifest['source']['sha256'],sha256(retained))
+        self.assertEqual(created.geometry.vertex_count,self.rig.geometry.vertex_count)
+        load_rig(self.destination)
+
+    def test_failed_staging_does_not_leave_partial_run(self):
+        original=rig_jobs.atomic_json
+        def failing(path, value):
+            if Path(path).name=='import.json':raise OSError('injected disk failure')
+            return original(path,value)
+        with patch.object(rig_jobs,'atomic_json',side_effect=failing):
+            with self.assertRaises(OSError):create_run(self.source,self.destination)
+        self.assertFalse(self.destination.exists())
+        self.assertFalse(list(self.home.glob('.rig-import-*')))
+        load_rig(self.rig.root)
+
+    def test_existing_empty_destination_is_preserved(self):
+        self.destination.mkdir();before=self.destination.stat()
+        with self.assertRaises(RigError) as caught:create_run(self.source,self.destination)
+        self.assertEqual(caught.exception.report['code'],'RIG_RUN_EXISTS')
+        after=self.destination.stat()
+        self.assertEqual((before.st_dev,before.st_ino),(after.st_dev,after.st_ino))
+        self.assertEqual(list(self.destination.iterdir()),[])
+
+    def test_racing_destination_is_preserved_and_stage_removed(self):
+        original=rig_jobs._rename_no_replace
+        def racing(stage,target):
+            target.mkdir();(target/'keep').write_bytes(b'other writer')
+            return original(stage,target)
+        with patch.object(rig_jobs,'_rename_no_replace',side_effect=racing):
+            with self.assertRaises(RigError) as caught:create_run(self.source,self.destination)
+        self.assertEqual(caught.exception.report['code'],'RIG_RUN_EXISTS')
+        self.assertEqual((self.destination/'keep').read_bytes(),b'other writer')
+        self.assertFalse(list(self.home.glob('.rig-import-*')))
