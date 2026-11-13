@@ -10,7 +10,6 @@ from animation3d_contracts import KINDS, validate_contract, target_key
 from animation3d_registry import TargetRegistry, sample_track
 from animation3d_time import frame_position,rate
 from rig_errors import require, sha256, object_hash
-from rig_models import load_rig
 from rig_skeleton import neutral_pose, evaluate_fk, validate_skeleton
 from rig_skinning import evaluate_deformation
 from rig_contracts import validate_contract as validate_rig_contract
@@ -31,14 +30,18 @@ class RigClipEvaluator:
     Returned nested lists and dicts are detached from both sources and caches.
     """
     def __init__(self, root, actor_id):
-        root=Path(root); before=sha256(root/'rig.json')
-        rig=load_rig(root)
-        validate_skeleton(rig.skeleton,rig.manifest['limits'])
+        from animation3d_assets import verify_native
+        root=Path(root)
         self._registry=TargetRegistry.from_rig(root,actor_id)
-        require(sha256(root/'rig.json')==before and all(e['source']['sha256']==before for e in self._registry.document['entries']),
-                'ANIMATION_HASH','Native rig changed while the evaluator was initialized.')
+        entries=self._registry.document['entries']
+        require(bool(entries),'ANIMATION_TARGET','Native rig has no registered channels.')
+        source=entries[0]['source']
+        _,rig=verify_native(root,source)
+        validate_skeleton(rig.skeleton,rig.manifest['limits'])
+        require(all(e['source']==source for e in entries),
+                'ANIMATION_HASH','Native rig channels must bind one admitted manifest closure.')
         self._rig=deepcopy(rig); self._actor_id=actor_id
-        self._dependency=before
+        self._dependency=source['sha256']
 
     def evaluate(self, clips, time, *, pose=None):
         """Evaluate disjoint clip channels at one shared exact source timestamp.
@@ -50,7 +53,8 @@ class RigClipEvaluator:
         return self.evaluate_sources([(clip,time) for clip in clips],pose=pose)
 
     def evaluate_sources(self, sources, *, pose=None):
-        sources=list(sources)
+        from itertools import islice
+        sources=list(islice(iter(sources),65))
         require(len(sources)<=64,'ANIMATION_LIMIT','At most 64 independent source clips may be composed.')
         pose=deepcopy(pose) if pose is not None else neutral_pose(self._rig.skeleton)
         validate_rig_contract(pose,'Pose')
