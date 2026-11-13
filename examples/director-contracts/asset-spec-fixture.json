@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "kind": "director-asset-spec",
+  "id": "asset-spec-fixture",
+  "semantic_version": "1.0.0",
+  "logical_id": "fixture",
+  "asset_type": "fixture",
+  "semantic_role": "fixture",
+  "visual_characteristics": [],
+  "capabilities": [],
+  "source_policy": {
+    "network": "deny",
+    "providers": [],
+    "paid": "deny",
+    "policy_ref": null
+  },
+  "candidates": [],
+  "formats": [],
+  "scale_meters": 1,
+  "coordinates": {
+    "handedness": "right",
+    "right": "+X",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "angles": "radian",
+    "quaternion": "XYZW",
+    "matrices": "column-vectors",
+    "time": "second"
+  },
+  "materials": [],
+  "textures": [],
+  "polygon_budget": 0,
+  "memory_budget": 0,
+  "licensing": "fixture",
+  "attribution": "fixture",
+  "dependencies": [],
+  "review": "unreviewed",
+  "substitutions": [],
+  "generation_required": false
+}
