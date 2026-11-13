@@ -104,13 +104,14 @@ def _clear_private_directory_fd(descriptor):
 
 @contextmanager
 def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_error=True):
-    """Yield an owned private directory FD on supported POSIX systems.
+    """Lend a private directory FD on supported POSIX systems.
 
     This additive adapter has no procfs requirement. All caller operations must
     use the FD, and directory publishers must publish an inner payload through
     descriptor-relative exclusive rename. Contents are cleaned relative to the
     pinned FD; the public outer basename is never removed. As with private_stage,
     same-UID hostile process isolation is outside this ownership boundary.
+    The descriptor belongs to this context; callers must not close or reuse it.
     """
     if not private_stage_fd_supported():
         raise OSError(errno.ENOTSUP, 'descriptor-only private staging is unavailable')
@@ -119,10 +120,16 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
         raise ValueError('private-stage prefix must be one bounded portable filename component')
     if type(cleanup) is not bool or type(cleanup_on_error) is not bool:
         raise ValueError('private-stage cleanup policies must be booleans')
+    parent_identity = os.fstat(parent_fd)
     parent = os.dup(parent_fd)
     descriptor = None
+    identity = None
     body_error = None
     try:
+        borrowed = os.fstat(parent)
+        if (borrowed.st_dev, borrowed.st_ino) != (parent_identity.st_dev, parent_identity.st_ino):
+            raise OSError(errno.ESTALE, 'private stage parent descriptor changed during acquisition')
+        _validate_directory_descriptor(parent)
         for _ in range(64):
             name = prefix + secrets.token_hex(16)
             try:
@@ -146,6 +153,9 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
         finally:
             if cleanup and (body_error is None or cleanup_on_error):
                 try:
+                    current = os.fstat(descriptor)
+                    if (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
+                        raise OSError(errno.ESTALE, 'private stage descriptor was closed and reused')
                     _clear_private_directory_fd(descriptor)
                 except BaseException as cleanup_error:
                     if body_error is None:
@@ -154,7 +164,12 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
                         body_error.add_note('Pinned staging cleanup also failed: ' + str(cleanup_error))
     finally:
         if descriptor is not None:
-            os.close(descriptor)
+            try:
+                current = os.fstat(descriptor)
+                if identity is None or (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
+                    os.close(descriptor)
+            except OSError:
+                pass
         os.close(parent)
 
 

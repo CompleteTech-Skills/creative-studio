@@ -106,6 +106,47 @@ class DescriptorStageTests(unittest.TestCase):
                 self.assertEqual(list(next(root.iterdir()).iterdir()), [])
             finally: os.close(parent)
 
+    def test_closed_and_reused_stage_descriptor_never_cleans_or_closes_foreign(self):
+        if self.unsupported(): return
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); foreign = root / 'foreign'; foreign.mkdir()
+            (foreign / 'original').write_bytes(b'user data')
+            parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            foreign_fd = os.open(foreign, os.O_RDONLY | os.O_DIRECTORY)
+            reused = None
+            try:
+                with self.assertRaises(OSError) as caught:
+                    with atomic.private_stage_fd(parent) as fd:
+                        reused = fd
+                        os.close(fd); os.dup2(foreign_fd, fd)
+                self.assertEqual(caught.exception.errno, errno.ESTALE)
+                self.assertEqual(os.fstat(reused).st_ino, os.fstat(foreign_fd).st_ino)
+                self.assertEqual((foreign / 'original').read_bytes(), b'user data')
+            finally:
+                if reused is not None: os.close(reused)
+                os.close(foreign_fd); os.close(parent)
+
+    def test_parent_descriptor_reuse_is_rejected_before_any_stage_creation(self):
+        if self.unsupported(): return
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); foreign = root / 'foreign'; foreign.mkdir()
+            parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+            foreign_fd = os.open(foreign, os.O_RDONLY | os.O_DIRECTORY)
+            created = []; original_dup = os.dup
+            def replace_before_duplicate(descriptor):
+                os.dup2(foreign_fd, parent)
+                duplicate = original_dup(descriptor); created.append(duplicate)
+                return duplicate
+            try:
+                with mock.patch.object(atomic.os, 'dup', side_effect=replace_before_duplicate):
+                    with self.assertRaises(OSError) as caught:
+                        with atomic.private_stage_fd(parent): self.fail('changed parent admitted')
+                self.assertEqual(caught.exception.errno, errno.ESTALE)
+                with self.assertRaises(OSError): os.fstat(created[0])
+                self.assertEqual(list(foreign.iterdir()), [])
+                self.assertEqual([p.name for p in root.iterdir()], ['foreign'])
+            finally: os.close(foreign_fd); os.close(parent)
+
     def test_inner_payload_publication_is_exclusive(self):
         if self.unsupported(): return
         with tempfile.TemporaryDirectory() as directory:

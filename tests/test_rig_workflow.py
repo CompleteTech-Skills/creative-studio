@@ -22,9 +22,13 @@ from rig_states import map_states
 
 class RigWorkflowTests(unittest.TestCase):
     def setUp(self):self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.rig=fixture(self.temp.name)
-    @unittest.skipUnless(Path('/proc/self/fd').is_dir(),'Explicit directory capability requires Linux procfd.')
     def test_load_rig_retains_explicit_directory_authority_after_root_replacement(self):
         from rig_errors import directory_capability
+        if not Path('/proc/self/fd').is_dir():
+            with self.assertRaises(RigError) as caught:
+                with directory_capability(0):self.fail('Unsupported descriptor authority admitted')
+            self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_UNAVAILABLE')
+            return
         original=self.rig.root
         fd=os.open(original,os.O_RDONLY|os.O_DIRECTORY)
         try:
@@ -37,9 +41,13 @@ class RigWorkflowTests(unittest.TestCase):
                 self.assertEqual((original/'rig.json').read_text(),'{}')
         finally:os.close(fd)
 
-    @unittest.skipUnless(Path('/proc/self/fd').is_dir(),'Explicit directory capability requires Linux procfd.')
     def test_model_readers_retain_explicit_parent_authority(self):
         from rig_errors import directory_capability
+        if not Path('/proc/self/fd').is_dir():
+            with self.assertRaises(RigError) as caught:
+                with directory_capability(0):self.fail('Unsupported descriptor authority admitted')
+            self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_UNAVAILABLE')
+            return
         from rig_gltf import read_gltf
         from rig_obj import import_obj
         root=Path(self.temp.name)/'models';root.mkdir()
