@@ -207,7 +207,9 @@ def apply_timeline(repository, body):
 
 def evaluate_timeline(repository, body):
     """Evaluate one exact frame in one hash-bound saved native snapshot."""
-    _keys(body,{'revision','sha256','shot','frame'})
+    _keys(body,{'revision','sha256','shot','frame'},{'sample_geometry'})
+    sample_geometry=body.get('sample_geometry',False)
+    _require(type(sample_geometry) is bool,'Geometry sampling must be an explicit boolean.')
     frame=body['frame']
     if isinstance(frame,dict):
         _keys(frame,{'numerator','denominator'})
@@ -222,7 +224,8 @@ def evaluate_timeline(repository, body):
     _require(any(ref['path']==body['shot'] for ref in bundle['project']['shots']),'Select an exact registered shot path.')
     shot=bundle['documents'][body['shot']]
     from scene3d_evaluate import evaluate_scene
-    result=evaluate_scene(bundle,shot['scene']['path'],body['shot'],frame,source_root=root)
+    result=evaluate_scene(bundle,shot['scene']['path'],body['shot'],frame,source_root=root,
+                          sample_geometry=sample_geometry,max_geometry_vertices=100000)
     result['revision']=body['revision'];result['snapshot_sha256']=body['sha256']
     return result
 

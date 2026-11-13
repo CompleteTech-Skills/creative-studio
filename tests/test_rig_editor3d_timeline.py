@@ -75,6 +75,7 @@ class TimelineTests(unittest.TestCase):
         out=evaluate_timeline(self.repo,body)
         self.assertEqual(out['nodes']['mesh']['world_matrix'][0][3],1.5)
         self.assertEqual(out['time'],dict(numerator=1,denominator=16))
+        with self.assertRaises(RigError):evaluate_timeline(self.repo,{**body,'sample_geometry':'yes'})
         for frame in (dict(numerator=1,denominator=0),24,True):
             with self.subTest(frame=frame),self.assertRaises(RigError):evaluate_timeline(self.repo,{**body,'frame':frame})
 
