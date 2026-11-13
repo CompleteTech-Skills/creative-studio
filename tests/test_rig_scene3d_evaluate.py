@@ -110,7 +110,23 @@ class SceneEvaluationTests(unittest.TestCase):
             character=node(identifier,'skinned_character','root');character['asset']=asset_ref
             self.scene['nodes'].append(character)
             self.shot['bindings'].append(dict(target=identifier,clip=clips[clip],start_frame=0,end_frame=24,speed=1,loop=False))
-        out=self.evaluate(12,source_root=self.root,sample_geometry=True)
+        from unittest.mock import patch
+        from rig_models import load_rig
+        with patch('rig_models.load_rig',wraps=load_rig) as loader:
+            out=self.evaluate(12,source_root=self.root,sample_geometry=True)
+        self.assertEqual(loader.call_count,1)
+        from rig_skinning import evaluate_deformation
+        with patch('scene3d_evaluate.MAX_NATIVE_CACHE_VERTICES',1), \
+                patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deformer:
+            with self.assertRaises(RigError):
+                self.evaluate(12,source_root=self.root,sample_geometry=True)
+            self.assertEqual(deformer.call_count,0)
+        source_vertices=sum(len(mesh.positions) for mesh in rig.geometry.meshes)
+        with patch('scene3d_evaluate.MAX_NATIVE_CACHE_VERTICES',source_vertices), \
+                patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deformer:
+            with self.assertRaises(RigError):
+                self.evaluate(12,source_root=self.root,sample_geometry=True)
+            self.assertEqual(deformer.call_count,1)
         first=np.asarray(next(iter(out['native_geometry']['first'].values())))
         second=np.asarray(next(iter(out['native_geometry']['second'].values())))
         self.assertEqual(out['nodes']['first']['world_bounds'],

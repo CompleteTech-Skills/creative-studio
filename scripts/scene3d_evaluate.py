@@ -17,6 +17,8 @@ from scene3d_contracts import COORDINATES, load_project, validate_document, requ
 from scene3d_graph import SceneGraph
 from scene3d_prefabs import PrefabLibrary
 
+MAX_NATIVE_CACHE_VERTICES = 2000000
+
 
 def _rational(value):
     return {'numerator': value.numerator, 'denominator': value.denominator}
@@ -323,7 +325,9 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
     from scene3d_contracts import portable_path
     from scene3d_capture import capture_verified_native
     import numpy as np
-    result, cache, count = {}, {}, 0
+    result, cache, rigs, count = {}, {}, {}, 0
+    rig_vertices = sampled_vertices = 0
+    native_input_limit = MAX_NATIVE_CACHE_VERTICES
     nodes = {node['id']:node for node in graph.document()['nodes']}
     for identifier, binding in native.items():
         node = nodes[identifier]
@@ -346,11 +350,21 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
         identity = ('kind', 'id', 'version', 'path', 'sha256')
         key = (tuple(rig_ref[field] for field in identity),
                tuple(reference[field] for field in identity), time, binding['loop'])
-        if key not in cache:
+        rig_key = key[0]
+        if rig_key not in rigs:
             with capture_verified_native(root,rig_ref['path'],inventory) as private_rig:
                 rig = load_rig(private_rig)
             require(rig.manifest['id'] == rig_ref['id'] and rig.manifest['version'] == rig_ref['version'],
                     'Native rig identity/version differs from the binding.')
+            size = sum(len(mesh.positions) for mesh in rig.geometry.meshes)
+            require(rig_vertices + size <= native_input_limit,
+                    'Native rig input vertex budget exceeded.', 'SCENE3D_EVALUATION_LIMIT')
+            rigs[rig_key] = (rig,size)
+            rig_vertices += size
+        rig, size = rigs[rig_key]
+        if key not in cache:
+            require(sampled_vertices + size <= native_input_limit,
+                    'Native deformation cache vertex budget exceeded.', 'SCENE3D_EVALUATION_LIMIT')
             require(reference['id'] in rig.clips, 'Native clip is absent from the rig.')
             descriptor = next(item for item in rig.manifest['animations']
                               if item['id'] == reference['id'])
@@ -361,8 +375,9 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
             clip = rig.clips[reference['id']]
             pose = evaluate_animation(rig, clip, float(time), loop=binding['loop'])['pose']
             deformed = evaluate_deformation(rig, pose)
-            cache[key] = (rig, deformed)
-        rig, deformed = cache[key]
+            cache[key] = deformed
+            sampled_vertices += size
+        deformed = cache[key]
         if 'source_component' in node.get('metadata', {}):
             # Retain the importer ownership of source transforms, component maps
             # and canonical bind-space geometry. Its evaluator avoids applying

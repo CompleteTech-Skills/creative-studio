@@ -130,3 +130,10 @@ The Pose suite exercises real two-instance bone/morph deformation, imported
 components, snapshot/reopen equivalence, exact-source rejection, active-clip
 conflicts and vertex budgets. These tests are included in the hosted native
 Scene3D workflow and interoperability gate.
+
+Native clip sampling retains one loaded rig per complete immutable rig reference.
+Distinct evaluated clip/time results share those source geometry arrays. Separate
+aggregate caps of 2000000 vertices bound loaded rig inputs and retained deformation
+arrays; deformation capacity is checked before the native evaluator allocates the
+next sample. These input/cache caps are independent of the selected output vertex
+budget, so selecting a small imported component cannot hide large retained rigs.
