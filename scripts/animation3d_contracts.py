@@ -190,6 +190,27 @@ def _unique(items,key='id'):
     return set(values)
 
 
+@lru_cache(maxsize=128)
+def _native_property_schema(kind, prop):
+    # Read the canonical owner's field schema instead of maintaining another
+    # definition of optics, light or material numeric ranges.
+    if kind == 'camera' and prop in ('focal_length','orthographic_size','focus_distance','aperture'):
+        from camera3d_contracts import POS
+        return deepcopy(POS)
+    if kind not in ('material', 'light'): return None
+    from lookdev_contracts import schemas as owner_schemas
+    if kind == 'material':
+        fields = owner_schemas()['lookdev-material3d.schema.json']['$defs']['material3d']['properties']['surface']['properties']
+        if prop in ('emissive_color','emissive_intensity'):
+            return fields['emission']['properties']['color' if prop == 'emissive_color' else 'strength_watts_per_square_meter']
+        return fields.get(prop)
+    fields = owner_schemas()['lookdev-light3d.schema.json']['$defs']['light3d']['properties']
+    if prop == 'color': return fields['color']['properties']['value']
+    if prop == 'intensity': return fields['intensity']['properties']['value']
+    if prop == 'cone_angle': return fields['spot_outer_radians']
+    return None
+
+
 def _check_value(value,kind,prop):
     expected=TARGET_PROPERTIES[kind][prop]
     if expected=='boolean': ok=type(value) is bool
@@ -199,6 +220,11 @@ def _check_value(value,kind,prop):
     if expected!='boolean':
         require(all(math.isfinite(x) and abs(x)<=1e9 for x in (value if isinstance(value,list) else [value])),
             'ANIMATION_RANGE','Animated components must remain finite and within [-1e9,1e9].',stage='animation3d')
+    native_schema = _native_property_schema(kind, prop)
+    if native_schema is not None:
+        from jsonschema import Draft202012Validator
+        require(Draft202012Validator(native_schema).is_valid(value), 'ANIMATION_RANGE',
+                'Animated value is outside the native owner property domain.', stage='animation3d')
     if expected=='quaternion':
         require(abs(sum(x*x for x in value)-1)<2e-5,'ANIMATION_QUATERNION','Rotation must be normalized.',stage='animation3d')
     if prop=='scale': require(all(x>1e-10 for x in value),'ANIMATION_SCALE','Scale must be positive.',stage='animation3d')
@@ -273,6 +299,14 @@ def _check_condition_intersection(conditions, parameters):
 
 
 def _check_constraint(node):
+    destinations = sum(key in node for key in ('target','target_position','target_object_id'))
+    require(destinations <= 1, 'ANIMATION_CONSTRAINT', 'Constraint destinations are ambiguous.', stage='animation3d')
+    if node['enabled'] and node['type'] in ('look_at','aim','parent','position','rotation','scale','distance','grasp','path_follow'):
+        require(destinations == 1, 'ANIMATION_CONSTRAINT', 'Enabled spatial constraint needs exactly one explicit destination.', stage='animation3d')
+    if node['enabled'] and node['type'] == 'limit':
+        require('position_limits' in node or 'rotation_limits' in node, 'ANIMATION_CONSTRAINT', 'Enabled limit constraint needs explicit limits.', stage='animation3d')
+    if 'start_frame' in node and 'end_frame' in node:
+        require(node['start_frame'] < node['end_frame'], 'ANIMATION_INTERVAL', 'Constraint interval is empty or reversed.', stage='animation3d')
     if 'target' in node:
         source={k:v for k,v in node['source'].items() if k!='property'}
         target={k:v for k,v in node['target'].items() if k!='property'}
@@ -282,12 +316,37 @@ def _check_constraint(node):
     if node['type'] in ('two_bone_ik','multi_bone_ik','foot_plant'):
         require(node['source']['kind']=='bone' and len(chain)>=3 and
             (node['type']!='two_bone_ik' or len(chain)==3) and
-            ('target' in node or 'target_position' in node),
+            ('target' in node or 'target_position' in node or 'target_object_id' in node),
             'ANIMATION_CONSTRAINT','IK requires a bone source, valid chain and explicit target.',stage='animation3d')
     for key,low,high in [('position_limits','minimum','maximum'),('rotation_limits','minimum_rad','maximum_rad')]:
         if key in node:
             require(all(a<=b for a,b in zip(node[key][low],node[key][high])),
                 'ANIMATION_CONSTRAINT','Constraint limits are reversed.',stage='animation3d')
+
+
+def _check_constraint_cycles(constraints, dependencies=()):
+    from collections import deque
+    _unique(constraints)
+    graph = {}
+    def identity(value):
+        return tuple(sorted((key, item) for key, item in value.items() if key != 'property'))
+    for source, destination in list(dependencies) + [(c['source'], c['target']) for c in constraints if 'target' in c] + [
+            (c['source'], dict(kind='node', node_id=c['target_object_id'])) for c in constraints if 'target_object_id' in c]:
+        source, destination = identity(source), identity(destination)
+        graph.setdefault(source, set()).add(destination)
+        graph.setdefault(destination, set())
+    counts = {node: len(edges) for node, edges in graph.items()}
+    reverse = {node: [] for node in graph}
+    for node, edges in graph.items():
+        for edge in edges: reverse[edge].append(node)
+    ready = deque(node for node, count in counts.items() if count == 0)
+    visited = 0
+    while ready:
+        node = ready.popleft(); visited += 1
+        for dependent in reverse[node]:
+            counts[dependent] -= 1
+            if counts[dependent] == 0: ready.append(dependent)
+    require(visited == len(graph), 'ANIMATION_CYCLE', 'Constraint dependency graph has a cycle.', stage='animation3d')
 
 
 def _check_placement(placement):
@@ -313,6 +372,8 @@ def _check_interaction(value):
     for transfer in value.get('ownership_changes',[]):
         require(value['start_frame']<=transfer['frame']<value['end_frame'] and transfer['frame']>previous,
             'ANIMATION_INTERVAL','Ownership events must be unique, ordered and inside interaction.',stage='animation3d')
+        require(transfer['frame'] + transfer.get('transfer_duration_frames', 0) <= value['end_frame'],
+                'ANIMATION_INTERVAL', 'Ownership transfer interval exceeds interaction bounds.', stage='animation3d')
         previous=transfer['frame']
         for key in ('previous_owner','next_owner'):
             require(key not in transfer or transfer[key] in actors,'ANIMATION_REFERENCE','Ownership actor is not a participant.',stage='animation3d')
@@ -364,6 +425,8 @@ def _semantic(value):
         require(all(e['frame']<=duration for e in value['events']) and all(c['end_frame']<=duration for c in value['contacts']),
             'ANIMATION_TIME','Event/contact exceeds clip duration.',stage='animation3d')
         for contact in value['contacts']:
+            require(contact['coordinate_space'] != 'object' or 'target_object' in contact,
+                    'ANIMATION_CONTACT', 'Object-space contact needs its explicit target object.', stage='animation3d')
             require(sum(key in contact for key in ('target_node','target_bone','target_anchor'))==1,
                 'ANIMATION_CONTACT','Contact requires exactly one target.',stage='animation3d')
         markers={e['name'] for e in value['events'] if e['type']=='marker'}
@@ -441,6 +504,7 @@ def _semantic(value):
             'ANIMATION_SEQUENCE','Sequence duration/marker mismatch.',stage='animation3d')
     elif kind==KINDS['scene']:
         _unique(value['actors'],'actor_id'); _unique(value['interactions']); _unique(value['markers'])
+        _check_constraint_cycles([c for actor in value['actors'] for c in actor['constraints']])
         for interaction in value['interactions']: _check_interaction(interaction)
         for field,targetkind in [('object_tracks','node'),('environment_tracks','environment'),('camera_tracks','camera'),('lighting_tracks','light')]:
             _unique(value[field]); require(all(t['target']['kind']==targetkind for t in value[field]),'ANIMATION_TARGET','Track in wrong owner domain.',stage='animation3d')
