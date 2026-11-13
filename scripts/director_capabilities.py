@@ -15,6 +15,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 from pathlib import Path
 import shutil
 import signal
@@ -353,7 +354,7 @@ def _provider_receipt_price(evidence, limits):
 def assert_admission(snapshot, required_operations, *, evidence_root=None, now=None,
                      resources=None, network_policy='deny', price_per_call=None,
                      budget_reservation_id=None, allow_unknown_price=False,
-                     budget_currency=None, budget_amount=None, paid_policy='deny'):
+                     budget_currency=None, budget_amount=None, paid_policy='deny', allowed_providers=()):
     """Fail closed for missing/stale/unexecuted native capabilities or resources."""
     _need(isinstance(snapshot,dict),'SCHEMA','Capability snapshot must be an object.')
     if snapshot.get('kind')=='director-result':
@@ -376,7 +377,7 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
         _need(item is not None and item['status']=='available' and item['execution_verified'],'UNAVAILABLE','Required capability is unverified: '+operation)
         _need(bool(item['probe_evidence']),'EVIDENCE','Execution verification requires nonempty retained evidence.')
         _need(evidence_root is not None,'EVIDENCE_ROOT','Admission requires the exact retained evidence root.')
-        receipt_prices=[]
+        receipt_prices=[];receipt_providers=[]
         if evidence_root is not None:
             from director_contracts import _read_artifact
             for reference in item['probe_evidence']:
@@ -388,12 +389,21 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                       'EVIDENCE','Retained receipt payloads differ from the capability dependency references.')
                 for payload in payloads:_read_artifact(evidence_root,payload)
                 if operation=='planning.provider':
+                    provider=evidence.get('provider_id')
+                    _need(isinstance(provider,str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}',provider) is not None,
+                          'POLICY','Executed provider receipt requires a valid provider identity.')
+                    receipt_providers.append(provider)
                     receipt_prices.append(_provider_receipt_price(evidence,item['limits']))
         for resource,amount in (resources or {}).items():
             _need(resource in LIMITS and type(amount) in (int,float) and amount>=0,'RESOURCE','Unknown or invalid resource estimate.')
             maximum=item['limits'][resource]
             _need(maximum is not None and amount<=maximum,'RESOURCE','Resource estimate exceeds capability bound: '+resource)
         if operation=='planning.provider':
+            _need(isinstance(allowed_providers,(list,tuple)) and
+                  all(isinstance(p,str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}',p) is not None for p in allowed_providers),
+                  'POLICY','Provider allowlist must contain exact provider identities.')
+            _need(len(set(receipt_providers))==1 and receipt_providers[0] in allowed_providers,
+                  'POLICY','Executed provider identity is not permitted by the operation policy.')
             _need(network_policy=='allow-configured' and budget_reservation_id is not None,'POLICY','Remote planning requires configured network authority and a reservation.')
             _need(bool(receipt_prices) and all(p==receipt_prices[0] for p in receipt_prices),
                   'EVIDENCE','Provider execution receipts disagree about pricing.')

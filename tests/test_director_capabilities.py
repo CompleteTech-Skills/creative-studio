@@ -135,10 +135,10 @@ class ProviderPricingContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory).resolve()
             limits={**deepcopy(cap.LIMITS),'max_provider_calls':10,'currency':'USD','max_amount':10}
-            def snapshot(price=.25,currency='USD',availability='known'):
+            def snapshot(price=.25,currency='USD',availability='known',provider_id='fixture-provider'):
                 record=dict(operation='planning.provider',execution_verified=True,status='available',
                             policy_limits=limits,version='contract-fixture',payloads=[],
-                            fixture=True,price_availability=availability,price_per_call=price,currency=currency)
+                            fixture=True,provider_id=provider_id,price_availability=availability,price_per_call=price,currency=currency)
                 path=root/'engineering-receipt.json';path.write_text(json.dumps(record))
                 ref=cap._reference(path,root)
                 value=dict(capabilities=[dict(operation='planning.provider',version='contract-fixture',
@@ -146,11 +146,11 @@ class ProviderPricingContractTests(unittest.TestCase):
                            expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())
                 value['digest']=object_hash(value)
                 return value
-            def admit(value,**extra):
+            def admit(value,allowed_providers=('fixture-provider',),**extra):
                 return cap.assert_admission(value,['planning.provider'],evidence_root=root,
                       resources={'max_provider_calls':2},network_policy='allow-configured',
                       budget_reservation_id='fixture-reservation',budget_currency='USD',
-                      budget_amount=.5,paid_policy='bounded',**extra)
+                      budget_amount=.5,paid_policy='bounded',allowed_providers=allowed_providers,**extra)
             if not (hasattr(os,'O_NOFOLLOW') and os.open in os.supports_dir_fd):
                 with self.assertRaises(RigError) as failure:
                     admit(snapshot())
@@ -158,6 +158,12 @@ class ProviderPricingContractTests(unittest.TestCase):
                 return
             admit(snapshot())
             admit(snapshot(0))
+            with self.assertRaisesRegex(RigError,'not permitted'):
+                admit(snapshot(),allowed_providers=())
+            with self.assertRaisesRegex(RigError,'not permitted'):
+                admit(snapshot(),allowed_providers=['other-provider'])
+            with self.assertRaisesRegex(RigError,'provider identity'):
+                admit(snapshot(provider_id=None))
             with self.assertRaises(RigError):admit(snapshot(),price_per_call=.1)
             with self.assertRaises(RigError):admit(snapshot(1))
             with self.assertRaises(RigError):admit(snapshot(currency='EUR'))
