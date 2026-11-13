@@ -426,7 +426,9 @@ def _pack_glb(document, buffers, image_payloads, *, unit_scale=1., basis='canoni
 
 
 def normalize_gltf(snapshot, destination, *, unit_scale=1., basis='canonical', ground=False, limits=None, fixture=False):
-    if isinstance(unit_scale,bool) or not isinstance(unit_scale,(int,float)) or not math.isfinite(unit_scale) or not 1e-6 <= unit_scale <= 1e6:
+    if (isinstance(unit_scale,bool) or not isinstance(unit_scale,(int,float))
+        or not 1e-6 <= unit_scale <= 1e6
+        or (isinstance(unit_scale,float) and not math.isfinite(unit_scale))):
         fail('NORMALIZATION','Unit scale must be finite in [1e-6,1e6].')
     if basis not in BASIS or type(ground) is not bool: fail('NORMALIZATION','Unsupported basis/ground policy.')
     document=snapshot.native_document
