@@ -45,7 +45,7 @@ def verify(root,*,blender=False,browser=False,validator=False,render=False,archi
     from rig_gltf import export_gltf
     from rig_import import load_character_model
     from rig_interop import compare_imported,validate_gltf
-    root=Path(root).absolute();results=[]
+    root=Path(root).absolute();results=[];archive_directory=None
     for name in (*ARCHETYPES,'humanoid-retarget','quadruped-retarget'):
         rig=load_rig(root/name);numeric=validate_rig(rig,require_animation=True)
         require(numeric['ok'],'RIG_DEMO_NUMERIC','Fixture numerical acceptance failed.',asset=name,observed=numeric)
@@ -105,11 +105,15 @@ def verify(root,*,blender=False,browser=False,validator=False,render=False,archi
         atomic_json(rig.root/'job.json',job)
         if archives:
             from rig_package import package_rig,restore_rig
-            path=root/'packages'/(name+'.zip');package=package_rig(rig.root,path)
+            if archive_directory is None:
+                package_root = root / 'packages'
+                package_root.mkdir(parents=True, exist_ok=True)
+                archive_directory = Path(tempfile.mkdtemp(prefix='verification-', dir=package_root))
+            path=archive_directory/(name+'.zip');package=package_rig(rig.root,path)
             with tempfile.TemporaryDirectory(prefix='hatch-demo-restore-') as temporary:
                 restored=Path(temporary)/'rig';restore_rig(path,restored)
                 require(validate_rig(load_rig(restored),require_animation=True)['ok'],'RIG_DEMO_ARCHIVE','Restored rig failed actual evaluation.')
-            entry['archive']=dict(path='packages/'+path.name,sha256=package['sha256'],restored_and_evaluated=True)
+            entry['archive']=dict(path=path.relative_to(root).as_posix(),sha256=package['sha256'],restored_and_evaluated=True)
         results.append(entry);print('verified '+name,flush=True)
         atomic_json(root/'acceptance.partial.json',dict(fixtures=results,complete=False))
     output=dict(schema_version=1,created_at=timestamp(),status='automated-fixture-acceptance-passed',production_artwork_approved=False,
