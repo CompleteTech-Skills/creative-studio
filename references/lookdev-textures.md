@@ -164,3 +164,17 @@ compare its exact pixel hash and derivation. This establishes native shader
 consumption of derived pixels. GPU residency and canonical PBR texture-slot
 binding remain separate renderer/material adapter work; texture-bearing
 canonical material plans still reject until that bridge is implemented.
+
+## Canonical native sampler settings
+
+`lookdev_texture_sampling.sampler_plan(Texture3D)` admits explicit nearest/linear
+filtering and repeat/clamp wrapping. `configure_blender_sampler(node, Texture3D)`
+requires a native image shader node whose installed image source hash, role and
+encoding match the document, then sets Closest/Linear and REPEAT/EXTEND explicitly.
+It never relies on the node defaults. Mirrored wrapping and explicit mipmap
+filtering reject until their coordinate/filter implementations are verified.
+This helper owns sampler settings only; direct canonical material-slot composition
+remains with the PBR adapter. A returned plan records exact document and helper
+source hashes. The opt-in HATCH_LOOKDEV_SAMPLING_TEST gate samples an actual
+PNG-derived red/blue texture through Cycles, compares boundary filtering and
+out-of-range repeat/clamp behavior, and retains exact image hashes.
