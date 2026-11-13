@@ -172,6 +172,26 @@ class PhysicsBackendAdmissionTests(unittest.TestCase):
                 timeout=5,memory_bytes=1024**3,output_bytes=16*1024**2,label='locked'))
         self.assertFalse((self.root/'locked-stdout.log').exists())
 
+    def test_fast_exit_worker_output_and_each_log_cap_are_enforced(self):
+        sleep = time.sleep
+        for name, code, cap, size in (
+            ('total', 'open("payload.bin","wb").write(b"x"*524288)', 65536, 524288),
+            ('stdout', 'import os;os.write(1,b"x"*9437184)', 32*1024**2, 9437184),
+            ('stderr', 'import os;os.write(2,b"x"*9437184)', 32*1024**2, 9437184),
+        ):
+            with self.subTest(name=name):
+                root=self.root/name;root.mkdir()
+                # Let the real short-lived child finish within one polling
+                # interval. The worker itself never sleeps, and no successful
+                # process result or file-size check is mocked.
+                with patch.object(physics.time,'sleep',side_effect=lambda _:sleep(.5)):
+                    failure=error_code(self,'PHYSICS_RESOURCE_LIMIT',lambda:physics._run_process(
+                        [sys.executable,'-I','-c',code],root,timeout=5,
+                        memory_bytes=1024**3,output_bytes=cap))
+                self.assertEqual(failure.report['process_exit_code'],0)
+                payload=root/('payload.bin' if name=='total' else 'simulation-'+name+'.log')
+                self.assertEqual(payload.stat().st_size,size)
+
     def test_owned_descendant_is_killed_even_when_leader_exits_on_term(self):
         def living(pid):
             try:

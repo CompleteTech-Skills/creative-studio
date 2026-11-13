@@ -485,6 +485,12 @@ def _run_process(command, root, *, timeout, memory_bytes, output_bytes, cancel_t
                     progress(dict(status='running', elapsed_seconds=time.monotonic()-start,
                                   completed_frames=None, progress_kind='process-liveness-only'))
                 time.sleep(.025)
+            # A worker can finish between polls, including after writing more
+            # than its budget. Stop any owned descendants before checking the
+            # settled inventory and before trusting or reading worker reports.
+            _stop(process)
+            require(_tree_size(root) <= output_bytes and stdout.stat().st_size <= MAX_LOG_BYTES and stderr.stat().st_size <= MAX_LOG_BYTES,
+                    'PHYSICS_RESOURCE_LIMIT', 'Worker files/logs exceeded the configured output cap.', category='resource-exhaustion')
             if process.returncode != 0 and (root/'worker-report.json').is_file() and (root/'worker-report.json').stat().st_size <= 32768:
                 failure=parse((root/'worker-report.json').read_bytes())
                 if isinstance(failure,dict) and failure.get('ok') is False and isinstance(failure.get('error'),dict):
