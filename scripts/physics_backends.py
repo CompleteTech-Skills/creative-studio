@@ -1338,9 +1338,11 @@ class PyBulletBackend(BlenderBackend):
         categories={name:FeatureCapability('unsupported',False,'No adapter implementation for this category.') for name in ALL_CATEGORIES}
         limitations=('Optional PyBullet3.2.7; not installed or imported by normal2D workflows.',
                      'DIRECT CPU only; distinct numerical behavior from Blender.',
-                     'Only box/sphere rigid bodies, fixed stepping and actual contacts are implemented.',
+                     'The default profile and basic readiness smoke cover box/sphere rigid bodies, fixed stepping and actual contacts.',
+                     'Opt-in explicit-proxies-v1 additionally supports capsule/cylinder/convex/compound/static-mesh proxies; the basic smoke does not establish readiness for those shapes.',
+                     'The explicit proxy profile provides cache-bound native ray queries; cylinder/hull-inclusive rays, shape sweeps and CCD guarantees remain unsupported.',
                      'Bounded native force/torque/one-step integrated impulses, initial velocities and inertial frames are implemented; basic readiness smoke does not exercise these controls.',
-                     'Queries, joints and solver checkpoint continuation remain unsupported; explicit sleep thresholds are unavailable.',
+                     'Joints and solver checkpoint continuation remain unsupported; explicit sleep thresholds are unavailable.',
                      'Cache export contains exact sampled transforms/contacts, not native solver checkpoint state.')
         try:
             identity=self._discover()

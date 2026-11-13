@@ -51,6 +51,23 @@ class CollisionProxyTests(unittest.TestCase):
 
 
 class CollisionAdmissionTests(unittest.TestCase):
+    def test_probe_distinguishes_default_smoke_from_explicit_proxy_declaration(self):
+        from physics_backends import PyBulletBackend
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            report=PyBulletBackend(str(Path(directory)/'missing-worker')).probe()
+        # A supported profile declaration never becomes execution/readiness evidence.
+        self.assertFalse(report.discovery_verified)
+        self.assertFalse(report.headless_smoke_verified)
+        self.assertEqual(report.shapes, ())
+        text=' '.join(report.limitations)
+        self.assertIn('default profile and basic readiness smoke', text)
+        self.assertIn('explicit-proxies-v1', text)
+        self.assertIn('cache-bound native ray queries', text)
+        self.assertIn('cylinder/hull-inclusive rays, shape sweeps and CCD guarantees remain unsupported', text)
+        self.assertNotIn('Only box/sphere rigid bodies', text)
+        self.assertNotIn('Queries, joints', text)
+
     def test_explicit_profile_preserves_legacy_admission(self):
         from physics_backend_example import build_inputs
         from physics_backends import PyBulletBackend, BackendError
