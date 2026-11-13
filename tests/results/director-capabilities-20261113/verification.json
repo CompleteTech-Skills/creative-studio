@@ -42,5 +42,15 @@
     "tests/test_director_capabilities.py": "6ddb026a6d95bd84a940882476b027016cb37dd79d037b6481179a80d4ca5f90",
     "tests/test_rig_director_capabilities.py": "f41184e529f2d4aa10d191a6e3ddce580cca5ff6702e64a49657ac7e96dbbde4"
   },
-  "test_source_commit": "be353319a60c6dda5af9f014e0a19296a5a8cec7"
+  "test_source_commit": "be353319a60c6dda5af9f014e0a19296a5a8cec7",
+  "current_regression": {
+    "source_commit": "d892f679827a1bbfadb06c1bd72fa7a5089e0072",
+    "tests": 17,
+    "seconds": 4.748,
+    "result": "PASS",
+    "log": "current-regression.log",
+    "optional_boundary_tests": 14,
+    "optional_boundary_log": "current-optional-boundary.log",
+    "scope": "Expiry-normalization follow-up. Historical real Blender/codec probes above remain bound to source_commit; not relabeled as reruns."
+  }
 }

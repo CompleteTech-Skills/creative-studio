@@ -87,7 +87,7 @@ native acquisition were explicitly untested; the planning provider was
 unavailable. These historical one-hour snapshots are expired after their
 recorded time and cannot authorize new work without fresh probing.
 
-All 16 focused tests passed. The 13 ordinary tests also passed with optional
+All 17 focused tests passed. The 14 ordinary tests also passed with optional
 3D imports blocked. Three native importer/evidence tests are registered only in
 the optional native schema/math gate, preserving the 2D dependency boundary.
 No provider calls or production film acceptance is claimed.
