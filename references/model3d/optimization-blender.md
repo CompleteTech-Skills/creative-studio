@@ -4,13 +4,17 @@
 LTS adapter for **planar and angle-limited DISSOLVE optimization**. It uses native
 Geometry, GLB export/import, strict image admission, geometry persistence and
 exclusive publication authorities. The fixed trusted worker starts Blender with
-factory settings, auto-execution disabled and two threads. Source-provided Python
+factory settings, auto-execution disabled and one thread. Source-provided Python
 and arbitrary Blender operations are never executed.
 
 The profile retains independent mesh parts and supports base-color PBR factors,
 PNG textures, UV0 and explicitly replaceable normals. Blender's NORMAL,
 MATERIAL, SEAM, SHARP and UV delimiters constrain dissolving. Geometric hard edges
-and open boundaries are detected in canonical geometry; their vertices and edge
+and open boundaries are detected in canonical geometry. Native
+`bmesh.ops.dissolve_limit` receives only unprotected vertices and edges not
+incident to protected points; delimiter flags alone do not preserve degree-2
+feature points. The resulting mesh is explicitly triangulated and uses flat
+recomputed normals in this profile. Protected vertices and edge
 connectivity must survive native reimport. Explicit protected source vertex
 indices additionally preserve attachment/feature points. `recompute_normals=True`
 is required when replacing source normals; authored custom-normal appearance is

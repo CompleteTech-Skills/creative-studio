@@ -33,7 +33,7 @@ def _number(value,lower,upper,code):
 
 def _run(job,root,*,executable,timeout):
     job_path=root/(job['mode']+'-job.json');atomic_json(job_path,job)
-    command=[find_blender(executable),'--background','--factory-startup','--disable-autoexec','--threads','2','--python-exit-code','1',
+    command=[find_blender(executable),'--background','--factory-startup','--disable-autoexec','--threads','1','--python-exit-code','1',
              '--python',str(Path(__file__).with_name('model3d_optimization_blender_worker.py')),'--',str(job_path)]
     try:result=subprocess.run(command,capture_output=True,text=True,timeout=timeout,check=False)
     except subprocess.TimeoutExpired as error:raise RigError('MODEL3D_DECIMATE_TIMEOUT','Blender exceeded its configured deadline.') from error
@@ -206,7 +206,7 @@ def decimate_blender(geometry,destination,*,angle_degrees=1.,sharp_angle_degrees
             require(uv['max_error']<=uv_tolerance,'MODEL3D_DECIMATE_UV','Reimported UV interpolation exceeds selected tolerance.',asset=m.id)
             maximum=0.
             for point in points[m.id]:maximum=max(maximum,float(np.linalg.norm(reduced.positions-point,axis=1).min()))
-            require(maximum<=point_tolerance,'MODEL3D_DECIMATE_FEATURE','Protected hard-edge/attachment point moved or disappeared.',asset=m.id)
+            require(maximum<=point_tolerance,'MODEL3D_DECIMATE_FEATURE','Protected hard-edge/attachment point moved or disappeared.',asset=m.id,expected=point_tolerance,observed=maximum)
             source_edges=features[m.id]['edges']
             require(len(source_edges)*len(reduced.triangles)*3<=4_000_000,'MODEL3D_DECIMATE_METRIC_BUDGET','Hard-edge comparison exceeds bounded work.')
             target_edges=np.concatenate([reduced.triangles[:,[0,1]],reduced.triangles[:,[1,2]],reduced.triangles[:,[2,0]]])
@@ -224,7 +224,7 @@ def decimate_blender(geometry,destination,*,angle_degrees=1.,sharp_angle_degrees
                     'MODEL3D_DECIMATE_MATERIAL','PBR factors changed during decimation.',asset=m.id)
             parts.append(dict(id=m.id,name=name,source_sha256=mesh_hash(m),reimport_sha256=mesh_hash(reduced),comparison=comparison,uv=uv,
                               protected_points=len(points[m.id]),protected_hard_edges=len(source_edges),hard_edges_preserved=True,protected_max_error_m=maximum,material=observed))
-        report=dict(schema_version=1,kind='hatch-model3d-blender-planar-optimization',algorithm='Blender DISSOLVE',
+        report=dict(schema_version=1,kind='hatch-model3d-blender-planar-optimization',algorithm='Blender bmesh dissolve_limit',
             delimiters=['NORMAL','MATERIAL','SEAM','SHARP','UV'],blender_version=reopened['blender_version'],save_reopen=True,
             source_triangles=geometry.triangle_count,texture_pixels=texture_pixels,triangles=output.triangle_count,vertices=output.vertex_count,
             angle_degrees=angle_degrees,sharp_angle_degrees=sharp_angle_degrees,budgets=dict(budgets),parts=parts,

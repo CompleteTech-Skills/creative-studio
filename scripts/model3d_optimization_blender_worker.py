@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 import sys
 import bpy
+import bmesh
 from mathutils import Vector
 
 
@@ -27,15 +28,25 @@ def main():
             # Mark all edges touching explicit feature coordinates as sharp;
             # DISSOLVE's SHARP delimiter retains those edges in this profile.
             points=[Vector((p[0],-p[2],p[1])) for p in part['protected']]
-            protected={v.index for v in mesh.vertices if any((obj.matrix_world@v.co-p).length<=job['point_tolerance'] for p in points)}
-            for edge in mesh.edges:
-                if any(int(v) in protected for v in edge.vertices):edge.use_edge_sharp=True
-            bpy.context.view_layer.objects.active=obj;obj.select_set(True)
-            modifier=obj.modifiers.new('Hatch explicit planar optimization','DECIMATE')
-            modifier.decimate_type='DISSOLVE';modifier.angle_limit=math.radians(job['angle_degrees'])
-            modifier.delimit={'NORMAL','MATERIAL','SEAM','SHARP','UV'}
-            modifier.use_dissolve_boundaries=False
-            bpy.ops.object.modifier_apply(modifier=modifier.name);obj.select_set(False)
+            matches=[{v.index for v in mesh.vertices if (obj.matrix_world@v.co-p).length<=job['point_tolerance']} for p in points]
+            if any(not match for match in matches):raise ValueError('Source feature coordinates did not match imported vertices')
+            protected=set().union(*matches) if matches else set()
+            bm=bmesh.new()
+            try:
+                bm.from_mesh(mesh);bm.verts.ensure_lookup_table();bm.verts.index_update()
+                # Excluding vertices and every incident edge is essential:
+                # Decimate's SHARP delimiter alone can dissolve degree-2 points.
+                eligible_vertices=[v for v in bm.verts if v.index not in protected]
+                eligible_edges=[e for e in bm.edges if all(v.index not in protected for v in e.verts)]
+                bmesh.ops.dissolve_limit(bm,angle_limit=math.radians(job['angle_degrees']),
+                    use_dissolve_boundaries=False,verts=eligible_vertices,edges=eligible_edges,
+                    delimit={'NORMAL','MATERIAL','SEAM','SHARP','UV'})
+                bmesh.ops.triangulate(bm,faces=list(bm.faces),quad_method='BEAUTY',ngon_method='EAR_CLIP')
+                for face in bm.faces:face.smooth=False
+                bm.to_mesh(mesh);mesh.update()
+                if mesh.has_custom_normals:
+                    mesh.normals_split_custom_set_from_vertices([(0.,0.,0.)]*len(mesh.vertices))
+            finally:bm.free()
         bpy.ops.wm.save_as_mainfile(filepath=job['blend'],compress=True)
     elif job['mode']=='reopen':
         bpy.ops.wm.open_mainfile(filepath=job['blend'],load_ui=False,use_scripts=False)
