@@ -354,9 +354,9 @@ def build_environment(plan, *, payload):
     file = plan['texture']['file']
     require(len(payload) == file['bytes'] and hashlib.sha256(payload).hexdigest() == file['sha256'],
             'LIGHT_ENVIRONMENT', 'Environment payload no longer matches its immutable source.')
-    from lookdev_textures import decode_texture, create_blender_image
-    decoded = decode_texture(payload, role='environment', encoding='linear-srgb')
+    from lookdev_textures import verify_texture_document, create_blender_image
     texture = plan['texture']
+    decoded = verify_texture_document(texture, payload)
     require(decoded.width == texture['width'] and decoded.height == texture['height'],
             'LIGHT_ENVIRONMENT', 'Decoded environment dimensions disagree with the manifest.')
     require(decoded.source_sha256 == file['sha256'], 'LIGHT_ENVIRONMENT', 'Decoder source identity mismatch.')

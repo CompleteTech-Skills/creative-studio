@@ -204,6 +204,25 @@ def main(destination):
     env['transform']['rotation_xyzw']=[0,0,0,1]
     registry=Registry([('texture.json',canonical_bytes(texture)),('env.json',canonical_bytes(env))],payloads={'studio.hdr':payload})
     reference=registry.reference(env['id'],env['version'])
+    # Exact byte hashes alone cannot excuse false channel/precision metadata.
+    import copy
+    from rig_errors import RigError
+    bad_texture=copy.deepcopy(texture);bad_texture.update(channels=4,bit_depth=16)
+    bad_ref=copy.deepcopy(texture_ref)
+    bad_ref['sha256']=hashlib.sha256(canonical_bytes(bad_texture)).hexdigest()
+    bad_env=copy.deepcopy(env);bad_env.update(environment=bad_ref,dependencies=[bad_ref])
+    bad_registry=Registry([('texture.json',canonical_bytes(bad_texture)),
+                           ('env.json',canonical_bytes(bad_env))],payloads={'studio.hdr':payload})
+    bad_plan=light_plan(bad_registry,bad_registry.reference(bad_env['id'],bad_env['version']))
+    before=(len(bpy.data.worlds),len(bpy.data.images))
+    try:
+        build_environment(bad_plan,payload=payload)
+    except RigError as error:
+        assert error.code == 'TEXTURE_METADATA',error
+    else:
+        raise AssertionError('False HDR metadata must fail before native creation')
+    assert before==(len(bpy.data.worlds),len(bpy.data.images))
+    metrics['false_hdr_metadata_rejected_without_mutation']=True
     initial=light_plan(registry,reference)
     bpy.context.scene.world=build_environment(initial,payload=payload)
     hdr,info=render(destination,'hdri');outputs.append(info)
