@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "silent-frame-profile"
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 4096
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 4096
+    },
+    "fps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 240000
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ]
+    },
+    "fit": {
+      "enum": [
+        "preserve",
+        "letterbox",
+        "fill",
+        "stretch"
+      ]
+    },
+    "fps_policy": {
+      "enum": [
+        "preserve",
+        "nearest"
+      ]
+    },
+    "background": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 255
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "width",
+    "height",
+    "fps",
+    "fit",
+    "fps_policy",
+    "background"
+  ]
+}

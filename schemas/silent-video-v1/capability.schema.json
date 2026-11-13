@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Silent video capability v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "silent-profile-capability"
+    },
+    "profile": {
+      "enum": [
+        "h264-mp4",
+        "vp9-webm",
+        "av1-webm"
+      ]
+    },
+    "status": {
+      "enum": [
+        "supported",
+        "unsupported",
+        "unavailable"
+      ]
+    },
+    "platform": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "max_width": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 4096
+    },
+    "max_height": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 4096
+    },
+    "max_pixels": {
+      "type": "integer",
+      "minimum": 4,
+      "maximum": 8847360
+    },
+    "estimated_source_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483648
+    },
+    "estimated_output_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483648
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "profile",
+    "status",
+    "platform",
+    "max_width",
+    "max_height",
+    "max_pixels",
+    "estimated_source_bytes",
+    "estimated_output_bytes"
+  ]
+}

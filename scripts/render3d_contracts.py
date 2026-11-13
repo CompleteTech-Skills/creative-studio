@@ -90,6 +90,7 @@ def definitions():
                         exposure=dict(type='number', minimum=-32, maximum=32),
                         view_transform={'enum': ['standard', 'agx']},
                         resources=resources))
+    settings['properties']['quality_sha256'] = digest
     backend = obj(dict(id=identifier, adapter_version=version, application_version=text,
                        executable_sha256=digest, worker_sha256=digest, platform=text,
                        engine={'enum': ['cycles', 'eevee']}, device=identifier))
@@ -134,6 +135,7 @@ def definitions():
                   failed=arr(count, 0, 100000), skipped=arr(count, 0, 100000), reused=arr(count, 0, 100000),
                   images=arr(image, 0, 400000), diagnostics=arr(diagnostic, 0, 1024),
                   usage=usage, logs=arr(artifact, 0, 1024), manifest=nullable(artifact), verification=verification))
+    result['properties']['artifacts'] = arr(file, 0, MAX_FILES)
     capabilities = doc('capabilities', dict(adapter=identity, backend=nullable(backend),
         discovery={'enum': ['available', 'unavailable', 'untested']},
         initialization={'enum': ['passed', 'failed', 'not-run']},
@@ -264,6 +266,19 @@ def validate(value, kind=None):
         for image in value['images']:
             require(image['bit_depth'] in ((8, 16) if image['format'] == 'png' else (16, 32)),
                     'invalid-input', 'Image bit depth is incompatible with its format.')
+        if value.get('artifacts'):
+            refs=[i['file'] for i in value['images']]+value['logs']+value['artifacts']
+            refs += [r for r in (value['manifest'],value['verification']['evidence']) if r is not None]
+            paths=[r['path'] for r in refs]
+            require(len(paths)==len(set(paths)), 'invalid-input', 'Companion artifacts must have distinct paths.')
+            files=set(paths);aliases={}
+            for path in paths:
+                parts=path.split('/')
+                for n in range(1,len(parts)+1):
+                    prefix='/'.join(parts[:n]);key=unicodedata.normalize('NFC',prefix).casefold()
+                    require(key not in aliases or aliases[key]==prefix, 'invalid-input', 'Artifact paths alias across platforms.')
+                    require(n==len(parts) or prefix not in files, 'invalid-input', 'Artifact path conflicts with a file parent.')
+                    aliases[key]=prefix
         _verification(value['verification'])
     elif kind == 'FrameSpec':
         require(value['cache_key'] == frame_hash(value), 'stale-cache', 'Frame cache identity changed.')
@@ -350,7 +365,7 @@ def frame_hash(value):
     return object_hash({k: v for k, v in value.items() if k not in ('cache_key', 'destination')})
 
 
-def make_frame_spec(request, index, snapshot_path, *, adapter=None):
+def make_frame_spec(request, index, snapshot_path, *, adapter=None, max_total_bytes=None):
     """Plan from a request-bound exact snapshot file and verified source closure."""
     from render3d_snapshot import verify_snapshot, NativeRigAdapter, Scene3DAdapter
     validate(request, 'RenderRequest')
@@ -373,7 +388,8 @@ def make_frame_spec(request, index, snapshot_path, *, adapter=None):
     require(snapshot_path.name == 'snapshot.json', 'invalid-input', 'Use the frozen snapshot.json entrypoint.')
     if adapter is None:
         adapter = Scene3DAdapter() if snapshot['scope'] == 'scene3d' else NativeRigAdapter()
-    verified = verify_snapshot(snapshot_path.parent, adapter)
+    verified = (verify_snapshot(snapshot_path.parent, adapter) if max_total_bytes is None
+                else verify_snapshot(snapshot_path.parent, adapter, max_total_bytes=max_total_bytes))
     require(verified==snapshot,'stale-asset','Owner-verified snapshot differs from request-authorized bytes.')
     if isinstance(adapter, Scene3DAdapter):
         try:

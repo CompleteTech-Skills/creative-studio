@@ -1,0 +1,352 @@
+{
+  "render": {
+    "frames": 3,
+    "sample_indices": [
+      0,
+      1,
+      2
+    ],
+    "receipt_sha256": "96501f702b4523067d587b2de4fad427759f57112d0bec9a4b644d1e77c77795",
+    "output": {
+      "format": "png",
+      "bit_depth": 8,
+      "passes": [
+        "combined"
+      ],
+      "alpha": "straight",
+      "color_space": "srgb"
+    },
+    "decoded": [
+      {
+        "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+        "bytes": 2111,
+        "format": "png",
+        "resolution": [
+          64,
+          64
+        ],
+        "bit_depth": 8,
+        "channels": {
+          "R": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "G": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "B": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "A": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        },
+        "requested_color_space": "srgb",
+        "requested_alpha": "straight",
+        "decoder": "pypng",
+        "decoder_version": "0.20220715.0",
+        "compression": "deflate"
+      },
+      {
+        "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+        "bytes": 2178,
+        "format": "png",
+        "resolution": [
+          64,
+          64
+        ],
+        "bit_depth": 8,
+        "channels": {
+          "R": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "G": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "B": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "A": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        },
+        "requested_color_space": "srgb",
+        "requested_alpha": "straight",
+        "decoder": "pypng",
+        "decoder_version": "0.20220715.0",
+        "compression": "deflate"
+      },
+      {
+        "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+        "bytes": 2123,
+        "format": "png",
+        "resolution": [
+          64,
+          64
+        ],
+        "bit_depth": 8,
+        "channels": {
+          "R": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "G": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "B": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "A": {
+            "type": "uint8",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        },
+        "requested_color_space": "srgb",
+        "requested_alpha": "straight",
+        "decoder": "pypng",
+        "decoder_version": "0.20220715.0",
+        "compression": "deflate"
+      }
+    ],
+    "source_identity": "9ed136bbb9fd326a316d1268141cb76011d9a9179305af61a255eec29054f1a6",
+    "pixel_samples": [
+      {
+        "index": 0,
+        "opaque_pixels": 272,
+        "transparent_pixels": 3790,
+        "semitransparent_pixels": 34,
+        "all_channels_pixel_equal": true
+      },
+      {
+        "index": 1,
+        "opaque_pixels": 287,
+        "transparent_pixels": 3766,
+        "semitransparent_pixels": 43,
+        "all_channels_pixel_equal": true
+      },
+      {
+        "index": 2,
+        "opaque_pixels": 276,
+        "transparent_pixels": 3782,
+        "semitransparent_pixels": 38,
+        "all_channels_pixel_equal": true
+      }
+    ]
+  },
+  "png16": {
+    "frames": 1,
+    "sample_indices": [
+      0
+    ],
+    "receipt_sha256": "023472a267b1c20546ab5b04fb5207425f89d5a3f65e8fb7fe96394b68cff187",
+    "output": {
+      "format": "png",
+      "bit_depth": 16,
+      "passes": [
+        "combined"
+      ],
+      "alpha": "straight",
+      "color_space": "srgb"
+    },
+    "decoded": [
+      {
+        "sha256": "2710ad3e096f0887585e20b943d9721a47089bf76944208a06c03cfd66c0ff10",
+        "bytes": 1262,
+        "format": "png",
+        "resolution": [
+          64,
+          64
+        ],
+        "bit_depth": 16,
+        "channels": {
+          "R": {
+            "type": "uint16",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "G": {
+            "type": "uint16",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "B": {
+            "type": "uint16",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "A": {
+            "type": "uint16",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        },
+        "requested_color_space": "srgb",
+        "requested_alpha": "straight",
+        "decoder": "pypng",
+        "decoder_version": "0.20220715.0",
+        "compression": "deflate"
+      }
+    ],
+    "source_identity": "cd3dabf7ef91f4b9c9ce56a8f449360dc82f4cfa4dd0100a40f8fd29fa80b38c",
+    "pixel_samples": [
+      {
+        "index": 0,
+        "opaque_pixels": 272,
+        "transparent_pixels": 3790,
+        "semitransparent_pixels": 34,
+        "all_channels_pixel_equal": true
+      }
+    ]
+  },
+  "exr16": {
+    "frames": 1,
+    "sample_indices": [
+      0
+    ],
+    "receipt_sha256": "20f524e5ab9d42ab11ac65d715c965225a1a19e1453d6a73202cc49c0f498e8e",
+    "output": {
+      "format": "exr",
+      "bit_depth": 16,
+      "passes": [
+        "combined"
+      ],
+      "alpha": "straight",
+      "color_space": "linear"
+    },
+    "decoded": [
+      {
+        "sha256": "813278f25cdbf5458cb03a697b5971cdab4387e7262e20ce157a885553300fc6",
+        "bytes": 2453,
+        "format": "exr",
+        "resolution": [
+          64,
+          64
+        ],
+        "bit_depth": 16,
+        "channels": {
+          "A": {
+            "type": "half",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "B": {
+            "type": "half",
+            "minimum": 0.0,
+            "maximum": 2.79296875
+          },
+          "G": {
+            "type": "half",
+            "minimum": 0.0,
+            "maximum": 2.79296875
+          },
+          "R": {
+            "type": "half",
+            "minimum": 0.0,
+            "maximum": 2.79296875
+          }
+        },
+        "requested_color_space": "linear",
+        "requested_alpha": "straight",
+        "decoder": "OpenEXR",
+        "decoder_version": "3.5.4",
+        "compression": "zip"
+      }
+    ],
+    "source_identity": "1c209ceb9239116cf41b009e19e1350ac407933fc349b4b4482ba88040f4fd19",
+    "pixel_samples": [
+      {
+        "index": 0,
+        "opaque_pixels": 272,
+        "transparent_pixels": 3790,
+        "semitransparent_pixels": 34,
+        "all_channels_pixel_equal": true
+      }
+    ]
+  },
+  "exr32": {
+    "frames": 1,
+    "sample_indices": [
+      0
+    ],
+    "receipt_sha256": "2a6d8a440e2ec1b14b39c7f00c54b257246b75302ff3bfa853b17fadf1bfb13c",
+    "output": {
+      "format": "exr",
+      "bit_depth": 32,
+      "passes": [
+        "combined"
+      ],
+      "alpha": "straight",
+      "color_space": "linear"
+    },
+    "decoded": [
+      {
+        "sha256": "9877bb6cefdc8c2d9dcf2cb27142042591aab3f81406d51f892806c199177d30",
+        "bytes": 3309,
+        "format": "exr",
+        "resolution": [
+          64,
+          64
+        ],
+        "bit_depth": 32,
+        "channels": {
+          "A": {
+            "type": "float",
+            "minimum": 0.0,
+            "maximum": 1.0
+          },
+          "B": {
+            "type": "float",
+            "minimum": 0.0,
+            "maximum": 2.7936770915985107
+          },
+          "G": {
+            "type": "float",
+            "minimum": 0.0,
+            "maximum": 2.7936770915985107
+          },
+          "R": {
+            "type": "float",
+            "minimum": 0.0,
+            "maximum": 2.7936770915985107
+          }
+        },
+        "requested_color_space": "linear",
+        "requested_alpha": "straight",
+        "decoder": "OpenEXR",
+        "decoder_version": "3.5.4",
+        "compression": "zip"
+      }
+    ],
+    "source_identity": "b37fa61fd100a1002ca0a38b703a878359284ca76ee19a541488a9b03df54690",
+    "pixel_samples": [
+      {
+        "index": 0,
+        "opaque_pixels": 272,
+        "transparent_pixels": 3790,
+        "semitransparent_pixels": 34,
+        "all_channels_pixel_equal": true
+      }
+    ]
+  }
+}

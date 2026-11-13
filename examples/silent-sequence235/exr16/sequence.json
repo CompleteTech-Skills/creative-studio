@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "kind": "silent-image-sequence",
+  "source": {
+    "schema_version": 1,
+    "kind": "silent-sequence-source",
+    "origin": "blender3d",
+    "identity_sha256": "1c209ceb9239116cf41b009e19e1350ac407933fc349b4b4482ba88040f4fd19",
+    "resolution": [
+      64,
+      64
+    ],
+    "fps": {
+      "numerator": 4,
+      "denominator": 1
+    },
+    "output": {
+      "format": "exr",
+      "bit_depth": 16,
+      "passes": [
+        "combined"
+      ],
+      "alpha": "straight",
+      "color_space": "linear"
+    },
+    "frames": [
+      {
+        "index": 0,
+        "source_index": 0,
+        "source_path": "frames/000000.exr",
+        "path": "frames/000000.exr",
+        "sha256": "813278f25cdbf5458cb03a697b5971cdab4387e7262e20ce157a885553300fc6",
+        "bytes": 2453
+      }
+    ]
+  },
+  "source_sha256": "5a02791e6fce8fdb76443ebfb0ac50ccf9c02395bf81abb17498844d072545b3",
+  "request_sha256": "971db997cc61e3559fd7a74db84e0abc152a1cb98373fcd9687c623b12757b12",
+  "provenance": {
+    "request": {
+      "schema_version": 1,
+      "kind": "render3d-request",
+      "id": "exr16",
+      "project": {
+        "id": "fixture",
+        "version": "1.0.0"
+      },
+      "scene": {
+        "id": "fixture",
+        "version": "1.0.0"
+      },
+      "shot": {
+        "id": "motion",
+        "version": "1.0.0"
+      },
+      "mode": "3d",
+      "snapshot": {
+        "path": "snapshot.json",
+        "bytes": 1733,
+        "sha256": "20e172024463cc2ed4fcccfdd1e7a218c4330b099e36481cc13d1dff5721dde4"
+      },
+      "fps": {
+        "numerator": 4,
+        "denominator": 1
+      },
+      "frame_range": {
+        "start": 0,
+        "end": 1
+      },
+      "source_start": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "playback_rate": {
+        "numerator": 1,
+        "denominator": 1
+      },
+      "camera": "front",
+      "priority": 0,
+      "max_attempts": 1,
+      "cache_policy": "verify-reuse",
+      "destination": {
+        "path": "exr16",
+        "owner_token": "backend-recovery-owner"
+      },
+      "settings": {
+        "engine": "cycles",
+        "device_policy": "cpu",
+        "device": "cpu",
+        "allow_cpu_fallback": false,
+        "resolution": [
+          64,
+          64
+        ],
+        "samples": 2,
+        "seed": 4,
+        "denoise": false,
+        "output": {
+          "format": "exr",
+          "bit_depth": 16,
+          "passes": [
+            "combined"
+          ],
+          "alpha": "straight",
+          "color_space": "linear"
+        },
+        "exposure": 0,
+        "view_transform": "standard",
+        "resources": {
+          "memory_bytes": 2147483648,
+          "storage_bytes": 134217728,
+          "timeout_seconds": 120,
+          "workers": 1,
+          "max_frames": 10
+        }
+      }
+    },
+    "result": {
+      "schema_version": 1,
+      "kind": "render3d-result",
+      "job": "exr16",
+      "request_sha256": "33d3d9b717fb1bbce98959670d624789a04fd1a53d554f27087491237b4bda81",
+      "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "status": "complete",
+      "requested_frames": [
+        0
+      ],
+      "successful": [
+        0
+      ],
+      "failed": [],
+      "skipped": [],
+      "reused": [],
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.exr",
+            "sha256": "813278f25cdbf5458cb03a697b5971cdab4387e7262e20ce157a885553300fc6",
+            "bytes": 2453
+          },
+          "format": "exr",
+          "bit_depth": 16,
+          "pass_name": "combined",
+          "resolution": [
+            64,
+            64
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "usage": {
+        "elapsed_seconds": 0.6068885049971868,
+        "peak_memory_bytes": 307716096,
+        "output_bytes": 32271,
+        "measurement": "measured"
+      },
+      "logs": [
+        {
+          "path": "blender.log",
+          "sha256": "8a9afe92151ff213385262ad7c4b2c7c463c8bae53b053dd6f2f46be5d086ebd",
+          "bytes": 5418
+        }
+      ],
+      "manifest": {
+        "path": "manifest.json",
+        "sha256": "9549c76c000925b9a7d67fed26ded866548b4a6e23fba8747ee221e2534ad661",
+        "bytes": 2954
+      },
+      "verification": {
+        "status": "passed",
+        "verifier": {
+          "id": "render3d-independent-pixels",
+          "version": "1.0.0",
+          "code_sha256": "0903f4ff8555d08e0851d082724944cfd1eade62cf94a487d2fb989595246097",
+          "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+        },
+        "evidence": {
+          "path": "verification.json",
+          "sha256": "7a42aff517b9d3acd9a9c611916a6a452a37f21909269b63e60c9d6e6089a7d4",
+          "bytes": 2273
+        }
+      }
+    },
+    "expected_backend": {
+      "id": "blender",
+      "adapter_version": "1.0.0",
+      "application_version": "Blender 4.5.3 LTS",
+      "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+      "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+      "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+      "engine": "cycles",
+      "device": "cpu"
+    },
+    "verification": {
+      "schema_version": 1,
+      "kind": "render3d-verification",
+      "status": "passed",
+      "verifier": {
+        "id": "render3d-independent-pixels",
+        "version": "1.0.0",
+        "code_sha256": "60d2b870206734319637c30a6be176404c92042a3093da5bc80ef2a0f9fba357",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+      },
+      "request_sha256": "33d3d9b717fb1bbce98959670d624789a04fd1a53d554f27087491237b4bda81",
+      "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+      "settings_sha256": "25cb7583aa1c66d225125009b79d2ee2c133ad24b8cd31f1db9756a7f868f565",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "path": "frames/000000.exr",
+          "presentation_time": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "source_time": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "bytes": 2453,
+          "sha256": "813278f25cdbf5458cb03a697b5971cdab4387e7262e20ce157a885553300fc6",
+          "channels": {
+            "A": {
+              "type": "half",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "half",
+              "minimum": 0.0,
+              "maximum": 2.79296875
+            },
+            "G": {
+              "type": "half",
+              "minimum": 0.0,
+              "maximum": 2.79296875
+            },
+            "R": {
+              "type": "half",
+              "minimum": 0.0,
+              "maximum": 2.79296875
+            }
+          },
+          "decoder": "OpenEXR",
+          "decoder_version": "3.5.4",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 16,
+          "format": "exr",
+          "pass_name": "combined",
+          "requested_color_space": "linear",
+          "requested_alpha": "straight"
+        }
+      ],
+      "decoded_frames": 1,
+      "decoded_images": 1,
+      "output_bytes": 2453,
+      "limitation": "Decoded integrity and input binding do not establish semantic scene correctness or visual approval."
+    }
+  },
+  "provenance_sha256": "ce5abac9e5e79df0c72c953487202f9f34ecabdabd01e8b9767eda0de725c0ca",
+  "decoded": [
+    {
+      "sha256": "813278f25cdbf5458cb03a697b5971cdab4387e7262e20ce157a885553300fc6",
+      "bytes": 2453,
+      "format": "exr",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 16,
+      "channels": {
+        "A": {
+          "type": "half",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "B": {
+          "type": "half",
+          "minimum": 0.0,
+          "maximum": 2.79296875
+        },
+        "G": {
+          "type": "half",
+          "minimum": 0.0,
+          "maximum": 2.79296875
+        },
+        "R": {
+          "type": "half",
+          "minimum": 0.0,
+          "maximum": 2.79296875
+        }
+      },
+      "requested_color_space": "linear",
+      "requested_alpha": "straight",
+      "decoder": "OpenEXR",
+      "decoder_version": "3.5.4",
+      "compression": "zip"
+    }
+  ],
+  "transform": "byte-preserving-copy",
+  "visual_review": "not-performed"
+}

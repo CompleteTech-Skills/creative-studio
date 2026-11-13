@@ -1,0 +1,53 @@
+{
+  "kind": "actual-native-lossless-sequence-execution",
+  "source_commit": "ceab2d3f16d3e293eed219e210a392ba3131f9ad",
+  "status": "executed and independently decoded; no visual approval or merge readiness claim",
+  "source_artifacts": "Existing canonical Blender backend retained native-smoke sources, exact original bytes preserved; this gate does not rerender or invent source execution.",
+  "tests": {
+    "actual_precision_and_publication": {
+      "ran": 14,
+      "passed": 14,
+      "skipped": 0,
+      "log": "recovery-ceab-native.log"
+    },
+    "portable_optional_import_blocked": {
+      "ran": 2,
+      "passed": 2,
+      "skipped": 0,
+      "log": "recovery-no-numpy.log"
+    },
+    "actual_linear_composite": {
+      "ran": 2,
+      "passed": 2,
+      "skipped": 0,
+      "log": "recovery-linear-composite.log"
+    }
+  },
+  "imports": "All21repositorymodules loaded from this single integrated checkout; see runtime-identities.json. No external module preload.",
+  "files": {
+    "actual-report.json": "d41a9da8fdd2e89fbb574a364231300e0c865e09fa9b8e128c69741a4c62aca6",
+    "exr16/frames/000000.exr": "813278f25cdbf5458cb03a697b5971cdab4387e7262e20ce157a885553300fc6",
+    "exr16/lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "exr16/plan.json": "5996d555b3e7198a36778f08b983200d50ecf0f96f1cf146148bf4e571bb5733",
+    "exr16/sequence.json": "20f524e5ab9d42ab11ac65d715c965225a1a19e1453d6a73202cc49c0f498e8e",
+    "exr32/frames/000000.exr": "9877bb6cefdc8c2d9dcf2cb27142042591aab3f81406d51f892806c199177d30",
+    "exr32/lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "exr32/plan.json": "93444510ef1daf979cafe00cb9caadac716d3b2f33bf107a08d252297e246c18",
+    "exr32/sequence.json": "2a6d8a440e2ec1b14b39c7f00c54b257246b75302ff3bfa853b17fadf1bfb13c",
+    "png16/frames/000000.png": "2710ad3e096f0887585e20b943d9721a47089bf76944208a06c03cfd66c0ff10",
+    "png16/lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "png16/plan.json": "2aa2fd2cb12b759085c3d8ea654af627cc4b294e613ff134364d9b5e19be807e",
+    "png16/sequence.json": "023472a267b1c20546ab5b04fb5207425f89d5a3f65e8fb7fe96394b68cff187",
+    "recovery-ceab-actual-proof.log": "ea505b30d1a5d457973001e8735e6cec199a6dd7cced9f42a3209cb15b5530be",
+    "recovery-ceab-native.log": "9535c7cf16d3f0696699def7ad7f190a5defcdcc589536f22c4ec743df207e35",
+    "recovery-linear-composite.log": "7e459bbe96bbb18057681b00783e3ae86badcfb1afe390ddeab62080f63666d6",
+    "recovery-no-numpy.log": "e08eecbca6c1265ed2543eae8e02adf9b6f27444a1bb0c4c485ce510ce3eb574",
+    "render/frames/000000.png": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+    "render/frames/000001.png": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+    "render/frames/000002.png": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+    "render/lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "render/plan.json": "25569f0ed46e873a6baed97b14e9843515050d17b32efbb586869e948182b9be",
+    "render/sequence.json": "96501f702b4523067d587b2de4fad427759f57112d0bec9a4b644d1e77c77795",
+    "runtime-identities.json": "83805eaaded4a97a857e89d173ffb797a9965fa05dc6b320f454acbdda52bd03"
+  }
+}
