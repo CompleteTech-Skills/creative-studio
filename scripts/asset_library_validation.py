@@ -294,16 +294,21 @@ def _scene_documents(root, manifest, payloads, geometry, limits):
                             'world_matrices': {key: value.tolist() for key, value in transforms.items()},
                             'sockets': list(document.get('sockets', []))})
     active = set()
-    done = set()
+    heights = {}
     def visit(name, depth=0):
-        if depth > 128 or name in active:
+        if depth >= 128 or name in active:
             fail('RECURSION', 'Scene/prefab dependency graph has a cycle or exceeds depth.', name)
-        if name in done:
-            return
+        if name in heights:
+            return heights[name]
         active.add(name)
+        height = 1
         for child in edges[name]:
-            visit(child, depth + 1)
-        active.remove(name);done.add(name)
+            height = max(height, visit(child, depth + 1) + 1)
+            if height > 128:
+                fail('RECURSION', 'Scene/prefab dependency graph exceeds 128 levels.', name)
+        active.remove(name)
+        heights[name] = height
+        return height
     for name in documents:
         visit(name)
     return reports

@@ -215,6 +215,28 @@ class AssetTechnicalTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError, 'hierarchy exceeds'):
             validate_asset(self.library, ref)
 
+    def test_prefab_dependency_depth_cannot_hide_behind_cached_children(self):
+        template = json.loads((ROOT / 'examples/scene3d-contracts/example-prefab.json').read_bytes())
+        files = {}
+        previous = None
+        # Leaf-first insertion makes a traversal that merely skips cached children
+        # miss the excessive height of the later root.
+        for index in range(129):
+            document = deepcopy(template)
+            document['id'] = 'prefab-' + str(index)
+            document['nodes'] = [document['nodes'][0]]
+            document['dependencies'] = [] if previous is None else [previous]
+            name = 'prefab-' + str(index) + '.json'
+            data = json.dumps(document, sort_keys=True).encode()
+            path = self.root / name
+            path.write_bytes(data)
+            files[name] = (path, 'runtime')
+            previous = {'kind': 'scene3d-prefab', 'id': document['id'], 'version': '1.0.0',
+                        'path': name, 'sha256': hashlib.sha256(data).hexdigest()}
+        ref = self.register(files, 'prefab')
+        with self.assertRaisesRegex(RigError, 'dependency graph exceeds'):
+            validate_asset(self.library, ref)
+
     def test_obj_is_geometry_only_and_reports_repairable_topology(self):
         path=self.root/'open.obj';path.write_text('v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 0\nf 1 2 3\n')
         item=inspect_geometry(path)
