@@ -16,14 +16,15 @@ MAX_FRAME=10_000_000
 def validate_track(value):
     require(isinstance(value,dict) and set(value)=={'property','interpolation','keys'},'LOOKDEV_TRACK','Invalid track fields.')
     require(value['property'] in ('scalar','vector','color','quaternion','discrete'),'LOOKDEV_TRACK','Unknown value semantic.')
-    require(value['interpolation'] in ('step','linear','smooth'),'LOOKDEV_TRACK','Unsupported interpolation.')
+    require(value['interpolation'] in ('step','linear','smooth','cubic'),'LOOKDEV_TRACK','Unsupported interpolation.')
     if value['property']=='discrete':
         require(value['interpolation']=='step','LOOKDEV_TRACK','Discrete switches must be stepped.')
     keys=value['keys']
     require(isinstance(keys,list) and 0<len(keys)<=10000,'LOOKDEV_TRACK','Unbounded key count.')
     previous=-1;dimension=None
     for key in keys:
-        require(isinstance(key,dict) and set(key)=={'frame','value'} and type(key['frame']) is int and
+        expected={'frame','value','in_tangent','out_tangent'} if value['interpolation']=='cubic' else {'frame','value'}
+        require(isinstance(key,dict) and set(key)==expected and type(key['frame']) is int and
                 previous<key['frame']<=MAX_FRAME,'LOOKDEV_TRACK','Frames must be increasing bounded integers.')
         previous=key['frame'];sample=key['value'];kind=value['property']
         finite_json(sample)
@@ -40,6 +41,12 @@ def validate_track(value):
             if kind=='color':require(len(sample) in (3,4) and all(x>=0 for x in sample) and (len(sample)==3 or sample[3]<=1),'LOOKDEV_TRACK','Colors must be nonnegative scene-linear RGB with bounded alpha.')
             if kind=='quaternion':
                 require(len(sample)==4 and abs(sum(x*x for x in sample)-1)<1e-5,'LOOKDEV_TRACK','Expected normalized XYZW quaternion.')
+        if value['interpolation']=='cubic':
+            for tangent in (key['in_tangent'],key['out_tangent']):
+                require((kind=='scalar' and type(tangent) in (int,float) and math.isfinite(tangent)) or
+                        (kind!='scalar' and isinstance(tangent,list) and len(tangent)==len(sample) and
+                         all(type(x) in (int,float) and math.isfinite(x) for x in tangent)),
+                        'LOOKDEV_TRACK','Cubic derivatives must match value dimensions in units per frame.')
     return deepcopy(value)
 
 
@@ -58,8 +65,13 @@ def evaluate_track(track, frame):
         right=next(i for i,t in enumerate(times) if t>frame);left=right-1
         u=(frame-times[left])/(times[right]-times[left]);u=u*u*(3-2*u)
         sample_frame=times[left]+u*(times[right]-times[left])
-    result=native_track({'times':times,'values':values,'interpolation':'LINEAR',
-                         'path':'rotation' if kind=='quaternion' else 'translation'},sample_frame).tolist()
+    native={'times':times,'values':values,'interpolation':'CUBICSPLINE' if track['interpolation']=='cubic' else 'LINEAR',
+            'path':'rotation' if kind=='quaternion' else 'translation'}
+    if track['interpolation']=='cubic':
+        for name in ('in_tangents','out_tangents'):
+            values=[k['in_tangent' if name=='in_tangents' else 'out_tangent'] for k in keys]
+            native[name]=[[v] for v in values] if kind=='scalar' else values
+    result=native_track(native,sample_frame).tolist()
     return result[0] if kind=='scalar' else result
 
 

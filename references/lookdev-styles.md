@@ -28,7 +28,9 @@ not implemented by this module.
 `lookdev_tracks` evaluates integer-frame scalar/vector/scene-linear color,
 normalized XYZW orientation and discrete tracks without prior frame state.
 Step switches remain discrete; linear/smooth quaternion paths call native rig
-slerp. Smooth is smoothstep easing, not an authored Bézier control-curve API.
+slerp. Smooth is smoothstep easing. Cubic calls the native rig CUBICSPLINE
+evaluator with explicit incoming/outgoing derivatives in value units per frame;
+this is Hermite interpolation (equivalent to explicitly derived Bézier handles).
 Property paths must already exist, duplicate/overlapping tracks reject, and
 continuity locks cover exact paths or complete namespaces. `shot_state` always
 copies authored base state, preventing one shot's changes from leaking.
@@ -48,7 +50,7 @@ retains rendered PNGs, mapping/source hashes and OCIO comparison PNG/EXR files.
 Use the shared native flock when running on the coordination host.
 
 This package does not complete #88: browser color/shading comparison, ACES-inspired
-mapping, authored Bézier controls, seeded flicker events, automated anatomy
+mapping, seeded flicker events, automated anatomy
 assignment, native timeline/Scene3D slot publication, and complete character
 pose/shot visual acceptance still require their owning adapters and evidence.
 Numerical tests and synthetic style spheres do not establish production artwork

@@ -42,17 +42,20 @@ def apply_configuration(scene, value):
     """
     value=validate_configuration(value)
     settings=scene.view_settings
+    require(hasattr(settings,'use_white_balance') and hasattr(settings,'white_balance_temperature') and hasattr(settings,'white_balance_tint'),
+            'LOOKDEV_COLOR_BACKEND','Backend lacks explicit view white balance; require pinned Blender4.5.')
+    for name,requested in [('white_balance_temperature',value['temperature_kelvin']),('white_balance_tint',value['tint'])]:
+        prop=settings.bl_rna.properties[name]
+        require(prop.hard_min<=requested<=prop.hard_max,'LOOKDEV_COLOR_BACKEND','White balance exceeds actual backend bounds.')
     try:
         settings.view_transform=value['view']
         scene.display_settings.display_device='sRGB'
         settings.look='None'
     except (TypeError,ValueError) as exc:
         raise RigError('LOOKDEV_COLOR_BACKEND','Requested OCIO view/look unavailable.') from exc
-    require(hasattr(settings,'use_white_balance') and hasattr(settings,'temperature') and hasattr(settings,'tint'),
-            'LOOKDEV_COLOR_BACKEND','Backend lacks explicit view white balance; require pinned Blender4.5.')
     settings.exposure=value['exposure_stops'];settings.gamma=1.
     settings.use_white_balance=True
-    settings.temperature=value['temperature_kelvin'];settings.tint=value['tint']
+    settings.white_balance_temperature=value['temperature_kelvin'];settings.white_balance_tint=value['tint']
     image=scene.render.image_settings
     image.color_mode='RGBA'
     if value['output']=='scene-linear-exr':
