@@ -309,7 +309,11 @@ def main(argv=None):
             print(json.dumps(result, sort_keys=True, indent=2))
         return 0
     except (ValueError, OSError, KeyError, TypeError) as exc:
-        print(json.dumps({'error': str(exc), 'code': getattr(exc, 'code', 'PRODUCTION_COMMAND_FAILED'), 'command': args.command, 'provider_called': False}), file=sys.stderr)
+        report = {'error': str(exc), 'command': args.command, 'provider_called': False}
+        from silent_cli import COMMANDS
+        if args.command in COMMANDS:
+            report['code'] = getattr(exc, 'code', 'PRODUCTION_COMMAND_FAILED')
+        print(json.dumps(report), file=sys.stderr)
         return 2
 
 
