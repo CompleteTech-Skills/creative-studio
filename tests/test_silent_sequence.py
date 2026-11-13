@@ -28,6 +28,15 @@ class SequenceContracts(unittest.TestCase):
         with self.assertRaises(ValueError):sequence.native_source(request,result,'.',snapshot_root='.',expected_backend={})
 
 
+    def test_missing_canonical_capability_fails_without_creating_staging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            with mock.patch.object(sequence,'publication_supported',return_value=True), \
+                    mock.patch.object(sequence,'_capability_factory',side_effect=ValueError('canonical capability unavailable')):
+                with self.assertRaisesRegex(ValueError,'canonical capability unavailable'):
+                    sequence.export_sequence({},'.',root/'delivery',provenance={})
+            self.assertEqual(list(root.iterdir()),[])
+
     def test_unsupported_publication_fails_before_owner_decode_or_disk_io(self):
         with mock.patch.object(sequence,'publication_supported',return_value=False):
             with self.assertRaisesRegex(ValueError,'unavailable'):
