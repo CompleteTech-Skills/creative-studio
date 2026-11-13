@@ -65,6 +65,8 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
             'RIG_FORMAT', 'Source snapshots support GLB, glTF, OBJ and packed Blender files.')
     source_root = entry.parent.resolve()
     entry = source_root / entry.name
+    source_info = source_root.stat()
+    root_identity = (source_info.st_dev, source_info.st_ino)
     temporary = tempfile.TemporaryDirectory(prefix='rig-source-')
     root = Path(temporary.name).resolve()
     records, aliases = {}, {}
@@ -84,7 +86,7 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
         target = root/name
         if name not in records:
             require(len(records) < limits['archive_files'], 'RIG_LIMIT_FILES', 'Source closure exceeds its file budget.')
-            with open_payload(source_root, name) as (stream, info):
+            with open_payload(source_root, name, root_identity=root_identity) as (stream, info):
                 ceiling = min(maximum, limits['source_bytes'], limits['dependency_bytes']-total,
                               limits['memory_bytes']//3)
                 require(0 < info.st_size <= ceiling, 'RIG_LIMIT_SOURCE', 'Source exceeds its encoded-byte budget.', asset=name)
