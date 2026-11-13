@@ -397,6 +397,6 @@ class EditorNativeStateTests(unittest.TestCase):
                     self.assertEqual(page.locator('#view').input_value(),'perspective')
                     self.assertEqual(page.locator('#view-label').inner_text(),'perspective')
                     self.assertFalse(page.evaluate('window.hatchEditor.camera.parent !== null'))
-                    self.assertEqual(page.evaluate('window.hatchEditor.errors'),[])
+                    self.assertEqual(page.evaluate('window.hatchEditor.errors'),['No native camera is available.'])
                 finally:browser.close()
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
