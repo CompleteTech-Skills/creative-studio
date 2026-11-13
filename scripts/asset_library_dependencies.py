@@ -500,16 +500,22 @@ def normalize_static_units(graph,value,path,*,version):
         originals=[deepcopy(f) for f in manifest['files'] if f['role'] in ('geometry','runtime')]
         retained={f['path']:{**deepcopy(f),'role':'source'} for f in originals}
         # All evidence references must remain identical to their inventoried
-        # records after demotion. Exact original bytes and metadata stay intact.
-        def retain_sources(node):
+        # records after demotion. Follow the canonical typed references rather
+        # than interpreting file-looking keys inside opaque technical metadata.
+        from asset_library_contracts import definitions
+        contracts=definitions()
+        def retain_sources(node,schema):
+            if '$ref' in schema:
+                name=schema['$ref'].rsplit('/',1)[-1]
+                if name=='AssetFile':return deepcopy(retained.get(node['path'],node))
+                schema=contracts[name]
             if isinstance(node,dict):
-                if {'path','role','sha256','bytes'}<=node.keys() and node['path'] in retained:
-                    replacement=deepcopy(retained[node['path']]);node.clear();node.update(replacement)
-                else:
-                    for child in node.values():retain_sources(child)
-            elif isinstance(node,list):
-                for child in node:retain_sources(child)
-        retain_sources(updated)
+                for key,child_schema in schema.get('properties',{}).items():
+                    if key in node:node[key]=retain_sources(node[key],child_schema)
+            elif isinstance(node,list) and 'items' in schema:
+                node=[retain_sources(child,schema['items']) for child in node]
+            return node
+        updated=retain_sources(updated,contracts['AssetVersion'])
         provenance=updated['provenance']
         known_sources={f['path'] for f in provenance['sources']}
         provenance['sources'].extend(deepcopy(f) for name,f in retained.items() if name not in known_sources)

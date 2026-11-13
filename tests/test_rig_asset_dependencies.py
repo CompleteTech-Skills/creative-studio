@@ -137,6 +137,10 @@ class UnitConversionTests(unittest.TestCase):
             template['compatibility']['unit_scale']=.01
             template['files'][0]['technical_metadata']={'field'+str(i):i for i in range(64)}
             template['provenance']['sources']=[deepcopy(template['files'][0])]
+            measurement=dict(path='mesh/triangle.obj',role='measurement',
+                             sha256=template['files'][0]['sha256'],bytes=template['files'][0]['bytes'])
+            template['files'][1]['technical_metadata']=measurement
+            template['provenance']['license_evidence']=[deepcopy(template['files'][1])]
             runtime=root/'original.glb'
             export_geometry(load_character_model(base/'mesh/triangle.obj').geometry,runtime)
             runtime_record=file_record(runtime,'runtime/original.glb','runtime')
@@ -157,6 +161,8 @@ class UnitConversionTests(unittest.TestCase):
             for path in ['mesh/triangle.obj','runtime/original.glb']:
                 self.assertEqual(files[path]['role'],'source')
             self.assertEqual(files['mesh/triangle.obj']['technical_metadata'],template['files'][0]['technical_metadata'])
+            self.assertEqual(files['source/license.txt']['technical_metadata'],measurement)
+            self.assertEqual(manifest['provenance']['license_evidence'],[files['source/license.txt']])
             for conversion in manifest['provenance']['conversions']:
                 for record in conversion['inputs']+conversion['outputs']:
                     self.assertEqual(record,files[record['path']])
