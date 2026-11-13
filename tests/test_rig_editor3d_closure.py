@@ -276,6 +276,32 @@ class EditorNativeClosureTests(unittest.TestCase):
         result=verify_editor_bundle(*bundle(self.root),self.root)
         self.assertNotIn('native/must-not-open.json',result['files'])
 
+    def test_additional_rig_cannot_borrow_source_identity_validation(self):
+        shutil.copytree(ROOT/'examples/rig-3d/robotic',self.root/'rig')
+        original=reference(self.root,'rig/rig.json','rig');original['native_kind']='Rig'
+        forged=json.loads((self.root/'rig/rig.json').read_bytes())
+        forged['id']=forged['character']['id']='forged'
+        forged['version']='2.0.0'
+        (self.root/'rig/forged.json').write_text(json.dumps(forged))
+        additional=reference(self.root,'rig/forged.json','rig');additional['native_kind']='Rig'
+        project=deepcopy(self.bundle[0]);project['source_projects'].append(original)
+        project['dependency_manifest'].extend([original,additional])
+        with self.assertRaises(RigError):verify_editor_bundle(project,*self.bundle[1:],self.root)
+
+    def test_material_does_not_consume_other_owners_opaque_payloads(self):
+        from lookdev_contracts import Registry
+        shutil.copyfile(ROOT/'examples/lookdev-contracts/ceramic.json',self.root/'ceramic.json')
+        material=reference(self.root,'ceramic.json','lookdev')
+        project=deepcopy(self.bundle[0]);project['dependency_manifest'].append(material)
+        observed=[]
+        def checked_registry(entries, *, payloads=None):
+            observed.extend(payloads or {})
+            return Registry(entries,payloads=payloads)
+        with patch('lookdev_contracts.Registry',side_effect=checked_registry):
+            result=verify_editor_bundle(project,*self.bundle[1:],self.root)
+        self.assertTrue(result['native_resources_verified'])
+        self.assertEqual(observed,[])
+
 
 if __name__ == '__main__':
     unittest.main()

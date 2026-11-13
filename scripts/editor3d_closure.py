@@ -183,6 +183,8 @@ def _scope(reference, sources):
         prefix = '' if prefix == '.' else prefix
         if prefix and not path.startswith(prefix + '/'):
             _error('SOURCE_PROJECT', 'Native reference is outside its source project.')
+        if owner == 'rig' and reference != source:
+            _error('UNAVAILABLE', 'A Rig closure requires the exact bound Rig source manifest.')
         return prefix, source
     prefix = str(PurePosixPath(path).parent)
     if owner == 'model3d':
@@ -259,17 +261,20 @@ def _verify_editor_bundle(project, scenes, nodes, assets, animations, root):
             elif owner == 'lookdev':
                 from lookdev_contracts import Registry
                 entries, payloads = [], {}
-                for name, candidate in snapshot.values.items():
-                    if not prefix or name == source_path or name.startswith(prefix + '/'):
-                        if isinstance(candidate, dict) and candidate.get('kind') in __import__('lookdev_contracts').KINDS:
-                            relative = PurePosixPath(name).relative_to(prefix).as_posix() if prefix else name
-                            entries.append((relative, (Path(temporary) / name).read_bytes()))
-                for name, record in snapshot.snapshot.files.items():
-                    if name in snapshot.values:
+                pending, visited = [source_path], set()
+                while pending:
+                    name = pending.pop()
+                    if name in visited:
                         continue
-                    if not prefix or name.startswith(prefix + '/'):
-                        relative = PurePosixPath(name).relative_to(prefix).as_posix() if prefix else name
-                        payloads[relative] = (Path(temporary) / name).read_bytes()
+                    visited.add(name)
+                    candidate = snapshot.values[name]
+                    relative = PurePosixPath(name).relative_to(prefix).as_posix() if prefix else name
+                    entries.append((relative, (Path(temporary) / name).read_bytes()))
+                    for dependency in candidate['dependencies']:
+                        pending.append(_joined(prefix, dependency['path']))
+                    if candidate['kind'] == 'texture3d':
+                        texture = candidate['file']
+                        payloads[texture['path']] = (Path(temporary) / _joined(prefix, texture['path'])).read_bytes()
                 registry = Registry(entries, payloads=payloads)
                 report = dict(status='verified-native-registry', resources=len(entries))
             elif owner == 'rig':
