@@ -100,7 +100,7 @@ def _job(root, identifier):
             raise ValueError('analysis job file quota exceeded')
         if any(p.is_symlink() for p in entries):
             raise ValueError('analysis job contains an unsafe symbolic link')
-        for name in ('request.json','state.json','response.json','worker-response.json'):
+        for name in ('request.json','state.json','response.json','worker-response.json','retry.json'):
             file = path / name
             if file.exists() and (not file.is_file() or file.stat().st_size > MAX_RESPONSE_BYTES):
                 raise ValueError('analysis metadata file exceeds bounds')
@@ -217,8 +217,50 @@ def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_secon
     return status(root, identifier)
 
 
+def _recover_retry(root, identifier):
+    """Roll forward an explicitly requested retry after any interrupted step."""
+    job = _job(root, identifier)
+    journal = job / 'retry.json'
+    if not journal.exists():
+        return
+    transaction = read_json(journal)
+    names = ('worker.log', 'cancel', 'response.json', 'worker-response.json')
+    validate_structure(transaction, obj({'previous': STATE, 'next': STATE,
+        'files': {'type': 'object', 'additionalProperties': False,
+                  'properties': {name: HASH for name in names}}}), 'analysis retry journal')
+    previous, following = transaction['previous'], transaction['next']
+    request = read_json(job / 'request.json')
+    validate_structure(request, REQUEST, 'analysis retry request')
+    if hash_object(request) != identifier:
+        raise ValueError('analysis retry request changed')
+    expected = {key: previous[key] for key in ('attempts','request_sha256','applied_revision','error')}
+    expected.update(status='ready' if request['backend'] == 'opencv-haar' else 'awaiting-external', error=None)
+    if (previous['request_sha256'] != identifier or following != expected or
+            (previous['status'] not in ('failed', 'cancelled', 'interrupted') and 'cancel' not in transaction['files']) or previous['attempts'] >= 3):
+        raise ValueError('invalid analysis retry transition')
+    history = safe_path(root, 'analysis-jobs/' + identifier + '/attempt-' + str(previous['attempts']))
+    if read_json(safe_path(history, 'state.json')) != previous:
+        raise ValueError('retry history state changed')
+    current = read_json(job / 'state.json')
+    if current not in (previous, following):
+        raise ValueError('retry live state changed')
+    # The complete old attempt is durable before deleting any live artifact.
+    for name, digest in transaction['files'].items():
+        retained = safe_path(history, name)
+        if not retained.is_file() or sha(retained) != digest:
+            raise ValueError('retry history artifact changed')
+        live = job / name
+        if live.exists():
+            if sha(live) != digest:
+                raise ValueError('retry live artifact changed')
+            live.unlink()
+    atomic_json(job / 'state.json', following)
+    journal.unlink()
+
+
 def status(root, identifier):
     job = _job(root, identifier)
+    _recover_retry(root, identifier)
     request = read_json(job / 'request.json')
     if hash_object(request) != identifier:
         raise ValueError('analysis request changed')
@@ -330,7 +372,7 @@ def run(root, identifier):
         state.update(status='cancelled', error='Cancelled before dispatch')
         atomic_json(job / 'state.json', state)
         return status(root, identifier)
-    if state['status'] == 'running':
+    if state['status'] in ('running', 'interrupted'):
         # A completed child may have survived a controller crash. Ingest its
         # exact result; otherwise never repeat an uncertain execution.
         if (job / 'worker-response.json').is_file():
@@ -423,6 +465,8 @@ def retry(root, identifier):
                 raise ValueError('completed worker response must be recovered before retry')
     history = safe_path(root, 'analysis-jobs/' + identifier + '/attempt-' + str(info['attempts']))
     history.mkdir(exist_ok=True)
+    previous = read_json(job / 'state.json')
+    files = {}
     for name in ('state.json','worker.log','cancel','response.json','worker-response.json'):
         path = safe_path(root, 'analysis-jobs/' + identifier + '/' + name)
         target = safe_path(root, 'analysis-jobs/' + identifier + '/' + history.name + '/' + name)
@@ -441,10 +485,11 @@ def retry(root, identifier):
                     if temporary.exists():
                         temporary.unlink()
             if name != 'state.json':
-                path.unlink()
+                files[name] = sha(path)
     state = {key: info[key] for key in ('attempts','request_sha256','applied_revision','error')}
     state.update(status='ready' if info['request']['backend'] == 'opencv-haar' else 'awaiting-external', error=None)
-    atomic_json(job / 'state.json', state)
+    atomic_json(job / 'retry.json', {'previous': previous, 'next': state, 'files': files})
+    _recover_retry(root, identifier)
     return status(root, identifier)
 
 

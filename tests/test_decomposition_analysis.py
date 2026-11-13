@@ -227,6 +227,51 @@ class AnalysisTests(unittest.TestCase):
             self.assertEqual(result['status'],'interrupted')
             self.assertEqual(analysis.run(self.root,job['job'])['status'],'interrupted')
 
+    def test_late_completed_worker_is_recovered_without_redispatch(self):
+        model={'provider':'synthetic-fixture','name':'none','version':'late','files':[],
+               'identity_evidence':'Synthetic recovery fixture; no model execution'}
+        with mock.patch.object(analysis,'_model',return_value=model):
+            job=analysis.prepare(self.root,'opencv-haar',enabled=True)
+        folder=self.root/'analysis-jobs'/job['job']
+        state=json.loads((folder/'state.json').read_text())
+        state.update(status='running',attempts=1);atomic_json(folder/'state.json',state)
+        with mock.patch.object(analysis.subprocess,'Popen',side_effect=AssertionError('must not dispatch')):
+            self.assertEqual(analysis.run(self.root,job['job'])['status'],'interrupted')
+            response=self.response(job);response['model']=model;response['evidence']['execution']='local'
+            atomic_json(folder/'worker-response.json',response)
+            recovered=analysis.run(self.root,job['job'])
+            self.assertEqual(recovered['status'],'proposed')
+            self.assertEqual(recovered['attempts'],1)
+            self.assertEqual(analysis.run(self.root,job['job'])['status'],'proposed')
+
+    def test_retry_crash_recovers_before_and_after_final_state_write(self):
+        for after_write in (False, True):
+            with self.subTest(after_write=after_write):
+                job=self.prepare(prompt=str(after_write))
+                failed=self.response(job);failed.update(status='failed',errors=['Fixture failure'])
+                failed['annotation']['components']=[]
+                self.ingest(job,failed)
+                folder=self.root/'analysis-jobs'/job['job']
+                original_response=(folder/'response.json').read_bytes()
+                real_atomic=analysis.atomic_json
+                def interrupted(path, value):
+                    if Path(path) == folder/'state.json':
+                        if after_write:
+                            real_atomic(path,value)
+                        raise RuntimeError('Injected controller crash')
+                    return real_atomic(path,value)
+                with mock.patch.object(analysis,'atomic_json',side_effect=interrupted):
+                    with self.assertRaisesRegex(RuntimeError,'Injected'):
+                        analysis.retry(self.root,job['job'])
+                self.assertTrue((folder/'retry.json').is_file())
+                self.assertEqual((folder/'attempt-1/response.json').read_bytes(),original_response)
+                recovered=analysis.status(self.root,job['job'])
+                self.assertEqual(recovered['status'],'awaiting-external')
+                self.assertFalse((folder/'retry.json').exists())
+                self.assertFalse(recovered['response_available'])
+                self.assertEqual(self.ingest(job)['attempts'],2)
+                self.assertEqual(self.original,(self.root/'decomposition.json').read_bytes())
+
     def test_runtime_timeout_kills_real_subprocess_and_keeps_manual_route(self):
         model={'provider':'synthetic-fixture','name':'none','version':'test','files':[], 'identity_evidence':'No detector used by timeout test'}
         with mock.patch.object(analysis,'_model',return_value=model):
