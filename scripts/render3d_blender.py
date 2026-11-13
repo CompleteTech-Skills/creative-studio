@@ -151,11 +151,22 @@ def _static_state(bundle,scene,shot):
     require(not shot['tracks'] and not shot['bindings'] and not shot['temporal_constraints']
             and not shot['material_overrides'],'unsupported-feature','Dynamic Scene3D shots require the temporal owner adapter.')
     require(not shot['camera_overrides'],'unsupported-feature','Camera overrides require the camera owner adapter.')
-    nodes=evaluate_transforms(scene)
-    collections={item['id']:item['visible'] for item in scene['collections']}
-    layers={item['id']:item['visible'] for item in scene['layers']}
-    for node in scene['nodes']:
-        nodes[node['id']]['visible'] &= node['render']['visible'] and all(collections[c] for c in node['collections']) and all(layers[l] for l in node['layers'])
+    try:
+        from scene3d_graph import SceneGraph
+    except ImportError:
+        # Legacy transform-only evaluation cannot establish inherited render/ray
+        # masks. Reject those options rather than silently using local flags.
+        require(all(node['render']['visible'] and node['render']['cast_shadow'] and
+                    node['render']['receive_shadow'] and node['render'].get('camera_visible',True)
+                    for node in scene['nodes']) and
+                all(group['visible'] and group.get('render_visible',True)
+                    for group in [*scene['collections'],*scene['layers']]),
+                'unsupported-feature','Nondefault render/ray/group visibility requires the authoritative SceneGraph evaluator.')
+        nodes=evaluate_transforms(scene)
+    else:
+        nodes=SceneGraph(scene).evaluate_base()
+        for node in scene['nodes']:
+            nodes[node['id']]['visible']=nodes[node['id']]['render_visible']
     return dict(nodes=nodes,world=scene['world'],camera=shot['camera'])
 
 
@@ -212,6 +223,11 @@ def _prepare_scene(request,snapshot_root,workspace):
                 'Evaluated physical world lights require the authoritative look-development adapter.')
         for entry in nodes:
             node_state=state['nodes'][entry['id']]
+            visible=bool(node_state['visible'])
+            require(bool(node_state.get('camera_visible',visible))==visible,
+                    'unsupported-feature','Camera-only visibility requires the authoritative ray visibility adapter.')
+            require(not visible or bool(node_state.get('cast_shadow',entry['cast_shadow']))==bool(entry['cast_shadow']),
+                    'unsupported-feature','Inherited shadow visibility requires the authoritative ray visibility adapter.')
             require(not node_state.get('material_overrides') and not node_state.get('light_binding'),'unsupported-feature',
                     'Evaluated material and physical light overrides require the authoritative look-development adapter.')
             require(not node_state.get('native_pose'),'unsupported-feature',
