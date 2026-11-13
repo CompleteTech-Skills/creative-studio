@@ -127,3 +127,9 @@ particles, two-way coupling, arbitrary complex moving obstacles and the full
 Physics Laboratory remain unverified or unsupported. Signed surface volume is
 a diagnostic and is not a certified mass-conservation measurement. No parent
 Physics issue is closed by this profile.
+
+The native control gate also requests `GEOMETRY` flow explicitly and checks
+its retained setting, evolving nontrivial native mesh and fresh-process
+reopen. Until that current-head gate executes, initial-volume mapping is
+implemented with native execution still unverified; historical `INFLOW`
+fixtures do not establish it.

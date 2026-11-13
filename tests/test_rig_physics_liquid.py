@@ -108,14 +108,20 @@ class NativeLiquidTests(unittest.TestCase):
         results={}
         caches={}
         with ExitStack() as stack:
-            for case,options in [('baseline',{}),('viscous',dict(viscosity=.01)),('stationary',dict(stationary_paddle=True)),('moving',dict(moving=True)),('uncontained',dict(container=False))]:
+            for case,options in [('baseline',{}),('viscous',dict(viscosity=.01)),('stationary',dict(stationary_paddle=True)),('moving',dict(moving=True)),('uncontained',dict(container=False)),('geometry',{})]:
                 with self.subTest(case=case):
                     root=stack.enter_context(self.workspace(case))
                     world,payloads,settings=build_liquid_inputs(**options)
                     if case in ('baseline','viscous','uncontained'):settings['boundaries']['bottom']=False
+                    if case=='geometry':settings['flow_behavior']='GEOMETRY'
                     report=simulate(world,payloads,root,settings=settings)
                     self.assertTrue(report['geometry']['reopened_geometry_verified'])
                     results[case]=[x['mesh_sha256'] for x in report['geometry']['samples']]
+                    if case=='geometry':
+                        retained=core.parse((root/'liquid-settings.json').read_bytes())
+                        self.assertEqual(retained['flow_behavior'],'GEOMETRY')
+                        self.assertTrue(any(x['vertex_count']>8 for x in report['geometry']['samples']))
+                        self.assertGreater(len(set(results[case])),1)
                     if case in ('baseline','viscous','uncontained'):caches[case]=root
             acceptance=evaluate_caches(caches)
             evidence=os.environ.get('HATCH_LIQUID_EVIDENCE')
