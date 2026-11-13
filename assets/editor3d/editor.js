@@ -450,6 +450,7 @@ function checkCommitContext(envelope, previewEdit) {
       (previewEdit && !canEditPreview()))
     throw Error("The selected timeline or evaluated preview changed while preparing the edit. Reapply at the intended frame.");
 }
+
 function setBusy(value) {
   busy = value;
   inspect();
@@ -465,6 +466,7 @@ function rejectPendingEdit() {
   if (!busy) return false;
   $("status").textContent = "Save in progress; retry this edit when saving finishes.";
   return true;
+
 
 }
 async function commit(commands) {
@@ -674,6 +676,7 @@ async function assetObject(asset) {
         materialFromNative(asset.materials[mesh.material] || {}, asset.images),
       );
       object.name = mesh.name || mesh.id;
+      object.userData.nativeMeshId = mesh.id;
       group.add(object);
     }
     return group;
@@ -715,7 +718,14 @@ async function install(snapshot) {
     if (["prefab_instance", "billboard_2d"].includes(node.type)) unavailableNodes.set(node.id, "No exact viewport adapter for " + node.type);
     if (node.asset) {
       const reference = node.asset;
-      const asset = assets[JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])];
+      const component = node.metadata?.source_component;
+      let asset = component !== undefined ? snapshot.viewport_nodes?.[node.id] :
+        assets[JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])];
+      if (component !== undefined && asset?.format !== "unavailable" &&
+          (asset?.source_component !== component || !asset.asset_reference ||
+           JSON.stringify([asset.asset_reference.id, asset.asset_reference.version, asset.asset_reference.path, asset.asset_reference.sha256]) !==
+           JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])))
+        asset = {format: "unavailable", message: "No exact native component projection."};
       if (asset && asset.format !== "unavailable") {
         try {
           const actual = await assetObject(asset);

@@ -592,6 +592,7 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                     finally: browser.close()
             finally: server.shutdown(); server.server_close(); thread.join(timeout=5)
 
+
     def test_pending_and_consecutive_numeric_edits_preserve_control_state(self):
         from tempfile import TemporaryDirectory
         from editor3d_repository import EditorRepository
@@ -647,6 +648,7 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                         browser.close()
             finally:
                 server.shutdown(); server.server_close(); thread.join(timeout=5)
+
 
 
     def test_numeric_group_undo_redo_and_reopen_are_real_native_edits(self):
