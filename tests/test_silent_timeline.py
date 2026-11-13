@@ -120,6 +120,26 @@ class TimelineTests(unittest.TestCase):
             timeline.assemble(self.shots, self.destination)
         self.assertEqual(marker.read_text(), 'preserve')
 
+    def test_stage_basename_replacement_cannot_publish_foreign_payload(self):
+        original_rename = timeline._rename_no_replace
+        replacements = []
+
+        def replace_wrapper(source, destination, **kwargs):
+            wrapper = Path(os.readlink('/proc/self/fd/' + str(kwargs['source_dir_fd'])))
+            wrapper.rename(wrapper.with_name(wrapper.name + '-retained'))
+            wrapper.mkdir()
+            foreign = wrapper / 'payload'
+            foreign.mkdir()
+            (foreign / 'unverified.txt').write_text('preserve unrelated replacement')
+            replacements.append(foreign)
+            return original_rename(source, destination, **kwargs)
+
+        with patch.object(timeline, '_rename_no_replace', side_effect=replace_wrapper):
+            timeline.assemble(self.shots, self.destination)
+        self.assertEqual(len(timeline.validate(self.destination)['mapping']), 240)
+        self.assertFalse((self.destination / 'unverified.txt').exists())
+        self.assertEqual((replacements[0] / 'unverified.txt').read_text(), 'preserve unrelated replacement')
+
     def test_duplicate_identity_and_extra_frame_are_rejected(self):
         shots = deepcopy(self.shots)
         shots[1]['id'] = shots[0]['id']

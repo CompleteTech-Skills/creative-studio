@@ -10,10 +10,10 @@ import io
 import json
 import os
 from pathlib import Path
-import tempfile
 
 from PIL import Image
 from atomic_publish import _rename_no_replace
+from silent_staging import payload_stage
 import silent_video as video
 
 
@@ -121,8 +121,7 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
     if not combined or len(combined) > video.MAX_FRAMES:
         raise ValueError('complete bounded combined image inventory required')
     with video._pin_directory(destination.parent) as parent_fd:
-        with tempfile.TemporaryDirectory(prefix='.silent-render3d-', dir=Path('/proc/self/fd') / str(parent_fd)) as tmp:
-            stage = Path(tmp)
+        with payload_stage(parent_fd, '.silent-render3d-') as (stage, wrapper_fd):
             (stage / 'frames').mkdir()
             mapping, paths, total = [], [], 0
             for index, item in enumerate(combined):
@@ -162,5 +161,5 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
             (stage / 'source.json').write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
             if cancel is not None and cancel():
                 raise ValueError('silent source preparation cancelled before publication')
-            _rename_no_replace(stage.name, destination.name, source_dir_fd=parent_fd, destination_dir_fd=parent_fd)
+            _rename_no_replace('payload', destination.name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
     return report
