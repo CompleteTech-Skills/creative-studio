@@ -149,7 +149,7 @@ def generate_lods(geometry,*,cell_sizes,source_version,regenerate_normals=False,
     budgets=dict(budgets or {});per_part=dict(per_part or {})
     require(set(per_part)<=set(geometry.by_id()) and all(isinstance(v,dict) and set(v)<={'vertices','triangles'} for v in per_part.values()),'MODEL3D_LOD_BUDGET','Invalid per-part budget.')
     for value in [*budgets.values(),*(v for p in per_part.values() for v in p.values())]:
-        require(type(value) is int and value>0,'MODEL3D_LOD_BUDGET','Budgets must be positive integers.')
+        require(type(value) is int and 0<value<=2**53-1,'MODEL3D_LOD_BUDGET','Budgets must be bounded positive integers.')
     require(not geometry.images and not geometry.textures,'MODEL3D_LOD_ATTRIBUTE','Textured simplification needs a UV-aware backend; retain source and choose another policy.')
     require(len(geometry.materials)<=budgets.get('materials',4096),'MODEL3D_LOD_BUDGET','Material budget exceeded.')
     estimated=sum(m.positions.nbytes+m.triangles.nbytes+sum(a.nbytes for a in m.attributes.values())
@@ -171,7 +171,7 @@ def generate_lods(geometry,*,cell_sizes,source_version,regenerate_normals=False,
         require(result.vertex_count<=budgets.get('vertices',limits['vertices']) and result.triangle_count<=budgets.get('triangles',limits['triangles']),'MODEL3D_LOD_BUDGET','LOD exceeds hard asset budget.')
         require(result.triangle_count<levels[-1].triangle_count,'MODEL3D_LOD_REDUCTION','Each requested LOD must actually reduce triangle count; choose different explicit cells.')
         levels.append(result);reports.append(dict(level=len(levels)-1,cell_size=size,vertices=result.vertex_count,triangles=result.triangle_count,parts=parts))
-    return LODResult(tuple(levels),dict(schema_version=1,kind='hatch-model3d-lods',source_version=source_version,source_meshes={m.id:mesh_hash(m) for m in geometry.meshes},materials_sha256=hashlib.sha256(json.dumps(geometry.materials,sort_keys=True,allow_nan=False).encode()).hexdigest(),levels=reports,source_preserved=True,limitations=['Smooth position-only remeshing; no texture/UV/hard-edge/morph simplification.','Self-intersection measurements unavailable; source orientation/manifold/boundary gates execute.','Registry publication and nonmesh dependency invalidation remain with owning lifecycle service.']))
+    return LODResult(tuple(levels),dict(schema_version=1,kind='hatch-model3d-lods',source_version=source_version,source_meshes={m.id:mesh_hash(m) for m in geometry.meshes},policy=dict(max_distance_m=float(max_distance),min_silhouette_iou=float(min_silhouette_iou),regenerate_normals=regenerate_normals,budgets=dict(budgets),per_part=copy.deepcopy(per_part),protected_vertices={k:list(v) for k,v in protected_vertices.items()},native_limits=dict(limits)),materials_sha256=hashlib.sha256(json.dumps(geometry.materials,sort_keys=True,allow_nan=False).encode()).hexdigest(),levels=reports,source_preserved=True,limitations=['Smooth position-only remeshing; no texture/UV/hard-edge/morph simplification.','Self-intersection measurements unavailable; source orientation/manifold/boundary gates execute.','Registry publication and nonmesh dependency invalidation remain with owning lifecycle service.']))
 
 
 def export_lods(result,destination,*,format='glb',source_snapshot=None):

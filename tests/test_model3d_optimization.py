@@ -30,6 +30,9 @@ class OptimizationTests(unittest.TestCase):
             self.assertEqual(level.materials,self.geometry.materials)
             self.assertEqual((level.meshes[0].id,level.meshes[0].name,level.meshes[0].region),('face','Face','head'))
         self.assertGreater(result.report['levels'][1]['parts'][0]['comparison']['sampled_surface_distance_max'],0)
+        self.assertEqual(result.report['policy']['max_distance_m'],.15)
+        self.assertEqual(result.report['policy']['min_silhouette_iou'],.85)
+        self.assertTrue(result.report['policy']['regenerate_normals'])
     def test_distinct_parts_material_slots_and_attachment_vertices_survive(self):
         second=copy.deepcopy(self.mesh);second.id='body';second.name='Body';second.region='torso'
         second.material=1;second.positions=second.positions+np.array([2.,0.,0.])
@@ -91,6 +94,7 @@ class OptimizationTests(unittest.TestCase):
             with self.assertRaises(RigError):compare_meshes(self.mesh,self.mesh,**kwargs)
         with self.assertRaises(RigError):repair_mesh(self.mesh,policy={'orient':'yes'})
         with self.assertRaises(RigError):self.generate(budgets={'bogus':4})
+        with self.assertRaises(RigError):self.generate(budgets={'triangles':10**5000})
         for options in [dict(cell_sizes=[1,10**1000]),dict(cell_sizes=[.08,.16],max_distance=10**1000)]:
             with self.assertRaises(RigError):generate_lods(self.geometry,source_version='v',**options)
 
