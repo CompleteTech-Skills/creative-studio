@@ -1,0 +1,49 @@
+[
+  {
+    "backend": "blender",
+    "requested_extra_skin_m": 0.05,
+    "expected_height_if_extra_skin_m": 0.55,
+    "actual_resting_height_m": 0.5,
+    "extra_skin_behavior_verified": false,
+    "native_observation": {
+      "angular_damping": 0.0,
+      "collision_margin": 0.05000000074505806,
+      "effective_mass": 0.0,
+      "friction": 0.5,
+      "id": "floor",
+      "linear_damping": 0.0,
+      "restitution": 0.0,
+      "shape": "BOX",
+      "type": "PASSIVE"
+    },
+    "source": "actual numerical solver control, not readiness evidence",
+    "world_sha256": "68b08f4714a163fc11bd09f166bfd53506c56beb45d6ec56b2a3d21201c86091"
+  },
+  {
+    "backend": "pybullet",
+    "requested_extra_skin_m": 0.05,
+    "expected_height_if_extra_skin_m": 0.55,
+    "actual_resting_height_m": 0.4999899999999703,
+    "extra_skin_behavior_verified": false,
+    "native_observation": {
+      "center_of_mass": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "friction": 0.5,
+      "id": "floor",
+      "inertia": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "margin_semantics": "explicit box collision margin",
+      "mass": 0.0,
+      "native_margin": 0.05,
+      "restitution": 0.0
+    },
+    "source": "actual numerical solver control, not readiness evidence",
+    "world_sha256": "7c3356c258809f25f38de845cc1ca15e47ba809682fb85d6e80065f8fcc1ab78"
+  }
+]
