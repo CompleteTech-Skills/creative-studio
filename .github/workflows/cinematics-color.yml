@@ -8,6 +8,8 @@ on:
       - 'requirements-color*.txt'
       - 'schemas/cinematics-color-v1/**'
       - 'tests/optional/test_cinematics3d_color.py'
+      - 'tests/optional/test_cinematics_color_capability_linux.py'
+      - 'scripts/rig_errors.py'
       - 'tests/fixtures/cinematics-color/**'
       - '.github/workflows/cinematics-color.yml'
   push:
@@ -16,6 +18,8 @@ on:
       - 'requirements-color*.txt'
       - 'schemas/cinematics-color-v1/**'
       - 'tests/optional/test_cinematics3d_color.py'
+      - 'tests/optional/test_cinematics_color_capability_linux.py'
+      - 'scripts/rig_errors.py'
       - 'tests/fixtures/cinematics-color/**'
       - '.github/workflows/cinematics-color.yml'
   workflow_dispatch:
@@ -43,8 +47,13 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r requirements-color-test.txt
       - run: python -m unittest discover -s tests/optional -p test_cinematics3d_color.py -v 2>&1 | tee color-tests.log
+      - name: Exercise explicit pinned directory authority on Linux
+        if: runner.os == 'Linux'
+        run: python -m unittest discover -s tests/optional -p test_cinematics_color_capability_linux.py -v 2>&1 | tee color-capability-tests.log
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: color-tests-${{ matrix.os }}
-          path: color-tests.log
+          path: |
+            color-tests.log
+            color-capability-tests.log

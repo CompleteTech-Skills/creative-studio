@@ -35,6 +35,12 @@ class ColorTests(unittest.TestCase):
     def plan(self, **kwargs):
         return color.make_plan(self.root, self.inventory, self.source, **kwargs)
 
+    def test_bounded_numbers_reject_unrepresentable_integers_clearly(self):
+        for value in (10**400, -(10**400), True, float('inf'), float('nan')):
+            with self.subTest(value_type=type(value).__name__):
+                with self.assertRaises(ValueError):
+                    self.plan(exposure_stops=value)
+
     def test_actual_standard_chart_matches_independent_srgb_reference_once(self):
         values = np.array([[0., .0031308, .18, 1.], [.5, 1., 4., .5]], dtype=np.float32)
         result, receipt = color.transform_pixels(self.root, self.plan(), values)

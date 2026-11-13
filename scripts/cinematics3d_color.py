@@ -11,10 +11,9 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
-import stat
 import tempfile
 
-from rig_errors import finite_json, object_hash
+from rig_errors import RigError, finite_json, object_hash, normalize_root, open_payload
 
 VERSION = 1
 OCIO_VERSION = '2.5.2'
@@ -50,7 +49,8 @@ def _sha(value):
 
 
 def _number(value, low, high):
-    _need(type(value) in (int, float) and math.isfinite(value) and low <= value <= high, 'invalid bounded number')
+    _need(type(value) in (int, float) and low <= value <= high, 'invalid bounded number')
+    _need(math.isfinite(value), 'invalid bounded number')
 
 
 def _path(value):
@@ -62,44 +62,29 @@ def _path(value):
     return value
 
 
+def _root(root):
+    # normalize_root preserves only explicitly registered descriptor roots.
+    # Unregistered procfs paths and ordinary symbolic roots remain rejected.
+    root = Path(root).absolute()
+    try:
+        normalized = normalize_root(root)
+        _need(normalized == root and root.is_dir(), 'color profile root cannot traverse symlinks')
+    except (OSError, RigError) as exc:
+        raise ValueError('unsafe/unavailable color root: '+str(exc)) from exc
+    return normalized
+
+
 def _bytes(root, name, limit):
     _path(name)
-    root = Path(root).absolute()
-    target = root/name
+    root = _root(root)
     try:
-        _need(root.resolve() == root and target.resolve().is_relative_to(root), 'redirected color path')
-        for ancestor in [target, *target.parents]:
-            _need(not ancestor.is_symlink(), 'color symlink is unsupported')
-        before = target.lstat()
-    except OSError as exc:
-        raise ValueError('unsafe/unavailable color payload: '+str(exc)) from exc
-    _need(stat.S_ISREG(before.st_mode) and before.st_size <= limit, 'color payload must be a bounded regular file')
-    descriptors = []
-    flags = os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0)
-    def identity(info):
-        value = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
-        return value if os.name == 'nt' else value + (info.st_ctime_ns,)
-    try:
-        if os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW'):
-            directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-            descriptors.append(os.open(root.anchor, directory_flags))
-            for part in [*root.parts[1:], *PurePosixPath(name).parts[:-1]]:
-                descriptors.append(os.open(part, directory_flags, dir_fd=descriptors[-1]))
-            descriptor = os.open(PurePosixPath(name).name, flags, dir_fd=descriptors[-1])
-        else:
-            descriptor = os.open(target, flags)
-        with os.fdopen(descriptor, 'rb') as stream:
-            opened = os.fstat(stream.fileno())
-            _need(stat.S_ISREG(opened.st_mode) and identity(opened) == identity(before), 'color file changed while opening')
+        with open_payload(root, name) as (stream, before):
+            _need(before.st_size <= limit, 'color payload must be a bounded regular file')
             payload = stream.read(limit+1)
-            _need(len(payload) <= limit and identity(os.fstat(stream.fileno())) == identity(before)
-                  and identity(target.lstat()) == identity(before), 'color file changed while reading')
+            _need(len(payload) <= limit, 'color payload byte budget exceeded')
             return payload
-    except OSError as exc:
+    except (OSError, RigError) as exc:
         raise ValueError('unsafe/unavailable color payload: '+str(exc)) from exc
-    finally:
-        for descriptor in reversed(descriptors):
-            os.close(descriptor)
 
 
 def _hash(payload):
@@ -233,9 +218,8 @@ def _yaml(payload):
 
 def capture_config(root, config_path='config.ocio'):
     """Inventory a closed, bounded config/LUT profile, independently of OCIO env."""
-    root = Path(root).absolute()
+    root = _root(root)
     _path(config_path)
-    _need(root.is_dir() and root.resolve() == root, 'color profile root cannot traverse symlinks')
     names = []
     aliases = set()
     directories = 0
@@ -316,8 +300,7 @@ def verify_config(root, inventory):
     independently interpret OCIO/YAML or authenticate who admitted the profile.
     """
     inventory = validate_inventory(inventory)
-    root = Path(root).absolute()
-    _need(root.is_dir() and root.resolve() == root, 'color root cannot traverse symlinks')
+    root = _root(root)
     names = []
     directories = 0
     for directory, subdirs, files in os.walk(root, followlinks=False):
