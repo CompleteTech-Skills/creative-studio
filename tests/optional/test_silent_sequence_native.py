@@ -129,6 +129,29 @@ class SequenceImages(unittest.TestCase):
         self.assertEqual((stage/'unverified.txt').read_text(),'unrelated replacement')
         self.assertTrue((self.root/'original-verified-cache/frames/000000.png').is_file())
 
+    def test_nested_destination_descriptor_pins_publication_across_parent_rename(self):
+        from rig_errors import directory_capability
+        source=self.source(count=1)
+        parent=self.root/'nested';parent.mkdir()
+        descriptor=os.open(parent,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+        swapped=[False]
+        def rename_parent():
+            if not swapped[0]:
+                swapped[0]=True
+                parent.rename(self.root/'original-parent');parent.mkdir()
+                (parent/'foreign.txt').write_text('unrelated replacement')
+            return False
+        try:
+            report=sequence.export_sequence(source,self.root,'verified',provenance=self.identity,
+                destination_dir_fd=descriptor,cancel=rename_parent)
+            with directory_capability(descriptor) as authority:
+                self.assertEqual(sequence.verify_sequence(authority.path/'verified'),report)
+            self.assertTrue(os.fstat(descriptor))
+            self.assertTrue((self.root/'original-parent/verified/frames/000000.png').is_file())
+            self.assertEqual([path.name for path in parent.iterdir()],['foreign.txt'])
+            self.assertEqual((parent/'foreign.txt').read_text(),'unrelated replacement')
+        finally:os.close(descriptor)
+
     @unittest.skipUnless(os.name=='posix','requires POSIX directory handles')
     def test_partial_cleanup_pins_parent_across_directory_symlink_swap(self):
         stage=self.root/'cleanup';stage.mkdir();(stage/'frames').mkdir()

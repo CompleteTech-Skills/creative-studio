@@ -419,12 +419,15 @@ def _publish_cache(stage,source,report,parent_fd,destination):
         finally:os.close(payload_fd)
 
 
-def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=None,_native_token=None):
+def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=None,
+                    destination_dir_fd=None,_native_token=None):
     """Export exact bytes; interrupted staging is reusable on explicit retry.
 
     Destination is immutable and exclusive. Staging is a sibling directory
     bound to the complete source/provenance identity, not a guessed frame cache.
-    Damaged or foreign staging is rejected, never overwritten.
+    Damaged or foreign staging is rejected, never overwritten. Nested trusted
+    transactions may supply destination_dir_fd and one portable destination
+    basename; the canonical media context duplicates the FD for this operation.
     """
     if not publication_supported():raise ValueError('secure sequence publication is unavailable on this platform')
     _capability_factory()  # Fail before touching an output/staging directory.
@@ -433,11 +436,11 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
         raise ValueError('native sources require export_native_sequence and canonical closure verification')
     if not isinstance(provenance,dict) or not provenance:raise ValueError('explicit sequence provenance required')
     plan={'source':source,'provenance':copy.deepcopy(provenance)}
-    destination=media._destination(destination)
-    if stage_name is None:stage_name='.'+destination.name+'.sequence-stage'
-    if not isinstance(stage_name,str) or not stage_name or '/' in stage_name or '\\' in stage_name or stage_name in ('.','..') or stage_name==destination.name:
-        raise ValueError('sequence stage must be a separate sibling basename')
-    with pinned_directory(destination.parent) as parent_fd:
+    with media.destination_directory(destination,destination_dir_fd=destination_dir_fd) as (name,parent_fd):
+        destination=Path(name)
+        if stage_name is None:stage_name='.'+destination.name+'.sequence-stage'
+        if not isinstance(stage_name,str) or not stage_name or '/' in stage_name or '\\' in stage_name or stage_name in ('.','..') or stage_name==destination.name:
+            raise ValueError('sequence stage must be a separate sibling basename')
         parent=Path('/proc/self/fd')/str(parent_fd)
         created_stage=True
         try:os.mkdir(stage_name,mode=0o700,dir_fd=parent_fd)

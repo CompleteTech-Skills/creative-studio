@@ -784,8 +784,14 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         return receipt
 
 
-def encode(request, root, destination, *, destination_dir_fd=None, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
-    validate_request(request)
+@contextmanager
+def destination_directory(destination, *, destination_dir_fd=None):
+    """Yield one portable basename and an owned destination-directory FD.
+
+    An explicitly supplied descriptor is duplicated for this context only.
+    Ordinary paths retain strict no-symlink admission and pinned publication.
+    Nested transactions reuse this authority rather than admitting proc aliases.
+    """
     if destination_dir_fd is not None:
         name = _destination_name(destination)
         if type(destination_dir_fd) is not int or destination_dir_fd < 0:
@@ -794,13 +800,19 @@ def encode(request, root, destination, *, destination_dir_fd=None, ffmpeg=None, 
         try:
             if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
                 raise ValueError('destination descriptor must identify an open directory')
-            return _encode_pinned(request, root, name, descriptor, ffmpeg=ffmpeg,
-                                  ffprobe=ffprobe, cancel=cancel, progress=progress)
+            yield name, descriptor
         finally:
             os.close(descriptor)
-    destination = _destination(destination)
-    with _pin_directory(destination.parent) as parent_fd:
-        return _encode_pinned(request, root, destination.name, parent_fd, ffmpeg=ffmpeg,
+    else:
+        destination = _destination(destination)
+        with _pin_directory(destination.parent) as parent_fd:
+            yield destination.name, parent_fd
+
+
+def encode(request, root, destination, *, destination_dir_fd=None, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
+    validate_request(request)
+    with destination_directory(destination, destination_dir_fd=destination_dir_fd) as (name, descriptor):
+        return _encode_pinned(request, root, name, descriptor, ffmpeg=ffmpeg,
                               ffprobe=ffprobe, cancel=cancel, progress=progress)
 
 
