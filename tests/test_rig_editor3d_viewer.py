@@ -323,6 +323,9 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                         saved=EditorRepository(repository.root).snapshot()
                         node=next(n for n in saved['scene']['nodes'] if n['id']=='mesh')
                         self.assertTrue(node['parent'].startswith('group-'))
+                        # The app strips the bearer fragment; navigating to the same
+                        # path with a fragment is only an in-document navigation.
+                        page.goto('about:blank')
                         page.goto(server.url)
                         page.wait_for_function('() => window.editorReady === true && window.hatchEditor.snapshot.revision === 4')
                         page.locator('[data-id="mesh"]').click()
