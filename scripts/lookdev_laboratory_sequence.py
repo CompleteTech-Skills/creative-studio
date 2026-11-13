@@ -15,6 +15,21 @@ from rig_errors import require
 ROOT=Path(__file__).resolve().parents[1]
 
 
+
+def canonical_fixture_triangles(polygons):
+    """Freeze cyclic face roots and triangle order without reversing winding."""
+    triangles=[]
+    for polygon in polygons:
+        indices=list(polygon)
+        require(len(indices)>=3 and all(type(index) is int and index>=0 for index in indices)
+                and len(set(indices))==len(indices), 'LOOKDEV_LAB_GEOMETRY', 'Expected simple indexed fixture faces.')
+        root=indices.index(min(indices))
+        indices=indices[root:]+indices[:root]
+        triangles.extend((indices[0],indices[index],indices[index+1])
+                         for index in range(1,len(indices)-1))
+    return sorted(triangles)
+
+
 def frame_parameters(frame):
     require(type(frame) is int and 0 <= frame <= 7, 'LOOKDEV_LAB_FRAME', 'Choose an integer frame 0–7.')
     t=frame/7

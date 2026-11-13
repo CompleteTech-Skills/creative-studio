@@ -4,13 +4,20 @@ from pathlib import Path
 import unittest
 from types import SimpleNamespace
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from lookdev_laboratory_sequence import frame_parameters,frame_documents,light_document,material_document,inspect_mesh_assignment
+from lookdev_laboratory_sequence import canonical_fixture_triangles,frame_parameters,frame_documents,light_document,material_document,inspect_mesh_assignment
 from lookdev_contracts import Registry,canonical_bytes
 from lookdev_blender import material_plan
 from lookdev_lighting import light_plan
 from rig_errors import RigError
 
 class SequenceTests(unittest.TestCase):
+    def test_fixture_faces_keep_exact_topology_across_loop_roots_and_face_order(self):
+        expected=canonical_fixture_triangles([[0,1,2,3],[4,5,6]])
+        self.assertEqual(expected,canonical_fixture_triangles([[6,4,5],[2,3,0,1]]))
+        self.assertNotEqual(expected,canonical_fixture_triangles([[0,3,2,1],[4,5,6]]))
+        for invalid in ([[1,1,2]],[[0,1]],[[-1,0,1]],[[True,1,2]]):
+            with self.assertRaises(RigError):canonical_fixture_triangles(invalid)
+
     def test_frames_are_bounded_integer_absolute_evaluations(self):
         expected=frame_documents(3)
         for frame in (7,0,6,1,5,2,4):frame_documents(frame)

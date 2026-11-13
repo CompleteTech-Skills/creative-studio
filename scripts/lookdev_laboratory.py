@@ -131,7 +131,11 @@ def run_sweep(destination, blender):
     temporary = temporary_root/destination.name
     temporary.mkdir(parents=True,exist_ok=False)
     environment['TMPDIR'] = str(temporary)
-    result=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=900,env=environment)
+    try:
+        result=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=900,env=environment)
+    except subprocess.TimeoutExpired as exc:
+        (destination/'render.log').write_bytes(exc.stdout or b'')
+        require(False,'LOOKDEV_LAB_TIMEOUT','Trusted sweep timed out; inspect retained render.log.')
     (destination/'render.log').write_bytes(result.stdout)
     require(result.returncode==0,'LOOKDEV_LAB_RENDER','Trusted Blender sweep failed; inspect retained render.log.')
     require(all(hashlib.sha256((ROOT/name).read_bytes()).hexdigest() == digest for name,digest in source_hashes.items()),

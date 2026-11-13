@@ -4,14 +4,28 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+import subprocess
 import numpy as np
 from PIL import Image
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from lookdev_laboratory import highlight_metrics,sweep_documents,measure_sweep
+from lookdev_laboratory import highlight_metrics,sweep_documents,measure_sweep,run_sweep
 from lookdev_contracts import Registry,canonical_bytes
 from rig_errors import RigError
 
 class LaboratoryTests(unittest.TestCase):
+    def test_timeout_preserves_partial_native_log_and_source_snapshot(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            destination=Path(temporary)/'sweep'
+            failure=subprocess.TimeoutExpired(['blender'],900,output=b'partial native diagnostic\n')
+            with patch('lookdev_laboratory.subprocess.run',side_effect=failure):
+                with self.assertRaises(RigError) as raised:run_sweep(destination,'blender')
+            self.assertEqual(raised.exception.report['code'],'LOOKDEV_LAB_TIMEOUT')
+            self.assertEqual((destination/'render.log').read_bytes(),b'partial native diagnostic\n')
+            self.assertTrue((destination/'source/scripts/lookdev_laboratory.py').is_file())
+            self.assertTrue((destination/'job.json').is_file())
+            self.assertFalse((destination/'measurements.json').exists())
+
     def test_nine_independent_canonical_combinations_with_one_controlled_surface(self):
         documents=sweep_documents()
         self.assertEqual({(x['surface']['metallic'],x['surface']['roughness']) for x in documents},

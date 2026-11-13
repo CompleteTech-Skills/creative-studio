@@ -9,7 +9,7 @@ job=json.loads(Path(sys.argv[sys.argv.index('--')+1]).read_text());sys.path.inse
 from lookdev_contracts import Registry,canonical_bytes,content_hash
 from lookdev_blender import material_plan,build_material,assign_material
 from lookdev_lighting import light_plan,build_light,build_environment
-from lookdev_laboratory_sequence import material_document,light_document,frame_documents,inspect_mesh_assignment
+from lookdev_laboratory_sequence import material_document,light_document,frame_documents,inspect_mesh_assignment,canonical_fixture_triangles
 from verify_lookdev_lighting import reset,render,radiance_fixture
 root=Path(job['destination']);outputs=[]
 
@@ -47,11 +47,7 @@ def sphere(name,location,scale,value,slot):
     # That changes actual Cycles triangles and defeats exact random-seek replay.
     original=obj.data
     vertices=[tuple(vertex.co) for vertex in original.vertices]
-    triangles=[]
-    for polygon in original.polygons:
-        indices=list(polygon.vertices)
-        triangles.extend((indices[0],indices[index],indices[index+1])
-                         for index in range(1,len(indices)-1))
+    triangles=canonical_fixture_triangles([list(polygon.vertices) for polygon in original.polygons])
     mesh=bpy.data.meshes.new(name+'-explicit-triangles')
     mesh.from_pydata(vertices,[],triangles);mesh.update()
     obj.data=mesh;bpy.data.meshes.remove(original)
