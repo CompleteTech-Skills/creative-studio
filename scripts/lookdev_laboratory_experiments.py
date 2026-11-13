@@ -9,7 +9,7 @@ import subprocess
 import time
 from rig_errors import require
 ROOT=Path(__file__).resolve().parents[1]
-FIXTURES={'shadows':'lookdev_laboratory_shadows.py'}
+FIXTURES={'shadows':'lookdev_laboratory_shadows.py','replay':'lookdev_laboratory_replay.py'}
 
 
 def run(experiment,destination,blender,*,python_site=None,temporary_root=None):
@@ -17,6 +17,7 @@ def run(experiment,destination,blender,*,python_site=None,temporary_root=None):
     destination=Path(destination).resolve();destination.mkdir(parents=True,exist_ok=False)
     inputs=sorted((ROOT/'scripts').glob('*.py'))+sorted((ROOT/'profiles').glob('*.json'))+[
         ROOT/'examples/lookdev-contracts/ceramic.json',ROOT/'tests/fixtures'/FIXTURES[experiment]]
+    if experiment=='replay':inputs.append(ROOT/'tests/fixtures/lookdev_laboratory_sequence.py')
     payloads={str(p.relative_to(ROOT)):p.read_bytes() for p in inputs}
     hashes={name:hashlib.sha256(data).hexdigest() for name,data in payloads.items()}
     snapshot=destination/'source'

@@ -58,3 +58,16 @@ centroid with reversed source position, increased displacement with elevation,
 near-zero contact visibility, and reduced displacement with increased distance.
 These checks apply to this fixed geometry and source setup. They need actual
 execution and visual inspection before demonstration C can be accepted.
+
+The CPU reference now explicitly disables animated seeds, adaptive sampling and
+light-tree sampling rather than inheriting factory defaults. A separate fixed
+`replay` experiment rebuilds frame 3 three times and records actual sampler,
+object matrices, mesh position/topology hashes, light values and material-plan
+hashes. It still requires bit-identical decoded float pixels. The initial run
+with inherited sampler defaults is retained as failed diagnostic evidence:
+independent OpenEXR 3.3.4 comparison measured maximum difference
+`1.549720764e-6`, mean `4.79028095e-10`, with no channel exceeding `1e-5`.
+Those measurements do not establish a passing replay or authorize a relaxed
+threshold. The explicit sampler replay must pass before the full suite reruns.
+Partial stage reports now preserve completed H/I observations if a later stage
+fails; their status remains incomplete until all scoped checks finish.
