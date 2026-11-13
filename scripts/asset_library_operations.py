@@ -44,7 +44,7 @@ MUTATIONS = frozenset(('register', 'import', 'import-batch', 'generate', 'previe
     'metadata.update', 'tags.add', 'tags.remove', 'collections.create', 'project.bind',
     'project.unbind', 'replace', 'repair', 'migrate', 'export', 'bundle.create',
     'bundle.restore', 'storage.gc.apply', 'storage.upgrade', 'storage.recover'))
-MANAGED = frozenset(('import', 'preview', 'thumbnail', 'turntable', 'export', 'index', 'bundle.create', 'bundle.restore','version','replace','repair'))
+MANAGED = frozenset(('generate','import', 'preview', 'thumbnail', 'turntable', 'export', 'index', 'bundle.create', 'bundle.restore','version','replace','repair'))
 
 
 def fail(code, message):
@@ -222,7 +222,7 @@ class AssetOperations:
         # mutable source bytes before any durable request is queued.
         adapter=self._adapter(operation,p)
         p=adapter.admit()
-        resources={'import':('cpu','blender','io','hash'),'preview':('preview','blender'),
+        resources={'generate':('cpu','blender','io','hash'),'import':('cpu','blender','io','hash'),'preview':('preview','blender'),
             'thumbnail':('preview','blender'),'turntable':('preview','blender'),
             'export':('cpu','blender','io'),'index':('index','io'),'bundle.create':('archive','io'),
             'bundle.restore':('archive','io'),'version':('io','hash'),'replace':('io','hash'),'repair':('io','hash')}[operation]
@@ -257,6 +257,7 @@ class OperationAdapter:
     def admit(self):
         p=self.parameters
         schemas={
+            'generate':({'identity','version','metadata','license_file','parameters'}, {'fixture','timeout','memory_bytes','blender'}),
             'import':({'source','identity','version','metadata','license_file'}, {'fixture','unit_scale','basis','ground','blender_roundtrip','trusted_packed_blend','timeout','memory_bytes','blender'}),
             'preview':({'reference','cache_root'}, {'config','logical_path','executable'}),
             'thumbnail':({'reference','cache_root'}, {'config','logical_path','executable'}),
@@ -289,6 +290,16 @@ class OperationAdapter:
             hashes=dict(package_sha256=module('packages').verify_package(_path(p['root'],exists=True))['package_sha256'])
             if p.get('input_hashes',hashes)!=hashes:fail('STALE','Package changed since queue admission.')
             p['input_hashes']=hashes
+        if self.operation=='generate':
+            validate(p['identity'],'AssetIdentity');validate(p['metadata'],'AssetMetadata')
+            validate(dict(id=p['identity']['id'],version=p['version'],sha256='0'*64),'AssetRef')
+            p['parameters']=module('import').generation_parameters(p['parameters'])
+            if type(p.get('fixture',False))is not bool:fail('REQUEST','Fixture policy must be a boolean.')
+            p['license_file']=str(_path(p['license_file'],exists=True))
+            import hashlib
+            hashes=dict(license_file=hashlib.sha256(read_source_bytes(p['license_file'],module('import').MAX_REPORT)).hexdigest())
+            if p.get('input_hashes',hashes)!=hashes:fail('STALE','Generation license bytes changed since admission.')
+            p['input_hashes']=hashes
         for key in ('destination','index','cache_root'):
             if key in p:p[key]=str(_path(p[key]))
         return p
@@ -299,7 +310,7 @@ class OperationAdapter:
 
     def stage(self,context):
         p=self.admit();context.check_cancelled();context.progress(0.05,'staging '+self.operation)
-        if self.operation=='import':
+        if self.operation in ('import','generate'):
             library=self._stage_library(context)
             existing=library.list_references()
             if existing:
@@ -308,7 +319,7 @@ class OperationAdapter:
                 return dict(reference=existing[0])
             args={k:v for k,v in p.items() if k not in ('timeout','memory_bytes','blender','input_hashes')}
             pipeline=module('import').ImportPipeline(library,timeout=p.get('timeout',60),memory_bytes=p.get('memory_bytes',1024**3),blender=p.get('blender'),cancelled=lambda: self._cancelled(context))
-            result=pipeline.import_asset(**args)
+            result=pipeline.generate(**args) if self.operation=='generate' else pipeline.import_asset(**args)
             self._prepare_import_payloads(context,library,result['reference'])
             return result
         if self.operation in ('preview','thumbnail','turntable'):
@@ -345,13 +356,19 @@ class OperationAdapter:
 
     def verify(self,context,staged):
         context.check_cancelled();context.progress(0.8,'verifying '+self.operation)
-        if self.operation=='import':
+        if self.operation in ('import','generate'):
             ref=staged['reference'];library=self._stage_library(context);manifest=library.resolve(ref)
             report=module('import').decode_json(library.read_file(ref,'evidence/import.json'))
             expected=self.parameters['input_hashes']
             import hashlib
-            if report['source_inventory']!=expected['closure'] or hashlib.sha256(library.read_file(ref,'source/license.txt')).hexdigest()!=expected['license_file']:
+            if (self.operation=='import' and report['source_inventory']!=expected['closure']) or hashlib.sha256(library.read_file(ref,'source/license.txt')).hexdigest()!=expected['license_file']:
                 fail('STALE','Imported snapshot differs from queued source closure/license; final publication refused.')
+            if self.operation=='generate':
+                generator=report.get('generator',{})
+                if generator.get('provider')!='blender-box-sphere-v1' or generator.get('parameters')!=self.parameters['parameters'] or generator.get('actual_output_sha256')!=report['source_sha256']:
+                    fail('VERIFY','Generated evidence does not match the queued native generation profile.')
+                if manifest['identity']!=self.parameters['identity'] or manifest['version']!=self.parameters['version'] or manifest['metadata']!=self.parameters['metadata'] or manifest['provenance']['fixture']!=self.parameters.get('fixture',False):
+                    fail('VERIFY','Generated staged identity differs from the queued request.')
             return dict(reference=ref,manifest_sha256=manifest['manifest_sha256'])
         if self.operation in ('preview','thumbnail','turntable'):
             return module('preview').verify_preview(context.stage_dir/'cache'/staged['key'],staged['key'])
@@ -389,7 +406,7 @@ class OperationAdapter:
 
     def publish(self,context,staged,verified):
         context.check_cancelled()
-        if self.operation=='import':
+        if self.operation in ('import','generate'):
             library=self._stage_library(context);ref=verified['reference'];manifest=library.resolve(ref)
             sources={file['path']:context.stage_dir/'payloads'/file['path'] for file in manifest['files']}
             try:result=self.owner.library.register(manifest,sources)
@@ -425,7 +442,7 @@ class OperationAdapter:
             _rename_no_replace(stage,target)
 
     def recover(self,context,staged,verified):
-        if self.operation=='import':
+        if self.operation in ('import','generate'):
             ref=verified['reference']
             try:self.owner.library.resolve(ref)
             except RigError as exc:

@@ -34,8 +34,8 @@ exports, packages, validation and storage to their canonical modules. Optional
 or missing capabilities return `LIBRARY_OPERATIONS_UNAVAILABLE`; a listed CLI
 verb alone does not imply its adapter is available. Semantic providers require
 the canonical search API's configured trusted provider; arbitrary provider code
-is not accepted in JSON. Canonical unbind, generic generation and remote
-publication remain unavailable. Metadata writes remain bounded synchronous native transactions; version,
+is not accepted in JSON. Canonical unbind and remote publication remain unavailable. Bounded native
+box/sphere generation is documented in [managed generation](asset-managed-generation.md). Metadata writes remain bounded synchronous native transactions; version,
 replacement, repair, conversion, preview, export, index and package work use
 managed jobs.
 
