@@ -69,7 +69,7 @@ def checked_job(path):
     world = value['world']
     if len(world['bodies']) > 32 or not 1 <= world['frame_range']['end'] <= 1024:
         raise ValueError('Worker body/frame bound exceeded.')
-    if world['frame_range']['start'] != 0 or world['components'] or world['joints'] or world['events']:
+    if world['frame_range']['start'] != 0 or world['components'] or world['events']:
         raise ValueError('This worker supports only zero-origin, uncoupled rigid-body jobs.')
     return path.resolve().parent, value
 
@@ -218,6 +218,54 @@ def preview(root,scene,bodies, replay_framing=None):
                 scope='neutral solver diagnostic only',visual_review='not-performed')
 
 
+def create_joints(scene, world):
+    """Build solver-local frames; canonical axis maps to Blender constraint Z/X."""
+    reports=[]
+    types={'fixed':'FIXED','hinge':'HINGE','slider':'SLIDER','ball':'POINT','point':'POINT',
+           'spring':'GENERIC_SPRING','generic-6dof':'GENERIC_SPRING'}
+    for joint in world['joints']:
+        a=bpy.data.objects[joint['body_a']];b=bpy.data.objects[joint['body_b']]
+        anchor=joint['anchor_a'];x,y,z,w=anchor['rotation']
+        local=Matrix.Translation(Vector(anchor['translation'])) @ Quaternion((w,x,y,z)).to_matrix().to_4x4()
+        frame=a.matrix_world @ BASIS @ local @ BASIS.transposed()
+        axis=BASIS.to_3x3() @ Vector(joint['axis'])
+        local_axis='X' if joint['type']=='slider' else 'Z'
+        orient=axis.to_track_quat(local_axis, 'Y').to_matrix().to_4x4()
+        bpy.ops.object.empty_add()
+        obj=bpy.context.object;obj.name='joint-'+joint['id'];obj.matrix_world=frame @ orient
+        bpy.ops.rigidbody.constraint_add()
+        c=obj.rigid_body_constraint;c.type=types[joint['type']];c.object1=a;c.object2=b
+        c.disable_collisions=not joint['collide_connected'];c.enabled=True
+        c.use_override_solver_iterations=True;c.solver_iterations=world['solver']['iterations']
+        c.use_breaking=False
+        for axis_name in 'xyz':
+            setattr(c,'use_limit_lin_'+axis_name,False);setattr(c,'use_limit_ang_'+axis_name,False)
+        kind=joint['type']
+        if kind=='hinge':
+            c.use_limit_ang_z=True;c.limit_ang_z_lower,c.limit_ang_z_upper=joint['limits']
+        if kind=='slider':
+            c.use_limit_lin_x=True;c.limit_lin_x_lower,c.limit_lin_x_upper=joint['limits']
+        if kind in ('spring','generic-6dof'):
+            c.spring_type='SPRING2'
+            for i,axis_name in enumerate('xyz'):
+                for family,key in [('lin','linear_limits'),('ang','angular_limits')]:
+                    limits=joint.get(key,[[0,0]]*3)[i]
+                    setattr(c,'use_limit_'+family+'_'+axis_name,True)
+                    setattr(c,'limit_'+family+'_'+axis_name+'_lower',limits[0])
+                    setattr(c,'limit_'+family+'_'+axis_name+'_upper',limits[1])
+                setattr(c,'use_spring_'+axis_name,joint['stiffness']>0)
+                setattr(c,'spring_stiffness_'+axis_name,joint['stiffness'])
+                setattr(c,'spring_damping_'+axis_name,joint['damping'])
+        reports.append(dict(id=joint['id'],type=c.type,body_a=c.object1.name,body_b=c.object2.name,
+            disable_collisions=c.disable_collisions,enabled=c.enabled,use_breaking=c.use_breaking,
+            solver_iterations=c.solver_iterations,
+            linear_limits=[[getattr(c,'use_limit_lin_'+x),getattr(c,'limit_lin_'+x+'_lower'),getattr(c,'limit_lin_'+x+'_upper')] for x in 'xyz'],
+            angular_limits=[[getattr(c,'use_limit_ang_'+x),getattr(c,'limit_ang_'+x+'_lower'),getattr(c,'limit_ang_'+x+'_upper')] for x in 'xyz'],
+            stiffness=[getattr(c,'spring_stiffness_'+x) for x in 'xyz'] if kind in ('spring','generic-6dof') else [0,0,0],
+            damping=[getattr(c,'spring_damping_'+x) for x in 'xyz'] if kind in ('spring','generic-6dof') else [0,0,0]))
+    return reports
+
+
 def create(root, job):
     world = job['world']
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -282,6 +330,8 @@ def create(root, job):
         if body['mode'] == 'dynamic':
             rb.mass = body['mass']['kilograms']
         obj.select_set(False)
+    bpy.context.view_layer.update()
+    joint_reports=create_joints(scene,world)
     effectors=[]
     for force in world['forces']:
         vector=BASIS.to_3x3() @ Vector([x*force['strength'] for x in force['vector']])
@@ -337,6 +387,7 @@ def create(root, job):
                     initially_sleeping=bpy.data.objects[body['id']].rigid_body.use_start_deactivated,
                     linear_threshold=bpy.data.objects[body['id']].rigid_body.deactivate_linear_velocity,
                     angular_threshold=bpy.data.objects[body['id']].rigid_body.deactivate_angular_velocity)) for body in world['bodies']]),
+        **({'joints':joint_reports} if world['joints'] else {}),
         actual_bodies=[dict(id=body['id'], type=bpy.data.objects[body['id']].rigid_body.type,
             shape=bpy.data.objects[body['id']].rigid_body.collision_shape,
             effective_mass=body['mass']['kilograms'] if body['mode']!='dynamic' else bpy.data.objects[body['id']].rigid_body.mass,

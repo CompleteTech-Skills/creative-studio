@@ -98,6 +98,10 @@ def native_report(value,world,operation):
         'actual_fps','actual_gravity_canonical','effective_mass_policy','seed_policy','quality_policy','sphere_margin_policy','actual_bodies'}
         if operation=='simulate' else {'reversed_samples','maximum_replay_error','replay_tolerance'})
     if operation=='simulate' and 'rigid_controls' in value: fields.add('rigid_controls')
+    if operation=='simulate' and world['joints']:
+        fields.add('joints')
+        from physics_joints import validate_native_report
+        validate_native_report(value.get('joints'),world)
     object_fields(value,fields,'Blender '+operation+' report')
     if operation=='simulate': rigid_report(value,world,'blender')
     blender_identity(value['backend'])
@@ -206,7 +210,7 @@ def records(manifest,world,receipt,request,simulation,last_report,source_meshes,
         control=receipt['native_consumption_control']
         if control is not None:consumption_report(control,world)
         need(last_report==(control if control is not None else receipt['native_reopen']),'Last worker report contradicts the recorded operation.')
-        need(receipt['restart']=='clean-restart-only' and receipt['unsupported']==(['joints','off-center-forces','torques','impulses','initial-velocity','shifted-center-of-mass','custom-inertia','sensors','mask-filtering','other-categories'] if 'rigid_controls' in simulation else ['joints','forces','initial-velocity','sensors','mask-filtering','other-categories']),
+        need(receipt['restart']=='clean-restart-only' and receipt['unsupported']==(([] if world['joints'] else ['joints'])+['off-center-forces','torques','impulses','initial-velocity','shifted-center-of-mass','custom-inertia','sensors','mask-filtering','other-categories'] if 'rigid_controls' in simulation else ['joints','forces','initial-velocity','sensors','mask-filtering','other-categories']),
              'Unsupported feature/recovery declarations differ.')
     else:
         module_identity(receipt['backend_module'])
