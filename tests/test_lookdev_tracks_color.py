@@ -35,6 +35,10 @@ class TrackTests(unittest.TestCase):
         tracks=[{'path':['color','exposure'],'track':track(0,2)}]
         self.assertEqual(evaluate_state(base,tracks,5)['color']['exposure'],1.)
         self.assertEqual(base,copy)
+        hashed=deepcopy(base);hashed['sha256']=content_hash(hashed)
+        changed=evaluate_state(hashed,tracks,5)
+        self.assertNotEqual(changed['sha256'],hashed['sha256'])
+        self.assertEqual(changed['sha256'],content_hash({k:v for k,v in changed.items() if k!='sha256'}))
         with self.assertRaises(RigError):evaluate_state(base,tracks,5,locks=[['color']])
         with self.assertRaises(RigError):evaluate_state(base,tracks+tracks,5)
         with self.assertRaises(RigError):evaluate_state(base,[{'path':['missing'],'track':track(0,1)}],5)
