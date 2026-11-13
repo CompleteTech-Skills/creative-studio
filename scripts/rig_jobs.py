@@ -6,6 +6,7 @@ from contextvars import ContextVar
 from pathlib import Path
 import shutil
 import hashlib
+import json
 import os
 import uuid
 
@@ -36,11 +37,13 @@ def retain_artifact(root, label, value):
     """Store exact immutable JSON evidence and return its relative reference."""
     name = 'rig/artifacts/' + slug(label) + '-' + object_hash(value) + '.json'
     target = safe_path(root, name)
+    payload = (json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode('utf-8')
+    digest = hashlib.sha256(payload).hexdigest()
     if target.exists():
-        require(read_json(target) == value, 'RIG_ARTIFACT_COLLISION',
+        require(sha256(target) == digest, 'RIG_ARTIFACT_COLLISION',
                 'Immutable artifact content was modified.', asset=name)
     else:
-        atomic_json(target, value)
+        atomic_bytes(target, payload)
     return name
 
 

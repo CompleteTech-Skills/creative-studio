@@ -6,8 +6,10 @@ has passed native load verification, artifact hashing and job-schema validation.
 writes and review writes use the same transaction-aware manifest publisher;
 outside a step, their existing direct API behavior is preserved.
 
-Each attempt has a UUID-owned directory under `rig/transactions/`. Its candidate
-manifest and record are retained for diagnosis. Content-addressed geometry, skin,
+Each attempt has a UUID-owned directory under `rig/transactions/`. Its changed candidate
+manifest and record are retained for diagnosis. Admission failures with an unchanged
+candidate remove only their exact owned temporary files; their failure diagnostic
+remains in the job journal. Content-addressed geometry, skin,
 clips, corrections and evidence can be appended during the attempt, but failed
 or interrupted candidates do not replace the active `rig.json`. Operation
 reports use immutable `rig/artifacts/` references instead of overwriting a

@@ -124,6 +124,42 @@ run_step(root, 'crash', {}, action, status='animation-ready')
         self.assertEqual(error.exception.report['code'], 'RIG_TRANSACTION_CONFLICT')
         self.assertEqual(sha256(other.root / 'rig.json'), before)
 
+    def prepared_record(self):
+        step = read_json(self.rig.root / 'job.json')['steps']['crash']
+        directory = self.rig.root / 'rig/transactions' / step['token']
+        return directory, read_json(directory / 'record.json')
+
+    def test_tampered_candidate_is_not_promoted(self):
+        self.crash('prepared')
+        before = sha256(self.rig.root / 'rig.json')
+        directory, record = self.prepared_record()
+        candidate = read_json(directory / 'manifest.json')
+        candidate['archetype'] = 'quadruped'
+        atomic_json(directory / 'manifest.json', candidate)
+        with self.assertRaises(RigError) as error:
+            run_step(self.rig.root, 'crash', {}, self.modify, status='animation-ready')
+        self.assertEqual(error.exception.report['code'], 'RIG_TRANSACTION')
+        self.assertEqual(sha256(self.rig.root / 'rig.json'), before)
+
+    def test_malformed_prepared_step_fails_before_pointer_publication(self):
+        for field, value in [('artifacts', None), ('job_status', 'unknown')]:
+            with self.subTest(field=field):
+                if (self.rig.root / 'job.json').exists():
+                    job = read_json(self.rig.root / 'job.json')
+                    job['steps'] = {}
+                    atomic_json(self.rig.root / 'job.json', job)
+                self.crash('prepared')
+                before = sha256(self.rig.root / 'rig.json')
+                directory, record = self.prepared_record()
+                if field == 'artifacts':
+                    record['step']['artifacts'] = value
+                else:
+                    record[field] = value
+                atomic_json(directory / 'record.json', record)
+                with self.assertRaises(RigError):
+                    run_step(self.rig.root, 'crash', {}, self.modify, status='animation-ready')
+                self.assertEqual(sha256(self.rig.root / 'rig.json'), before)
+
     def test_result_status_is_validated_before_revision_publication(self):
         before = sha256(self.rig.root / 'rig.json')
         def invalid(rig):
@@ -139,7 +175,7 @@ run_step(root, 'crash', {}, action, status='animation-ready')
         original = target.read_bytes()
         self.assertEqual(retain_artifact(self.rig.root, 'example', {'two': 2, 'one': 1}), path)
         self.assertEqual(target.read_bytes(), original)
-        target.write_bytes(b'{}')
+        target.write_text(json.dumps({'one': 1, 'two': 2}))
         with self.assertRaises(RigError) as error:
             retain_artifact(self.rig.root, 'example', {'one': 1, 'two': 2})
         self.assertEqual(error.exception.report['code'], 'RIG_ARTIFACT_COLLISION')
