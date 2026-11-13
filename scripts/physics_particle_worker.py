@@ -443,7 +443,8 @@ def run(job, *, cancel=None):
             if 0 <= at <= terminal:
                 boundaries.add(at)
     ordered = sorted(boundaries)
-    require(len(ordered) <= MAX_INTERVALS, 'PARTICLE_RESOURCE_LIMIT', 'Event subdivisions exceed worker bound.')
+    require(len(ordered) <= MAX_INTERVALS and len(ordered)-1 <= world['budgets']['steps'],
+            'PARTICLE_RESOURCE_LIMIT', 'Event subdivisions exceed configured step or worker bound.')
     require(len(ordered)*cap <= MAX_PARTICLE_UPDATES, 'PARTICLE_RESOURCE_LIMIT',
             'Worst-case particle updates exceed the worker operation budget.')
     active = {}

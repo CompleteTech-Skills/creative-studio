@@ -118,6 +118,20 @@ class ParticleTests(unittest.TestCase):
             with self.assertRaises(ValueError):run(job)
         finally:backend.cleanup(prepared)
 
+    def test_off_grid_event_subdivisions_respect_step_budget(self):
+        world,settings,payloads=fixture()
+        world['solver']['fixed_step']=dict(numerator=1,denominator=240)
+        world['solver']['substeps']=1
+        world['budgets']['steps']=490
+        settings['emitters'][0]['rate']=dict(numerator=23,denominator=1)
+        settings['world_sha256']=core.digest(core.canonical(world))
+        backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
+        try:
+            job=core.parse((prepared.root/'worker-job.json').read_bytes())
+            with self.assertRaisesRegex(ValueError,'Event subdivisions'):
+                run(job)
+        finally:backend.cleanup(prepared)
+
     def test_display_geometry_mutation_is_rejected_even_if_rehashed(self):
         world,settings,payloads=fixture();backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
         try:
