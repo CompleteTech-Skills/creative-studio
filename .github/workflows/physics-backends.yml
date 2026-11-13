@@ -81,6 +81,11 @@ jobs:
           HATCH_JOINT_EVIDENCE: ${{ github.workspace }}/physics-evidence/joints
         run: |
           python -B -m unittest discover -s tests -p test_rig_physics_joints.py -v 2>&1 | tee physics-evidence/joints-tests.log
+      - name: Actual liquid bake, cache decoding and reopened geometry
+        env:
+          HATCH_LIQUID_EVIDENCE: physics-evidence/liquid
+        run: |
+          python -B -m unittest discover -s tests -p 'test_rig_physics_liquid*.py' -v 2>&1 | tee physics-evidence/liquid-tests.log
       - name: Actual category/shape/headless probes
         run: |
           python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json
