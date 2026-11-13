@@ -262,9 +262,10 @@ def decode_image(path, **options):
 
 
 class RenderArtifactVerifier:
-    def __init__(self,snapshot_root,expected_backend):
+    def __init__(self,snapshot_root,expected_backend,*,max_total_bytes=None):
         self.snapshot_root=Path(snapshot_root)
         self.expected_backend=deepcopy(expected_backend)
+        self.max_total_bytes=max_total_bytes
 
     def verify(self,request,result,root):
         """Verify all expected frames, including a provisional unverified result.
@@ -291,7 +292,9 @@ class RenderArtifactVerifier:
             snapshot=validate(decode_json(stream.read()),'RenderSnapshot')
         require(reference == {key:request['snapshot'][key] for key in ('bytes','sha256')},'stale-asset','Snapshot differs from request-bound bytes.')
         adapter=Scene3DAdapter() if snapshot['scope']=='scene3d' else NativeRigAdapter()
-        require(verify_snapshot(self.snapshot_root,adapter)==snapshot,'stale-asset','Snapshot changed during independent verification.')
+        verified=(verify_snapshot(self.snapshot_root,adapter) if self.max_total_bytes is None else
+                  verify_snapshot(self.snapshot_root,adapter,max_total_bytes=self.max_total_bytes))
+        require(verified==snapshot,'stale-asset','Snapshot changed during independent verification.')
         if isinstance(adapter,Scene3DAdapter):
             try:
                 adapter.validate_request(self.snapshot_root,request,snapshot)
@@ -352,5 +355,5 @@ class RenderArtifactVerifier:
                     limitation='Decoded integrity and input binding do not establish semantic scene correctness or visual approval.')
 
 
-def verify_result(request,result,root,*,snapshot_root,expected_backend):
-    return RenderArtifactVerifier(snapshot_root,expected_backend).verify(request,result,root)
+def verify_result(request,result,root,*,snapshot_root,expected_backend,max_total_bytes=None):
+    return RenderArtifactVerifier(snapshot_root,expected_backend,max_total_bytes=max_total_bytes).verify(request,result,root)
