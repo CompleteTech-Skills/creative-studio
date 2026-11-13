@@ -12,6 +12,8 @@ import json
 import os
 from pathlib import Path
 import stat
+import tempfile
+import shutil
 import re
 import unicodedata
 
@@ -264,28 +266,40 @@ def _write(root,name,data):
             child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor)
             os.close(descriptor);descriptor=child
         partial='.'+parts[-1]+'.partial'
+        created=False
         try:
             fd=os.open(partial,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600,dir_fd=descriptor)
+            created=True
             with os.fdopen(fd,'wb') as stream:
                 stream.write(data);stream.flush();os.fsync(stream.fileno())
             _rename_no_replace(partial,parts[-1],source_dir_fd=descriptor,destination_dir_fd=descriptor)
             os.fsync(descriptor)
         finally:
-            try:os.unlink(partial,dir_fd=descriptor)
-            except FileNotFoundError:pass
+            if created:
+                try:os.unlink(partial,dir_fd=descriptor)
+                except FileNotFoundError:pass
     finally:os.close(descriptor)
 
 
 def _clear_partial(root,name):
-    """Remove only a known request-owned incomplete write, never a cache frame."""
-    path=Path(root)/name
-    if path.exists() or path.is_symlink():
+    """Unlink only inside the exact pinned parent used for file validation."""
+    _relative(name)
+    descriptor=os.open(root,os.O_RDONLY|os.O_DIRECTORY)
+    try:
+        parts=name.split('/')
+        for part in parts[:-1]:
+            child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=descriptor)
+            os.close(descriptor);descriptor=child
+        try:fd=os.open(parts[-1],os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=descriptor)
+        except FileNotFoundError:return
         try:
-            with media._open_source(root,name) as stream:
-                if os.fstat(stream.fileno()).st_size>MAX_FRAME_BYTES:
-                    raise ValueError('incomplete sequence write exceeds byte budget')
-        except OSError as exc:raise ValueError('unsafe incomplete sequence write') from exc
-        path.unlink()
+            observed=os.fstat(fd)
+            if not stat.S_ISREG(observed.st_mode) or observed.st_size>MAX_FRAME_BYTES:
+                raise ValueError('incomplete sequence write must be a bounded regular file')
+            os.unlink(parts[-1],dir_fd=descriptor)
+        finally:os.close(fd)
+    except OSError as exc:raise ValueError('unsafe incomplete sequence write') from exc
+    finally:os.close(descriptor)
 
 
 def _inventory(root,source,*,staging=False):
@@ -350,6 +364,50 @@ def verify_sequence(root,*,expected_receipt_sha256=None):
         return report
 
 
+def _publish_cache(stage,source,report,parent_fd,destination):
+    """Publish an inner payload from an independently pinned private parent.
+
+    The public persistent cache basename is never a rename source. No caller
+    callbacks run while this private publication payload is created/verified.
+    Both outer cache and destination ancestors may therefore be renamed without
+    substituting unverified data for the payload relative to this private fd.
+    """
+    parent=Path('/proc/self/fd')/str(parent_fd)
+    required=sum(f['bytes'] for f in source['frames'])+2*MAX_JSON_BYTES
+    if shutil.disk_usage(parent).free<required:
+        raise ValueError('insufficient free storage for private sequence publication')
+    wrapper=Path(tempfile.mkdtemp(prefix='.sequence-publish-',dir=parent))
+    wrapper_fd=os.open(wrapper.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent_fd)
+    payload_fd=None
+    try:
+        os.mkdir('payload',mode=0o700,dir_fd=wrapper_fd)
+        payload_fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=wrapper_fd)
+        payload=Path('/proc/self/fd')/str(payload_fd)
+        os.mkdir('frames',mode=0o700,dir_fd=payload_fd)
+        _write(payload,'lock',b'')
+        _write(payload,'plan.json',_read(stage,'plan.json',MAX_JSON_BYTES))
+        _write(payload,'sequence.json',_read(stage,'sequence.json',MAX_JSON_BYTES))
+        for frame in source['frames']:
+            data=_read(stage,frame['path'],MAX_FRAME_BYTES)
+            if len(data)!=frame['bytes'] or _hash(data)!=frame['sha256']:
+                raise ValueError('verified cache changed before private publication')
+            _write(payload,frame['path'],data)
+            _verify_frame(payload,frame,source)
+        _inventory(payload,source)
+        if (_read_json(payload,'sequence.json')!=report or
+                _read_json(payload,'plan.json')!={'source':source,'provenance':report['provenance']}):
+            raise ValueError('sequence publication metadata changed')
+        os.fsync(payload_fd)
+        _rename_no_replace('payload',destination.name,source_dir_fd=wrapper_fd,destination_dir_fd=parent_fd)
+        os.fsync(parent_fd)
+        # Keep the tiny private parent rather than pathname-based cleanup of a
+        # parent another process could replace. The immutable payload is final;
+        # persistent input cache remains available for explicit reuse/inspection.
+    finally:
+        if payload_fd is not None:os.close(payload_fd)
+        os.close(wrapper_fd)
+
+
 def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=None,_native_token=None):
     """Export exact bytes; interrupted staging is reusable on explicit retry.
 
@@ -368,7 +426,7 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
         raise ValueError('sequence stage must be a separate sibling basename')
     with media._pin_directory(destination.parent) as parent_fd:
         parent=Path('/proc/self/fd')/str(parent_fd)
-        try:os.mkdir(stage_name,dir_fd=parent_fd)
+        try:os.mkdir(stage_name,mode=0o700,dir_fd=parent_fd)
         except FileExistsError:pass
         stage_fd=os.open(stage_name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent_fd)
         try:
@@ -391,7 +449,7 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
                     if names=={'lock','.plan.json.partial'}:
                         partial=_read(stage,'.plan.json.partial',MAX_JSON_BYTES)
                         if partial!=_json_bytes(plan):raise ValueError('incomplete staging plan does not match request')
-                        (stage/'.plan.json.partial').unlink()
+                        _clear_partial(stage,'.plan.json.partial')
                     elif names!={'lock'}:raise ValueError('unrecognized sequence staging')
                     _write(stage,'plan.json',_json_bytes(plan));os.mkdir('frames',dir_fd=stage_fd)
                 if not set(os.listdir(stage))<={'lock','plan.json','frames','sequence.json'}:
@@ -418,8 +476,7 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
                 # Independent final verification uses a pinned directory, too.
                 _inventory(stage,source)
                 if cancel is not None and cancel():raise ValueError('sequence export cancelled before publication')
-                _rename_no_replace(stage_name,destination.name,source_dir_fd=parent_fd,destination_dir_fd=parent_fd)
-                os.fsync(parent_fd)
+                _publish_cache(stage,source,report,parent_fd,destination)
                 return report
             finally:os.close(lock_fd)
         finally:os.close(stage_fd)

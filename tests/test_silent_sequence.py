@@ -31,6 +31,14 @@ class SequenceContracts(unittest.TestCase):
         for name,schema in sequence.schemas().items():
             self.assertEqual(schema,json.loads((Path(__file__).resolve().parents[1]/f'profiles/silent-sequence-{name}.schema.json').read_text()))
 
+    def test_exclusive_write_preserves_preexisting_foreign_partial(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);partial=root/'.plan.json.partial'
+            partial.write_bytes(b'preexisting unrelated file')
+            with self.assertRaises(FileExistsError):sequence._write(root,'plan.json',b'new plan')
+            self.assertEqual(partial.read_bytes(),b'preexisting unrelated file')
+            self.assertFalse((root/'plan.json').exists())
+
     def test_preflight_rejects_fake_precision_and_excess_before_decode(self):
         request={'settings':{'resolution':[40000,40000],'output':{'format':'exr','bit_depth':8,
             'alpha':'straight','color_space':'srgb','passes':['combined']}},'fps':{'numerator':24,'denominator':1},
@@ -90,9 +98,44 @@ class SequenceImages(unittest.TestCase):
         stage=self.root/'.resume.sequence-stage';frame=stage/'frames/000000.png'
         self.assertTrue(frame.is_file());before=frame.stat().st_mtime_ns
         sequence.export_sequence(source,self.root,destination,provenance=self.identity)
-        self.assertEqual((destination/'frames/000000.png').stat().st_mtime_ns,before)
-        self.assertFalse(stage.exists())
+        self.assertEqual((stage/'frames/000000.png').stat().st_mtime_ns,before)
+        self.assertEqual((destination/'frames/000000.png').read_bytes(),frame.read_bytes())
+        self.assertTrue(stage.exists())  # persistent verified cache remains reusable
         with self.assertRaises(ValueError):sequence.export_sequence(source,self.root,destination,provenance=self.identity)
+
+    def test_public_cache_basename_swap_cannot_replace_verified_publication(self):
+        source=self.source(count=1);destination=self.root/'swap'
+        stage=self.root/'.swap.sequence-stage';calls=[0]
+        def swap_at_commit():
+            calls[0]+=1
+            if calls[0]==2:
+                stage.rename(self.root/'original-verified-cache');stage.mkdir()
+                (stage/'unverified.txt').write_text('unrelated replacement')
+            return False
+        report=sequence.export_sequence(source,self.root,destination,provenance=self.identity,cancel=swap_at_commit)
+        self.assertEqual(sequence.verify_sequence(destination),report)
+        self.assertFalse((destination/'unverified.txt').exists())
+        self.assertEqual((stage/'unverified.txt').read_text(),'unrelated replacement')
+        self.assertTrue((self.root/'original-verified-cache/frames/000000.png').is_file())
+
+    @unittest.skipUnless(os.name=='posix','requires POSIX directory handles')
+    def test_partial_cleanup_pins_parent_across_directory_symlink_swap(self):
+        stage=self.root/'cleanup';stage.mkdir();(stage/'frames').mkdir()
+        unrelated=self.root/'unrelated';unrelated.mkdir();name='.000000.png.partial'
+        (stage/'frames'/name).write_bytes(b'owned incomplete write')
+        (unrelated/name).write_bytes(b'unrelated original')
+        real_open=os.open;swapped=[False]
+        def replace_after_open(path,*args,**kwargs):
+            fd=real_open(path,*args,**kwargs)
+            if path==name and not swapped[0]:
+                swapped[0]=True
+                (stage/'frames').rename(stage/'original-frames')
+                (stage/'frames').symlink_to(unrelated,target_is_directory=True)
+            return fd
+        with mock.patch.object(sequence.os,'open',side_effect=replace_after_open):
+            sequence._clear_partial(stage,'frames/'+name)
+        self.assertTrue(swapped[0]);self.assertEqual((unrelated/name).read_bytes(),b'unrelated original')
+        self.assertFalse((stage/'original-frames'/name).exists())
 
     def test_partial_write_and_missing_frame_directory_resume(self):
         source=self.source();destination=self.root/'partial'

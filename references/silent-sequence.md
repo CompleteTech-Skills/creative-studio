@@ -75,7 +75,15 @@ remain unchanged. Work happens in the sibling `.DESTINATION.sequence-stage`,
 protected by a process lock and exact source/provenance plan. Cancellation or
 interruption retains verified cached frame bytes; rerunning the same export
 revalidates and reuses them. Completed frames and immutable destinations are
-never overwritten. Only recognized incomplete temporary writes under that bound
+never overwritten. The verified cache remains after successful publication for
+explicit reuse/inspection. Finalization copies and independently verifies an
+inner payload inside a separate pinned private parent, then publishes relative
+to that parent descriptor; replacing the public cache basename cannot substitute
+unverified output. A tiny empty private publication parent is retained rather
+than removed through a replaceable pathname. Final publication reserves space
+for another complete encoded sequence plus bounded metadata. Cancellation is
+checked immediately before this bounded finalization section; no caller callbacks
+run inside the private copy/verification/rename section. Only recognized incomplete temporary writes under that bound
 staging plan are removed on resume. Corrupted cache frames, foreign plans,
 symlinks, special files and unknown staging entries fail closed. If interruption
 occurs before a complete plan exists, an incomplete unidentifiable plan is
