@@ -237,6 +237,15 @@ class CinematicsTests(unittest.TestCase):
                  fps=RATE,start=START,end=END,color=COLOR)
         with self.assertRaises(RigError):bundle(self.effect,self.stack,shot,external_files={'native.json':b'{}'})
 
+    def test_public_lookup_and_migration_reject_malformed_inputs(self):
+        registry=bundle(self.effect,self.stack)
+        for value in [None,[],{'id':[]}]:
+            with self.assertRaises(RigError):registry.get(value)
+            with self.assertRaises(RigError):migrate(value)
+        with self.assertRaises(RigError):registry.reference([], '1.0.0')
+        with self.assertRaises(RigError):admission([self.effect,self.effect])
+        with self.assertRaises(RigError):admission([self.effect],[])
+
     def test_optional_runtime_dependencies_are_not_imported(self):
         code="""import sys
 class Block:

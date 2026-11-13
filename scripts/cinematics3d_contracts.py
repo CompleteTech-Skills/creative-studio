@@ -12,7 +12,6 @@ from functools import lru_cache
 import hashlib
 import json
 from pathlib import Path
-import re
 
 from lookdev_contracts import canonical_bytes, portable_path
 from camera3d_contracts import ID, VERSION, SHA, PATH, obj, arr, enum, integer
@@ -44,9 +43,9 @@ def _registry_v1():
         backend_feature='cinematics.', default_status='unavailable',
         fallback='reject-unless-explicit-approximation', executed=False)
     out = {
-        'depth-of-field': effect('lens', {'enabled': b(True)}, ('depth',)),
+        'depth-of-field': effect('lens', {'enabled': b(True)}),
         'motion-blur': effect('scene', {'shutter_frames': f(0, 2, .5, 'frames'),
-                                      'samples': parameter(integer(1, 256), 16, 'count')}, ('vector',)),
+                                      'samples': parameter(integer(1, 256), 16, 'count')}),
         'exposure': effect('grade', {'stops': f(-24, 24, 0, 'stops')}),
         'tone-map': effect('display', {'view': parameter(enum('standard', 'agx', 'filmic'), 'agx', 'view-transform')}),
         'color-grade': effect('grade', {'contrast': f(0, 4, 1), 'saturation': f(0, 4, 1),
@@ -316,11 +315,16 @@ class Registry:
                         'CINEMATICS_HISTORY', 'Preset history must advance the same immutable identity.')
 
     def reference(self, identifier, version):
+        require(isinstance(identifier, str) and isinstance(version, str), 'CINEMATICS_REFERENCE', 'Expected string identity and version.')
         require((identifier, version) in self._keys, 'CINEMATICS_MISSING', 'Unknown document identity.')
         path = self._keys[(identifier, version)]; value = self._documents[path]
         return dict(id=identifier, version=version, path=path, kind=value['kind'], sha256=hashlib.sha256(self._raw[path]).hexdigest())
 
     def get(self, reference):
+        finite_json(reference)
+        error = next(_validator('reference').iter_errors(reference), None)
+        require(error is None, 'CINEMATICS_REFERENCE', 'Malformed immutable reference.')
+        portable_path(reference['path'])
         require(reference == self.reference(reference['id'], reference['version']), 'CINEMATICS_REFERENCE', 'Reference differs from exact stored identity.')
         return deepcopy(self._documents[reference['path']])
 
@@ -368,7 +372,8 @@ def admission(effects, capabilities=None):
     A valid report remains a claim until the backend verifier checks its bytes.
     Returning admission never marks a render executed or production approved.
     """
-    registry = effect_registry(); capabilities = capabilities or {}
+    require(isinstance(effects, (list, tuple)) and len(effects) <= 128, 'CINEMATICS_LIMIT', 'Expected at most 128 effects.')
+    registry = effect_registry(); capabilities = {} if capabilities is None else capabilities
     require(isinstance(capabilities, dict) and len(capabilities) <= len(registry), 'CINEMATICS_CAPABILITY', 'Invalid capability report.')
     require(set(capabilities).issubset(registry), 'CINEMATICS_CAPABILITY', 'Unknown capability key.')
     rows = []
@@ -381,11 +386,13 @@ def admission(effects, capabilities=None):
         accepted = not effect['enabled'] or status == 'supported' or (status == 'approximate' and effect['policy']['allow_approximation'])
         rows.append(dict(id=effect['id'], effect=key, status=status, admitted=accepted,
                          required_passes=registry[key]['required_passes'], executed=False))
+    _unique([row['id'] for row in rows], 'admission effect IDs')
     return dict(admitted=all(r['admitted'] for r in rows), effects=rows, executed=False,
                 capability_source='caller-supplied, not independently verified')
 
 
 def migrate(value, target_schema_version=1):
+    require(isinstance(value, dict), 'CINEMATICS_SCHEMA', 'Expected a document object.')
     require(target_schema_version == 1 and value.get('schema_version') == 1, 'CINEMATICS_VERSION', 'No implicit migration from unknown cinematic schemas.')
     return validate_document(value)
 
