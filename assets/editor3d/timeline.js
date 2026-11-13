@@ -63,7 +63,7 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   async function scrub(at=Number(frame.value)){
     if(!snapshot||!shotPath)return;const serial=++request;const s=getSnapshot();
     if(s.documents[shotPath]?.scene.path!==s.scene_path)throw Error('Switch to the shot scene before preview.');
-    const result=await api('timeline/evaluate',{revision:s.revision,sha256:s.sha256,shot:shotPath,frame:at});
+    const result=await api('timeline/evaluate',{revision:s.revision,sha256:s.sha256,shot:shotPath,frame:at,sample_geometry:true});
     if(disposed||serial!==request)return;if(result.scene.path!==getSnapshot().scene_path)throw Error('Preview scene changed; reload before scrubbing.');preview(result);refreshPreviewEditState?.();message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
   }
   function stop(){playing=false;cancelAnimationFrame(raf);play.textContent='Play';refreshPreviewEditState?.();}
