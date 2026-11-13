@@ -145,6 +145,19 @@ def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_secon
     _source(root, request)
     if backend == 'opencv-haar' and (prompt or any(x not in ('face/region', 'face/eye-region') for x in request['taxonomy'])):
         raise ValueError('OpenCV supports only fixed face/eye taxonomy and no text prompt')
+    # Applying this exact analysis changes the manifest revision. Repeating the
+    # high-level analyze command must still reuse that accepted result instead
+    # of spending another detector/provider call on its own output revision.
+    annotation = read_json(safe_path(root, manifest['annotation']['path']))
+    previous_id = annotation.get('extensions', {}).get('decomposition_analysis', {}).get('job')
+    if previous_id:
+        previous_job = _job(root, previous_id)
+        previous_request = read_json(previous_job / 'request.json')
+        comparable = lambda value: {key: item for key, item in value.items() if key != 'base_manifest_sha256'}
+        if comparable(previous_request) == comparable(request):
+            prior = status(root, previous_id)
+            if prior['status'] == 'applied':
+                return prior
     identifier = hash_object(request)
     job = _job(root, identifier)
     if job.exists():

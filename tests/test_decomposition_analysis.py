@@ -74,6 +74,7 @@ class AnalysisTests(unittest.TestCase):
         self.assertEqual(current['validation']['max_channel_error'] if 'max_channel_error' in current['validation'] else current['validation']['reconstruction_error']['max_channel_error'],0)
         self.assertEqual(original_source,(self.root/'source'/'original.png').read_bytes())
         self.assertEqual(analysis.apply(self.root,job['job'])['applied_revision'],current['revision'])
+        self.assertEqual(self.prepare()['job'],job['job'])
         self.assertFalse(current['analysis']['semantic_model_called'])
         self.assertIn('decomposition_analysis',json.loads((self.root/'annotations/current.json').read_text())['extensions'])
 
