@@ -42,7 +42,8 @@ def _new_destination(destination):
 
 def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                      scene_version=None, project_version=None, derived_documents=None,
-                     extra_payloads=None, max_bytes=1024**3):
+                     extra_payloads=None, document_replacements=None, project_selection=None,
+                     max_bytes=1024**3):
     """Copy and revalidate actual source bytes, then exclusively publish a closure.
 
     New scene versions coexist with original scene/shot versions. The return value
@@ -133,7 +134,10 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         require(path not in combined_derived or combined_derived[path] == document, 'Conflicting derived document.')
         combined_derived[path] = document
     for path, document in combined_derived.items():
-        add_document(document, path)
+        created = add_document(document, path)
+        field = {'scene3d-scene': 'scenes', 'scene3d-shot': 'shots'}.get(created['kind'])
+        if field is not None:
+            project[field].append(created)
     if graph is not None:
         require(scene_path in bundle['documents'] and bundle['documents'][scene_path]['kind'] == 'scene3d-scene',
                 'Select the exact original scene for this edit.')
@@ -173,6 +177,82 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             shot['version'] = version_patch(shot['version'])
             shot['scene'] = deepcopy(active_scene)
             project['shots'].append(add_document(shot))
+    replacements = {} if document_replacements is None else document_replacements
+    require(isinstance(replacements, dict) and len(replacements) <= 4096,
+            'Document replacements must be a bounded path/document mapping.')
+    require(project_selection is None or isinstance(project_selection, dict),
+            'Project selection must be a mapping.')
+    requested = {}
+    for old_path, replacement in replacements.items():
+        portable_path(old_path)
+        require(old_path in bundle['documents'] and old_path != 'project.json',
+                'Replacement must identify an existing native document.')
+        require(graph is None or old_path != scene_path,
+                'A scene cannot be edited through graph and document replacement together.')
+        original = bundle['documents'][old_path]
+        require(isinstance(replacement, dict) and
+                (replacement.get('kind'), replacement.get('id'), replacement.get('version')) ==
+                (original['kind'], original['id'], original['version']),
+                'Replacement must retain its original identity/version until publication.')
+        requested[old_path] = deepcopy(replacement)
+    # A changed document requires a new version of every consuming native
+    # document, even when only its exact child reference changes.
+    changed = True
+    while changed:
+        changed = False
+        for path, document in list(documents.items()):
+            if path == 'project.json' or path in requested:
+                continue
+            if any('kind' in ref and ref['path'] in requested for ref in all_refs(document)):
+                requested[path] = deepcopy(document)
+                changed = True
+    promoted, pending = {}, set()
+    def replace_references(document):
+        for reference in all_refs(document):
+            if 'kind' in reference and reference['path'] in requested:
+                replacement_ref = promote(reference['path'])
+                reference.clear()
+                reference.update(deepcopy(replacement_ref))
+    def promote(path):
+        if path in promoted:
+            return promoted[path]
+        require(path not in pending, 'Replacement dependencies contain a cycle.')
+        pending.add(path)
+        document = deepcopy(requested[path])
+        replace_references(document)
+        original = documents[path]
+        document['version'] = version_patch(original['version'])
+        if 'provenance' in document:
+            document['provenance']['origin'] = 'derived'
+            document['provenance']['tool'] = 'scene3d-document-edit-v1'
+            document['provenance']['inputs'].append(dict(path=path,
+                sha256=hashlib.sha256(files[path]).hexdigest()))
+        validate_document(document)
+        promoted[path] = add_document(document)
+        pending.remove(path)
+        return promoted[path]
+    for path in requested:
+        promote(path)
+        retained = dict(path=path, sha256=hashlib.sha256(files[path]).hexdigest())
+        if retained not in project['provenance']['inputs']:
+            project['provenance']['inputs'].append(retained)
+    replace_references(project)
+    if scene_path in promoted:
+        active_scene = deepcopy(promoted[scene_path])
+    if project_selection is not None:
+        require(set(project_selection) <= {'scenes', 'shots', 'animations'},
+                'Only scene, shot and animation selection/order may be edited.')
+        for field, paths in project_selection.items():
+            require(isinstance(paths, list) and len(paths) <= 4096 and
+                    all(isinstance(path, str) for path in paths) and len(paths) == len(set(paths)),
+                    'Project selection must contain unique native document paths.')
+            allowed = {reference['path']: reference for reference in project[field]}
+            selected = []
+            for path in paths:
+                path = promoted[path]['path'] if path in promoted else path
+                require(path in allowed, 'Project selection cannot inject an unregistered reference.')
+                selected.append(deepcopy(allowed[path]))
+            project[field] = selected
     original_project = files['project.json']
     history = 'history/project-'+hashlib.sha256(original_project).hexdigest()+'.json'
     files[history] = original_project
@@ -184,15 +264,34 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     project['provenance']['inputs'].append(dict(path=history, sha256=hashlib.sha256(original_project).hexdigest()))
     project['dependency_lock'].extend(additions)
     # Lock any exact references added by expanded prefabs or imported assets.
-    locked = {(r['kind'], r['id'], r['version']): r for r in project['dependency_lock']}
-    for document in [project, *documents.values()]:
-        for r in all_refs(document):
-            if 'kind' not in r:
-                continue
-            key = (r['kind'], r['id'], r['version'])
-            require(key not in locked or locked[key] == r, 'Conflicting dependency version in snapshot.',
-                    'SCENE3D_IMMUTABLE')
-            locked[key] = deepcopy(r)
+    if replacements or project_selection is not None:
+        # Lock only the selected current closure. Retained historical manifests
+        # remain exact raw provenance inputs, not active semantic scene versions.
+        current_project = deepcopy(project)
+        current_project['dependency_lock'] = []
+        locked, visited, pending_documents = {}, set(), [current_project]
+        while pending_documents:
+            current = pending_documents.pop()
+            for r in all_refs(current):
+                if 'kind' not in r:
+                    continue
+                key = (r['kind'], r['id'], r['version'])
+                require(key not in locked or locked[key] == r, 'Conflicting selected dependency version.',
+                        'SCENE3D_IMMUTABLE')
+                locked[key] = deepcopy(r)
+                if r['path'] in documents and r['path'] not in visited:
+                    visited.add(r['path'])
+                    pending_documents.append(documents[r['path']])
+    else:
+        locked = {(r['kind'], r['id'], r['version']): r for r in project['dependency_lock']}
+        for document in [project, *documents.values()]:
+            for r in all_refs(document):
+                if 'kind' not in r:
+                    continue
+                key = (r['kind'], r['id'], r['version'])
+                require(key not in locked or locked[key] == r, 'Conflicting dependency version in snapshot.',
+                        'SCENE3D_IMMUTABLE')
+                locked[key] = deepcopy(r)
     project['dependency_lock'] = sorted(locked.values(), key=lambda r: (r['kind'], r['id'], r['version']))
     validate_document(project, 'project')
     files['project.json'] = canonical_bytes(project)
