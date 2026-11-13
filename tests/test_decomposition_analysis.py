@@ -106,6 +106,36 @@ class AnalysisTests(unittest.TestCase):
         finally:
             target.write_bytes(original_bytes)
 
+    def test_response_normalization_rejects_source_replaced_after_admission(self):
+        job=self.prepare(); target=self.root/job['request']['source']['path']
+        original=target.read_bytes(); source=analysis._source
+        def replace_after_source(root,request):
+            manifest=source(root,request)
+            Image.new('RGBA',(64,64),'#f01020').save(target)
+            return manifest
+        try:
+            with mock.patch.object(analysis,'_source',side_effect=replace_after_source):
+                with self.assertRaisesRegex(ValueError,'bytes changed'):
+                    analysis._validated_response(self.root,job['job'],self.response(job))
+            self.assertEqual((self.root/'decomposition.json').read_bytes(),self.original)
+        finally:
+            target.write_bytes(original)
+
+    def test_source_normalization_retains_verified_alpha(self):
+        request=self.prepare()['request']
+        rgba=analysis._source_image(self.root,request,mode='RGBA')
+        self.assertEqual(rgba.mode,'RGBA')
+        self.assertEqual(rgba.getpixel((0,0)),(0x78,0xb8,0xee,255))
+
+    def test_regular_record_capacity_is_explicit_and_bounded(self):
+        path=self.home/'record.bin'; data=b'x'*(analysis.MAX_RESPONSE_BYTES+1); path.write_bytes(data)
+        with self.assertRaisesRegex(ValueError,'bounded'):
+            analysis._record_bytes(path)
+        self.assertEqual(analysis._record_bytes(path,len(data)),data)
+        for bound in (True,0,-1,200_000_001,1.5):
+            with self.subTest(bound=bound):
+                with self.assertRaisesRegex(ValueError,'bound'): analysis._record_bytes(path,bound)
+
     def test_disabled_requires_permission_and_is_failure_isolated(self):
         with self.assertRaisesRegex(ValueError,'disabled'):
             analysis.prepare(self.root,'external')

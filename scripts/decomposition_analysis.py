@@ -19,8 +19,8 @@ import sys
 import tempfile
 import time
 
-from asset_contracts import hash_object, sha, MAX_SOURCE_BYTES
-from character_decomposition import (_annotation, load_decomposition,
+from asset_contracts import hash_object, MAX_SOURCE_BYTES
+from character_decomposition import (_annotation, load_decomposition, MAX_JSON_BYTES,
                                      rebuild_from_annotation)
 from decomposition_spec import (ANNOTATION_SCHEMA, HASH, TEXT, NOTE, BOOLEAN,
     array, obj, validate_structure, safe_path)
@@ -113,8 +113,10 @@ def _windows_record_descriptor(path):
 _WINDOWS_RECORD_IO = sys.platform == 'win32'
 
 
-def _record_bytes(path):
-    """Read a bounded regular record without following links or blocking on FIFOs."""
+def _record_bytes(path, maximum=MAX_RESPONSE_BYTES):
+    """Read admitted regular bytes; analysis JSON retains its default8MiB quota."""
+    if type(maximum) is not int or not 1 <= maximum <= 200_000_000:
+        raise ValueError('invalid regular-file byte bound')
     try:
         if _WINDOWS_RECORD_IO:
             descriptor = _windows_record_descriptor(path)
@@ -126,16 +128,16 @@ def _record_bytes(path):
         raise ValueError('analysis record cannot be opened safely: ' + str(path)) from exc
     with os.fdopen(descriptor, 'rb') as stream:
         info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_RESPONSE_BYTES:
+        if not stat.S_ISREG(info.st_mode) or info.st_size > maximum:
             raise ValueError('analysis record must be a bounded regular file: ' + str(path))
-        data = stream.read(MAX_RESPONSE_BYTES + 1)
-        if len(data) > MAX_RESPONSE_BYTES:
+        data = stream.read(maximum + 1)
+        if len(data) > maximum:
             raise ValueError('analysis record exceeds byte quota: ' + str(path))
         return data
 
 
-def _record_sha(path):
-    return hashlib.sha256(_record_bytes(path)).hexdigest()
+def _record_sha(path, maximum=MAX_RESPONSE_BYTES):
+    return hashlib.sha256(_record_bytes(path, maximum)).hexdigest()
 
 
 def _record_json(path):
@@ -168,7 +170,7 @@ def _model():
     if any(not p.is_file() or p.is_symlink() for p in files):
         raise ValueError('OpenCV installed cascades unavailable')
     return {'provider': 'local-opencv', 'name': 'opencv-haar-face-eye', 'version': cv2.__version__,
-            'files': [{'name': p.name, 'sha256': sha(p)} for p in files],
+            'files': [{'name': p.name, 'sha256': _record_sha(p)} for p in files],
             'identity_evidence': 'Installed OpenCV version and exact cascade bytes; not a remote call.'}
 
 
@@ -254,7 +256,7 @@ def _source_bytes(root, reference):
     return payload
 
 
-def _source_image(root, request):
+def _source_image(root, request, *, mode='RGB'):
     """Decode the exact admitted/hash-verified source bytes, without reopening."""
     from PIL import Image
     payload = _source_bytes(root, request['source'])
@@ -262,7 +264,7 @@ def _source_image(root, request):
         expected = (request['source']['width'], request['source']['height'])
         if image.size != expected or image.width * image.height > request['policy']['max_pixels']:
             raise ValueError('analysis source dimensions changed or exceed pixel quota')
-        return image.convert('RGB')
+        return image.convert(mode)
 
 
 def _source(root, request):
@@ -289,7 +291,7 @@ def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_secon
         raise ValueError('analysis is disabled; explicit --enable-analysis is required')
     manifest = load_decomposition(root)
     model = _model() if backend == 'opencv-haar' else expected_model
-    request = {'base_manifest_sha256': sha(root / 'decomposition.json'), 'schema_version': 1, 'kind': 'decomposition-analysis-request',
+    request = {'base_manifest_sha256': _record_sha(root / 'decomposition.json', MAX_JSON_BYTES), 'schema_version': 1, 'kind': 'decomposition-analysis-request',
         'source': {key: manifest['source'][key] for key in ('path', 'sha256')},
         'references': [{'role': 'foreground', **manifest['foreground']['mask']}],
         'taxonomy': taxonomy or ['face/region', 'face/eye-region'], 'backend': backend,
@@ -444,9 +446,8 @@ def _validated_response(root, identifier, response):
             raise ValueError('analysis responses require inline runs or polygons')
     if 'foreground_mask' in annotation:
         raise ValueError('analysis cannot replace foreground; use its independent owner')
-    from PIL import Image
-    with Image.open(safe_path(root, request['source']['path'])) as image:
-        normalized = _annotation(annotation, request['source']['sha256'], image.convert('RGBA'), root)
+    image = _source_image(root, request, mode='RGBA')
+    normalized = _annotation(annotation, request['source']['sha256'], image, root)
     return normalized
 
 
@@ -559,7 +560,7 @@ def apply(root, identifier):
     # job state acknowledgement without creating another revision.
     current_annotation = _record_json(safe_path(root, current['annotation']['path']))
     if current_annotation.get('extensions', {}).get('decomposition_analysis') != evidence:
-        if sha(Path(root) / 'decomposition.json') != info['request']['base_manifest_sha256']:
+        if _record_sha(Path(root) / 'decomposition.json', MAX_JSON_BYTES) != info['request']['base_manifest_sha256']:
             raise ValueError('decomposition changed since analysis request; preserve reviewer edits')
         current = rebuild_from_annotation(root, normalized,
             reason='Automatic source-bound proposals; semantic review remains pending.',
