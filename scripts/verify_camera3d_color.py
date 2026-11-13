@@ -86,14 +86,23 @@ def main():
         receipts.append(dict(label=label, configuration=color, native_receipt=receipt))
         return pixels
 
+    # An existing JPEG scene cannot represent RGBA until its format changes.
+    scene.render.image_settings.file_format = 'JPEG'
+    scene.render.image_settings.color_mode = 'RGB'
     neutral = capture('neutral', 6500, 10)
+    if scene.render.image_settings.file_format != 'PNG' or scene.render.image_settings.color_mode != 'RGBA':
+        raise AssertionError('JPEG to shared PNG color configuration failed')
     warm = capture('temperature-3200', 3200, 10)
     tint = capture('tint-100', 6500, 100)
     temperature_difference = float(np.abs(neutral[:, :3] - warm[:, :3]).mean())
     tint_difference = float(np.abs(neutral[:, :3] - tint[:, :3]).mean())
     if temperature_difference <= .01 or tint_difference <= .01:
         raise AssertionError(f'Actual white balance did not change PNG: {temperature_difference}, {tint_difference}')
+    scene.render.image_settings.file_format = 'JPEG'
+    scene.render.image_settings.color_mode = 'RGB'
     linear_neutral = capture('linear-neutral', 6500, 10, True)
+    if scene.render.image_settings.file_format != 'OPEN_EXR' or scene.render.image_settings.color_mode != 'RGBA':
+        raise AssertionError('JPEG to shared linear EXR color configuration failed')
     linear_changed = capture('linear-changed-view', 3200, 100, True)
     linear_difference = float(np.abs(linear_neutral - linear_changed).max())
     if linear_difference != 0:
