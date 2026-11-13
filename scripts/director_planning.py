@@ -204,6 +204,7 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
             artifacts, repairs = [], []
             counts = {'provider_calls': 0, 'input_tokens': None, 'output_tokens': None}
             complete_usage = {'input_tokens': True, 'output_tokens': True}
+            pending_usage = False
             role = STAGES[request['input']['stage']]
             spec = template(role)
             status, value, diagnostics = 'failed', None, []
@@ -236,6 +237,8 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
                     _fail('failed', 'CONTEXT_LIMIT', 'Prompt and context exceed the byte limit.')
                 user = {'original_prompt': data['original_prompt'], 'locked_constraints': data['locked_constraints'],
                         'untrusted_reference_data': context}
+                if len(json.dumps(user, allow_nan=False).encode()) > MAX_CONTEXT:
+                    _fail('failed', 'CONTEXT_LIMIT', 'Prompt, frozen constraints and references exceed the byte limit.')
                 for attempt in range(data['max_repairs'] + 1):
                     if datetime.fromisoformat(request['context']['deadline'].replace('Z', '+00:00')) <= datetime.now(timezone.utc):
                         _fail('failed', 'DEADLINE', 'Planning deadline expired before call.')
@@ -258,6 +261,7 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
                         stream.flush()
                         os.fsync(stream.fileno())
                     counts['provider_calls'] += 1
+                    pending_usage = True
                     raw = _post(configuration, body, request['context']['idempotency_key'] + ':' + str(attempt), credential)
                     raw_path = stage / f'response-{attempt}.json'
                     raw_path.write_bytes(raw)
@@ -275,6 +279,7 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
                             counts[field] = (counts[field] or 0) + observed
                         else:
                             complete_usage[field] = False
+                    pending_usage = False
                     try:
                         content = decode_json(_text(response))
                         Draft202012Validator(spec['schema'], format_checker=Draft202012Validator.FORMAT_CHECKER).validate(content)
@@ -308,7 +313,7 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
                     'field_path': 'input', 'expected': 'verified UTF-8 structured input', 'observed': 'Input or response could not be validated.',
                     'retryable': False, 'recommended_action': 'Correct input and verify exact evidence.', 'evidence': deepcopy(artifacts)})
             for field, complete in complete_usage.items():
-                if not complete:
+                if not complete or pending_usage:
                     counts[field] = None
             usage = {name: {'value': counts.get(name), 'explanation': None if counts.get(name) is not None else 'Not reported by the provider.'}
                      for name in ('provider_calls','input_tokens','output_tokens','cpu_seconds','gpu_seconds','storage_bytes','amount')}
