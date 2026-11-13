@@ -226,7 +226,38 @@ def evaluate_timeline(repository, body):
     return result
 
 
+def sample_curve(repository, body):
+    """Bounded exact samples from the canonical evaluator, never a UI interpolator."""
+    _keys(body,{'revision','sha256','shot','target','property','sample_count'})
+    count=body['sample_count'];_require(type(count) is int and 2<=count<=33,'Curve samples must be between 2 and 33.')
+    prop=body['property'];target=body['target']
+    _require(prop in ('translation','rotation','scale','visible','light_intensity','world_exposure') and isinstance(target,str),'Unsupported curve channel.')
+    native=repository.native_snapshot(body['revision'],body['sha256']);bundle=load_project(native['root'])
+    _require(any(ref['path']==body['shot'] for ref in bundle['project']['shots']),'Select an exact registered shot path.')
+    shot=bundle['documents'][body['shot']]
+    from scene3d_evaluate import evaluate_scene
+    samples=[]
+    for index in range(count):
+        frame=Fraction(index*(shot['duration_frames']-1),count-1)
+        evaluated=evaluate_scene(bundle,shot['scene']['path'],body['shot'],frame,source_root=native['root'],max_track_samples=8192)
+        if prop=='world_exposure':
+            _require(target=='world','World exposure requires world target.');value=evaluated['world']['exposure']
+        else:
+            _require(target in evaluated['nodes'],'Curve target is absent from the evaluated scene.')
+            state=evaluated['nodes'][target]
+            if prop in ('translation','rotation','scale'):value=state['channels'][prop]
+            elif prop=='visible':value=state['visible']
+            else:
+                _require('light' in state,'Light intensity requires a light target.');value=state['light']['intensity']
+        samples.append(dict(frame=evaluated['frame'],value=deepcopy(value)))
+    return dict(revision=body['revision'],snapshot_sha256=body['sha256'],shot=deepcopy(body['shot']),
+                target=target,property=prop,samples=samples,semantics=(
+                    'evaluated-local-channels-before-constraints' if prop in ('translation','rotation','scale') else
+                    'effective-render-visibility' if prop=='visible' else 'evaluated-world-exposure' if prop=='world_exposure' else 'evaluated-light-intensity'))
+
+
 def routes():
     """Fixed authenticated server dispatch; no caller-supplied Python callbacks."""
     return {'timeline/edit':lambda server,body: apply_timeline(server.repository,body),
-            'timeline/evaluate':lambda server,body:evaluate_timeline(server.repository,body)}
+            'timeline/evaluate':lambda server,body:evaluate_timeline(server.repository,body),
+            'timeline/curve':lambda server,body:sample_curve(server.repository,body)}

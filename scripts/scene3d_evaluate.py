@@ -127,6 +127,11 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
                 elif prop == 'light_intensity':
                     require(node['type'] == 'light', 'Light channel targets a nonlight.')
                     node['light']['intensity'] = result
+                elif prop in ('light_intensity_scale','light_color_multiplier'):
+                    require(node['type'] == 'light' and 'light_binding' in node,
+                            'Canonical light channel requires a bound light node.')
+                    node['light_binding'][{'light_intensity_scale':'intensity_scale',
+                                           'light_color_multiplier':'color_multiplier'}[prop]] = result
                 elif prop == 'material':
                     matches = [ref for ref in value['dependencies'] if
                                ref['kind'] == 'material' and ref['id']+'@'+ref['version'] == result]
@@ -179,6 +184,10 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
         target['material_overrides'] = [item for item in target['material_overrides']
                                         if item['slot'] != override['slot']]
         target['material_overrides'].append({'slot': override['slot'], 'material': deepcopy(override['material'])})
+    for override in authored_shot.get('light_overrides', []):
+        require(override['target'] in nodes and nodes[override['target']]['type'] == 'light',
+                'Shot canonical light override requires a light node.')
+        nodes[override['target']]['light_binding'] = deepcopy(override['binding'])
     camera = nodes[authored_shot['camera']]
     for name, value in authored_shot['camera_overrides'].items():
         camera[name] = deepcopy(value)
@@ -186,6 +195,39 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
     # constraint evaluation. Retaining them here would imply a second evaluator.
     for node in working['nodes']:
         node['animation_bindings'] = []
+    paths = [binding for binding in authored_shot.get('path_bindings', [])
+             if binding['start_frame'] <= frame < binding['end_frame']]
+    ranks = {}
+    def depth(identifier):
+        from scene3d_graph import _dependencies
+        require(identifier in nodes, 'Path binding target is absent from the expanded scene.')
+        if identifier not in ranks:
+            ranks[identifier] = 1 + max((depth(target) for target in _dependencies(nodes[identifier])),default=-1)
+        return ranks[identifier]
+    if paths:
+        SceneGraph(working)  # Validate the complete dependency graph before ordering.
+        import numpy as np
+        from scene3d_constraints import sample_path
+        from scene3d_math import local_matrix
+        for binding in sorted(paths,key=lambda b:depth(b['target'])):
+            samples += 1
+            require(samples <= max_track_samples,'Evaluated-track budget exceeded.','SCENE3D_EVALUATION_LIMIT')
+            progress = (frame-binding['start_frame'])/(binding['end_frame']-binding['start_frame'])
+            fraction = (Fraction(str(binding['start_fraction'])) + progress *
+                        (Fraction(str(binding['end_fraction']))-Fraction(str(binding['start_fraction']))))
+            desired = sample_path(binding['points'],float(fraction))
+            node = nodes[binding['target']]
+            parent = node['parent']
+            world = (np.eye(4) if parent is None else
+                     np.asarray(SceneGraph(working).evaluate_base(parent)['world_matrix']))
+            if 'attachment' in node:
+                attachment = node['attachment']
+                world = (np.asarray(SceneGraph(working).evaluate_base(attachment['socket'])['world_matrix']) @
+                         local_matrix(attachment['offset']))
+            local_target = (np.linalg.inv(world)@np.r_[desired,1])[:3]
+            transform = node['transform']
+            pivot_offset = local_matrix(transform)[:3,3]-np.asarray(transform['translation'])
+            transform['translation'] = (local_target-pivot_offset).tolist()
     validate_document(working, 'scene')
     asset_bounds = {d['id']+'@'+d['version']: d['bounds'] for d in documents.values()
                     if d['kind'] == 'scene3d-asset' and d['bounds'] is not None}
@@ -194,10 +236,11 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
     for identifier, state in evaluated.items():
         node = nodes[identifier]
         state.update(type=node['type'], visible=state['render_visible'],
+                     channels=deepcopy(node['transform']),
                      medium='projected-2d' if node['type'] == 'billboard_2d' else '3d',
                      material_overrides=deepcopy(node['material_overrides']),
                      base_pose_only=False, animation_evaluated=True)
-        for name in ('camera', 'light', 'asset'):
+        for name in ('camera', 'light', 'light_binding', 'asset'):
             if name in node:
                 state[name] = deepcopy(node[name])
         if identifier in native:
@@ -232,9 +275,25 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
         for identifier, meshes in geometry.items():
             arrays = [np.asarray(points) for points in meshes.values() if len(points)]
             if arrays:
-                evaluated[identifier]['world_bounds'] = dict(
+                evaluated[identifier]['own_world_bounds'] = dict(
                     minimum=np.min([points.min(axis=0) for points in arrays], axis=0).tolist(),
                     maximum=np.max([points.max(axis=0) for points in arrays], axis=0).tolist())
+        children = {identifier: [] for identifier in nodes}
+        for identifier, node in nodes.items():
+            if node['parent'] is not None:
+                children[node['parent']].append(identifier)
+        def bounds(identifier):
+            boxes = [evaluated[identifier]['own_world_bounds']]
+            boxes.extend(bounds(child) for child in children[identifier])
+            boxes = [box for box in boxes if box is not None]
+            result = (dict(minimum=np.min([box['minimum'] for box in boxes], axis=0).tolist(),
+                           maximum=np.max([box['maximum'] for box in boxes], axis=0).tolist())
+                      if boxes else None)
+            evaluated[identifier]['world_bounds'] = result
+            return result
+        for identifier, node in nodes.items():
+            if node['parent'] is None:
+                bounds(identifier)
     require(authored == before_scene and authored_shot == before_shot, 'Authored scene changed during evaluation.')
     result = {'schema_version': 1, 'coordinate_system': COORDINATES,
               'scene': _reference_identity(authored, scene_path), 'shot': _reference_identity(authored_shot, shot_path),
@@ -373,4 +432,54 @@ def resolve_materials(evaluation, registry):
             materials[override['slot']] = registry.effective_material(native)
         if materials:
             result[identifier] = materials
+    return result
+
+
+def frame_camera(evaluation, render, targets, **options):
+    """Frame exact evaluated target bounds through the canonical camera owner."""
+    require(isinstance(targets,(list,tuple)) and 1 <= len(targets) <= 128 and
+            all(isinstance(target,str) and target in evaluation['nodes'] for target in targets),
+            'Framing requires 1..128 evaluated node IDs.')
+    from camera3d_constraints import frame_subject
+    mapped = camera_matrices(evaluation,render)
+    resolved = [dict(position=[evaluation['nodes'][target]['world_matrix'][axis][3] for axis in range(3)],
+                     bounds=deepcopy(evaluation['nodes'][target]['world_bounds'])) for target in targets]
+    return frame_subject(mapped['world_matrix'],mapped['optics'],mapped['render'],resolved,**options)
+
+
+def light_instances(evaluation, registry):
+    """Resolve explicit physical light bindings without reinterpreting legacy scalars.
+
+    Returned instance intent retains the canonical source reference and evaluated
+    world transform; the LookDev lighting owner builds the resulting native plan.
+    """
+    from camera3d_math import world_transform
+    from lookdev_contracts import content_hash
+    result = dict(schema_version=1,lights={},world=None)
+    identity = dict(translation=[0,0,0],rotation=[0,0,0,1],scale=[1,1,1])
+    for identifier, state in evaluation['nodes'].items():
+        if 'light_binding' not in state:
+            continue
+        binding = state['light_binding']
+        source = registry.get(binding['light'])
+        require(source['kind'] == 'light3d' and source['type'] == state['light']['type'] and
+                source['type'] != 'environment', 'Canonical light source differs from its scene node type.')
+        matrix = world_transform(identity,parent=state['world_matrix'])
+        intent = dict(reference=deepcopy(binding['light']),world_matrix=matrix.tolist(),
+                      intensity_scale=binding['intensity_scale'],
+                      color_multiplier=deepcopy(binding['color_multiplier']),enabled=bool(state['visible']))
+        intent['sha256'] = content_hash(intent)
+        result['lights'][identifier] = intent
+    binding = evaluation['world'].get('light_binding')
+    if binding is not None:
+        source = registry.get(binding['light'])
+        require(source['kind'] == 'light3d' and source['type'] == 'environment',
+                'Canonical world lighting requires an environment light.')
+        require(evaluation['world']['environment'] is None,
+                'Choose one explicit world environment authority.')
+        intent = dict(reference=deepcopy(binding['light']),intensity_scale=binding['intensity_scale'],
+                      exposure_stops=binding['exposure_stops'])
+        intent['sha256'] = content_hash(intent)
+        result['world'] = intent
+    result['sha256'] = content_hash(result)
     return result
