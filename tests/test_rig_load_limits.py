@@ -314,7 +314,8 @@ class NativeLoadLimitTests(unittest.TestCase):
             name_size, extra_size, comment_size = struct.unpack_from('<3H', data, cursor + 28)
             if data[cursor + 46:cursor + 46 + name_size] == b'data.npy': break
             cursor += 46 + name_size + extra_size + comment_size
-        struct.pack_into('<I', data, cursor + 24, 200)
+        struct.pack_into('<I', data, cursor + 16, zlib.crc32(fake[:32 * 1024]))
+        struct.pack_into('<I', data, cursor + 24, 32 * 1024)
         path.write_bytes(data)
         real = zipfile.ZipExtFile.read
         requests = []
