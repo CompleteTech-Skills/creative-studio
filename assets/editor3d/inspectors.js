@@ -101,6 +101,7 @@ export function mountInspectors({container, getSnapshot, getSelection, api, relo
       field.append(element("legend","Bones and morphs"));section.append(field);
       if (!descriptor.editable) section.append(element("p",descriptor.read_only_reason));
       const bone=label(field,"Pose bone",choice(descriptor.skeleton.root,descriptor.skeleton.bones.map(item=>item.id)));
+      bone.setAttribute("aria-label","Pose bone");
       const inputs=element("div");field.append(inputs);
       let translation,rotation,scale;
       function drawBone() {
