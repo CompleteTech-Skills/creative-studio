@@ -1,0 +1,233 @@
+{
+  "status": "cohesive-PNG-JPEG-source-admission-passed-local-review-pending",
+  "repository": "CompleteTech-Skills/hatch-pet",
+  "base_sha": "bae65356567a10915658a6371c14ee9a4553db36",
+  "scope": "Complete assigned native PNG raster/container and warning-aware JPEG admission; partial broader52/44/139, no parent closure",
+  "environment": {
+    "python": "3.12.15",
+    "packages": {
+      "numpy": "2.3.5",
+      "Pillow": "12.3.0",
+      "jsonschema": "4.25.1",
+      "playwright": "1.55.0",
+      "pygltflib": "1.16.5",
+      "simplejpeg": "1.9.0"
+    },
+    "scope": "Isolated optional3D rig-test exact dependencies, no shared environment mutations"
+  },
+  "executed": {
+    "command": "PYTHONPATH=scripts:tests HATCH_RIG_INTEROP_TEST=1 HATCH_RIG_BLENDER_TEST=1 HATCH_RIG_BROWSER_TEST=1 /tmp/hatch-strict-jpeg-env/bin/python -B -m unittest -v test_rig_texture_integrity test_rig_jpeg test_rig_interop test_rig_contracts test_rig_skinning test_rig_compatibility test_rig_correction_validation",
+    "tests": 67,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "seconds": 27.925,
+    "new_test_methods": 19,
+    "schema_check": "passed",
+    "rig_template_check": "passed",
+    "diff_whitespace_check": "Authored runtime/tests/docs pass; full cumulative check reports original captured unittest trailing whitespace in raw baseline log, preserved unchanged.",
+    "wall_seconds": 28.884626388549805
+  },
+  "baseline_control": {
+    "expected_failing_subcases": 5,
+    "errors": 0,
+    "scope": "Exact old _images and OBJ importer functions loaded from base in memory; genuine damaged JPEG/PNG GLB/glTF/OBJ inputs",
+    "source_edits": false
+  },
+  "inputs": {
+    "scripts/rig_import.py": {
+      "bytes": 25825,
+      "sha256": "e3664c07e7f127a8c343e4dbaf7a3d13c1d1bbb4e06ca20b7e989aba33b757c8"
+    },
+    "scripts/rig_obj.py": {
+      "bytes": 10351,
+      "sha256": "5fb0a80012a5351c9bd5fad7e632a0c24e0bc9f7c5b22576ac34f168a28daced"
+    },
+    "scripts/rig_jpeg.py": {
+      "bytes": 6964,
+      "sha256": "98fd692ec3d6b3262b4329391926a40090dc39fd5c347abd0cdfe6bc3f118849"
+    },
+    "scripts/test_rig_gate.py": {
+      "bytes": 1360,
+      "sha256": "a90f2b16527639f82c6991a7aeeb0b65ffdc9fc8de2fa5110c534e5bad758df4"
+    },
+    "tests/test_rig_texture_integrity.py": {
+      "bytes": 20675,
+      "sha256": "c889ac4a6a9cd58b24c83d2ff7cff9eb804917838b9c2fd232d74760018e4ab7"
+    },
+    "tests/test_rig_jpeg.py": {
+      "bytes": 9423,
+      "sha256": "73884116becb90a6327ef28359b41796374005822f86bc84d68c47411f07d310"
+    },
+    "requirements-rig.txt": {
+      "bytes": 206,
+      "sha256": "8ba3ffc89f62f3e759282b2de7c85c5d409d19e8c06f830811ad09dcbbde35f4"
+    },
+    ".github/workflows/strict-jpeg.yml": {
+      "bytes": 1928,
+      "sha256": "6604587757075bd8b48c5840a1629499c1f7d5aaf3fa861c0f46ad32b2e0597b"
+    },
+    "references/3d-rigging.md": {
+      "bytes": 30956,
+      "sha256": "6fb0aa5fa6898585d3e11cad21dd76096cb0ba7d665955fa1cd4dd7a1dd9b00b"
+    },
+    "references/strict-jpeg-validation.md": {
+      "bytes": 5696,
+      "sha256": "28edac1648da2fab3c233bd07ce3db09e19deafac46d7d5a918fe26b1720b937"
+    }
+  },
+  "unchanged_protected": {
+    "profiles/codex-v1.json": {
+      "bytes": 13287,
+      "sha256": "f4e0279f8634ea53ef544ecb49b9a71ec2565c61ec5b8e63163ecc5ead478a6b"
+    },
+    "profiles/production-project.schema.json": {
+      "bytes": 57164,
+      "sha256": "cd33410c713660e33c6805df19aa94512de5f0cb64f71f6b3db74ce05d2c4c21"
+    },
+    "profiles/production-scene.schema.json": {
+      "bytes": 57160,
+      "sha256": "1d01d66903b3d730f4670951daf2f30239e05d27b1f50d68be080173585974ad"
+    },
+    "profiles/rig.schema.json": {
+      "bytes": 125546,
+      "sha256": "aa57fc1b61a540d4b667ed2c64d764aab1fee33c8bf2af02103900a87db7a078"
+    },
+    "scripts/rig_math.py": {
+      "bytes": 6570,
+      "sha256": "2bb7c84179af828c9f84f41e9510e59e4e88c68367b91c7e6e41279a77ee0f2c"
+    },
+    "scripts/rig_models.py": {
+      "bytes": 18162,
+      "sha256": "fadd03340ebee772391dd28a488c0fab011450e940c26816ade49d0c5f98d81d"
+    },
+    "scripts/rig_gltf.py": {
+      "bytes": 22902,
+      "sha256": "3d5117c5f6c69df785abefab1fe19fe0b867c821a0e3764da5777f0b841fab92"
+    },
+    "scripts/production_render.py": {
+      "bytes": 67584,
+      "sha256": "981b6fbafdcd0fcf009dca02b0f695bfb3742b58bd9e9a11068f0e0dd085c9be"
+    },
+    "requirements-delivery.txt": {
+      "bytes": 123,
+      "sha256": "e040ae6d71bf707f56ac2050473252d1efa4a6f7aef43cfbf0d2e3a1b17a126b"
+    },
+    "requirements-rig-test.txt": {
+      "bytes": 76,
+      "sha256": "58fe31f26d8a9192632890f76b27fd4335f9a9a8607e31215b2a6fe862791f2f"
+    }
+  },
+  "artifacts": {
+    "tests/results/native-texture-integrity-20261024/baseline-control.log": {
+      "bytes": 4302,
+      "sha256": "15bdf0125d6f347526f8213f9350030d26893351558bb6e941486c921f9f61ed"
+    },
+    "tests/results/native-texture-integrity-20261024/baseline-control.py": {
+      "bytes": 2019,
+      "sha256": "896d74023ec3c473570a2b6cb44aefbcb523356ce604bf6b153011b4059808f0"
+    },
+    "tests/results/native-texture-integrity-20261024/initial-verification.json": {
+      "bytes": 4657,
+      "sha256": "8033513a0a0edece8a89f8369e0dd1b6e3ab042156370bdbd85b49a91619877a"
+    },
+    "tests/results/native-texture-integrity-20261024/jpeg-recovery-residual.json": {
+      "bytes": 2777,
+      "sha256": "522b724e2aec040446a09dcc80835a444911645c59db90e74b753b497168049e"
+    },
+    "tests/results/native-texture-integrity-20261024/native-texture-final-focused.log": {
+      "bytes": 5505,
+      "sha256": "d533342eab51f5bf6f33218e10fb370ace3e09b118bc6dff75d5a4ae268c456c"
+    },
+    "tests/results/native-texture-integrity-20261024/native-texture-final-regression.json": {
+      "bytes": 77240,
+      "sha256": "78db6ad572dc29a4bfabd5c5cdfd1dd23c7c07f3e58bfff79326bc9dd0299c5c"
+    },
+    "tests/results/native-texture-integrity-20261024/native-texture-final-regression.log": {
+      "bytes": 11307,
+      "sha256": "54f4b5a54eb973bfcb2757b59b69515e595d701fc3b3591e348067d504901e6d"
+    },
+    "tests/results/native-texture-integrity-20261024/native-texture-workflow-codec.log": {
+      "bytes": 2061,
+      "sha256": "7c82a5d37dd3bc3f00aefd3de995402116e16cdf643b262ccf7e9641e241024b"
+    },
+    "tests/results/native-texture-integrity-20261024/native-texture-workflow-routes.log": {
+      "bytes": 3416,
+      "sha256": "7e4a059c346775e926ec6c7ec30ece8116dccecd6a3b272bb46ec0619e136616"
+    },
+    "tests/results/native-texture-integrity-20261024/png-baseline-control.log": {
+      "bytes": 4964,
+      "sha256": "ef88617c9749dd2143adfb9cdc2c6c80fdb6fe93c3f7b851a04e1a2fe108fd29"
+    },
+    "tests/results/native-texture-integrity-20261024/png-baseline-control.py": {
+      "bytes": 1521,
+      "sha256": "31e205290a798dacc36529b0b0c4391079bfd816ce54fae982984affd57d7be0"
+    },
+    "tests/results/native-texture-integrity-20261024/png-corrected-frozen-inputs.json": {
+      "bytes": 71469,
+      "sha256": "c92e146e4bee9b7c204d2c28d7139adf40f978eefa35cabef094ef907da7d70d"
+    },
+    "tests/results/native-texture-integrity-20261024/png-corrected-regression.log": {
+      "bytes": 7619,
+      "sha256": "d6d69a489724f818c1c4a21e917c36290d6041e56d32e3b22a7988ae6cfe9cee"
+    },
+    "tests/results/native-texture-integrity-20261024/png-corrected-verification.json": {
+      "bytes": 7279,
+      "sha256": "04eb1e796f7b8d69be6147d34f5d7e628b1c424f81c6c9664e856899706234b5"
+    },
+    "tests/results/native-texture-integrity-20261024/regression.log": {
+      "bytes": 7073,
+      "sha256": "8ec9d2b7cd02b003cb7e5cf721c1b3e89e572865e2021a9a7fa6b1c689fd6178"
+    }
+  },
+  "limitations": [
+    "Synthetic engineering fixtures; no visual/human production approval.",
+    "Pillow strict host policy required; LOAD_TRUNCATED_IMAGES=True fails closed and is not modified.",
+    "Only existing static PNG/JPEG texture profile supported.",
+    "Native source filesystem admission and other source-format requirements remain owned by existing importer; this is not a new race-free filesystem sandbox.",
+    "No actual native macOS/Windows execution in this local report; future exact-head hosted CI required.",
+    "Review and publication remain pending; worker does not self-approve or merge.",
+    "Warning-aware formatdecode is not original-pixel authenticity: demonstrated valid changed arithmetic bitstreams retain legal zero-padding, requiring independent originaldigest for identity.",
+    "The optional3D strictJPEG dependency is newly pinned; no ordinary2D requirement changed. Actual hosted nativeWindows/macOS execution remains pendingCI.",
+    "Final cohesive exact-head independentAstra review pending; earlier partialPNG and standaloneJPEG reviews do not automatically approve this merged source boundary."
+  ],
+  "source_commit": "8c7f9eefc1ae5905e1584b95e3bb78f52338e7b0",
+  "initial_receipt": "initial-verification.json preserves exact original fe467c0 receipt; its full-whitespace claim was broader than actually checked authored tracked files.",
+  "png_control": {
+    "source_commit": "fe467c0e0835a5aa06a989cc27bac2f25de9ba57",
+    "expected_failing_subcases": 6,
+    "errors": 0,
+    "source_edits": false,
+    "scope": "Prior verify+load accepts complete-looking PNG missingrows/zlibfooter/endCRC through genuine GLB andOBJ."
+  },
+  "png_validation": "All chunk CRCs and IEND, valid PNG raster parameters, consecutive IDAT, complete one zlibstream with exact filtered row bytes including Adam7, 64KiB bounded streaming; no complete inflated raster allocation.",
+  "frozen_inputs": "native-texture-final-regression.json records identical full scripts/tests/profiles hashes before/after67tests at8c7f9ee.",
+  "integrated_module_commit": "e881182b12583dc1dcd99cba66714ed520d2e419",
+  "integration_merge_commit": "970f5c7783aee86c77d91cae1f69160133f28c46",
+  "jpeg_integration": {
+    "single_hook": "rig_import._decode_texture:verify_jpeg before JPEG acceptance and Pillowload",
+    "budget": "max_encoded=source_bytes;max_working=memory_bytes//2-total_pixels*16;expected_size=actual Pillow header size",
+    "paths": [
+      "GLB bufferView",
+      "glTF embeddedbufferView",
+      "glTF externalfile",
+      "glTF dataURI",
+      "OBJ/MTL"
+    ],
+    "corruption": "All four canonical Huffman entropy cuts that Pillow recovers now reject through every route, withactualCLI no-publication/source-preservation checks.",
+    "unavailability": "Actual missing-module CLI and API reject structured RIG_TEXTURE_VERIFIER_UNAVAILABLE, never permissive fallback; PNG unaffected.",
+    "supported": "Byte-preserving grayscale/RGB/CMYK baseline+progressive and arithmetic positive fixtures.",
+    "history": "jpeg-recovery-residual.json is preserved preintegration evidence atb5b48f2; warning-producing canonicalJPEG gap is fixed by strict native codec integration.",
+    "identity_limit": "Arithmetic JPEG permits legal marker padding; different valid bitstream cannot be authenticated without independently supplied original hash. No claim to detect every possible changed JPEG."
+  },
+  "workflow": {
+    "matrix": [
+      "ubuntu-latest",
+      "windows-latest",
+      "macos-latest"
+    ],
+    "portable_commands": "JobPYTHONPATH=scripts plus unittestdiscover, no POSIXpathseparator assumption onWindows",
+    "local_equivalent_codec_family": "12passed",
+    "local_equivalent_native_family": "19tests;18passed+1explicitoptionalKhronos skip without externalflag; full67suite enablesexternaltools and haszero skips."
+  }
+}
