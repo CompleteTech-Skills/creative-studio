@@ -398,6 +398,8 @@ class BlenderBackend:
                 backend=backend,status='complete',requested_frames=indices,successful=indices,failed=[],skipped=[],reused=[],images=images,diagnostics=[],
                 usage=dict(**usage,output_bytes=sum(p.stat().st_size for p in stage.rglob('*') if p.is_file()),measurement='measured' if usage['peak_memory_bytes'] is not None else 'estimated'),
                 logs=[artifact('blender.log')],manifest=artifact('manifest.json'),verification=dict(status='not-run',verifier=None,evidence=None))
+            if quality is not None:
+                result['artifacts']=[artifact('color-context.json')]+[artifact('color-config/'+row['path']) for row in quality['color_config']['files']]
             from render3d_verify import verify_result
             _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes'])
             verification=verify_result(request,result,stage,snapshot_root=frozen,expected_backend=backend,max_total_bytes=source_budget)

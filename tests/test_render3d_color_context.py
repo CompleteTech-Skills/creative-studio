@@ -64,3 +64,24 @@ class CompletedCacheBinding(unittest.TestCase):
             client.identity_provider=lambda:deepcopy(current)
             with patch('render3d_quality_binding.adapter_hash',return_value='f'*64):
                 with self.assertRaises(Render3DError):client.run_one('job')
+
+
+class ArtifactContracts(unittest.TestCase):
+    def candidate(self):
+        from test_render3d_contracts import backend
+        return dict(schema_version=1,kind='render3d-result',job='job',request_sha256='0'*64,
+            snapshot_sha256='1'*64,backend=backend(),status='partial',requested_frames=[0],
+            successful=[0],failed=[],skipped=[],reused=[],images=[],diagnostics=[],
+            usage=dict(elapsed_seconds=None,peak_memory_bytes=None,output_bytes=None,measurement='unavailable'),
+            logs=[],manifest=None,verification=dict(status='not-run',verifier=None,evidence=None))
+    def test_optional_companion_refs_are_bounded_and_portable(self):
+        from render3d_contracts import validate
+        value=self.candidate();validate(value,'RenderResult')
+        value['artifacts']=[];validate(value,'RenderResult')
+        ref=dict(path='color-config/config.ocio',sha256='a'*64,bytes=123)
+        value['artifacts']=[ref];validate(value,'RenderResult')
+        for refs in ([ref,ref],[ref,dict(ref,path='Color-Config/config.ocio')],
+                     [ref,dict(ref,path='color-config')],[dict(ref,bytes=256*1024**2+1)],
+                     [dict(ref,path='../escape')]):
+            with self.subTest(refs=refs),self.assertRaises(Render3DError):
+                validate(dict(value,artifacts=refs),'RenderResult')

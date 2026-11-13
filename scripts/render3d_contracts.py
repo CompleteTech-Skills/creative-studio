@@ -135,6 +135,7 @@ def definitions():
                   failed=arr(count, 0, 100000), skipped=arr(count, 0, 100000), reused=arr(count, 0, 100000),
                   images=arr(image, 0, 400000), diagnostics=arr(diagnostic, 0, 1024),
                   usage=usage, logs=arr(artifact, 0, 1024), manifest=nullable(artifact), verification=verification))
+    result['properties']['artifacts'] = arr(file, 0, MAX_FILES)
     capabilities = doc('capabilities', dict(adapter=identity, backend=nullable(backend),
         discovery={'enum': ['available', 'unavailable', 'untested']},
         initialization={'enum': ['passed', 'failed', 'not-run']},
@@ -265,6 +266,19 @@ def validate(value, kind=None):
         for image in value['images']:
             require(image['bit_depth'] in ((8, 16) if image['format'] == 'png' else (16, 32)),
                     'invalid-input', 'Image bit depth is incompatible with its format.')
+        if value.get('artifacts'):
+            refs=[i['file'] for i in value['images']]+value['logs']+value['artifacts']
+            refs += [r for r in (value['manifest'],value['verification']['evidence']) if r is not None]
+            paths=[r['path'] for r in refs]
+            require(len(paths)==len(set(paths)), 'invalid-input', 'Companion artifacts must have distinct paths.')
+            files=set(paths);aliases={}
+            for path in paths:
+                parts=path.split('/')
+                for n in range(1,len(parts)+1):
+                    prefix='/'.join(parts[:n]);key=unicodedata.normalize('NFC',prefix).casefold()
+                    require(key not in aliases or aliases[key]==prefix, 'invalid-input', 'Artifact paths alias across platforms.')
+                    require(n==len(parts) or prefix not in files, 'invalid-input', 'Artifact path conflicts with a file parent.')
+                    aliases[key]=prefix
         _verification(value['verification'])
     elif kind == 'FrameSpec':
         require(value['cache_key'] == frame_hash(value), 'stale-cache', 'Frame cache identity changed.')
