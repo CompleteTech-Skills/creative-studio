@@ -192,6 +192,40 @@ class PhysicsBackendAdmissionTests(unittest.TestCase):
                 payload=root/('payload.bin' if name=='total' else 'simulation-'+name+'.log')
                 self.assertEqual(payload.stat().st_size,size)
 
+    def test_concurrent_and_failed_discovery_cannot_reuse_prepared_attempt(self):
+        # Negative protocol test only: real source admission and threads, no
+        # successful solver result is substituted for native execution.
+        for backend in (physics.BlenderBackend('/unused'), physics.PyBulletBackend(sys.executable)):
+            with self.subTest(backend=backend.backend_id):
+                world,payloads=build_inputs(backend=backend.backend_id)
+                identity=dict(id=backend.backend_id,adapter_version='1.0.0',executable_sha256='0'*64)
+                with patch.object(backend,'_discover',return_value=identity):
+                    prepared=backend.prepare(world,payloads)
+                entered=threading.Event();release=threading.Event();failures=[]
+                def discover(**kwargs):
+                    entered.set()
+                    if not release.wait(5):raise RuntimeError('test discovery release timed out')
+                    raise physics.BackendError('PHYSICS_BACKEND_UNAVAILABLE','Injected discovery failure')
+                def execute():
+                    try:backend.simulate(prepared)
+                    except BaseException as exc:failures.append(exc)
+                thread=threading.Thread(target=execute)
+                try:
+                    with patch.object(backend,'_discover',side_effect=discover) as discovery:
+                        thread.start()
+                        self.assertTrue(entered.wait(5))
+                        error_code(self,'PHYSICS_STATE',lambda:backend.simulate(prepared))
+                        release.set();thread.join(5)
+                        self.assertFalse(thread.is_alive())
+                        self.assertEqual(discovery.call_count,1)
+                        self.assertEqual(len(failures),1)
+                        self.assertIsInstance(failures[0],physics.BackendError)
+                        self.assertEqual(failures[0].report['code'],'PHYSICS_BACKEND_UNAVAILABLE')
+                        error_code(self,'PHYSICS_STATE',lambda:backend.simulate(prepared))
+                finally:
+                    release.set();thread.join(5)
+                    backend.cleanup(prepared)
+
     def test_owned_descendant_is_killed_even_when_leader_exits_on_term(self):
         def living(pid):
             try:
