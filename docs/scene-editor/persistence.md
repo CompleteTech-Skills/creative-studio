@@ -199,6 +199,8 @@ active, or the viewport was lost or disposed. The busy lock lasts until the
 callback settles, including its reload. The callback receives the post-save
 `snapshot` and lifecycle-checked `api`, `reload`, and `isCurrent` helpers; derive
 revision/hash bindings from that snapshot, and use those helpers for requests.
+Callback helpers expire when the callback settles. A response to a cancelled
+guarded reload is rejected before installing it into the viewport.
 A failed last edit must be retried successfully before guarded actions resume.
 This does not cancel a server transaction that already committed before a
 context loss; callers must inspect the saved revision after recovery.

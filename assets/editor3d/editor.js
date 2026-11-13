@@ -335,13 +335,13 @@ async function runGuardedAction(callback) {
     if (!usable() || lifecycleGeneration !== generation) throw Error("The viewport changed while saving the pending edit.");
     setBusy(true); ownsBusy = true; gizmo?.detach();
     const assertCurrent = () => {
-      if (!usable() || lifecycleGeneration !== generation) throw Error("The editor action was cancelled by the viewport lifecycle.");
+      if (!guardedAction || actionAuthority !== authority || !usable() || lifecycleGeneration !== generation) throw Error("The editor action was cancelled or has finished.");
     };
     const value = await callback({
       snapshot: structuredClone(currentSnapshot),
       api: async (...args) => { assertCurrent(); const result = await api(args[0], args[1], authority); assertCurrent(); return result; },
-      reload: async (...args) => { assertCurrent(); const result = await reload(args[0], authority); assertCurrent(); return result; },
-      isCurrent: () => usable() && lifecycleGeneration === generation,
+      reload: async (...args) => { assertCurrent(); const result = await reload(args[0], authority, assertCurrent); assertCurrent(); return result; },
+      isCurrent: () => guardedAction && actionAuthority === authority && usable() && lifecycleGeneration === generation,
     });
     assertCurrent();
     return value;
@@ -523,7 +523,8 @@ async function assetObject(asset) {
   }
   throw Error(asset.message || "Unsupported geometry format.");
 }
-async function install(snapshot) {
+async function install(snapshot, assertCurrent = null) {
+  assertCurrent?.();
   previewActive = false;
   currentSnapshot = snapshot;
   $("undo").disabled = busy || !snapshot.undo_available;
@@ -577,6 +578,11 @@ async function install(snapshot) {
       if (asset && asset.format !== "unavailable") {
         try {
           const actual = await assetObject(asset);
+          try { assertCurrent?.(); } catch (error) {
+            actual.traverse(object => { object.geometry?.dispose();
+              for (const material of Array.isArray(object.material) ? object.material : [object.material]) material?.dispose(); });
+            throw error;
+          }
           if (epoch !== loadEpoch) {
             actual.traverse((o) => {
               o.geometry?.dispose();
@@ -585,6 +591,7 @@ async function install(snapshot) {
           }
           object.add(actual);
         } catch (error) {
+          assertCurrent?.();
           diagnostic("Asset " + node.asset.id + ": " + error.message);
         }
       } else
@@ -695,9 +702,11 @@ async function install(snapshot) {
   if ($("diagnostic").hidden)
     $("status").textContent = "Loaded saved revision " + revision;
 }
-async function reload(frame = false, authority = null) {
+async function reload(frame = false, authority = null, assertCurrent = null) {
   const snapshot = await api("snapshot", undefined, authority);
-  const displayed = await install(snapshot);
+  assertCurrent?.();
+  const displayed = await install(snapshot, assertCurrent);
+  assertCurrent?.();
   if (frame && displayed !== false) frameScene();
   return displayed;
 }

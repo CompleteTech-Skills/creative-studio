@@ -80,6 +80,12 @@ class EditorActionBrowserTests(unittest.TestCase):
                         page.wait_for_function('() => window.guardResult !== null')
                         self.assertIn('consumer failed', page.evaluate('() => window.guardResult.error'))
                         self.assertFalse(x.is_disabled())
+                        # Captured action helpers expire as soon as the callback completes.
+                        page.evaluate('() => actionContext.runGuardedAction(context => { window.closedAction=context; })')
+                        self.assertFalse(page.evaluate('() => window.closedAction.isCurrent()'))
+                        for operation in ('api', 'reload'):
+                            rejected = page.evaluate("""async operation => {try{await window.closedAction[operation]('snapshot');return '';}catch(e){return e.message;}}""", operation)
+                            self.assertIn('finished', rejected)
                         # Invalid focused values and active native interactions do not publish.
                         unchanged = repository.snapshot()['revision']
                         x.fill('2000000')
@@ -106,14 +112,20 @@ class EditorActionBrowserTests(unittest.TestCase):
                         page.evaluate('() => window.releaseGuard()')
                         page.wait_for_function('() => window.guardResult !== null')
                         self.assertFalse(page.evaluate('() => window.guardResult.ok'))
-                        # Disposal rejects a pending consumer request and releases the lock.
-                        page.evaluate('''() => { window.releaseGuard=null; window.guardResult=null;
-                          actionContext.runGuardedAction(async c=>{
-                            await new Promise(resolve=>window.releaseGuard=resolve); await c.api('snapshot');
-                          }).then(()=>window.guardResult={ok:true},e=>window.guardResult={ok:false,error:e.message}); }''')
-                        page.evaluate("() => {window.dispatchEvent(new Event('pagehide'));window.releaseGuard();}")
+                        # A snapshot response already in flight must not rebuild a disposed viewport.
+                        snapshots = []
+                        page.route('**/api/snapshot', lambda route: snapshots.append(route))
+                        page.evaluate('''() => { window.guardResult=null;
+                          actionContext.runGuardedAction(async c=>{ await c.reload(); })
+                          .then(()=>window.guardResult={ok:true},e=>window.guardResult={ok:false,error:e.message}); }''')
+                        page.wait_for_timeout(80)
+                        self.assertEqual(len(snapshots), 1)
+                        page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
+                        self.assertEqual(page.evaluate('() => hatchEditor.objects.size'), 0)
+                        snapshots.pop().continue_(); page.unroute('**/api/snapshot')
                         page.wait_for_function('() => window.guardResult !== null')
                         self.assertFalse(page.evaluate('() => window.guardResult.ok'))
+                        self.assertEqual(page.evaluate('() => hatchEditor.objects.size'), 0)
                     finally:
                         browser.close()
             finally:
