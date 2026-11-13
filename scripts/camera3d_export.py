@@ -8,10 +8,9 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 import math
-import shutil
-import tempfile
+import os
 
-from atomic_publish import _rename_no_replace
+from atomic_publish import _rename_no_replace, pinned_directory, private_stage
 from camera3d_contracts import canonical_bytes
 from camera3d_math import _matrix, field_of_view, optical_gate
 from rig_errors import atomic_json, object_hash, sha256
@@ -35,7 +34,7 @@ def export_plan(optics, render, world_matrix, *, allow_loss=False, exposure=0.0,
     for value, low, high, label in ((exposure, -32, 32, 'exposure'),
                                    (shutter_frames, 0, 1, 'shutter_frames')):
         if (isinstance(value, bool) or not isinstance(value, (int, float))
-                or not math.isfinite(value) or not low <= value <= high):
+                or not low <= value <= high or not math.isfinite(value)):
             raise ValueError(f'camera3d {label} must be finite in [{low},{high}]')
     if not isinstance(motion_blur, bool):
         raise ValueError('camera3d motion_blur must be boolean')
@@ -103,15 +102,20 @@ def export_gltf(destination, optics, render, world_matrix, *, validate=True, **o
         raise ValueError('camera3d export destination must be new')
     if not destination.parent.is_dir():
         raise ValueError('camera3d export parent directory must exist')
-    stage = Path(tempfile.mkdtemp(prefix='.camera-export-', dir=destination.parent))
-    try:
+    with pinned_directory(destination.parent) as parent_fd, private_stage(
+            parent_fd, prefix='.camera-export-') as (wrapper, wrapper_fd):
+        stage = wrapper / 'payload'
+        stage.mkdir(mode=0o700)
         for name, value in (('camera.gltf', plan['gltf']), ('canonical.json', plan['canonical']),
                             ('losses.json', plan['loss_report'])):
             atomic_json(stage / name, value)
         validation = None
         if validate:
             from rig_interop import validate_gltf
-            validation = validate_gltf(stage / 'camera.gltf')
+            # The validator is a separate process. Refer to this live parent
+            # descriptor explicitly; /proc/self would refer to its own fd table.
+            validation_path = Path('/proc') / str(os.getpid()) / 'fd' / str(wrapper_fd) / 'payload/camera.gltf'
+            validation = validate_gltf(validation_path)
             if not validation['ok']:
                 raise ValueError('camera3d independent Khronos validation rejected export')
             atomic_json(stage / 'khronos-validation.json', validation)
@@ -121,8 +125,6 @@ def export_gltf(destination, optics, render, world_matrix, *, validate=True, **o
                        files={path.name: sha256(path) for path in stage.iterdir()},
                        canonical_sha256=plan['loss_report']['canonical_sha256'])
         atomic_json(stage / 'receipt.json', receipt)
-        _rename_no_replace(stage, destination)
+        _rename_no_replace('payload', destination.name,
+                           source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
         return receipt
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)

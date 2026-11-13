@@ -39,3 +39,14 @@ matrices and physical optical state. Reports retain source hashes, exact native
 file hashes and measured errors. The optional automated test is enabled with
 `HATCH_CAMERA3D_NATIVE_EXPORT_TEST=1`, `HATCH_BLENDER` and
 `HATCH_CAMERA_TEST_SITE`; otherwise it explicitly skips the native gate.
+
+Directory publication currently requires the tested Linux procfs/descriptor adapter.
+Planning and core glTF loss analysis remain portable. Publication fails closed
+on unsupported hosts before creating output. A pinned, mode-0700 outer wrapper
+holds an inner payload; verification and exclusive publication use that same
+open directory. Concurrent replacement of the public wrapper cannot substitute
+output or redirect cleanup. The shared helper intentionally retains its empty
+outer wrappers for owned maintenance. The glTF validator reads a parent-process
+descriptor path while that parent holds the descriptor until validation exits.
+This is namespace race protection, not isolation from a hostile process with
+the same user identity and access to the process descriptors.

@@ -46,3 +46,14 @@ errors. This is static camera interchange proof, not physical-effects parity or
 the complete Camera #80 render/export/cache acceptance. Native Blender save,
 production frame rendering, silent media, full target/path/transition cache
 identity and resumed-render verification remain required owner integrations.
+
+Directory publication currently requires the tested Linux procfs/descriptor adapter.
+Planning and core glTF loss analysis remain portable. Publication fails closed
+on unsupported hosts before creating output. A pinned, mode-0700 outer wrapper
+holds an inner payload; verification and exclusive publication use that same
+open directory. Concurrent replacement of the public wrapper cannot substitute
+output or redirect cleanup. The shared helper intentionally retains its empty
+outer wrappers for owned maintenance. The glTF validator reads a parent-process
+descriptor path while that parent holds the descriptor until validation exits.
+This is namespace race protection, not isolation from a hostile process with
+the same user identity and access to the process descriptors.

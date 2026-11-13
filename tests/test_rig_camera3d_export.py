@@ -6,12 +6,14 @@ import math
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import numpy as np
 from camera3d_export import export_gltf, export_plan
+from atomic_publish import private_stage_supported
 from camera3d_math import projection_matrix, world_transform
 
 
@@ -110,9 +112,19 @@ class CameraExportTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             export_plan(self.optics, self.render, self.world, allow_loss=1)
 
+    def test_huge_numeric_controls_are_rejected_before_conversion(self):
+        for name in ('exposure', 'shutter_frames'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                export_plan(self.optics, self.render, self.world, **{name: 10**400})
+
     def test_publication_is_new_and_receipt_checks_real_bytes(self):
         with tempfile.TemporaryDirectory() as temp:
             destination = Path(temp) / 'camera'
+            if not private_stage_supported():
+                with self.assertRaises(OSError):
+                    export_gltf(destination, self.optics, self.render, self.world, validate=False)
+                self.assertFalse(destination.exists())
+                return
             receipt = export_gltf(destination, self.optics, self.render, self.world, validate=False)
             self.assertFalse(receipt['independently_validated'])
             for name, digest in receipt['files'].items():
@@ -120,6 +132,40 @@ class CameraExportTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 export_gltf(destination, self.optics, self.render, self.world, validate=False)
             self.assertEqual(json.loads((destination / 'canonical.json').read_text())['optics'], self.optics)
+
+
+    def test_publication_refuses_unavailable_pinned_adapter_without_output(self):
+        with tempfile.TemporaryDirectory() as temp, patch('atomic_publish.private_stage_supported', return_value=False):
+            destination = Path(temp) / 'camera'
+            with self.assertRaises(OSError):
+                export_gltf(destination, self.optics, self.render, self.world, validate=False)
+            self.assertEqual(list(Path(temp).iterdir()), [])
+
+    def test_replaced_outer_stage_is_preserved_and_never_published(self):
+        if not private_stage_supported():
+            # Unsupported hosts execute the explicit fail-closed boundary above.
+            return
+        import camera3d_export
+        original = camera3d_export.atomic_json
+        with tempfile.TemporaryDirectory() as temp:
+            parent = Path(temp)
+            replaced = []
+            def write_and_replace(path, value):
+                original(path, value)
+                if path.name == 'receipt.json':
+                    wrapper = next(parent.glob('.camera-export-*'))
+                    moved = parent / 'moved-owned-wrapper'
+                    wrapper.rename(moved)
+                    wrapper.mkdir()
+                    (wrapper / 'foreign.txt').write_bytes(b'preserve replacement')
+                    replaced.append(wrapper)
+            with patch.object(camera3d_export, 'atomic_json', side_effect=write_and_replace):
+                receipt = export_gltf(parent / 'camera', self.optics, self.render, self.world, validate=False)
+            self.assertEqual((replaced[0] / 'foreign.txt').read_bytes(), b'preserve replacement')
+            self.assertFalse((parent / 'camera/foreign.txt').exists())
+            self.assertEqual(json.loads((parent / 'camera/canonical.json').read_text())['optics'], self.optics)
+            for name, digest in receipt['files'].items():
+                self.assertEqual(hashlib.sha256((parent / 'camera' / name).read_bytes()).hexdigest(), digest)
 
 
 if __name__ == '__main__':

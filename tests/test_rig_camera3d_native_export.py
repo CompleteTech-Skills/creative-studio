@@ -47,6 +47,7 @@ class NativeCameraExportTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, (result.stdout + result.stderr)[-12000:])
             report = json.loads((destination / 'acceptance.json').read_text())
             self.assertTrue(report['source_project_unchanged'])
+            self.assertTrue(report['stage_replacement_preserved'])
             self.assertTrue(report['rejected_unsupported_without_leak'])
             self.assertEqual(len(report['cases']), 2)
 

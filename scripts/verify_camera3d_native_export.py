@@ -18,7 +18,9 @@ if os.environ.get('HATCH_CAMERA_TEST_SITE'):
 def main():
     import bpy
     import numpy as np
+    import camera3d_native_export
     from camera3d_native_export import export_camera_library
+    from unittest.mock import patch
     from camera3d_math import projection_matrix, world_transform
     from rig_math import BLENDER_FROM_CANONICAL
     parser = argparse.ArgumentParser(description=__doc__)
@@ -53,6 +55,7 @@ def main():
     if (destination / 'unsupported').exists() or source_state() != before:
         raise AssertionError('Failed native export leaked output or changed the source project')
     exports = []
+    replacements = []
     for label in ('perspective', 'orthographic'):
         value = deepcopy(optics)
         if label == 'orthographic':
@@ -61,7 +64,25 @@ def main():
             value['depth_of_field']['enabled'] = False
         options = dict(exposure=1 if label == 'perspective' else -1,
                        motion_blur=label == 'perspective', shutter_frames=.25)
-        receipt = export_camera_library(destination / label, value, render, world, **options)
+        write_json = camera3d_native_export.atomic_json
+        def write_and_replace(path, document):
+            write_json(path, document)
+            if path.name == 'receipt.json':
+                # Exercise the original publication gap with an actual library:
+                # replace its public outer wrapper after all bytes are hashed.
+                wrapper = next(p for p in destination.glob('.camera-native-export-*')
+                               if p.is_dir() and not (p / 'foreign.txt').exists())
+                wrapper.rename(destination / ('moved-wrapper-' + label))
+                wrapper.mkdir()
+                (wrapper / 'foreign.txt').write_bytes(b'preserve foreign replacement')
+                replacements.append(wrapper)
+        with patch.object(camera3d_native_export, 'atomic_json', side_effect=write_and_replace):
+            receipt = export_camera_library(destination / label, value, render, world, **options)
+        if (destination / label / 'foreign.txt').exists():
+            raise AssertionError('Native export published an unverified stage replacement')
+        if any((path / 'foreign.txt').read_bytes() != b'preserve foreign replacement'
+               for path in replacements):
+            raise AssertionError('Native export cleanup touched a foreign replacement')
         if source_state() != before:
             raise AssertionError('Native camera export changed existing project IDs or active state')
         exports.append((label, receipt))
@@ -103,6 +124,7 @@ def main():
     report = dict(ok=True, fixture=True, blender_version=bpy.app.version_string,
         scope='two static evaluated physical camera assets; no scene/animation export',
         source_project_unchanged=True, rejected_unsupported_without_leak=True, cases=cases,
+        stage_replacement_preserved=True,
         source_sha256={name: hashlib.sha256((ROOT / 'scripts' / name).read_bytes()).hexdigest()
             for name in ('camera3d_native_export.py', 'camera3d_blender.py', 'camera3d_math.py',
                          'verify_camera3d_native_export.py')})
