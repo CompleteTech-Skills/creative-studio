@@ -41,7 +41,7 @@ jobs:
           git rev-parse HEAD | tee scene3d-evidence/head.txt
           python scripts/generate_schemas.py --check 2>&1 | tee scene3d-evidence/schemas.log
           python scripts/generate_rig_templates.py --check 2>&1 | tee scene3d-evidence/templates.log
-          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service test_rig_scene3d_materials test_rig_scene3d_capture -v 2>&1 | tee scene3d-evidence/service.log
+          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service test_rig_scene3d_materials test_rig_scene3d_capture test_rig_scene3d_lifecycle -v 2>&1 | tee scene3d-evidence/service.log
           PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_evaluate -v 2>&1 | tee scene3d-evidence/evaluation.log
           PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_pose -v 2>&1 | tee scene3d-evidence/poses.log
         env:
