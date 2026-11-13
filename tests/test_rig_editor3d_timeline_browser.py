@@ -61,6 +61,15 @@ class TimelineBrowserTests(unittest.TestCase):
                         # Reopening the persisted repository retains only the selected second-shot keys.
                         reopened=EditorRepository(repo.root).snapshot()
                         self.assertEqual(reopened['documents'][selected['path']]['tracks'],tracks)
+                        page.get_by_label('Timeline shot',exact=True).select_option(label='Second')
+                        page.get_by_label('Animated property',exact=True).select_option('world_exposure')
+                        page.get_by_label('Key value as JSON',exact=True).fill('1024')
+                        page.get_by_role('button',name='Insert or replace key',exact=True).click()
+                        page.wait_for_function('(revision)=>window.hatchEditor.snapshot.revision===revision',arg=baseline+2)
+                        page.get_by_role('button',name='Scrub',exact=True).click()
+                        page.wait_for_function("()=>document.querySelector('[aria-label=\"Animation timeline\"] [role=status]').textContent.includes('-20 to +20 stops')")
+                        self.assertEqual(page.evaluate('()=>window.hatchEditor.renderer.toneMappingExposure'),1)
+
                     finally:browser.close()
             finally:server.shutdown();server.server_close();thread.join(timeout=5)
 
