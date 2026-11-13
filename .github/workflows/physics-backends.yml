@@ -66,6 +66,7 @@ jobs:
       - name: Actual soft-body deformation and portable native replay
         env:
           HATCH_SOFTBODY_TEST: '1'
+          HATCH_SOFTBODY_EVIDENCE: ${{ github.workspace }}/physics-evidence/softbody
         run: |
           python -B -m unittest discover -s tests -p test_rig_physics_softbody.py -v 2>&1 | tee physics-evidence/softbody-tests.log
       - name: Actual category/shape/headless probes
