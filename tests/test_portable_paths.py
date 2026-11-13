@@ -12,6 +12,7 @@ import rig_errors
 class PortablePathTests(unittest.TestCase):
     def test_transport_reexports_single_authority(self):
         self.assertIs(decomposition_package._relative, portable_paths.existing_relative)
+        self.assertIs(decomposition_package._RESERVED, portable_paths._RESERVED)
         for name in ['mesh.glb', 'models/Milo rig/asset_1.obj', 'café/数据.bin', 'a..b']:
             self.assertEqual(portable_paths.existing_relative(name), name)
             self.assertEqual(rig_errors.portable_name(name), name)
