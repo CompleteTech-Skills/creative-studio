@@ -70,14 +70,18 @@ The selected run retains the original source, proposal receipt, all candidate
 masks and overlay in `foreground-analysis/`; its annotation records the exact
 receipt digest and selected IDs. It has source-bound unassigned foreground,
 zero-error recomposition of selected pixels, and pending semantic review.
-Running the separate face/eye analyzer later does not turn these whole-object
-masks into anatomical parts. Use existing manual correction for bad boundaries.
+The run's `analysis.semantic_model_called` remains false because this stage does
+not run the component analyzer; the retained foreground receipt separately records
+the actual local instance-model execution. Running the separate face/eye analyzer
+later does not turn these whole-object masks into anatomical parts. Use existing manual correction for bad boundaries.
 
 ## Evidence boundaries
 
 `tests/test_decomposition_foreground.py` uses explicitly synthetic fixture
 receipts to test validation, overlap, malicious paths and alpha preservation; it
-is not model-quality evidence. Optional real-model tests use the retained NASA
+is not model-quality evidence. Optional real-model tests in `tests/optional/` run through their dedicated CI
+job, keeping optional dependencies outside the strict core delivery suite. They
+use the retained NASA
 astronaut photograph and explicitly provided Penn-Fudan photographs. Dataset
 masks are used only after inference to measure output quality, never as inputs.
 Even accurate foreground segmentation is insufficient to close automatic

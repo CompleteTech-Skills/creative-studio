@@ -6,10 +6,10 @@ import sys
 import tempfile
 import unittest
 from PIL import Image
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'scripts'))
 import decomposition_foreground as fg
 from asset_contracts import sha
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 
 def workspace(name):
     retained=os.environ.get('HATCH_FOREGROUND_EVIDENCE_DIRECTORY')
