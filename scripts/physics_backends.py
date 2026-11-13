@@ -362,6 +362,12 @@ def _worker_bytes(backend):
     source = Path(__file__).with_name(filename)
     require(source.is_file() and not source.is_symlink(), 'PHYSICS_WORKER_TRUST', 'Package worker must be a regular source file.')
     payload = source.read_bytes()
+    if backend == 'pybullet':
+        helper = Path(__file__).with_name('physics_collision_native.py')
+        require(helper.is_file() and not helper.is_symlink(), 'PHYSICS_WORKER_TRUST', 'Missing package-owned collision helper.')
+        prefix = helper.read_bytes()
+        require(0 < len(prefix) <= 256*1024, 'PHYSICS_WORKER_TRUST', 'Collision helper exceeds source bound.')
+        payload = prefix + b'\n' + payload
     require(0 < len(payload) <= 1024 * 1024, 'PHYSICS_WORKER_TRUST', 'Package worker size is invalid.')
     return payload
 
@@ -1398,7 +1404,9 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
         controls=report.get('rigid_controls',{}).get('bodies',[None]*len(world['bodies']))[world['bodies'].index(body)]
         wrapped=controls is not None and (any(controls['inertial_position']) or abs(abs(controls['inertial_rotation'][3])-1)>1e-10)
         expected_margin=(0 if wrapped else shape['radius']) if shape['type']=='sphere' else material['collision_margin']
-        expected_semantics=('transformed primitive wrapper margin' if wrapped else 'inherent sphere radius') if shape['type']=='sphere' else 'explicit box collision margin'
+        explicit_proxies=world.get('collision_profile')=='explicit-proxies-v1'
+        if explicit_proxies: expected_margin=material['collision_margin']
+        expected_semantics='explicit proxy margin' if explicit_proxies else (('transformed primitive wrapper margin' if wrapped else 'inherent sphere radius') if shape['type']=='sphere' else 'explicit box collision margin')
         require(actual['margin_semantics']==expected_semantics,'PHYSICS_BAKE_FAILED','Native margin semantics differ from the admitted child representation.',category='backend-crash')
         require(type(actual.get('center_of_mass')) is list and len(actual['center_of_mass'])==3 and all(type(a) in (int,float) and math.isfinite(a) and abs(a-b)<=1e-6 for a,b in zip(actual['center_of_mass'],body['mass']['center_of_mass'])),
                 'PHYSICS_BAKE_FAILED','DIRECT observed center of mass differs.',category='backend-crash')
@@ -1411,12 +1419,18 @@ def _check_pybullet_report(report,world,module,*,legacy=False):
             from rig_math import qmatrix, qmul
             controls=report['rigid_controls']['bodies'][world['bodies'].index(body)]
             rotation=qmatrix(controls['inertial_rotation'])
-            collision=controls['collision'];native_shape=body['colliders'][0]['shape']
-            expected_dimensions=[native_shape['radius']]*3 if native_shape['type']=='sphere' else native_shape['size']
-            require(collision['type']==native_shape['type'] and np.allclose(collision['dimensions'],expected_dimensions,rtol=1e-6,atol=0) and
-                    np.max(np.abs(rotation @ np.asarray(collision['translation'])+np.asarray(body['mass']['center_of_mass'])))<=1e-6 and
-                    np.allclose(qmatrix(qmul(controls['inertial_rotation'],collision['rotation'])),np.eye(3),rtol=0,atol=1e-6),
-                    'PHYSICS_BAKE_FAILED','Native collision child/frame differs from the unchanged declared primitive.',category='backend-crash')
+            if explicit_proxies:
+                from physics_collisions import verify_native_children, CollisionError
+                try: verify_native_children(body,controls)
+                except (CollisionError,KeyError,TypeError,ValueError) as exc:
+                    raise BackendError('PHYSICS_BAKE_FAILED',str(exc),category='backend-crash') from exc
+            else:
+                collision=controls['collision'];native_shape=body['colliders'][0]['shape']
+                expected_dimensions=[native_shape['radius']]*3 if native_shape['type']=='sphere' else native_shape['size']
+                require(collision['type']==native_shape['type'] and np.allclose(collision['dimensions'],expected_dimensions,rtol=1e-6,atol=0) and
+                        np.max(np.abs(rotation @ np.asarray(collision['translation'])+np.asarray(body['mass']['center_of_mass'])))<=1e-6 and
+                        np.allclose(qmatrix(qmul(controls['inertial_rotation'],collision['rotation'])),np.eye(3),rtol=0,atol=1e-6),
+                        'PHYSICS_BAKE_FAILED','Native collision child/frame differs from the unchanged declared primitive.',category='backend-crash')
             tensor=rotation @ np.diag(controls['principal_inertia']) @ rotation.T
             requested=np.asarray(body['mass']['inertia'])
             if body['mode']=='dynamic':
@@ -1472,11 +1486,23 @@ def _validate_contacts(value,world,world_hash,*,legacy=False):
             require(type(frame['solver_step']) is int and frame['solver_step']==native_index and frame['solver_time']==rational(native_index*step),
                     'PHYSICS_CACHE_CORRUPT','Contact observation clock differs from actual solver bracket.',category='cache-corruption')
         for contact in frame['contacts']:
-            require(isinstance(contact,dict) and set(contact)=={'body_a','body_b','position_a','position_b','normal_b','distance','normal_force'} and
+            expected_fields={'body_a','body_b','position_a','position_b','normal_b','distance','normal_force'}
+            if world.get('collision_profile')=='explicit-proxies-v1':
+                expected_fields.update(('normal_impulse','lateral_force_1','lateral_direction_1','lateral_force_2','lateral_direction_2'))
+            require(isinstance(contact,dict) and set(contact)==expected_fields and
                     type(contact['body_a']) is str and type(contact['body_b']) is str and
                     contact['body_a'] in ids and contact['body_b'] in ids and contact['body_a']!=contact['body_b'],
                     'PHYSICS_CACHE_CORRUPT','DIRECT contact endpoints are invalid.',category='cache-corruption')
-            for name in ('position_a','position_b','normal_b'):
+            if world.get('collision_profile')=='explicit-proxies-v1':
+                scalar_keys=('normal_impulse','lateral_force_1','lateral_force_2')
+                require(all(type(contact[k]) in (int,float) and math.isfinite(contact[k]) and abs(contact[k])<=1e12 for k in scalar_keys),
+                        'PHYSICS_CACHE_CORRUPT','Invalid native contact impulse or tangent force.',category='cache-corruption')
+                require(abs(contact['normal_impulse']-contact['normal_force']*float(step))<=1e-8*max(1,contact['normal_impulse']),
+                        'PHYSICS_CACHE_CORRUPT','Native contact impulse differs from the observed step force.',category='cache-corruption')
+                excluded={frozenset(pair) for pair in world.get('collision_exclusions',[])}
+                require(frozenset((contact['body_a'],contact['body_b'])) not in excluded,
+                        'PHYSICS_CACHE_CORRUPT','Excluded collision pair produced contact.',category='cache-corruption')
+            for name in (('position_a','position_b','normal_b','lateral_direction_1','lateral_direction_2') if world.get('collision_profile')=='explicit-proxies-v1' else ('position_a','position_b','normal_b')):
                 require(type(contact[name]) is list and len(contact[name])==3 and
                         all(type(x) in (int,float) and abs(x)<=1e12 and math.isfinite(x) for x in contact[name]),
                         'PHYSICS_CACHE_CORRUPT','DIRECT contact vector is invalid.',category='cache-corruption')

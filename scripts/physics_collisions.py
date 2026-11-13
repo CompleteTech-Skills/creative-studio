@@ -95,3 +95,27 @@ def collision_capabilities():
         filtering='bilateral group/mask; explicit pair exclusions', contacts='native Bullet contact manifolds',
         raycast='native Bullet closest ray test', sweep='unsupported', sensors='unsupported',
         continuous_collision='not guaranteed; high-speed tunneling must be measured')
+
+
+def verify_native_children(body, controls):
+    """Compare native Bullet children with the independently admitted proxy tree."""
+    import numpy as np
+    from rig_math import qmatrix, qmul
+    from physics_collision_native import collision_leaves
+    expected = collision_leaves(body['colliders'][0])
+    actual = controls.get('collision_children')
+    _require(type(actual) is list and len(actual) == len(expected), 'Native collision child count differs from proxy.')
+    axes = qmatrix(controls['inertial_rotation'])
+    center = np.asarray(body['mass']['center_of_mass'])
+    kinds = {'sphere': 2, 'box': 3, 'cylinder': 4, 'convex-hull': 5, 'triangle-mesh': 5, 'capsule': 7}
+    for child, leaf in zip(actual, expected):
+        shape=leaf['shape'];kind=shape['type']
+        dimensions = ([shape['radius']]*3 if kind=='sphere' else shape['size'] if kind=='box'
+            else [shape['height'],shape['radius'],0.] if kind in ('capsule','cylinder') else [1.,1.,1.])
+        _require(child.get('type') == kinds[kind], 'Native collision type differs from proxy.')
+        _require(np.allclose(child['dimensions'], dimensions, atol=1e-7, rtol=1e-6), 'Native collision dimensions differ from proxy.')
+        _require(np.allclose(axes @ np.asarray(child['translation'])+center, leaf['translation'], atol=1e-6, rtol=0),
+                 'Native collision child offset differs from proxy.')
+        rotation=qmatrix(qmul(controls['inertial_rotation'], child['rotation']))
+        _require(np.allclose(rotation,qmatrix(leaf['rotation']),atol=1e-6,rtol=0),
+                 'Native collision child rotation differs from proxy.')

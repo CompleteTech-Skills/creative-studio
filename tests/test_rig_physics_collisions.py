@@ -48,3 +48,144 @@ class CollisionProxyTests(unittest.TestCase):
             self.assertEqual(validate_shape(shape,dynamic=True),(0,0,1))
             shape['radius']=float('inf')
             with self.assertRaises(CollisionError):validate_shape(shape,dynamic=True)
+
+
+class CollisionAdmissionTests(unittest.TestCase):
+    def test_explicit_profile_preserves_legacy_admission(self):
+        from physics_backend_example import build_inputs
+        from physics_backends import PyBulletBackend, BackendError
+        world,_=build_inputs(backend='pybullet')
+        backend=PyBulletBackend('/not-installed')
+        world['bodies'][0]['colliders'][0]['mask']=1
+        with self.assertRaises(BackendError):backend.validate_scene(world)
+        world['collision_profile']='explicit-proxies-v1'
+        self.assertEqual(backend.validate_scene(world)['status'],'configuration-valid')
+        world['bodies'][0]['colliders'][0]['sensor']=True
+        with self.assertRaises(BackendError):backend.validate_scene(world)
+
+    def test_playground_configuration_has_no_solver_readiness_claim(self):
+        from physics_collision_example import build_collision_inputs
+        from physics_backends import PyBulletBackend
+        world,_=build_collision_inputs()
+        report=PyBulletBackend('/not-installed').validate_scene(world)
+        self.assertFalse(report['solver_executed'])
+        self.assertFalse(report['native_scene_verified'])
+        self.assertEqual(len(world['bodies']),12)
+
+    def test_exclusion_pairs_are_explicit_unique_existing_bodies(self):
+        from physics_collision_example import build_collision_inputs
+        from physics_contracts import validate_contract, PhysicsError
+        world,_=build_collision_inputs()
+        for pairs in [[['excluded','missing']],[['floor','floor']],[['floor','excluded'],['excluded','floor']]]:
+            candidate=deepcopy(world);candidate['collision_exclusions']=pairs
+            with self.subTest(pairs=pairs), self.assertRaises(PhysicsError):validate_contract(candidate)
+
+    def test_native_child_observation_cannot_lie_about_geometry_or_frame(self):
+        from physics_collisions import verify_native_children
+        from physics_backend_example import build_inputs
+        world,_=build_inputs(backend='pybullet')
+        body=world['bodies'][0]
+        controls=dict(inertial_rotation=[0,0,0,1],collision_children=[dict(type=2,dimensions=[.5,.5,.5],translation=[0,0,0],rotation=[0,0,0,1])])
+        verify_native_children(body,controls)
+        for mutate in [lambda c:c['collision_children'][0].update(type=3),
+                       lambda c:c['collision_children'][0].update(dimensions=[1,1,1]),
+                       lambda c:c['collision_children'][0].update(translation=[1,0,0]),
+                       lambda c:c.update(collision_children=[])]:
+            candidate=deepcopy(controls);mutate(candidate)
+            with self.assertRaises(CollisionError):verify_native_children(body,candidate)
+
+
+import os
+import tempfile
+
+
+@unittest.skipUnless(os.environ.get('HATCH_PHYSICS_BACKEND_TEST') == '1','Explicit real solver gate')
+class CollisionNativeTests(unittest.TestCase):
+    def setUp(self):
+        from physics_backends import PyBulletBackend
+        self.backend=PyBulletBackend(os.environ['HATCH_PYBULLET_PYTHON'])
+        retained=os.environ.get('HATCH_COLLISION_EVIDENCE')
+        if retained:
+            self.root=Path(retained)/self._testMethodName
+            self.root.mkdir(parents=True,exist_ok=False)
+        else:
+            self.temporary=tempfile.TemporaryDirectory(prefix='hatch-collision-test-')
+            self.addCleanup(self.temporary.cleanup);self.root=Path(self.temporary.name)
+
+    def run_world(self,world,payloads,name):
+        import physics_backends as physics
+        prepared=self.backend.prepare(world,payloads)
+        try:
+            result=self.backend.simulate(prepared)
+            cache=self.root/name
+            self.backend.bake(result,cache)
+            self.assertEqual(physics.verify_cache(cache)['status'],'hash-and-contract-verified')
+            return cache,physics.parse((cache/'states.json').read_bytes()),physics.parse((cache/'contacts.json').read_bytes())
+        finally:self.backend.cleanup(prepared)
+
+    def base(self):
+        from physics_backend_example import build_inputs
+        world,payloads=build_inputs(backend='pybullet')
+        world['collision_profile']='explicit-proxies-v1'
+        return world,payloads
+
+    def test_real_extended_shapes_land_and_cache_reopens(self):
+        points,triangles=_box([1,1,1])
+        shapes=[('capsule',dict(type='capsule',radius=.25,height=1.,axis='Y'),.75),
+                ('cylinder',dict(type='cylinder',radius=.35,height=1.,axis='Y'),.5),
+                ('convex',dict(type='convex-hull',source='ball-asset',vertices=[list(v) for v in points],triangles=[list(v) for v in triangles]),.5),
+                ('compound',dict(type='compound',children=[dict(shape=dict(type='sphere',radius=.3),
+                     transform=dict(translation=[x,0,0],rotation=[0,0,0,1])) for x in [-.5,.5]]),.3)]
+        for name,shape,height in shapes:
+            with self.subTest(name=name):
+                world,payloads=self.base();world['bodies'][0]['colliders'][0]['shape']=shape
+                _,states,contacts=self.run_world(world,payloads,name)
+                observed=states['samples'][-1]['bodies'][0]['translation'][1]
+                self.assertAlmostEqual(observed,height,delta=.06)
+                self.assertTrue(any(frame['contacts'] for frame in contacts['samples']))
+
+    def test_real_masks_and_pair_exclusions_remove_response(self):
+        heights={}
+        for mode in ['colliding','mask','pair']:
+            world,payloads=self.base()
+            if mode=='mask':world['bodies'][0]['colliders'][0]['mask']=0
+            if mode=='pair':world['collision_exclusions']=[['ball','floor']]
+            _,states,contacts=self.run_world(world,payloads,mode)
+            heights[mode]=states['samples'][-1]['bodies'][0]['translation'][1]
+            if mode!='colliding':self.assertFalse(any(frame['contacts'] for frame in contacts['samples']))
+        self.assertGreater(heights['colliding'],.45)
+        self.assertLess(heights['mask'],-10)
+        self.assertLess(heights['pair'],-10)
+
+    def test_real_friction_and_restitution_change_dynamics(self):
+        distances={};bounce_heights={}
+        for coefficient in [0.,.9]:
+            world,payloads=self.base()
+            world['bodies'][0]['colliders'][0]['shape']=dict(type='box',size=[1,1,1])
+            world['bodies'][0]['linear_velocity']=[4,0,0]
+            # Preserve actual source translation; the box falls before sliding.
+            world['materials'][0].update(static_friction=coefficient,dynamic_friction=coefficient)
+            _,states,_=self.run_world(world,payloads,'friction-'+str(coefficient))
+            distances[coefficient]=states['samples'][-1]['bodies'][0]['translation'][0]
+            world,payloads=self.base();world['materials'][0]['restitution']=coefficient
+            _,states,contacts=self.run_world(world,payloads,'bounce-'+str(coefficient))
+            first=next(i for i,frame in enumerate(contacts['samples']) if frame['contacts'])
+            bounce_heights[coefficient]=max(frame['bodies'][0]['translation'][1] for frame in states['samples'][first:])
+        self.assertGreater(distances[0.]-distances[.9],1.)
+        self.assertGreater(bounce_heights[.9]-bounce_heights[0.],.5)
+
+    def test_real_playground_contacts_queries_and_tunneling_record(self):
+        import physics_backends as physics
+        from physics_collision_example import build_collision_inputs
+        from physics_collision_query import raycast_cache
+        world,payloads=build_collision_inputs()
+        cache,states,contacts=self.run_world(world,payloads,'playground')
+        self.assertTrue(any({'left-ball','right-ball'}=={c['body_a'],c['body_b']} for f in contacts['samples'] for c in f['contacts']))
+        self.assertFalse(any('excluded' in (c['body_a'],c['body_b']) for f in contacts['samples'] for c in f['contacts']))
+        self.assertLess(next(b for b in states['samples'][-1]['bodies'] if b['id']=='excluded')['translation'][1],-1)
+        distances=[c['distance'] for f in contacts['samples'] for c in f['contacts']]
+        self.assertGreater(min(distances),-.2)
+        query=raycast_cache(cache,0,[dict(start=[0,8,0],end=[0,-2,0],mask=0xffffffff)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'],preview=True)
+        self.assertTrue(query['results'][0]['hit'])
+        self.assertTrue(query.pop('preview_png').startswith(b'\x89PNG\r\n\x1a\n'))
+        physics._write(self.root/'query.json',physics.canonical(query))
