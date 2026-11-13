@@ -242,3 +242,14 @@ def collision_build_query_shapes(p, client, collider, root):
             shape=collision_build_shape(p,client,local,root)
         shapes.append(shape)
     return shapes
+
+
+def collision_query_box_surface_valid(point, pose, leaf, tolerance=1e-8):
+    """Validate a native hit; never synthesize an intersection or a ray miss."""
+    rotation=pose['rotation'];inverse=[-rotation[0],-rotation[1],-rotation[2],rotation[3]]
+    body_point=_collision_rotate(inverse,[a-b for a,b in zip(point,pose['translation'])])
+    rotation=leaf['rotation'];inverse=[-rotation[0],-rotation[1],-rotation[2],rotation[3]]
+    local=_collision_rotate(inverse,[a-b for a,b in zip(body_point,leaf['translation'])])
+    half=[v/2 for v in leaf['shape']['size']]
+    return (all(abs(v)<=h+tolerance for v,h in zip(local,half)) and
+            min(abs(abs(v)-h) for v,h in zip(local,half))<=tolerance)

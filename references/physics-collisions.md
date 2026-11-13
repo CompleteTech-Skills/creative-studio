@@ -103,3 +103,12 @@ continuation. Zero-margin convex-hull and cylinder queries remain explicitly uns
 the playground assigns these to group2 and explicitly queries group1. Raw native
 characterization confirms sphere and capsule radius mappings survive zero extra
 margin; cylinder cap rays falsely miss and are not advertised.
+
+Bullet's native triangle ray routine can accept points slightly outside a triangle
+near an edge, even with double-precision vertices. Every returned box hit is
+therefore independently checked against the declared box surface in its exact
+local frame, with1e-8m tolerance. A violation fails the whole request with
+`PHYSICS_QUERY_NUMERICAL` and capability-gap status. It never becomes an invented
+miss or a replacement intersection. Query receipts retain the validation status
+and tolerance. Outside-slab regression cases characterize the native false hits
+at1e-5m beyond a1m box and .001m beyond a1000m box and require rejection.

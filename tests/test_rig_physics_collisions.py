@@ -169,6 +169,9 @@ class CollisionNativeTests(unittest.TestCase):
         query=raycast_cache(cache,0,[dict(start=[0,5,0],end=[0,-1,0],mask=1)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'])
         self.assertTrue(query['results'][0]['hit'])
         self.assertEqual(query['results'][0]['body'],'floor')
+        with self.assertRaises(BackendError) as raised:
+            raycast_cache(cache,0,[dict(start=[5.00001,5,0],end=[5.00001,-1,0],mask=1)],interpreter=os.environ['HATCH_PYBULLET_PYTHON'])
+        self.assertEqual(raised.exception.report['code'],'PHYSICS_QUERY_NUMERICAL')
 
     def test_real_sphere_offsets_and_centers_preserve_native_margin(self):
         for offset,center in [(0,0),(.2,0),(0,.2),(.2,.2)]:

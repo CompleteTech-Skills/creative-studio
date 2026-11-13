@@ -53,10 +53,12 @@ def raycast_cache(cache, frame, queries, *, interpreter=None, preview=False):
             output_bytes=min(world['budgets']['temporary_bytes'],16*1024*1024),label='query')
         with physics._Reader(root) as reader:
             output=physics.parse(reader.read('query-result.json',2*1024*1024))
-        physics.require(type(output) is dict and set(output)=={'ok','operation','world_sha256','worker_sha256','frame','backend','results','representation'} and output.get('ok') is True and output.get('operation')=='collision-query' and
+        physics.require(type(output) is dict and set(output)=={'ok','operation','world_sha256','worker_sha256','frame','backend','results','representation','query_status','query_tolerance_m'} and output.get('ok') is True and output.get('operation')=='collision-query' and
             output.get('world_sha256')==manifest['world_sha256'] and output.get('worker_sha256')==worker_hash and type(output.get('frame')) is int and output['frame']==frame and
             output.get('representation')=='exact-box-triangle-surface-v1;native-other-proxies-v1' and output.get('backend')==backend._module_record and type(output.get('results')) is list and len(output['results'])==len(queries),
             'PHYSICS_QUERY','Native query response identity/count differs.')
+        physics.require(output.get('query_status')=='validated' and output.get('query_tolerance_m')==1e-8,
+                        'PHYSICS_QUERY_NUMERICAL','Native box ray tolerance produced a hit outside the declared surface; no intersection or miss is synthesized.',category='capability-gap')
         bodies={body['id'] for body in world['bodies']}
         for ray,result in zip(queries,output['results']):
             physics.require(type(result) is dict and set(result)=={'hit','body','fraction','position','normal'} and type(result.get('hit')) is bool,

@@ -33,6 +33,7 @@ def main():
         poses = {body['id']:body for body in job['state']['bodies']}
         materials = {material['id']:material for material in world['materials']}
         identifiers = {}
+        query_boxes = {}
         for index, body in enumerate(world['bodies']):
             collider = body['colliders'][0]
             shapes = collision_build_query_shapes(p,client,collider,root)
@@ -54,12 +55,19 @@ def main():
                     basePosition=pose['translation'],baseOrientation=pose['rotation'],physicsClientId=client)
                 p.changeDynamics(native,-1,collisionMargin=materials[collider['material']]['collision_margin'],physicsClientId=client)
                 identifiers[native] = body['id']
+                leaf=collision_leaves(collider)[shape_index]
+                if leaf['shape']['type']=='box':query_boxes[native]=(pose,leaf)
                 p.setCollisionFilterGroupMask(native,-1,collision_signed_mask(collider['group']),collision_signed_mask(collider['mask']),physicsClientId=client)
         # Synchronize broadphase AABBs for newly reconstructed static poses.
         p.performCollisionDetection(physicsClientId=client)
         results = []
+        query_status = 'validated'
         for ray in job['queries']:
             hit = collision_raycast(p,client,ray['start'],ray['end'],ray['mask'])
+            if hit['hit'] and hit['body_index'] in query_boxes:
+                box_pose,box_leaf=query_boxes[hit['body_index']]
+                if not collision_query_box_surface_valid(hit['position'],box_pose,box_leaf):
+                    query_status='numerical-capability-gap'
             results.append(dict(hit=hit['hit'],body=identifiers[hit['body_index']] if hit['hit'] else None,
                 fraction=hit['fraction'],position=hit['position'],normal=hit['normal']))
         if job['preview']:
@@ -71,7 +79,8 @@ def main():
             (root/'query-preview.ppm').write_bytes(b'P6\n320 240\n255\n'+rgb)
         output = dict(ok=True,operation='collision-query',world_sha256=job['world_sha256'],
             worker_sha256=job['worker_sha256'],frame=job['frame'],backend=identity,results=results,
-            representation='exact-box-triangle-surface-v1;native-other-proxies-v1')
+            representation='exact-box-triangle-surface-v1;native-other-proxies-v1',
+            query_status=query_status,query_tolerance_m=1e-8)
         (root/'query-result.json').write_bytes(canonical(output))
     finally:
         p.disconnect(client)

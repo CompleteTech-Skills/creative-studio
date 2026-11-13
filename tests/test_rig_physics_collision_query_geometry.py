@@ -45,3 +45,25 @@ for axis in ['X','Y','Z']:
 """
         result=subprocess.run([os.environ['HATCH_PYBULLET_PYTHON'],'-I','-c',source+'\n'+program],capture_output=True,text=True,timeout=60)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    def test_native_triangle_edge_tolerance_is_rejected_without_fake_miss(self):
+        source=(Path(__file__).resolve().parents[1]/'scripts'/'physics_collision_native.py').read_text()
+        program = r"""
+import pybullet as p
+import tempfile
+from pathlib import Path
+for size,gap in [(1.,1e-5),(1000.,.001)]:
+ client=p.connect(p.DIRECT)
+ collider=dict(shape=dict(type='box',size=[size]*3),transform=dict(translation=[0,0,0],rotation=[0,0,0,1]))
+ with tempfile.TemporaryDirectory() as directory:
+  shape=collision_build_query_shapes(p,client,collider,Path(directory))[0]
+  body=p.createMultiBody(baseMass=0,baseCollisionShapeIndex=shape,physicsClientId=client)
+  p.changeDynamics(body,-1,collisionMargin=0,physicsClientId=client)
+  x=size/2+gap
+  hit=p.rayTest([x,size,0],[x,-size,0],physicsClientId=client)[0]
+  assert hit[0]>=0,('characterized native tolerance changed',size,gap)
+  assert not collision_query_box_surface_valid(hit[3],dict(translation=[0,0,0],rotation=[0,0,0,1]),collision_leaves(collider)[0])
+ p.disconnect(client)
+"""
+        result=subprocess.run([os.environ['HATCH_PYBULLET_PYTHON'],'-I','-c',source+'\n'+program],capture_output=True,text=True,timeout=60)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
