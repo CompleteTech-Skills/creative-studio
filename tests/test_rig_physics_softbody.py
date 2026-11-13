@@ -1,5 +1,6 @@
 """Soft-body admission uses actual source geometry; solver cases are explicit."""
 from copy import deepcopy
+from contextlib import contextmanager
 from pathlib import Path
 import os
 import shutil
@@ -116,6 +117,15 @@ class SoftBodyAdmissionTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('HATCH_SOFTBODY_TEST')=='1','Explicit Blender soft-body gate')
 class NativeSoftBodyTests(unittest.TestCase):
+    @contextmanager
+    def workspace(self,label):
+        evidence=os.environ.get('HATCH_SOFTBODY_EVIDENCE')
+        if evidence:
+            root=Path(evidence)/label;root.mkdir(parents=True,exist_ok=False)
+            yield str(root)
+        else:
+            with tempfile.TemporaryDirectory() as name:yield name
+
     @staticmethod
     def _change_json(path,key,value):
         data=parse(path.read_bytes());data[key]=value;path.write_bytes(canonical(data))
@@ -128,7 +138,7 @@ class NativeSoftBodyTests(unittest.TestCase):
     def test_real_deformation_and_reopened_cache(self):
         backend=SoftBodyBackend(os.environ['HATCH_BLENDER']);world,payloads=build_softbody_inputs()
         prepared=backend.prepare(world,payloads)
-        with tempfile.TemporaryDirectory() as name:
+        with self.workspace('lifecycle') as name:
             try:
                 result=backend.simulate(prepared)
                 self.assertLessEqual(result.verification['maximum_vertex_error'],1e-5)
@@ -178,7 +188,7 @@ class NativeSoftBodyTests(unittest.TestCase):
 
     def test_real_stiffness_damping_and_approximate_goal_controls(self):
         measured={}
-        with tempfile.TemporaryDirectory() as name:
+        with self.workspace('controls') as name:
             for label,settings in [('stiff',dict(stiffness=.7)),('soft',dict(stiffness=.2)),('lowdamp',dict(stiffness=.7,damping=.05)),('pinned',dict(pins=True))]:
                 backend=SoftBodyBackend(os.environ['HATCH_BLENDER']);world,payloads=build_softbody_inputs(**settings)
                 prepared=backend.prepare(world,payloads)
