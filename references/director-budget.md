@@ -18,7 +18,7 @@ revision = ledger.snapshot()['sha256']
 
 The metrics are provider calls, input tokens, output tokens, CPU seconds, GPU
 seconds, storage bytes and monetary amount. Counts must be integral; values are
-bounded nonnegative exact decimals. No floating arithmetic accumulates balances.
+bounded nonnegative exact decimals (at most 1e15, 64 fractional places and 80 significant digits). No floating arithmetic accumulates balances.
 Memory admission belongs to the capability/execution owner, not this cumulative
 consumption ledger. A zero monetary budget may omit currency; every positive
 monetary budget requires an explicit three-letter currency.
@@ -28,7 +28,7 @@ monetary budget requires an explicit three-letter currency.
 `idempotency_key`. It holds `(retry_allowance + 1) × estimate` against both
 project and provider limits. Unknown nonmonetary estimates are rejected.
 Unknown monetary price requires explicit `unknown_price=True`, a finite
-`unknown_price_cap`, and retained policy/rate evidence. Monetary estimates also
+positive `unknown_price_cap`, and retained policy/rate evidence. Monetary estimates also
 require retained evidence. Unlisted providers and over-budget reservations fail
 without changing the last valid revision.
 
@@ -66,7 +66,8 @@ changed, unsafe, conflicting or out-of-order history fails closed.
 
 `execute(ledger, request, evidence_root=...)` adapts the existing strict Director
 `BudgetLedger.reserve`, `.settle` and `.release` request/result contracts. It
-copies referenced evidence bytes from the supplied root, preserves the input
+enforces the request provider allowlist and paid-work policy before reservation,
+and copies referenced evidence bytes from the supplied root, preserves the input
 digest and returns the current immutable ledger revision. The direct ledger API
 additionally exposes known cancellation and retry outcomes. A receipt is
 accounting evidence; it is not a provider execution receipt or visual approval.

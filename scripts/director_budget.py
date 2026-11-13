@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from copy import deepcopy
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
+from functools import wraps
 import hashlib
 import json
 import os
@@ -24,6 +25,16 @@ COUNTS = frozenset(('provider_calls', 'input_tokens', 'output_tokens', 'storage_
 MAX_REVISIONS = 2048
 MAX_RESERVATIONS = 512
 MAX_BYTES = 4 * 1024**2
+
+
+def _exact(function):
+    """All supported quantities and bounded aggregates fit exactly in 128 digits."""
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with localcontext() as context:
+            context.prec = 128
+            return function(*args, **kwargs)
+    return wrapped
 
 
 def _need(ok, code, message):
@@ -45,6 +56,7 @@ def _number(value, metric):
     except InvalidOperation as exc:
         raise RigError('DIRECTOR_BUDGET_INPUT', 'Invalid decimal quantity.', stage='budget') from exc
     _need(result.is_finite() and 0 <= result <= Decimal('1e15'), 'INPUT', 'Quantity exceeds the finite budget bound.')
+    _need(result.as_tuple().exponent >= -64 and len(result.as_tuple().digits) <= 80, 'INPUT', 'Quantities support at most 64 fractional places and 80 significant digits.')
     _need(metric not in COUNTS or result == result.to_integral_value(), 'INPUT', 'Count quantities must be integral.')
     return result
 
@@ -58,6 +70,7 @@ def _decimal_map(value):
     return {key: Decimal(value[key]) for key in METRICS}
 
 
+@_exact
 def _totals(state, provider=None):
     spent = {key: Decimal(0) for key in METRICS}
     held = {key: Decimal(0) for key in METRICS}
@@ -70,6 +83,7 @@ def _totals(state, provider=None):
     return spent, held
 
 
+@_exact
 def _validate_state(state):
     _need(isinstance(state, dict) and set(state) == {'schema_version', 'kind', 'revision', 'parent', 'limits', 'provider_limits', 'reservations', 'events', 'currency'}, 'CORRUPT', 'Unknown ledger fields.')
     _need(state['schema_version'] == 1 and state['kind'] == 'director-budget-ledger', 'CORRUPT', 'Unsupported ledger version.')
@@ -219,19 +233,23 @@ class BudgetLedger:
             self._publish(state)
             return receipt
 
+    @_exact
     def reserve(self, *, operation_id, provider, estimate, retry_allowance, expected_revision, idempotency_key,
                 unknown_price=False, unknown_price_cap=None, evidence=None):
         _id(operation_id); _id(provider)
         _need(type(retry_allowance) is int and 0 <= retry_allowance <= 16, 'INPUT', 'Retries must be bounded from zero to sixteen.')
         _need(type(unknown_price) is bool, 'INPUT', 'Unknown-price policy must be explicit.')
         amounts = _quantities(estimate, unknown=True)
-        if amounts['amount'] is None:
+        missing_price = amounts['amount'] is None
+        if missing_price:
             _need(unknown_price and unknown_price_cap is not None, 'PRICE', 'Unknown-priced work requires explicit policy and monetary cap.')
-            amounts['amount'] = str(_number(unknown_price_cap, 'amount'))
+            cap = _number(unknown_price_cap, 'amount')
+            _need(cap > 0, 'PRICE', 'Unknown-priced work requires a positive monetary cap.')
+            amounts['amount'] = str(cap)
         _need(all(value is not None for value in amounts.values()), 'ESTIMATE', 'Unknown nonmonetary estimates cannot be reserved.')
         bound = {key: str(Decimal(value) * (retry_allowance + 1)) for key,value in amounts.items()}
         proof = _evidence(evidence)
-        _need(Decimal(amounts['amount']) == 0 or proof, 'EVIDENCE', 'Monetary estimates require retained rate or unknown-price policy evidence.')
+        _need(not (unknown_price or missing_price or Decimal(amounts['amount']) > 0) or proof, 'EVIDENCE', 'Monetary estimates require retained rate or unknown-price policy evidence.')
         payload = dict(operation_id=operation_id, provider=provider, estimate=amounts, retry_allowance=retry_allowance,
                        unknown_price=unknown_price, evidence=proof)
         def mutate(state):
@@ -248,6 +266,7 @@ class BudgetLedger:
             return {'reservation_id':identifier,'state':'reserved','reserved':deepcopy(bound)}
         return self._change(expected_revision,idempotency_key,'reserve',payload,mutate)
 
+    @_exact
     def settle(self, reservation_id, *, usage, outcome, expected_revision, idempotency_key, evidence):
         _id(reservation_id)
         _need(outcome in ('complete','failed','uncertain','retry'), 'INPUT', 'Unsupported settlement outcome.')
@@ -303,6 +322,7 @@ def _verify_evidence(root, evidence):
         _need(hashlib.sha256(data).hexdigest() == item['sha256'], 'EVIDENCE', 'Retained accounting evidence changed.')
 
 
+@_exact
 def execute(ledger, request, *, evidence_root, provider='local', unknown_price_cap=None):
     """Adapt a strict Director BudgetLedger request to this native ledger.
 
@@ -324,6 +344,11 @@ def execute(ledger, request, *, evidence_root, provider='local', unknown_price_c
     common = dict(expected_revision=data['expected_ledger_revision'], idempotency_key=context['idempotency_key'])
     if method == 'BudgetLedger.reserve':
         usage = data['estimated_bound']
+        policy = context['policy']
+        _need(provider in policy['providers'], 'POLICY', 'Provider is not allowed by this request.')
+        amount = usage['amount']['value']
+        _need(policy['paid'] != 'deny' or (amount is not None and _number(amount, 'amount') == 0),
+              'POLICY', 'Paid or unpriced work is denied by this request.')
         _need(usage['classification']=='estimated', 'USAGE', 'Reservation requires estimated usage.')
         _need(usage['currency'] in (None, ledger.snapshot()['state']['currency']), 'CURRENCY', 'Usage currency differs from ledger.')
         receipt = ledger.reserve(operation_id=data['operation'],provider=provider,

@@ -160,6 +160,7 @@ class BudgetTests(unittest.TestCase):
         request['input']['expected_ledger_revision']=self.ledger.snapshot()['sha256']
         request['input']['retry_allowance']=0
         request['input']['rate_evidence']=[]
+        request['context']['policy']['providers']=['local']
         usage=request['input']['estimated_bound'];usage['classification']='estimated';usage['currency']='USD'
         for key in METRICS:usage[key]={'value':0,'explanation':None}
         usage['provider_calls']['value']=1
@@ -167,6 +168,85 @@ class BudgetTests(unittest.TestCase):
         validate_method_result('BudgetLedger.reserve',result,request)
         self.assertEqual(result['value']['state'],'reserved')
         self.assertEqual(result['value']['remaining']['max_provider_calls'],99)
+
+    def adapter_request(self, **metrics):
+        import json
+        root=Path(__file__).resolve().parents[1]
+        request=next(d for d in json.loads((root/'examples/director-contracts/contracts.json').read_text())
+            if d.get('kind')=='director-request' and d.get('method')=='BudgetLedger.reserve')
+        request['input'].update(expected_ledger_revision=self.ledger.snapshot()['sha256'], retry_allowance=0, rate_evidence=[])
+        usage=request['input']['estimated_bound'];usage['classification']='estimated';usage['currency']='USD'
+        for key in METRICS:usage[key]={'value':metrics.get(key,0),'explanation':None}
+        request['context']['policy']['providers']=['local']
+        return request
+
+    def test_adapter_denied_paid_and_unlisted_provider_preserve_revision(self):
+        from director_budget import execute
+        for paid,providers,amount in [('deny',['local'],1),('deny',[],0),('deny',['local'],None)]:
+            with self.subTest(paid=paid,providers=providers,amount=amount):
+                request=self.adapter_request(amount=amount)
+                if amount is None:
+                    request['input']['estimated_bound']['amount']['explanation']='Unknown price'
+                    request['input']['estimated_bound']['currency']=None
+                request['context']['policy'].update(paid=paid,providers=providers)
+                before=self.ledger.snapshot()
+                with self.assertRaisesRegex(RigError,'request'):
+                    execute(self.ledger,request,evidence_root=self.root)
+                self.assertEqual(self.ledger.snapshot(),before)
+
+    def test_adapter_allows_explicit_bounded_paid_work_with_evidence(self):
+        from director_budget import execute
+        request=self.adapter_request(amount=1)
+        proof=self.proof[0]
+        reference=dict(artifact_id='rate-proof',kind='accounting-proof',schema_version=1,semantic_version='1.0.0',
+            path=proof['path'],sha256=proof['sha256'],byte_size=(self.root/proof['path']).stat().st_size,
+            media_type='application/json',provenance_ref=None,fixture=True,dependencies=[])
+        request['context']['policy'].update(paid='bounded',policy_ref=reference)
+        request['context']['budget_reservation_id']='outer-authorization'
+        request['input']['rate_evidence']=[reference]
+        result=execute(self.ledger,request,evidence_root=self.root)
+        self.assertEqual(result['value']['state'],'reserved')
+        row=next(iter(self.ledger.snapshot()['state']['reservations'].values()))
+        self.assertEqual(row['reserved']['amount'],'1')
+
+    def test_adapter_large_storage_and_call_limits_have_valid_result(self):
+        from director_budget import execute
+        self.ledger=BudgetLedger.create(Path(self.temp.name)/'large',quantities(3_000_000_000),
+            provider_limits={'local':quantities(3_000_000_000)},currency='USD')
+        result=execute(self.ledger,self.adapter_request(),evidence_root=self.root)
+        self.assertEqual(result['value']['remaining']['max_storage_bytes'],3_000_000_000)
+        self.assertEqual(result['value']['remaining']['max_provider_calls'],3_000_000_000)
+        self.assertEqual(self.ledger.snapshot()['state']['revision'],1)
+
+    def test_precise_reservation_aggregate_and_settlement(self):
+        from decimal import localcontext
+        value='1.00000000000000000000000000001'
+        with localcontext() as context:
+            context.prec=6  # Host application precision must not affect accounting.
+            receipt=self.reserve(estimate=quantities(amount=value),retry_allowance=0,evidence=self.proof)
+            self.assertEqual(receipt['reserved']['amount'],value)
+            self.ledger.settle(receipt['reservation_id'],usage=quantities(amount=value),outcome='complete',
+                expected_revision=self.ledger.snapshot()['sha256'],idempotency_key='precise',evidence=self.proof)
+            self.assertEqual(self.ledger.snapshot()['state']['reservations'][receipt['reservation_id']]['spent']['amount'],value)
+        ledger=BudgetLedger.create(Path(self.temp.name)/'exact',quantities(amount=1),
+            provider_limits={'local':quantities(amount=1)},currency='USD')
+        proof=[ledger.retain_evidence(self.root/self.proof[0]['path'])]
+        for index,amount in enumerate(['0.5','0.50000000000000000000000000001']):
+            options=dict(operation_id='op'+str(index),provider='local',estimate=quantities(amount=amount),
+                retry_allowance=0,expected_revision=ledger.snapshot()['sha256'],idempotency_key='key'+str(index),evidence=proof)
+            if index:
+                before=ledger.snapshot()
+                with self.assertRaisesRegex(RigError,'hard limits'):ledger.reserve(**options)
+                self.assertEqual(ledger.snapshot(),before)
+            else:ledger.reserve(**options)
+
+    def test_decimal_scale_bound_and_unknown_zero_cap_fail_without_mutation(self):
+        before=self.ledger.snapshot()
+        for options in [dict(estimate=quantities(amount='1e-65'),evidence=self.proof),
+                        dict(estimate=quantities(amount=None),unknown_price=True,unknown_price_cap=0,evidence=[]),
+                        dict(estimate=quantities(amount=0),unknown_price=True,evidence=[])]:
+            with self.assertRaises(RigError):self.reserve(**options)
+            self.assertEqual(self.ledger.snapshot(),before)
 
     def test_strict_settle_release_adapters_preserve_fixture_evidence(self):
         import json
