@@ -390,14 +390,37 @@ def _workspace_shape(fd):
 
 
 def _work_bytes(fd):
-    total=0;count=0;root=Path('/proc/self/fd')/str(fd)
-    for folder,dirs,files in os.walk(root,followlinks=False):
-        for name in dirs+files:
-            path=Path(folder)/name;info=path.lstat()
-            if stat.S_ISLNK(info.st_mode) or not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
-                raise ValueError('unsafe entry in job workspace')
-            total+=info.st_size if stat.S_ISREG(info.st_mode) else 0;count+=1
-            if count>media.MAX_FRAMES*5+128:raise ValueError('job workspace file count exceeds budget')
+    total=0;count=0
+    def walk(directory,depth):
+        nonlocal total,count
+        if depth>64:raise ValueError('job workspace directory depth exceeds budget')
+        # Open a fresh description so enumeration never consumes a borrowed
+        # directory's offset. Walk only pinned, no-follow child descriptors.
+        fresh=os.open('.',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=directory)
+        try:
+            with os.scandir(fresh) as entries:
+                for entry in entries:
+                    try:info=os.stat(entry.name,dir_fd=fresh,follow_symlinks=False)
+                    except FileNotFoundError:
+                        # The owned worker atomically renames checkpoints while
+                        # the controller measures storage. Removed bytes no
+                        # longer consume storage; other I/O errors still fail.
+                        continue
+                    count+=1
+                    if count>media.MAX_FRAMES*5+128:raise ValueError('job workspace file count exceeds budget')
+                    if stat.S_ISREG(info.st_mode):total+=info.st_size
+                    elif stat.S_ISDIR(info.st_mode):
+                        try:child=os.open(entry.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=fresh)
+                        except FileNotFoundError:continue
+                        try:
+                            current=os.fstat(child)
+                            if (current.st_dev,current.st_ino)!=(info.st_dev,info.st_ino):
+                                raise ValueError('job workspace directory changed during measurement')
+                            walk(child,depth+1)
+                        finally:os.close(child)
+                    else:raise ValueError('unsafe entry in job workspace')
+        finally:os.close(fresh)
+    walk(fd,0)
     return total
 
 

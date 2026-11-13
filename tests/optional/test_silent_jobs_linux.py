@@ -129,6 +129,23 @@ class JobFixtures(unittest.TestCase):
                 with self.assertRaises(ValueError):jobs.status(self.root/'job')
         self.assertFalse((self.root/'job-delivery').exists())
 
+    def test_storage_measurement_tolerates_owned_checkpoint_rename_only(self):
+        self.create()
+        with jobs._locked(self.root/'job') as (fd,_,_):
+            expected=jobs._work_bytes(fd)
+            jobs._write(fd,'.job-write-race',b'temporary checkpoint bytes')
+            original=os.stat;removed=[]
+            def remove_checkpoint(path,*args,**kwargs):
+                if path=='.job-write-race' and not removed:
+                    os.unlink(path,dir_fd=kwargs['dir_fd']);removed.append(True)
+                return original(path,*args,**kwargs)
+            with mock.patch.object(jobs.os,'stat',side_effect=remove_checkpoint):
+                self.assertEqual(jobs._work_bytes(fd),expected)
+            self.assertTrue(removed)
+            outside=self.root/'foreign';outside.write_bytes(b'foreign')
+            os.symlink(outside,self.root/'job/escape')
+            with self.assertRaisesRegex(ValueError,'unsafe'):jobs._work_bytes(fd)
+
     def test_hidden_worker_cannot_signal_an_unowned_process_group(self):
         result=subprocess.run([sys.executable,str(Path(jobs.__file__)),'_worker'],capture_output=True,text=True,timeout=5)
         self.assertEqual(result.returncode,2);self.assertIn('owned session',result.stderr)

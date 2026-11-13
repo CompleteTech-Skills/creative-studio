@@ -63,7 +63,7 @@ class ActualMediaJobs(unittest.TestCase):
         paths=[frame['path'] for frame in self.manifest['frames']]
         source=sequence_jobs.sequence.build_source(self.source,paths,fps=self.manifest['fps'],
             output={'format':'png','bit_depth':8,'passes':['combined'],'alpha':'opaque','color_space':'srgb'},
-            identity={'fixture':'same actual imported PNG timeline as video request; no render claim'})
+            identity={'resolution':[32,32],'fixture':'same actual imported PNG timeline as video request; no render claim'})
         sequence_jobs.create(source,self.source,self.root/'sequence',self.root/'sequence-delivery',
             provenance={'video_source_sha256':media._digest(self.manifest)})
         result=jobs.run_batch([self.root/'video',self.root/'sequence'])
@@ -167,7 +167,7 @@ class ActualMediaJobs(unittest.TestCase):
                     if owned:break
                 if owned:break
                 time.sleep(.01)
-            self.assertTrue(owned,'actual owned FFmpeg process must execute before parent-death injection')
+            self.assertTrue(owned,f'actual owned FFmpeg process must execute before parent-death injection: {jobs.status(self.root/"job")["state"]}')
             controller.kill();controller.wait(timeout=5)
             deadline=time.monotonic()+5
             def executing(pid):
