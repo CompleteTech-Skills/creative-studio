@@ -391,7 +391,7 @@ def inspect_cache(root,frame):
 
 
 def metrics(root):
-    _,data,world=_load_verified_cache(root)
+    verified,data,world=_load_verified_cache(root)
     samples=data['samples'];comp=world['components'][0]
     initial=samples[0]['positions']
     def center(points):return [sum(p[i] for p in points)/len(points) for i in range(3)]
@@ -403,7 +403,7 @@ def metrics(root):
     pin_error=max((distance(sample['positions'][index],initial[index]) for sample in samples for index in comp['pins']),default=0.)
     return dict(maximum_centered_radius_change=shape_change,initial_center=origin,final_center=center(samples[-1]['positions']),
         maximum_tail_vertex_step=tail_motion,maximum_pin_error=pin_error,volume_preservation='unsupported',pressure='unsupported',
-        fixture=world['id']=='backend-engineering-fixture',visual_review='not-performed')
+        fixture=verified['fixture'],visual_review='not-performed')
 
 
 def main(argv=None):
