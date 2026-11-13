@@ -1,0 +1,24 @@
+{
+  "source_commit": "15116668746a091a82cd87faa9b686886772f58c",
+  "tests": 114,
+  "seconds": 21.883,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "legacy_discovery_only": 809,
+  "frozen_source_files": 150,
+  "source_hashes_unchanged": true,
+  "corrections": [
+    "Bound native ZIP methods before member decoding",
+    "Use no-decoder PNG/JPEG dimension probes",
+    "Deduplicate immutable encoded image byte copies by data key",
+    "Bind locked-index header length before array/list construction"
+  ],
+  "review_status": "Fresh independent actual Astra review required; dffbf6f fullreviewCHANGES_REQUIRED preserved.",
+  "artifacts": {
+    "workspace-source-before.json": "e48061233b8814d030e3d3faf18f46428e3647ffa42463988dea61abbe3edf6a",
+    "workspace-combined.log": "1d15c7f80dee225b6cf259b8067ad43654ba520571d51926f4fe2325a2e810a5",
+    "workspace-correction-focused.log": "f5757b01a1e36df126302da6e00abeb77dd5565be2531d2dd7f78436f7ec4bad",
+    "independent-review-dffbf6f-changes-required.md": "bbba5073cd0e99cf8558674bc3b36b6dd576eed8e4ca548438bcd860bdefa3c1"
+  }
+}
