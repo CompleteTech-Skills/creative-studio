@@ -147,10 +147,14 @@ class EditorServer(HTTPServer):
         require(isinstance(workers, int) and 1 <= workers <= 8, 'EDITOR3D_VIEW_WORKERS', 'Use 1–8 workers.')
         self.repository = repository
         self.routes = {}
-        # Built-in optional inspector extension selects fixed trusted handlers.
+        # Installed extensions select fixed trusted handlers; explicit handlers
+        # remain an in-process override chosen by the local application owner.
         if (ROOT / "scripts/editor3d_inspectors.py").is_file():
             from editor3d_inspectors import inspector_routes
             self.routes.update(inspector_routes())
+        if Path(__file__).with_name('editor3d_timeline.py').is_file():
+            from editor3d_timeline import routes as timeline_routes
+            self.routes.update(timeline_routes())
         self.routes.update(routes or {})
         self.upload_directory = tempfile.TemporaryDirectory(prefix="hatch-editor-uploads-")
         self.uploads = {}
