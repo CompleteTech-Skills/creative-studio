@@ -805,8 +805,9 @@ def destination_directory(destination, *, destination_dir_fd=None):
             os.close(descriptor)
     else:
         destination = _destination(destination)
+        name = _destination_name(destination.name)
         with _pin_directory(destination.parent) as parent_fd:
-            yield destination.name, parent_fd
+            yield name, parent_fd
 
 
 def encode(request, root, destination, *, destination_dir_fd=None, ffmpeg=None, ffprobe=None, cancel=None, progress=None):

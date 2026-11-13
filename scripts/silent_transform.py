@@ -5,11 +5,11 @@ from fractions import Fraction
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
-import shutil
 
 from PIL import Image, __version__ as PILLOW_VERSION
-from atomic_publish import _rename_no_replace, private_stage
+from atomic_publish import _rename_no_replace
 from production_contracts import MAX_MANIFEST_BYTES, read_json
 import silent_video as video
 
@@ -99,18 +99,18 @@ def _raster(image, settings):
                         box=tuple(float(v) for v in (left, top, left + crop_width, top + crop_height)))
 
 
-def transform(source, root, settings, destination, *, cancel=None):
+def transform(source, root, settings, destination, *, destination_dir_fd=None, cancel=None):
     source, settings = copy.deepcopy(video.validate_source(source)), validate_profile(settings)
     mapping = plan(source, settings)
     estimated = len(mapping) * (settings['width'] * settings['height'] * 4 + 1024)
     if estimated > video.MAX_SOURCE_BYTES:
         raise ValueError('conservative output work-byte estimate exceeds source budget')
-    destination = video._destination(destination)
-    if shutil.disk_usage(destination.parent).free < estimated + MAX_MANIFEST_BYTES:
-        raise ValueError('insufficient free storage for bounded transform')
-    video._snapshot(video.make_request(source), root, None)
-    with video._pin_directory(destination.parent) as parent_fd:
-        with private_stage(parent_fd, prefix='.silent-transform-') as (private_path, wrapper_fd):
+    with video.destination_directory(destination, destination_dir_fd=destination_dir_fd) as (name, parent_fd):
+        filesystem = os.fstatvfs(parent_fd)
+        if filesystem.f_bavail * filesystem.f_frsize < estimated + MAX_MANIFEST_BYTES:
+            raise ValueError('insufficient free storage for bounded transform')
+        video._snapshot(video.make_request(source), root, None)
+        with video._private_stage(parent_fd, prefix='.silent-transform-') as (private_path, wrapper_fd):
             stage = private_path / 'payload'
             stage.mkdir(mode=0o700)
             (stage / 'frames').mkdir()
@@ -154,7 +154,7 @@ def transform(source, root, settings, destination, *, cancel=None):
             (stage / 'transform.json').write_bytes(encoded)
             if cancel is not None and cancel():
                 raise ValueError('frame transform cancelled before publication')
-            _rename_no_replace('payload', destination.name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
+            _rename_no_replace('payload', name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
     return report
 
 

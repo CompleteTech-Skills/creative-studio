@@ -26,6 +26,9 @@ jobs:
       - run: python -m unittest discover -s tests/optional -p test_silent_profiles_native.py -v 2>&1 | tee silent-profiles.log
         env:
           HATCH_SILENT_MEDIA_TEST: '1'
+      - run: python -m unittest discover -s tests/optional -p test_silent_transform_native.py -v 2>&1 | tee silent-transform.log
+        env:
+          HATCH_SILENT_MEDIA_TEST: '1'
       - run: python -m unittest discover -s tests -p test_production_render.py -v 2>&1 | tee legacy-review-movie.log
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
@@ -34,6 +37,7 @@ jobs:
           path: |
             silent-media.log
             silent-profiles.log
+            silent-transform.log
             silent-contract.log
             legacy-review-movie.log
           if-no-files-found: error
