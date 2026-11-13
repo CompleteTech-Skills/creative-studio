@@ -169,8 +169,11 @@ Fixed background depth anchors expose actual tracking/follow/dolly parallax.
 The static tripod must retain identical pixels; every other movement must show
 a measured raster difference. Each actual frame also isolates the red foreground
 subject from differently colored depth anchors and compares measured foreground
-bounds with the canonical projection within three pixels. The host gate creates animated GIF previews from
-those actual PNGs. These are short engineering previews, not the #82 film.
+bounds with the canonical projection within three pixels. The host gate creates animated WebP and GIF previews from those actual PNGs.
+WebP retains the exact 125 ms display-frame duration; the host verifies the
+eight-frame, 1000 ms animation. GIF uses centisecond timing and provides an
+approximate visual preview. Static tripod may collapse repeated identical
+images into one static preview frame. These are short engineering previews, not the #82 film.
 
 ```bash
 HATCH_CAMERA3D_PREVIEW_TEST=1 HATCH_BLENDER=/path/to/blender \

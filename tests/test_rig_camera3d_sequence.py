@@ -195,6 +195,16 @@ class ActualCameraPreviews(unittest.TestCase):
                         image.load();images.append(image.convert('RGB'))
                 images[0].save(destination/('movement-'+movement['name']+'.gif'),save_all=True,
                     append_images=images[1:],duration=125,loop=0)
+                webp=destination/('movement-'+movement['name']+'.webp')
+                images[0].save(webp,format='WEBP',save_all=True,append_images=images[1:],
+                               duration=125,loop=0,lossless=True)
+                with Image.open(webp) as preview:
+                    if movement['name']!='static-tripod':
+                        duration=0
+                        for index in range(preview.n_frames):
+                            preview.seek(index);preview.load();duration+=preview.info['duration']
+                        self.assertEqual(preview.n_frames,8)
+                        self.assertEqual(duration,1000)
                 if movement['name']=='static-tripod':self.assertEqual(movement['maximum_pixel_difference'],0)
                 else:self.assertGreater(movement['maximum_pixel_difference'],1e-5)
             transitions=write_transition_preview(destination/'shot-establishing-shot.png',
