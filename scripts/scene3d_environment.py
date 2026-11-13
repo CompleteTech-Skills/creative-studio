@@ -50,7 +50,10 @@ def plan(recipe):
         require(len(objects)<recipe['budget'],'Generator node budget exceeded.','SCENE3D_LAYOUT')
         mesh.validate();objects.append(dict(id=identifier+'-'+label,mesh=mesh,position=list(position),rotation=rotation))
     kind=recipe['generator'];require(isinstance(kind,str),'Generator must be text.')
-    if kind=='primitive':
+    if kind=='template':
+        from scene3d_catalog import template_objects
+        objects=template_objects(recipe,plan)
+    elif kind=='primitive':
         require(set(p)=={'kind','dimensions'} and isinstance(p['kind'],str) and isinstance(p['dimensions'],dict),
                 'Primitive requires a text kind and dimensions object.')
         add('mesh',primitive(p['kind'],**p['dimensions']))

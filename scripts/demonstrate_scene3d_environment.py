@@ -20,6 +20,7 @@ BLENDER_SCRIPT = r'''
 import bpy, json, sys, math
 from pathlib import Path
 from mathutils import Matrix, Vector
+from itertools import product
 root=Path(sys.argv[sys.argv.index('--')+1])
 data=json.loads((root/'input.json').read_text())
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -48,10 +49,26 @@ for obj in meshes:
     if 'ceiling' in obj.name:obj.hide_render=True
 camera_data=bpy.data.cameras.new('inspection');camera=bpy.data.objects.new('inspection',camera_data)
 bpy.context.collection.objects.link(camera);camera.location=(13,-16,12)
-target=Vector((3,0,1));camera.rotation_euler=(target-camera.location).to_track_quat('-Z','Y').to_euler()
-camera.data.type='ORTHO';camera.data.ortho_scale=20;bpy.context.scene.camera=camera
+target=Vector((3,0,1))
+if data.get('auto_frame'):
+    low=Vector(tuple(min(bounds[i][0] for bounds in expected_bounds.values()) for i in range(3)))
+    high=Vector(tuple(max(bounds[i][1] for bounds in expected_bounds.values()) for i in range(3)))
+    target=(low+high)/2;extent=max(high-low)
+    camera.location=target+Vector((-1,-1,1.2)).normalized()*(extent*3)
+    camera.data.clip_end=extent*20
+camera.rotation_euler=(target-camera.location).to_track_quat('-Z','Y').to_euler()
+camera.data.type='ORTHO'
+if data.get('auto_frame'):
+    orientation=camera.rotation_euler.to_quaternion();right=orientation @ Vector((1,0,0));up=orientation @ Vector((0,1,0))
+    corners=[Vector(p)-target for p in product(*zip(low,high))]
+    xs=[p.dot(right) for p in corners];ys=[p.dot(up) for p in corners]
+    camera.data.ortho_scale=max(max(ys)-min(ys),(max(xs)-min(xs))/(640/480))*1.15
+else:camera.data.ortho_scale=20
+bpy.context.scene.camera=camera
 light_data=bpy.data.lights.new('key','AREA');light=bpy.data.objects.new('key',light_data);bpy.context.collection.objects.link(light)
-light.location=(3,-8,10);light.rotation_euler=(target-light.location).to_track_quat('-Z','Y').to_euler();light.data.energy=1800;light.data.size=10
+light.location=(3,-8,10)
+if data.get('auto_frame'):light.location=target+Vector((-1,-1,2))*extent
+light.rotation_euler=(target-light.location).to_track_quat('-Z','Y').to_euler();light.data.energy=7200*(extent/10)**2 if data.get('auto_frame') else 1800;light.data.size=extent if data.get('auto_frame') else 10
 scene=bpy.context.scene;scene.render.engine='CYCLES';scene.cycles.samples=16;scene.cycles.device='CPU';scene.render.threads_mode='FIXED';scene.render.threads=2
 scene.world=bpy.data.worlds.new('inspection-world');scene.world.color=(.15,.15,.15);scene.render.resolution_x=640;scene.render.resolution_y=480;scene.render.resolution_percentage=100
 scene.render.image_settings.file_format='PNG';scene.render.filepath=str(root/'inspection.png');bpy.ops.render.render(write_still=True)
@@ -59,16 +76,20 @@ scene.render.image_settings.file_format='PNG';scene.render.filepath=str(root/'in
 '''
 
 
-def demonstrate(destination,blender):
+def demonstrate(destination,blender,preset=None):
     root=Path(destination).absolute();root.mkdir(parents=True,exist_ok=False)
     recipe=dict(id='workshop',version=1,seed=42,generator='workshop',parameters=dict(rooms=2,windows=True),budget=100)
+    if preset is not None:
+        from scene3d_catalog import PRESETS
+        if preset not in PRESETS:raise ValueError('Unknown catalog preset.')
+        recipe=dict(id='catalog',version=1,seed=42,generator='template',parameters=dict(preset=preset),budget=128)
     create_environment(root/'project',recipe)
     bundle=load_project(root/'project');scene_path=bundle['project']['scenes'][-1]['path']
     scene=bundle['documents'][scene_path];graph=SceneGraph(scene);meshes=load_meshes(root/'project',scene_path)
     objects=[dict(id=i,vertices=(np.asarray(m['vertices'])@BLENDER_BASIS[:3,:3].T).tolist(),
                   triangles=m['triangles'],matrix=to_blender(graph.evaluate_base(i)['world_matrix']).tolist())
              for i,m in meshes.items()]
-    (root/'input.json').write_text(json.dumps(dict(objects=objects),allow_nan=False))
+    (root/'input.json').write_text(json.dumps(dict(objects=objects,auto_frame=preset is not None),allow_nan=False))
     script=root/'native.py';script.write_text(BLENDER_SCRIPT)
     with (root/'blender.log').open('w') as log:
         subprocess.run([str(blender),'--background','--factory-startup','--threads','2','--python-exit-code','1','--python',str(script),'--',str(root)],
@@ -84,4 +105,5 @@ def demonstrate(destination,blender):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('destination',type=Path);parser.add_argument('--blender',required=True,type=Path)
-    args=parser.parse_args();print(json.dumps(demonstrate(args.destination,args.blender),indent=2))
+    parser.add_argument('--preset',help='Optional catalog preset for an automatically framed inspection.')
+    args=parser.parse_args();print(json.dumps(demonstrate(args.destination,args.blender,args.preset),indent=2))
