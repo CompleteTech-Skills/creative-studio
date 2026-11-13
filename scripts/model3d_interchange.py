@@ -104,7 +104,7 @@ def _obj_payloads(geometry, limits):
     return payloads
 
 
-def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', limits=None, editable=None):
+def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', limits=None, editable=None, source_snapshot=None):
     """Publish standalone native geometry as model.glb/.gltf or model.obj+MTL.
 
     No skin, animation, hierarchy or source polygon topology is implied by a
@@ -184,6 +184,46 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
                 and all(len(data) <= limits['source_bytes'] for data in payloads.values()),
                 'MODEL3D_EXPORT_LIMIT', 'Encoded export exceeds source/dependency limits.')
         files={name:dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest()) for name,data in sorted(payloads.items())}
+        if source_snapshot is not None:
+            # Persist exact originals alongside the derived mesh before exclusive
+            # publication. A context-owned snapshot is read again defensively;
+            # caller mutation cannot turn a receipt into unverified provenance.
+            from model3d_validation import _open_payload
+            require(source_snapshot.model.geometry is geometry,
+                    'MODEL3D_SOURCE', 'Source snapshot must own the exported geometry.')
+            records = source_snapshot.source_records
+            require(isinstance(records, list) and 0 < len(records) <= limits['archive_files'],
+                    'MODEL3D_SOURCE', 'Source inventory is missing or too large.')
+            source_records = []
+            for record in records:
+                name = 'source/' + record['path']
+                require(name not in files, 'MODEL3D_SOURCE', 'Source inventory contains duplicate paths.')
+                from rig_errors import safe_path
+                target = safe_path(stage, name)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                digest = hashlib.sha256(); count = 0
+                with _open_payload(source_snapshot.root, record['path']) as (stream, info):
+                    require(info.st_size == record['bytes'] and 0 < info.st_size <= limits['source_bytes'],
+                            'MODEL3D_SOURCE', 'Source snapshot size changed or exceeds limits.')
+                    with target.open('xb') as output:
+                        while chunk := stream.read(1024**2):
+                            count += len(chunk)
+                            require(count <= record['bytes'], 'MODEL3D_SOURCE', 'Source snapshot grew.')
+                            digest.update(chunk); output.write(chunk)
+                require(count == record['bytes'] and digest.hexdigest() == record['sha256'],
+                        'MODEL3D_SOURCE', 'Source snapshot no longer matches its receipt.')
+                files[name] = dict(bytes=count, sha256=digest.hexdigest())
+                source_records.append(dict(original_path=record['path'], path=name, **files[name]))
+                require(sum(f['bytes'] for f in files.values()) <= limits['dependency_bytes'],
+                        'MODEL3D_EXPORT_LIMIT', 'Originals and export exceed dependency byte limits.')
+            envelope = dict(schema_version=1, kind='hatch-model3d-source-snapshot',
+                            files=source_records, provenance=source_snapshot.provenance)
+            data = (json.dumps(envelope, allow_nan=False, sort_keys=True)+'\n').encode('utf-8')
+            require(len(data) <= limits['source_bytes'] and
+                    len(data) + sum(f['bytes'] for f in files.values()) <= limits['dependency_bytes'],
+                    'MODEL3D_EXPORT_LIMIT', 'Source receipt exceeds export limits.')
+            (stage/'source.json').write_bytes(data)
+            files['source.json'] = dict(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
         manifest=dict(schema_version=1, kind='hatch-model3d-mesh-export', format=format,
                       vertices=geometry.vertex_count, triangles=geometry.triangle_count, files=files,
                       mesh_identity=[dict(id=m.id,name=m.name,region=m.region,source_node=m.source_node) for m in geometry.meshes],
