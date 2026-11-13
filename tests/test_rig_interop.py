@@ -120,11 +120,11 @@ class RigExternalIntegrationTests(unittest.TestCase):
     def test_blender_preview_rejects_a_different_embedded_rig_revision(self):
         from rig_blender import export_blender,render_blender_preview
         blend=Path(self.temp.name)/'source.blend'
-        export_blender(self.rig,blend,verify=False)
+        receipt=export_blender(self.rig,blend,verify=False)
         self.rig.manifest['source']['attribution']+=' changed revision'
         destination=Path(self.temp.name)/'wrong-rig-preview'
         with self.assertRaisesRegex(RigError,'Blender failed'):
-            render_blender_preview(self.rig,destination,clip='bend',blend_path=blend,width=96,height=96)
+            render_blender_preview(self.rig,destination,clip='bend',blend_path=blend,blend_sha256=receipt['sha256'],width=96,height=96)
         self.assertFalse(destination.exists())
         self.assertTrue(blend.is_file())
 
@@ -208,6 +208,20 @@ class RigBlenderPublicationTests(unittest.TestCase):
             raise RigError('TEST_DONE','Snapshot inspection complete.')
         with patch('rig_blender._run',side_effect=inspect):
             with self.assertRaisesRegex(RigError,'Snapshot inspection complete'):
-                render_blender_preview(self.rig,destination,clip='bend',blend_path=original)
+                render_blender_preview(self.rig,destination,clip='bend',blend_path=original,blend_sha256=sha256(original))
         self.assertFalse(destination.exists())
         self.assertEqual(original.read_bytes(),b'changed live source')
+
+    def test_supplied_blend_requires_unchanged_exact_reference(self):
+        from unittest.mock import patch
+        from rig_blender import render_blender_preview
+        source=self.root/'changed.blend';source.write_bytes(b'original')
+        expected=sha256(source);source.write_bytes(b'modified')
+        destination=self.root/'untrusted-preview'
+        with patch('rig_blender._run') as worker:
+            with self.assertRaises(RigError):
+                render_blender_preview(self.rig,destination,clip='bend',blend_path=source)
+            with self.assertRaises(RigError):
+                render_blender_preview(self.rig,destination,clip='bend',blend_path=source,blend_sha256=expected)
+            worker.assert_not_called()
+        self.assertFalse(destination.exists());self.assertEqual(source.read_bytes(),b'modified')

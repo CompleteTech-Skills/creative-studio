@@ -132,7 +132,7 @@ def import_blend(path,*,scale=1.,limits=None,executable=None):
         return imported
 
 
-def render_blender_preview(rig,destination,*,clip=None,times=None,pose=None,blend_path=None,
+def render_blender_preview(rig,destination,*,clip=None,times=None,pose=None,blend_path=None,blend_sha256=None,
                            width=256,height=256,camera='three-quarter',executable=None):
     """Render real Cycles CPU PNGs with one shared camera and exact source provenance."""
     import math
@@ -162,7 +162,10 @@ def render_blender_preview(rig,destination,*,clip=None,times=None,pose=None,blen
         require(clip in working.clips and max(times)<=working.clips[clip]['duration'],
                 'RIG_RENDER_TIME','Render samples must lie inside an available clip.')
         if blend_path is None:
-            blend_path=root/'render.blend';export_blender(working,blend_path,executable=executable,verify=False)
+            blend_path=root/'render.blend';created=export_blender(working,blend_path,executable=executable,verify=False)
+            blend_sha256=created['sha256']
+        require(isinstance(blend_sha256,str) and len(blend_sha256)==64 and all(c in '0123456789abcdef' for c in blend_sha256),
+                'RIG_BLENDER_REFERENCE','A supplied Blender project requires the exact SHA-256 from its export receipt.')
         blend_path=Path(blend_path).absolute()
         from rig_errors import open_payload
         snapshot=root/'input.blend';digest=hashlib.sha256();written=0
@@ -176,6 +179,7 @@ def render_blender_preview(rig,destination,*,clip=None,times=None,pose=None,blen
                     require(written<=rig.manifest['limits']['source_bytes'],'RIG_LIMIT_SOURCE','Blender input exceeds its byte budget.')
                     output.write(block);digest.update(block)
         blend_digest=digest.hexdigest()
+        require(blend_digest==blend_sha256,'RIG_BLENDER_CHANGED','Blender project differs from its immutable export reference.')
         requests=[dict(time=float(t),path=str(p)) for t,p in zip(times,staged_outputs)]
         report=_run(dict(mode='render',input=str(snapshot),clip=clip,frames=requests,width=width,height=height,camera=camera,
                          report=str(root/'report.json'),samples=[],rig_sha256=rig_signature(working.manifest)),executable=executable,timeout=rig.manifest['limits']['timeout_seconds'])
