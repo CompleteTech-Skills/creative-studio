@@ -375,10 +375,22 @@ def restore_package(root, destination) -> dict:
 def create_transport(root, destination, *, part_size=65535) -> dict:
     """Reuse the existing ordered, hash-verified source-parts transport."""
     index, _, report = _verify(root)
-    result = create_source_bundle(root, sorted(index['members']) + [INDEX], destination,
-        fixture=index['fixture'], origin='Exact asset package ' + index['package_id'],
-        provenance_paths=[INDEX, *index['locks'].values()], part_size=part_size)
-    return {**result, 'package_sha256': report['package_sha256']}
+    destination = _new_destination(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix='.asset-transport-', dir=destination.parent))
+    try:
+        bundle = stage / 'parts'
+        result = create_source_bundle(root, sorted(index['members']) + [INDEX], bundle,
+            fixture=index['fixture'], origin='Exact asset package ' + index['package_id'],
+            provenance_paths=[INDEX, *index['locks'].values()], part_size=part_size)
+        verified = verify_transport(bundle)
+        if verified['package_sha256'] != report['package_sha256']:
+            fail('HASH', 'Source package changed during transport creation.')
+        _publish_stage(bundle, destination)
+        return {**result, 'bundle': str(destination / SOURCE_INDEX),
+                'package_sha256': report['package_sha256']}
+    finally:
+        shutil.rmtree(stage)
 
 
 @contextmanager
@@ -429,7 +441,9 @@ def create_archive(root, destination) -> dict:
             output.writestr('archive-receipt.json', canonical_bytes(receipt))
         if archive.stat().st_size > MAX_FILE_BYTES:
             fail('LIMIT', 'ZIP transport exceeds 64 MiB; use ordered source parts.')
-        verify_archive(archive)
+        verified = verify_package_archive(archive)
+        if verified['package_sha256'] != report['package_sha256']:
+            fail('HASH', 'Source package changed during archive creation.')
         from atomic_publish import _rename_no_replace
         import hatch
         with hatch.ownership(destination, resolve_leaf=False):
