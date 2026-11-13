@@ -106,7 +106,12 @@ publication. The output directory is opened without following symlinks and pinne
 by descriptor through staging, subprocesses and the final rename. A concurrent
 parent rename retains that original directory identity; a substituted pathname
 cannot redirect publication elsewhere. An existing destination, including a racing empty directory or
-symlink, is preserved. Private partials are removed after failures. The returned
+symlink, is preserved. The private staging directory is also pinned before any
+frame or encoded bytes are written; its replaceable basename is never reopened
+for publication or recursive cleanup. Cleanup preserves a foreign replacement.
+Cancellation callbacks run during encoding and verification, with no callback
+between the final original-byte recheck and exclusive publication. Private
+partials are removed after failures. The returned
 receipt binds the actual artifact, source manifest and request hashes and
 retains commands, raw probe output, timeline and decode evidence. Persist it in
 the enclosing renderer's existing transaction; this low-level API does not
