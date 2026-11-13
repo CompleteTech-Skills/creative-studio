@@ -56,6 +56,9 @@ A light node may carry `light_binding` with `schema_version: 1`, an exact
 canonical `light3d` reference under `light`, `intensity_scale` in [0, 1000000],
 and a linear RGB `color_multiplier` in [0,1]. This multiplies the physical source
 light; it never interprets the legacy unitless `light.intensity` as physical power.
+The lighting owner retains photometric tint semantics: candela/lux colors are
+normalized to unit luminance after tint (black stays dark); use intensity_scale
+for brightness changes. Area watt sources retain direct RGB multiplication.
 `light_intensity_scale` and `light_color_multiplier` tracks animate those explicit
 multipliers. Optional shot `light_overrides` replace a target's complete binding
 as the final shot override. The world binding instead carries `light`,
@@ -109,6 +112,18 @@ components. `sample_geometry=True` returns actual deformed world vertices and
 updated component/ancestor bounds through the existing importer and rig owners.
 Exposed bone/morph state is capped at 250000 total entries across components;
 posed and animated vertices share the evaluator's output vertex budget.
+Authored rig attachment sockets additionally appear as `socket_matrices` with
+`socket_matrix_space:'rig-bind'`, evaluated by `rig_attachments.socket_world` for
+the same canonical pose. Consumers obtain scene matrices by multiplying
+`world_from_rig @ socket_matrices[socket_id]`. Only manifest-declared sockets are
+returned; rigs without sockets expose an empty mapping. Socket entries share the
+existing 250000-entry native state budget.
+Each exact rig pin is loaded once per evaluation and shared across its distinct
+poses. Every instance still revalidates its rig/Pose source and identity pins.
+Distinct retained native rigs share a fixed 2000000-input-vertex budget even when
+geometry sampling is disabled. Distinct pose deformation cache entries share a
+separate fixed 2000000-vertex budget, charged before native deformation allocates
+arrays. These limits are independent of the selected component output budget.
 
 Consumers must use this state or reject pose-bound scenes; a binding is not
 permission to render the rig's rest pose. Before any native pose decoder runs,
@@ -121,3 +136,25 @@ The Pose suite exercises real two-instance bone/morph deformation, imported
 components, snapshot/reopen equivalence, exact-source rejection, active-clip
 conflicts and vertex budgets. These tests are included in the hosted native
 Scene3D workflow and interoperability gate.
+
+Native clip sampling retains one loaded rig per complete immutable rig reference.
+Distinct evaluated clip/time results share those source geometry arrays. Separate
+aggregate caps of 2000000 vertices bound loaded rig inputs and retained deformation
+arrays; deformation capacity is checked before the native evaluator allocates the
+next sample. These input/cache caps are independent of the selected output vertex
+budget, so selecting a small imported component cannot hide large retained rigs.
+
+Each evaluated node also reports `native_bounds_evaluated`. Cheap native Pose/clip
+state leaves this false on the deformed node and its transform ancestors, because
+bind bounds do not describe the current deformation. `frame_camera` requires true
+for every selected target and asks for `sample_geometry=True` otherwise; unrelated
+static targets can still be framed from a cheap evaluation.
+
+`scene3d_import.project_imported_vertices(graph, imported, admitted_rig, deformed)`
+is the pure canonical component projection boundary for already admitted native
+rigs and evaluated deformation arrays. It checks each selected node's exact
+component/source binding and applies the importer's existing source-to-world edit
+mapping. It performs no source reads, rig decoding or deformation evaluation.
+`evaluate_imported_vertices` retains its independent admission/sampling API and
+then delegates to this same mapper. Temporal caches use the pure boundary so
+imported instances cannot bypass input/deformation budgets through a second loader.
