@@ -297,7 +297,8 @@ def build_light(plan, *, collection=None, receivers=None):
             for identifier in opts['excluded_receivers']:
                 target = receivers[identifier]
                 linking.objects.link(target)
-                linking.collection_objects[target.name].light_linking.link_state = 'EXCLUDE'
+                index = next(i for i, member in enumerate(linking.objects) if member == target)
+                linking.collection_objects[index].light_linking.link_state = 'EXCLUDE'
             obj.light_linking.receiver_collection = linking
         obj['hatch_light_plan_sha256'] = plan['sha256']
         obj['hatch_light_source_sha256'] = plan['reference']['sha256']

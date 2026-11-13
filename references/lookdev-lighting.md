@@ -85,8 +85,8 @@ indirect illumination; it does not substitute an AO texture for GI. EEVEE local
 light objects are supported, while unrestricted path tracing and identical
 transmission/GI are not claimed. Browser lighting, browser HDR prefiltering,
 shadow-map controls and browser/Blender comparisons remain with the preview
-integration work. OpenEXR environment decoding awaits the texture owner's bounded
-EXR decoder. Radiance HDR decoding is available. These boundaries keep #87 open
+integration work. Radiance HDR and the texture owner's bounded OpenEXR subset are available;
+unsupported OpenEXR compression/layouts fail explicitly. These boundaries keep #87 open
 until its complete integration acceptance is verified.
 
 ## Verification
