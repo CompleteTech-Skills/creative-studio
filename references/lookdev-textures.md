@@ -88,7 +88,7 @@ are portable independently of this publication restriction.
 
 The shared AssetLibrary remains the authority for blob deduplication, cache
 storage, version lifecycle and eviction. This module does not create a second
-asset index. Image-to-material provider generation, asset-cache integration,
+asset index. Image-to-material provider generation, renderer/GPU cache integration,
 directional tangent ground-truth comparisons and complete #85 acceptance remain
 integration work; the implementation must not be presented as full parent #15
 acceptance.
@@ -121,3 +121,23 @@ Unassigned Blender images have no users and can be omitted by Blender's save;
 callers must bind the returned image to a shader or deliberately retain it.
 A successful process exit alone is insufficient: the test checks every render
 hash, measured differences and packed-image pixel values after reopen.
+
+## Disposable upload memory
+
+`lookdev_texture_cache.DerivedTextureCache` owns disposable CPU float32 upload
+pyramids only. Canonical originals and versions remain in AssetLibrary; clearing
+or evicting this in-memory LRU cannot remove them. `prepare(decoded, profile=...)`
+keys exact source hash, actual decoded pixel hash, role/encoding and adapter/profile
+settings. A repeated source digest cannot alias changed pixels. Default mobile,
+browser and offline profiles limit retained dimensions and total upload bytes;
+custom `UploadProfile` values are bounded. Every mip byte is admitted before
+construction. Receipts record original and upload dimensions, all mip dimensions,
+byte estimates and the explicit area-filter derivation; approved originals remain
+untouched. Returned arrays/receipts are independent copies. Eviction releases least
+recently used derived buffers within the configured retained-byte budget.
+
+This is an application memory cache, not durable disk cache, GPU allocation or
+KTX2 compression. Source decoding and mipmap working memory retain their own
+separate admission limit. Shader binding, GPU texture upload and backend-native
+compression must consume these explicit buffers through their owning renderer.
+Run `python -m unittest discover -s tests -p test_lookdev_texture_cache.py -v`.
