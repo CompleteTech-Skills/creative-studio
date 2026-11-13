@@ -95,6 +95,8 @@ class CapabilityTests(unittest.TestCase):
                 self.assertEqual(evidence['execution']['triangles'],1)
             changed=deepcopy(result);changed['value']['capabilities'][0]['limits']['max_provider_calls']=100
             with self.assertRaises(RigError):cap.assert_admission(changed,operations)
+            changed['value']['digest']=object_hash({k:v for k,v in changed['value'].items() if k!='digest'})
+            with self.assertRaises(RigError):cap.assert_admission(changed,operations,evidence_root=path)
             with self.assertRaises(RigError):cap.assert_admission(result,operations,resources={'max_provider_calls':1})
             with self.assertRaises(RigError):cap.assert_admission(result,operations,now=datetime.now(timezone.utc)+timedelta(days=1))
             (path/result['artifacts'][0]['path']).write_text('{}')
