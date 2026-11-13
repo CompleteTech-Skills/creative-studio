@@ -1,0 +1,21 @@
+{
+  "source_commit": "61225b2740ba96f0f1f85b626151089d8730b297",
+  "source_sha256": "9fb20f454d3a87030089c211be04a8f11f79ebd85d23276220fb428d719322ef",
+  "states": {
+    "blender.cpu": "available",
+    "blender.gpu": "available",
+    "codec.av1": "available",
+    "codec.h264": "available",
+    "codec.vp9": "available",
+    "importer.glb": "available",
+    "importer.gltf": "available",
+    "importer.obj": "available",
+    "module.scene3d": "untested",
+    "native.acquisition": "untested",
+    "planning.provider": "unavailable"
+  },
+  "admission": "PASS",
+  "exact_byte_closure": "PASS",
+  "scope": "Synthetic local smoke probes; not production film acceptance",
+  "remote_provider_calls": 0
+}

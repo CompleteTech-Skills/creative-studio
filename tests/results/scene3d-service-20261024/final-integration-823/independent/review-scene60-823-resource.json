@@ -1,0 +1,20 @@
+[
+  {
+    "case": "files",
+    "limit": 1,
+    "accepted": false,
+    "unchanged_on_rejection": true
+  },
+  {
+    "case": "bytes",
+    "limit": 1329,
+    "accepted": false,
+    "unchanged_on_rejection": true
+  },
+  {
+    "case": "exact-bytes",
+    "limit": 1330,
+    "accepted": true,
+    "unchanged_on_rejection": true
+  }
+]
