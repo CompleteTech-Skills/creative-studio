@@ -162,6 +162,8 @@ class IdentityRegistry:
         document = validate_document(_unpack(row[0]), 'identity')
         if digest(document) != row[1]:
             raise ValueError('CONTINUITY_HASH: corrupted identity document')
+        if document['identity_id'] != identity_id:
+            raise ValueError('CONTINUITY_REFERENCE: identity document disagrees with indexed identity')
         pin = None
         if row[2] is not None:
             selected = self.revision(row[2], verify=verify_selected)
@@ -307,11 +309,22 @@ class IdentityRegistry:
                 or document['semantic_version'] != row[5]):
             raise ValueError('CONTINUITY_REFERENCE: immutable document disagrees with indexed identity/version')
         review = validate_document(_unpack(row[2]), 'review')
-        if review['subject_sha256'] != row[0] or review['verdict'] != 'approved':
+        if (review['subject_sha256'] != row[0] or review['verdict'] != 'approved'
+                or review['fixture'] != document['source_provenance']['fixture']):
             raise ValueError('CONTINUITY_REVIEW: corrupted approval binding')
+        # Promotion history is append-only through this API and retains the
+        # original exact decision digest, including during missing-file recovery.
+        promoted = self.db.execute("SELECT details FROM history WHERE action='promote' AND subject=?",
+                                   (revision_id,)).fetchall()
+        binding = _unpack(promoted[0][0]) if len(promoted) == 1 else None
+        if not isinstance(binding, dict) or binding.get('review_sha256') != digest(review):
+            raise ValueError('CONTINUITY_REVIEW: decision disagrees with immutable promotion binding')
         if verify:
             verify_references(self.asset_root, document)
             verify_references(self.asset_root, review)
+            retained = decode_json(read_reference_bytes(self.asset_root, review['native_receipt']))
+            if retained != {key: value for key, value in review.items() if key != 'native_receipt'}:
+                raise ValueError('CONTINUITY_REVIEW: decision disagrees with retained native receipt')
         return dict(document=document, sha256=row[0], review=review, deprecated=bool(row[3]),
                     production_artwork_approved=False)
 
@@ -359,9 +372,10 @@ class IdentityRegistry:
         return dict(before_sha256=before['sha256'], after_sha256=after['sha256'], changes=changes,
                     geometry_compared=False, visual_approval=False)
 
-    def _validate_pins(self, bindings, *, allow_deprecated=False):
+    def _validate_pins(self, bindings, *, allow_deprecated=False, verified=None):
         # Cache only within this operation; every later operation rereads payloads.
-        verified = {}
+        if verified is None:
+            verified = {}
         for instance in bindings['instances']:
             pin = instance['revision']
             revision_id = pin['revision_id']
@@ -389,13 +403,18 @@ class IdentityRegistry:
         return checksum
 
     def bindings(self, project_id):
+        return self._bindings(project_id)
+
+    def _bindings(self, project_id, *, verified=None):
         row = self.db.execute('SELECT document,hash FROM projects WHERE id=?', (_id(project_id),)).fetchone()
         if not row:
             raise ValueError('CONTINUITY_REFERENCE: project bindings missing')
         document = validate_document(_unpack(row[0]), 'bindings')
         if digest(document) != row[1]:
             raise ValueError('CONTINUITY_HASH: corrupted project binding')
-        self._validate_pins(document, allow_deprecated=True)
+        if document['project_id'] != project_id:
+            raise ValueError('CONTINUITY_REFERENCE: bindings document disagrees with indexed project')
+        self._validate_pins(document, allow_deprecated=True, verified=verified)
         verify_references(self.asset_root, document)
         return dict(document=document, sha256=row[1])
 
@@ -417,7 +436,8 @@ class IdentityRegistry:
             target = self.revision(target_revision_id)
             if target['deprecated']:
                 raise ValueError('CONTINUITY_DEPRECATED: revision deprecated during migration')
-            before = self.bindings(project_id)
+            verified = {target_revision_id: target}
+            before = self._bindings(project_id, verified=verified)
             if before['sha256'] != expected_sha256:
                 raise ValueError('CONTINUITY_CONFLICT: stale selected-version migration')
             bindings = deepcopy(before['document'])
@@ -428,7 +448,7 @@ class IdentityRegistry:
             for name in instance_ids:
                 if by_id[name]['revision']['identity_id'] != doc['identity_id']:
                     raise ValueError('CONTINUITY_IDENTITY: migration cannot change logical identity')
-                old = self.revision(by_id[name]['revision']['revision_id'])['document']
+                old = verified[by_id[name]['revision']['revision_id']]['document']
                 # Until geometry/rig adapter acceptance is implemented, migration
                 # may only rebind a metadata revision of exactly the same native
                 # structural payload. Changed assets require real compatibility
@@ -440,7 +460,7 @@ class IdentityRegistry:
                 by_id[name]['revision'] = dict(identity_id=doc['identity_id'], revision_id=doc['revision_id'],
                     semantic_version=doc['semantic_version'], sha256=target['sha256'])
             bindings = validate_document(bindings, 'bindings')
-            self._validate_pins(bindings, allow_deprecated=True)
+            self._validate_pins(bindings, allow_deprecated=True, verified=verified)
             checksum = digest(bindings)
             self.db.execute('UPDATE projects SET document=?,hash=? WHERE id=?', (canonical_bytes(bindings), checksum, project_id))
             self._history('migrate-selected', project_id, dict(before_sha256=expected_sha256, after_sha256=checksum,

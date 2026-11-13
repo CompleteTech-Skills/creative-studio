@@ -333,6 +333,65 @@ class RegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'HASH'):
             self.registry.bindings('many')
 
+    def test_migration_verifies_unique_revisions_once_inside_transaction(self):
+        _, h1 = self.promote()
+        self.promote(2, 'robot-r1')
+        pin = dict(identity_id='robot', revision_id='robot-r1', semantic_version='1.0.0', sha256=h1)
+        bindings = dict(schema_version='1.0.0', project_id='many', project_revision=pointer(),
+            instances=[dict(instance_id=f'instance-{i}', entity_id=f'entity-{i}', shot_id='shot',
+                            revision=deepcopy(pin)) for i in range(100)])
+        initial = self.registry.register_bindings(bindings)
+        import continuity_registry
+        with patch('continuity_registry.verify_references', wraps=continuity_registry.verify_references) as verify:
+            changed = self.registry.migrate_selected('many', [x['instance_id'] for x in bindings['instances']],
+                                                      'robot-r2', expected_sha256=initial)
+            self.assertEqual(verify.call_count, 7)
+        self.assertNotEqual(changed, initial)
+        after = self.registry.bindings('many')['document']
+        self.assertEqual({x['revision']['revision_id'] for x in after['instances']}, {'robot-r2'})
+        (self.assets/'review2.json').write_bytes(b'changed receipt')
+        with self.assertRaisesRegex(ValueError, 'HASH'):
+            self.registry.migrate_selected('many', ['instance-1'], 'robot-r2', expected_sha256=changed)
+
+    def test_persisted_review_fields_retain_original_decision_binding(self):
+        self.promote(select=True)
+        original = self.registry.db.execute("SELECT review FROM revisions WHERE id='robot-r1'").fetchone()[0]
+        def change_fixture(value): value['fixture'] = False
+        def change_reviewer(value): value.update(reviewer_kind='human', reviewer='False human provenance')
+        def change_scope(value): value['scope']['world_id'] = 'wrong-world'
+        def change_inspected(value): value['inspected'] = value['inspected'][:1]
+        for mutate in (change_fixture, change_reviewer, change_scope, change_inspected):
+            with self.subTest(mutation=mutate.__name__):
+                review = json.loads(original); mutate(review)
+                self.registry.db.execute("UPDATE revisions SET review=? WHERE id='robot-r1'", (canonical_bytes(review),))
+                for verify in (True, False):
+                    with self.assertRaisesRegex(ValueError, 'REVIEW'):
+                        self.registry.revision('robot-r1', verify=verify)
+                self.registry.db.execute("UPDATE revisions SET review=? WHERE id='robot-r1'", (original,))
+        self.assertTrue(self.registry.revision('robot-r1')['review']['fixture'])
+        (self.assets/'review1.json').unlink()
+        self.assertTrue(self.registry.revision('robot-r1', verify=False)['review']['fixture'])
+
+    def test_identity_and_project_payloads_cannot_be_swapped_between_indexes(self):
+        self.promote(select=True)
+        identity = sample('identity'); identity['identity_id'] = 'other'
+        self.registry.create_identity(identity)
+        original = self.registry.db.execute("SELECT document,hash FROM identities WHERE id='robot'").fetchone()
+        replacement = self.registry.db.execute("SELECT document,hash FROM identities WHERE id='other'").fetchone()
+        self.registry.db.execute("UPDATE identities SET document=?,hash=? WHERE id='robot'", replacement)
+        with self.assertRaisesRegex(ValueError, 'indexed identity'): self.registry.identity('robot')
+        with self.assertRaisesRegex(ValueError, 'indexed identity'):
+            self.registry.select('robot', 'robot-r1', expected_revision_id='robot-r1')
+        self.registry.db.execute("UPDATE identities SET document=?,hash=? WHERE id='robot'", original)
+        bindings = dict(schema_version='1.0.0', project_id='p', project_revision=pointer(), instances=[])
+        h1 = self.registry.register_bindings(bindings)
+        bindings['project_id'] = 'p2'; self.registry.register_bindings(bindings)
+        replacement = self.registry.db.execute("SELECT document,hash FROM projects WHERE id='p2'").fetchone()
+        self.registry.db.execute("UPDATE projects SET document=?,hash=? WHERE id='p'", replacement)
+        with self.assertRaisesRegex(ValueError, 'indexed project'): self.registry.bindings('p')
+        with self.assertRaisesRegex(ValueError, 'indexed project'):
+            self.registry.migrate_selected('p', ['missing'], 'robot-r1', expected_sha256=h1)
+
     def test_selection_recovers_from_missing_old_receipt_with_cas_intact(self):
         self.promote(select=True)
         _, checksum = self.promote(2, 'robot-r1')

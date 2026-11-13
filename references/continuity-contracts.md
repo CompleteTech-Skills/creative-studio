@@ -205,3 +205,11 @@ Native symlink rejection tests run where the OS permits creating symlinks. An
 explicit missing-privilege/unsupported-platform skip records unavailable native
 coverage; ordinary path, hashing and lifecycle checks still run independently.
 Linux results do not establish native Windows coverage.
+
+Verified revision reads also compare the stored decision to both the original
+promotion-history digest and the hash-verified retained receipt. Recovery reads
+that omit external payload verification still enforce the promotion digest.
+This detects corrupted decision fields; it is not cryptographic protection
+against an attacker rewriting every database row. Identity and project payload
+IDs must match their database lookup keys. Selected migration shares revision
+verification across all repeated pins within its transaction, then discards it.
