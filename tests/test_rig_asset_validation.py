@@ -237,6 +237,50 @@ class AssetTechnicalTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError, 'dependency graph exceeds'):
             validate_asset(self.library, ref)
 
+    def test_prefab_instance_overrides_use_actual_child_contract(self):
+        template = json.loads((ROOT / 'examples/scene3d-contracts/example-prefab.json').read_bytes())
+        child = deepcopy(template)
+        child.update(id='child', dependencies=[], nodes=child['nodes'][:1])
+        child_path = self.root / 'child.json'
+        child_data = json.dumps(child, sort_keys=True).encode()
+        child_path.write_bytes(child_data)
+        child_ref = {'kind': 'scene3d-prefab', 'id': 'child', 'version': '1.0.0',
+                     'path': 'child.json', 'sha256': hashlib.sha256(child_data).hexdigest()}
+        outer = deepcopy(template)
+        outer.update(id='outer', dependencies=[child_ref])
+        node = deepcopy(template['nodes'][0])
+        node.update(id='instance', parent='prefab-root', type='prefab_instance', prefab=child_ref,
+                    prefab_overrides={'parameters': {'nonexistent': 1}, 'materials': {}, 'nodes': []})
+        outer['nodes'] = [template['nodes'][0], node]
+        outer_path = self.root / 'outer.json'
+        outer_path.write_text(json.dumps(outer))
+        ref = self.register({'child.json': (child_path, 'runtime'), 'outer.json': (outer_path, 'runtime')}, 'prefab')
+        with self.assertRaisesRegex(RigError, 'Unknown prefab instance parameter'):
+            validate_asset(self.library, ref)
+
+    def test_scene_binding_target_and_geometry_category_use_consumer_contracts(self):
+        files = self.scene_files(change=lambda value: value.update(asset_type='material'))
+        ref = self.register(files, 'prefab')
+        with self.assertRaisesRegex(RigError, 'non-geometric'):
+            validate_asset(self.library, ref)
+        files = self.scene_files()
+        clip_data = (ROOT / 'examples/scene3d-contracts/example-animation.json').read_bytes()
+        clip_path = self.root / 'clip.json'
+        clip_path.write_bytes(clip_data)
+        clip = json.loads(clip_data)
+        clip_ref = {'kind': clip['kind'], 'id': clip['id'], 'version': clip['version'],
+                    'path': 'clip.json', 'sha256': hashlib.sha256(clip_data).hexdigest()}
+        path = files['example-prefab.json'][0]
+        document = json.loads(path.read_bytes())
+        document['dependencies'].append(clip_ref)
+        document['nodes'][0]['animation_bindings'] = [{'target': 'prefab-root', 'clip': clip_ref,
+                    'start_frame': 0, 'end_frame': 24, 'speed': 1, 'loop': False}]
+        path.write_text(json.dumps(document))
+        files['clip.json'] = (clip_path, 'runtime')
+        ref = self.register(files, 'prefab', '2.0.0')
+        with self.assertRaisesRegex(RigError, 'missing node in the consuming graph'):
+            validate_asset(self.library, ref)
+
     def test_obj_is_geometry_only_and_reports_repairable_topology(self):
         path=self.root/'open.obj';path.write_text('v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 0\nf 1 2 3\n')
         item=inspect_geometry(path)

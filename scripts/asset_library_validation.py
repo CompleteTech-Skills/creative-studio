@@ -191,7 +191,7 @@ def _inspect_geometry(path, *, limits=None):
 
 def _scene_documents(root, manifest, payloads, geometry, limits):
     """Verify typed Scene3D references against exact registered content and owners."""
-    from scene3d_contracts import all_refs, validate_document
+    from scene3d_contracts import all_refs, validate_document, _binding_context, _prefab_overrides
     from scene3d_math import local_matrix
     import numpy as np
     documents = {}
@@ -201,6 +201,8 @@ def _scene_documents(root, manifest, payloads, geometry, limits):
         value = decode_json(payload)
         if isinstance(value, dict) and str(value.get('kind', '')).startswith('scene3d-'):
             validate_document(value)
+            if value['kind'] not in ('scene3d-asset', 'scene3d-scene', 'scene3d-prefab', 'scene3d-animation'):
+                fail('UNSUPPORTED', 'No technical consumption adapter for document kind: ' + value['kind'], name)
             documents[name] = value
     edges = {}
     reports = []
@@ -210,6 +212,7 @@ def _scene_documents(root, manifest, payloads, geometry, limits):
         if identity in identities and identities[identity] != name:
             fail('IDENTITY', 'Multiple files declare the same native identity.', name)
         identities[identity] = name
+    binding_context = dict(seen=set(), checks=0)
     for name, document in documents.items():
         edges[name] = []
         for ref in all_refs(document):
@@ -245,6 +248,8 @@ def _scene_documents(root, manifest, payloads, geometry, limits):
                 if clip['id'] != ref['id'] or clip['version'] != ref['version']:
                     fail('REFERENCE', 'Native clip identity differs from declared scene binding.', target)
                 fail('UNSUPPORTED', 'Detached native clips require an explicit bound rig before technical verification.', target)
+    # Admit every document closure before following nested consumption bindings.
+    for name, document in documents.items():
         if document['kind'] == 'scene3d-asset':
             content = document['content']['path']
             suffix = Path(content).suffix.lower()
@@ -265,6 +270,23 @@ def _scene_documents(root, manifest, payloads, geometry, limits):
                 if not set(mesh_ids) <= {m['id'] for m in geometry[content]['meshes']}:
                     fail('COMPONENT', 'Scene component names unavailable native mesh identifiers.', component)
         if document['kind'] in ('scene3d-scene', 'scene3d-prefab'):
+            # Reuse the Scene3D consumer validators: a schema-valid binding or
+            # override is not necessarily meaningful in the consuming graph.
+            for node in document['nodes']:
+                for binding in node['animation_bindings']:
+                    _binding_context(binding, document, documents, binding_context)
+                if 'prefab_overrides' in node:
+                    _prefab_overrides(node['prefab_overrides'], documents[node['prefab']['path']])
+                if 'asset' in node:
+                    asset = documents[node['asset']['path']]
+                    if asset['asset_type'] in ('material', 'texture'):
+                        fail('CATEGORY', 'Geometry node references a non-geometric asset.', node['id'])
+                    if node['type'] == 'skinned_character' and asset['asset_type'] != 'character':
+                        fail('CATEGORY', 'Skinned character must reference a character asset.', node['id'])
+            if document['kind'] == 'scene3d-scene' and document['world']['environment'] is not None:
+                environment = document['world']['environment']
+                if environment['kind'] == 'scene3d-asset' and documents[environment['path']]['asset_type'] != 'environment':
+                    fail('CATEGORY', 'World environment must reference an environment asset.', name)
             nodes = {node['id']: node for node in document['nodes']}
             transforms = {}
             def evaluate(identifier):
