@@ -37,6 +37,30 @@ class RigSpecializationTests(unittest.TestCase):
         self.assertEqual(first,second);self.assertIn('wing-root.right',first['bones'])
         with self.assertRaises(RigError):appendage_controls(self.humanoid,neutral_pose(self.humanoid.skeleton),tail_curl=.5)
         with self.assertRaises(RigError):finger_controls(self.creature,p,side='left',curl=.5)
+    def test_controls_follow_anatomical_hierarchy_not_bone_array_order(self):
+        human=deepcopy(self.humanoid);human.skeleton['bones'].reverse()
+        normal=finger_controls(self.humanoid,neutral_pose(self.humanoid.skeleton),side='right',curl=.4,spread=.7)
+        reordered=finger_controls(human,neutral_pose(human.skeleton),side='right',curl=.4,spread=.7)
+        self.assertEqual(normal,reordered)
+        creature=deepcopy(self.creature);creature.skeleton['bones'].reverse()
+        normal=appendage_controls(self.creature,neutral_pose(self.creature.skeleton),time=.3,tail_wag=.6,secondary=.4)
+        reordered=appendage_controls(creature,neutral_pose(creature.skeleton),time=.3,tail_wag=.6,secondary=.4)
+        self.assertEqual(normal,reordered)
+    def test_wing_twist_changes_only_requested_side_and_real_geometry(self):
+        rig=self.creature;neutral=neutral_pose(rig.skeleton)
+        twisted=appendage_controls(rig,neutral,wing_twist=.8,wing_side='left')
+        before=evaluate_deformation(rig,neutral);after=evaluate_deformation(rig,twisted)
+        self.assertTrue(any(name.endswith('.left') for name in twisted['bones']))
+        rest_world=evaluate_fk(rig.skeleton,neutral);posed_world=evaluate_fk(rig.skeleton,twisted)
+        for name in rest_world:
+            if name.startswith('wing-') and name.endswith('.right'):
+                np.testing.assert_allclose(posed_world[name],rest_world[name],atol=1e-12)
+        self.assertGreater(max(np.max(np.abs(after[name]['positions']-data['positions']))
+                               for name,data in before.items()),.01)
+        for value in (-1.01,1.01,float('nan')):
+            with self.assertRaises(RigError):appendage_controls(rig,neutral,wing_twist=value)
+        with self.assertRaises(RigError):appendage_controls(rig,neutral,wing_side='front')
+        with self.assertRaises(RigError):appendage_controls(self.humanoid,neutral_pose(self.humanoid.skeleton),wing_twist=.5)
     def test_expression_conflicts_and_unavailable_controls_fail(self):
         r=deepcopy(self.humanoid);r.manifest['facial']['expressions']['blink']['incompatible']=['squint']
         r.manifest['facial']['expressions']['squint']=dict(schema_version=1,morphs={'blink':.5},bones={},incompatible=['blink'])
