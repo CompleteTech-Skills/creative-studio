@@ -9,6 +9,8 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import re
+import tempfile
+from pathlib import Path
 from typing import Protocol
 
 from asset_library import legacy_roundtrip, read_source_bytes
@@ -21,6 +23,7 @@ MAX_BINDINGS = 1024
 
 class LifecycleStore(Protocol):
     def resolve(self, reference: dict) -> dict: ...
+    def read_file(self, reference: dict, path: str) -> bytes: ...
     def register(self, manifest: dict, sources: dict, *, expected_identity_refs: list[dict] | None = None) -> dict: ...
     def list_references(self, *, limit: int = 4096) -> list[dict]: ...
     def append_event(self, stream: str, *, expected_revision: int, document: dict) -> dict: ...
@@ -199,6 +202,46 @@ class AssetVersions:
             if not required_evidence <= {f['sha256'] for f in manifest['provenance']['license_evidence']}:
                 fail('LICENSE', 'New versions must retain original license evidence.')
         return self.library.register(deepcopy(manifest), sources, expected_identity_refs=known)
+
+    def duplicate(self, reference, *, identity, version='1.0.0'):
+        """Copy exact registered bytes to a new identity in this same library.
+
+        Immutable dependency/parent/style references retain their complete
+        verified closure in the canonical store. No native IDs inside payloads
+        are rewritten, and no selection, preview or approval is inherited.
+        """
+        reference = exact(reference)
+        source = self.library.resolve(reference)
+        validate(identity, 'AssetIdentity')
+        semver(version)
+        if identity['id'] == reference['id']:
+            fail('IDENTITY', 'Duplication requires an explicit different asset identity.')
+        for field in ('kind', 'subtype', 'attribution'):
+            if identity[field] != source['identity'][field]:
+                fail('IDENTITY', 'Duplication must preserve source kind, subtype and attribution.')
+        candidate = deepcopy(source)
+        candidate['identity'] = deepcopy(identity)
+        candidate['version'] = version
+        candidate['metadata']['review_status'] = 'unreviewed'
+        candidate['previews'] = []
+        provenance = candidate['provenance']
+        if reference not in provenance['parents']:
+            provenance['parents'].append(reference)
+        provenance['method'] = 'fixture' if provenance['fixture'] else 'derived'
+        provenance['edits'].append('Duplicated exact registered payload into a new library identity; native source IDs unchanged.')
+        candidate['publication']['integration'] = 'not-exercised'
+        candidate['publication']['visibility'] = 'private'
+        candidate = seal(candidate)
+        # register remains the only publication authority. It verifies the full
+        # retained closure and performs expected-identity CAS inside its writer
+        # transaction. Staging contains exact bytes and is never a second store.
+        with tempfile.TemporaryDirectory(prefix='asset-duplicate-') as directory:
+            sources = {}
+            for index, record in enumerate(source['files']):
+                path = Path(directory) / str(index)
+                path.write_bytes(self.library.read_file(reference, record['path']))
+                sources[record['path']] = path
+            return self.create(candidate, sources)
 
     def promotion_plan(self, reference, *, consumers=None):
         reference = exact(reference); candidate = self.library.resolve(reference)
