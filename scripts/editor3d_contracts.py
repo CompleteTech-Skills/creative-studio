@@ -178,7 +178,10 @@ def validate_contract(value):
     finite_json(value)
     if not isinstance(value, dict) or value.get('kind') not in ['editor3d-' + k for k in KINDS]:
         _error('KIND', 'Unsupported editor contract kind.')
-    from jsonschema import Draft202012Validator, FormatChecker
+    try:
+        from jsonschema import Draft202012Validator, FormatChecker
+    except ImportError as exc:
+        raise RigError("EDITOR3D_DEPENDENCY", "Install jsonschema from requirements-rig.txt.", stage="editor3d") from exc
     kind = value['kind'].removeprefix('editor3d-')
     validator = Draft202012Validator({'$defs': _definitions(), '$ref': '#/$defs/' + kind},
                                     format_checker=FormatChecker())

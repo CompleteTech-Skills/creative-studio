@@ -547,3 +547,44 @@ assert editor3d_adapters.frame_time(720,{'numerator':24,'denominator':1}) == 30
 
 if __name__ == '__main__':
     unittest.main()
+
+class ReviewAdmissionRegressions(unittest.TestCase):
+    def test_utf16_and_utf32_requests_are_not_utf8(self):
+        request=example('request');raw=json.dumps(request)
+        for encoding in ('utf-16','utf-32'):
+            payload=raw.encode(encoding)
+            with self.subTest(encoding=encoding),self.assertRaises(RigError) as caught:
+                validate_api_request(payload,authorization='Bearer '+TOKEN,token=TOKEN,origin=ORIGIN,server_origin=ORIGIN,content_length=len(payload))
+            self.assertEqual(caught.exception.report['code'],'EDITOR3D_BODY')
+
+    def test_native_os_errors_are_structured(self):
+        reference=example('asset')['native']
+        with patch('editor3d_adapters.os.open',side_effect=PermissionError('denied')):
+            with self.assertRaises(RigError) as caught:verify_native_reference(reference,ROOT)
+        self.assertEqual(caught.exception.report['code'],'EDITOR3D_FILE')
+
+    def test_invalid_production_structure_is_structured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);payload=b'{"id":"broken"}';(root/'shot.json').write_bytes(payload)
+            reference=dict(owner='production2d',native_kind='shot',id='broken',version='1.0.0',file=dict(path='shot.json',media_type='application/json',bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest()))
+            with self.assertRaises(RigError) as caught:verify_native_reference(reference,root)
+            self.assertEqual(caught.exception.report['code'],'EDITOR3D_KIND')
+
+    def test_missing_schema_dependency_has_structured_diagnostic(self):
+        script='''
+import builtins
+from editor3d_contracts import validate_contract
+from editor3d_adapters import frame_time
+from rig_errors import RigError
+original=builtins.__import__
+def blocked(name,*args,**kwargs):
+    if name=='jsonschema':raise ImportError('blocked')
+    return original(name,*args,**kwargs)
+builtins.__import__=blocked
+for call in (lambda:validate_contract({'kind':'editor3d-request'}),lambda:frame_time(1,{'numerator':24,'denominator':1})):
+    try:call()
+    except RigError as exc:assert exc.report['code']=='EDITOR3D_DEPENDENCY',exc.report
+    else:raise AssertionError('missing dependency accepted')
+'''
+        result=subprocess.run([sys.executable,'-c',script],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)

@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 from editor3d_contracts import (MAX_DOCUMENT_BYTES, WRITE_OPERATIONS, _definitions,
                                 validate_contract, _error)
-from rig_errors import decode_json, require, safe_path
+from rig_errors import RigError, decode_json, require, safe_path
 
 
 def frame_time(frame, fps):
@@ -24,7 +24,10 @@ def frame_time(frame, fps):
             or not 0 <= frame <= 2_000_000_000):
         _error('FRAME', 'Frame boundary must be an integer in the supported range.')
     frame = int(frame)
-    from jsonschema import Draft202012Validator
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError as exc:
+        raise RigError("EDITOR3D_DEPENDENCY", "Install jsonschema from requirements-rig.txt.", stage="editor3d") from exc
     if not Draft202012Validator(_definitions()['FrameRate']).is_valid(fps):
         _error('RATE', 'Use a bounded positive rational frame rate.')
     numerator, denominator = int(fps['numerator']), int(fps['denominator'])
@@ -35,7 +38,10 @@ def frame_time(frame, fps):
 
 def transform_to_blender(transform):
     """Object transform basis conjugation; camera-local conventions are separate."""
-    from jsonschema import Draft202012Validator
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError as exc:
+        raise RigError("EDITOR3D_DEPENDENCY", "Install jsonschema from requirements-rig.txt.", stage="editor3d") from exc
     if not Draft202012Validator(_definitions()['Transform']).is_valid(transform):
         _error('TRANSFORM', 'Use the native rig transform contract.')
     if abs(math.hypot(*transform['rotation']) - 1) > 1e-6:
@@ -75,7 +81,10 @@ def verify_native_reference(reference, root):
 This verifies a manifest contract, not its transitive resources or a whole scene.
 An unmerged owner is unavailable, never silently parsed as a different format.
 """
-    from jsonschema import Draft202012Validator
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError as exc:
+        raise RigError("EDITOR3D_DEPENDENCY", "Install jsonschema from requirements-rig.txt.", stage="editor3d") from exc
     if not Draft202012Validator({'$defs': _definitions(), '$ref': '#/$defs/NativeReference'}).is_valid(reference):
         _error('REFERENCE', 'Invalid native resource reference.')
     owner = reference['owner']
@@ -84,13 +93,17 @@ An unmerged owner is unavailable, never silently parsed as a different format.
     declared = reference['file']
     if declared['media_type'] != 'application/json' or declared['bytes'] > MAX_DOCUMENT_BYTES:
         _error('REFERENCE', 'Native manifests must be bounded JSON documents.')
-    path = safe_path(root, declared['path'], exists=True)
-    fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
-    with os.fdopen(fd, 'rb') as stream:
-        observed = os.fstat(stream.fileno())
-        if not stat.S_ISREG(observed.st_mode) or observed.st_size != declared['bytes']:
-            _error('BYTES', 'Native manifest byte count differs.')
-        payload = stream.read(MAX_DOCUMENT_BYTES + 1)
+    path = declared['path']
+    try:
+        path = safe_path(root, declared['path'], exists=True)
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
+        with os.fdopen(fd, 'rb') as stream:
+            observed = os.fstat(stream.fileno())
+            if not stat.S_ISREG(observed.st_mode) or observed.st_size != declared['bytes']:
+                _error('BYTES', 'Native manifest byte count differs.')
+            payload = stream.read(MAX_DOCUMENT_BYTES + 1)
+    except OSError as exc:
+        raise RigError("EDITOR3D_FILE", str(exc), stage="editor3d", asset=str(path)) from exc
     if len(payload) != declared['bytes'] or hashlib.sha256(payload).hexdigest() != declared['sha256']:
         _error('HASH', 'Native manifest bytes changed.')
     value = decode_json(payload)
@@ -101,6 +114,8 @@ An unmerged owner is unavailable, never silently parsed as a different format.
         from rig_contracts import KINDS, validate_contract as native_validate
         if kind not in KINDS.values():
             _error('KIND', 'Unknown rig native kind.')
+        if kind in ("RigCorrection", "RigReviewReceipt", "RigExportReceipt"):
+            _error("UNAVAILABLE", "This native receipt has no supported standalone identity binding.")
         native_validate(value, kind)
     elif owner == 'model3d':
         from model3d_contracts import validate_contract as native_validate
@@ -111,7 +126,10 @@ An unmerged owner is unavailable, never silently parsed as a different format.
         from production_contracts import validate_structure
         if kind not in ('project', 'scene', 'shot', 'cast', 'clip'):
             _error('KIND', 'Unknown production2d native kind.')
-        validate_structure(value, kind)
+        try:
+            validate_structure(value, kind)
+        except ValueError as exc:
+            raise RigError("EDITOR3D_KIND", str(exc), stage="editor3d") from exc
     native_id = value.get('id', value.get('project_id'))
     if native_id != reference['id']:
         _error('IDENTITY', 'Native ID differs from the bound identity.')
@@ -120,7 +138,7 @@ An unmerged owner is unavailable, never silently parsed as a different format.
     if owner == 'production2d' and kind == 'shot':
         native_version = '1.0.0'
     else:
-        native_version = value.get('version', str(value.get('schema_version')) + '.0.0')
+        native_version = value.get('version', str(int(value['schema_version'])) + '.0.0')
     if native_version != reference['version']:
         _error('VERSION', 'Native version differs from the exact reference.')
     return {'status': 'valid-native-contract', 'owner': owner, 'id': native_id,
@@ -169,7 +187,11 @@ that lock. This preflight performs no operation and returns no token or secrets.
     if (isinstance(content_length, bool) or not isinstance(content_length, int)
             or not 0 < content_length <= MAX_DOCUMENT_BYTES or len(request) != content_length):
         _error('BODY', 'Require an exact Content-Length of at most 4 MiB.')
-    value = decode_json(request)
+    try:
+        decoded = request.decode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise RigError("EDITOR3D_BODY", "Request must be UTF-8 JSON.", stage="editor3d") from exc
+    value = decode_json(decoded)
     validate_contract(value)
     if value['kind'] != 'editor3d-request':
         _error('KIND', 'Expected an editor request.')
