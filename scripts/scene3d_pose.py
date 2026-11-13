@@ -36,6 +36,7 @@ def _evaluate_private_poses(graph, evaluated, documents, native_clips, root, *, 
     from rig_contracts import validate_contract
     from rig_operations import pose_operation
     from rig_skeleton import evaluate_fk
+    from rig_attachments import socket_world
     from rig_skinning import evaluate_deformation
     from rig_math import transform_points
     nodes = {node['id']:node for node in graph.document()['nodes']}
@@ -95,10 +96,12 @@ def _evaluate_private_poses(graph, evaluated, documents, native_clips, root, *, 
             for mesh,weights in pose['morphs'].items():
                 require(set(weights) <= set(meshes[mesh].morphs), 'Pose targets an unknown morph.')
             bones = {bone:matrix.tolist() for bone,matrix in evaluate_fk(rig.skeleton,pose).items()}
+            sockets = {socket['id']:socket_world(rig,pose,socket['id']).tolist()
+                       for socket in rig.manifest['attachments']}
             deformed = evaluate_deformation(rig,pose) if sample_geometry else None
-            cache[key] = rig,pose,bones,deformed
-        rig,pose,bones,deformed = cache[key]
-        state_entries += len(bones) + sum(len(mesh.morphs) for mesh in rig.geometry.meshes)
+            cache[key] = rig,pose,bones,sockets,deformed
+        rig,pose,bones,sockets,deformed = cache[key]
+        state_entries += len(bones) + len(sockets) + sum(len(mesh.morphs) for mesh in rig.geometry.meshes)
         require(state_entries <= 250000, 'Native pose state budget exceeded.','SCENE3D_EVALUATION_LIMIT')
         world_from_rig = np.asarray(evaluated[identifier]['world_matrix'])
         imported = None
@@ -119,6 +122,7 @@ def _evaluate_private_poses(graph, evaluated, documents, native_clips, root, *, 
         state['native_pose_evaluated'] = True
         state['native_state'] = dict(pose=deepcopy(pose),skeleton=deepcopy(rig.skeleton),
             bone_matrices=deepcopy(bones),bone_matrix_space='rig-bind',world_from_rig=world_from_rig.tolist(),
+            socket_matrices=deepcopy(sockets),socket_matrix_space='rig-bind',
             morph_targets={mesh.id:sorted(mesh.morphs) for mesh in rig.geometry.meshes})
         if sample_geometry:
             if imported is not None:
