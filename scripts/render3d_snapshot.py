@@ -98,7 +98,8 @@ class NativeRigAdapter:
     id = 'native-rig-preview'
     version = VERSION
 
-    def describe(self, root):
+    def describe(self, root, *, max_total_bytes=None):
+        total_limit = _total_limit(max_total_bytes)
         from rig_models import load_rig
         from rig_errors import decode_json
         from rig_contracts import validate_contract
@@ -123,7 +124,7 @@ class NativeRigAdapter:
             distinct[path] = digest
         require(len(distinct) <= MAX_FILES, 'storage-exhaustion', 'Native rig source closure exceeds file budget.')
         sizes = [safe_path(root, path, exists=True).stat().st_size for path in distinct]
-        require(all(size <= MAX_FILE_BYTES for size in sizes) and sum(sizes) <= MAX_TOTAL_BYTES,
+        require(all(size <= MAX_FILE_BYTES for size in sizes) and sum(sizes) <= total_limit,
                 'storage-exhaustion', 'Native rig source closure exceeds byte budget.')
         # Enforce snapshot admission before loading binary geometry/skin payloads.
         # Native validators may reopen payloads using their legacy readers.
@@ -133,7 +134,7 @@ class NativeRigAdapter:
             copied_bytes = 0
             for path, digest in distinct.items():
                 copied = _copy_verified(root, private_root, path, digest,
-                                        remaining=MAX_TOTAL_BYTES - copied_bytes)
+                                        remaining=total_limit - copied_bytes)
                 copied_bytes += copied['bytes']
             rig = load_rig(private_root)
             # Loading authenticates storage; the existing semantic validators own
@@ -191,25 +192,40 @@ def _copy_verified(root, stage, path, expected, *, remaining=None):
         raise Render3DError('missing-asset',str(exc),path=path) from exc
 
 
-def create_snapshot(source_root, destination, adapter: SceneAdapter):
+def _total_limit(value):
+    require(value is None or (type(value) is int and value >= 0),
+            'invalid-input', 'Snapshot byte budget must be a nonnegative integer.')
+    return MAX_TOTAL_BYTES if value is None else min(MAX_TOTAL_BYTES, value)
+
+
+def _describe_source(adapter, root, total_limit):
+    if isinstance(adapter, NativeRigAdapter) and type(adapter).describe is NativeRigAdapter.describe:
+        return adapter.describe(root, max_total_bytes=total_limit)
+    return adapter.describe(root)
+
+
+def create_snapshot(source_root, destination, adapter: SceneAdapter, *, max_total_bytes=None):
     """Publish a new directory only after copying and validating exact bytes.
 
 An existing destination, including an empty directory or symlink, is preserved.
 No source revision or output cache is overwritten or pruned.
 """
+    total_limit = _total_limit(max_total_bytes)
     source_root, destination = Path(source_root).absolute(), Path(destination).absolute()
     require(not source_root.is_symlink(), 'invalid-input', 'Snapshot root cannot be a symlink.')
     source_root = source_root.resolve()
     require(not destination.exists() and not destination.is_symlink(), 'ownership', 'Snapshot destination already exists.')
     require(not (destination.parent.resolve() / destination.name).is_relative_to(source_root), 'ownership', 'Snapshot destination cannot be inside source.')
     try:
-        description = adapter.describe(source_root)
+        description = _describe_source(adapter, source_root, total_limit)
         require(0 < len(description.files) <= MAX_FILES, 'storage-exhaustion', 'Snapshot file count is outside budget.')
         require(all(unicodedata.normalize('NFC', p).casefold().split('/')[0] != 'snapshot.json' for p, _ in description.files),
                 'invalid-input', 'snapshot.json is reserved for snapshot metadata.')
         # Preflight the inventory before creating a destination or copying bytes.
         inventory = [dict(path=p, sha256=h, bytes=safe_path(source_root, p, exists=True).stat().st_size)
                      for p, h in description.files]
+        require(sum(item['bytes'] for item in inventory) <= total_limit,
+                'storage-exhaustion', 'Source closure exceeds the snapshot byte budget.')
         document = dict(schema_version=1, kind='render3d-snapshot',
                         adapter=dict(id=adapter.id, version=adapter.version),
                         source=dict(id=description.id, version=description.version),
@@ -224,10 +240,11 @@ No source revision or output cache is overwritten or pruned.
             copied, copied_bytes = [], 0
             for path, digest in description.files:
                 item = _copy_verified(source_root, stage, path, digest,
-                                      remaining=MAX_TOTAL_BYTES - copied_bytes)
+                                      remaining=total_limit - copied_bytes)
                 copied.append(item); copied_bytes += item['bytes']
             require(copied == inventory, 'stale-asset', 'Source inventory changed during snapshot creation.')
-            require(adapter.describe(stage) == description, 'stale-asset', 'Frozen source failed its owner validation.')
+            require(_describe_source(adapter, stage, total_limit) == description,
+                    'stale-asset', 'Frozen source failed its owner validation.')
             atomic_json(stage / 'snapshot.json', document)
             _rename_no_replace(stage, destination)
         finally:
@@ -244,13 +261,16 @@ No source revision or output cache is overwritten or pruned.
         raise Render3DError('invalid-input', str(exc)) from exc
 
 
-def verify_snapshot(root, adapter: SceneAdapter):
+def verify_snapshot(root, adapter: SceneAdapter, *, max_total_bytes=None):
     """Re-read immutable inventory and owner semantics before each reuse."""
+    total_limit = _total_limit(max_total_bytes)
     root = Path(root).absolute()
     require(not root.is_symlink(), 'invalid-input', 'Snapshot root cannot be a symlink.')
     root = root.resolve()
     try:
         document = load(safe_path(root, 'snapshot.json', exists=True), 'RenderSnapshot')
+        require(document['total_bytes'] <= total_limit, 'storage-exhaustion',
+                'Frozen source exceeds the snapshot byte budget.')
         require(document['adapter'] == dict(id=adapter.id, version=adapter.version),
                 'unsupported-feature', 'Snapshot requires a different source adapter.')
         for item in document['files']:
@@ -263,7 +283,7 @@ def verify_snapshot(root, adapter: SceneAdapter):
                     digest.update(block)
             require(count == item['bytes'] and digest.hexdigest() == item['sha256'],
                     'stale-asset', 'Frozen source changed.', path=item['path'])
-        description = adapter.describe(root)
+        description = _describe_source(adapter, root, total_limit)
         require(description.files == tuple((f['path'], f['sha256']) for f in document['files'])
                 and description.entrypoint == document['entrypoint']
                 and dict(id=description.id, version=description.version) == document['source']
