@@ -121,3 +121,7 @@ class CapabilityTests(unittest.TestCase):
             with self.subTest(value=value),self.assertRaises(RigError):cap.assert_admission(value,[])
 
 
+    def test_expiry_normalizes_rfc3339_lowercase_and_rejects_naive(self):
+        self.assertEqual(cap._date('2026-11-13t01:02:03z'),cap._date('2026-11-13T01:02:03Z'))
+        for value in ('invalid','2026-11-13T01:02:03',None):
+            with self.subTest(value=value),self.assertRaises(RigError):cap._date(value)

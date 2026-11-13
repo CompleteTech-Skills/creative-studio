@@ -51,6 +51,15 @@ def _diagnostic(code, operation, message):
                 observed=message, retryable=False, recommended_action='Install/configure the required native owner, then explicitly reprobe.', evidence=[])
 
 
+def _date(value):
+    try:
+        parsed=datetime.fromisoformat(value.replace('t','T').replace('z','+00:00').replace('Z','+00:00'))
+        _need(parsed.tzinfo is not None,'TIME','Timestamp must include a timezone.')
+        return parsed
+    except (TypeError,ValueError,AttributeError) as error:
+        raise RigError('DIRECTOR_CAPABILITY_TIME','Invalid timezone-aware timestamp.',stage='capability') from error
+
+
 def _unknown_usage():
     return dict(classification='unavailable', **{k:{'value':None,'explanation':'Not measured by capability discovery.'}
                 for k in ('provider_calls','input_tokens','output_tokens','cpu_seconds','gpu_seconds','storage_bytes','amount')},
@@ -237,12 +246,12 @@ def probe(request, evidence_root, *, configuration=None):
     _need(not destination.exists() and not destination.is_symlink(),'DESTINATION','Evidence destination must be new.')
     _need(destination.parent.is_dir() and destination.parent.resolve()==destination.parent,'DESTINATION','Evidence parent must be an existing canonical directory without symlinks.')
     stamp=datetime.now(timezone.utc)
-    _need(datetime.fromisoformat(request['context']['deadline'].replace('Z','+00:00'))>stamp,'DEADLINE','Operation deadline has expired.')
+    _need(_date(request['context']['deadline'])>stamp,'DEADLINE','Operation deadline has expired.')
     records=[];diagnostics=[];refs=[]
     with tempfile.TemporaryDirectory(prefix='.director-probe-',dir=destination.parent) as tmp:
         stage=Path(tmp)/'published';stage.mkdir();(stage/'receipts').mkdir();(stage/'payloads').mkdir()
         for operation in sorted(ops):
-            _need(datetime.fromisoformat(request['context']['deadline'].replace('Z','+00:00'))>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired during probing.')
+            _need(_date(request['context']['deadline'])>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired during probing.')
             payloads=[]
             record={'schema_version':1,'operation':operation,'discovered':False,'initialized':False,'execution_verified':False,
                     'status':'unavailable','reason':'unsupported-operation','dependencies':{'probe_source':sha256(Path(__file__))},'fallback':None}
@@ -311,7 +320,7 @@ def probe(request, evidence_root, *, configuration=None):
             records.append(dict(operation=operation,version=version,status=record['status'],limits=deepcopy(record['policy_limits']),
                                 probe_evidence=[reference],execution_verified=record['execution_verified']))
             if record['status']!='available':diagnostics.append(_diagnostic('CAPABILITY_'+record['reason'].upper().replace('-','_'),operation,record['reason']))
-        _need(datetime.fromisoformat(request['context']['deadline'].replace('Z','+00:00'))>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired before publication.')
+        _need(_date(request['context']['deadline'])>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired before publication.')
         value=dict(capabilities=records,expires_at=(stamp+timedelta(hours=1)).isoformat(),digest='0'*64)
         value['digest']=object_hash({k:v for k,v in value.items() if k!='digest'})
         result=dict(schema_version=1,kind='director-result',method='CapabilityRegistry.probe',status='succeeded',
@@ -340,7 +349,7 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
     _need(resources is None or isinstance(resources,dict),'RESOURCE','Resource estimates must be a map.')
     _need(value['digest']==object_hash({k:v for k,v in value.items() if k!='digest'}),'HASH','Capability snapshot digest changed.')
     current=now or datetime.now(timezone.utc)
-    _need(datetime.fromisoformat(value['expires_at'].replace('Z','+00:00'))>current,'EXPIRED','Capability evidence expired.')
+    _need(_date(value['expires_at'])>current,'EXPIRED','Capability evidence expired.')
     by_op={item['operation']:item for item in value['capabilities']}
     _need(len(by_op)==len(value['capabilities']),'DUPLICATE','Duplicate capability entries.')
     for operation in required_operations:
