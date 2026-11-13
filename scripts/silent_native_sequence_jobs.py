@@ -212,6 +212,7 @@ def _publish(fd,plan,state):
                 'plan_sha256':sequence.media._digest(plan),'sequence_receipt_sha256':reference,
                 'source_identity_sha256':plan['source']['identity_sha256'],'visual_review':'not-performed'}
             raw=jobs._bytes(envelope,jobs.MAX_PLAN_BYTES);jobs._write(payload,'job.json',raw);os.fsync(payload)
+            if jobs._exists(fd,'cancel'):raise ValueError('native sequence cancelled before immutable publication')
             _rename_no_replace('payload',destination.name,source_dir_fd=wrapper,destination_dir_fd=parent);os.fsync(parent)
             return hashlib.sha256(raw).hexdigest()
         finally:os.close(payload)

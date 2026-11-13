@@ -110,4 +110,16 @@ class ActualNativeSequenceJobs(unittest.TestCase):
             self.assertEqual(result['state']['phase'],'completed')
             self.assertEqual(native.jobs._json(fd,'state.json')['phase'],'completed')
 
+    def test_cancellation_during_private_finalization_prevents_publication(self):
+        self.create();publish=native._publish
+        def cancel_during_finalization(fd,plan,state):
+            native.cancel(self.job)
+            return publish(fd,plan,state)
+        with mock.patch.object(native,'_publish',side_effect=cancel_during_finalization):
+            result=native.run(self.job)
+        self.assertEqual(result['state']['phase'],'cancelled',result)
+        self.assertFalse(self.delivery.exists())
+        self.assertTrue((self.job/'native-sequence/sequence.json').is_file())
+        self.assertEqual(native.run(self.job,retry=True)['state']['phase'],'completed')
+
 if __name__=='__main__':unittest.main()
