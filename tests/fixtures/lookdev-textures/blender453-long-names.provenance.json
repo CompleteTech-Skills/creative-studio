@@ -1,0 +1,11 @@
+{
+  "source_commit": "870df7d4",
+  "source": "/home/complete/.cache/hatch-coordination-20261112/lookdev/styles-render-3/render/color-linear.exr",
+  "sha256": "6917c48c5a1b6377614992459d3a1b7cfe1c8585c22b61ed3d7bbe87157de047",
+  "renderer": "Blender4.5.3 Cycles",
+  "version_word": "0x402",
+  "independent_reader": "OpenEXR3.3.4",
+  "independent_max_pixel_error": 0.0,
+  "kind": "actual-render engineering fixture",
+  "source_manifest": "/home/complete/.cache/hatch-coordination-20261112/lookdev/styles-render-3/source-manifest.json"
+}

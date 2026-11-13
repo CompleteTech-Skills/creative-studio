@@ -82,6 +82,40 @@ class TextureTests(unittest.TestCase):
             for malformed in (data[:-1],data+b'extra',data[:4]+b'\x02\x10\x00\x00'+data[8:]):
                 with self.assertRaises(RigError):t.decode_texture(malformed,role='environment',encoding='linear-srgb')
 
+    def test_exr_long_names_and_unknown_flags(self):
+        import struct
+        source=(Path(__file__).parent/'fixtures/lookdev-textures/float32-NO_COMPRESSION.exr').read_bytes()
+        baseline=t.decode_texture(source,role='environment',encoding='linear-srgb')
+        cursor=8
+        while source[cursor]:
+            cursor=source.index(b'\0',cursor)+1
+            cursor=source.index(b'\0',cursor)+1
+            length=struct.unpack_from('<I',source,cursor)[0]
+            cursor+=4+length
+        # Insert optional metadata and shift every scanline chunk offset.
+        for length,flag,valid in [(31,2,True),(32,2,False),(32,0x402,True),
+                                  (255,0x402,True),(256,0x402,False)]:
+            attribute=b'x'*length+b'\0string\0'+struct.pack('<I',1)+b'a'
+            table=cursor+1
+            offsets=[struct.unpack_from('<Q',source,table+8*i)[0]+len(attribute)
+                     for i in range(baseline.height)]
+            data=(source[:4]+struct.pack('<I',flag)+source[8:cursor]+attribute+b'\0'
+                  +b''.join(struct.pack('<Q',x) for x in offsets)
+                  +source[table+8*baseline.height:])
+            if valid:
+                actual=t.decode_texture(data,role='environment',encoding='linear-srgb')
+                np.testing.assert_array_equal(actual.pixels,baseline.pixels)
+            else:
+                with self.assertRaises(RigError):t.decode_texture(data,role='environment',encoding='linear-srgb')
+        actual_source=(Path(__file__).parent/'fixtures/lookdev-textures/blender453-long-names.exr').read_bytes()
+        actual=t.decode_texture(actual_source,role='environment',encoding='linear-srgb')
+        self.assertEqual((actual.width,actual.height),(96,96))
+        self.assertEqual(actual.bit_depth,32)
+        self.assertGreater(float(actual.pixels[:,:,:3].max()),1)
+        for flags in (0x202,0x802,0x1002,0x602,0x80000002,3):
+            with self.assertRaises(RigError):
+                t.decode_texture(source[:4]+struct.pack('<I',flags)+source[8:],role='environment',encoding='linear-srgb')
+
     def test_high_bit_color_preserves_low_bits(self):
         import zlib,struct
         def chunk(kind,payload):return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff)

@@ -17,6 +17,10 @@ legacy repeated-pixel HDR encoding reject explicitly. HDR values remain above
 half/float channels with NONE, ZIPS and ZIP compression. Deep, tiled, multipart,
 subsampled, non-sRGB primaries and other EXR compression modes reject explicitly.
 The decoder follows the [OpenEXR file layout](https://openexr.com/en/latest/OpenEXRFileLayout.html).
+EXR version 2 optionally permits the LONG_NAMES flag (0x400): attribute and
+type names are bounded to 31 bytes without it, 255 with it; other flags remain
+rejected. Actual Blender 4.5.3 float EXR output is retained with provenance and
+compared exactly against independent OpenEXR 3.3.4 decoded pixels.
 Six fixtures independently written by OpenEXR 3.3.4 verify exact half/float pixels.
 Noninterlaced 16-bit grayscale/RGB PNG with optional alpha is reconstructed at
 full sample precision after the native importer verifies its container. All five

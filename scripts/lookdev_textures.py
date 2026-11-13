@@ -153,11 +153,14 @@ def _exr(data, limits):
     import zlib
     np = _np()
     require(len(data) >= 8 and data[:4] == b'v/1\x01', 'TEXTURE_EXR', 'Invalid EXR signature.')
-    require(struct.unpack_from('<I', data, 4)[0] == 2, 'TEXTURE_EXR', 'Only single-part scanline EXR version 2 is supported.')
+    version=struct.unpack_from('<I',data,4)[0]
+    require(version in (2,0x402),'TEXTURE_EXR',
+            'Only scanline EXR version 2 with optional LONG_NAMES is supported.')
+    name_limit=255 if version & 0x400 else 31
     cursor = 8
     def string():
         nonlocal cursor
-        end = data.find(b'\x00', cursor, min(len(data),cursor+256))
+        end = data.find(b'\x00', cursor, min(len(data),cursor+name_limit+1))
         require(end >= 0, 'TEXTURE_EXR', 'Invalid bounded EXR attribute string.')
         result=data[cursor:end];cursor=end+1
         return result
@@ -190,7 +193,7 @@ def _exr(data, limits):
     channels_payload=attr(b'channels',b'chlist');offset=0;channels=[]
     while offset<len(channels_payload):
         end=channels_payload.find(b'\x00',offset)
-        require(end>=0,'TEXTURE_EXR','Truncated EXR channel name.')
+        require(end>=0 and end-offset<=name_limit,'TEXTURE_EXR','Invalid bounded EXR channel name.')
         name=channels_payload[offset:end];offset=end+1
         if not name:break
         require(name in (b'R',b'G',b'B',b'A') and name not in [n for n,_ in channels] and offset+16<=len(channels_payload),
