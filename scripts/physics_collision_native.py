@@ -215,3 +215,26 @@ def collision_query_collider(collider):
             shape.update(type='triangle-mesh',source='internal-query-box-surface',vertices=vertices,triangles=triangles)
     convert(result['shape'])
     return result
+
+
+def collision_build_query_shapes(p, client, collider, root):
+    """One native query shape per leaf, preserving double-precision box vertices.
+
+    OBJ import rounds vertices to float32; use the native vertex API for boxes.
+    Separate static query bodies allow compounds without that lossy file route.
+    """
+    shapes=[]
+    for leaf in collision_leaves(collider):
+        local=dict(shape=leaf['shape'],transform=dict(translation=leaf['translation'],rotation=leaf['rotation']))
+        if leaf['shape']['type']=='box':
+            surface=collision_query_collider(local)['shape']
+            shape=p.createCollisionShape(p.GEOM_MESH,vertices=surface['vertices'],
+                indices=[index for triangle in surface['triangles'] for index in triangle],
+                flags=p.GEOM_FORCE_CONCAVE_TRIMESH,collisionFramePosition=leaf['translation'],
+                collisionFrameOrientation=leaf['rotation'],physicsClientId=client)
+            if type(shape) is not int or shape<0:
+                raise ValueError('Bullet rejected the exact query box surface.')
+        else:
+            shape=collision_build_shape(p,client,local,root)
+        shapes.append(shape)
+    return shapes

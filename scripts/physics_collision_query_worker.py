@@ -35,7 +35,7 @@ def main():
         identifiers = {}
         for index, body in enumerate(world['bodies']):
             collider = body['colliders'][0]
-            shape = collision_build_shape(p,client,collision_query_collider(collider),root)
+            shapes = collision_build_query_shapes(p,client,collider,root)
             visual = -1
             if job['preview']:
                 leaves = collision_leaves(collider)
@@ -49,11 +49,12 @@ def main():
                     visualFrameOrientations=[x['rotation'] for x in leaves],
                     rgbaColors=[[.25+.15*(index%4),.35+.1*(index%3),.7,1] for _ in leaves],physicsClientId=client)
             pose = poses[body['id']]
-            native = p.createMultiBody(baseMass=0,baseCollisionShapeIndex=shape,baseVisualShapeIndex=visual,
-                basePosition=pose['translation'],baseOrientation=pose['rotation'],physicsClientId=client)
-            p.changeDynamics(native,-1,collisionMargin=materials[collider['material']]['collision_margin'],physicsClientId=client)
-            identifiers[native] = body['id']
-            p.setCollisionFilterGroupMask(native,-1,collision_signed_mask(collider['group']),collision_signed_mask(collider['mask']),physicsClientId=client)
+            for shape_index, shape in enumerate(shapes):
+                native = p.createMultiBody(baseMass=0,baseCollisionShapeIndex=shape,baseVisualShapeIndex=visual if shape_index==0 else -1,
+                    basePosition=pose['translation'],baseOrientation=pose['rotation'],physicsClientId=client)
+                p.changeDynamics(native,-1,collisionMargin=materials[collider['material']]['collision_margin'],physicsClientId=client)
+                identifiers[native] = body['id']
+                p.setCollisionFilterGroupMask(native,-1,collision_signed_mask(collider['group']),collision_signed_mask(collider['mask']),physicsClientId=client)
         # Synchronize broadphase AABBs for newly reconstructed static poses.
         p.performCollisionDetection(physicsClientId=client)
         results = []
