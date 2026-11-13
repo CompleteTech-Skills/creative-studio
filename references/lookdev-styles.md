@@ -31,7 +31,9 @@ Step switches remain discrete; linear/smooth quaternion paths call native rig
 slerp. Smooth is smoothstep easing. Cubic calls the native rig CUBICSPLINE
 evaluator with explicit incoming/outgoing derivatives in value units per frame;
 this is Hermite interpolation (equivalent to explicitly derived Bézier handles).
-Property paths must already exist, duplicate/overlapping tracks reject, and
+Cubic color curves that leave nonnegative RGB or bounded-alpha semantics reject
+at evaluation rather than silently clamping authored values. Property paths
+must already exist, duplicate/overlapping tracks reject, and
 continuity locks cover exact paths or complete namespaces. `shot_state` always
 copies authored base state, preventing one shot's changes from leaking.
 

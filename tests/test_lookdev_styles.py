@@ -60,6 +60,17 @@ class StyleTests(unittest.TestCase):
         binding['sha256']=content_hash({k:v for k,v in binding.items() if k!='sha256'})
         with self.assertRaises(RigError):validate_identity_material(binding,'body',registry,registry.reference('bad','1.0.0'))
 
+    def test_optional_surface_protection_roundtrips_through_authoritative_schema(self):
+        resource=material_resource(resolve_mapping('clay'));resource['surface']['subsurface']={
+            'weight':.5,'radius_meters':[.01,.01,.01],'color':[.2,.3,.4],'method':'random-walk'}
+        registry=Registry([('clay.json',canonical_bytes(resource))])
+        reference=registry.reference('clay','1.0.0')
+        binding=bind_identity(registry,character={'id':'x','version':'1.0.0','sha256':'a'*64},
+            identity_sha256='b'*64,slots={'skin':{'material':reference,
+                'targets':[{'object_id':'mesh','slot_id':'skin'}],'protected_fields':['subsurface']}})
+        self.assertEqual(validate_binding(binding),binding)
+        self.assertEqual(validate_identity_material(binding,'skin',registry,reference)['surface']['subsurface']['weight'],.5)
+
     def test_slot_ownership_is_unique_and_bounded(self):
         resource=material_resource(resolve_mapping('clay'));registry=Registry([('clay.json',canonical_bytes(resource))])
         slot={'material':registry.reference('clay','1.0.0'),'targets':[{'object_id':'mesh','slot_id':'body'}],'protected_fields':['base_color']}

@@ -39,6 +39,14 @@ class TrackTests(unittest.TestCase):
         t['keys'][0]['out_tangent']=[.4]
         with self.assertRaises(RigError):evaluate_track(t,5)
 
+    def test_cubic_rejects_invalid_color_overshoot_without_clamping(self):
+        t=track([.1,.1,.1,1.],[.1,.1,.1,1.],'color','cubic')
+        for key in t['keys']:key.update(in_tangent=[1.,1.,1.,0.],out_tangent=[-1.,-1.,-1.,0.])
+        with self.assertRaises(RigError):evaluate_track(t,5)
+        t['keys'][0]['out_tangent']=[0.,0.,0.,1.]
+        t['keys'][1]['in_tangent']=[0.,0.,0.,-1.]
+        with self.assertRaises(RigError):evaluate_track(t,5)
+
     def test_state_isolation_continuity_and_conflicting_bindings(self):
         base={'color':{'exposure':0},'material':{'variant':'dry'}};copy=deepcopy(base)
         tracks=[{'path':['color','exposure'],'track':track(0,2)}]
