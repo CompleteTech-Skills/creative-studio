@@ -15,6 +15,17 @@ MAX_TEMPLATE_DEPTH = 32
 MAX_TEMPLATE_FILES = 256
 
 
+def _validate_template_semantics(template):
+    validate_contract(template, 'RigTemplate')
+    for key in ('bones', 'constraints', 'ik', 'sockets'):
+        ids = [value['id'] for value in template[key]]
+        require(len(set(ids)) == len(ids), 'RIG_TEMPLATE_CONFLICT',
+                'Template composition repeats '+key+' IDs.')
+    require(len({bone['role'] for bone in template['bones']}) == len(template['bones']),
+            'RIG_TEMPLATE_SEMANTICS', 'Template semantic roles must be unambiguous.')
+    return template
+
+
 def _validate_landmarks(landmarks, bone_ids):
     """Reject malformed authored input before fitting or deriving review status."""
     require(isinstance(landmarks, dict), 'RIG_LANDMARK', 'Landmarks must be an object keyed by bone ID.')
@@ -64,10 +75,8 @@ def load_rig_template(name: str | Path, *, directory: Path | None = None, _activ
         if key == 'capabilities':combined[key] = sorted(set(combined[key]));continue
         ids = [v['id'] for v in combined[key]]
         require(len(set(ids)) == len(ids), 'RIG_TEMPLATE_CONFLICT', 'Template composition repeats '+key+' IDs.')
-    require(len({b['role'] for b in combined['bones']}) == len(combined['bones']),
-            'RIG_TEMPLATE_SEMANTICS', 'Template semantic roles must be unambiguous.')
     # Individual parents being valid does not make their composition bounded.
-    return validate_contract(combined, 'RigTemplate')
+    return _validate_template_semantics(combined)
 
 
 def list_templates(directory=None) -> list[dict]:
@@ -92,7 +101,7 @@ def generate_skeleton(geometry: Geometry, template: dict | str, *, landmarks=Non
         return dict(skeleton=deepcopy(existing), controllers=dict(ik=[], constraints=[]),
                     attachments=[], uncertainties=[], status='preserved-existing-rig')
     template = load_rig_template(template) if isinstance(template, (str, Path)) else deepcopy(template)
-    validate_contract(template, 'RigTemplate')
+    _validate_template_semantics(template)
     analysis = analyze_geometry(geometry)
     lower, upper = np.array(analysis['bounds'])
     source_bounds = np.array(template.get('rest_bounds', [[-.85, 0, -.35], [.85, 2.05, .35]]))

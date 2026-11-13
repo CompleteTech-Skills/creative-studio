@@ -27,7 +27,18 @@
     }
   ],
   "source_sha256": {
-    "scripts/rig_templates.py": "2c93c42d7413a1e0c87f2b5016ca7bc4602520dc42900926b7f1dd8c06d2e76f",
-    "tests/test_rig_landmarks.py": "feb3cf189d3929cfb85353a161a22528b49c1d7b285c2414bb10ec5b631f94aa"
+    "scripts/rig_templates.py": "625b066d44fd0dbb7144f3408259e74f25c4554d534a9497015d22dc0a727fd8",
+    "tests/test_rig_landmarks.py": "dbf232edf6bc69eb0f5acd1f19be01eb40327dd7b927ad0a43238b9f09beb2c9"
+  },
+  "review_findings": [
+    {
+      "finding": "Dictionary inputs bypass duplicate semantic role and controller identity checks",
+      "resolution": "Shared semantic validation now applies to loaded files and dictionaries; added both-form rejection regressions."
+    }
+  ],
+  "review_fix_checks": {
+    "focused": 13,
+    "schema_math": 75,
+    "legacy_discovery": 952
   }
 }

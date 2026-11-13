@@ -140,6 +140,30 @@ class TemplateAdmissionTests(unittest.TestCase):
             with self.subTest(update=update), self.assertRaises(RigError):
                 generate_skeleton(self.geometry, value)
 
+    def test_dictionary_and_file_reject_duplicate_template_semantics(self):
+        values=[]
+        repeated_role=deepcopy(self.base_template)
+        repeated_role['bones'][1]['role']=repeated_role['bones'][0]['role']
+        values.append((repeated_role, 'RIG_TEMPLATE_SEMANTICS'))
+        for key in ('bones', 'constraints', 'ik', 'sockets'):
+            template=deepcopy(self.base_template)
+            if not template[key]:
+                template=load_rig_template('humanoid')
+            self.assertTrue(template[key], key)
+            template[key].append(deepcopy(template[key][0]))
+            values.append((template, 'RIG_TEMPLATE_CONFLICT'))
+        with tempfile.TemporaryDirectory() as directory:
+            for value, code in values:
+                with self.subTest(code=code, value=value):
+                    value['extends']=[]  # The loaded value already contains parent contents.
+                    self.write(directory, value)
+                    with self.assertRaises(RigError) as file_error:
+                        load_rig_template(value['id'], directory=Path(directory))
+                    with self.assertRaises(RigError) as dictionary_error:
+                        generate_skeleton(self.geometry, value)
+                    self.assertEqual(file_error.exception.report['code'], code)
+                    self.assertEqual(dictionary_error.exception.report['code'], code)
+
     def test_preserved_existing_skeleton_is_validated_before_returning_ready(self):
         from rig_skeleton import skeleton_from_heads
         valid = skeleton_from_heads([dict(id='root', role='root', parent=None,
