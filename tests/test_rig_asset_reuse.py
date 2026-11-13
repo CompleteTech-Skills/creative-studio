@@ -99,6 +99,9 @@ class Reuse(unittest.TestCase):
         replacement=self.register('character','character',source,'1.0.1')
         with self.assertRaises(RigError):self.adapter.replace(project,'scene-a','robot','character',replacement)
         self.assertEqual(project,before)
+        wrong_animation=self.register('animation','animation',source,'1.0.1')
+        mismatched=deepcopy(self.bindings);mismatched['animation']=wrong_animation
+        with self.assertRaises(RigError):self.adapter.instantiate(project,'scene-b','unsampled',bindings=mismatched)
         broken=deepcopy(self.bindings);broken['rig']['location']['reference']['sha256']='0'*64
         with self.assertRaises(RigError):self.adapter.instantiate(project,'scene-b','broken',bindings=broken)
 
@@ -151,6 +154,17 @@ class Reuse(unittest.TestCase):
         self.assertEqual(store.load(),modified)
         link=self.root/'linked';link.symlink_to(store.root,target_is_directory=True)
         with self.assertRaises(RigError):ProjectStore(link)
+
+    def test_receipt_scope_cannot_shadow_an_instance(self):
+        receipt_path=self.root/'scope-receipt.json';receipt_path.write_text('{"review":"rejected"}')
+        receipt=self.register('receipt','reference',receipt_path)
+        project=deepcopy(self.project);project['scenes']['scene-a']['receipts']=[receipt]
+        project=self.adapter.instantiate(project,'scene-a','receipt-0',bindings=self.bindings)
+        scopes=self.adapter.dependencies(project)
+        self.assertIn('scene-a/instance/receipt-0',scopes)
+        self.assertIn('scene-a/receipt/0',scopes)
+        self.assertEqual(len(scopes),2)
+        self.assertEqual(len(scopes['scene-a/instance/receipt-0']['graph']['roots']),4)
 
     def test_binding_dataclass_and_unknown_fields_are_explicit(self):
         bindings={key:AssetBinding(**value) for key,value in self.bindings.items()}

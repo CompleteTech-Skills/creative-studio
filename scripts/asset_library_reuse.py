@@ -192,9 +192,9 @@ class SceneLibraryAdapter:
         for scene_id,scene in project['scenes'].items():
             for instance_id,instance in scene['instances'].items():
                 roots={location_key(b['location']):b['location'] for b in instance['bindings'].values()}
-                scopes[scene_id+'/'+instance_id]=self.graph.lock(list(roots.values()),include_optional=False)
+                scopes[scene_id+'/instance/'+instance_id]=self.graph.lock(list(roots.values()),include_optional=False)
             for i,item in enumerate(scene['receipts']):
-                scopes[scene_id+'/receipt-'+str(i)]=self.graph.lock([item['location']],include_optional=False)
+                scopes[scene_id+'/receipt/'+str(i)]=self.graph.lock([item['location']],include_optional=False)
         for index,event in enumerate(project['history']):
             for side in ('before','after'):
                 scopes['history-'+str(index)+'-'+side]=self.graph.lock([event[side]['location']],include_optional=False)
@@ -325,6 +325,8 @@ class SceneLibraryAdapter:
         elif 'animation' in sources:
             animation_source,_=self._model(sources['animation'])
             require(bool(animation_source.clips),'ANIMATION','Animation binding contains no executable clips.')
+            require(animation_source.skeleton==rig_source.skeleton and self._same_geometry(geometry,animation_source.geometry),
+                    'COMPATIBILITY','Animation source is not calibrated to this native geometry and skeleton.')
         for slot,material in instance['material_overrides'].items():
             require(int(slot)<len(geometry.materials),'MATERIAL','Override refers to a missing native slot.')
             pbr=geometry.materials[int(slot)].setdefault('pbrMetallicRoughness',{})
