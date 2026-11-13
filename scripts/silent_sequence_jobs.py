@@ -177,12 +177,13 @@ def status(job_root):
     # An active owner must not have its checkpoint rewritten by a status reader.
     import fcntl
     with pinned_directory(job_root) as fd:
-        plan=_plan(fd);state=_state(fd,plan);owned=False
+        plan=_plan(fd);owned=False
         lock=os.open('lock',os.O_RDWR|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=fd)
         try:
             if not stat.S_ISREG(os.fstat(lock).st_mode):raise ValueError('unsafe sequence job lock')
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:owned=True
+            state=_state(fd,plan)
             if not owned and state['phase'] in ACTIVE:_save(fd,state,'interrupted',error='Lost controller ownership; explicit resume required')
             if not owned and state['phase']=='completed':
                 try:_verify(plan,state)

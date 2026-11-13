@@ -39,6 +39,17 @@ BUDGET=media._obj({'wall_seconds':media._int(1,3600),'max_work_bytes':media._int
                   'max_attempts':media._int(1,3),'max_runs':media._int(1,8)})
 
 
+
+def _validate_schema(value,schema,label):
+    try:return media._structural(value,schema,label)
+    except OverflowError as exc:raise ValueError(f'{label} exceeds finite numeric limits') from exc
+
+
+def _validate_request(request):
+    try:return media.validate_request(request)
+    except OverflowError as exc:raise ValueError('job request exceeds finite numeric limits') from exc
+
+
 def publication_supported():
     return private_stage_supported()
 
@@ -231,15 +242,15 @@ def _plan(fd):
     if not isinstance(plan,dict) or set(plan)!={'schema_version','kind','id','request','source_root','destination','context','tools','implementation','budget','estimate'}:
         raise ValueError('invalid job plan fields')
     if plan['schema_version']!=1 or plan['kind']!='silent-video-job-plan':raise ValueError('unsupported job plan')
-    media.validate_request(plan['request']);media._structural(plan['budget'],BUDGET,'job budget')
+    _validate_request(plan['request']);_validate_schema(plan['budget'],BUDGET,'job budget')
     value={k:v for k,v in plan.items() if k!='id'}
     if plan['id']!=media._digest(value) or plan['estimate']!=_estimate(plan['request']):raise ValueError('job plan identity changed')
     for key in ('source_root','destination'):
         if not isinstance(plan[key],str) or not 0<len(plan[key])<=4096 or not Path(plan[key]).is_absolute():raise ValueError('job locations must be explicit absolute paths')
     if not isinstance(plan['context'],dict):raise ValueError('job source/timeline context must be an object')
     tool=media._obj({'path':{'type':'string','minLength':1,'maxLength':4096},'sha256':media.SHA,'bytes':media._int(1,MAX_TOOL_BYTES),'version_stdout':{'type':'string','minLength':1,'maxLength':1024**2}})
-    media._structural(plan['tools'],media._obj({'ffmpeg':tool,'ffprobe':tool}),'job tools')
-    media._structural(plan['implementation'],media._obj({k:media.SHA for k in ('controller','encoder','publication','profiles','path_boundary')}),'job implementation')
+    _validate_schema(plan['tools'],media._obj({'ffmpeg':tool,'ffprobe':tool}),'job tools')
+    _validate_schema(plan['implementation'],media._obj({k:media.SHA for k in ('controller','encoder','publication','profiles','path_boundary')}),'job implementation')
     return plan
 
 
@@ -259,8 +270,8 @@ def _state(fd,plan):
     receipt_schema=media._obj({'sha256':exact_sha,'bytes':media._int(1,MAX_RECEIPT_BYTES)})
     artifact_schema=media._obj({'sha256':exact_sha,'bytes':media._int(1,plan['request']['limits']['max_output_bytes']),
                                'path':{'const':'video'+media.PROFILES[plan['request']['profile']]['extension']}})
-    if state['receipt'] is not None:media._structural(state['receipt'],receipt_schema,'job receipt checkpoint')
-    if state['artifact'] is not None:media._structural(state['artifact'],artifact_schema,'job artifact checkpoint')
+    if state['receipt'] is not None:_validate_schema(state['receipt'],receipt_schema,'job receipt checkpoint')
+    if state['artifact'] is not None:_validate_schema(state['artifact'],artifact_schema,'job artifact checkpoint')
     if state['phase']=='completed' and (state['receipt'] is None or state['artifact'] is None):
         raise ValueError('completed job checkpoint requires immutable artifact and receipt references')
     if type(state['elapsed_seconds']) not in (int,float) or not 0<=state['elapsed_seconds']<=86400:raise ValueError('invalid job elapsed time')
@@ -289,8 +300,8 @@ def _locked(root,*,blocking=False):
 
 def create(request,source_root,job_root,destination,*,context=None,budget=None,ffmpeg=None,ffprobe=None):
     if not publication_supported():raise ValueError('secure job staging is unavailable on this platform')
-    request=copy.deepcopy(media.validate_request(request));budget=copy.deepcopy(budget or DEFAULT_BUDGET)
-    media._structural(budget,BUDGET,'job budget')
+    request=copy.deepcopy(_validate_request(request));budget=copy.deepcopy(budget or DEFAULT_BUDGET)
+    _validate_schema(budget,BUDGET,'job budget')
     if len(request['source']['frames'])/media.fps_fraction(request['source']['fps'])>3600:
         raise ValueError('job duration exceeds one-hour limit')
     estimate=_estimate(request)
@@ -346,13 +357,14 @@ def _quick_delivery(plan,state):
 def status(job_root):
     with pinned_directory(job_root) as fd:
         import fcntl
-        plan=_plan(fd);state=_state(fd,plan)
+        plan=_plan(fd)
         lock=os.open('lock',os.O_RDWR|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=fd)
         owned=False
         try:
             if not stat.S_ISREG(os.fstat(lock).st_mode):raise ValueError('unsafe job lock')
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:owned=True
+            state=_state(fd,plan)
             if not owned and state['phase'] in ACTIVE:_save(fd,state,'interrupted',error='Controller/worker no longer owns checkpoint; explicit resume required')
             if state['phase']=='completed':
                 try:_quick_delivery(plan,state)

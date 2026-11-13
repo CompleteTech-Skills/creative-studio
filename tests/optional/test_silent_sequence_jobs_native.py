@@ -39,6 +39,20 @@ class ActualSequenceJobs(unittest.TestCase):
             for frame in report['source']['frames']:
                 self.assertEqual(hashlib.sha256((self.root/(label+'-out')/frame['path']).read_bytes()).hexdigest(),frame['sha256'])
 
+    def test_status_observes_completion_after_lock_acquisition(self):
+        import fcntl
+        self.create();self.assertEqual(adapter.run(self.root/'job')['state']['phase'],'completed')
+        path=self.root/'job/state.json';completed=path.read_bytes();active=json.loads(completed)
+        active.update(phase='preparing',receipt_sha256=None);path.write_text(json.dumps(active))
+        original=fcntl.flock;published=[]
+        def finish_owner(fd,operation):
+            if operation==fcntl.LOCK_EX|fcntl.LOCK_NB and not published:
+                path.write_bytes(completed);published.append(True)
+            return original(fd,operation)
+        with mock.patch.object(fcntl,'flock',side_effect=finish_owner):
+            self.assertEqual(adapter.status(self.root/'job')['state']['phase'],'completed')
+        self.assertEqual(path.read_bytes(),completed)
+
     def test_retained_png16_exr_half_and_float_batches_preserve_precision(self):
         project=Path(__file__).resolve().parents[2]
         roots=[]

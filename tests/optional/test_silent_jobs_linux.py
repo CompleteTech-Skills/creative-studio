@@ -146,6 +146,18 @@ class JobFixtures(unittest.TestCase):
             os.symlink(outside,self.root/'job/escape')
             with self.assertRaisesRegex(ValueError,'unsafe'):jobs._work_bytes(fd)
 
+    def test_extreme_request_and_budget_numbers_fail_before_creation(self):
+        huge=10**400
+        for key in jobs.DEFAULT_BUDGET:
+            with self.subTest(budget=key),mock.patch.object(jobs,'_tools',side_effect=AssertionError('admission precedes tools')):
+                with self.assertRaises(ValueError):self.create(budget={**jobs.DEFAULT_BUDGET,key:huge})
+        for section,key in [('limits','max_output_bytes'),('source','width')]:
+            request=copy.deepcopy(self.request);request[section][key]=huge
+            with self.subTest(request=(section,key)),mock.patch.object(jobs,'_tools',side_effect=AssertionError('admission precedes tools')):
+                with self.assertRaises(ValueError):
+                    jobs.create(request,self.source,self.root/'job',self.root/'job-delivery')
+        self.assertFalse((self.root/'job').exists())
+
     def test_hidden_worker_cannot_signal_an_unowned_process_group(self):
         result=subprocess.run([sys.executable,str(Path(jobs.__file__)),'_worker'],capture_output=True,text=True,timeout=5)
         self.assertEqual(result.returncode,2);self.assertIn('owned session',result.stderr)

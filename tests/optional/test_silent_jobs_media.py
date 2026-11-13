@@ -47,6 +47,20 @@ class ActualMediaJobs(unittest.TestCase):
         (self.root/'job-delivery/video.mp4').write_bytes(b'corruption')
         self.assertEqual(jobs.status(self.root/'job')['state']['phase'],'stale')
 
+    def test_status_observes_completion_after_lock_acquisition(self):
+        import fcntl
+        self.create();self.assertEqual(jobs.run(self.root/'job')['state']['phase'],'completed')
+        path=self.root/'job/state.json';completed=path.read_bytes();active=json.loads(completed)
+        active.update(phase='encoding',receipt=None,artifact=None);path.write_text(json.dumps(active))
+        original=fcntl.flock;published=[]
+        def finish_owner(fd,operation):
+            if operation==fcntl.LOCK_EX|fcntl.LOCK_NB and not published:
+                path.write_bytes(completed);published.append(True)
+            return original(fd,operation)
+        with mock.patch.object(fcntl,'flock',side_effect=finish_owner):
+            self.assertEqual(jobs.status(self.root/'job')['state']['phase'],'completed')
+        self.assertEqual(path.read_bytes(),completed)
+
     def test_real_sequential_mp4_webm_batch_and_no_repeat(self):
         self.create('mp4');self.create('webm','vp9-webm')
         report=jobs.run_batch([self.root/'mp4',self.root/'webm'])
