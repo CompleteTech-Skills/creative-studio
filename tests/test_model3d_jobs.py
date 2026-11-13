@@ -247,5 +247,48 @@ j.run_job(sys.argv[1],handler,handler_version='v1')
         self.assertEqual(caught.exception.report['code'],'MODEL3D_ARCHIVE_LIMIT')
         self.assertFalse((self.root/'bad-long').exists())
 
+    def test_unicode_normalized_input_output_and_directory_aliases_rejected(self):
+        source=self.root/'source.bin';source.write_bytes(b'original')
+        composed='caf\u00e9.txt';decomposed='cafe\u0301.txt'
+        with self.assertRaises(RigError):self.create(inputs={composed:source,decomposed:source})
+        self.assertFalse(self.job.exists())
+        with self.assertRaises(RigError):self.create(inputs={'caf\u00e9/a.txt':source,'cafe\u0301/b.txt':source})
+        self.assertFalse(self.job.exists())
+        self.create()
+        # A filesystem which itself rejects aliases is safe too; use a direct
+        # synthetic directory inventory for host-independent alias enumeration.
+        class Entry:
+            def __init__(self,path):self.path=str(path)
+            def is_symlink(self):return False
+            def is_dir(self,follow_symlinks=False):return True
+        from contextlib import nullcontext
+        entries=[Entry(self.job/'caf\u00e9'),Entry(self.job/'cafe\u0301')]
+        with patch('model3d_jobs.os.scandir',return_value=nullcontext(entries)):
+            with self.assertRaises(RigError) as caught:jobs._inventory(self.job,files=10,bytes_=100)
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_JOB_PATH')
+        def handler(context):
+            # Works as a real two-file probe on normalization-sensitive Linux.
+            (context.output/composed).write_bytes(b'first')
+            try:
+                with (context.output/decomposed).open('xb') as out:out.write(b'second')
+            except FileExistsError:
+                raise RigError('MODEL3D_JOB_PATH','Filesystem rejected the normalized alias.')
+        with self.assertRaises(RigError):jobs.run_job(self.job,handler,handler_version='unicode-v1')
+        self.assertIsNone(jobs.status(self.job)['current_revision'])
+
+    def test_hostile_unicode_aliased_zip_rejected_before_restoration(self):
+        self.create();jobs.run_job(self.job,self.handler,handler_version='v1')
+        good=self.root/'good.zip';jobs.archive_job(self.job,good)
+        with zipfile.ZipFile(good) as archive:items={i.filename:archive.read(i.filename) for i in archive.infolist()}
+        items.update({'inputs/caf\u00e9.txt':b'first','inputs/cafe\u0301.txt':b'second'})
+        hostile=self.root/'unicode-alias.zip'
+        with zipfile.ZipFile(hostile,'w') as archive:
+            for name,data in items.items():archive.writestr(name,data)
+        with self.assertRaises(RigError) as caught:jobs.restore_job(hostile,self.root/'bad')
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_ARCHIVE_LIMIT')
+        self.assertFalse((self.root/'bad').exists())
+        self.assertFalse(jobs._unique_names(['inputs/caf\u00e9/a.txt','inputs/cafe\u0301/b.txt']))
+        self.assertTrue(jobs._unique_names(['inputs/caf\u00e9/a.txt','inputs/caf\u00e9/b.txt']))
+
 
 if __name__=='__main__':unittest.main()

@@ -15,6 +15,7 @@ import shutil
 import struct
 import tempfile
 import time
+import unicodedata
 import uuid
 import zipfile
 
@@ -26,6 +27,28 @@ from rig_errors import (RigError, atomic_json, finite_json, job_lock, object_has
 DEFAULT_BUDGETS = dict(files=4096, input_bytes=256*1024**2, output_bytes=1024**3,
                        attempts=3, runtime_seconds=120.)
 _STATUS = {'queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted'}
+
+
+def _alias(name):
+    """Canonical portable collision key; preserve literal source names/bytes."""
+    return unicodedata.normalize('NFC', portable_name(name)).casefold()
+
+
+def _unique_names(names):
+    """Check file and implicit directory aliases without touching the filesystem."""
+    seen = {}
+    for name in names:
+        portable_name(name)
+        parts = name.split('/')
+        # Native payload trees have at most32directories; archive envelopes add
+        # a small fixed prefix. Bound prefix work even for hostile ZIP names.
+        if len(parts) > 40:return False
+        for index in range(1,len(parts)+1):
+            prefix = '/'.join(parts[:index]);kind = 'file' if index == len(parts) else 'directory'
+            key = _alias(prefix);prior = seen.get(key)
+            if prior is not None and (prior != (prefix,kind) or kind == 'file'):return False
+            seen[key] = (prefix,kind)
+    return True
 
 
 def _budgets(value):
@@ -73,9 +96,9 @@ def _inventory(root, *, files, bytes_):
                 require(entries <= files*2, 'MODEL3D_JOB_LIMIT', 'Directory inventory exceeds its entry budget.')
                 require(not item.is_symlink(), 'MODEL3D_JOB_PATH', 'Symbolic links are not job payloads.')
                 relative = Path(item.path).relative_to(root).as_posix()
-                portable_name(relative)
-                require(relative.casefold() not in folded, 'MODEL3D_JOB_PATH', 'Case-aliased payload paths.')
-                folded.add(relative.casefold())
+                alias = _alias(relative)
+                require(alias not in folded, 'MODEL3D_JOB_PATH', 'Case/Unicode-aliased payload paths.')
+                folded.add(alias)
                 if item.is_dir(follow_symlinks=False):
                     pending.append((Path(item.path), depth+1))
                 else:
@@ -146,7 +169,7 @@ def create_job(root, request, *, inputs=None, budgets=None):
     require(isinstance(inputs, dict) and len(inputs) <= budgets['files'],
             'MODEL3D_JOB_LIMIT', 'Too many job inputs.')
     names = [portable_name(name) for name in inputs]
-    require(len({name.casefold() for name in names}) == len(names),
+    require(_unique_names(names),
             'MODEL3D_JOB_PATH', 'Input aliases are not portable.')
     with job_lock(root):
         require(not root.exists() and not root.is_symlink(), 'MODEL3D_JOB_EXISTS', 'Job destination must be new.')
@@ -422,7 +445,7 @@ def _verify_open_archive(stream, destination):
     from rig_errors import decode_json, MAX_JSON_BYTES
     with zipfile.ZipFile(stream) as archive:
         entries = archive.infolist(); names = [item.filename for item in entries]
-        require(1 < len(entries) <= 10001 and len(set(name.casefold() for name in names)) == len(names),
+        require(1 < len(entries) <= 10001 and _unique_names(names),
                 'MODEL3D_ARCHIVE_LIMIT', 'Duplicate, aliased or excessive ZIP members.')
         total = 0
         for item in entries:
