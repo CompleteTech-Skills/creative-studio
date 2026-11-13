@@ -12,6 +12,7 @@ import rig_errors
 class PortablePathTests(unittest.TestCase):
     def test_transport_reexports_single_authority(self):
         self.assertIs(decomposition_package._relative, portable_paths.existing_relative)
+        self.assertIs(decomposition_package._RESERVED, portable_paths._RESERVED)
         for name in ['mesh.glb', 'models/Milo rig/asset_1.obj', 'café/数据.bin', 'a..b']:
             self.assertEqual(portable_paths.existing_relative(name), name)
             self.assertEqual(rig_errors.portable_name(name), name)
@@ -32,7 +33,7 @@ class PortablePathTests(unittest.TestCase):
 sys.path.insert(0,sys.argv[1])
 import rig_errors
 with tempfile.TemporaryDirectory() as folder:
-    root=pathlib.Path(folder); (root/'payload.bin').write_bytes(b'actual stdlib worker bytes')
+    root=pathlib.Path(folder).resolve(); (root/'payload.bin').write_bytes(b'actual stdlib worker bytes')
     with rig_errors.open_payload(root,'payload.bin') as (stream, _):
         assert stream.read()==b'actual stdlib worker bytes'
 assert not any(name=='PIL' or name.startswith('PIL.') for name in sys.modules)
