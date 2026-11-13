@@ -132,6 +132,11 @@ Animation clips contain real translation/rotation/scale/morph channels, ordered 
 
 The Python API supports masked pose layers, additive rest-relative deltas, morph mixing and aligned crossfades. Embedded root motion can accumulate between loops. World-space foot/paw contacts re-solve IK through stance intervals; contact and release events remain in the native clip. An exported GLB contains the resulting baked motion, not live contact solvers.
 
+Contact targets repeat at their authored world locations for in-place clips.
+Embedded root-motion loops translate each repeated contact target by the same
+complete-cycle root displacement as the pose. Non-looping evaluation keeps
+contact targets at their authored world locations.
+
 ```bash
 python scripts/rig.py retarget --source output/source-character --run-dir output/target-character --clip walk
 python scripts/rig.py render --run-dir output/target-character --clip walk-retargeted --time 0.7 --destination output/retarget.png
