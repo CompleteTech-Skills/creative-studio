@@ -104,6 +104,8 @@ def _supervise(command, *, cwd, timeout, memory_bytes, storage_bytes, cancelled=
     finally:
         _stop(process)
         if process.stdout:process.stdout.close()
+        try:(Path(cwd)/'blender.log').write_bytes(bytes(log))
+        except OSError:pass
 
 
 def _plain(value):
@@ -319,11 +321,15 @@ class BlenderBackend:
             validate(result,'RenderResult');atomic_json(stage/'result.json',result)
             _rename_no_replace(stage,target)
             return result
-        except Render3DError:raise
-        except RigError as exc:raise Render3DError('invalid-input',str(exc)) from exc
-        except OSError as exc:raise Render3DError('storage-exhaustion' if exc.errno in (28,122) else 'external-tool',str(exc)) from exc
-        finally:
-            if stage.exists():shutil.rmtree(stage)
+        except Exception as exc:
+            error=exc if isinstance(exc,Render3DError) else Render3DError(
+                'invalid-input' if isinstance(exc,RigError) else 'storage-exhaustion' if isinstance(exc,OSError) and exc.errno in (28,122) else 'external-tool',str(exc))
+            error.report['path']=str(stage)
+            try:atomic_json(stage/'failure.json',error.report)
+            except OSError:pass
+            # Private failed staging is retained for diagnostics; it is never a
+            # published result and the requested destination remains untouched.
+            raise error from exc
 
     def prepare(self,snapshot,settings):
         return self.validate(snapshot,settings)
