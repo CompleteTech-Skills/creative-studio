@@ -34,20 +34,24 @@ def _error(category, message):
 
 
 def _stop(process):
-    if process.poll() is not None:
-        return
+    # The worker leader can exit while descendants remain in its session.
+    # Signal the owned group even after poll() reports a completed leader.
     if os.name == 'posix':
-        os.killpg(process.pid, signal.SIGTERM)
-    else:
+        try:os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:return
+    elif process.poll() is None:
         process.terminate()
+    else:
+        return
     try:
         process.wait(timeout=3)
     except subprocess.TimeoutExpired:
+        if os.name != 'posix':process.kill()
+    finally:
         if os.name == 'posix':
-            os.killpg(process.pid, signal.SIGKILL)
-        else:
-            process.kill()
-        process.wait(timeout=5)
+            try:os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:pass
+    if process.poll() is None:process.wait(timeout=5)
 
 
 def _rss(pid):
@@ -96,6 +100,8 @@ def _supervise(command, *, cwd, timeout, memory_bytes, storage_bytes, cancelled=
             if error:
                 _stop(process);break
             time.sleep(.1)
+        # Close descendant-held output pipes before joining the log reader.
+        _stop(process)
         reader.join(timeout=5)
         payload=bytes(log)
         if error:raise error
