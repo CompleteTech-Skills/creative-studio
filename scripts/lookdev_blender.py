@@ -229,17 +229,22 @@ def build_material(plan):
 
 
 def assign_material(obj, material, *, slots=None):
-    """Assign a material to explicit existing mesh face slots; preserve other slots."""
+    """Assign explicit mesh slots without changing linked object instances."""
     require(obj.type == 'MESH', 'LOOKDEV_MESH', 'Material assignment requires a real mesh.')
+    if slots is not None:
+        require(isinstance(slots, (list, tuple)) and slots and len(set(slots)) == len(slots) and
+                all(type(i) is int and 0 <= i < len(obj.data.materials) for i in slots),
+                'LOOKDEV_SLOT', 'Select distinct existing material slot indices.')
+    # Blender stores slots and polygon indices on shared mesh data. Isolate the
+    # selected instance only after all slot admission checks have succeeded.
+    if obj.data.users > 1:
+        obj.data = obj.data.copy()
     if slots is None:
         obj.data.materials.append(material)
         index = len(obj.data.materials) - 1
         for face in obj.data.polygons:
             face.material_index = index
     else:
-        require(isinstance(slots, (list, tuple)) and slots and len(set(slots)) == len(slots) and
-                all(type(i) is int and 0 <= i < len(obj.data.materials) for i in slots),
-                'LOOKDEV_SLOT', 'Select distinct existing material slot indices.')
         for i in slots:
             obj.data.materials[i] = material
     return {'mesh': obj.name, 'material': material.name,

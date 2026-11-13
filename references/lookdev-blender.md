@@ -17,6 +17,8 @@ plan = material_plan(registry, exact_material_reference, engine='CYCLES')
 This validates native inheritance and the effective render policy, then copies
 its immutable values and exact source reference into a hash-bound internal plan.
 The trusted worker sets the planned engine and calls `build_material(plan)`.
+`assign_material` validates existing integer mesh slots and isolates shared mesh
+data before assignment, preserving other linked object instances.
 The plan is an internal handoff; external JSON still enters through the canonical
 LookDev `Registry`. Inherited materials never mutate the base resource.
 
