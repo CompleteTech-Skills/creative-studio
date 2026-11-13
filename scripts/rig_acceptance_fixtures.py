@@ -164,12 +164,18 @@ def grip_render_proof(rig,directory,*,blender=False,render=False):
     material=len(derived.geometry.materials)
     derived.geometry.materials.append(dict(name='proof-grip-bar',pbrMetallicRoughness=dict(baseColorFactor=[1.,.05,.7,1.],metallicFactor=0.,roughnessFactor=.7)))
     bar=tube('proof-grip-bar',[g['transform']['translation'] for g in grips],.035,material,sides=12,subdivisions=3)
-    derived.geometry.meshes.append(bar);root=derived.skeleton['root'];rest=evaluate_fk(derived.skeleton)
-    # An explicitly static demonstration object is represented by a rigid root
-    # skin for the existing renderer/exporter. This does not activate ownership.
+    derived.geometry.meshes.append(bar);root=derived.skeleton['root']
+    # Keep the source nondeforming hierarchy root unchanged. The derived static
+    # prop has its own explicit deforming anchor and positive skin influences.
+    anchor=deepcopy(next(b for b in derived.skeleton['bones'] if b['id']==root))
+    anchor.update(id='proof-grip-anchor',role='prop-anchor',parent=root,deform=True,mirror=None,
+                  rest=dict(translation=[0.,0.,0.],rotation=[0.,0.,0.,1.],scale=[1.,1.,1.]),
+                  evidence=dict(source='procedural-fixture',reference='Explicit derived static grip-bar anchor',confidence=1.))
+    derived.skeleton['bones'].append(anchor)
+    rest=evaluate_fk(derived.skeleton)
     bar_weights=np.zeros((len(bar.positions),4));bar_weights[:,0]=1.
-    derived.weights[bar.id]=SkinWeights(bar.id,[root],np.zeros((len(bar.positions),4),dtype=np.int64),
-        bar_weights,np.linalg.inv(rest[root])[None,:,:],method='rigid')
+    derived.weights[bar.id]=SkinWeights(bar.id,[anchor['id']],np.zeros((len(bar.positions),4),dtype=np.int64),
+        bar_weights,np.linalg.inv(rest[anchor['id']])[None,:,:],method='rigid')
     save_rig(derived,operation='explicit-synthetic-grip-object')
     recipe=grips_api.create_grip_pose(derived,'proof-bar-grip','1.0.0',prop,grips)
     solved=grips_api.solve_grip_pose(derived,neutral,prop,recipe)
@@ -212,7 +218,7 @@ def grip_render_proof(rig,directory,*,blender=False,render=False):
     report=dict(scope='cooperative hand contact with an explicitly static unowned synthetic bar; no ownership activation',
         source_rig_sha256=rig_signature(rig.manifest),derived_rig_sha256=rig_signature(derived.manifest),derived_root=str(derived.root),
         grip_authority=_code_reference(grips_api.__file__),recipe_sha256=object_hash(recipe),
-        contact=solved['report'],hand_vertex_displacement_m=hand_displacement,nearest_hand_vertex_to_grip_m=hand_to_grip,max_static_prop_vertex_error_m=prop_error,
+        prop_anchor=anchor['id'],contact=solved['report'],hand_vertex_displacement_m=hand_displacement,nearest_hand_vertex_to_grip_m=hand_to_grip,max_static_prop_vertex_error_m=prop_error,
         artifacts=artifacts,render=rendered,visual_review='pending')
     atomic_json(directory/'grip-proof.json',report);return report
 

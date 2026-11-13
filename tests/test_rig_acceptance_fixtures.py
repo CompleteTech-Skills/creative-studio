@@ -54,7 +54,18 @@ class SpecialtyFixtureTests(unittest.TestCase):
     @unittest.skipUnless(importlib.util.find_spec('rig_grips'),'reviewed cooperative authority is a separate integration dependency')
     def test_cooperative_grip_uses_final_bound_revision_and_actual_hands(self):
         source=sha256(self.humanoid.root/'rig.json')
+        source_bones=self.humanoid.skeleton['bones']
         report=grip_render_proof(self.humanoid,self.destination('grip'))
+        derived=load_rig(report['derived_root'])
+        self.assertEqual(derived.skeleton['bones'][:-1],source_bones)
+        anchor=derived.skeleton['bones'][-1]
+        self.assertEqual(anchor['id'],report['prop_anchor'])
+        self.assertTrue(anchor['deform'])
+        self.assertEqual(anchor['parent'],self.humanoid.skeleton['root'])
+        self.assertFalse(next(b for b in derived.skeleton['bones'] if b['id']==derived.skeleton['root'])['deform'])
+        binding=derived.weights['proof-grip-bar']
+        self.assertEqual(binding.joints,[anchor['id']])
+        self.assertTrue((binding.weights[:,0]==1.).all())
         self.assertTrue(report['contact']['converged'])
         self.assertFalse(report['contact']['ownership_changed'])
         self.assertTrue(all(v>.05 for v in report['hand_vertex_displacement_m'].values()))
