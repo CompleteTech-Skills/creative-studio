@@ -25,7 +25,9 @@ triangles. OBJ resources contain actual triangles, explicit flat normals and
 per-triangle UVs; they are not textured material demonstrations.
 
 `rooms`, `workshop`, `fantasy`, and `science-fiction` accept room count,
-width/depth/height, wall thickness, door width/height and a windows boolean.
+width/depth/height, wall thickness, door width/height, a windows boolean, and an `external_door` boolean (default
+false). An external door creates a real entrance through the first end wall;
+internal shared partitions retain their connected-room doors.
 Adjacent rooms share an actual partition with an opening. Window and doorway
 voids contain no wall triangles. Fantasy adds editable tower meshes;
 science-fiction adds editable structural beams. These basic variations do not

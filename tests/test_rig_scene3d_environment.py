@@ -161,6 +161,31 @@ class EnvironmentTests(unittest.TestCase):
             with self.assertRaises(RigError):Heightfield(heights=data)
         with self.assertRaises(RigError):extrude([['a','b']])
 
+    def test_external_house_door_and_internal_partition_have_real_ray_clearance(self):
+        from rig_math import qmatrix
+        def hits(item,origin):
+            vertices=np.array(item['mesh'].vertices)@qmatrix(item['rotation']).T+item['position']
+            direction=np.array([1.,0.,0.]);origin=np.array(origin);found=0
+            for a,b,c in vertices[item['mesh'].triangles]:
+                edge1=b-a;edge2=c-a;cross=np.cross(direction,edge2);det=float(np.dot(edge1,cross))
+                if abs(det)<1e-10:continue
+                offset=origin-a;u=float(np.dot(offset,cross)/det)
+                if not 0<=u<=1:continue
+                q=np.cross(offset,edge1);v=float(np.dot(direction,q)/det)
+                if v<0 or u+v>1:continue
+                distance=float(np.dot(edge2,q)/det)
+                if 1e-8<distance<2:found+=1
+            return found
+        closed=next(o for o in plan(recipe(rooms=1)) if o['id']=='test-partition-0')
+        opened=next(o for o in plan(recipe(rooms=1,external_door=True)) if o['id']=='test-partition-0')
+        self.assertGreater(hits(closed,[-3.5,1.1,.1]),0)
+        self.assertEqual(hits(opened,[-3.5,1.1,.1]),0)
+        self.assertGreater(hits(opened,[-3.5,2.8,.1]),0)
+        internal=next(o for o in plan(recipe(rooms=2,external_door=True)) if o['id']=='test-partition-1')
+        self.assertEqual(hits(internal,[1.5,1.1,.1]),0)
+        with self.assertRaises(RigError):plan(recipe(rooms=1,external_door='yes'))
+        with self.assertRaises(RigError):plan(recipe(rooms=1,external_door=True,depth=1))
+
     def test_rooms_are_connected_and_bounded(self):
         items=plan(recipe(rooms=3))
         self.assertEqual(len([x for x in items if 'partition' in x['id']]),4)

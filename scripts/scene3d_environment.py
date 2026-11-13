@@ -80,12 +80,13 @@ def plan(recipe):
             add(f'trunk-{i}',primitive('cylinder',radius=.12,height=1.2,segments=8),[position[0],position[1]+.6,position[2]])
             add(f'crown-{i}',primitive('cone',radius=.65,height=1.6,segments=8),[position[0],position[1]+1.8,position[2]])
     elif kind in ('rooms','workshop','fantasy','science-fiction'):
-        require(not set(p)-{'rooms','width','depth','height','thickness','door_width','door_height','windows'},'Unknown architecture parameter.')
+        require(not set(p)-{'rooms','width','depth','height','thickness','door_width','door_height','windows','external_door'},'Unknown architecture parameter.')
         rooms=count(p.get('rooms',2),'rooms',1,20)
         w,d,h,t=[positive(p.get(k,v),k) for k,v in [('width',5),('depth',5),('height',3),('thickness',.2)]]
         dw=positive(p.get('door_width',1.2),'door width');dh=positive(p.get('door_height',2.2),'door height')
-        require(dw<w-2*t and dh<h and t<min(w,d)/4,'Impossible room opening or wall thickness.','SCENE3D_LAYOUT')
+        require(dw<w-2*t and (rooms==1 and not p.get('external_door',False) or dw<d-2*t) and dh<h and t<min(w,d)/4,'Impossible room opening or wall thickness.','SCENE3D_LAYOUT')
         require(type(p.get('windows',True)) is bool,'Windows must be boolean.')
+        require(type(p.get('external_door',False)) is bool,'External door must be boolean.')
         # Shared walls are emitted once; doorway continuity is structural, not approximate adjacency.
         door=[dict(x=(d-dw)/2,y=0,width=dw,height=dh)]
         for i in range(rooms):
@@ -101,7 +102,7 @@ def plan(recipe):
         # Along X, these walls are rotated to occupy the YZ plane.
         q=[0,2**-.5,0,2**-.5]
         for i in range(rooms+1):
-            openings=door if 0<i<rooms else []
+            openings=door if 0<i<rooms or (i==0 and p.get('external_door',False)) else []
             add(f'partition-{i}',wall(d,h,t,openings),[(i-.5)*w,0,0],q)
     else:
         require(False,'Unsupported generator; heightfields do not model caves or overhangs.','SCENE3D_GENERATOR')
