@@ -1,0 +1,77 @@
+name: Camera3D evaluated camera exports
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  contracts:
+    name: Camera export contracts (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-rig-test.txt
+      - run: python -m unittest discover -s tests -p 'test_rig_camera3d*export.py' -v
+  native:
+    name: Actual glTF import and Blender camera libraries
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      HATCH_CAMERA_TEST_SITE: /tmp/camera-export-blender-site
+      HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.16.0'
+      - run: |
+          python -m pip install -r requirements-rig-test.txt
+          npm ci --ignore-scripts --prefix tools/rig
+          python -m pip install --target "$HATCH_CAMERA_TEST_SITE" --python-version 3.11 --only-binary=:all: jsonschema==4.25.1
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        id: blender-cache
+        with:
+          path: /tmp/blender-4.5.3-linux-x64
+          key: blender-linux-x64-4.5.3-975c58fcb244
+      - name: Install checksum-verified Blender 4.5.3 LTS
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fL --retry 3 https://download.blender.org/release/Blender4.5/blender-4.5.3-linux-x64.tar.xz -o /tmp/camera-export-blender.tar.xz
+          echo '975c58fcb244273838534bba771e64ad87739216b0f9b39a888531a49a72d845  /tmp/camera-export-blender.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/camera-export-blender.tar.xz -C /tmp
+      - name: Export and independently import actual glTF cameras
+        run: |
+          mkdir camera-export-evidence
+          git rev-parse HEAD > camera-export-evidence/execution-head.txt
+          python scripts/verify_camera3d_export.py --prepare --destination camera-export-evidence/gltf
+          "$HATCH_BLENDER" --background --factory-startup --disable-autoexec --threads 2 --python-exit-code 1 --python scripts/verify_camera3d_export.py -- --verify --destination camera-export-evidence/gltf
+      - name: Export and reopen actual Blender libraries with stage replacement regression
+        run: python -m unittest discover -s tests -p test_rig_camera3d_native_export.py -v
+        env:
+          HATCH_CAMERA3D_NATIVE_EXPORT_TEST: '1'
+          HATCH_CAMERA_NATIVE_EXPORT_EVIDENCE: camera-export-evidence/native
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: camera3d-export-${{ github.sha }}
+          if-no-files-found: error
+          path: camera-export-evidence/
