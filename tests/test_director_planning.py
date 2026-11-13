@@ -202,6 +202,20 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(result['status'],'failed')
         self.assertEqual(self.calls,[])
 
+    def test_invalid_external_model_metadata_returns_controlled_failure(self):
+        response=self.response(self.brief)
+        response['model']='x'*4097
+        result=self.run_request(self.server([(200,response)]))
+        self.assertEqual(result['status'],'failed')
+        self.assertTrue(any(a['path']=='response-0.json' for a in result['artifacts']))
+
+    def test_out_of_bounds_external_usage_returns_controlled_failure(self):
+        response=self.response(self.brief)
+        response['usage']['input_tokens']=10**16
+        result=self.run_request(self.server([(200,response)]))
+        self.assertEqual(result['status'],'failed')
+        self.assertIsNone(result['usage']['input_tokens']['value'])
+
     def test_all_role_templates_have_valid_schema_and_distinct_hashes(self):
         values=[dp.template(role) for role in dp.ROLES]
         self.assertEqual(len({s['sha256'] for s in values}),9)
