@@ -57,7 +57,7 @@ Run the numerical and actual native gates separately:
 
 ```sh
 PYTHONPATH=scripts:tests python -m unittest test_rig_camera3d_motion -v
-blender --background --threads 1 --python-exit-code 1 \
+blender --background --disable-autoexec --threads 1 --python-exit-code 1 \
   --python scripts/verify_camera3d_motion.py -- --output /tmp/camera-motion
 ```
 
@@ -66,7 +66,8 @@ projections to analytical projections, and rerenders frame 24 after seeking
 backward to demand identical decoded pixels (PNG timing metadata may differ). It emits a JSON report with Blender
 version, coordinates and exact PNG hashes. `HATCH_CAMERA_MOTION_BLENDER` enables
 the subprocess gate within the unittest suite. Blender needs the optional 3D
-Python dependencies. Shared hosts must acquire the coordination native lock for
+Python dependencies compiled for Blender's embedded Python version (4.5.3 uses
+Python 3.11; host Python wheels may be incompatible). Shared hosts must acquire the coordination native lock for
 the entire command lifetime.
 
 Requirement traceability for #77: procedural movements/dolly zoom are covered by

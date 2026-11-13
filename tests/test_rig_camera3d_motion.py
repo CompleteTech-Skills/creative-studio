@@ -253,7 +253,7 @@ class CameraNativeMotionTests(unittest.TestCase):
     def test_actual_blender_random_seek(self):
         evidence=os.environ.get('HATCH_CAMERA_MOTION_EVIDENCE')
         with (nullcontext(evidence) if evidence else tempfile.TemporaryDirectory()) as temporary:
-            result=subprocess.run([os.environ['HATCH_CAMERA_MOTION_BLENDER'], '--background',
+            result=subprocess.run([os.environ['HATCH_CAMERA_MOTION_BLENDER'], '--background','--disable-autoexec',
                 '--threads','1','--python-exit-code','1','--python',
                 str(ROOT/'scripts/verify_camera3d_motion.py'),'--','--output',temporary],
                 capture_output=True,text=True,timeout=180)
