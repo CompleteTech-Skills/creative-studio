@@ -569,6 +569,37 @@ def _pin_directory(path):
 
 
 
+@contextmanager
+def _private_stage(parent_fd):
+    """Keep staging I/O and publication bound to its original directory."""
+    name = Path(tempfile.mkdtemp(prefix='.silent-export-',
+                                dir=Path('/proc/self/fd') / str(parent_fd))).name
+    descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                         dir_fd=parent_fd)
+    try:
+        yield Path('/proc/self/fd') / str(descriptor), descriptor
+    finally:
+        try:
+            # Do not recurse through a stage basename a callback can replace.
+            # A fresh directory stream avoids reusing a borrowed descriptor's
+            # directory offset; procfs still resolves to the pinned inode.
+            for child in os.listdir(Path('/proc/self/fd') / str(descriptor)):
+                mode = os.stat(child, dir_fd=descriptor, follow_symlinks=False).st_mode
+                if stat.S_ISDIR(mode):
+                    shutil.rmtree(child, dir_fd=descriptor)
+                else:
+                    os.unlink(child, dir_fd=descriptor)
+            try:
+                current = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                current = None
+            original = os.fstat(descriptor)
+            if current is not None and (current.st_dev, current.st_ino) == (original.st_dev, original.st_ino):
+                os.rmdir(name, dir_fd=parent_fd)
+        finally:
+            os.close(descriptor)
+
+
 def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
     validate_request(request)
     request = copy.deepcopy(request)
@@ -583,8 +614,7 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         raise ValueError('requested media profile unavailable/unsupported; no fallback')
     if shutil.disk_usage(destination.parent).free < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
         raise ValueError('insufficient free storage for bounded snapshot and output')
-    with tempfile.TemporaryDirectory(prefix='.silent-export-', dir=Path('/proc/self/fd')/str(parent_fd)) as tmp:
-        stage = Path(tmp)
+    with _private_stage(parent_fd) as (stage, source_fd):
         inputs = stage/'frames'; inputs.mkdir()
         _snapshot(request, root, inputs)
         output = stage/('output.partial'+profile['extension'])
@@ -602,19 +632,18 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         command += [str(output)]
         if progress is not None:
             progress({'phase': 'encode', 'total_frames': len(request['source']['frames'])})
-        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(parent_fd,))
-        receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
+        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(source_fd,))
         if cancel is not None and cancel():
-            raise ValueError('silent export cancelled before publication')
+            raise ValueError('silent export cancelled before verification')
+        receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
+        # Verification rechecks original bytes after its final cancellation
+        # callback. No user callback may mutate staging between that check and
+        # publication.
         # Never replace a file or even an empty directory created by another writer.
         # Source and destination basenames resolve relative to pinned directory
         # descriptors, never a path a concurrent writer can replace by a symlink.
-        source_fd = os.open(stage.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
-        try:
-            _rename_no_replace(output.name, destination.name,
-                               source_dir_fd=source_fd, destination_dir_fd=parent_fd)
-        finally:
-            os.close(source_fd)
+        _rename_no_replace(output.name, destination.name,
+                           source_dir_fd=source_fd, destination_dir_fd=parent_fd)
         receipt['encode'] = execution
         receipt['path'] = destination.name
         if progress is not None:
