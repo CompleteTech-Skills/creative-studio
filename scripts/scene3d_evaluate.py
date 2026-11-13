@@ -270,7 +270,7 @@ def evaluate_scene(project, scene, shot, frame, *, source_root=None,
                                        max_geometry_vertices,bundle['inventory']) if sample_geometry else None
     from scene3d_pose import evaluate_poses
     pose_geometry = evaluate_poses(graph,evaluated,documents,native,source_root,
-        sample_geometry=sample_geometry,max_vertices=max_geometry_vertices)
+        verified_inventory=bundle['inventory'],sample_geometry=sample_geometry,max_vertices=max_geometry_vertices)
     if geometry is not None:
         geometry.update(pose_geometry)
         require(sum(len(points) for meshes in geometry.values() for points in meshes.values()) <=

@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 import numpy as np
 
 import test_rig_scene3d_evaluate as evaluation_tests
@@ -100,6 +101,32 @@ class PoseBindingTests(unittest.TestCase):
         self.evaluate(1,source_root=self.root)
         self.shot['bindings']=[]
         with self.assertRaises(RigError):self.evaluate(source_root=self.root,sample_geometry=True,max_geometry_vertices=1)
+
+    def test_changed_native_payload_rejected_before_any_legacy_decoder(self):
+        rig,asset,one,two=self.actors()
+        geometry=self.root/'actor'/rig.manifest['geometry']['data']['path']
+        geometry.write_bytes(geometry.read_bytes()+b'changed')
+        with patch('rig_models.load_rig') as decoder:
+            with self.assertRaises(RigError):self.evaluate(source_root=self.root,sample_geometry=True)
+            decoder.assert_not_called()
+
+    def test_decoder_uses_private_capture_after_original_source_changes(self):
+        from rig_models import load_rig
+        rig,asset,one,two=self.actors()
+        before=self.evaluate(source_root=self.root,sample_geometry=True)
+        geometry=self.root/'actor'/rig.manifest['geometry']['data']['path']
+        original=geometry.read_bytes()
+        def decode(private_root):
+            self.assertNotEqual(Path(private_root).resolve(),(self.root/'actor').resolve())
+            geometry.write_bytes(b'mutated after complete admission')
+            return load_rig(private_root)
+        try:
+            with patch('rig_models.load_rig',side_effect=decode):
+                after=self.evaluate(source_root=self.root,sample_geometry=True)
+            self.assertEqual(after['native_geometry'],before['native_geometry'])
+            self.assertEqual(after['nodes']['one']['native_state'],before['nodes']['one']['native_state'])
+        finally:
+            geometry.write_bytes(original)
 
     def test_imported_root_pose_matches_canonical_importer_and_keeps_other_instance(self):
         from asset_library import AssetLibrary
