@@ -121,6 +121,36 @@ class CapturedImportTests(unittest.TestCase):
                     with resolve_captured_import(admitted,reference,root):
                         self.fail('Malformed report reached the native consumer.')
 
+    def test_rehashed_asset_and_report_cannot_hide_native_fixture_provenance(self):
+        from copy import deepcopy
+        import hashlib,json
+        root,bundle,graph=self.project()
+        report_ref=next(item for item in self.imported.asset['dependencies'] if item['path'].endswith('/import-report.json'))
+        asset_path=root/self.imported.asset_reference['path'];report_path=root/report_ref['path']
+        asset=json.loads(asset_path.read_bytes());report=json.loads(report_path.read_bytes())
+        asset['provenance']['fixture']=False;report['fixture']=False
+        def encoded(value):return (json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False)+'\n').encode()
+        asset_path.write_bytes(encoded(asset));report_path.write_bytes(encoded(report))
+        def reseal(value,hashes):
+            if isinstance(value,dict):
+                for child in value.values():reseal(child,hashes)
+                if isinstance(value.get('path'),str) and 'sha256' in value and value['path'] in hashes:value['sha256']=hashes[value['path']]
+                if isinstance(value.get('asset'),dict) and isinstance(value.get('metadata'),dict) and 'source_asset_sha256' in value['metadata']:
+                    value['metadata']['source_asset_sha256']=value['asset']['sha256']
+            elif isinstance(value,list):
+                for child in value:reseal(child,hashes)
+        for _ in range(30):
+            hashes={path.relative_to(root).as_posix():hashlib.sha256(path.read_bytes()).hexdigest() for path in root.rglob('*') if path.is_file()}
+            changed=False
+            for path in root.rglob('*.json'):
+                value=json.loads(path.read_bytes());before=deepcopy(value);reseal(value,hashes)
+                if value!=before:path.write_bytes(encoded(value));changed=True
+            if not changed:break
+        admitted=load_project(root)
+        reference=dict(self.imported.asset_reference,sha256=hashlib.sha256(asset_path.read_bytes()).hexdigest())
+        with self.assertRaisesRegex(RigError,'fixture provenance'):
+            with resolve_captured_import(admitted,reference,root):self.fail('Native fixture was relabelled as nonfixture.')
+
     def test_actual_skinned_import_retains_exact_native_skeleton_pin(self):
         from rig_test_helpers import fixture
         from rig_gltf import export_gltf
