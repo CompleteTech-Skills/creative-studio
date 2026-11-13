@@ -266,8 +266,8 @@ def apply_displacement(obj, image, setting, *, max_vertices=1_000_000, max_exten
             {'enabled', 'texture', 'scale_meters', 'midlevel', 'max_subdivision'},
             'LOOKDEV_DISPLACEMENT', 'Unexpected displacement fields.')
     scale, midlevel, levels = (setting.get('scale_meters'), setting.get('midlevel'), setting.get('max_subdivision'))
-    require(setting.get('enabled') is True and type(scale) in (float, int) and math.isfinite(scale)
-            and abs(scale) <= 100 and type(midlevel) in (float, int) and 0 <= midlevel <= 1
+    require(setting.get('enabled') is True and type(scale) in (float, int) and abs(scale) <= 100
+            and math.isfinite(scale) and type(midlevel) in (float, int) and 0 <= midlevel <= 1
             and type(levels) is int and 0 <= levels <= 8,
             'LOOKDEV_DISPLACEMENT', 'Invalid displacement scale, midlevel or subdivision.')
     require(type(max_vertices) is int and 1 <= max_vertices <= 10_000_000 and

@@ -153,6 +153,18 @@ if mode == 'render':
     initial_mesh = displaced.data
     initial = [tuple(vertex.co) for vertex in initial_mesh.vertices]
     setting = dict(enabled=True, scale_meters=0.25, midlevel=0.5, max_subdivision=0)
+    for excessive_scale in (10**400, -(10**400), 10**6000, -(10**6000)):
+        before_objects = len(bpy.data.objects)
+        before_textures = len(bpy.data.textures)
+        try:
+            apply_displacement(displaced, image, dict(setting, scale_meters=excessive_scale))
+            raise AssertionError('An excessive displacement scale was admitted')
+        except RigError as exc:
+            assert exc.report['code'] == 'LOOKDEV_DISPLACEMENT'
+        assert displaced.data == initial_mesh
+        assert [tuple(vertex.co) for vertex in initial_mesh.vertices] == initial
+        assert len(bpy.data.objects) == before_objects
+        assert len(bpy.data.textures) == before_textures
     try:
         apply_displacement(displaced, image, setting, max_vertices=1)
         raise AssertionError('Exceeded vertex budget accepted')
