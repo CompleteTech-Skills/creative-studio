@@ -11,7 +11,7 @@ GROUPS={
  'skinning':['test_rig_skinning.py','test_rig_weight_input_boundaries.py'],
  'animation-ik':['test_rig_controls.py','test_rig_animation.py','test_rig_specializations.py','test_rig_morph_authoring.py','test_rig_state_runtime.py'],
  'interoperability':['test_rig_interop.py','test_rig_import_transforms.py','test_rig_material_validation.py','test_rig_texture_integrity.py','test_rig_jpeg.py'],
- 'operations-archive':['test_rig_correction_validation.py','test_rig_workflow.py','test_rig_http.py','test_rig_render.py']}
+ 'operations-archive':['test_rig_transactions.py','test_rig_correction_validation.py','test_rig_workflow.py','test_rig_http.py','test_rig_render.py']}
 
 
 def main():
