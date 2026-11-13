@@ -134,8 +134,10 @@ class Compiler(unittest.TestCase):
             with self.assertRaises(ValueError):validate_plan(changed)
 
     def test_duplicate_native_controls_rejected(self):
-        effects=[default_effect('volumetric-fog','fog-a'),default_effect('volumetric-fog','fog-b')]
-        effects[1]['order']=1;registry,stack=bundle(effects)
-        with self.assertRaises(RigError):compile_plan(registry,stack,request(),inventory())
+        for effect_type in ('volumetric-fog','exposure','tone-map'):
+            effects=[default_effect(effect_type,'control-a'),default_effect(effect_type,'control-b')]
+            effects[1]['order']=1;registry,stack=bundle(effects)
+            with self.subTest(effect_type=effect_type),self.assertRaises(RigError):
+                compile_plan(registry,stack,request(),inventory())
 
 if __name__=='__main__':unittest.main()

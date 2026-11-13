@@ -89,11 +89,14 @@ def compile_plan(registry, stack_reference, request, probe, *, input_bytes=None)
               configuration_sha256=object_hash({path:hashlib.sha256(data).hexdigest() for path,data in configuration.items()}),
               probe_sha256=object_hash(probe),adapter_sha256=adapter_hash(),stack=deepcopy(stack_reference),sources=[],camera=request['camera'],dof=None,fog=None,disabled=[],
               effective_settings={})
+    mapped_controls=set()
     for effect in effects:
         validate_document(effect)
         operation=effect['operation'];name=operation['type'];params=operation['parameters']
         require(name in MAPPED_EFFECTS,'CINEMATICS_UNSUPPORTED','Cinematic effect has no verified native mapping: '+name)
         require(probe['effects'][name]['available'],'CINEMATICS_UNSUPPORTED','Blender lacks '+name+': '+probe['effects'][name]['method'])
+        require(name not in mapped_controls,'CINEMATICS_CONFLICT','Multiple native controls for '+name+' are ambiguous.')
+        mapped_controls.add(name)
         plan['sources'].append(registry.reference(effect['id'],effect['version']))
         if name=='exposure':
             effective['settings']['exposure']=params['stops']

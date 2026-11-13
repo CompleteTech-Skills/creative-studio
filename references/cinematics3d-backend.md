@@ -34,7 +34,7 @@ with the referenced native Camera3D optics, and world volumetric fog.
 Projection gate and shift conversion use the canonical Camera3D `optical_plan`;
 the fixed worker transports its computed native values. The worker
 reads back mapped properties and fails on clamping. Object-local global effects,
-multiple competing optical/volume controls, unsupported engines, motion blur
+multiple competing native controls for the same property, unsupported engines, motion blur
 and other unmapped effects reject explicitly. Disabled effects remain in the
 retained source configuration and produce no native operation.
 
