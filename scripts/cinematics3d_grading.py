@@ -12,6 +12,8 @@ import cinematics3d_color as color
 from rig_errors import object_hash
 
 MAX_OPERATIONS = 32
+LUT_PARSE_EXPANSION = 64
+LUT_PARSE_RESERVE = 64 * 1024
 KINDS = {'exposure', 'lift-gamma-gain', 'contrast', 'saturation', 'vibrance',
          'temperature-tint', 'hue', 'channel-matrix', 'tonal-balance', 'curves', 'lut'}
 
@@ -37,6 +39,10 @@ def import_cube(root, path, *, working_space, interpolation='linear'):
     _need(interpolation == 'linear', 'only explicit linear LUT interpolation is supported')
     _need(Path(path).suffix.lower() == '.cube', 'only CUBE LUTs are supported')
     payload = color._bytes(root, path, color.MAX_FILE_BYTES)
+    return _cube_inventory(payload, path, working_space, interpolation)
+
+
+def _cube_inventory(payload, path, working_space, interpolation):
     color._lut(payload, '.cube')
     headers = {}
     for line in payload.decode('utf-8').splitlines():
@@ -129,10 +135,14 @@ def make_grade(*, working_space, operations, scope='shot', source_id, intensity=
 
 
 def _lut_pixels(root, inventory, rgb):
-    current = import_cube(root, inventory['path'], working_space=inventory['input_space'], interpolation=inventory['interpolation'])
+    # A stale path must never increase the allocation admitted by this grade.
+    # Read at the recorded bound, verify exact bytes first, then parse only the
+    # single retained snapshot. Reopening through import_cube used the global
+    # 32 MiB limit before checking this much smaller inventory.
+    payload = color._bytes(root, inventory['path'], inventory['bytes'])
+    _need(len(payload) == inventory['bytes'] and color._hash(payload) == inventory['sha256'], 'LUT changed during snapshot')
+    current = _cube_inventory(payload, inventory['path'], inventory['input_space'], inventory['interpolation'])
     _need(current == inventory, 'LUT bytes or admission changed')
-    payload = color._bytes(root, inventory['path'], color.MAX_FILE_BYTES)
-    _need(color._hash(payload) == inventory['sha256'], 'LUT changed during snapshot')
     ocio = color._ocio()
     with tempfile.TemporaryDirectory(prefix='grade-lut-') as temporary:
         path = Path(temporary)/'grade.cube'; path.write_bytes(payload)
@@ -222,9 +232,10 @@ def apply_grade(root, grade, rgba, *, source_context, mask=None, max_work_bytes=
           and source_context['alpha_mode'] == 'straight',
           'grades require an explicitly declared straight scene-linear Rec.709 source')
     count = math.prod(rgba.shape[:-1])
-    lut_bytes = sum(op['parameters']['inventory']['bytes'] for op in grade['operations'] if op['enabled'] and op['kind'] == 'lut')
+    lut_work_bytes = sum(op['parameters']['inventory']['bytes']*LUT_PARSE_EXPANSION+LUT_PARSE_RESERVE
+                         for op in grade['operations'] if op['enabled'] and op['kind'] == 'lut')
     _need(type(max_work_bytes) is int and 0 < max_work_bytes <= color.MAX_WORK_BYTES
-          and 0 < count <= color.MAX_PIXELS and rgba.nbytes+count*256+lut_bytes*8 <= max_work_bytes, 'grading work budget exceeded')
+          and 0 < count <= color.MAX_PIXELS and rgba.nbytes+count*256+lut_work_bytes <= max_work_bytes, 'grading work budget exceeded')
     _need(bool(np.isfinite(rgba).all()) and bool(((rgba[..., 3] >= 0) & (rgba[..., 3] <= 1)).all()), 'invalid grade pixels')
     maximum = float(np.finfo(np.float32).max)
     _need(float(rgba.min()) >= -maximum and float(rgba.max()) <= maximum,

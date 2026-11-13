@@ -152,6 +152,23 @@ class GradingTests(unittest.TestCase):
             path.write_text('LUT_1D_SIZE 2\n0 0 0\n1 1 1\n')
             with self.assertRaises(ValueError): self.apply(root, plan, source)
 
+    def test_stale_lut_read_is_bounded_and_hash_checked_before_parser(self):
+        with tempfile.TemporaryDirectory(prefix='grade-tests-') as temporary:
+            root = Path(temporary).resolve(); path = root/'test.cube'
+            original = b'LUT_1D_SIZE 2\n0 0 0\n.5 .5 .5\n'
+            path.write_bytes(original)
+            lut = grade.import_cube(root, 'test.cube', working_space='Linear Rec.709')
+            plan = self.plan([self.operation('lut', {'inventory': lut})])
+            source = np.array([[.2,.4,.8,1.]], np.float32)
+            with patch.object(grade.color, '_bytes', side_effect=AssertionError('reader entered before work admission')):
+                with self.assertRaisesRegex(ValueError, 'work budget'):
+                    self.apply(root, plan, source, max_work_bytes=source.nbytes+256+len(original)*8)
+            for replacement in (original.replace(b'.5', b'.9'), b'x'*(len(original)+32768)):
+                path.write_bytes(replacement)
+                with patch.object(grade.color, '_lut', side_effect=AssertionError('parser entered before exact byte verification')):
+                    with self.assertRaises(ValueError):
+                        self.apply(root, plan, source)
+
     def test_real_3d_cube_lut_axis_order_matches_reference(self):
         with tempfile.TemporaryDirectory(prefix='grade-tests-') as temporary:
             root = Path(temporary).resolve()
