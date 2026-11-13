@@ -28,6 +28,7 @@ from rig_errors import RigError, decode_json, require, safe_path
 MAX_BODY = 4 * 1024 * 1024
 MAX_PREVIEW_BYTES = 64 * 1024 * 1024
 MAX_PREVIEW_VERTICES = 500_000
+MAX_COMPONENT_RESOURCE_BYTES = 64 * 1024 * 1024
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -94,7 +95,8 @@ def preview_snapshot(repository, snapshot):
                 limits['vertices'] = min(limits['vertices'], MAX_PREVIEW_VERTICES)
                 imported = load_character_model(path, limits=limits)
                 instances = sum(asset_identity(node['asset']) == identifier
-                                for node in scene['nodes'] if node.get('asset'))
+                                for node in scene['nodes'] if node.get('asset') and
+                                'source_component' not in node.get('metadata', {}))
                 projected_vertices += imported.geometry.vertex_count * instances
                 require(projected_vertices <= MAX_PREVIEW_VERTICES, 'EDITOR3D_VIEW_LIMIT',
                         'Instanced geometry exceeds the 500,000-vertex viewport budget.')
@@ -124,6 +126,10 @@ def preview_snapshot(repository, snapshot):
                                              materials=geometry.materials, images=images)
             except (RigError, ValueError, OSError) as error:
                 assets[identifier] = dict(format='unavailable', message=str(error))
+        from editor3d_components import project_components
+        components, component_vertices = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices,
+            max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES)
+    result['viewport_nodes'] = components
     result['viewport_assets'] = assets
     result['preview'] = dict(backend='three-0.180.0', offline_render=False,
                              source_sha256=snapshot['sha256'])
@@ -137,7 +143,16 @@ class EditorServer(HTTPServer):
     def __init__(self, repository, *, port=0, token=None, workers=4, routes=None):
         require(isinstance(workers, int) and 1 <= workers <= 8, 'EDITOR3D_VIEW_WORKERS', 'Use 1–8 workers.')
         self.repository = repository
-        self.routes = dict(routes or {})
+        # The standard editor launch enables the installed native timeline UI.
+        # Register its fixed handlers at the same boundary as explicit extensions.
+        self.routes = {'render/capabilities': lambda server,body: dict(
+            available=False,rendering='unavailable',executed=False,
+            diagnostic='Rendering is unavailable for this session. Open a session with a configured native renderer.')}
+        if Path(__file__).with_name('editor3d_timeline.py').is_file():
+            from editor3d_timeline import routes as timeline_routes
+            self.routes.update(timeline_routes())
+
+        self.routes.update(routes or {})
         self.upload_directory = tempfile.TemporaryDirectory(prefix="hatch-editor-uploads-")
         self.uploads = {}
         self.upload_lock = threading.Lock()
