@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Hatch Scene Editor</title>
+    <link rel="stylesheet" href="/editor/editor.css" />
+    <script type="importmap">
+      { "imports": { "three": "/vendor/build/three.module.min.js" } }
+    </script>
+  </head>
+  <body>
+    <header>
+      <strong>Hatch Scene Editor</strong><span id="revision">Connecting</span
+      ><span class="approximation">WebGL preview · not an offline render</span>
+    </header>
+    <nav aria-label="Scene tools">
+      <button id="undo">Undo</button><button id="redo">Redo</button
+      ><button id="refresh">Reload saved state</button
+      ><select id="tool" aria-label="Transform tool">
+        <option value="translate">Move (G)</option>
+        <option value="rotate">Rotate (R)</option>
+        <option value="scale">Scale (S)</option></select
+      ><select id="space" aria-label="Transform space">
+        <option value="world">World</option>
+        <option value="local">Local</option></select
+      ><label
+        >Snap
+        <input
+          id="snap"
+          type="number"
+          min="0"
+          max="100"
+          step="0.1"
+          value="0"
+          aria-label="Grid snap in meters" /></label
+      ><select id="view" aria-label="View direction">
+        <option value="perspective">Perspective</option>
+        <option value="front">Front</option>
+        <option value="back">Back</option>
+        <option value="left">Left</option>
+        <option value="right">Right</option>
+        <option value="top">Top</option>
+        <option value="bottom">Bottom</option>
+        <option value="camera">Active camera</option></select
+      ><button id="frame">Frame selection (F)</button
+      ><button id="frame-all">Frame scene</button
+      ><button id="bookmark">Save view</button
+      ><button id="recall">Recall view</button
+      ><select id="shading" aria-label="Preview shading">
+        <option value="material">Material</option>
+        <option value="solid">Solid</option>
+        <option value="wireframe">Wireframe</option>
+        <option value="normals">Normals</option>
+      </select>
+    </nav>
+    <main>
+      <aside aria-label="Scene hierarchy">
+        <label
+          >Filter
+          <input id="filter" type="search" aria-label="Filter scene objects"
+        /></label>
+        <div class="selection-tools">
+          <button id="all">All</button><button id="none">None</button
+          ><button id="invert">Invert</button
+          ><button id="children">Children</button
+          ><button id="parent-select">Parent</button
+          ><button id="same-type">Same type</button>
+        </div>
+        <div id="outliner" role="tree" aria-label="Scene objects"></div>
+        <div id="asset-browser"></div>
+        <h2>Collections</h2>
+        <div id="collections"></div>
+      </aside>
+      <section id="viewport" aria-label="3D viewport" tabindex="0">
+        <div id="view-label">Perspective</div>
+        <div id="guides" aria-hidden="true"></div>
+        <div id="diagnostic" role="alert" hidden></div>
+      </section>
+      <aside id="inspector" aria-label="Object inspector">
+        <h2 id="selected-name">Select an object</h2>
+        <p id="selected-type"></p>
+        <label>Name <input id="name" maxlength="4096" /></label
+        ><label
+          >Parent
+          <select id="parent"></select
+        ></label>
+        <div id="transform-fields"></div>
+        <label><input id="visible" type="checkbox" />Visible in editor</label
+        ><label
+          ><input id="render-visible" type="checkbox" />Visible in render</label
+        ><label><input id="locked" type="checkbox" />Locked</label
+        ><button id="reset">Reset transform</button
+        ><button id="copy">Copy transform</button
+        ><button id="paste">Paste transform</button
+        ><button id="ground">Align to ground</button
+        ><button id="hide">Hide selection</button
+        ><button id="isolate">Isolate selection</button
+        ><button id="show-all">Show all</button>
+        <pre id="details"></pre>
+        <div id="native-inspectors"></div>
+        <h2>Overlays</h2>
+        <div id="overlay-controls"></div>
+        <h2>Playback</h2>
+        <select id="clip" aria-label="Imported animation">
+          <option value="">No clip</option></select
+        ><button id="play">Play</button
+        ><input
+          id="time"
+          aria-label="Animation time seconds"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0"
+        /><output id="clock">0 s</output>
+        <p class="note">
+          Imported clip playback is a preview. Pose keyframing and production
+          rendering use their native owners.
+        </p>
+      </aside>
+    </main>
+    <footer>
+      <span id="status" role="status">Loading saved scene…</span
+      ><span id="stats"></span>
+    </footer>
+    <script type="module" src="/editor/editor.js"></script>
+  </body>
+</html>
