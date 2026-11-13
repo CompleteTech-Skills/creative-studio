@@ -43,7 +43,26 @@ Immutable example fixtures and retained validation evidence preserve their autho
 
 Shared JSON ingestion bounds document size in encoded bytes and nesting, rejects duplicate keys and nonfinite numbers, and reports decoder failures as structured `RIG_JSON` errors. This includes the interpreter's decimal-integer conversion limit; it does not disable or raise that resource limit. String payloads count UTF-8 bytes in bounded chunks before parsing, matching byte-payload admission without allocating a full encoded copy. Invalid raw Unicode encoding produces `RIG_JSON`; JSON escape spelling retains its prior parsing semantics. Existing specific duplicate-key, nonfinite, nesting and size diagnostic codes remain distinct. Invalid input is rejected before a CLI configuration/correction operation persists state.
 
-Transforms must be finite and nonsingular. Rest transforms that contain shear or a reflection are rejected for the skeletal core; apply those transforms in an editor first. Static reflected geometry is baked with corrected winding. Original files are copied byte for byte and hash checked. `identity.json` locks the source identity, origin, fixture classification and import scale. An imported procedural fixture stays a fixture when exported and reimported.
+Transforms must be finite and nonsingular. Rest transforms that contain shear or a reflection are rejected for the skeletal core; apply those transforms in an editor first. Static reflected geometry is baked with corrected winding. Original files are copied byte for byte and hash checked. `identity.json` locks the source identity, origin, fixture classification and import scale. Its complete version-1 shape and field types are validated independently of its hash; a self-consistent hash cannot make malformed metadata valid. An imported procedural fixture stays a fixture when exported and reimported.
+
+glTF node admission retains the existing `abs(det(linear)) > 1e-12` admission,
+and additionally admits smaller determinants when the determinant after dividing
+each column by its largest absolute component exceeds `1e-12` in absolute value.
+This extends admission to well-conditioned small unit conversions without
+narrowing existing static shear or anisotropy support. It does not establish a
+new scale-invariant conditioning policy for previously accepted transforms.
+Zero axes and newly admitted almost dependent directions remain rejected.
+The complete inverse must remain finite in float64. Extreme scales whose raw determinant underflows or
+overflows, or whose inverse directions exceed the float64 squared-normalization
+budget, fail with `RIG_GLTF_NUMERIC_RANGE` before importing mesh data. The latter
+bound is `max(abs(inverse_linear)) <= sqrt(float64_max)/6`; a unit direction's
+squared transformed length is bounded by 27 times that maximum component squared.
+This is a representability limit, not a declaration of mathematical singularity.
+The same checks cover accumulated hierarchy transforms and the explicit import
+unit conversion, before decoding geometry or creating a rig run. Scene-graph
+callers still receive the original, unscaled source-world matrices.
+Static reflections and shear retain their existing
+import behavior; this does not relax the skeletal rest-transform rules above.
 
 The canonical definitions live in `scripts/rig_contracts.py`. Generated Draft 2020-12 schemas under `profiles/rig*.schema.json` cover rigs, templates, clips, poses, retarget profiles, corrections, reviews, jobs and export receipts. Nested definitions cover skeletons, bones, skin bindings and controllers. JSON Schema checks structure and field types; the runtime also checks reference graphs, unit quaternions, bind reconstruction, source hashes and safe local resource paths. See the [contract acceptance audit](rig-contracts-acceptance.md) for the current compatibility baseline and requirement-to-test mapping.
 
@@ -60,6 +79,8 @@ python scripts/rig.py test-motion --run-dir output/character
 ```
 
 GLB/glTF import handles real mesh primitives and scene instances, local or embedded buffers, interleaved and sparse accessors, PNG/JPEG textures, material references, UVs, normals, tangents, morph deltas/default weights, compatible skins and animation channels. The importer preserves an existing compatible skeleton. `auto` reports preservation instead of replacing it; replacement needs `--replace`. Unsupported required extensions, inconsistent bind shapes and missing dependencies fail with actionable errors.
+
+Use a new, nonexistent run destination. Import captures and decodes a private exact-byte source closure, builds and reopens the complete run in a sibling staging directory, then publishes it with an exclusive rename. Changing the original source after capture cannot change the retained source or its provenance. Failure before publication leaves no partial run, and an existing or racing destination is preserved, including an empty directory. The persistent sibling writer-lock file is retained for safe future locking.
 
 When static glTF node transforms are baked into canonical geometry, normals use the inverse transpose while tangent XYZ uses the forward linear transform. Base vectors are normalized, and their morph deltas use the same per-vertex normalization denominator, preserving the direction of the transformed base plus weighted deltas. Reflections retain the existing triangle-winding correction and invert tangent handedness. This assumes an authored valid normal/tangent basis; the importer does not infer UV tangents or repair artistic shading. Direction morphs require their corresponding base attribute, and zero-length direction attributes are rejected. Original source bytes remain unchanged. These attribute checks do not establish renderer or skinned shading equivalence; independent rendering remains a separate gate.
 
