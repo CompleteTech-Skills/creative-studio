@@ -635,6 +635,47 @@ class SceneServiceTests(unittest.TestCase):
             self.assertTrue({track['target'] for track in clip['tracks']} <= targets)
         self.assertEqual(graph.animation_payloads(), exact_payloads)
 
+    def test_prefab_batch_snapshot_preserves_noncanonical_source_and_mapped_clip_bytes(self):
+        for duplicate in (False, True):
+            with self.subTest(duplicate=duplicate):
+                clip = deepcopy(self.bundle['documents']['example-animation.json'])
+                clip['id'] = 'owned-noncanonical-clip'
+                raw = (json.dumps(clip, indent=3)+'\n').encode()
+                path = 'animations/owned-noncanonical-clip/1.0.0.json'
+                reference = dict(id=clip['id'], version=clip['version'], kind=clip['kind'],
+                    path=path, sha256=hashlib.sha256(raw).hexdigest())
+                scene = deepcopy(self.scene)
+                scene['nodes'][1]['animation_bindings'] = [dict(target='mesh', clip=reference,
+                    start_frame=0, end_frame=24, speed=1., loop=False)]
+                graph = SceneGraph(scene, animation_payloads={path:raw})
+                graph.replace_document(graph.document(), expected_revision=graph.revision)
+                library = PrefabLibrary.from_files(self.root/'source', self.bundle)
+                commands = []
+                if duplicate:
+                    commands.append(dict(operation='duplicate', parameters=dict(identifier='mesh', new_id='copy')))
+                commands.append(dict(operation='prefab-create', parameters=dict(root_id='copy' if duplicate else 'mesh',
+                    identifier='noncanonical-prefab', version='1.0.0')))
+                batch = apply_commands(graph, library, dict(schema_version=1, commands=commands))
+                self.assertEqual(batch['derived_documents'][path], raw)
+                destination = self.root/('noncanonical-batch-'+str(duplicate))
+                snapshot_project(self.root/'source', destination, graph, scene_path='example-scene.json',
+                    derived_documents=batch['derived_documents'])
+                reopened = load_project(destination)
+                self.assertEqual((destination/path).read_bytes(), raw)
+                self.assertEqual(reopened['inventory'][path]['sha256'], reference['sha256'])
+                for derived_path, document in graph.derived_documents().items():
+                    self.assertEqual((destination/derived_path).read_bytes(), canonical_bytes(document))
+                if duplicate:
+                    # Semantic JSON equality cannot replace a pinned byte identity.
+                    altered = dict(batch['derived_documents'])
+                    derived_path = next(iter(graph.derived_documents()))
+                    altered[derived_path] += b'\n'
+                    rejected = self.root/'changed-derived-must-not-publish'
+                    with self.assertRaises(RigError):
+                        snapshot_project(self.root/'source', rejected, graph, scene_path='example-scene.json',
+                            derived_documents=altered)
+                    self.assertFalse(rejected.exists())
+
     def test_prefab_clip_admission_failure_preserves_catalog_and_graph(self):
         scene = deepcopy(self.scene)
         reference = self.bundle['project']['animations'][0]
