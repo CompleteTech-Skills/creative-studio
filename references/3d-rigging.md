@@ -354,6 +354,6 @@ around each wing bone's local length axis) and `wing_side` (`both`, `left` or
 `right`). Existing joint constraints still apply. They are available through
 `rig_facial.appendage_controls` and the `appendages` object in a pose-operation
 request. An unsupported requested side fails rather than inventing a wing. A
-one-sided pose does not automatically mirror to the other side. Finger spread and
+one-sided pose does not automatically mirror to the other side. Wing selection and rotation direction use anatomical roles, so imported joint IDs do not need side suffixes and renaming an ID does not change the motion. Finger spread and
 tail phase follow parent-to-child hierarchy, so reordering the serialized bone
 array does not change those authored motions.

@@ -161,7 +161,7 @@ def appendage_controls(rig, pose: dict, *, time=0., tail_curl=0., tail_wag=0.,
         angle += secondary*.15*math.sin(time*7-i*.6+phase)*math.exp(-.35*time)
         result = rotate_bone(rig.skeleton, result, bone['id'], qmul(axis_angle([1, 0, 0], tail_curl*.4), axis_angle([0, 0, 1], angle)))
     for bone in wings:
-        sign = -1 if bone['id'].endswith('.left') else 1
+        sign = -1 if bone['role'].endswith('.left') else 1
         angle = sign*(wing_flap*.7*math.sin(2*math.pi*time)+wing_fold*.7)
         # Imported joint frames need not point local +Y along the authored
         # bone. Derive the length axis from rest geometry in that joint frame.
