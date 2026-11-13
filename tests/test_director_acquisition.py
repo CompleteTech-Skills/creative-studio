@@ -2,6 +2,8 @@
 import argparse
 from copy import deepcopy
 import hashlib
+from functools import wraps
+import os
 import json
 from pathlib import Path
 import subprocess
@@ -21,7 +23,7 @@ from rig_errors import RigError
 class DirectorAcquisitionTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.parent=Path(self.temp.name);self.root=self.parent/'run'
+        self.parent=Path(self.temp.name).resolve();self.root=self.parent/'run'
         profile=self.parent/'profile.json';hatch.atomic(profile,small_profile())
         hatch.prepare(self.root,argparse.Namespace(replace_inputs=False,fixture_mode=True,
             profile=str(profile),pet_name='Gateway fixture',pet_notes='Explicit synthetic lifecycle test',
@@ -110,6 +112,23 @@ import director_acquisition
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
 
+def secure_artifact_test(test):
+    """Assert the real platform boundary before exercising supported operations."""
+    @wraps(test)
+    def run(self):
+        from director_contracts import _read_artifact
+        before=(self.root/'imagegen-jobs.json').read_bytes()
+        try:
+            _read_artifact(self.root,self.spec)
+        except RigError as error:
+            self.assertEqual(error.report['code'],'DIRECTOR_PLATFORM')
+            self.assertFalse(hasattr(os,'O_NOFOLLOW') and os.open in os.supports_dir_fd)
+            self.assertEqual((self.root/'imagegen-jobs.json').read_bytes(),before)
+            return
+        return test(self)
+    return run
+
+
 class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
     def setUp(self):
         DirectorAcquisitionTests.setUp(self)
@@ -135,6 +154,7 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
             provider_request_id=None,candidates=candidates or [],diagnostics=diagnostics or [])
         return value
 
+    @secure_artifact_test
     def test_canonical_claim_replay_and_immutable_evidence(self):
         from director_contracts import _read_artifact, validate_method_result
         prepared=self.adapter.prepare(self.request('prepare'))
@@ -147,6 +167,7 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         self.assertEqual(_read_artifact(self.root,initial),initial_bytes)
         validate_method_result('AcquisitionGateway.claim',replay,request)
 
+    @secure_artifact_test
     def test_canonical_ingest_exact_source_and_receipt(self):
         token=self.adapter.claim(self.request('claim'))['value']['claim_id']
         job=hatch.job_for(hatch.manifest(self.root),'base')
@@ -159,6 +180,7 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         self.assertTrue(result['value']['receipt']['fixture'])
         self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['source_origin'],'fixture')
 
+    @secure_artifact_test
     def test_canonical_uncertain_reason_survives_reopen(self):
         token=self.adapter.claim(self.request('claim'))['value']['claim_id']
         reason='Provider disconnected after submission; keep original ownership.'
@@ -173,6 +195,7 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         self.assertEqual(current['history'][-1]['reason'],reason)
         self.assertEqual(current['history'][-1]['event'],'outcome-uncertain')
 
+    @secure_artifact_test
     def test_canonical_rejects_stale_state_hash_and_wrong_spec_before_claim(self):
         for field,value in [('expected_state','generated'),('input_sha256','0'*64),('binding_id','wrong')]:
             request=self.request('claim');request['input'][field]=value
@@ -183,6 +206,7 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         with self.assertRaises(RigError):self.adapter.claim(request)
         self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['attempts'],0)
 
+    @secure_artifact_test
     def test_missing_source_does_not_release_claim(self):
         result=self.gateway.claim('base');token=result['claim_id']
         with self.assertRaises(RigError):
@@ -190,6 +214,7 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
                                 receipt=result['handoff']['receipt_template'],note='missing source')
         self.assertEqual(self.gateway.reconcile('base')['claim_id'],token)
 
+    @secure_artifact_test
     def test_production_claim_requires_both_explicit_policies_and_native_limits(self):
         from director_acquisition import AcquisitionGateway
         # Prepare a real native non-fixture run, but do not invoke any provider.
@@ -220,11 +245,13 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         self.assertFalse(result['value']['binding']['fixture'])
         self.assertEqual(result['usage']['provider_calls']['value'],0)
 
+    @secure_artifact_test
     def test_deadline_rejected_before_native_claim(self):
         request=self.request('claim');request['context']['deadline']='2000-01-01T00:00:00Z'
         with self.assertRaises(RigError):self.adapter.claim(request)
         self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['attempts'],0)
 
+    @secure_artifact_test
     def test_changed_exact_spec_cannot_reuse_native_acquisition(self):
         request=self.request('claim')
         first=self.adapter.claim(request)
@@ -235,6 +262,7 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
             self.adapter.claim(self.request('claim','running',first['value']['claim_id']))
         self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['attempts'],1)
 
+    @secure_artifact_test
     def test_deadline_checked_again_after_native_lock_wait(self):
         from contextlib import contextmanager
         from datetime import datetime,timedelta,timezone
@@ -252,6 +280,7 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
                 self.adapter.claim(request)
         self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['attempts'],0)
 
+    @secure_artifact_test
     def test_missing_inputs_allow_token_bound_recovery_and_known_failure(self):
         claim=self.adapter.claim(self.request('claim'))['value']['claim_id']
         reconcile=self.request('reconcile','running',claim)
@@ -272,6 +301,7 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         self.assertEqual(result['value']['native_state'],'failed')
         self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['status'],'failed')
 
+    @secure_artifact_test
     def test_canonical_spec_cannot_adopt_existing_unbound_native_claim(self):
         token=self.gateway.claim('base')['claim_id']
         with self.assertRaisesRegex(RigError,'cannot be relabeled'):
