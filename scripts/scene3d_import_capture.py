@@ -24,6 +24,7 @@ def resolve_captured_import(bundle, asset_reference, source_root, *, verified_in
     from scene3d_import import ImportedScene
     from rig_models import load_rig
     import numpy as np
+    asset_reference=deepcopy(asset_reference)
     require(isinstance(bundle, dict) and {'project','documents','inventory'} <= set(bundle),
             'Captured import requires a complete verified project bundle.')
     require(isinstance(asset_reference, dict) and set(asset_reference)=={'kind','id','version','path','sha256'}

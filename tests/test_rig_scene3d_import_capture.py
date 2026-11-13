@@ -55,6 +55,28 @@ class CapturedImportTests(unittest.TestCase):
             finally:path.write_bytes(original)
         self.assertEqual(path.read_bytes(),original)
 
+    def test_caller_asset_pin_mutation_after_preflight_cannot_change_admitted_identity(self):
+        from contextlib import contextmanager
+        from copy import deepcopy
+        from unittest.mock import patch
+        from scene3d_capture import capture_verified_files
+        root,bundle,graph=self.project()
+        expected=deepcopy(self.imported.asset_reference);caller_pin=deepcopy(expected)
+        @contextmanager
+        def capture_then_mutate(source,inventory):
+            with capture_verified_files(source,inventory) as private:
+                # Real captured bytes remain unchanged. Only the caller-owned
+                # mutable pin changes after portable-path/type preflight.
+                caller_pin['path']='../../unregistered-asset.json'
+                caller_pin['sha256']='0'*64
+                yield private
+        with patch('scene3d_capture.capture_verified_files',capture_then_mutate):
+            with resolve_captured_import(bundle,caller_pin,root) as resolved:
+                self.assertEqual(resolved['asset_reference'],expected)
+                self.assertEqual(resolved['imported'].asset_reference,expected)
+                self.assertTrue(evaluate_imported_vertices(graph,resolved['imported'],resolved['native_root'])['nodes'])
+        self.assertNotEqual(caller_pin,expected)
+
     def test_changed_registered_bytes_and_wrong_asset_hash_reject(self):
         root,bundle,graph=self.project()
         record=next(item for item in self.imported.asset['dependencies'] if item['path'].endswith('/hierarchy.json'))
