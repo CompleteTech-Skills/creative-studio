@@ -84,6 +84,11 @@ class PackageTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError, 'extra'):
             verify_package(self.package)
 
+    def test_extra_empty_directories_are_rejected(self):
+        (self.package / 'unlisted-directory').mkdir()
+        with self.assertRaisesRegex(RigError, 'empty directory'):
+            verify_package(self.package)
+
     def test_lock_asset_identity_and_required_blob_cannot_be_omitted_by_resealed_index(self):
         original = self.read_index()
         index = deepcopy(original)

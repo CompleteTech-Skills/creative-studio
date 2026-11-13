@@ -27,6 +27,7 @@ MAX_FILES = 4096
 MAX_BYTES = 256 * 1024 * 1024
 MAX_FILE_BYTES = 64 * 1024 * 1024
 MAX_INDEX_BYTES = 4 * 1024 * 1024
+MAX_DIRECTORIES = 16384
 PACKAGE_TYPES = ('asset', 'collection', 'prefab', 'scene', 'project', 'library')
 
 
@@ -53,8 +54,14 @@ def _inventory(root):
     root = Path(root).absolute()
     if root.is_symlink() or not root.is_dir():
         fail('PATH', 'Package root must be an ordinary existing directory.')
-    result = set()
-    for current, directories, files in os.walk(root, followlinks=False):
+    result = set(); seen_directories = set()
+    def scan_failed(error):
+        raise error
+    for current, directories, files in os.walk(root, followlinks=False, onerror=scan_failed):
+        for name in directories:
+            seen_directories.add((Path(current) / name).relative_to(root).as_posix())
+            if len(seen_directories) > MAX_DIRECTORIES:
+                fail('LIMIT', 'Package directory count exceeds its bound.')
         for name in [*directories, *files]:
             path = Path(current) / name
             if path.is_symlink() or getattr(path.lstat(), 'st_file_attributes', 0) & 0x400:
@@ -67,6 +74,12 @@ def _inventory(root):
             result.add((Path(current) / name).relative_to(root).as_posix())
             if len(result) > MAX_FILES:
                 fail('LIMIT', 'Package has too many files.')
+    expected_directories = set()
+    for relative in result:
+        parts = relative.split('/')
+        expected_directories.update('/'.join(parts[:i]) for i in range(1, len(parts)))
+    if seen_directories != expected_directories:
+        fail('INVENTORY', 'Package has unexpected empty directory members.')
     _portable_inventory(result)
     return result
 
