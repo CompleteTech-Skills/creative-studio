@@ -103,7 +103,10 @@ class SpatialTests(unittest.TestCase):
         for origin,direction,limit in [([0,0,0],[0,0,0],1),([0,float('inf'),0],[1,0,0],1),([0,0,0],[1,0,0],-1)]:
             with self.assertRaises(RigError): index.raycast(origin,direction,max_distance=limit)
         with self.assertRaises(RigError): index.overlap(dict(minimum=[1,1,1],maximum=[0,0,0]))
-        with self.assertRaises(RigError): index.frustum([[0,0,0,0]]*6)
+        for invalid in ([[0,0,0,0]]*6, np.array(0), [['bad',0,0,0]]*6):
+            with self.assertRaises(RigError): index.frustum(invalid)
+        with self.assertRaises(RigError):
+            SpatialIndex(graph,{'mesh':dict(vertices=np.array(0),triangles=[[0,0,0]])})
 
     def test_snap_explicit_space_and_no_invalid_mutation(self):
         graph = self.graph()

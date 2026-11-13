@@ -137,6 +137,10 @@ class SpatialIndex:
                     'Invalid mesh node/fields.', 'SCENE3D_SPATIAL')
             require(isinstance(mesh['vertices'], (list,tuple,np.ndarray)) and
                     isinstance(mesh['triangles'], (list,tuple,np.ndarray)), 'Invalid mesh arrays.', 'SCENE3D_SPATIAL')
+            require(not isinstance(mesh['vertices'],np.ndarray) or mesh['vertices'].ndim>0,
+                    'Invalid vertex array shape.', 'SCENE3D_SPATIAL')
+            require(not isinstance(mesh['triangles'],np.ndarray) or mesh['triangles'].ndim>0,
+                    'Invalid triangle array shape.', 'SCENE3D_SPATIAL')
             total_vertices += len(mesh['vertices'])
             total_triangles += len(mesh['triangles'])
             require(total_vertices <= MAX_VERTICES and total_triangles <= MAX_TRIANGLES,
@@ -309,9 +313,13 @@ class SpatialIndex:
 
     def frustum(self, planes, *, exclude=(), visibility='all'):
         """AABB candidates inside inward world planes [nx, ny, nz, offset]."""
-        require(isinstance(planes,(list,tuple,np.ndarray)) and len(planes) == 6,
+        require(isinstance(planes,(list,tuple,np.ndarray)) and
+                (not isinstance(planes,np.ndarray) or planes.ndim>0) and len(planes) == 6,
                 'Frustum requires six planes.', 'SCENE3D_SPATIAL')
-        planes = np.asarray(planes,dtype=float)
+        try:
+            planes = np.asarray(planes,dtype=float)
+        except (TypeError,ValueError,OverflowError):
+            require(False, 'Invalid frustum plane values.', 'SCENE3D_SPATIAL')
         require(planes.shape == (6,4) and np.isfinite(planes).all() and
                 np.all(np.linalg.norm(planes[:,:3],axis=1)>EPS), 'Invalid frustum planes.', 'SCENE3D_SPATIAL')
         result = []
