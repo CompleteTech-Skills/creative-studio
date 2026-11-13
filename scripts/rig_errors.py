@@ -389,7 +389,7 @@ def slug(text: str) -> str:
 @contextmanager
 def job_lock(root: str | Path) -> Iterator[None]:
     """OS locks release on process exit; the lock inode is never replaced."""
-    root = Path(root).resolve()
+    root = normalize_root(root)
     root.parent.mkdir(parents=True, exist_ok=True)
     lock = root.parent / ('.' + root.name + '.rig.lock')
     require(not lock.is_symlink(), 'RIG_SYMLINK', 'Lock path cannot be a symbolic link.')
