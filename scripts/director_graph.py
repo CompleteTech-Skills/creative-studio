@@ -272,12 +272,14 @@ def compile_graph(request, root, *, now=None):
             elif node['resource_class'] == 'gpu':
                 resource_estimate['max_gpu_seconds'] = node['estimated_seconds']
         if node['resource_class'] == 'provider':
-            resource_estimate['max_provider_calls'] = 1
+            resource_estimate['max_provider_calls'] = provider_calls
         assert_admission(snapshot, node['required_capabilities'], evidence_root=root, now=now,
                          resources=resource_estimate,
                          network_policy=request['context']['policy']['network'],
                          budget_reservation_id=request['context']['budget_reservation_id'],
-                         allow_unknown_price=request['context']['policy']['paid'] == 'allow-unknown-price')
+                         allow_unknown_price=request['context']['policy']['paid'] == 'allow-unknown-price',
+                         budget_currency=data['budget']['currency'],budget_amount=data['budget']['max_amount'],
+                         paid_policy=request['context']['policy']['paid'])
         parent_ids = sorted(set(predecessors[node_id]))
         keys[node_id] = object_hash(dict(node=node, parents={key: keys[key] for key in parent_ids},
                                          incoming=[edge for edge in plan['edges'] if edge['target'] == node_id],

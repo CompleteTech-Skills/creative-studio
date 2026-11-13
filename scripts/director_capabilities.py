@@ -8,10 +8,12 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import hashlib
 import importlib.metadata
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -277,7 +279,9 @@ def probe(request, evidence_root, *, configuration=None):
                     record['discovered']=bool(provider and provider['configured'])
                     record['reason']='missing-planning-credentials' if not record['discovered'] else 'remote-execution-not-probed'
                     record['price_availability']='known' if provider and provider.get('price_per_call') is not None else 'unknown'
-                    if provider:record['provider_id']=provider['id']
+                    if provider:
+                        record.update(provider_id=provider['id'],price_per_call=provider.get('price_per_call'),
+                                      currency=provider.get('currency'))
                     record['fallback']='structured-local-plan'  # This changes planning, never substitutes 2D for 3D.
                 if executable:record['dependencies']['executable']=sha256(executable)
                 if operation.startswith('importer.'):
@@ -332,9 +336,24 @@ def probe(request, evidence_root, *, configuration=None):
     return result
 
 
+def _provider_receipt_price(evidence, limits):
+    """Read public pricing only after the caller verifies the execution receipt."""
+    if evidence.get('price_availability')!='known':
+        _need(evidence.get('price_per_call') is None and evidence.get('currency') is None,
+              'PRICE','Unknown provider pricing cannot declare a price or currency.')
+        return None
+    price=evidence.get('price_per_call');currency=evidence.get('currency')
+    _need(type(price) in (int,float) and 0<=price<=1e9 and math.isfinite(price),
+          'PRICE','Retained provider price must be finite and nonnegative.')
+    _need(isinstance(currency,str) and len(currency)==3 and currency.isalpha() and currency.isupper()
+          and currency==limits['currency'], 'PRICE','Retained provider currency differs from policy.')
+    return price,currency
+
+
 def assert_admission(snapshot, required_operations, *, evidence_root=None, now=None,
                      resources=None, network_policy='deny', price_per_call=None,
-                     budget_reservation_id=None, allow_unknown_price=False):
+                     budget_reservation_id=None, allow_unknown_price=False,
+                     budget_currency=None, budget_amount=None, paid_policy='deny'):
     """Fail closed for missing/stale/unexecuted native capabilities or resources."""
     _need(isinstance(snapshot,dict),'SCHEMA','Capability snapshot must be an object.')
     if snapshot.get('kind')=='director-result':
@@ -357,6 +376,7 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
         _need(item is not None and item['status']=='available' and item['execution_verified'],'UNAVAILABLE','Required capability is unverified: '+operation)
         _need(bool(item['probe_evidence']),'EVIDENCE','Execution verification requires nonempty retained evidence.')
         _need(evidence_root is not None,'EVIDENCE_ROOT','Admission requires the exact retained evidence root.')
+        receipt_prices=[]
         if evidence_root is not None:
             from director_contracts import _read_artifact
             for reference in item['probe_evidence']:
@@ -367,13 +387,37 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                 _need(isinstance(payloads,list) and payloads==reference['dependencies'],
                       'EVIDENCE','Retained receipt payloads differ from the capability dependency references.')
                 for payload in payloads:_read_artifact(evidence_root,payload)
+                if operation=='planning.provider':
+                    receipt_prices.append(_provider_receipt_price(evidence,item['limits']))
         for resource,amount in (resources or {}).items():
             _need(resource in LIMITS and type(amount) in (int,float) and amount>=0,'RESOURCE','Unknown or invalid resource estimate.')
             maximum=item['limits'][resource]
             _need(maximum is not None and amount<=maximum,'RESOURCE','Resource estimate exceeds capability bound: '+resource)
         if operation=='planning.provider':
             _need(network_policy=='allow-configured' and budget_reservation_id is not None,'POLICY','Remote planning requires configured network authority and a reservation.')
-            _need(price_per_call is not None or allow_unknown_price,'PRICE','Unknown provider price requires explicit authority.')
+            _need(bool(receipt_prices) and all(p==receipt_prices[0] for p in receipt_prices),
+                  'EVIDENCE','Provider execution receipts disagree about pricing.')
+            known=receipt_prices[0]
+            _need(price_per_call is None or known is not None and type(price_per_call) in (int,float)
+                  and 0<=price_per_call<=1e9 and math.isfinite(price_per_call) and price_per_call==known[0],
+                  'PRICE','Explicit provider price differs from retained execution evidence.')
+            _need(known is not None or allow_unknown_price,'PRICE','Unknown provider price requires explicit authority.')
+            if known is not None:
+                price,currency=known
+                _need(price==0 or paid_policy in ('bounded','allow-unknown-price'),
+                      'POLICY','Nonzero provider pricing requires explicit paid authority.')
+                _need(budget_currency==currency and type(budget_amount) in (int,float)
+                      and 0<=budget_amount<=1e9 and math.isfinite(budget_amount),
+                      'PRICE','Known provider price requires a matching currency and bounded amount.')
+                calls=(resources or {}).get('max_provider_calls',1)
+                _need(type(calls) is int and calls>=0,'RESOURCE','Provider call estimate must be a nonnegative integer.')
+                _need(Decimal(str(price))*calls<=Decimal(str(budget_amount)),
+                      'RESOURCE','Estimated provider amount exceeds budget.')
+                policy_amount=item['limits']['max_amount']
+                _need(type(policy_amount) in (int,float) and 0<=policy_amount<=1e9 and math.isfinite(policy_amount),
+                      'PRICE','Known provider price requires a finite bounded capability amount.')
+                _need(Decimal(str(price))*calls<=Decimal(str(policy_amount)),
+                      'RESOURCE','Estimated provider amount exceeds capability policy.')
     return deepcopy(value)
 
 

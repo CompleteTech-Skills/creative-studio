@@ -256,6 +256,39 @@ class DirectorGraphTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'provider invocations exceed budget'):
             self.compile()
 
+    def test_known_provider_receipt_pricing_fits_bounded_aggregate_budget(self):
+        # Engineering contract fixture only: no provider execution or payment.
+        limits={**deepcopy(self.request['input']['budget']),'max_provider_calls':3,
+                'currency':'USD','max_amount':1}
+        receipt=self.write('provider-pricing', dict(operation='planning.provider',
+                   status='available',execution_verified=True,fixture=True,version='fixture',
+                   policy_limits=limits,payloads=[],price_availability='known',
+                   price_per_call=.25,currency='USD'),kind='evidence')
+        self.snapshot['capabilities']=[dict(operation='planning.provider',version='fixture',
+                   status='available',execution_verified=True,limits=limits,probe_evidence=[receipt])]
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        for node in self.plan['nodes']:
+            node.update(operation='PlanningProvider.generate_structured',native_owner='PlanningProvider',
+                        output_schema='planning-artifact',resource_class='provider',
+                        required_capabilities=['planning.provider'])
+        self.request['input']['budget']=deepcopy(limits)
+        self.request['context']['policy'].update(network='allow-configured',paid='bounded',
+                    policy_ref=self.write('paid-policy',{'fixture':True},kind='policy'))
+        self.request['context']['budget_reservation_id']='fixture-reservation'
+        self.refresh()
+        self.assertEqual(self.compile()['status'],'succeeded')
+        self.request['context']['policy']['paid']='deny'
+        with self.assertRaisesRegex(ValueError,'paid authority'):
+            self.compile()
+        self.request['context']['policy']['paid']='bounded'
+        self.request['input']['budget']['max_amount']=.5
+        with self.assertRaisesRegex(ValueError,'provider amount exceeds budget'):
+            self.compile()
+        self.request['input']['budget']['max_amount']=1
+        self.request['input']['budget']['currency']='EUR'
+        with self.assertRaisesRegex(ValueError,'matching currency'):
+            self.compile()
+
     def test_traceability_rejects_unbound_plan_and_graph(self):
         graph = self.compile()['value']
         altered = deepcopy(self.plan)
