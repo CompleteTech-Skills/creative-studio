@@ -16,6 +16,78 @@ from rig_test_helpers import fixture
 
 ROOT=Path(__file__).resolve().parents[1]
 
+class GeneratorAdmissionTests(unittest.TestCase):
+    """Generator admission and actual CLI rejection, without native execution."""
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name)
+        self.library=AssetLibrary(self.root/'library',create=True)
+        self.pipeline=ImportPipeline(self.library)
+        self.license=self.root/'license.txt';self.license.write_bytes(b'Fixture license: CC0.\n')
+        self.source=self.root/'original.bin';self.source.write_bytes(b'Original source stays untouched.')
+        base=json.loads((ROOT/'examples/asset-library-foundation/manifest.json').read_text())
+        self.request=dict(identity=base['identity'],version='1.0.0',metadata=base['metadata'],
+            license_file=str(self.license),fixture=True,
+            parameters=dict(primitive='box',dimensions=[1,2,3],color=[.2,.4,.6,1],animated=False))
+
+    def assert_unpublished_and_original(self):
+        self.assertEqual(self.license.read_bytes(),b'Fixture license: CC0.\n')
+        self.assertEqual(self.source.read_bytes(),b'Original source stays untouched.')
+        with sqlite3.connect(self.library.database) as db:
+            for table in ('versions','blobs'):
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM '+table).fetchone()[0],0)
+
+    def test_invalid_generator_components_are_structured_before_native_execution(self):
+        from unittest.mock import patch
+        huge=json.loads('1'+'0'*400)
+        for field in ('dimensions','color'):
+            for value in (huge,-huge,True,False,'1',None,[],{},float('inf'),float('-inf'),float('nan')):
+                with self.subTest(field=field,value=repr(value)):
+                    request=copy.deepcopy(self.request);request['parameters'][field][0]=value
+                    with patch.object(self.pipeline.blender,'execute') as execute:
+                        with self.assertRaises(RigError) as caught:self.pipeline.generate(**request)
+                        self.assertEqual(caught.exception.report['code'],'LIBRARY_IMPORT_REQUEST')
+                        execute.assert_not_called()
+                    self.assert_unpublished_and_original()
+
+    def test_generator_outside_profile_is_rejected(self):
+        for field,values in [('dimensions',(0,.000999,1000.001)),('color',(-.001,1.001))]:
+            for value in values:
+                with self.subTest(field=field,value=value):
+                    request=copy.deepcopy(self.request);request['parameters'][field][0]=value
+                    with self.assertRaises(RigError):self.pipeline.generate(**request)
+                    self.assert_unpublished_and_original()
+
+    def test_generator_endpoints_reach_native_dispatch_without_coercion(self):
+        from unittest.mock import patch
+        class DispatchObserved(Exception):pass
+        for dimensions,color in [([.001,1000,1],[0,1,0.,1.]),([1.,2.,3.],[.2,.4,.6,1])]:
+            request=copy.deepcopy(self.request)
+            request['parameters'].update(dimensions=dimensions,color=color)
+            with patch.object(self.pipeline.blender,'execute',side_effect=DispatchObserved) as execute:
+                with self.assertRaises(DispatchObserved):self.pipeline.generate(**request)
+                self.assertEqual(execute.call_args.kwargs['parameters'],request['parameters'])
+            self.assert_unpublished_and_original()
+
+    def test_actual_generate_cli_rejects_401_digit_components_without_publication(self):
+        import subprocess
+        import sys
+        for field in ('dimensions','color'):
+            with self.subTest(field=field):
+                request=copy.deepcopy(self.request)
+                request['parameters'][field][0]=json.loads('1'+'0'*400)
+                request_path=self.root/'request.json';request_path.write_text(json.dumps(request))
+                completed=subprocess.run([sys.executable,str(ROOT/'scripts/asset_library_import.py'),
+                    'generate','--library',str(self.library.root),'--request',str(request_path)],
+                    capture_output=True,text=True,timeout=30,cwd=ROOT)
+                self.assertEqual(completed.returncode,2,completed.stderr)
+                result=json.loads(completed.stdout)
+                self.assertEqual(result['status'],'failed')
+                self.assertEqual(result['diagnostic']['code'],'LIBRARY_IMPORT_REQUEST')
+                self.assertNotIn('Traceback',completed.stdout+completed.stderr)
+                self.assert_unpublished_and_original()
+
+
 class ImportTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
