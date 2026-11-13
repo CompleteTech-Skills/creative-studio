@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 import stat
 
-from atomic_publish import rename_no_replace_at, private_stage, private_stage_supported
+from atomic_publish import rename_no_replace_at, private_stage_fd, private_stage_fd_supported
 from lookdev_contracts import Registry, canonical_bytes, content_hash, portable_path, validate_resource
 from rig_errors import RigError, decode_json, require
 
@@ -269,13 +269,13 @@ class Project:
                 'LOOKDEV_PROJECT_EXISTS', 'Export destination must be new.')
         require(not destination.resolve().is_relative_to(self.root.resolve()),
                 'LOOKDEV_PROJECT_DESTINATION', 'Export outside the source project.')
-        require(private_stage_supported(), 'LOOKDEV_PROJECT_EXPORT_PLATFORM',
-                'Pinned native export requires the tested Linux descriptor staging adapter.')
+        require(private_stage_fd_supported(), 'LOOKDEV_PROJECT_EXPORT_PLATFORM',
+                'Pinned native export requires a supported POSIX descriptor staging adapter.')
         parent_fd = _directory_fd(destination.parent)
         try:
             # The public wrapper can be renamed or replaced without changing
             # the private descriptor that owns the inner payload publication.
-            with private_stage(parent_fd, prefix='.lookdev-export-', cleanup_on_error=False) as (_, wrapper_fd):
+            with private_stage_fd(parent_fd, prefix='.lookdev-export-', cleanup_on_error=False) as wrapper_fd:
                 os.mkdir('payload', mode=0o700, dir_fd=wrapper_fd)
                 stage_fd = os.open('payload', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=wrapper_fd)
                 try:

@@ -41,8 +41,10 @@ and atomically publishes without replacing an existing destination. Source edits
 after capture cannot alter the export. `export-manifest.json` records exact hashes
 and a native-format loss report. Both index and export manifest names are reserved.
 Export parent must already exist and destination must be outside the source
-project. Native filesystem export currently requires the tested Linux descriptor staging
-adapter; other hosts fail explicitly before creating output. Portable closure
+project. Native filesystem export currently requires a supported POSIX descriptor staging
+adapter; unsupported hosts fail explicitly before creating output. The dedicated
+workflow requires actual Linux and macOS execution before compatibility is
+claimed. Portable closure
 readers remain available on other platforms. The private mode-0700 wrapper is
 opened before all writes; a verified inner payload is renamed from that bound
 descriptor, so replacing the public wrapper cannot publish an unverified

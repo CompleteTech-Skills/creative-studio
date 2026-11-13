@@ -190,7 +190,7 @@ class ProjectTests(unittest.TestCase):
 
     def test_unavailable_pinned_staging_rejected_before_any_output(self):
         import lookdev
-        with patch.object(lookdev, 'private_stage_supported', return_value=False):
+        with patch.object(lookdev, 'private_stage_fd_supported', return_value=False):
             with self.assertRaises(RigError) as error:
                 Project(self.root).export_native(self.parent/'unsupported')
         self.assertEqual(error.exception.report['code'], 'LOOKDEV_PROJECT_EXPORT_PLATFORM')
