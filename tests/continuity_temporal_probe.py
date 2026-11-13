@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from continuity_contracts import canonical_bytes
 from continuity_registry import IdentityRegistry
-from test_continuity_temporal import fixture, event
+from test_rig_continuity_temporal import fixture, event
 from scene3d_example import TRANSFORM
 
 
@@ -46,7 +46,7 @@ def main():
     source_root=Path(__file__).resolve().parents[1]
     sources=['scripts/continuity_temporal.py','scripts/continuity_registry.py','scripts/continuity_contracts.py',
              'scripts/scene3d_contracts.py','scripts/scene3d_math.py','scripts/rig_math.py',
-             'tests/test_continuity_temporal.py','tests/continuity_temporal_probe.py']
+             'tests/test_rig_continuity_temporal.py','tests/continuity_temporal_probe.py']
     report=dict(status='passed-synthetic-structural-replay',production_artwork_approved=False,
         versions=dict(python=platform.python_version(),numpy=importlib.metadata.version('numpy'),
                       jsonschema=importlib.metadata.version('jsonschema'),sqlite=__import__('sqlite3').sqlite_version),

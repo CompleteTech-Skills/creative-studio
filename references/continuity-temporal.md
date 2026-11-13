@@ -113,8 +113,11 @@ Generate/check schemas using the existing continuity generator:
 
 ## Verification boundary
 
-`tests/test_continuity_temporal.py` constructs a real hash-bound native project
+`tests/test_rig_continuity_temporal.py` constructs a real hash-bound native project
 with two locations, two character stand-ins, a distinct prop and three shots.
+The dedicated continuity CI gate executes all 14 temporal tests with optional
+3D dependencies on Linux, Windows and macOS. Its `test_rig_` name keeps native
+evaluation outside ordinary 2D discovery, which does not install NumPy.
 Tests exercise actual replay, native hierarchy evaluation, out-of-order requests,
 terminal and event boundaries, rational rates, intentional chronology changes,
 atomic rejection, branches, cache corruption, changed native source bytes,

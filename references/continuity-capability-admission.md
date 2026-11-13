@@ -50,7 +50,11 @@ peak resident memory (including previous work in that process). An unavailable
 measurement or an exceeded reservation fails closed; historical process peaks
 can therefore reject a check conservatively. This prevents a successful result
 from waiving its measured memory ceiling, but does not prevent an in-flight
-allocation or provide hard memory isolation. Native evidence emission enforces its disk
+allocation or provide hard memory isolation. Executable fixtures reserve 256 MiB
+for the complete Python process: the Windows runner measured 187,936,768 bytes
+through both native ctypes and independent .NET process counters. The image
+owner advertises the same process headroom while retaining the separate
+four-million-pixel per-image and sixteen-million-pixel aggregate decode caps. Native evidence emission enforces its disk
 reservation before writing. Working-memory estimates are admission bounds, not
 OS allocation enforcement. The host must authorize the explicit owner probe before registering it. Creating
 a `RigOwner` or `ImageMastersOwner` is an explicit real probe, not passive discovery.

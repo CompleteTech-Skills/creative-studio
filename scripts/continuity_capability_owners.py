@@ -189,7 +189,9 @@ class ImageMastersOwner(OwnerAdapter):
         if not 1 <= len(self.images) <= 128:
             raise ValueError('CONTINUITY_CAPABILITY_LIMIT: use 1..128 image masters')
         self._lock = __import__('threading').Lock()
-        self._resources = dict(memory_bytes=128*1024*1024, disk_bytes=8*1024*1024)
+        # Process reservation includes the host Python runtime; image decode
+        # remains independently capped at four million pixels per image.
+        self._resources = dict(memory_bytes=256*1024*1024, disk_bytes=8*1024*1024)
         with self.reserve(None): result = self._execute()
         import PIL
         self._snap = dict(schema_version=VERSION, kind='continuity-capability-snapshot',
@@ -198,7 +200,7 @@ class ImageMastersOwner(OwnerAdapter):
             contract_version=VERSION, input_types=['image-master'], output_types=['verified-image-masters'],
             operations=['video-encoding'], status='available', discovered=True,
             tested_operations=['video-encoding'], evidence=result['evidence'],
-            limits=dict(memory_bytes=128*1024*1024, disk_bytes=8*1024*1024,
+            limits=dict(memory_bytes=256*1024*1024, disk_bytes=8*1024*1024,
                         cpu_seconds=30, gpu_bytes=0, concurrency=1), offline=True, asset_rights_required=True,
             expires_at=(datetime.now(timezone.utc)+timedelta(seconds=expiry_seconds)).strftime('%Y-%m-%dT%H:%M:%SZ'),
             limitations=['No encoder executed. Video export and silent-stream verification remain unavailable.'])
@@ -212,7 +214,7 @@ class ImageMastersOwner(OwnerAdapter):
         try:
             if check is not None and any(p not in check['inputs'] for p in self.images):
                 raise ValueError('CONTINUITY_CAPABILITY_SOURCE: every original master must be bound')
-            self._resources = check['resources'] if check is not None else dict(memory_bytes=128*1024*1024, disk_bytes=8*1024*1024)
+            self._resources = check['resources'] if check is not None else dict(memory_bytes=256*1024*1024, disk_bytes=8*1024*1024)
             verify_references(self.root, dict(images=self.images))
             yield
             verify_references(self.root, dict(images=self.images))

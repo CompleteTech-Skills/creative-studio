@@ -44,7 +44,7 @@ class CapabilityHTTPTests(unittest.TestCase):
             project_revision=pointer(self.project,self.project/'project.json',kind='project-revision'),
             checks=[dict(id='geometry',capability='geometry-inspection',schema_version=VERSION,
                 inputs=[self.owner.bound],input_types=['hatch-3d-rig'],output_types=['native-inspection'],
-                resources=dict(memory_bytes=128*1024*1024,disk_bytes=8*1024*1024,cpu_seconds=30,gpu_bytes=0,concurrency=1),
+                resources=dict(memory_bytes=256*1024*1024,disk_bytes=8*1024*1024,cpu_seconds=30,gpu_bytes=0,concurrency=1),
                 required_fields=[],allow_fallback=True,gpu_required=False,needs_visual_approval=False)])
 
     def call(self,server,method,path,body=None,**extra):

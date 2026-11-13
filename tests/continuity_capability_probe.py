@@ -55,7 +55,7 @@ def run(destination):
             inputs=masters.images if image else [rig],
             input_types=['image-master'] if image else ['hatch-3d-rig'],
             output_types=['verified-image-masters'] if image else ['native-inspection'],
-            resources=dict(memory_bytes=128*1024*1024,disk_bytes=8*1024*1024,cpu_seconds=5,gpu_bytes=0,concurrency=1),
+            resources=dict(memory_bytes=256*1024*1024,disk_bytes=8*1024*1024,cpu_seconds=5,gpu_bytes=0,concurrency=1),
             required_fields=[],allow_fallback=True,gpu_required=False,
             needs_visual_approval=cap in ('visual-reference','visual-comparison')))
     policy=Policy(asset_rights=True,allowed_owners=frozenset(['hatch-rig','hatch-image-masters']),

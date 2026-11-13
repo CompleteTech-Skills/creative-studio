@@ -36,7 +36,7 @@ class CapabilityTest(unittest.TestCase):
     def request(self, *caps):
         return dict(schema_version=VERSION, kind='continuity-capability-request', request_id='fixture-request',
             project_revision=self.project, checks=[dict(id='check-'+str(i), capability=cap, schema_version=VERSION,
-                inputs=[], input_types=[], output_types=[], resources=dict(memory_bytes=128*1024*1024,
+                inputs=[], input_types=[], output_types=[], resources=dict(memory_bytes=256*1024*1024,
                 disk_bytes=8*1024*1024, cpu_seconds=30, gpu_bytes=0, concurrency=1), required_fields=[],
                 allow_fallback=True, gpu_required=False, needs_visual_approval=False) for i,cap in enumerate(caps)])
 
@@ -259,7 +259,7 @@ class CapabilityTest(unittest.TestCase):
         execute.assert_not_called()
 
     def test_peak_memory_overshoot_and_unavailable_measurement_fail_closed(self):
-        for peaks in ((1,1,256*1024*1024),(None,)):
+        for peaks in ((1,1,512*1024*1024),(None,)):
             owner, request=self.bound('geometry-inspection')
             with patch('continuity_capabilities._peak_memory_bytes',side_effect=peaks):
                 result=self.engine(owner).run(request)
