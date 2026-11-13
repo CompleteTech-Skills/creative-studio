@@ -1,5 +1,10 @@
 # Production validation
 
+> Historical report, 19 October 2026. Its missing-public-payload status was
+> superseded by the 20 October recovery and verified delivery recorded in
+> [DELIVERY_STATUS.md](../DELIVERY_STATUS.md). The original results and limits
+> below remain unchanged; they are not a current-head validation run.
+
 Evidence date: **19 October 2026 (UTC)**. The final local regression run completed with **299 tests: 298 passed, one skipped, no failures and no errors**. The supplied Milo/Luma pilot has current, explicitly scoped assistant review receipts. The implementation, its automated checks, production review, editor adapter, independent skill exercise and Git publication have separate evidence and limits.
 
 **Public delivery remains incomplete.** Automatic approval review blocked source PNG and retained TTS WAV publication, textual review-history fragments and a later production-evidence metadata batch. Complete local evidence and saved compiled outputs are available, but the public bundles and evidence are incomplete; no merge or completed Git transport is claimed. See [delivery status](#delivery-status-and-remaining-limits).
