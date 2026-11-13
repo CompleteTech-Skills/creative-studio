@@ -1,0 +1,33 @@
+{
+  "base_sha": "6bb3079b840b03d253ce9f9960b626802f3f007e",
+  "classification": "engineering regression tests; no artistic approval",
+  "commands": [
+    {
+      "command": "PYTHONPATH=scripts python -m unittest discover -s tests -p test_rig_landmarks.py -v",
+      "tests": 12,
+      "result": "PASS"
+    },
+    {
+      "command": "python scripts/test_rig_gate.py schema-math",
+      "tests": 74,
+      "result": "PASS",
+      "legacy_discovery": 952
+    },
+    {
+      "command": "python scripts/generate_rig_templates.py --check",
+      "result": "PASS"
+    },
+    {
+      "command": "python scripts/generate_schemas.py --check",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "source_sha256": {
+    "scripts/rig_templates.py": "2c93c42d7413a1e0c87f2b5016ca7bc4602520dc42900926b7f1dd8c06d2e76f",
+    "tests/test_rig_landmarks.py": "feb3cf189d3929cfb85353a161a22528b49c1d7b285c2414bb10ec5b631f94aa"
+  }
+}

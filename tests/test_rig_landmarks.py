@@ -14,7 +14,7 @@ from rig_errors import RigError, read_json, sha256
 from rig_models import load_rig
 from rig_operations import mutate
 from rig_skeleton import validate_skeleton
-from rig_templates import generate_skeleton
+from rig_templates import generate_skeleton, load_rig_template, MAX_TEMPLATE_DEPTH
 
 
 class LandmarkAdmissionTests(unittest.TestCase):
@@ -122,3 +122,72 @@ class LandmarkAdmissionTests(unittest.TestCase):
             loaded = load_rig(rig.root)
             validate_skeleton(loaded.skeleton)
             self.assertEqual(loaded.skeleton['bones'][0]['evidence']['source'], 'procedural-fixture')
+
+
+class TemplateAdmissionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.geometry, _, _, _ = make_geometry('robotic')
+        cls.base_template = load_rig_template('robotic')
+
+    def write(self, directory, value):
+        (Path(directory)/(value['id']+'.json')).write_text(json.dumps(value))
+
+    def test_custom_template_dictionary_has_the_same_strict_admission_as_file(self):
+        for update in ({'unknown': 1}, {'bones': None}, {'rest_bounds': [[0, 0, 0]]},
+                       {'extends': ['robotic']*9}):
+            value = deepcopy(self.base_template);value.update(update)
+            with self.subTest(update=update), self.assertRaises(RigError):
+                generate_skeleton(self.geometry, value)
+
+    def test_preserved_existing_skeleton_is_validated_before_returning_ready(self):
+        from rig_skeleton import skeleton_from_heads
+        valid = skeleton_from_heads([dict(id='root', role='root', parent=None,
+            head=[0, 0, 0], tail=[0, 1, 0], deform=True)])
+        invalid = deepcopy(valid);invalid['bones'][0]['rest']['rotation']=[0, 0, 0, 0]
+        with self.assertRaises(RigError):
+            generate_skeleton(self.geometry, self.base_template, existing=invalid)
+        result = generate_skeleton(self.geometry, self.base_template, existing=valid)
+        self.assertEqual(result['skeleton'], valid)
+        self.assertIsNot(result['skeleton'], valid)
+
+    def test_composed_templates_cannot_exceed_the_published_bone_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = deepcopy(self.base_template['bones'][0])
+            for part in ('a', 'b'):
+                bones = []
+                for index in range(129):
+                    bone=deepcopy(base);bone.update(id=f'{part}{index}', role=f'{part}{index}',
+                                                  parent=None, mirror=None)
+                    bones.append(bone)
+                self.write(directory, self.template_value(part, bones=bones))
+            self.write(directory, self.template_value('child', extends=['a', 'b']))
+            with self.assertRaises(RigError) as caught:
+                load_rig_template('child', directory=Path(directory))
+            self.assertEqual(caught.exception.report['code'], 'RIG_SCHEMA')
+
+    def template_value(self, identifier, **kwargs):
+        value=deepcopy(self.base_template)
+        value.update(id=identifier, extends=list(kwargs.get('extends', ())),
+                     bones=list(kwargs.get('bones', ())), constraints=[], ik=[],
+                     sockets=[], capabilities=[])
+        return value
+
+    def test_deep_inheritance_fails_before_python_recursion_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for index in range(MAX_TEMPLATE_DEPTH+1):
+                parents=[f'n{index+1}'] if index < MAX_TEMPLATE_DEPTH else []
+                self.write(directory, self.template_value(f'n{index}', extends=parents))
+            with self.assertRaises(RigError) as caught:
+                load_rig_template('n0', directory=Path(directory))
+            self.assertEqual(caught.exception.report['code'], 'RIG_TEMPLATE_DEPTH')
+
+    def test_repeated_acyclic_inheritance_has_a_total_work_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for level in range(9):
+                parents=[] if level == 0 else [f'a{level-1}', f'b{level-1}']
+                for prefix in ('a', 'b'):
+                    self.write(directory, self.template_value(f'{prefix}{level}', extends=parents))
+            with self.assertRaises(RigError) as caught:
+                load_rig_template('a8', directory=Path(directory))
+            self.assertEqual(caught.exception.report['code'], 'RIG_TEMPLATE_WORK')

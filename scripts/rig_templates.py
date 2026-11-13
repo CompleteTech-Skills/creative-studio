@@ -11,6 +11,8 @@ from rig_models import Geometry
 from rig_skeleton import skeleton_from_heads, validate_skeleton
 
 ROOT = Path(__file__).resolve().parents[1]/'rig-templates'
+MAX_TEMPLATE_DEPTH = 32
+MAX_TEMPLATE_FILES = 256
 
 
 def _validate_landmarks(landmarks, bone_ids):
@@ -35,7 +37,15 @@ def _validate_landmarks(landmarks, bone_ids):
                     'Landmark coordinates must be finite and within the bone coordinate bounds.', asset=name)
 
 
-def load_rig_template(name: str | Path, *, directory: Path | None = None, _active=()) -> dict:
+def load_rig_template(name: str | Path, *, directory: Path | None = None, _active=(), _budget=None) -> dict:
+    # Bound the traversal as well as the resulting arrays. A small inherited
+    # document can otherwise describe an exponentially large expansion.
+    require(len(_active) < MAX_TEMPLATE_DEPTH, 'RIG_TEMPLATE_DEPTH',
+            'Template inheritance exceeds the 32-level limit.')
+    budget = [0] if _budget is None else _budget
+    budget[0] += 1
+    require(budget[0] <= MAX_TEMPLATE_FILES, 'RIG_TEMPLATE_WORK',
+            'Template inheritance exceeds the 256-document traversal limit.')
     directory = Path(directory or ROOT)
     path = Path(name)
     if path.suffix != '.json':
@@ -47,7 +57,7 @@ def load_rig_template(name: str | Path, *, directory: Path | None = None, _activ
     combined = deepcopy(value)
     for key in ('bones', 'constraints', 'ik', 'sockets', 'capabilities'):combined[key] = []
     for parent in value['extends']:
-        inherited = load_rig_template(parent, directory=path.parent, _active=(*_active, value['id']))
+        inherited = load_rig_template(parent, directory=path.parent, _active=(*_active, value['id']), _budget=budget)
         for key in ('bones', 'constraints', 'ik', 'sockets', 'capabilities'):combined[key].extend(deepcopy(inherited[key]))
     for key in ('bones', 'constraints', 'ik', 'sockets', 'capabilities'):
         combined[key].extend(value[key])
@@ -56,7 +66,8 @@ def load_rig_template(name: str | Path, *, directory: Path | None = None, _activ
         require(len(set(ids)) == len(ids), 'RIG_TEMPLATE_CONFLICT', 'Template composition repeats '+key+' IDs.')
     require(len({b['role'] for b in combined['bones']}) == len(combined['bones']),
             'RIG_TEMPLATE_SEMANTICS', 'Template semantic roles must be unambiguous.')
-    return combined
+    # Individual parents being valid does not make their composition bounded.
+    return validate_contract(combined, 'RigTemplate')
 
 
 def list_templates(directory=None) -> list[dict]:
@@ -77,9 +88,11 @@ def generate_skeleton(geometry: Geometry, template: dict | str, *, landmarks=Non
     All unauthenticated geometric suggestions remain pending visual correction.
     """
     if existing is not None:
+        validate_skeleton(existing)
         return dict(skeleton=deepcopy(existing), controllers=dict(ik=[], constraints=[]),
                     attachments=[], uncertainties=[], status='preserved-existing-rig')
     template = load_rig_template(template) if isinstance(template, (str, Path)) else deepcopy(template)
+    validate_contract(template, 'RigTemplate')
     analysis = analyze_geometry(geometry)
     lower, upper = np.array(analysis['bounds'])
     source_bounds = np.array(template.get('rest_bounds', [[-.85, 0, -.35], [.85, 2.05, .35]]))
