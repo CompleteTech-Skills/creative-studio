@@ -182,6 +182,11 @@ class ActualCameraPreviews(unittest.TestCase):
                     image.load();self.assertEqual(image.size,(192,128))
                 self.assertGreater(preview['alpha_pixels'],3)
                 self.assertLessEqual(max(abs(a-b) for a,b in zip(preview['actual_bounds'],preview['predicted_bounds'])),3)
+            transitions=write_transition_preview(destination/'shot-establishing-shot.png',
+                destination/'shot-close-up.png',destination/'actual-camera-transitions',duration_frames=8)
+            self.assertEqual(len(transitions['frames']),24)
+            hashes={item['path']:item['sha256'] for item in report['previews']}
+            self.assertEqual(transitions['source_sha256'],[hashes['shot-establishing-shot.png'],hashes['shot-close-up.png']])
 
 
 class CatalogAndPresets(unittest.TestCase):

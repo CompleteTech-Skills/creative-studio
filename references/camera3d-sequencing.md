@@ -173,6 +173,9 @@ python -m unittest discover -s tests -p test_rig_camera3d_sequence.py -v
 ```
 
 The hosted Blender job executes this explicit native gate and retains its PNGs,
-plans and measurements. These engineering previews establish corresponding
+plans and measurements. After Blender completes, the host gate composites 24
+dissolve/fade/wipe frames from the corresponding establishing and close-up
+camera renders and verifies both source hashes against the native report.
+These engineering previews establish corresponding
 camera output and framing, not production visual approval, motion-preset film
 acceptance, multi-camera editor review, or the five-shot demonstration.
