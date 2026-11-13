@@ -165,6 +165,13 @@ character, camera or lighting intentions. Unknown words, missing dimensions,
 nonintegral room counts and impossible geometry remain unresolved. Applying a plan
 recompiles its original description exactly before delegating one immutable
 `apply_recipes` snapshot; forged recipes and stale source tokens fail closed.
+Readiness also checks the verified source project's effective prefab node limit
+and exact snapshot file/byte budgets, including retained history and promoted
+scene/shot documents. Regeneration uses the canonical recipe preparation logic,
+so preserved manual edits and existing generated nodes are counted correctly.
+Standalone in-memory graphs without a verified project source remain unresolved.
+The snapshot owner's resource-only dry run returns `status: planned`; it does not
+publish a destination or claim independent artifact verification.
 Generated meshes are editable persisted native nodes with hash-bound OBJ bytes.
 Existing authored nodes, source bytes and manual generator overrides retain their
 native owner protections. No material, camera, character or asset substitution is

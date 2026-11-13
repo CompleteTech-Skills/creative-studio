@@ -103,6 +103,20 @@ class EnvironmentLanguageTests(unittest.TestCase):
         self.assertIn('node budget', plan['diagnostics'][0]['message'])
         self.assertGreater(sum(item['nodes'] for item in plan['geometry']) + len(self.graph.document()['nodes']), 100)
 
+    def test_named_generator_cli_dry_run_rejects_project_node_overflow(self):
+        recipe = self.directory / 'large-recipe.json'
+        recipe.write_text(json.dumps({'id': 'shop', 'version': 1, 'seed': 42, 'generator': 'workshop',
+            'parameters': {'width': 5, 'depth': 5, 'height': 3, 'rooms': 20}, 'budget': 256}))
+        target = self.directory / 'dry-invalid'
+        command = [sys.executable, str(Path(__file__).resolve().parents[1] / 'scripts/scene3d.py')]
+        result = subprocess.run(command + ['building', 'generate', '--project', str(self.source),
+            '--scene', 'example-scene.json', '--file', str(recipe), '--expected-revision', '0',
+            '--expected-sha256', self.graph.digest, '--destination', str(target), '--dry-run'],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn('node budget', json.loads(result.stderr)['error']['message'])
+        self.assertFalse(target.exists())
+
     def test_snapshot_file_and_byte_limits_are_preflighted(self):
         self._set_project_budget(max_files=len(self.bundle['inventory']))
         plan = compile_environment_description(self.graph, self.text)
