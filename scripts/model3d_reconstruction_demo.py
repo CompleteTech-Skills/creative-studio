@@ -36,8 +36,9 @@ def demonstrate(destination, *, artwork=DEFAULT_ARTWORK):
         stride=16;sample=mask[::stride,::stride]
         artwork_result=extrude_mask(sample,pixel_size=.005*stride,thickness=.2,
             evidence=[dict(**source.descriptor(),interpretation='authored alpha>127',sampling=dict(method='point-grid',stride_px=stride,offset_px=[0,0]),scale='explicit hypothesis0.005m per original pixel; not measured')])
-        artwork_result.report['fixture']=False
-        artwork_result.report['source_origin']='retained canonical artwork; local extrusion does not authenticate original artwork approval'
+        artwork_result.report['fixture_classification']='not established by reconstruction'
+        artwork_result.report['source_origin']=('retained Milo canonical artwork' if Path(artwork).resolve()==DEFAULT_ARTWORK.resolve() else 'caller-supplied artwork; origin not inferred')
+        artwork_result.report['source_approval']='not authenticated by local reconstruction'
         # Added source-origin labels are part of the method report before delivery.
         _seal_result(artwork_result)
         records['C-artwork-limited-extrusion']=publish(artwork_result,stage/'C-artwork',evidence=[source])

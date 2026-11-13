@@ -109,6 +109,17 @@ class ReconstructionTests(unittest.TestCase):
             with patch('model3d_reconstruction.MAX_IMAGE_PIXELS',2):
                 with self.assertRaises(RigError):read_image(path)
 
+    def test_damaged_jpeg_entropy_is_rejected_without_source_repair(self):
+        source=Path(__file__).parent/'fixtures/strict-jpeg-valid.jpg'
+        original=source.read_bytes()
+        with tempfile.TemporaryDirectory() as temporary:
+            for cut in (5,20,100,300):
+                path=Path(temporary)/(str(cut)+'.jpg');damaged=original[:-cut]+b'\xff\xd9';path.write_bytes(damaged)
+                with self.assertRaises(RigError) as caught:read_image(path)
+                self.assertEqual(caught.exception.report['code'],'RIG_TEXTURE_DECODE')
+                self.assertEqual(path.read_bytes(),damaged)
+        self.assertEqual(source.read_bytes(),original)
+
     def test_actual_all_methods_export_reimport_and_exact_source_publication(self):
         results=[extrude_contour([[0,0],[2,0],[2,2],[0,2]],holes=[[[.5,.5],[1.5,.5],[1.5,1.5],[.5,1.5]]],thickness=.3),
                  revolve_profile([[0,0],[1,.5],[.8,1],[0,1.5]]),heightfield([[0,.1],[.2,.3]],spacing=[1,1],base_thickness=.5)]
@@ -145,6 +156,20 @@ class ReconstructionTests(unittest.TestCase):
                 with self.assertRaises(RigError) as caught:publish(result,destination)
                 self.assertEqual(caught.exception.report['code'],'RECON_STALE')
                 self.assertFalse(destination.exists())
+
+    def test_publisher_uses_isolated_snapshot_if_caller_edits_during_export(self):
+        from model3d_interchange import export_mesh as original
+        result=extrude_contour([[0,0],[1,0],[1,1],[0,1]],thickness=.2)
+        def edit_caller(geometry,destination,**kwargs):
+            result.geometry.meshes[0].positions[:,2]*=10
+            result.report['parameters']['thickness_m']=2
+            return original(geometry,destination,**kwargs)
+        with tempfile.TemporaryDirectory() as temporary:
+            destination=Path(temporary)/'out'
+            with patch('model3d_interchange.export_mesh',edit_caller):publish(result,destination)
+            saved=load_character_model(destination/'mesh/model.glb').geometry.meshes[0]
+            self.assertAlmostEqual(float(np.ptp(saved.positions[:,2])),.2,places=6)
+            self.assertEqual(json.loads((destination/'reconstruction.json').read_text())['parameters']['thickness_m'],.2)
 
     def test_failed_or_racing_publication_preserves_dest_and_removes_only_owned_stage(self):
         result=extrude_contour([[0,0],[1,0],[1,1],[0,1]],thickness=.1)
