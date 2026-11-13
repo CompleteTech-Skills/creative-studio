@@ -10,10 +10,12 @@ from rig_contracts import validate_contract
 from rig_errors import RigError, object_hash, timestamp
 from rig_geometry import deformation_metrics
 from rig_ik import validate_controllers
-from rig_math import axis_angle
+from rig_math import axis_angle, decompose, qangle
 from rig_models import rig_signature, validate_geometry
 from rig_skeleton import evaluate_fk, neutral_pose, rotate_bone, validate_skeleton
 from rig_skinning import evaluate_deformation, validate_skin
+
+CONTACT_ORIENTATION_TOLERANCE_RAD = 1e-5  # Same requested-orientation criterion as solve_ik.
 
 REVIEW_DIMENSIONS = ('skeleton-placement', 'bone-semantics', 'deformation', 'joint-movement',
                      'facial-animation', 'contacts', 'animation-continuity', 'identity', 'export-interoperability')
@@ -33,18 +35,27 @@ def _check(report, name, ok, message, value=None, *, unavailable=False, warning=
 def contact_metrics(rig, clip) -> dict:
     chains = {c['id']: c for c in rig.manifest['controllers']['ik']}
     maximum, drift, count = 0., 0., 0
+    orientation_maximum = 0.;oriented_contacts = 0
     by_contact = []
     for contact in clip['contacts']:
         times = np.linspace(contact['start'], contact['end'], 7, endpoint=False)
-        positions = [];errors = []
+        positions = [];errors = [];orientation_errors = []
         for t in times:
             evaluated = evaluate_animation(rig, clip, float(t), _validated=True)
-            point = evaluate_fk(rig.skeleton, evaluated['pose'])[chains[contact['chain']]['bones'][-1]][:3, 3]
+            endpoint = evaluate_fk(rig.skeleton, evaluated['pose'])[chains[contact['chain']]['bones'][-1]]
+            point = endpoint[:3, 3]
+            if 'orientation' in contact:
+                orientation_errors.append(qangle(decompose(endpoint)['rotation'], contact['orientation']))
             positions.append(point);errors.append(float(np.linalg.norm(point-np.asarray(contact['target']))));count += 1
         local_drift = float(np.max(np.linalg.norm(np.array(positions)-positions[0], axis=1)))
         maximum = max(maximum, max(errors));drift = max(drift, local_drift)
-        by_contact.append(dict(id=contact['id'], samples=len(times), max_error_m=max(errors), max_drift_m=local_drift))
-    return dict(max_contact_error_m=maximum, max_planted_drift_m=drift, samples=count, contacts=by_contact)
+        value=dict(id=contact['id'], samples=len(times), max_error_m=max(errors), max_drift_m=local_drift)
+        if orientation_errors:
+            value['max_orientation_error_rad']=max(orientation_errors)
+            orientation_maximum=max(orientation_maximum,value['max_orientation_error_rad']);oriented_contacts+=1
+        by_contact.append(value)
+    return dict(max_contact_error_m=maximum, max_planted_drift_m=drift, samples=count, contacts=by_contact,
+                max_contact_orientation_error_rad=orientation_maximum, oriented_contacts=oriented_contacts)
 
 
 def validate_rig(rig, *, require_animation=False) -> dict:
@@ -77,6 +88,7 @@ def validate_rig(rig, *, require_animation=False) -> dict:
     report['metrics'].update(weight_sum_max_error=weight_error, bind_pose_max_error_m=bind_error, nonfinite_vertices=0)
     height = max(m.positions[:, 1].max() for m in rig.geometry.meshes)-min(m.positions[:, 1].min() for m in rig.geometry.meshes)
     contact_tolerance = min(.01, max(height*.01, 1e-5));maximum = 0.;distinct = set();contact_max = 0.;drift_max = 0.;key_total = 0
+    orientation_max = 0.;oriented_contacts = 0
     for clip in rig.clips.values():
         try:
             result = validate_animation(rig, clip);key_total += result['keyframes']
@@ -91,11 +103,18 @@ def validate_rig(rig, *, require_animation=False) -> dict:
                 distinct.add(object_hash(signature))
             contacts = contact_metrics(rig, clip)
             contact_max = max(contact_max, contacts['max_contact_error_m']);drift_max = max(drift_max, contacts['max_planted_drift_m'])
+            orientation_max=max(orientation_max,contacts['max_contact_orientation_error_rad'])
+            oriented_contacts+=contacts['oriented_contacts']
             _check(report, 'clip:'+clip['id'], True, 'Channel evaluation produces finite real mesh positions.', result['tracks'])
         except (RigError, ValueError, KeyError) as exc:_check(report, 'clip:'+clip['id'], False, str(exc))
     _check(report, 'key-budget', key_total <= rig.manifest['limits']['keyframes'], 'Total authored keyframe budget.', key_total)
     _check(report, 'contacts', contact_max <= contact_tolerance and drift_max <= contact_tolerance,
            'Measured IK endpoint error and planted world-space drift.', max(contact_max, drift_max))
+    if oriented_contacts:
+        _check(report, 'contact-orientations', orientation_max <= CONTACT_ORIENTATION_TOLERANCE_RAD,
+               'Measured final endpoint orientation for explicitly oriented current contacts (radians).', orientation_max)
+        report['metrics'].update(max_contact_orientation_error_rad=orientation_max,
+                                  contact_orientation_tolerance_rad=CONTACT_ORIENTATION_TOLERANCE_RAD)
     if require_animation:
         _check(report, 'animated-geometry', bool(rig.clips) and maximum > 1e-5 and len(distinct) >= 2,
                'Acceptance requires executable channels and distinct deformed vertices.', maximum)
