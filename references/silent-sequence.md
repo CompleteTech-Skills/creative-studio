@@ -88,3 +88,6 @@ PNG8 (three frames), PNG16, EXR half and EXR float exports. The latter source
 smokes each contain one frame; they establish those complete one-frame source
 exports, not a three-shot production film. Full silent-film/CLI integration and
 release regression evidence remain with #97/#241 and the canonical renderer.
+
+See [retained actual exports](../examples/silent-sequence235/README.md) for exact
+source/decoder identities and the current canonical-owner integration dependency.
