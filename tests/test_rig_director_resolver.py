@@ -171,7 +171,8 @@ class ResolverTests(unittest.TestCase):
 
     def test_malformed_rig_binding_remains_unavailable(self):
         import struct
-        from asset_library_contracts import seal, file_record
+        from asset_library_contracts import seal
+        from asset_library import file_record
         manifest=json.loads((self.root/'aster-asset.json').read_text())
         rig=next(f for f in manifest['files'] if f['role']=='rig')
         original=(self.root/rig['path']).read_bytes()
