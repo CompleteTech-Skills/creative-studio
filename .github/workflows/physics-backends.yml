@@ -69,6 +69,14 @@ jobs:
           HATCH_SOFTBODY_EVIDENCE: ${{ github.workspace }}/physics-evidence/softbody
         run: |
           python -B -m unittest discover -s tests -p test_rig_physics_softbody.py -v 2>&1 | tee physics-evidence/softbody-tests.log
+      - name: Real rigid-body controls and source-bound Blender replay
+        env:
+          HATCH_RIGID_EVIDENCE: physics-evidence/rigid-bodies
+          HATCH_RIGID_REPLAY_EVIDENCE: physics-evidence/rigid-replay
+        run: |
+          mkdir physics-evidence/rigid-bodies physics-evidence/rigid-replay
+          python -B -m unittest discover -s tests -p test_rig_physics_rigid.py -v 2>&1 | tee physics-evidence/rigid-body-tests.log
+          python -B -m unittest discover -s tests -p test_rig_physics_rigid_replay.py -v 2>&1 | tee physics-evidence/rigid-replay-tests.log
       - name: Actual category/shape/headless probes
         run: |
           python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json
