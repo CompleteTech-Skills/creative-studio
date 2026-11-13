@@ -1,0 +1,8 @@
+{
+  "status": "executed-and-verified",
+  "destination": "/tmp/hatch-physics168/tests/results/physics-backends-20261024/blender-demo",
+  "world_sha256": "1174afd8aa90cc3565fc7dfcde62022304cb937366755d9e9c0e515120fef692",
+  "fixture": true,
+  "review_status": "unreviewed",
+  "sample_count": 49
+}

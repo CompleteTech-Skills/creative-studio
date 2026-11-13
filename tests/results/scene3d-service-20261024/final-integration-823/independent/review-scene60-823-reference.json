@@ -1,0 +1,4 @@
+{
+  "delete_error": "Animation clip references a missing node in the consuming graph.",
+  "snapshot": "published"
+}
