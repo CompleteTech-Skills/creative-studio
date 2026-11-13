@@ -76,3 +76,15 @@ class RigAnimationTests(unittest.TestCase):
         del clip['contacts'][0]['orientation']
         positional=retarget_animation(source,target,clip)['clip']
         self.assertNotIn('orientation',positional['contacts'][0])
+
+    def test_contact_reports_unsatisfied_orientation_after_limits(self):
+        rig=self.rig
+        rig.manifest['controllers']['constraints']=[dict(schema_version=1,id='hand-limit',
+            bone='b2',type='hinge',axis=[1,0,0],minimum=0.,maximum=.2)]
+        clip=deepcopy(rig.clips['neutral'])
+        clip['contacts']=[dict(schema_version=1,id='hold',chain='arm',start=0.,end=1.,
+            target=[0.,2.,0.],orientation=axis_angle([1,0,0],1.2).tolist(),kind='hand')]
+        report=evaluate_animation(rig,clip,.5)['contacts'][0]
+        self.assertLess(report['residual_m'],1e-8)
+        self.assertAlmostEqual(report['orientation_residual_rad'],1.)
+        self.assertFalse(report['converged'])

@@ -8,7 +8,7 @@ import numpy as np
 from rig_contracts import validate_contract
 from rig_constraints import apply_constraints, constraint_order
 from rig_errors import require
-from rig_math import (decompose, qbetween, qinverse, qmul, quaternion, unit, vector)
+from rig_math import (decompose, qangle, qbetween, qinverse, qmul, quaternion, unit, vector)
 from rig_skeleton import evaluate_fk
 
 
@@ -20,11 +20,13 @@ class IKResult:
     converged: bool
     iterations: int
     constraints_applied: list[dict]
+    orientation_residual_rad: float | None = None
 
     def report(self) -> dict:
         return dict(pose=self.pose, residual_m=self.residual_m, reachable=self.reachable,
                     converged=self.converged, iterations=self.iterations,
-                    constraints_applied=self.constraints_applied)
+                    constraints_applied=self.constraints_applied,
+                    orientation_residual_rad=self.orientation_residual_rad)
 
 
 def _chain_points_and_lengths(skeleton: dict, names: list[str], pose=None):
@@ -148,9 +150,12 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
         if constrained:
             result, current = apply_constraints(skeleton, result, constrained, ordered=True)
             changes.extend(current)
-    final = evaluate_fk(skeleton, result)[names[-1]][:3, 3]
-    error = float(np.linalg.norm(final-target))
-    return IKResult(result, error, bool(reachable), bool(reachable and error <= tolerance), iterations, changes)
+    final = evaluate_fk(skeleton, result)[names[-1]]
+    error = float(np.linalg.norm(final[:3, 3]-target))
+    orientation_error = (qangle(decompose(final)['rotation'], orientation)
+                         if orientation is not None else None)
+    converged = reachable and error <= tolerance and (orientation_error is None or orientation_error <= 1e-5)
+    return IKResult(result, error, bool(reachable), bool(converged), iterations, changes, orientation_error)
 
 
 def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:
