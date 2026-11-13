@@ -111,8 +111,8 @@ class SceneLifecycleTests(unittest.TestCase):
         restored=inspect_revision(repository.root)
         self.assertEqual(before['nodes'],restored['nodes'])
         result=subprocess.run([sys.executable,'-c',
-            'import json,sys;from scene3d_lifecycle import inspect_revision;print(json.dumps(inspect_revision(sys.argv[1])))',
-            str(repository.root)],check=True,capture_output=True,text=True)
+            'import json,sys;sys.path.insert(0,sys.argv[2]);from scene3d_lifecycle import inspect_revision;print(json.dumps(inspect_revision(sys.argv[1])))',
+            str(repository.root),str(Path(__file__).resolve().parents[1]/'scripts')],check=True,capture_output=True,text=True)
         self.assertEqual(json.loads(result.stdout),restored)
         self.assertEqual((self.source/'triangle.obj').read_bytes(),repository.read_file('triangle.obj',restored['snapshot_sha256']))
 
