@@ -115,6 +115,18 @@ class TwoHandGripTests(unittest.TestCase):
                     dict(owned,transform='bad'),dict(owned,transform={'translation':[0,0,0]})):
             with self.subTest(prop=bad),self.assertRaises(RigError):solve_grip_pose(self.rig,result['pose'],bad,authored)
 
+    def test_huge_integer_and_nonfinite_numbers_fail_before_float_conversion(self):
+        pose,prop,recipe=self.recipe()
+        for value in (10**400,-10**400,1e308,float('inf'),float('nan')):
+            bad=deepcopy(recipe);bad['grips'][0]['transform']['translation'][0]=value
+            with self.subTest(input='grip',value=value),self.assertRaises(RigError):solve_grip_pose(self.rig,pose,prop,bad)
+            bad_prop=deepcopy(prop);bad_prop['transform']['scale'][0]=value
+            with self.subTest(input='prop',value=value),self.assertRaises(RigError):solve_grip_pose(self.rig,pose,bad_prop,recipe)
+            bad_pose=deepcopy(pose);bad_pose['bones']['hand.left']={'translation':[value,0,0]}
+            with self.subTest(input='pose',value=value),self.assertRaises(RigError):solve_grip_pose(self.rig,bad_pose,prop,recipe)
+            bad=deepcopy(recipe);bad['position_tolerance_m']=value
+            with self.subTest(input='tolerance',value=value),self.assertRaises(RigError):validate_grip_pose(self.rig,bad)
+
     def test_owned_prop_motion_cannot_falsely_accept_frozen_world_grips(self):
         pose,prop,recipe=self.recipe()
         owned=attach_prop(self.rig,pose,prop,'grip.left',expected_owner=None)

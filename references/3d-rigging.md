@@ -410,7 +410,8 @@ exported by `rig_api`). Each of the exactly two grip entries has `id`, `chain`,
 `profiles/rig-grip-pose.schema.json` records recipe ID/version, exact rig
 ID/version/hash, object ID/world transform and explicit expected owner. Object
 and grip transforms are right-handed meters in the canonical rig-root frame;
-unit scale is required. The two IK chains must be disjoint and neither may
+unit scale is required. All supplied numeric inputs are bounded to finite values
+within `+/-1e12` before native float conversion. The two IK chains must be disjoint and neither may
 parent the other. Shared or coupled limb chains are explicitly unsupported.
 
 The helper reuses native `solve_grasp` in deterministic chain order, then

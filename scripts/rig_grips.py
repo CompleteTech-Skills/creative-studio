@@ -37,10 +37,24 @@ def grip_pose_schema():
             orientation_tolerance_rad=dict(type='number',exclusiveMinimum=0,maximum=.1)))}
 
 
+def _bounded_numbers(value):
+    """Reject nonfinite/huge JSON numbers before NumPy or float conversion."""
+    finite_json(value)
+    def visit(item):
+        if type(item) in (int,float):
+            require(-1e12<=item<=1e12,'RIG_GRIP_NUMBER',
+                    'Grip inputs require finite numeric values within +/-1e12.')
+        elif isinstance(item,dict):
+            for child in item.values():visit(child)
+        elif isinstance(item,(list,tuple)):
+            for child in item:visit(child)
+    visit(value)
+
+
 def validate_grip_pose(rig, recipe):
     """Admit exact rig revision, rigid authored grips, and independent limb chains."""
     from jsonschema import Draft202012Validator
-    finite_json(recipe)
+    _bounded_numbers(recipe)
     error=next(Draft202012Validator(grip_pose_schema()).iter_errors(recipe),None)
     require(error is None,'RIG_GRIP_SCHEMA',error.message if error else '',
             asset='.'.join(map(str,error.absolute_path)) if error else None)
@@ -88,7 +102,7 @@ def _validate_prop_metadata(prop):
     fields=grip_pose_schema()['properties']['object']['properties']
     schema=dict(type='object',properties=dict(id=fields['id'],owner=fields['expected_owner'],
                                              transform=fields['transform']),required=['id','owner','transform'])
-    finite_json(prop)
+    _bounded_numbers(prop)
     error=next(Draft202012Validator(schema).iter_errors(prop),None)
     require(error is None,'RIG_GRIP_OBJECT',error.message if error else '')
     quaternion(prop['transform']['rotation'],strict=True)
@@ -116,7 +130,7 @@ def create_grip_pose(rig, identifier, version, prop, grips, *, expected_owner=No
 
 def solve_grip_pose(rig, pose, prop, recipe, *, require_success=True):
     """Solve both hands, then measure both final sockets together; never publish changes."""
-    validate_grip_pose(rig,recipe);validate_contract(pose,'Pose')
+    validate_grip_pose(rig,recipe);_bounded_numbers(pose);validate_contract(pose,'Pose')
     require(pose['rig_version']==rig.skeleton['version'],'RIG_POSE_VERSION',
             'Grip input pose targets a different skeleton version.')
     require(type(require_success) is bool,'RIG_GRIP_SCHEMA','require_success must be a boolean.')
