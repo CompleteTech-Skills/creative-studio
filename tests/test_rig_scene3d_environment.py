@@ -62,6 +62,28 @@ class GeometryTests(unittest.TestCase):
         for line in normals:
             self.assertAlmostEqual(np.linalg.norm([float(v) for v in line.split()[1:]]),1)
 
+    def test_large_json_integer_parameters_fail_typed_before_geometry_or_publication(self):
+        huge=10**400
+        terrain=Heightfield(width=2,depth=2,resolution=2,elevation=1,heights=[[0,0],[0,0]])
+        before=terrain.mesh().obj()
+        for value in (huge,-huge):
+            cases=[lambda:primitive('box',width=value),
+                   lambda:wall(2,2,.2,[dict(x=value,y=0,width=1,height=1)]),
+                   lambda:Heightfield(elevation=value),
+                   lambda:terrain.sample(value,0),
+                   lambda:terrain.edit([dict(x=0,z=0,height=value)]),
+                   lambda:terrain.mask([[0,0],[0,1]],target=value),
+                   lambda:terrain.path([[-1,0],[1,0]],1,elevation=value)]
+            for operation in cases:
+                with self.subTest(value_sign=value>0,operation=cases.index(operation)):
+                    with self.assertRaises(RigError):operation()
+                    self.assertEqual(terrain.mesh().obj(),before)
+            with tempfile.TemporaryDirectory() as temporary:
+                destination=Path(temporary)/'invalid'
+                with self.assertRaises(RigError):
+                    create_environment(destination,recipe('primitive',kind='box',dimensions=dict(width=value)))
+                self.assertFalse(destination.exists())
+
     def test_closed_shapes_outward_winding(self):
         for kind in ('box','sphere','cylinder','cone','torus','pipe','capsule'):
             mesh=primitive(kind);v=np.array(mesh.vertices);f=np.array(mesh.triangles)

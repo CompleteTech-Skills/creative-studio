@@ -73,7 +73,8 @@ class CatalogTests(unittest.TestCase):
 
     def test_invalid_catalog_inputs_and_output_budgets_fail(self):
         for p in ({'preset':'unknown'},{'preset':'castle','scale':0},{'preset':'castle','detail':3},
-                  {'preset':'castle','unsupported':True}):
+                  {'preset':'castle','unsupported':True},
+                  {'preset':'castle','scale':10**400},{'preset':'castle','detail':10**400}):
             candidate=recipe('castle');candidate['parameters']=p
             with self.assertRaises(RigError):plan(candidate)
         with self.assertRaises(RigError):plan(dict(recipe('castle'),budget=3))

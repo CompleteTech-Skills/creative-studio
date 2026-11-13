@@ -11,7 +11,7 @@ class Heightfield:
         self.width=positive(width,'width'); self.depth=positive(depth,'depth')
         self.resolution=count(resolution,'resolution',2,257)
         require(type(seed) is int and 0<=seed<2**32,'Seed must be an unsigned 32-bit integer.')
-        require(type(elevation) in (int,float) and math.isfinite(elevation) and 0<=elevation<=10000,'Invalid elevation.')
+        require(type(elevation) in (int,float) and 0<=elevation<=10000 and math.isfinite(elevation),'Invalid elevation.')
         self.elevation_limit=float(elevation)
         n=self.resolution
         if heights is None:
@@ -53,8 +53,9 @@ class Heightfield:
 
     def sample(self,x,z):
         """Exact triangle height and upward normal, matching the emitted diagonal."""
-        require(type(x) in (int,float) and type(z) in (int,float) and math.isfinite(x) and math.isfinite(z)
-                and -self.width/2<=x<=self.width/2 and -self.depth/2<=z<=self.depth/2,'Query outside heightfield.')
+        require(type(x) in (int,float) and type(z) in (int,float)
+                and -self.width/2<=x<=self.width/2 and -self.depth/2<=z<=self.depth/2
+                and math.isfinite(x) and math.isfinite(z),'Query outside heightfield.')
         n=self.resolution; u=(x/self.width+.5)*(n-1);v=(z/self.depth+.5)*(n-1)
         ix=min(int(u),n-2);iz=min(int(v),n-2);tx=u-ix;tz=v-iz
         a=self.heights[iz,ix];b=self.heights[iz,ix+1];c=self.heights[iz+1,ix];d=self.heights[iz+1,ix+1]
@@ -72,7 +73,7 @@ class Heightfield:
             x,z,height=update['x'],update['z'],update['height']
             require(type(x) is int and type(z) is int and 0<=x<self.resolution and 0<=z<self.resolution,
                     'Elevation grid coordinate is outside the terrain.')
-            require(type(height) in (int,float) and math.isfinite(height) and abs(height)<=self.elevation_limit,
+            require(type(height) in (int,float) and abs(height)<=self.elevation_limit and math.isfinite(height),
                     'Edited elevation exceeds its configured bound.')
             require((x,z) not in seen,'An atomic elevation edit cannot repeat a grid coordinate.')
             candidate[z,x]=height;seen.add((x,z))
@@ -88,7 +89,7 @@ class Heightfield:
         values=numeric_array(values,'terrain mask')
         require(values.shape==self.heights.shape and (values>=0).all() and (values<=1).all(),
                 'Terrain mask must match the heightfield and contain weights in [0,1].')
-        require(type(target) in (int,float) and math.isfinite(target) and abs(target)<=self.elevation_limit,
+        require(type(target) in (int,float) and abs(target)<=self.elevation_limit and math.isfinite(target),
                 'Masked target elevation exceeds its configured bound.')
         previous=self.heights;self.heights=self.heights*(1-values)+target*values
         try:self.mesh()
@@ -117,7 +118,7 @@ class Heightfield:
         """Flatten a bounded polyline corridor into this actual heightfield."""
         positive(width,'path width'); p=numeric_array(points,'path')
         require(p.ndim==2 and p.shape[1]==2 and 2<=len(p)<=256 and np.isfinite(p).all(),'Invalid path.')
-        require(type(elevation) in (int,float) and math.isfinite(elevation) and abs(elevation)<=self.elevation_limit,'Path elevation exceeds its configured bound.')
+        require(type(elevation) in (int,float) and abs(elevation)<=self.elevation_limit and math.isfinite(elevation),'Path elevation exceeds its configured bound.')
         require((np.abs(p[:,0])<=self.width/2).all() and (np.abs(p[:,1])<=self.depth/2).all(),'Path exceeds terrain.')
         require((np.linalg.norm(np.diff(p,axis=0),axis=1)>1e-9).all(),'Path has empty spans.')
         axis_x=np.linspace(-self.width/2,self.width/2,self.resolution)

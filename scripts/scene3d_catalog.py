@@ -50,9 +50,9 @@ def template_objects(recipe,build):
     preset=p['preset'];require(isinstance(preset,str) and preset in PRESETS,'Unknown environment template.')
     require(len(recipe['id'])<=24,'Template recipe IDs are limited to 24 characters to preserve child identity budgets.')
     scale=p.get('scale',1)
-    require(type(scale) in (int,float) and math.isfinite(scale) and .1<=scale<=10,'Template scale must be in [0.1,10].')
+    require(type(scale) in (int,float) and .1<=scale<=10 and math.isfinite(scale),'Template scale must be in [0.1,10].')
     detail=p.get('detail',12)
-    require(type(detail) in (int,float) and math.isfinite(detail) and detail==int(detail) and 6<=detail<=32,
+    require(type(detail) in (int,float) and 6<=detail<=32 and math.isfinite(detail) and detail==int(detail),
             'Template detail must be an integer in [6,32].')
     detail=int(detail)
     result=[];labels=set();rng=random.Random(recipe['seed'])

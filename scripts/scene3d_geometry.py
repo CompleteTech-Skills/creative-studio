@@ -17,7 +17,7 @@ def numeric_array(value, label):
 
 
 def positive(value, name):
-    require(type(value) in (int, float) and math.isfinite(value) and 0 < value <= 10000,
+    require(type(value) in (int, float) and 0 < value <= 10000 and math.isfinite(value),
             name + ' must be finite, positive and at most 10000.', 'SCENE3D_GEOMETRY')
     return float(value)
 
@@ -178,8 +178,9 @@ def wall(width, height, thickness, openings=()):
     for opening in openings:
         require(isinstance(opening,dict) and set(opening)=={'x','y','width','height'},'Opening needs x/y/width/height.')
         x,y=opening['x'],opening['y'];ow,oh=positive(opening['width'],'opening width'),positive(opening['height'],'opening height')
-        require(type(x) in (int,float) and type(y) in (int,float) and math.isfinite(x) and math.isfinite(y)
-                and 0<=x<x+ow<=w and 0<=y<y+oh<=h,'Opening lies outside wall.')
+        require(type(x) in (int,float) and type(y) in (int,float)
+                and 0<=x<=w and 0<=y<=h and math.isfinite(x) and math.isfinite(y)
+                and x+ow<=w and y+oh<=h,'Opening lies outside wall.')
         rectangles.append((x,y,x+ow,y+oh))
     xs=sorted({0,w,*[v for r in rectangles for v in (r[0],r[2])]})
     ys=sorted({0,h,*[v for r in rectangles for v in (r[1],r[3])]})

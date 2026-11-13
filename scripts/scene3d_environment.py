@@ -153,7 +153,7 @@ def _prepare_recipe(bundle,scene,recipe,*,policy='preserve',offset=None,parent=N
     require(policy in ('preserve','reject'),'Regeneration policy must be preserve or reject.')
     objects=plan(recipe);scene=deepcopy(scene)
     offset=[0,0,0] if offset is None else offset
-    require(isinstance(offset,(list,tuple)) and len(offset)==3 and all(type(x) in (int,float) and math.isfinite(x) and abs(x)<=1000000 for x in offset),'Offset must be a bounded finite vector.')
+    require(isinstance(offset,(list,tuple)) and len(offset)==3 and all(type(x) in (int,float) and abs(x)<=1000000 and math.isfinite(x) for x in offset),'Offset must be a bounded finite vector.')
     require(parent is None or isinstance(parent,str),'Parent must be a node ID or null.')
     require(scene['kind']=='scene3d-scene','Select a scene manifest.')
     rid=recipe['id'];old={n['id']:n for n in scene['nodes'] if n['metadata'].get('generator_id')==rid}
