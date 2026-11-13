@@ -7,9 +7,9 @@
     "url": "https://github.com/scikit-image/scikit-image/blob/v0.25.2/skimage/data/astronaut.png",
     "license": "Public domain NASA photograph; distribution documented by scikit-image"
   },
-  "source_commit": "60dfa52ea5b68770a53f5032989813bd9628278e",
+  "source_commit": "486d495119438526a5a9851e34399729a5a068e3",
   "implementation_sha256": {
-    "scripts/decomposition_analysis.py": "170027926dbf5219c9ff14c0749d65b9757099f4d3ef3502acb1af4d7285e67a",
+    "scripts/decomposition_analysis.py": "6879d3e3f8a80bf921c68a2df9710dc63db74fa15a85c85a6b40b30602f8a04c",
     "scripts/decomposition_cli.py": "eb29e3c90c760c93c4c8cfe052e0b758eaf54b9512ae7136996b3b66f6508363",
     "scripts/decomposition_spec.py": "cf6ebfa0b6699c98fad47754f877782daaa457a295c53e592509d9955ba006c8",
     "scripts/character_decomposition.py": "f474fb0f4ec641aaf77590bd41b712e65aa35edc267e61b25a84f2eba5663a9c"
@@ -203,13 +203,13 @@
       "execution": "local",
       "call_id": null,
       "unavailable_reason": "Local cascade inference does not issue provider call IDs.",
-      "elapsed_seconds": 0.19703644800028997,
+      "elapsed_seconds": 0.4171538060036255,
       "cost": 0,
       "note": "Executed fixed installed cascades on original source RGB; detector rectangles are proposals."
     },
     "errors": []
   },
-  "response_sha256": "a37ff2005ff092355568e0b74a0f4bd821164149a4e1d40da2fe965afe6ef503",
+  "response_sha256": "f55a5d7adc5378ad8c0c7de9dbcd1e7659822026bd4490f18b725b945f8097b0",
   "result": {
     "attempts_after_resume": 1,
     "applied_revision": 2,
