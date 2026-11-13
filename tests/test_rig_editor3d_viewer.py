@@ -12,7 +12,7 @@ import unittest
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from editor3d_viewer import EditorServer, preview_snapshot
+from editor3d_viewer import EditorServer, asset_identity, preview_snapshot
 from rig_errors import RigError
 from scene3d_contracts import load_project
 
@@ -36,18 +36,82 @@ class NativeReadRepository:
         return (self.root / path).read_bytes()
 
 
+def versioned_repository(root):
+    """Load two validated immutable revisions of one real native mesh."""
+    from copy import deepcopy
+    from scene3d_example import build_example
+    from scene3d_contracts import all_refs
+    build_example(root)
+    def read(name):
+        return json.loads((root / name).read_text())
+    def write(name, value):
+        (root / name).write_text(json.dumps(value))
+    asset = read('triangle.json')
+    asset['version'] = '2.0.0'
+    geometry = (root / 'triangle.obj').read_text().replace('v 1 0 0', 'v 2 0 0')
+    (root / 'triangle2.obj').write_text(geometry)
+    for field in ('content', 'source'):
+        asset[field] = dict(path='triangle2.obj', sha256=hashlib.sha256(geometry.encode()).hexdigest())
+    asset['meshes'] = [dict(asset['content'])]
+    asset['resources']['bytes'] = len(geometry.encode())
+    asset['bounds']['maximum'][0] = 2
+    write('triangle2.json', asset)
+    reference = dict(id='triangle', version='2.0.0', path='triangle2.json',
+                     sha256=hashlib.sha256((root / 'triangle2.json').read_bytes()).hexdigest(), kind='scene3d-asset')
+    project = read('project.json')
+    project['assets'].append(reference)
+    project['dependency_lock'].append(reference)
+    write('project.json', project)
+    scene = read('example-scene.json')
+    node = deepcopy(scene['nodes'][1])
+    node.update(id='mesh2', asset=reference)
+    node['transform']['translation'] = [4, 0, 0]
+    scene['nodes'].append(node)
+    scene['dependencies'].append(reference)
+    write('example-scene.json', scene)
+    for _ in range(6):
+        for path in root.glob('*.json'):
+            document = read(path.name)
+            for ref in all_refs(document):
+                if (root / ref['path']).is_file():
+                    ref['sha256'] = hashlib.sha256((root / ref['path']).read_bytes()).hexdigest()
+            write(path.name, document)
+    repository = NativeReadRepository()
+    repository.root = root
+    repository.value = load_project(root)
+    repository.value.update(revision=0, sha256='0' * 64,
+        scene=repository.value['documents']['example-scene.json'])
+    return repository
+
+
 class EditorViewportTests(unittest.TestCase):
     def setUp(self):
         self.repository = NativeReadRepository()
 
     def test_real_geometry_is_decoded_and_snapshot_bound(self):
         value = preview_snapshot(self.repository, self.repository.snapshot())
-        geometry = value['viewport_assets']['triangle']
+        geometry = value['viewport_assets'][asset_identity(value['scene']['nodes'][1]['asset'])]
         self.assertEqual(geometry['format'], 'geometry')
         self.assertEqual(len(geometry['meshes'][0]['positions']), 3)
         self.assertEqual(len(geometry['meshes'][0]['triangles']), 1)
         self.assertEqual(value['preview']['source_sha256'], value['sha256'])
         self.assertFalse(value['preview']['offline_render'])
+
+    def test_distinct_asset_versions_keep_geometry_and_instance_budgets(self):
+        from tempfile import TemporaryDirectory
+        from unittest.mock import patch
+        with TemporaryDirectory() as directory:
+            repository = versioned_repository(Path(directory) / 'native')
+            value = preview_snapshot(repository, repository.snapshot())
+            first, second = [node['asset'] for node in value['scene']['nodes'] if node.get('asset')]
+            self.assertNotEqual(asset_identity(first), asset_identity(second))
+            self.assertEqual(len(value['viewport_assets']), 2)
+            self.assertEqual(value['viewport_assets'][asset_identity(first)]['meshes'][0]['positions'][1][0], 1)
+            self.assertEqual(value['viewport_assets'][asset_identity(second)]['meshes'][0]['positions'][1][0], 2)
+            # Each three-vertex mesh is instantiated once; ID-only counting would count both twice.
+            with patch('editor3d_viewer.MAX_PREVIEW_VERTICES', 6):
+                limited = preview_snapshot(repository, repository.snapshot())
+            self.assertTrue(all(asset['format'] == 'geometry' for asset in limited['viewport_assets'].values()))
 
     def test_corrupt_native_bytes_fail_before_preview(self):
         original = self.repository.read_file
@@ -101,7 +165,7 @@ class EditorHttpTests(unittest.TestCase):
     def test_actual_http_snapshot_and_offline_assets(self):
         with self.fetch('/api/snapshot') as response:
             snapshot = json.load(response)
-        self.assertEqual(snapshot['viewport_assets']['triangle']['format'], 'geometry')
+        self.assertEqual(snapshot['viewport_assets'][asset_identity(snapshot['scene']['nodes'][1]['asset'])]['format'], 'geometry')
         for path in ('/', '/editor/editor.js', '/editor/TransformControls.js', '/vendor/build/three.module.min.js'):
             with self.fetch(path, token=False) as response:
                 self.assertEqual(response.status, 200)
@@ -144,6 +208,34 @@ class EditorHttpTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual editor browser acceptance explicitly.')
 class EditorBrowserTests(EditorHttpTests):
+    def test_two_native_asset_versions_render_distinct_meshes(self):
+        from tempfile import TemporaryDirectory
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with TemporaryDirectory() as directory:
+            self.server.repository = versioned_repository(Path(directory) / 'native')
+            with sync_playwright() as runtime:
+                browser = launch_chromium(runtime)
+                try:
+                    page = browser.new_page(viewport={'width': 1400, 'height': 900})
+                    page.goto(self.server.url)
+                    page.wait_for_function('() => window.editorReady === true')
+                    widths = page.evaluate("""() => ['mesh', 'mesh2'].map(id => {
+                        const object = window.hatchEditor.objects.get(id);
+                        let maximum = 0;
+                        object.traverse(child => {
+                            if (child.geometry) {
+                                child.geometry.computeBoundingBox();
+                                maximum = Math.max(maximum, child.geometry.boundingBox.max.x);
+                            }
+                        });
+                        return maximum;
+                    })""")
+                    self.assertEqual(widths, [1, 2])
+                    self.assertEqual(page.evaluate('() => window.hatchEditor.errors'), [])
+                finally:
+                    browser.close()
+
     def test_real_webgl_geometry_selection_and_navigation(self):
         from playwright.sync_api import sync_playwright
         from browser_runtime import launch_chromium

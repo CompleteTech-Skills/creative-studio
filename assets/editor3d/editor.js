@@ -458,7 +458,8 @@ async function install(snapshot) {
     object.visible = node.visible;
     content.add(object);
     if (node.asset) {
-      const asset = assets[node.asset.id];
+      const reference = node.asset;
+      const asset = assets[JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])];
       if (asset && asset.format !== "unavailable") {
         try {
           const actual = await assetObject(asset);
