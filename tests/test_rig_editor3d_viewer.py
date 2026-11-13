@@ -467,6 +467,28 @@ class EditorPersistentBrowserTests(unittest.TestCase):
                         }''')
                         self.assertEqual(lifecycle, [1, 2])
                         document = json.loads((source / 'example-scene.json').read_text())
+                        next(n for n in document['nodes'] if n['id'] == 'camera')['camera']['projection'] = 'orthographic'
+                        (source / 'example-scene.json').write_text(json.dumps(document))
+                        for _ in range(6):
+                            for path in source.glob('*.json'):
+                                document = json.loads(path.read_text())
+                                for ref in all_refs(document):
+                                    if (source / ref['path']).is_file():
+                                        ref['sha256'] = hashlib.sha256((source / ref['path']).read_bytes()).hexdigest()
+                                path.write_text(json.dumps(document))
+                        repository = EditorRepository.create(source, Path(directory) / 'ortho-saved')
+                        server.repository = repository
+                        page.goto('about:blank'); page.goto(server.url)
+                        page.wait_for_function('() => window.editorReady === true')
+                        orthographic_image = page.evaluate('''async () => {
+                            const s = window.hatchEditor.snapshot, ref = s.project.shots[0], shot = s.documents[ref.path];
+                            const result = await window.hatchEditor.capturePreview({revision:s.revision,sha256:s.sha256,
+                                shot:{id:ref.id,version:ref.version},camera:shot.camera,frame:0,source_time:{numerator:0,denominator:1},
+                                color_space:'srgb',view_transform:'standard',resolution:[320,240]});
+                            return result.image;
+                        }''')
+                        self.assertTrue(orthographic_image.startswith('data:image/png;base64,'))
+                        document = json.loads((source / 'example-scene.json').read_text())
                         area = json.loads(json.dumps(document['nodes'][0]))
                         area.update(id='area', name='Unsupported native area light', type='light', parent='root',
                                     light=dict(type='area', color=[1, 1, 1], intensity=1))

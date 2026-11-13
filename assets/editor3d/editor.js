@@ -221,7 +221,7 @@ async function capturePreview(metadata) {
       if (node.visible !== false && unavailableNodes.has(id)) throw Error(unavailableNodes.get(id));
       if (node.camera) {
         const actual = objects.get(id).children.find(child => child.isCamera);
-        if (!actual || actual.isPerspectiveCamera !== (node.camera.projection === "perspective"))
+        if (!actual || Boolean(actual.isPerspectiveCamera) !== (node.camera.projection === "perspective"))
           throw Error("The evaluated camera projection has no matching browser capture adapter.");
       }
     }
