@@ -239,7 +239,7 @@ The server binds only `127.0.0.1` and prints its local bearer token. Send `Autho
 | `POST /v1/rigs/{id}/pose`, `/solve-ik` | Evaluate a native pose or spatial target |
 | `POST .../retarget`, `/review` | Retarget from another local job or apply a bound review receipt |
 
-Operation parameters are shared with `rig_operations.py`; unknown mutation fields fail. A stale correction returns a conflict, missing jobs return 404, unauthenticated requests 401, and occupied workers 429. Tests issue real local HTTP requests rather than stubbing route behavior.
+Operation parameters are shared with `rig_operations.py`; unknown mutation fields fail. Pose and IK payloads also use closed admission. Pose fields are `pose`, `clip`, `time`, `expressions`, `gaze`, `head_follow`, `fingers` and `appendages`; IK adds `chain`, `target`, optional `pole` and optional unit-quaternion `orientation`. Unknown fields, malformed supplied objects, booleans used as numbers, nonfinite/oversized numbers and unavailable pose references fail before evaluation. A null clip preserves the neutral default; an explicitly supplied `gaze: null` releases gaze and its owned eyelid overrides. `time` is nonnegative seconds within the numeric contract bound, and supplied controls retain their documented ranges. IK-only fields do not pass through the pose admission boundary. A stale correction returns a conflict, missing jobs return 404, unauthenticated requests 401, and occupied workers 429. Tests issue real local HTTP requests rather than stubbing route behavior.
 
 ## Resource limits, jobs and recovery
 
