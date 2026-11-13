@@ -156,6 +156,21 @@ class AnalysisTests(unittest.TestCase):
         with mock.patch.object(analysis,'MAX_JOBS',1):
             with self.assertRaisesRegex(ValueError,'quota'):self.prepare(prompt='other request')
 
+    def test_arbitrary_extension_cannot_claim_local_model_execution(self):
+        annotation=json.loads((self.root/'annotations/current.json').read_text())
+        annotation['extensions']['decomposition_analysis']={'evidence':{'execution':'local'}}
+        with self.assertRaises(ValueError):
+            rebuild_from_annotation(self.root,annotation,reason='Forgery fixture',author='Test')
+        self.assertEqual(self.original,(self.root/'decomposition.json').read_bytes())
+
+    def test_modified_lineage_response_invalidates_loaded_decomposition(self):
+        job=self.prepare();self.ingest(job);analysis.apply(self.root,job['job'])
+        path=self.root/'analysis-jobs'/job['job']/'response.json'
+        response=json.loads(path.read_text());response['model']['version']='forged'
+        atomic_json(path,response)
+        with self.assertRaisesRegex(ValueError,'lineage'):
+            load_decomposition(self.root)
+
     def test_external_parameters_and_selected_model_are_bound(self):
         model={'provider':'synthetic-fixture','name':'none','version':'fixture-v1','files':[],
                'identity_evidence':'Fixture only; no model executed'}

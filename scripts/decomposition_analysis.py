@@ -107,6 +107,42 @@ def _job(root, identifier):
     return path
 
 
+def provenance(root, annotation, source_hash):
+    """Verify the reserved lineage extension against retained immutable records.
+
+    This is byte-bound local provenance, not cryptographic provider identity.
+    Arbitrary imported extension data cannot itself assert a local model call.
+    """
+    record = annotation.get('extensions', {}).get('decomposition_analysis')
+    if record is None:
+        return None
+    spec = obj({'job': HASH, 'response_sha256': HASH, 'model': MODEL,
+                'evidence': RESPONSE['properties']['evidence'], 'semantic_approval': {'const': False}})
+    validate_structure(record, spec, 'analysis lineage')
+    job = _job(root, record['job'])
+    request = read_json(job / 'request.json')
+    response = read_json(job / 'response.json')
+    state = read_json(job / 'state.json')
+    validate_structure(request, REQUEST, 'analysis lineage request')
+    validate_structure(response, RESPONSE, 'analysis lineage response')
+    validate_structure(state, STATE, 'analysis lineage state')
+    digest = record['job']
+    if (hash_object(request) != digest or response['request_sha256'] != digest or
+            state['request_sha256'] != digest or request['source']['sha256'] != source_hash or
+            response['source_sha256'] != source_hash or response['annotation']['source_sha256'] != source_hash or
+            sha(job / 'response.json') != record['response_sha256'] or
+            state.get('response_sha256') != record['response_sha256'] or
+            record['model'] != response['model'] or record['evidence'] != response['evidence'] or
+            response['status'] != 'proposed' or state['status'] not in ('proposed', 'applied')):
+        raise ValueError('analysis lineage disagrees with retained source-bound job')
+    if request['backend'] == 'opencv-haar':
+        if record['evidence']['execution'] != 'local' or request['model'] != record['model']:
+            raise ValueError('local analysis lineage disagrees with selected backend/model')
+    elif record['evidence']['execution'] != 'external-assertion':
+        raise ValueError('external analysis lineage cannot assert local execution')
+    return record
+
+
 def _source(root, request):
     validate_structure(request, REQUEST, 'analysis request')
     if request['backend'] == 'opencv-haar':

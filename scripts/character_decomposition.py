@@ -585,6 +585,11 @@ def _load_checked(root, verify):
         validate_structure(annotation, ANNOTATION_SCHEMA, 'current annotation')
         if annotation['source_sha256'] != source['sha256']:
             raise ValueError('current annotation names another source')
+        from decomposition_analysis import provenance as analysis_provenance
+        analysis_record = analysis_provenance(root, annotation, source['sha256'])
+        expected_call = bool(analysis_record and analysis_record['evidence']['execution'] == 'local')
+        if manifest['analysis']['semantic_model_called'] != expected_call or (manifest['analysis']['mode'] == 'model-assisted') != bool(analysis_record):
+            raise ValueError('analysis metadata disagrees with verified lineage')
         identity = read_json(safe_path(root, manifest['identity']['path']))
         directions = identity.get('directions', {}) if isinstance(identity, dict) else {}
         validate_identity(identity, {'states': [{'id': name} for name in directions]})
@@ -628,6 +633,8 @@ def _build(root, source, source_info, annotation, foreground_mask, foreground_in
     foreground_asset.update(mask=_content_image(root, 'masks', 'foreground', foreground_mask), **foreground_info)
     candidates = character_candidates(foreground)
     annotations_are_semantic = any(c['category'] != 'unassigned' for c in components)
+    from decomposition_analysis import provenance as analysis_provenance
+    analysis_record = analysis_provenance(root, annotation, source_info['sha256'])
     suspected = len(candidates) > 1
     analysis_warnings = []
     if suspected:
@@ -645,8 +652,8 @@ def _build(root, source, source_info, annotation, foreground_mask, foreground_in
         'source': source_info, 'canvas': {'width': source.width, 'height': source.height, 'pixel_art': pixel_art},
         'foreground': foreground_asset, 'components': components,
         'annotation': {'path': 'annotations/current.json', 'sha256': sha(root / 'annotations/current.json')},
-        'analysis': {'mode': 'model-assisted' if 'decomposition_analysis' in annotation.get('extensions', {}) else ('annotation-assisted' if annotations_are_semantic else 'manual-pending'),
-            'semantic_model_called': bool(annotation.get('extensions', {}).get('decomposition_analysis', {}).get('evidence', {}).get('execution') == 'local'), 'candidates': candidates, 'multiple_characters_suspected': suspected,
+        'analysis': {'mode': 'model-assisted' if analysis_record else ('annotation-assisted' if annotations_are_semantic else 'manual-pending'),
+            'semantic_model_called': bool(analysis_record and analysis_record['evidence']['execution'] == 'local'), 'candidates': candidates, 'multiple_characters_suspected': suspected,
             'selection': selection, 'selection_resolved': bool(selection is not None or annotations_are_semantic or not suspected),
             'warnings': analysis_warnings},
         'quality': quality(source, foreground, pixel_art), 'rig': _rig(components),
