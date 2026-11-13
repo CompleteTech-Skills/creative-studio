@@ -225,7 +225,11 @@ def collision_build_query_shapes(p, client, collider, root):
     """
     shapes=[]
     for leaf in collision_leaves(collider):
-        local=dict(shape=leaf['shape'],transform=dict(translation=leaf['translation'],rotation=leaf['rotation']))
+        native_shape=json.loads(json.dumps(leaf['shape']))
+        # Flattened leaf frames already contain the authored axis conversion.
+        if native_shape['type'] in ('capsule','cylinder'):
+            native_shape['axis']='Z'
+        local=dict(shape=native_shape,transform=dict(translation=leaf['translation'],rotation=leaf['rotation']))
         if leaf['shape']['type']=='box':
             surface=collision_query_collider(local)['shape']
             shape=p.createCollisionShape(p.GEOM_MESH,vertices=surface['vertices'],
