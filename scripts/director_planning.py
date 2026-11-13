@@ -201,8 +201,26 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
         if destination.exists():
             result = decode_json((destination / 'result.json').read_bytes())
             validate_method_result('PlanningProvider.generate_structured', result, request)
-            for ref in result['artifacts']:
-                _read_artifact(destination, ref)
+            try:
+                for ref in result['artifacts']:
+                    _read_artifact(destination, ref)
+            except RigError as error:
+                if error.report.get('code') != 'DIRECTOR_PLATFORM':
+                    raise
+                # The immutable historical result remains untouched. Report this
+                # invocation's inability to verify it without asserting its usage.
+                result = deepcopy(result)
+                result.update(status='blocked_capability', value=None, artifacts=[], provenance_receipts=[],
+                    diagnostics=[{'code': 'DIRECTOR_PLANNING_PLATFORM', 'severity': 'error', 'stage': 'planning',
+                        'entity_id': None, 'field_path': 'artifacts', 'expected': 'secure verified cached evidence',
+                        'observed': 'Secure descriptor-relative artifact reads are unavailable on this platform.',
+                        'retryable': False, 'recommended_action': 'Use a platform with the native secure artifact reader.',
+                        'evidence': []}])
+                for measurement in result['usage'].values():
+                    if isinstance(measurement, dict):
+                        measurement.update(value=None, explanation='Cached usage could not be verified on this platform.')
+                result['usage']['provider_calls'] = {'value': 0, 'explanation': None}
+                validate_method_result('PlanningProvider.generate_structured', result, request)
             return result
         with tempfile.TemporaryDirectory(prefix='.planning-', dir=root) as temporary:
             stage = Path(temporary) / 'result'
@@ -321,10 +339,11 @@ def generate_structured(request, store, *, project_root, configuration=None, aut
                 diagnostics.append({'code': failure.code, 'severity': 'error', 'stage': 'planning', 'entity_id': None,
                     'field_path': 'input', 'expected': 'authorized bounded valid planning response', 'observed': failure.message,
                     'retryable': False, 'recommended_action': 'Resolve the stated configuration or input problem; reconcile unknown outcomes before starting another attempt.', 'evidence': deepcopy(artifacts)})
-            except (RigError, UnicodeError, ValueError, TypeError):
-                status = 'failed'
-                diagnostics.append({'code': 'DIRECTOR_PLANNING_INPUT', 'severity': 'error', 'stage': 'planning', 'entity_id': None,
-                    'field_path': 'input', 'expected': 'verified UTF-8 structured input', 'observed': 'Input or response could not be validated.',
+            except (RigError, UnicodeError, ValueError, TypeError) as error:
+                platform_unavailable = isinstance(error, RigError) and error.report.get('code') == 'DIRECTOR_PLATFORM'
+                status = 'blocked_capability' if platform_unavailable else 'failed'
+                diagnostics.append({'code': 'DIRECTOR_PLANNING_PLATFORM' if platform_unavailable else 'DIRECTOR_PLANNING_INPUT', 'severity': 'error', 'stage': 'planning', 'entity_id': None,
+                    'field_path': 'input', 'expected': 'verified UTF-8 structured input', 'observed': 'Secure descriptor-relative artifact reads are unavailable on this platform.' if platform_unavailable else 'Input or response could not be validated.',
                     'retryable': False, 'recommended_action': 'Correct input and verify exact evidence.', 'evidence': deepcopy(artifacts)})
             for field, complete in complete_usage.items():
                 if not complete or pending_usage:

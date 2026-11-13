@@ -3,12 +3,14 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import os
 import hashlib
 from pathlib import Path
 import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 import director_planning as dp
 
@@ -66,7 +68,24 @@ class PlanningTests(unittest.TestCase):
     def response(self, content):
         return {'status':'completed','model':'fixture-model','usage':{'input_tokens':7,'output_tokens':3},'output':[{'type':'message','role':'assistant','content':[{'type':'output_text','text':json.dumps(content)}]}]}
 
+    @staticmethod
+    def secure_reads_available():
+        return hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd
+
+    @staticmethod
+    def read_private_fixture(root, reference):
+        # Test-only transport fixture under an owned TemporaryDirectory. This is
+        # never installed in production or proof of secure Windows artifact I/O.
+        path = Path(root) / reference['path']
+        raw = path.read_bytes()
+        if len(raw) != reference['byte_size'] or hashlib.sha256(raw).hexdigest() != reference['sha256']:
+            raise AssertionError('Fixture artifact bytes differ.')
+        return raw
+
     def run_request(self, config=None):
+        if not self.secure_reads_available():
+            with patch.object(dp, '_read_artifact', self.read_private_fixture):
+                return dp.generate_structured(self.request,self.temp.name,project_root=self.temp.name,configuration=config)
         return dp.generate_structured(self.request,self.temp.name,project_root=self.temp.name,configuration=config)
 
     def test_unconfigured_is_controlled(self):
@@ -149,7 +168,9 @@ class PlanningTests(unittest.TestCase):
         self.request['context']['budget_reservation_id']='reservation'
         def decline(*args):
             raise dp.RigError('BUDGET_EXHAUSTED','No remaining budget.')
-        result=dp.generate_structured(self.request,self.temp.name,project_root=self.temp.name,configuration=config,authorize_call=decline)
+        reader = dp._read_artifact if self.secure_reads_available() else self.read_private_fixture
+        with patch.object(dp, '_read_artifact', reader):
+            result=dp.generate_structured(self.request,self.temp.name,project_root=self.temp.name,configuration=config,authorize_call=decline)
         self.assertEqual(result['status'],'blocked_budget')
         self.assertEqual(self.calls,[])
 
@@ -220,6 +241,40 @@ class PlanningTests(unittest.TestCase):
         config=dp.ProviderConfig('fixture','fixture-model','https://example.org/v1/responses',allowed_hosts=None)
         result=self.run_request(config)
         self.assertEqual(result['status'],'blocked_capability')
+
+    def test_native_secure_reader_capability_is_explicit(self):
+        config=self.server([(200,self.response(self.brief))])
+        # Always use the production reader here, including on Windows.
+        result=dp.generate_structured(self.request,self.temp.name,project_root=self.temp.name,configuration=config)
+        if self.secure_reads_available():
+            self.assertEqual(result['status'],'succeeded')
+            self.assertEqual(len(self.calls),1)
+        else:
+            self.assertEqual(result['status'],'blocked_capability')
+            self.assertEqual(result['diagnostics'][0]['code'],'DIRECTOR_PLANNING_PLATFORM')
+            self.assertEqual(result['usage']['provider_calls']['value'],0)
+            self.assertEqual(self.calls,[])
+
+    def test_unsupported_native_reader_never_dispatches(self):
+        config=self.server([(200,self.response(self.brief))])
+        with patch.object(os, 'supports_dir_fd', set()):
+            result=dp.generate_structured(self.request,self.temp.name,project_root=self.temp.name,configuration=config)
+        self.assertEqual(result['status'],'blocked_capability')
+        self.assertEqual(result['diagnostics'][0]['code'],'DIRECTOR_PLANNING_PLATFORM')
+        self.assertEqual(result['usage']['provider_calls']['value'],0)
+        self.assertEqual(self.calls,[])
+
+    def test_cached_evidence_platform_unavailable_does_not_dispatch(self):
+        config=self.server([(200,self.response(self.brief))])
+        self.assertEqual(self.run_request(config)['status'],'succeeded')
+        with patch.object(os, 'supports_dir_fd', set()):
+            result=dp.generate_structured(self.request,self.temp.name,project_root=self.temp.name,configuration=config)
+        self.assertEqual(result['status'],'blocked_capability')
+        self.assertEqual(result['diagnostics'][0]['code'],'DIRECTOR_PLANNING_PLATFORM')
+        self.assertEqual(result['artifacts'],[])
+        self.assertEqual(result['usage']['provider_calls']['value'],0)
+        self.assertIsNone(result['usage']['input_tokens']['value'])
+        self.assertEqual(len(self.calls),1)
 
     def test_all_role_templates_have_valid_schema_and_distinct_hashes(self):
         values=[dp.template(role) for role in dp.ROLES]
