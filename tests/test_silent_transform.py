@@ -84,5 +84,13 @@ class TransformTests(unittest.TestCase):
         self.assertEqual(output.size,(2,4096));self.assertEqual(output.getpixel((1,2048)),(40,80,120))
         source.close();output.close()
 
+    def test_customizing_returned_schemas_cannot_mutate_media_authority(self):
+        profile_schema = transform.profile_schema()
+        profile_schema['properties']['fps']['properties']['numerator']['maximum'] = 1
+        source_schema = transform.schema()
+        source_schema['properties']['source']['properties']['width']['maximum'] = 2
+        transform.profile(64,48,self.source['fps'])
+        video.validate_source(self.source)
+
 
 if __name__ == '__main__':unittest.main()

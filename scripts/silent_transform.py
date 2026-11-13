@@ -30,11 +30,11 @@ def profile(width, height, fps, *, fit='preserve', fps_policy='preserve', backgr
 
 
 def profile_schema():
-    return video._obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-frame-profile'},
+    return copy.deepcopy(video._obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-frame-profile'},
         'width': video._int(2, 4096), 'height': video._int(2, 4096), 'fps': video.FPS,
         'fit': {'enum': ['preserve', 'letterbox', 'fill', 'stretch']},
         'fps_policy': {'enum': ['preserve', 'nearest']},
-        'background': {'type': 'array', 'minItems': 3, 'maxItems': 3, 'items': video._int(0, 255)}})
+        'background': {'type': 'array', 'minItems': 3, 'maxItems': 3, 'items': video._int(0, 255)}}))
 
 
 def validate_profile(value):
@@ -49,7 +49,7 @@ def validate_profile(value):
 
 def schema():
     ratio = video._obj({'numerator': video._int(-10**12, 10**12), 'denominator': video._int(1, 10**12)})
-    return video._obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-frame-transform'},
+    return copy.deepcopy(video._obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-frame-transform'},
         'input_source': video.SOURCE, 'input_source_sha256': video.SHA, 'profile': profile_schema(), 'profile_sha256': video.SHA,
         'source': video.SOURCE, 'mapping': {'type': 'array', 'minItems': 1, 'maxItems': video.MAX_FRAMES,
             'items': video._obj({'index': video._int(0, video.MAX_FRAMES - 1),
@@ -57,7 +57,7 @@ def schema():
         'input_duration': ratio, 'output_duration': ratio, 'duration_delta': ratio,
         'implementation': video._obj({'id': {'const': 'pillow-lanczos-center'},
             'pillow_version': {'type': 'string', 'minLength': 1, 'maxLength': 64}, 'code_sha256': video.SHA}),
-        'visual_review': {'const': 'not-performed'}})
+        'visual_review': {'const': 'not-performed'}}))
 
 
 def plan(source, settings):
