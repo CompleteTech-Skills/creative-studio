@@ -1,0 +1,50 @@
+{
+  "backend": "blender",
+  "dependencies": {
+    "executable": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+    "inventory_source": "0357e94361c2669ff52b5928cb2d57c5966bd41e45303537a09c6732b12bf406",
+    "probe_source": "9edd4c76c76592e3d72ba02c9fc66fc06620d046efb4a24d4f8846bd3a094f19"
+  },
+  "dependency_fingerprint": "ba706dc6140aa5013acb731023474bf8cf4616eb4f19b9789232ae0df5a4a778",
+  "discovered": true,
+  "execution": {
+    "engines": [
+      "BLENDER_EEVEE_NEXT",
+      "BLENDER_WORKBENCH",
+      "CYCLES"
+    ],
+    "exit_code": 0,
+    "reason": null,
+    "rendered": false,
+    "success": true,
+    "version": "4.5.3 LTS"
+  },
+  "execution_verified": true,
+  "fallback": null,
+  "fixture": true,
+  "initialized": true,
+  "operation": "blender.engines",
+  "payloads": [],
+  "performance": null,
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "executed",
+  "required_permissions": [
+    "explicit-local-probe"
+  ],
+  "schema_version": 1,
+  "status": "available",
+  "supported_formats": [],
+  "supported_operations": [
+    "blender.engines"
+  ],
+  "version": "4.5.3 LTS"
+}
