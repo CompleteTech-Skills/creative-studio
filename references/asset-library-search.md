@@ -58,7 +58,7 @@ index directories. Do not replace their roots during an operation.
   all supplied strings must match recorded metadata.
 - `favorite`: boolean.
 - `max_triangles`, `max_texture_pixels`: nonnegative integer budgets over the sum of recorded per-file counts. Missing
-  recorded technical values fail the filter; a manifest does not prove geometry
+  recorded technical values on any relevant file fail the filter. Geometry means GLB/glTF/OBJ or geometry/mesh/model roles; textures mean PNG/JPEG/WebP or texture roles. Explicit recorded counts on other files are also included. A manifest does not prove geometry
   correctness merely by recording a count.
 - `created_after`, `created_before`: explicit RFC3339 timestamps, inclusive.
 - `used_by`: any supplied project ID from native project bindings.
@@ -77,7 +77,7 @@ Sorting supports `relevance`, `name`, `created_at` and descending numeric semant
 explainable lexical, completeness, native-compatibility and optional cosine
 components. Completeness is a verified admission gate, so all returned records
 have that same score. Maximum page size is 100. Cursor state binds query, filters,
-sort and index snapshot; changing any of those invalidates the cursor.
+sort, index snapshot, embedding-cache identity and exact query vector; changing any of those invalidates the cursor.
 
 ## Natural-language boundary
 

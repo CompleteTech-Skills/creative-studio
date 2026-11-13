@@ -400,7 +400,12 @@ class SearchIndex:
                 if a['favorite']!=expected:return False
             elif name.startswith('max_'):
                 field={'max_triangles':'triangles','max_texture_pixels':'texture_pixels'}[name]
-                values=[v[field] for v in technical if field in v]
+                formats = ({'glb','gltf','obj'} if field=='triangles' else {'png','jpeg','webp'})
+                roles = ({'geometry','mesh','model'} if field=='triangles' else {'texture'})
+                relevant=[f.get('technical_metadata',{}) for f in m['files']
+                          if f['format'] in formats or f['role'] in roles or field in f.get('technical_metadata',{})]
+                if any(field not in v for v in relevant):return False
+                values=[v[field] for v in relevant]
                 if (not values or any(type(v) not in (int,float) or not math.isfinite(v) or v<0 for v in values)
                     or sum(values)>expected):return False
             else:
@@ -430,21 +435,11 @@ class SearchIndex:
         with self._connect() as db:
             db.execute('BEGIN')
             revision,state=self._current(db)
-            if cursor is not None:
-                try:
-                    if not isinstance(cursor,str) or len(cursor)>2048:raise ValueError()
-                    token=decode_json(base64.b64decode(cursor,validate=True))
-                    if set(token)!={'revision','request','offset'}:raise ValueError()
-                    if token['revision']!=revision or token['request']!=request_hash:fail('CURSOR','Cursor belongs to a different snapshot/query.')
-                    offset=_integer(token['offset'],0,MAX_ASSETS)
-                except (ValueError,TypeError) as exc:
-                    if isinstance(exc,RigError):raise
-                    fail('CURSOR','Malformed pagination cursor.')
             lexical={}
             if parsed['tokens']:
                 expression=' OR '.join('"'+t.replace('"','""')+'"' for t in parsed['tokens'])
                 lexical=dict(db.execute('SELECT rowid,bm25(words) FROM words WHERE words MATCH ?',(expression,)))
-            vector_scores={};embedding_identity=None
+            vector_scores={};embedding_identity=None;query_vector_sha256=None
             if provider is not None:
                 if registry is None:fail('PROVIDER','Configure an explicit provider registry.')
                 adapter=registry.get(provider,enabled=enabled,authorize_private_metadata=authorize_private_metadata)
@@ -457,6 +452,7 @@ class SearchIndex:
                 version=(adapter.model_id,adapter.model_version)
                 q=_vectors(adapter.encode([query]),1)[0]
                 if (adapter.model_id,adapter.model_version)!=version:fail('PROVIDER','Provider identity changed during query.')
+                query_vector_sha256=object_hash(q)
                 if len(q)!=embedding_identity['dimensions']:fail('EMBEDDING','Query vector dimensions differ.')
                 vector_rows=[(n,decode_json(blob)) for n,blob in db.execute('SELECT id,vector FROM vectors ORDER BY id')]
                 entry_ids=[n for (n,) in db.execute('SELECT id FROM entries ORDER BY id')]
@@ -467,6 +463,17 @@ class SearchIndex:
                     v=_vectors([raw],1)[0]
                     if len(v)!=len(q):fail('EMBEDDING','Stored vector dimensions differ.')
                     vector_scores[number]=sum(a*b for a,b in zip(q,v))
+            retrieval_revision=object_hash(dict(index=revision,embedding=embedding_identity,query_vector=query_vector_sha256))
+            if cursor is not None:
+                try:
+                    if not isinstance(cursor,str) or len(cursor)>2048:raise ValueError()
+                    token=decode_json(base64.b64decode(cursor,validate=True))
+                    if set(token)!={'revision','request','offset'}:raise ValueError()
+                    if token['revision']!=retrieval_revision or token['request']!=request_hash:fail('CURSOR','Cursor belongs to a different snapshot/query.')
+                    offset=_integer(token['offset'],0,MAX_ASSETS)
+                except (ValueError,TypeError) as exc:
+                    if isinstance(exc,RigError):raise
+                    fail('CURSOR','Malformed pagination cursor.')
             results=[]
             for number,blob,_ in db.execute('SELECT id,document,text FROM entries'):
                 entry=decode_json(blob)
@@ -498,10 +505,10 @@ class SearchIndex:
             else:results.sort(key=lambda r:(r[sort].casefold(),_key(r['location'])))
             page=results[offset:offset+limit];next_cursor=None
             if offset+limit<len(results):
-                next_cursor=base64.b64encode(canonical_bytes(dict(revision=revision,request=request_hash,offset=offset+limit))).decode()
+                next_cursor=base64.b64encode(canonical_bytes(dict(revision=retrieval_revision,request=request_hash,offset=offset+limit))).decode()
             # Detect source mutation during query evaluation before returning any hit.
             current,_=self._current(db)
             if current!=revision:fail('STALE','Snapshot changed during query.')
-            return dict(revision=revision,total=len(results),results=page,next_cursor=next_cursor,
+            return dict(revision=revision,retrieval_revision=retrieval_revision,total=len(results),results=page,next_cursor=next_cursor,
                         excluded=state['snapshot']['diagnostics'],query=parsed,embedding_used=provider is not None,
                         embedding=embedding_identity)

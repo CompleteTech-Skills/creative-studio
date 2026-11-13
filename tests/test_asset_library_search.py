@@ -155,6 +155,42 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(self.index.search(filters={'max_triangles':10})['total'],0)
         self.assertEqual(self.index.search(filters={'max_triangles':12})['total'],2)
 
+    def test_resource_budgets_reject_partially_measured_payloads(self):
+        manifest=deepcopy(self.template)
+        manifest['files'][0]['technical_metadata']={'triangles':1}
+        other=deepcopy(manifest['files'][0]);other['path']='mesh/second.obj'
+        other.pop('technical_metadata')
+        manifest['files'].append(other)
+        manifest['publication']['inventory'].append(other['path'])
+        manifest['provenance']['sources']=[manifest['files'][0],other]
+        payloads={f['path']:self.example/('mesh/triangle.obj' if f['role']=='geometry' else f['path'])
+                  for f in manifest['files']}
+        ref=self.library.register(seal(manifest),payloads)
+        self.index.rebuild([{'library':'local','reference':ref}])
+        self.assertEqual(self.index.search(filters={'max_triangles':10})['total'],0)
+        # Nongeometry license evidence does not need invented triangle counts.
+        one=self.register('single',triangles=1)
+        self.index.rebuild([one])
+        self.assertEqual(self.index.search(filters={'max_triangles':1})['total'],1)
+        from PIL import Image
+        texture=self.root/'texture.png'
+        Image.new('RGBA',(1,1),(255,0,0,255)).save(texture)
+        import hashlib
+        payload=texture.read_bytes()
+        record=dict(path='textures/a.png',role='texture',sha256=hashlib.sha256(payload).hexdigest(),
+                    bytes=len(payload),format='png',mime_type='image/png',required=True,
+                    technical_metadata={'texture_pixels':1})
+        manifest=deepcopy(self.template)
+        manifest['identity'].update(id='textured',slug='textured',name='Textured')
+        manifest['files'] += [record,dict(record,path='textures/b.png')]
+        manifest['files'][-1].pop('technical_metadata')
+        manifest['publication']['inventory'] += ['textures/a.png','textures/b.png']
+        sources={f['path']:self.example/f['path'] for f in self.template['files']}
+        sources.update({'textures/a.png':texture,'textures/b.png':texture})
+        ref=self.library.register(seal(manifest),sources)
+        self.index.rebuild([{'library':'local','reference':ref}])
+        self.assertEqual(self.index.search(filters={'max_texture_pixels':10})['total'],0)
+
     def test_provider_absence_unknown_model_and_remote_private_metadata_gate(self):
         self.register('hero');self.index.rebuild(self.refs)
         registry=ProviderRegistry()
@@ -177,6 +213,27 @@ class SearchTests(unittest.TestCase):
         provider.model_version='fixture-2'
         self.assert_code('EMBEDDING',lambda:self.index.search('hero',registry=registry,provider='test',enabled=True,authorize_private_metadata=True))
         # This double proves dispatch/authorization only, never model quality.
+
+    def test_semantic_cursors_bind_vector_rebuilds_and_query_vectors(self):
+        for name in ('alpha','beta','gamma'):self.register(name)
+        self.index.rebuild(self.refs)
+        class ChangingProvider:
+            model_id='protocol-test';model_version='fixed';runtime_available=True
+            requires_credentials=False;credentials_available=True;transmits_metadata=False
+            reverse=False;query_reverse=False
+            def encode(self,texts):
+                if len(texts)==1:return [[0.,1.] if self.query_reverse else [1.,0.]]
+                result=[[1.,0.],[.7,.7],[0.,1.]]
+                return list(reversed(result)) if self.reverse else result
+        provider=ChangingProvider();registry=ProviderRegistry();registry.register('test',provider)
+        self.index.rebuild_embeddings(registry,'test',enabled=True)
+        first=self.index.search(registry=registry,provider='test',enabled=True,limit=1)
+        provider.reverse=True
+        self.index.rebuild_embeddings(registry,'test',enabled=True)
+        self.assert_code('CURSOR',lambda:self.index.search(registry=registry,provider='test',enabled=True,limit=1,cursor=first['next_cursor']))
+        fresh=self.index.search(registry=registry,provider='test',enabled=True,limit=1)
+        provider.query_reverse=True
+        self.assert_code('CURSOR',lambda:self.index.search(registry=registry,provider='test',enabled=True,limit=1,cursor=fresh['next_cursor']))
 
     def test_bad_embedding_vectors_are_rejected_without_publishing(self):
         self.register('hero');self.index.rebuild(self.refs)
