@@ -765,7 +765,7 @@ function inspect() {
   }
   $("selected-name").textContent =
     selection.size > 1 ? selection.size + " objects" : node.name;
-  $("selected-type").textContent = node.type + (nativeTransformReadonly[id] ? " · transform read-only" : "");
+  $("selected-type").textContent = node.type + (Object.hasOwn(nativeTransformReadonly, id) ? " · transform read-only" : "");
   $("name").value = node.name;
   $("visible").checked = node.visible;
   $("render-visible").checked = node.render.visible;
