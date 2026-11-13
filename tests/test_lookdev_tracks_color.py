@@ -30,6 +30,15 @@ class TrackTests(unittest.TestCase):
         for frame in [True,-1,1.5,10_000_001]:
             with self.assertRaises(RigError):evaluate_track(track(0,1),frame)
 
+    def test_native_cubic_derivatives_and_boundary_validation(self):
+        t=track(0.,1.,mode='cubic')
+        for key in t['keys']:key.update(in_tangent=0.,out_tangent=0.)
+        t['keys'][0]['out_tangent']=.4
+        self.assertAlmostEqual(evaluate_track(t,5),1.)
+        self.assertEqual(evaluate_track(t,10),1.)
+        t['keys'][0]['out_tangent']=[.4]
+        with self.assertRaises(RigError):evaluate_track(t,5)
+
     def test_state_isolation_continuity_and_conflicting_bindings(self):
         base={'color':{'exposure':0},'material':{'variant':'dry'}};copy=deepcopy(base)
         tracks=[{'path':['color','exposure'],'track':track(0,2)}]
