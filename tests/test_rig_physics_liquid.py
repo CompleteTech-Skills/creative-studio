@@ -6,11 +6,12 @@ import struct
 import zlib
 import tempfile
 import unittest
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import physics_backends as core
 from physics_liquid import simulate,verify_cache
 from physics_liquid_example import build_liquid_inputs
+from physics_liquid_acceptance import evaluate_caches
 
 
 @unittest.skipUnless(os.environ.get('HATCH_PHYSICS_BACKEND_TEST')=='1','Native backend opt-in required')
@@ -104,15 +105,23 @@ class NativeLiquidTests(unittest.TestCase):
 
     def test_actual_viscosity_moving_obstacle_and_open_boundary(self):
         results={}
-        for case,options in [('baseline',{}),('viscous',dict(viscosity=.01)),('stationary',dict(stationary_paddle=True)),('moving',dict(moving=True)),('uncontained',dict(container=False))]:
-            with self.subTest(case=case),self.workspace(case) as root:
-                world,payloads,settings=build_liquid_inputs(**options)
-                if case=='uncontained':settings['boundaries']['bottom']=False
-                report=simulate(world,payloads,root,settings=settings)
-                self.assertTrue(report['geometry']['reopened_geometry_verified'])
-                results[case]=[x['mesh_sha256'] for x in report['geometry']['samples']]
-        for case in ('viscous','uncontained'):
-            self.assertNotEqual(results['baseline'],results[case],case)
+        caches={}
+        with ExitStack() as stack:
+            for case,options in [('baseline',{}),('viscous',dict(viscosity=.01)),('stationary',dict(stationary_paddle=True)),('moving',dict(moving=True)),('uncontained',dict(container=False))]:
+                with self.subTest(case=case):
+                    root=stack.enter_context(self.workspace(case))
+                    world,payloads,settings=build_liquid_inputs(**options)
+                    if case in ('baseline','viscous','uncontained'):settings['boundaries']['bottom']=False
+                    report=simulate(world,payloads,root,settings=settings)
+                    self.assertTrue(report['geometry']['reopened_geometry_verified'])
+                    results[case]=[x['mesh_sha256'] for x in report['geometry']['samples']]
+                    if case in ('baseline','viscous','uncontained'):caches[case]=root
+            acceptance=evaluate_caches(caches)
+            evidence=os.environ.get('HATCH_LIQUID_EVIDENCE')
+            if evidence:
+                # Keep the full diagnostics even if an actual physical check fails.
+                (Path(evidence)/'surface-acceptance.json').write_bytes(core.canonical(acceptance))
+            self.assertEqual(acceptance['assessment']['status'],'passed',acceptance['assessment'])
         self.assertNotEqual(results['stationary'],results['moving'])
 
     def test_missing_solver_never_publishes_success(self):
