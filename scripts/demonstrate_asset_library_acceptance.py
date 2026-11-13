@@ -112,7 +112,7 @@ def demonstrate(output, executable):
     from asset_library_search import SearchIndex
     search=SearchIndex(output/'search',{'local':library},create=True,dependency_graph=graph)
     search.rebuild()
-    discovery=search.search('character',filters={'kind':'character'})
+    discovery=search.search('character',filters={'kind':['character']})
     require(any(item['location']['reference']==refs['character'] for item in discovery['results']),
             'Metadata search did not discover the actual character version.')
     atomic_json(output/'discovery.json',discovery)
