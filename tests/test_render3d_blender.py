@@ -96,6 +96,58 @@ class Supervision(unittest.TestCase):
             self.assertIn('worker failure fixture',(root/'blender.log').read_text())
 
 
+class ScenePrefabPreparation(unittest.TestCase):
+    def test_nested_prefabs_plan_exact_effective_nodes_and_geometry(self):
+        from scene3d_example import build_example, node
+        from scene3d_graph import SceneGraph
+        from scene3d_prefabs import PrefabLibrary
+        from scene3d_snapshot import snapshot_project
+        from scene3d_contracts import load_project
+        from scene3d_evaluate import evaluate_scene
+        from render3d_snapshot import create_snapshot, Scene3DAdapter
+        from render3d_blender import _prepare_scene
+        from test_render3d_contracts import request
+        import numpy as np
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);source=root/'source';bundle=build_example(source)
+            library=PrefabLibrary.from_files(source,bundle)
+            outer=deepcopy(bundle['documents']['example-prefab.json'])
+            outer.update(id='outer',nodes=outer['nodes'][:1],dependencies=[])
+            child=node('inner','prefab_instance','prefab-root')
+            child['prefab']=deepcopy(bundle['project']['prefabs'][0])
+            child['prefab_overrides']=dict(parameters={},materials={},nodes=[])
+            outer['nodes'].append(child)
+            reference=library.register(outer)
+            graph=SceneGraph.from_bundle(bundle,'example-scene.json',source_root=source)
+            library.instantiate(graph,reference,'outer-instance')
+            saved=snapshot_project(source,root/'persisted',graph,scene_path='example-scene.json',
+                                   derived_documents={reference['path']:outer})
+            persisted=load_project(root/'persisted')
+            scene_ref=saved['active_scene'];shot_ref=persisted['project']['shots'][-1]
+            create_snapshot(root/'persisted',root/'snapshot',Scene3DAdapter())
+            payload=(root/'snapshot/snapshot.json').read_bytes()
+            spec=request();spec.update(project={k:persisted['project'][k] for k in ('id','version')},
+                scene={k:scene_ref[k] for k in ('id','version')},shot={k:shot_ref[k] for k in ('id','version')},
+                fps=dict(numerator=24,denominator=1),frame_range=dict(start=0,end=2),
+                source_start=dict(numerator=0,denominator=1),playback_rate=dict(numerator=1,denominator=1),
+                snapshot=dict(path='snapshot.json',bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest()))
+            workspace=root/'workspace';workspace.mkdir()
+            result=_prepare_scene(spec,root/'snapshot',workspace)
+            expected=evaluate_scene(root/'snapshot',scene_ref['path'],shot_ref['path'],0)
+            self.assertEqual({n['id'] for n in result['nodes']},set(expected['nodes']))
+            self.assertEqual(len([n for n in result['nodes'] if 'asset' in n]),2)
+            self.assertGreater(result['geometry_vertices'],0)
+            self.assertGreater(result['geometry_triangles'],0)
+            self.assertTrue(all(len(n['frames'])==2 for n in result['nodes']))
+            from scene3d_math import to_blender
+            for entry in result['nodes']:
+                if 'asset' in entry:
+                    np.testing.assert_allclose(entry['frames'][0]['matrix'],
+                        to_blender(np.asarray(expected['nodes'][entry['id']]['world_matrix'])))
+            self.assertEqual(spec['scene'],{k:scene_ref[k] for k in ('id','version')})
+            self.assertEqual(load_project(root/'persisted')['inventory'],persisted['inventory'])
+
+
 @unittest.skipUnless(os.environ.get('HATCH_RENDER3D_REAL_TESTS') == '1',
                      'Actual Blender gate requires HATCH_RENDER3D_REAL_TESTS=1')
 class NativeRendering(unittest.TestCase):

@@ -170,10 +170,17 @@ def _prepare_scene(request,snapshot_root,workspace):
     scene_ref=next(r for r in project['scenes'] if r['id']==request['scene']['id'] and r['version']==request['scene']['version'])
     shot_ref=next(r for r in project['shots'] if r['id']==request['shot']['id'] and r['version']==request['shot']['version'])
     scene=bundle['documents'][scene_ref['path']]; shot=bundle['documents'][shot_ref['path']]
+    # Plan the same authoritative effective hierarchy as the temporal evaluator.
+    # Request scene/shot references remain bound to the persisted source versions.
+    if any('prefab' in node for node in scene['nodes']):
+        from scene3d_prefabs import PrefabLibrary
+        scene=PrefabLibrary.from_files(snapshot_root,bundle).expand(scene)['scene']
     plan_bytes=len(scene['nodes'])*(request['frame_range']['end']-request['frame_range']['start'])*4096
     require(plan_bytes+snapshot['total_bytes']*8<=request['settings']['resources']['memory_bytes'],
             'system-memory','Evaluated frame plan exceeds memory budget.')
     require(not scene['world']['environment'],'unsupported-feature','HDRI environment maps require the look-development adapter.')
+    require(not scene['world'].get('light_binding') and not any(node.get('light_binding') for node in scene['nodes']),
+            'unsupported-feature','Bound physical lights require the authoritative look-development adapter.')
     require(not any(node['material_overrides'] for node in scene['nodes']),'unsupported-feature','Material overrides require the look-development adapter.')
     assets={};nodes=[]
     allowed={'root','group','mesh_instance','skinned_character','static_prop','animated_prop','terrain','camera','light','socket','constraint_target','locator'}
