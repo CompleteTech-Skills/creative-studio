@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from editor3d_repository import EditorRepository
-from editor3d_timeline import apply_timeline, evaluate_timeline, prepare_timeline_commands, sample_curve
+from editor3d_timeline import apply_timeline, evaluate_timeline, prepare_timeline_commands, sample_curve, select_scene
 from rig_errors import RigError
 from scene3d_example import build_example
 
@@ -108,6 +108,18 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(self.repo.snapshot(),result)
         for updates in ({'sample_count':34},{'sample_count':True},{'target':'missing'},{'property':'unsupported'}):
             with self.subTest(updates=updates),self.assertRaises(RigError):sample_curve(self.repo,{**body,**updates})
+
+    def test_active_scene_switch_preserves_bytes_and_undo(self):
+        first=self.apply([dict(operation='scene-duplicate',source='example-scene.json',id='second-scene',name='Second')])
+        scene=next(ref for ref in first['project']['scenes'] if ref['id']=='second-scene')
+        body=dict(expected_revision=first['revision'],expected_sha256=first['sha256'],transaction_id='open-scene',scene=scene['path'])
+        switched=select_scene(self.repo,body)
+        self.assertEqual(switched['scene_path'],scene['path']);self.assertEqual(switched['sha256'],first['sha256'])
+        self.assertEqual(select_scene(self.repo,body),switched)
+        reopened=EditorRepository(self.repo.root).snapshot();self.assertEqual(reopened['scene']['id'],'second-scene')
+        undo=self.repo.undo(switched['revision'],'undo-scene');self.assertEqual(undo['scene_path'],first['scene_path'])
+        with self.assertRaises(RigError):select_scene(self.repo,{**body,'expected_revision':undo['revision'],'transaction_id':'missing','scene':'absent'})
+        self.assertEqual(self.repo.snapshot(),undo)
 
     def test_prepare_never_mutates_input(self):
         snap=self.repo.snapshot();before=deepcopy(snap)
