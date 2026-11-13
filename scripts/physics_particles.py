@@ -255,6 +255,11 @@ def _verify_snapshot(root):
         core.require(core.digest(world_data)==manifest['world_sha256'] and core.digest(settings_data)==manifest['settings_sha256'],
             'PARTICLE_CACHE','World/settings identity differs.')
         world,settings=admit(core.parse(world_data),core.parse(settings_data))
+        budget=world['budgets']
+        core.require(sum(item['bytes'] for item in manifest['files'])+len(reader.read('particle-cache.json'))<=
+            min(budget['cache_bytes'],budget['temporary_bytes'],core.MAX_CACHE_BYTES) and
+            all(item['bytes']<=budget['bake_file_bytes'] for item in manifest['files']),
+            'PARTICLE_LIMIT','Published particle cache exceeds retained world file or aggregate budgets.')
     from physics_component_sources import admit_component_meshes
     body_world=core.parse(core.canonical(world))
     body_ids={body['asset'] for body in world['bodies']}

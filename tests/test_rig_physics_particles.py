@@ -132,6 +132,20 @@ class ParticleTests(unittest.TestCase):
                 run(job)
         finally:backend.cleanup(prepared)
 
+    def test_bake_enforces_per_file_budget_without_publication(self):
+        world,settings,payloads=fixture()
+        world['budgets']['bake_file_bytes']=1
+        settings['world_sha256']=core.digest(core.canonical(world))
+        backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
+        destination=self.root/'bounded-cache'
+        try:
+            backend.simulate(prepared)
+            with self.assertRaises(core.BackendError) as caught:backend.bake(prepared,destination)
+            self.assertEqual(caught.exception.report['code'],'PARTICLE_LIMIT')
+            self.assertFalse(destination.exists())
+            self.assertFalse(list(self.root.glob('.bounded-cache.particle-*')))
+        finally:backend.cleanup(prepared)
+
     def test_display_geometry_mutation_is_rejected_even_if_rehashed(self):
         world,settings,payloads=fixture();backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
         try:
