@@ -186,6 +186,11 @@ def definitions() -> dict:
                       seed=integer, quality={'enum': ['draft', 'preview', 'production', 'custom']},
                       required_categories=arr({'enum': list(CATEGORIES)}, 1, len(CATEGORIES)),
                       reproducibility={'enum': ['verified-cache-replay', 'pinned-numerical', 'approximate', 'not-guaranteed']}))
+    solver['properties']['stability'] = obj(dict(
+        contact_penetration_tolerance=nonnegative,
+        max_linear_velocity=positive, max_angular_velocity=positive,
+        sleeping_threshold=nonnegative, constraint_iterations=count,
+        continuous_collision_detection=dict(type='boolean')), [])
     world = obj(dict(schema_version={'const': 1}, kind={'const': 'hatch-3d-physics-world'},
                      id=identifier, version=version, coordinate_system={'const': COORDINATES},
                      physical_units={'const': PHYSICAL_UNITS}, scene=asset,

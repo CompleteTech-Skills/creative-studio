@@ -1,0 +1,84 @@
+name: Trusted physics backend lifecycle
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: physics-backends-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+
+jobs:
+  native-physics:
+    name: Actual Blender and optional DIRECT lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      HATCH_PHYSICS_BACKEND_TEST: '1'
+      HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
+      HATCH_PYBULLET_PYTHON: /tmp/hatch-physics-pybullet/bin/python
+    steps:
+      - name: Fresh exact-head checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Isolated optional worker interpreter
+        id: optional-python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.11'
+      - name: Install optional pinned DIRECT worker without changing host dependencies
+        run: |
+          python -m venv /tmp/hatch-physics-pybullet
+          /tmp/hatch-physics-pybullet/bin/python -m pip install --only-binary=:all: -r requirements-physics-pybullet.txt
+      - name: Supported host interpreter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Existing optional3D host pins
+        run: python -m pip install -r requirements-rig-test.txt
+      - name: Checksum-verified Blender4.5.3 LTS
+        run: |
+          curl -fL --retry 3 https://download.blender.org/release/Blender4.5/blender-4.5.3-linux-x64.tar.xz -o /tmp/hatch-physics-blender.tar.xz
+          echo '975c58fcb244273838534bba771e64ad87739216b0f9b39a888531a49a72d845  /tmp/hatch-physics-blender.tar.xz' | sha256sum -c -
+          tar -xJf /tmp/hatch-physics-blender.tar.xz -C /tmp
+      - name: Exact-source unit, negative, numerical and real backend cases
+        run: |
+          mkdir physics-evidence
+          python -B -m unittest discover -s tests -p test_rig_physics_backends.py -v 2>&1 | tee physics-evidence/tests.log
+      - name: Actual exact-clock numerical and stability acceptance
+        env:
+          HATCH_TIMING_EVIDENCE: ${{ github.workspace }}/physics-evidence/timing/numerical.json
+        run: |
+          python -B -m unittest discover -s tests -p test_physics_timing.py -v 2>&1 | tee physics-evidence/timing-tests.log
+          python -B -m unittest discover -s tests -p test_rig_physics_timing_cache.py -v 2>&1 | tee physics-evidence/timing-cache-tests.log
+          python -B -m unittest discover -s tests -p test_rig_physics_timing.py -v 2>&1 | tee physics-evidence/native-timing-tests.log
+      - name: Actual category/shape/headless probes
+        run: |
+          python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json
+          python -B scripts/physics_backends.py probe --backend pybullet --python "$HATCH_PYBULLET_PYTHON" --smoke > physics-evidence/pybullet-probe.json
+      - name: Retain genuine native sources, real caches and transform exports
+        run: |
+          python -B scripts/physics_backends.py demo physics-evidence/blender-demo > physics-evidence/blender-demo.json
+          python -B scripts/physics_backends.py demo --backend pybullet --python "$HATCH_PYBULLET_PYTHON" physics-evidence/pybullet-demo > physics-evidence/pybullet-demo.json
+          python -B scripts/physics_backends.py verify physics-evidence/blender-demo/cache
+          python -B scripts/physics_backends.py verify physics-evidence/pybullet-demo/cache
+      - name: Retain actual physics evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: trusted-physics-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: true
+          path: physics-evidence/
