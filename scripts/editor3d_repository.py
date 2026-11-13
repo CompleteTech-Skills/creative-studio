@@ -49,12 +49,32 @@ def _digest(value):
 def _read_json(path):
     try:
         _require(not path.is_symlink() and path.is_file(), 'FILE', 'Expected regular metadata: ' + str(path))
-        with path.open('rb') as stream:
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0))
+        with os.fdopen(fd, 'rb') as stream:
+            import stat
+            _require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), 'FILE', 'Metadata must be a regular file.')
             raw = stream.read(MAX_METADATA_BYTES + 1)
         _require(len(raw) <= MAX_METADATA_BYTES, 'LIMIT', 'Repository metadata exceeds 4 MiB.')
-        return decode_json(raw)
+        value = decode_json(raw)
+        _require(isinstance(value, dict), 'FILE', 'Metadata must be a JSON object.')
+        return value
     except OSError as exc:
         raise RigError('EDITOR3D_FILE', str(exc), stage='editor3d-repository') from exc
+
+
+def _sync_directory(path):
+    if os.name == 'posix':
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
+def _write_metadata(path, value):
+    _require(not path.is_symlink(), 'PATH', 'Metadata cannot be a symbolic link.')
+    atomic_json(path, value)
+    _sync_directory(path.parent)
 
 
 def _check_id(value):
@@ -78,6 +98,36 @@ def _regular_bytes(root, name, expected, max_bytes):
         return payload
     except OSError as exc:
         raise RigError('EDITOR3D_FILE', str(exc), stage='editor3d-repository', asset=name) from exc
+
+
+def _scan(root, limits):
+    """Bound traversal itself, rejecting links before descending."""
+    import stat
+    import unicodedata
+    pending=[(Path(root),'')]; files={}; aliases=set(); entries=0; total=0
+    while pending:
+        directory,prefix=pending.pop()
+        with os.scandir(directory) as iterator:
+            for entry in iterator:
+                entries+=1
+                _require(entries <= limits['max_files']*4, 'LIMIT', 'Repository directory-entry budget exceeded.')
+                name=portable_name(prefix+entry.name)
+                alias=unicodedata.normalize('NFC',name).casefold()
+                _require(alias not in aliases, 'PATH', 'Portable path alias collision.')
+                aliases.add(alias)
+                _require(not entry.is_symlink() and not getattr(Path(entry.path),'is_junction',lambda:False)(),
+                         'PATH','Repository contains a symbolic link or junction.')
+                info=entry.stat(follow_symlinks=False)
+                if stat.S_ISDIR(info.st_mode):
+                    _require(len(Path(name).parts) <= 128, 'LIMIT', 'Repository directory depth exceeded.')
+                    pending.append((Path(entry.path),name+'/'))
+                else:
+                    _require(stat.S_ISREG(info.st_mode), 'FILE', 'Repository contains a nonregular file.')
+                    total+=info.st_size
+                    _require(len(files)<limits['max_files'] and info.st_size<=limits['max_file_bytes'] and
+                             total<=limits['max_bytes'], 'LIMIT', 'Repository exceeds file or byte limits.')
+                    files[name]=info.st_size
+    return files
 
 
 def _copy_closure(source, destination, limits):
@@ -149,12 +199,13 @@ class EditorRepository:
                           project_sha256=bundle['inventory']['project.json']['sha256'], scene_path=scene_path,
                           transaction_id='initial', request_sha256=_digest({'action':'create'}), action='create',
                           label='Import native project', created_at=timestamp(), inventory=bundle['inventory'])
-            atomic_json(revision / 'record.json', record)
-            atomic_json(stage / 'repository.json', dict(schema_version=FORMAT, kind='editor3d-repository',
+            _write_metadata(revision / 'record.json', record)
+            _write_metadata(stage / 'repository.json', dict(schema_version=FORMAT, kind='editor3d-repository',
                                                        id=identifier, created_at=timestamp(), limits=limits))
-            atomic_json(stage / 'HEAD.json', dict(schema_version=FORMAT, revision=0, sha256=closure, undo=[], redo=[]))
+            _write_metadata(stage / 'HEAD.json', dict(schema_version=FORMAT, revision=0, sha256=closure, undo=[], redo=[]))
             (stage / 'journal').mkdir()
             _rename_no_replace(stage, destination)
+            _sync_directory(destination.parent)
         return cls(destination)
 
     def _head(self):
@@ -212,6 +263,18 @@ class EditorRepository:
                     scene=deepcopy(bundle['documents'][record['scene_path']]), scene_path=record['scene_path'],
                     undo_available=bool(head['undo']), redo_available=bool(head['redo']))
 
+    def native_snapshot(self, revision, expected_sha256):
+        """Verified immutable source reference for native render/import owners.
+
+        Consumers must copy/recheck input bytes at their admission boundary.
+        This returns a native filesystem location to trusted Python callers only.
+        """
+        record = self._record(revision)
+        _require(record['snapshot_sha256'] == expected_sha256, 'HASH', 'Requested native revision hash differs.')
+        self._bundle(record)
+        return dict(root=self._native_root(revision), revision=revision, sha256=expected_sha256,
+                    scene_path=record['scene_path'], inventory=deepcopy(record['inventory']))
+
     def read_file(self, path, snapshot_sha256):
         _require(isinstance(snapshot_sha256, str) and re.fullmatch('[0-9a-f]{64}', snapshot_sha256), 'HASH', 'Use an exact snapshot digest.')
         head = self._head()
@@ -236,10 +299,11 @@ class EditorRepository:
 
     def _space(self, next_revision, estimate):
         _require(next_revision < self.limits['max_revisions'], 'LIMIT', 'Revision budget reached; export and start a new repository.')
-        used = sum(p.stat().st_size for p in self.root.rglob('*') if p.is_file() and not p.is_symlink())
+        used = sum(_scan(self.root, self.limits).values())
         _require(used + estimate <= self.limits['max_bytes'], 'LIMIT', 'Retained repository byte budget exceeded.')
 
     def _commit(self, head, transaction_id, request, label, action, build, undo, redo):
+        _require(not self.recovery(), 'RECOVERY', 'Resolve interrupted transactions before another edit.')
         revision = head['revision'] + 1
         self._space(revision, sum(self._record(head['revision'])['inventory'][n]['bytes'] for n in self._record(head['revision'])['inventory']))
         transaction_hash = _digest(request)
@@ -248,9 +312,10 @@ class EditorRepository:
         _require(not journal.exists(), 'RECOVERY', 'An interrupted transaction requires inspection before retry.')
         pending = dict(schema_version=FORMAT, transaction_id=transaction_id, request_sha256=transaction_hash,
                        expected_revision=head['revision'], expected_sha256=head['sha256'], revision=revision,
-                       status='building', new_head=None)
-        atomic_json(journal, pending)
+                       status='building', new_head=None, stage=None)
+        _write_metadata(journal, pending)
         stage = Path(tempfile.mkdtemp(prefix='.editor-revision-', dir=safe_path(self.root, 'revisions')))
+        pending['stage'] = stage.name; _write_metadata(journal, pending)
         try:
             scene_path = build(stage / 'native')
             bundle = load_project(stage / 'native')
@@ -262,14 +327,19 @@ class EditorRepository:
                           snapshot_sha256=_digest(bundle['inventory']), project_sha256=bundle['inventory']['project.json']['sha256'],
                           scene_path=scene_path, transaction_id=transaction_id, request_sha256=transaction_hash,
                           action=action, label=label, created_at=timestamp(), inventory=bundle['inventory'])
-            atomic_json(stage / 'record.json', record)
+            _write_metadata(stage / 'record.json', record)
+            staged_files = _scan(stage / 'native', self.limits)
+            _require(set(staged_files) == set(bundle['inventory']), 'HASH', 'Native adapter left uninventoried files in its snapshot.')
+            current_bytes = sum(_scan(self.root, self.limits).values())
+            _require(current_bytes <= self.limits['max_bytes'], 'LIMIT', 'New revision exceeds total repository byte budget.')
             next_head = dict(schema_version=FORMAT, revision=revision, sha256=record['snapshot_sha256'],
                              undo=undo[-self.limits['max_history']:], redo=redo[-self.limits['max_history']:])
             pending.update(status='verified', new_head=next_head)
-            atomic_json(journal, pending)
+            _write_metadata(journal, pending)
             _rename_no_replace(stage, safe_path(self.root, f'revisions/{revision:08d}'))
-            pending['status'] = 'published'; atomic_json(journal, pending)
-            atomic_json(safe_path(self.root, 'HEAD.json'), next_head)
+            _sync_directory(safe_path(self.root, 'revisions'))
+            pending['status'] = 'published'; _write_metadata(journal, pending)
+            _write_metadata(safe_path(self.root, 'HEAD.json'), next_head)
             journal.unlink()
         except Exception:
             # A verified/published revision is retained for explicit recovery.
@@ -278,7 +348,7 @@ class EditorRepository:
                 journal.unlink(missing_ok=True)
             raise
         finally:
-            if stage.exists(): shutil.rmtree(stage)
+            if pending['status'] == 'building' and stage.exists(): shutil.rmtree(stage)
         return self.snapshot()
 
     def apply(self, expected_revision, commands, transaction_id, *, expected_sha256=None, label='Edit scene'):
@@ -349,34 +419,92 @@ class EditorRepository:
         return [{key: value for key, value in self._record(n).items() if key != 'inventory'}
                 for n in range(head['revision'] + 1)]
 
+    def _journal(self, path):
+        item = _read_json(path)
+        fields = {'schema_version','transaction_id','request_sha256','expected_revision','expected_sha256',
+                  'revision','status','new_head','stage'}
+        _require(isinstance(item,dict) and set(item) == fields and item['schema_version'] == FORMAT and
+                 item['status'] in ('building','verified','published') and type(item['expected_revision']) is int and
+                 type(item['revision']) is int and item['revision'] == item['expected_revision'] + 1 and
+                 0 < item['revision'] < self.limits['max_revisions'], 'RECOVERY', 'Malformed transaction journal.')
+        _check_id(item['transaction_id'])
+        _require(path.name == hashlib.sha256(item['transaction_id'].encode()).hexdigest()+'.json',
+                 'RECOVERY', 'Journal identity differs from its path.')
+        for key in ('request_sha256','expected_sha256'):
+            _require(isinstance(item[key],str) and re.fullmatch('[0-9a-f]{64}',item[key]), 'RECOVERY', 'Invalid journal digest.')
+        if item['stage'] is not None:
+            _require(isinstance(item['stage'],str) and re.fullmatch(r'\.editor-revision-[a-zA-Z0-9_-]+',item['stage']),
+                     'RECOVERY', 'Invalid private stage path.')
+        if item['status'] != 'building':
+            value=item['new_head']
+            _require(isinstance(value,dict) and set(value)=={'schema_version','revision','sha256','undo','redo'} and
+                     value['schema_version']==FORMAT and value['revision']==item['revision'] and
+                     isinstance(value['sha256'],str) and re.fullmatch('[0-9a-f]{64}',value['sha256']) and
+                     all(isinstance(value[k],list) and len(value[k])<=self.limits['max_history'] and
+                         all(type(n) is int and 0<=n<item['revision'] for n in value[k]) for k in ('undo','redo')),
+                     'RECOVERY', 'Invalid journal head.')
+        return item
+
     def recovery(self):
         """Report interrupted attempts without applying or discarding evidence."""
-        head = self._head()
-        result = []
-        for path in sorted(safe_path(self.root, 'journal').glob('*.json')):
-            _require(not path.is_symlink(), 'PATH', 'Journal cannot be a symlink.')
-            item = _read_json(path)
-            item['can_recover'] = (item.get('status') in ('verified', 'published') and
-                item.get('expected_revision') == head['revision'] and item.get('expected_sha256') == head['sha256'] and
-                safe_path(self.root, f"revisions/{item.get('revision', -1):08d}/record.json").is_file())
+        head = self._head(); result=[]
+        for path in sorted(safe_path(self.root,'journal').glob('*.json')):
+            item=self._journal(path)
+            revision_path=safe_path(self.root,f"revisions/{item['revision']:08d}/record.json")
+            stage=(safe_path(self.root,'revisions/'+item['stage']) if item['stage'] else None)
+            item['committed']=(head==item['new_head'])
+            item['can_recover']=(item['status'] in ('verified','published') and
+                (item['committed'] or item['expected_revision']==head['revision'] and item['expected_sha256']==head['sha256']) and
+                (revision_path.is_file() or stage is not None and (stage/'record.json').is_file()))
             result.append(item)
         return result
 
     def recover(self, transaction_id, expected_revision, *, expected_sha256=None):
         _check_id(transaction_id)
         with job_lock(self.root):
-            head = self._head(); self._check_expected(head, expected_revision, expected_sha256)
-            path = safe_path(self.root, 'journal/' + hashlib.sha256(transaction_id.encode()).hexdigest() + '.json', exists=True)
-            item = _read_json(path)
-            _require(item.get('transaction_id') == transaction_id and item.get('status') in ('verified','published') and
-                     item.get('expected_revision') == head['revision'] and item.get('expected_sha256') == head['sha256'],
-                     'STALE', 'Interrupted transaction does not match current HEAD.')
-            record = self._record(item['revision']); self._bundle(record)
-            _require(item['new_head']['revision'] == record['revision'] and item['new_head']['sha256'] == record['snapshot_sha256'],
-                     'HASH', 'Journal does not match the verified revision.')
-            atomic_json(safe_path(self.root, 'HEAD.json'), item['new_head'])
-            self._head(); path.unlink()
+            head=self._head(); self._check_expected(head,expected_revision,expected_sha256)
+            path=safe_path(self.root,'journal/'+hashlib.sha256(transaction_id.encode()).hexdigest()+'.json',exists=True)
+            item=self._journal(path)
+            if head==item['new_head']:
+                self._bundle(self._record(head['revision']));path.unlink();_sync_directory(path.parent)
+                return self.snapshot()
+            _require(item['status'] in ('verified','published') and
+                     item['expected_revision']==head['revision'] and item['expected_sha256']==head['sha256'],
+                     'STALE','Interrupted transaction does not match current HEAD.')
+            destination=safe_path(self.root,f"revisions/{item['revision']:08d}")
+            if not destination.exists():
+                _require(item['stage'] is not None,'RECOVERY','Verified private stage is missing.')
+                stage=safe_path(self.root,'revisions/'+item['stage'])
+                _require(stage.is_dir(),'RECOVERY','Verified private stage is missing.')
+                staged_record=_read_json(safe_path(stage,'record.json',exists=True))
+                bundle=load_project(safe_path(stage,'native'))
+                _require(staged_record['inventory']==bundle['inventory'] and
+                         _digest(bundle['inventory'])==item['new_head']['sha256'], 'HASH','Staged closure changed.')
+                _rename_no_replace(stage,destination);_sync_directory(destination.parent)
+            record=self._record(item['revision']);self._bundle(record)
+            _require(item['new_head']['sha256']==record['snapshot_sha256'], 'HASH','Journal differs from verified revision.')
+            _write_metadata(safe_path(self.root,'HEAD.json'),item['new_head'])
+            self._head();path.unlink();_sync_directory(path.parent)
         return self.snapshot()
+
+    def discard_incomplete(self, transaction_id, expected_revision, *, expected_sha256=None):
+        """Roll back only an unverified private attempt, retaining its journal."""
+        _check_id(transaction_id)
+        with job_lock(self.root):
+            head=self._head();self._check_expected(head,expected_revision,expected_sha256)
+            path=safe_path(self.root,'journal/'+hashlib.sha256(transaction_id.encode()).hexdigest()+'.json',exists=True)
+            item=self._journal(path)
+            _require(item['status']=='building' and item['expected_revision']==head['revision'] and
+                     item['expected_sha256']==head['sha256'], 'RECOVERY','Only an unverified current attempt can be discarded.')
+            if item['stage'] is not None:
+                stage=safe_path(self.root,'revisions/'+item['stage'])
+                if stage.exists():
+                    _scan(stage,self.limits)
+                    shutil.rmtree(stage)
+            failure_root=safe_path(self.root,'failed');failure_root.mkdir(exist_ok=True)
+            destination=safe_path(failure_root,path.name)
+            _rename_no_replace(path,destination);_sync_directory(failure_root);_sync_directory(path.parent)
+        return dict(discarded=True,transaction_id=transaction_id,revision=head['revision'])
 
     def transact_native(self, expected_revision, transaction_id, request, builder, *, expected_sha256=None, label='Native edit'):
         """Trusted in-process extension for an existing native subsystem adapter.
@@ -452,7 +580,7 @@ class EditorRepository:
         with job_lock(self.root):
             head = self._head(); self._bundle(self._record(head['revision']))
             checkpoint = dict(schema_version=FORMAT, revision=head['revision'], sha256=head['sha256'], created_at=timestamp())
-            atomic_json(safe_path(self.root, 'autosave.json'), checkpoint)
+            _write_metadata(safe_path(self.root, 'autosave.json'), checkpoint)
         self._pending_autosave = None; self._last_autosave = now
         return dict(saved=True, **checkpoint)
 
@@ -461,7 +589,7 @@ class EditorRepository:
             head = self._head(); self._check_expected(head, expected_revision, expected_sha256)
             self._bundle(self._record(head['revision']))
             record = dict(schema_version=FORMAT, revision=head['revision'], sha256=head['sha256'], created_at=timestamp())
-            atomic_json(safe_path(self.root, 'checkpoint.json'), record)
+            _write_metadata(safe_path(self.root, 'checkpoint.json'), record)
         return record
 
     def save_as(self, destination):
@@ -477,29 +605,23 @@ class EditorRepository:
                 stage = Path(temporary) / 'repository'; stage.mkdir()
                 for name, record in self._all_files().items():
                     target = stage / name; target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(_regular_bytes(self.root, name, record, self.limits['max_file_bytes']))
+                    with target.open('xb') as output:
+                        output.write(_regular_bytes(self.root, name, record, self.limits['max_file_bytes']))
+                        output.flush(); os.fsync(output.fileno())
                 EditorRepository(stage)._verify_all()
+                _sync_directory(stage)
                 _rename_no_replace(stage, destination)
+                _sync_directory(destination.parent)
         return EditorRepository(destination)
 
     def _all_files(self):
-        files = {}; aliases = set(); total = 0
-        for path in self.root.rglob('*'):
-            _require(not path.is_symlink() and not getattr(path, 'is_junction', lambda: False)(), 'PATH', 'Repository contains a link.')
-            if path.is_dir(): continue
-            name = portable_name(path.relative_to(self.root).as_posix())
-            import unicodedata
-            alias = unicodedata.normalize('NFC', name).casefold()
-            _require(alias not in aliases, 'PATH', 'Portable filename alias collision.')
-            aliases.add(alias)
-            _require(path.is_file(), 'FILE', 'Repository contains a nonregular file.')
-            size = path.stat().st_size; total += size
-            _require(size <= self.limits['max_file_bytes'] and total <= self.limits['max_bytes'] and
-                     len(files) < self.limits['max_files'], 'LIMIT', 'Repository exceeds archive limits.')
+        files={}
+        for name,size in _scan(self.root,self.limits).items():
+            path=safe_path(self.root,name,exists=True)
             with path.open('rb') as stream:
-                raw = stream.read(self.limits['max_file_bytes'] + 1)
-            _require(len(raw) == size, 'HASH', 'Repository changed while inventorying.')
-            files[name] = dict(bytes=size, sha256=hashlib.sha256(raw).hexdigest())
+                raw=stream.read(self.limits['max_file_bytes']+1)
+            _require(len(raw)==size,'HASH','Repository changed while inventorying.')
+            files[name]=dict(bytes=size,sha256=hashlib.sha256(raw).hexdigest())
         return files
 
     def _verify_all(self):
@@ -525,7 +647,9 @@ class EditorRepository:
                         archive.writestr(name, _regular_bytes(self.root, name, record, self.limits['max_file_bytes']))
                     archive.writestr('archive-receipt.json', _bytes(receipt))
                 self.verify_archive(stage)
+                with stage.open('rb') as stream: os.fsync(stream.fileno())
                 _rename_no_replace(stage, destination)
+                _sync_directory(destination.parent)
         return dict(archive=str(destination), sha256=hashlib.sha256(destination.read_bytes()).hexdigest(), revision=head['revision'])
 
     @staticmethod
@@ -542,7 +666,7 @@ class EditorRepository:
                     alias = unicodedata.normalize('NFC', name).casefold()
                     mode = entry.external_attr >> 16
                     _require(name == entry.orig_filename and name not in names and alias not in aliases and
-                             not entry.is_dir() and (mode & 0o170000) not in (0o120000,0o060000,0o010000) and
+                             not entry.is_dir() and (mode & 0o170000) in (0,0o100000) and
                              entry.file_size <= DEFAULT_LIMITS['max_file_bytes'] and
                              (entry.file_size == 0 or entry.compress_size > 0) and
                              entry.file_size <= max(entry.compress_size, 1)*1000,
@@ -562,7 +686,7 @@ class EditorRepository:
                     raw = archive.read(name)
                     _require(hashlib.sha256(raw).hexdigest() == record['sha256'], 'HASH', 'Archive file hash differs.')
                 return receipt
-        except (zipfile.BadZipFile, KeyError, OSError) as exc:
+        except (zipfile.BadZipFile, KeyError, OSError, RuntimeError, NotImplementedError, EOFError) as exc:
             raise RigError('EDITOR3D_ARCHIVE', str(exc), stage='editor3d-repository') from exc
 
     @classmethod
@@ -585,9 +709,12 @@ class EditorRepository:
                             size += len(chunk); digest.update(chunk)
                             _require(size <= record['bytes'], 'LIMIT', 'Archive changed after verification.')
                             output.write(chunk)
+                        output.flush(); os.fsync(output.fileno())
                     _require(size == record['bytes'] and digest.hexdigest() == record['sha256'], 'HASH', 'Archive changed after verification.')
             restored = cls(stage)
             _require(restored._verify_all() == receipt['head'], 'HASH', 'Archive HEAD differs from receipt.')
             _require(not restored.recovery(), 'RECOVERY', 'Archive contains interrupted transactions.')
+            _sync_directory(stage)
             _rename_no_replace(stage, destination)
+            _sync_directory(destination.parent)
         return cls(destination)
