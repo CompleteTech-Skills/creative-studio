@@ -8,6 +8,8 @@ from contextlib import contextmanager
 import math
 import numpy as np
 from rig_animation import evaluate_animation, blend_poses
+from rig_contracts import validate_contract
+from rig_skinning import evaluate_deformation
 from rig_errors import require, object_hash
 from rig_states import map_states
 
@@ -22,7 +24,8 @@ class RigStateRuntime:
     """
 
     def __init__(self, rig, initial, *, recipes=None, selected=None,
-                 blend_seconds=0.2, now=0.0, transition_budget=32):
+                 blend_seconds=0.2, now=0.0, transition_budget=32,
+                 reduced_motion=False, reduced_motion_poses=None):
         require(isinstance(now, (int, float)) and not isinstance(now, bool) and math.isfinite(now) and now >= 0,
                 'RIG_STATE_TIME', 'Runtime time must be finite and nonnegative.')
         require(isinstance(blend_seconds, (int, float)) and not isinstance(blend_seconds, bool)
@@ -30,10 +33,28 @@ class RigStateRuntime:
                 'RIG_STATE_BLEND', 'Blend duration must be within zero to ten seconds.')
         require(type(transition_budget) is int and 1 <= transition_budget <= 1024,
                 'RIG_STATE_BUDGET', 'Transition budget must be within 1..1024.')
+        require(type(reduced_motion) is bool, 'RIG_STATE_REDUCED_MOTION', 'Reduced-motion mode must be boolean.')
         self.rig = rig
         self.mapping = map_states(rig, recipes=recipes, selected=selected)
         self.recipes = deepcopy(self.mapping['recipes'])
         self._require_state(initial)
+        self.reduced_motion = reduced_motion
+        self._static_poses = {}
+        require(reduced_motion_poses is None or isinstance(reduced_motion_poses, dict),
+                'RIG_STATE_REDUCED_MOTION', 'Reduced-motion alternatives must be a state-to-Pose mapping.')
+        alternatives = reduced_motion_poses or {}
+        require(set(alternatives) <= set(self.recipes), 'RIG_STATE_REDUCED_MOTION',
+                'Reduced-motion alternatives must identify selected executable states.')
+        if reduced_motion:
+            require(set(alternatives) == set(self.recipes), 'RIG_STATE_REDUCED_MOTION',
+                    'Every selected executable state requires an authored reduced-motion Pose.')
+        for state, alternative in alternatives.items():
+            validate_contract(alternative, 'Pose')
+            identifier = self.rig.clips[self.recipes[state]['clips'][0]]['reduced_motion_pose']
+            require(alternative['id'] == identifier and alternative['rig_version'] == rig.skeleton['version'],
+                    'RIG_STATE_REDUCED_MOTION', 'Alternative must match the clip named reduced-motion pose and current skeleton version.')
+            evaluate_deformation(rig, alternative)
+            self._static_poses[state] = deepcopy(alternative)
         self.state = initial
         self.entered = self.time = float(now)
         self.blend_seconds = float(blend_seconds)
@@ -66,6 +87,8 @@ class RigStateRuntime:
         return np.asarray(pose['bones'].get(name, {}).get('translation', rest))
 
     def _pose(self, now):
+        if self.reduced_motion:
+            return deepcopy(self._static_poses[self.state])
         recipe = self.recipes[self.state]
         elapsed = max(0., now-self.entered)
         clips = recipe['clips']
@@ -139,7 +162,7 @@ class RigStateRuntime:
         """Evaluate geometry-driving pose and perform available completion edges."""
         self._check(now)
         status = 'playing'
-        while self.recipes[self.state]['completion'] is not None and now >= self.entered+self._duration():
+        while not self.reduced_motion and self.recipes[self.state]['completion'] is not None and now >= self.entered+self._duration():
             target = self.recipes[self.state]['completion']
             if target not in self.recipes:
                 status = 'completion-unavailable'
@@ -149,7 +172,7 @@ class RigStateRuntime:
         pose = self._pose(now)
         self.time = float(now)
         return dict(state=self.state, elapsed=now-self.entered, pose=pose,
-                    status=status, transition_count=self.transition_count,
+                    status='held-reduced-motion' if self.reduced_motion else status, transition_count=self.transition_count,
                     pending_completion=self.recipes[self.state]['completion'] if status == 'completion-unavailable' else None)
 
     def request(self, state, now):
@@ -167,6 +190,22 @@ class RigStateRuntime:
                     (incoming['interrupt'] == 'higher' and incoming['priority'] > current['priority']),
                     'RIG_STATE_PRIORITY', 'Incoming state cannot interrupt the active priority.')
             self._enter(state, now, pose)
+            return self._evaluate(now)
+
+    def dispatch(self, event, now):
+        """Dispatch a selected catalog event or state alias through request policy."""
+        require(isinstance(event, str) and event in self.mapping['events'], 'RIG_STATE_EVENT',
+                'Event has no selected executable catalog state.')
+        return self.request(self.mapping['events'][event], now)
+
+    def recover(self, now):
+        """Enter the selected catalog recovery state as an explicit override."""
+        with self._transaction():
+            self._check(now)
+            pose = self._evaluate(now)['pose']
+            target = self.recipes[self.state]['recovery']
+            self._require_state(target)
+            self._enter(target, now, pose)
             return self._evaluate(now)
 
     def cancel(self, now):
