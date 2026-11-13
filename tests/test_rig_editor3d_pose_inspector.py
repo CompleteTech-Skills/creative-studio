@@ -162,7 +162,7 @@ class PoseInspectorTests(unittest.TestCase):
         self.addCleanup(server.shutdown)
         def post(route,body,authenticated=True):
             headers={'Content-Type':'application/json'}
-            if authenticated:headers['Authorization']='Bearer '+server.token
+            headers['Authorization']='Bearer '+(server.token if authenticated else 'invalid-local-pose-token')
             request=urllib.request.Request('http://127.0.0.1:'+str(server.server_port)+'/api/'+route,
                 data=json.dumps(body).encode(),headers=headers,method='POST')
             try:
