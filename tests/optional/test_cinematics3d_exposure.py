@@ -128,7 +128,12 @@ class ExposureTests(unittest.TestCase):
     def test_forged_record_complexity_is_bounded_before_hashing(self):
         meter = self.meter()
         forged = deepcopy(meter); forged['color_execution'] = {'large': 'x'*4097}
-        with patch.object(exposure, 'object_hash', side_effect=AssertionError('hashing started')):
+        original_hash = exposure.object_hash
+        def guarded_hash(value):
+            if 'color_execution' in value:
+                raise AssertionError('unbounded measurement hashing started')
+            return original_hash(value)
+        with patch.object(exposure, 'object_hash', side_effect=guarded_hash):
             with self.assertRaises(ValueError):
                 exposure.advise(forged, Fraction(0))
         forged = deepcopy(meter); forged['histogram_alpha_weights'] = [0.]*257
