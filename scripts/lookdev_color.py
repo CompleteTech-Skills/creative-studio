@@ -25,7 +25,7 @@ def validate_configuration(value):
     require(value['view'] in ('Standard','AgX','Filmic'),'LOOKDEV_COLOR','Unsupported OCIO view; query backend availability.')
     for key,low,high in [('exposure_stops',-32,32),('temperature_kelvin',1800,100000),('tint',-500,500)]:
         number=value[key]
-        require(type(number) in (int,float) and math.isfinite(number) and low<=number<=high,
+        require(type(number) in (int,float) and low<=number<=high and math.isfinite(number),
                 'LOOKDEV_COLOR','Invalid '+key)
     require(value['output'] in ('srgb-png','scene-linear-exr'),'LOOKDEV_COLOR','Unsupported output encoding.')
     require(value['sha256']==content_hash({k:v for k,v in value.items() if k!='sha256'}),
