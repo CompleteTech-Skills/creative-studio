@@ -243,7 +243,7 @@ class AssetLibrary:
             storage.validate_ready()
             self.storage = storage
 
-    def register(self, manifest, sources):
+    def register(self, manifest, sources, *, expected_identity_refs=None):
         """Register all inventoried logical files from explicit source paths.
 
         Files are always re-read and hashed; a supplied manifest never certifies
@@ -267,8 +267,22 @@ class AssetLibrary:
             payloads[f['sha256']] = payload
         identity, version = manifest['identity']['id'], manifest['version']
         reference = dict(id=identity, version=version, sha256=manifest['manifest_sha256'])
+        if expected_identity_refs is not None:
+            if not isinstance(expected_identity_refs, list) or len(expected_identity_refs) > MAX_VERSIONS:
+                _fail('REQUEST', 'Expected identity references must be a bounded list.')
+            seen = set()
+            for expected in expected_identity_refs:
+                validate(expected, 'AssetRef')
+                key = (expected['id'], expected['version'], expected['sha256'])
+                if expected['id'] != identity or key in seen:
+                    _fail('REQUEST', 'Expected identity references must be unique and match this identity.')
+                seen.add(key)
         with self._connect() as db:
             self._begin_writer(db)
+            if expected_identity_refs is not None:
+                current = set(db.execute('SELECT id,version,sha256 FROM versions WHERE id=?', (identity,)).fetchall())
+                if current != seen:
+                    _fail('CONFLICT', 'Identity history changed after lifecycle validation; reload before creating a version.')
             if db.execute('SELECT 1 FROM versions WHERE id=? AND version=?', (identity, version)).fetchone():
                 _fail('IMMUTABLE', 'This asset version already exists; publish a new version.')
             if db.execute('SELECT COUNT(*) FROM versions').fetchone()[0] >= MAX_VERSIONS:
