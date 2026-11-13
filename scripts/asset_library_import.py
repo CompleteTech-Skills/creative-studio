@@ -686,6 +686,21 @@ def _wireframe(model):
             ''.join(lines)+'</g></svg>').encode('ascii')
 
 
+def generation_parameters(parameters):
+    """Admit the exact bounded native box/sphere generation profile without executing it."""
+    if not isinstance(parameters,dict) or set(parameters)!={'primitive','dimensions','color','animated'}:
+        fail('REQUEST','Generator needs explicit primitive/dimensions/color/animated parameters.')
+    if parameters['primitive'] not in ('box','sphere') or type(parameters['animated'])is not bool:
+        fail('UNSUPPORTED','Only real box/sphere generation is implemented.')
+    for key,width in [('dimensions',3),('color',4)]:
+        values=parameters[key]
+        if not isinstance(values,list) or len(values)!=width or any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) for v in values):
+            fail('REQUEST','Invalid numeric generator '+key)
+    if any(not .001<=v<=1000 for v in parameters['dimensions']) or any(not 0<=v<=1 for v in parameters['color']):fail('REQUEST','Generator values outside bounded profile.')
+    if parameters['primitive']=='sphere' and len(set(parameters['dimensions']))!=1:fail('UNSUPPORTED','Sphere generator requires equal dimensions; no ignored parameters.')
+    return deepcopy(parameters)
+
+
 class ImportPipeline:
     """A cohesive, synchronous import transaction over the existing registry.
 
@@ -926,16 +941,7 @@ class ImportPipeline:
 
     @dependency_errors
     def generate(self,*,identity,version,metadata,license_file,parameters,fixture=False):
-        if not isinstance(parameters,dict) or set(parameters)!={'primitive','dimensions','color','animated'}:
-            fail('REQUEST','Generator needs explicit primitive/dimensions/color/animated parameters.')
-        if parameters['primitive'] not in ('box','sphere') or type(parameters['animated'])is not bool:
-            fail('UNSUPPORTED','Only real box/sphere generation is implemented.')
-        for key,width in [('dimensions',3),('color',4)]:
-            values=parameters[key]
-            if not isinstance(values,list) or len(values)!=width or any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) for v in values):
-                fail('REQUEST','Invalid numeric generator '+key)
-        if any(not .001<=v<=1000 for v in parameters['dimensions']) or any(not 0<=v<=1 for v in parameters['color']):fail('REQUEST','Generator values outside bounded profile.')
-        if parameters['primitive']=='sphere' and len(set(parameters['dimensions']))!=1:fail('UNSUPPORTED','Sphere generator requires equal dimensions; no ignored parameters.')
+        parameters=generation_parameters(parameters)
         with tempfile.TemporaryDirectory(prefix='hatch-library-generate-') as temp:
             result=self.blender.execute('generate',None,Path(temp)/'generation',parameters=parameters,fixture=fixture)
             generator=dict(provider='blender-box-sphere-v1',provider_version=VERSION,parameters=deepcopy(parameters),
