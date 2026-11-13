@@ -216,6 +216,7 @@ class AssetOperations:
 
     def submit(self, operation: str, parameters: dict) -> dict:
         p=request(parameters)
+        if not isinstance(operation,str):fail('REQUEST','Operation must be a string.')
         if operation not in MANAGED:fail('UNAVAILABLE','Operation is not managed: '+str(operation))
         # Admission constructs the fixed adapter, validates parameters and binds
         # mutable source bytes before any durable request is queued.
@@ -465,6 +466,7 @@ class ScopedAssetOperations:
 
     def submit(self,operation,parameters):
         p=request(parameters)
+        if not isinstance(operation,str):fail('REQUEST','Operation must be a string.')
         if operation not in MANAGED:fail('UNAVAILABLE','No scoped managed adapter for '+str(operation)+'.')
         if set(p)&{'blender','executable'}:fail('SCOPE','HTTP requests cannot select executables.')
         for name in ('source','license_file','root'):

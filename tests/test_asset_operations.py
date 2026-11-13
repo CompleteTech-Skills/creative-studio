@@ -153,6 +153,7 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
     def test_unknown_operation_and_optional_capability_do_not_fake_success(self):
         for operation in ('remote-upload','generate','semantic-search'):
             with self.assertRaises(RigError):self.owner.execute(operation,{},apply=True)
+        with self.assertRaises(RigError):self.owner.submit([], {})
         self.assertEqual(self.owner.capabilities()['production_approval'],False)
 
     def test_project_bind_uses_ordered_native_scope_and_preserves_unavailable_unbind(self):

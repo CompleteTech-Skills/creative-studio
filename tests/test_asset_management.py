@@ -37,6 +37,30 @@ class ManagementTests(unittest.TestCase):
         self.assertEqual(self.fixture.mesh.read_bytes(),before)
         self.assertEqual(AssetVersions(self.library).history(self.old['id'])[-1]['version'],'1.0.1')
 
+    def test_malformed_direct_requests_have_structured_errors_before_mutation(self):
+        new=AssetVersions(self.library).create(self.candidate(),self.fixture.sources,previous=self.old)
+        manifest=deepcopy(self.fixture.manifest)
+        manifest['identity']=dict(manifest['identity'],id='consumer',slug='consumer',name='Consumer')
+        manifest['dependencies']=[dict(target=self.old,purpose='mesh',required=True,origin='authored',relationship='direct',capabilities=[])]
+        consumer=self.library.register(seal(manifest),self.fixture.sources)
+        graph=DependencyGraph({'local':self.library})
+        plan=replacement_plan(graph,locator('local',self.old),locator('local',new),consumers=[dict(asset=locator('local',consumer),purposes=['mesh'])])
+        before=self.library.list_references()
+        cases=[('version',dict(action=[])),('version',dict(action={})),
+            ('version',dict(action='promote',reference=[],expected_revision=0)),
+            ('version',dict(action='promote',reference=None,expected_revision=0)),
+            ('version',dict(action='rollback',asset_id=[],expected_revision=0)),
+            ('replace',dict(plan=[],versions={})),('replace',dict(plan={},versions=[])),
+            ('replace',dict(plan=plan,versions=[])),('replace',dict(plan=plan,versions={'consumer':[]})),
+            ('repair',dict(source=[],digest=[],expected_bytes=[]))]
+        for operation,parameters in cases:
+            with self.subTest(operation=operation,parameters=parameters):
+                with self.assertRaises(RigError):self.owner.submit(operation,parameters)
+        from asset_library_management import management_adapter
+        with self.assertRaises(RigError):management_adapter(self.owner,[],{})
+        self.assertEqual(self.library.list_references(),before)
+        self.assertFalse(self.owner.jobs_root.exists())
+
     def test_request_cannot_supply_internal_baseline_or_source_admission_evidence(self):
         for field,value in [('baseline',[]),('input_hashes',{}),('lifecycle',{})]:
             p=self.create_request();p[field]=value
@@ -102,6 +126,42 @@ owner.jobs.run(record['id'],CrashAdapter(owner,record['kind'],record['parameters
         self.assertEqual(result['status'],'published')
         self.assertEqual(self.library.read_file(self.old,record['path']),before)
         self.assertEqual(self.fixture.mesh.read_bytes(),before)
+
+    def test_partial_replacement_deadline_preserves_first_commit_and_resumes_missing_consumer(self):
+        import time
+        from unittest.mock import patch
+        from asset_library_management import ManagementAdapter
+        new=AssetVersions(self.library).create(self.candidate(),self.fixture.sources,previous=self.old)
+        consumers=[]
+        for name in ('consumer-a','consumer-b'):
+            manifest=deepcopy(self.fixture.manifest)
+            manifest['identity']=dict(manifest['identity'],id=name,slug=name,name=name)
+            manifest['dependencies']=[dict(target=self.old,purpose='mesh',required=True,origin='authored',relationship='direct',capabilities=[])]
+            consumers.append(self.library.register(seal(manifest),self.fixture.sources))
+        graph=DependencyGraph({'local':self.library})
+        plan=replacement_plan(graph,locator('local',self.old),locator('local',new),consumers=[dict(asset=locator('local',r),purposes=['mesh']) for r in consumers])
+        job=self.owner.submit('replace',dict(plan=plan,versions={r['id']:'1.0.1' for r in consumers}))
+        owner=self.owner;library=self.library
+        class DeadlineAfterFirst(ManagementAdapter):
+            def publish(self,context,staged,verified):
+                original=library.register
+                def register(*args,**kwargs):
+                    result=original(*args,**kwargs)
+                    if args[0]['identity']['id']=='consumer-a':context.deadline=time.monotonic()-1
+                    return result
+                with patch.object(library,'register',side_effect=register):
+                    return super().publish(context,staged,verified)
+        with self.assertRaises(RigError) as caught:
+            owner.jobs.run(job['id'],DeadlineAfterFirst(owner,'replace',job['parameters']))
+        self.assertEqual(caught.exception.report['code'],'ASSET_JOB_TIMEOUT')
+        first=[r for r in library.list_references() if r['id']=='consumer-a' and r['version']=='1.0.1']
+        self.assertEqual(len(first),1)
+        self.assertFalse(any(r['id']=='consumer-b' and r['version']=='1.0.1' for r in library.list_references()))
+        for consumer in consumers:self.assertEqual(library.resolve(consumer)['dependencies'][0]['target'],self.old)
+        owner.resume_job(job['id']);finished=owner.run_job(job['id'])
+        self.assertEqual(finished['status'],'published')
+        self.assertEqual([r for r in library.list_references() if r['id']=='consumer-a' and r['version']=='1.0.1'],first)
+        self.assertEqual(len([r for r in library.list_references() if r['id']=='consumer-b' and r['version']=='1.0.1']),1)
 
     def test_replacement_runs_native_plan_and_preserves_previous_consumer(self):
         changed=self.candidate();new=AssetVersions(self.library).create(changed,self.fixture.sources,previous=self.old)
