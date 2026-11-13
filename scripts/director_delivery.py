@@ -233,12 +233,15 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
     _require(not destination.exists() and not destination.is_symlink(), 'Use a new delivery destination.')
     _require(destination.parent.is_dir(), 'Delivery parent does not exist.')
     retained_admission = None
+    retained_checkpoint_sha256 = None
     if retained_stage is not None:
         from render3d_contracts import open_regular
         from rig_errors import decode_json
         _require(retained_inventory is not None, 'Trusted supervisor inventory checkpoint is required.')
         with open_regular(retained_inventory, 1024**2) as stream:
-            retained_admission = decode_json(stream.read(1024**2+1), max_bytes=1024**2)
+            retained_bytes = stream.read(1024**2+1)
+        retained_admission = decode_json(retained_bytes, max_bytes=1024**2)
+        retained_checkpoint_sha256 = hashlib.sha256(retained_bytes).hexdigest()
     motion = verify_performance_motion(root)
     static = verify_no_motion_negative(root)
     bundle = load_project(root / 'scene-project')
@@ -325,7 +328,7 @@ def render_mvp(performance_root, destination, *, blender=None, ffmpeg=None, ffpr
             static_motion_negative=static, snapshot=snapshot, backend=identity,
             shots=[dict(request=item['request'], result=item['result'], directory=item['directory']) for item in shots],
             inspections=inspections, media=media, negatives=negatives, visual_review='unreviewed',
-            retained_recovery=(dict(checkpoint_sha256=sha256(retained_inventory),
+            retained_recovery=(dict(checkpoint_sha256=retained_checkpoint_sha256,
                 limitation='Trusted supervisor continuation from captured private-stage bytes; no retrospective cryptographic execution authentication.')
                 if retained_admission is not None else None))
         if (stage / 'failure.json').exists():

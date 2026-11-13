@@ -429,15 +429,17 @@ def _recover_verified_stage(request, stage, destination, *, expected_backend, ex
               for index in frames]
     require([dict(frame=item['frame'], **item['file']) for item in images] == expected_images,
             'corrupt-output', 'Retained images differ from the trusted supervisor checkpoint.')
-    total = 0
-    for path in stage.rglob('*'):
-        require(not path.is_symlink(), 'ownership', 'Retained stage contains a symlink.')
-        if path.is_file():
-            with open_regular(path, settings['resources']['storage_bytes']) as stream:
-                total += os.fstat(stream.fileno()).st_size
-            require(total <= settings['resources']['storage_bytes'], 'storage-exhaustion', 'Retained stage exceeds aggregate storage budget.')
-        else:
-            require(path.is_dir(), 'ownership', 'Retained stage contains a special file.')
+    def check_storage():
+        total = 0
+        for path in stage.rglob('*'):
+            require(not path.is_symlink(), 'ownership', 'Retained stage contains a symlink.')
+            if path.is_file():
+                with open_regular(path, settings['resources']['storage_bytes']) as stream:
+                    total += os.fstat(stream.fileno()).st_size
+                require(total <= settings['resources']['storage_bytes'], 'storage-exhaustion', 'Retained stage exceeds aggregate storage budget.')
+            else:
+                require(path.is_dir(), 'ownership', 'Retained stage contains a special file.')
+    check_storage()
     result = dict(schema_version=1, kind='render3d-result', job=request['id'], request_sha256=object_hash(request),
         snapshot_sha256=snapshot['snapshot_sha256'], backend=backend, status='complete', requested_frames=frames,
         successful=frames, failed=[], skipped=[], reused=[], images=images,
@@ -450,6 +452,7 @@ def _recover_verified_stage(request, stage, destination, *, expected_backend, ex
     result['verification'] = dict(status='passed', verifier=verification['verifier'], evidence=artifact('verification.json'))
     validate(result, 'RenderResult')
     atomic_json(stage/'result.json', result)
+    check_storage()
     _rename_no_replace(stage, target)
     return result
 
