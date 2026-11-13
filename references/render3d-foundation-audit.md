@@ -89,6 +89,8 @@ The compatibility gate is `test_rig_compatibility.py`; the 20 renderer regressio
 
 Existing dictionary/schema conventions were retained instead of adding a new modeling dependency. Structural schemas and explicit semantic checks coexist: a valid capability document cannot claim initialization/execution from discovery, and a complete result requires a passed verifier record and complete frame accounting. No protocol ellipsis is evidence that its backend operation executed.
 
+The native job binding implementation is the separate, not-yet-merged `ca7525d` owner follow-up. This documentation-only audit does not install that runtime or claim that the current foundation alone provides it. Its requirement/test addresses are revision-qualified links to that owner package, with integration/review status recorded in `audit.json`.
+
 The field-level map in `audit.json` covers every foundation document field and every mandatory parent §4 semantic requirement. Job-only context is resolved by exact native job ID plus canonical request digest through the explicit `JobStore` instance. The store is the lookup authority, just as a project root resolves project-relative references. It is local/same-host, not an unspecified remote registry. The job follow-up documents and tests tamper rejection, strict priority, native frame partition, reduced completion fraction, retry policy and actual capacity reservations. Reservations are not measured usage.
 
 ## 5. Migration and rollback
