@@ -56,6 +56,9 @@ A light node may carry `light_binding` with `schema_version: 1`, an exact
 canonical `light3d` reference under `light`, `intensity_scale` in [0, 1000000],
 and a linear RGB `color_multiplier` in [0,1]. This multiplies the physical source
 light; it never interprets the legacy unitless `light.intensity` as physical power.
+The lighting owner retains photometric tint semantics: candela/lux colors are
+normalized to unit luminance after tint (black stays dark); use intensity_scale
+for brightness changes. Area watt sources retain direct RGB multiplication.
 `light_intensity_scale` and `light_color_multiplier` tracks animate those explicit
 multipliers. Optional shot `light_overrides` replace a target's complete binding
 as the final shot override. The world binding instead carries `light`,
@@ -81,3 +84,43 @@ It returns camera/framing output without changing authored documents. Evaluated
 `state.channels` retains local input translation/quaternion/scale (and optional
 pivot), after channel/path evaluation and before ordinary graph constraints; curve
 editors can consume these values without decomposing matrices or resampling tracks.
+
+## Immutable native poses
+
+Optional node `pose_binding` has `schema_version:1`, an exact `rig` reference of
+kind `hatch-3d-rig`, and `pose:{id,rig_version,file:{path,sha256}}`. The pose pin's
+`rig_version` identifies the canonical skeleton version, independently of the rig
+manifest version. Pose JSON must satisfy the rig owner's `Pose` contract. Its
+file is a real project dependency, copied by snapshots and checked on reopening.
+
+Bindings on group roots propagate only to descendant assets whose exact
+`asset.skeleton` equals the rig pin. Multiple pose bindings or an active native
+clip on the same affected component are rejected because no blend policy exists.
+The evaluator checks exact rig/pose bytes, IDs and versions, then delegates pose
+constraints to `rig_operations.pose_operation`. It never changes the rest pose,
+asset, other instances or authored documents. Mesh-qualified morph names and
+bone references must exist in the admitted native rig.
+
+With a binding, evaluation needs `source_root` even without geometry sampling.
+Each affected component exposes `native_pose` (the exact binding),
+`native_pose_evaluated:true`, and `native_state` containing `pose`, `skeleton`,
+`bone_matrices`, `bone_matrix_space:'rig-bind'`, `world_from_rig`, and
+`morph_targets:{mesh_id:[names]}`. Bone matrices remain in canonical rig space;
+`world_from_rig` explicitly maps the instance or imported component into scene
+world space. Authored roots expose `native_pose_components` identifying affected
+components. `sample_geometry=True` returns actual deformed world vertices and
+updated component/ancestor bounds through the existing importer and rig owners.
+Exposed bone/morph state is capped at 250000 total entries across components;
+posed and animated vertices share the evaluator's output vertex budget.
+
+Consumers must use this state or reject pose-bound scenes; a binding is not
+permission to render the rig's rest pose. Before any native pose decoder runs,
+`scene3d_capture.capture_verified_files` admits the trusted bundle inventory into
+an owned private project tree. Rig, Pose, import report and hierarchy reads stay
+inside that context until native evaluation finishes. No sampler scans mutable
+sources to manufacture a trusted inventory. Renderer/browser consumption remains
+an integration gate owned by the lifecycle adapter.
+The Pose suite exercises real two-instance bone/morph deformation, imported
+components, snapshot/reopen equivalence, exact-source rejection, active-clip
+conflicts and vertex budgets. These tests are included in the hosted native
+Scene3D workflow and interoperability gate.

@@ -25,6 +25,13 @@ class SceneEvaluationTests(unittest.TestCase):
     def evaluate(self, frame=0, **kwargs):
         return evaluate_scene(self.bundle, 'example-scene', 'example-shot', frame, **kwargs)
 
+    def register_authored_files(self,root,paths):
+        import hashlib
+        for path in paths:
+            payload=path.read_bytes()
+            self.bundle['inventory'][path.relative_to(root).as_posix()]=dict(
+                bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())
+
     def test_exact_rational_sampling_and_unchanged_sources(self):
         self.shot['fps'] = dict(numerator=30000, denominator=1001)
         self.shot['tracks'] = [dict(target='mesh', property='translation', interpolation='linear',
@@ -88,6 +95,7 @@ class SceneEvaluationTests(unittest.TestCase):
         from rig_skinning import evaluate_deformation
         from scene3d_contracts import canonical_bytes
         rig = fixture(self.root, name='actor')
+        self.register_authored_files(self.root,[p for p in (self.root/'actor').rglob('*') if p.is_file()])
         asset = deepcopy(self.bundle['documents']['triangle.json'])
         def file(path):
             return dict(path=path,sha256=hashlib.sha256((self.root/path).read_bytes()).hexdigest())
@@ -145,6 +153,10 @@ class SceneEvaluationTests(unittest.TestCase):
         library=AssetLibrary(self.root/'library',create=True)
         imported=import_gltf(source,library,asset_id='imported',attribution='test fixture',license_file=license_path)
         copied=self.root/'copied';materialize(library,imported.library_reference,copied)
+        for path in list(self.bundle['inventory']):
+            target=copied/path;target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_bytes((self.root/path).read_bytes())
+        self.register_authored_files(copied,[p for p in copied.rglob('*') if p.is_file()])
         graph=SceneGraph(self.scene,external_references={})
         first_mapping=add_import(graph,imported,'one')['mapping']
         second_mapping=add_import(graph,imported,'two')['mapping']

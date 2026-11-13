@@ -576,20 +576,32 @@ def add_import(graph, imported, identifier, *, parent=None, transform=None):
     return dict(mapping=mapping, root=identifier, **result)
 
 
-def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=0., loop=False):
-    """Evaluate actual native deformation then each scene component's edit delta."""
+def _load_verified_native(imported, native_root):
+    """Admit the registered bytes before legacy loaders reopen any paths."""
     from rig_models import load_rig
+    manifests = [r for r in imported.asset['dependencies'] if r['path'].endswith('/native/rig.json')]
+    require(len(manifests) == 1, 'Imported asset needs one exact native manifest.')
+    prefix = manifests[0]['path'][:-len('rig.json')]
+    records = [r for r in imported.asset['dependencies'] if r['path'].startswith(prefix)]
+    from scene3d_capture import capture_verified_native
+    relative_inventory = [dict(record, path=record['path'][len(prefix):]) for record in records]
+    with capture_verified_native(native_root, 'rig.json', relative_inventory) as admitted:
+        return load_rig(admitted)
+
+
+def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=0., loop=False, pose=None):
+    """Evaluate actual native deformation then each scene component's edit delta."""
     from rig_animation import evaluate_animation
     from rig_skinning import evaluate_deformation
     from rig_math import transform_points
-    rig = load_rig(native_root)
-    manifest_path = next(r for r in imported.asset['dependencies'] if r['path'].endswith('/native/rig.json'))
-    payload = read_source_bytes(Path(native_root)/'rig.json', 16*1024*1024)
-    require(hashlib.sha256(payload).hexdigest() == manifest_path['sha256'] and decode_json(payload) == rig.manifest,
-            'Native rig manifest differs from the registered exact bytes.', 'SCENE3D_SOURCE_CHANGED')
+    rig = _load_verified_native(imported, native_root)
     require(rig.manifest['source']['sha256'] == imported.report['source_sha256'],
             'Native run does not match the imported source.', 'SCENE3D_SOURCE_CHANGED')
-    if clip is not None:
+    require(clip is None or pose is None, 'Choose a native clip or a pose; blending is not declared.')
+    if pose is not None:
+        from rig_operations import pose_operation
+        evaluated = evaluate_deformation(rig, pose_operation(rig, {'pose':pose}))
+    elif clip is not None:
         clip = imported.report['native_clip_map'].get(clip, clip)
         require(clip in rig.clips, 'Unknown imported native clip.')
         evaluated = evaluate_deformation(rig, evaluate_animation(rig, clip, time, loop=loop)['pose'])

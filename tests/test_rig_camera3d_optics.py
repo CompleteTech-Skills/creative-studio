@@ -37,6 +37,13 @@ class CameraOptics(unittest.TestCase):
                                         shift_x=.2, shift_y=-.1, near_clip_m=.1, far_clip_m=100)
         plan = optical_plan(self.optics, self.render)
         self.assertAlmostEqual(plan['ortho_scale'], 4.5)
+        self.assertEqual(plan['sensor_width'], 36.0)
+        for height in (.1, 10000):
+            self.optics['projection']['orthographic_height_m'] = height
+            resized = optical_plan(self.optics, self.render)
+            self.assertEqual(resized['sensor_width'], 36.0)
+            self.assertAlmostEqual(resized['ortho_scale'], height * 1.5)
+        self.optics['projection']['orthographic_height_m'] = 3
         matrix = projection_matrix(self.optics, self.render)
         world = world_transform(self.camera['transform'])
         self.assertEqual(project([1, 0, -1], world, matrix, 360, 240)['pixel'],
