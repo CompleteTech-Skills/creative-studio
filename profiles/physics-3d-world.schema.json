@@ -362,7 +362,8 @@
             "backend": {
               "enum": [
                 "blender",
-                "pybullet"
+                "pybullet",
+                "particles-native"
               ]
             },
             "adapter_version": {
