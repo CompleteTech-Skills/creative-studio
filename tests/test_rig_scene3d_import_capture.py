@@ -9,11 +9,11 @@ from scene3d_graph import SceneGraph
 from scene3d_import import add_import,evaluate_imported_vertices,import_gltf
 from scene3d_import_capture import resolve_captured_import
 from scene3d_snapshot import snapshot_project
-from test_rig_scene3d_materials import SceneMaterialProjectionTests
+import test_rig_scene3d_materials as material_projection_tests
 
 
 class CapturedImportTests(unittest.TestCase):
-    setUp=SceneMaterialProjectionTests.setUp
+    setUp=material_projection_tests.SceneMaterialProjectionTests.setUp
 
     def project(self,imported=None):
         imported=imported or self.imported
