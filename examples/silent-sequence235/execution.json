@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "kind": "actual-native-lossless-sequence-execution",
-  "validated_source_commit": "1ff87917c19b75ac8eb38b92b05ee5c92a54f180",
+  "validated_source_commit": "b970bce59295159774f7414555daee32be15c608",
   "implementation_sha256": {
-    "scripts/silent_sequence.py": "8792aa357759e2b591c114027e0bb36d7e7bc87d6db56bda4998bb1749ec2c51",
-    "tests/test_silent_sequence.py": "c1e8ac889d5e2cdda7246078f0cd9e6d692f2a9626caed35d2529e6f02d64ed9"
+    "scripts/silent_sequence.py": "4694ee04ce726d638e90ac499ca2b610de1f98cbca440e40f99407c447c1793f",
+    "tests/test_silent_sequence.py": "0f4a4af2152a85fad1cd3f7607b8498a5fdf4166706f5cb7584bad288efc1dcd"
   },
   "runtime_identities": {
-    "source_commit": "1ff87917c19b75ac8eb38b92b05ee5c92a54f180",
+    "source_commit": "b970bce59295159774f7414555daee32be15c608",
     "modules": {
       "rig_errors": {
         "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/render-verifier/scripts/rig_errors.py",
@@ -35,7 +35,7 @@
       },
       "silent_sequence": {
         "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/silent_sequence.py",
-        "sha256": "8792aa357759e2b591c114027e0bb36d7e7bc87d6db56bda4998bb1749ec2c51"
+        "sha256": "4694ee04ce726d638e90ac499ca2b610de1f98cbca440e40f99407c447c1793f"
       },
       "rig_contracts": {
         "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_contracts.py",
@@ -458,19 +458,22 @@
   },
   "verification": {
     "current_sequence_tests": {
-      "passed": 10,
+      "passed": 14,
       "skipped": 0,
-      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-sequence-evidence/tests-release-current.log",
-      "log_sha256": "f2790a24bfb5518887cc0afb63a20c3e01be0a4723826cda10e91e633b7db994"
+      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-sequence-evidence/tests-publication-final.log",
+      "log_sha256": "fdc4f54eb986993ed61725cc69780e60b790cca6f3b2866c261c7d3bb8f21f91",
+      "launcher": "run-budgeted.py (three shared pure-test slots)"
     },
     "legacy_2d_contract_tests": {
       "passed": 31,
       "skipped": 0,
       "log": "/home/complete/.cache/hatch-coordination-20261112/silent-sequence-evidence/legacy-contracts.log",
-      "log_sha256": "df6210ed39d2ac450f3d118a98178012babcb15d0e5104f9d344c93308895546"
+      "log_sha256": "df6210ed39d2ac450f3d118a98178012babcb15d0e5104f9d344c93308895546",
+      "executed_source_commit": "9c94608",
+      "attribution": "Earlier executed tests; subsequent modifications only new sequence files and evidence, legacy production code/test bytes unchanged."
     },
     "actual_export_log": {
-      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-sequence-evidence/actual-release.log",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-sequence-evidence/actual-b970bce.log",
       "sha256": "ea505b30d1a5d457973001e8735e6cec199a6dd7cced9f42a3209cb15b5530be"
     },
     "new_blender_renders": false,
@@ -483,5 +486,12 @@
     "Original native snapshots are retained by canonical renderer, not packaged here; offline verification does not claim to re-open absent snapshots.",
     "Canonical Render3D verifier owner is an external pending integration dependency; exact Python module origins/hashes recorded.",
     "All exported bytes and sampled decoded channels match actual source files exactly; no color/precision conversion."
-  ]
+  ],
+  "publication_recovery_fixes": [
+    "Publish independently decoded inner payload from a pinned private parent; public cache basename is never the source of final rename.",
+    "Partial-file validation and unlink use the same walked parent descriptor.",
+    "Exclusive write failure preserves preexisting partials; unknown staging is rejected before creating lock inode."
+  ],
+  "persistent_cache_policy": "Verified cache remains after final output publication. Private finalization copies one complete payload and reserves corresponding space; no caller callbacks execute during private copy/verification/rename.",
+  "historical_receipt_preserved": "examples/silent-sequence235/execution-pre-publication-fix.json"
 }
