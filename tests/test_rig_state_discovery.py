@@ -102,3 +102,27 @@ class StateDiscoveryTests(unittest.TestCase):
         evaluate_fk(rig.skeleton,report['pose'])
         rig.skeleton['bones'].pop()
         with self.assertRaises(RigError):map_states(rig,selected=['static-neutral'],recipes={'static-neutral':'bend'})
+
+    def test_unused_optional_constraint_target_does_not_invent_native_dependency(self):
+        from rig_animation import evaluate_animation
+        self.rig.manifest['controllers']['constraints']=[dict(schema_version=1,id='hinge',type='hinge',
+            bone='b1',target='unused',axis=[0.,0.,1.],minimum=-1.,maximum=1.)]
+        evaluate_animation(self.rig,'bend',.5)
+        result=map_states(self.rig,selected=['static-neutral'],recipes={'static-neutral':'bend'})
+        self.assertNotIn('unused',result['discovery']['static-neutral']['recipe']['required_bones'])
+
+    def test_declared_zero_weight_skin_joint_is_still_required_by_native_deformation(self):
+        import numpy as np
+        from rig_skinning import evaluate_deformation
+        from rig_skeleton import evaluate_fk
+        rig=self.rig;control=deepcopy(rig.skeleton['bones'][-1])
+        control.update(id='unused-influence',role='custom-control',parent='b0',deform=False)
+        rig.skeleton['bones'].append(control)
+        rest=evaluate_fk(rig.skeleton)
+        skin=rig.weights['strip'];skin.joints.append('unused-influence')
+        skin.inverse_bind=np.concatenate((skin.inverse_bind,np.linalg.inv(rest['unused-influence'])[None,:,:]))
+        result=map_states(rig,selected=['static-neutral'],recipes={'static-neutral':'bend'})
+        actual=result['discovery']['static-neutral']['recipe']
+        self.assertIn('unused-influence',actual['skinned_joints'])
+        self.assertIn('unused-influence',actual['required_bones'])
+        evaluate_deformation(rig,neutral_pose(rig.skeleton))

@@ -72,13 +72,13 @@ def _state_discovery(rig, state, requested, executable, capabilities, archetype,
                 if track['path']=='weights':morph_channels[track['target']]=list(meshes[track['target']].morphs)
                 else:bone_channels.add((track['target'],track['path']))
             contact_ids.update(contact['chain'] for contact in clip['contacts'])
-        skinned={skin.joints[int(index)] for skin in rig.weights.values()
-                 for index in set(skin.indices[skin.weights>0].tolist())}
+        skinned={joint for skin in rig.weights.values() for joint in skin.joints}
         required=skinned|{bone for bone,path in bone_channels}
         required.update(bone for name in contact_ids for bone in chains[name]['bones'])
         constraints=rig.manifest['controllers']['constraints']
         required.update(constraint['bone'] for constraint in constraints)
-        required.update(constraint['target'] for constraint in constraints if 'target' in constraint)
+        required.update(constraint['target'] for constraint in constraints
+                        if constraint['type'] in ('copy-position','copy-rotation','aim') and 'target' in constraint)
         parents={bone['id']:bone['parent'] for bone in rig.skeleton['bones']}
         for bone in list(required):
             parent=parents[bone]
