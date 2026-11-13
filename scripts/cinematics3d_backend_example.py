@@ -84,7 +84,12 @@ def run(destination,executable):
     exposure=default_effect('exposure','exposure');exposure['operation']['parameters']['stops']=1
     fog=default_effect('volumetric-fog','fog');fog['operation']['parameters']['density_per_meter']=.08
     dof=default_effect('depth-of-field','dof');dof['inputs']=[reference(optics,'optics.json')]
-    variants=[('baseline',[],None),('exposure',[exposure],None),('fog',[fog],None),('dof',[dof],{'optics.json':optics_bytes}),('exr',[exposure],None)]
+    for effect in (exposure,fog,dof):effect['metadata']['fixture']=True
+    disabled_dof=deepcopy(dof);disabled_dof['operation']['parameters']['enabled']=False
+    inputs={'optics.json':optics_bytes}
+    # Hold identical native lens/projection in every pair. Only DOF itself changes.
+    variants=[('baseline',[disabled_dof],inputs),('exposure',[disabled_dof,exposure],inputs),
+              ('fog',[disabled_dof,fog],inputs),('dof',[dof],inputs),('exr',[disabled_dof,exposure],inputs)]
     outputs={};pixels={}
     for name,effects,inputs in variants:
         current=deepcopy(request);current['id']=name;current['destination']['path']=name
@@ -100,7 +105,7 @@ def run(destination,executable):
         if name!='exr':pixels[name]=decoded['_pixels']
         # Reopen retained original config bytes and require exact reconstruction.
         retained=destination/name/'cinematics'
-        restored={p.relative_to(retained).as_posix():p.read_bytes() for p in retained.rglob('*.json') if p.name!='plan.json'}
+        restored={p.relative_to(retained).as_posix():p.read_bytes() for p in retained.rglob('*.json') if p.relative_to(retained).as_posix()!='plan.json'}
         from cinematics3d_blender import validate_configuration
         validate_configuration(compiled['plan'],restored)
     import numpy as np

@@ -45,7 +45,9 @@ def inspect_scene(scene):
                 pass
     finally:
         bpy.data.node_groups.remove(tree)
-    compositor = bpy.data.node_groups.new('hatch-cinematics-compositor-probe', 'CompositorNodeTree')
+    original_use_nodes=scene.use_nodes
+    scene.use_nodes=True
+    compositor=scene.node_tree
     try:
         for name in ['CompositorNodeRLayers', 'CompositorNodeGlare', 'CompositorNodeExposure',
                      'CompositorNodeColorBalance', 'CompositorNodeCryptomatteV2']:
@@ -54,7 +56,7 @@ def inspect_scene(scene):
             except (RuntimeError, TypeError):
                 pass
     finally:
-        bpy.data.node_groups.remove(compositor)
+        scene.use_nodes=original_use_nodes
     layer=scene.view_layers[0]
     pass_properties = {name: hasattr(layer, property_name) for name,property_name in {
         'depth':'use_pass_z','normal':'use_pass_normal','vector':'use_pass_vector',
