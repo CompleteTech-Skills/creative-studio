@@ -326,6 +326,8 @@ class CameraNativeMotionTests(unittest.TestCase):
             print(json.dumps(report,sort_keys=True))
             self.assertEqual(set(report['png_sha256']),{'0','12','24'})
             self.assertGreater(len(set(report['png_sha256'].values())),1)
+            self.assertTrue(report['shot_override']['source_unchanged'])
+            self.assertEqual(report['shot_override']['state']['transform']['translation'],[2,0,8])
 
 
 class CameraPathTests(unittest.TestCase):

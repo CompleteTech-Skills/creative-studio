@@ -71,7 +71,8 @@ blender --background --disable-autoexec --threads 1 --python-exit-code 1 \
   --python scripts/verify_camera3d_motion.py -- --output /tmp/camera-motion
 ```
 
-The latter creates three actual 160×120 Cycles PNGs, compares Blender camera
+The latter creates three actual 160×120 Cycles movement PNGs and a fourth
+shot-override PNG from real native-registry-admitted track layers, compares Blender camera
 projections to analytical projections, and rerenders frame 24 after seeking
 backward to demand identical decoded pixels (PNG timing metadata may differ). It emits a JSON report with Blender
 version, coordinates and exact PNG hashes. `HATCH_CAMERA_MOTION_BLENDER` enables
