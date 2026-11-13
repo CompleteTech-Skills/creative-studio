@@ -12,13 +12,13 @@ from rig_models import Geometry, Mesh, TextureImage, validate_geometry
 
 
 def import_obj(path: Path, *, scale=1., limits=None):
-    from PIL import Image
-    from rig_import import ImportedModel
+    from rig_import import ImportedModel, _decode_texture
     limits = limits or DEFAULT_LIMITS;path = Path(path).resolve()
     require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'OBJ exceeds the encoded source budget.')
     require(math.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'OBJ scale must be positive.')
     vertices, uv, normals, groups, dependencies = [], [], [], {}, [path]
     materials = [dict(name='Default material')];material_ids = {'default': 0};images = [];textures = []
+    total_texture_pixels = 0
     current_group, current_material = 'mesh', 0
 
     def numbers(values, minimum):
@@ -27,6 +27,7 @@ def import_obj(path: Path, *, scale=1., limits=None):
         return data
 
     def material_file(name):
+        nonlocal total_texture_pixels
         p = safe_path(path.parent, name, exists=True);dependencies.append(p)
         require(p.stat().st_size <= 1024**2, 'RIG_LIMIT_MTL', 'MTL exceeds 1 MiB.')
         material = None
@@ -49,10 +50,11 @@ def import_obj(path: Path, *, scale=1., limits=None):
                 require(values and not values[0].startswith('-'), 'RIG_MTL', 'Bake MTL texture options before import.')
                 texture = safe_path(p.parent, ' '.join(values), exists=True)
                 require(texture.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_TEXTURE', 'MTL texture exceeds its budget.')
-                with Image.open(texture) as im:
-                    require(im.format in ('PNG', 'JPEG') and im.width*im.height <= 16_777_216, 'RIG_TEXTURE_FORMAT', 'Use bounded PNG/JPEG OBJ textures.')
-                    mime = 'image/png' if im.format == 'PNG' else 'image/jpeg';im.verify()
-                dependencies.append(texture);images.append(TextureImage(texture.name, mime, texture.read_bytes()))
+                with texture.open('rb') as stream:
+                    data = stream.read(limits['source_bytes'] + 1)
+                mime, pixels = _decode_texture(data, limits, total_texture_pixels)
+                total_texture_pixels += pixels
+                dependencies.append(texture);images.append(TextureImage(texture.name, mime, data))
                 textures.append(dict(source=len(images)-1))
                 material['pbrMetallicRoughness']['baseColorTexture'] = dict(index=len(textures)-1)
 

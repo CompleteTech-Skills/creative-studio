@@ -1,3 +1,5 @@
 # Optional: only the separate 3D rigging commands import these dependencies.
 numpy==2.3.5
 jsonschema==4.25.1
+# Warning-aware JPEG entropy validation; never installed by ordinary 2D setup.
+simplejpeg==1.9.0

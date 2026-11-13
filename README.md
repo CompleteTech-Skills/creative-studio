@@ -76,6 +76,8 @@ Read the [complete 3D guide](references/3d-rigging.md) for fitting uncertainty, 
 
 The 3D contracts are additive. Existing Codex atlas geometry/timing, 2D profiles/playback, decomposition and the 416-state catalog retain their original contracts. Selected actual clips map to catalog definitions; missing anatomy or animation remains explicit. Blender, WebGL and the optional 3D Python packages are unnecessary for ordinary 2D use.
 
+The additive [Scene3D contract foundation](references/scene3d-contracts.md) defines strict project, scene, shot, asset and prefab documents, verifies actual dependency bytes, and evaluates static hierarchical transforms with explicit Blender/glTF conversions. It preserves production v1. Scene construction, editing and rendering remain separate unfinished work; the included triangle is an engineering fixture.
+
 The [physics integration audit](references/physics-3d-audit.md) records current subsystem ownership, coordinate and timing decisions, and the executed compatibility baseline for future simulation work. No physics solver is implemented by that audit.
 
 <div align="center">
