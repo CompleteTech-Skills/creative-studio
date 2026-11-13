@@ -224,3 +224,17 @@ footer {
     font-size: 12px;
   }
 }
+
+dialog {
+  color: #e6edf3;
+  background: #17232f;
+  border: 2px solid #65d9ff;
+  border-radius: 6px;
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+dialog::backdrop { background: #000a; }
+dialog input { width: 100%; margin: 0.5rem 0; }
+dialog li { margin: 0.7rem 0; }
+#outliner button:focus-visible { outline: 2px solid #65d9ff; outline-offset: -2px; }
