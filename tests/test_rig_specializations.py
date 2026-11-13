@@ -117,6 +117,64 @@ class GazeEyelidTests(unittest.TestCase):
             self.assertEqual(report['checks'][0]['name'],'structure')
 
 
+class EyelidCorrectionTests(unittest.TestCase):
+    def setUp(self):
+        from rig_jobs import save_rig
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.rig,_=create_demo(Path(self.temp.name)/'human','humanoid',animate=False)
+        self.binding=dict(eye='eye.left',mesh='eye-white-left',morph='blink',up_weight=.7,
+                          down_weight=.1,up_radians=.5,down_radians=.5)
+        self.rig.manifest['facial']['eyelids']=[deepcopy(self.binding)]
+        save_rig(self.rig,operation='authored-eyelid-binding')
+
+    def correct(self, edits):
+        from rig_corrections import apply_rig_corrections
+        from rig_models import rig_signature
+        from rig_errors import timestamp
+        rig=self.rig
+        envelope=dict(schema_version=1,kind='hatch-3d-rig-correction',rig_id=rig.manifest['id'],
+            rig_version=rig.manifest['version'],expected_sha256=rig_signature(rig.manifest),
+            author='fixture',reason='Exercise eyelid correction references',created_at=timestamp(),edits=edits)
+        return apply_rig_corrections(rig,envelope)
+
+    def test_eye_rename_persists_remapped_binding_and_gaze_still_evaluates(self):
+        from rig_models import load_rig
+        result,_=self.correct([dict(operation='bone-update',target='eye.left',value={'id':'imported-eye'})])
+        loaded=load_rig(result.root)
+        self.assertEqual(loaded.manifest['facial']['eyelids'][0]['eye'],'imported-eye')
+        pose=gaze_at(loaded,neutral_pose(loaded.skeleton),[0,2,2])
+        self.assertIn('imported-eye',pose['bones'])
+        self.assertIn('blink',pose['morphs']['eye-white-left'])
+        self.assertEqual(self.rig.manifest['facial']['eyelids'][0]['eye'],'eye.left')
+
+    def test_eye_removal_prunes_only_its_binding_and_preserves_other_gaze(self):
+        from rig_models import load_rig
+        result,_=self.correct([dict(operation='bone-remove',target='eye.left',value=None)])
+        loaded=load_rig(result.root)
+        self.assertEqual(loaded.manifest['facial']['eyelids'],[])
+        self.assertIn('eye.right',gaze_at(loaded,neutral_pose(loaded.skeleton),[0,2,2])['bones'])
+
+    def test_morph_removal_prunes_exact_binding_and_preserves_same_name_elsewhere(self):
+        from rig_models import load_rig
+        result,_=self.correct([dict(operation='morph',target='eye-white-left',value={'action':'remove','name':'blink'})])
+        loaded=load_rig(result.root)
+        self.assertEqual(loaded.manifest['facial']['eyelids'],[])
+        self.assertIn('blink',loaded.geometry.by_id()['eye-white-right'].morphs)
+        gaze_at(loaded,neutral_pose(loaded.skeleton),[0,2,2])
+
+    def test_invalid_facial_replacement_and_inert_morph_edit_reject_before_persistence(self):
+        facial=deepcopy(self.rig.manifest['facial']);facial['eyelids'][0]['mesh']='missing'
+        mesh=self.rig.geometry.by_id()['eye-white-left']
+        changes=[dict(operation='facial',target='face',value=facial),
+                 dict(operation='morph',target=mesh.id,value={'name':'blink','action':'edit',
+                     'assignments':{str(i):[0.,0.,0.] for i in range(len(mesh.positions))}})]
+        before=(self.rig.root/'rig.json').read_bytes()
+        for edit in changes:
+            with self.subTest(operation=edit['operation']),self.assertRaises(RigError):self.correct([edit])
+            self.assertEqual((self.rig.root/'rig.json').read_bytes(),before)
+            self.assertEqual(self.rig.manifest['facial']['eyelids'],[self.binding])
+
+
 class RigSpecializationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
