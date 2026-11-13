@@ -1,0 +1,16 @@
+sssssssssssssss..........F.....sssssssssssssss
+======================================================================
+FAIL: test_stdlib_import_in_actual_empty_environment_and_optional_missing_result (test_rig_physics_backends.PhysicsBackendAdmissionTests.test_stdlib_import_in_actual_empty_environment_and_optional_missing_result)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/hatch-physics169/tests/test_rig_physics_backends.py", line 235, in test_stdlib_import_in_actual_empty_environment_and_optional_missing_result
+    self.assertEqual(report.state,'unavailable')
+AssertionError: 'degraded' != 'unavailable'
+- degraded
++ unavailable
+
+
+----------------------------------------------------------------------
+Ran 46 tests in 3.846s
+
+FAILED (failures=1, skipped=30)

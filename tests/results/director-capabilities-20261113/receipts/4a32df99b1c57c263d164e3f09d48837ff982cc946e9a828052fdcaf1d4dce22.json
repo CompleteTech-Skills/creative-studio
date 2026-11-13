@@ -1,0 +1,28 @@
+{
+  "dependencies": {
+    "native_module": "f520e07d97a96c4cdc907a558ac618e72303876230725f928946bfe5f2495961",
+    "probe_source": "9fb20f454d3a87030089c211be04a8f11f79ebd85d23276220fb428d719322ef"
+  },
+  "dependency_fingerprint": "b41db64865546845a35df1275a03aad6827154112896a39666847435c0508598",
+  "discovered": true,
+  "execution_verified": false,
+  "fallback": null,
+  "fixture": true,
+  "initialized": false,
+  "operation": "module.scene3d",
+  "payloads": [],
+  "policy_limits": {
+    "currency": null,
+    "max_amount": null,
+    "max_cpu_seconds": 3600,
+    "max_gpu_seconds": 3600,
+    "max_memory_bytes": 1610612736,
+    "max_provider_calls": 0,
+    "max_storage_bytes": 1073741824,
+    "policy_ref": null
+  },
+  "reason": "contract-module-only",
+  "schema_version": 1,
+  "status": "untested",
+  "version": null
+}
