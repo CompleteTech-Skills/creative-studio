@@ -76,6 +76,82 @@ def look_at(position, target, up=(0,1,0)):
     return rig.matrix_quaternion(rotation)
 
 
+def optical_gate(optics, render):
+    """Effective gate before overscan; millimeters for perspective, meters otherwise."""
+    from camera3d_contracts import validate
+    validate(optics, 'optics'); validate(render, 'render')
+    p = optics['projection']
+    aspect = render['width'] * render['pixel_aspect']['numerator'] / (render['height'] * render['pixel_aspect']['denominator'])
+    if p['type'] == 'orthographic':
+        return p['orthographic_height_m'] * aspect, p['orthographic_height_m']
+    width, height = p['sensor_width_mm'], p['sensor_height_mm']
+    if p['sensor_fit'] == 'horizontal':
+        height = width / aspect
+    elif p['sensor_fit'] == 'vertical':
+        width = height * aspect
+    elif render['gate_fit'] == 'crop':
+        width = min(width, height * aspect); height = width / aspect
+    else:
+        width = max(width, height * aspect); height = width / aspect
+    return width, height
+
+
+def scene_camera_optics(camera, *, identifier='scene-camera-optics', version='1.0.0'):
+    """Explicit conversion of Scene3D's vertical-radian pinhole/ortho fields.
+
+    Scene cameras contain no physical sensor or DOF intent. A 24 mm vertical
+    gate and vertical fit preserve their projection exactly; disabled DOF is
+    explicit. The source scene remains authoritative and unmodified.
+    """
+    import jsonschema
+    import scene3d_contracts
+    from camera3d_contracts import validate
+    definition = scene3d_contracts.definitions()['node']['properties']['camera']
+    try:
+        jsonschema.Draft202012Validator(definition).validate(camera)
+    except jsonschema.ValidationError as exc:
+        raise ValueError('camera3d invalid native scene camera: ' + exc.message) from exc
+    if camera is None or not 0 < camera['vertical_fov'] < math.pi:
+        raise ValueError('camera3d scene camera needs a vertical FOV in (0,pi)')
+    if camera['projection'] == 'perspective':
+        projection = dict(type='perspective', focal_length_mm=12 / math.tan(camera['vertical_fov'] / 2),
+                          sensor_width_mm=36, sensor_height_mm=24, sensor_fit='vertical')
+    else:
+        projection = dict(type='orthographic', orthographic_height_m=camera['orthographic_height'])
+    projection.update(near_clip_m=camera['near'], far_clip_m=camera['far'], shift_x=0, shift_y=0)
+    result = dict(schema_version=1, kind='camera3d-optics', id=identifier, version=version,
+                  projection=projection, depth_of_field=dict(enabled=False, focus_distance_m=10,
+                  f_stop=2.8, aperture_blades=0, aperture_rotation_rad=0, anamorphic_ratio=1))
+    validate(result, 'optics')
+    return result
+
+
+def field_of_view(optics, render):
+    """Horizontal and vertical perspective angles in radians; ortho has no FOV."""
+    width, height = optical_gate(optics, render)
+    if optics['projection']['type'] != 'perspective':
+        raise ValueError('camera3d orthographic projection has no optical field of view')
+    scale = render['overscan'] / (2 * optics['projection']['focal_length_mm'])
+    return 2 * math.atan(width * scale), 2 * math.atan(height * scale)
+
+
+def with_field_of_view(optics, render, angle_rad, *, axis='vertical'):
+    """Return new optics with focal length derived from an explicit FOV edit."""
+    from copy import deepcopy
+    from camera3d_contracts import validate
+    if (axis not in ('horizontal', 'vertical') or isinstance(angle_rad, bool)
+            or not isinstance(angle_rad, (int, float)) or not math.isfinite(angle_rad)
+            or not 0 < angle_rad < math.pi):
+        raise ValueError('camera3d FOV requires horizontal/vertical axis and angle in (0,pi)')
+    gate = optical_gate(optics, render)
+    if optics['projection']['type'] != 'perspective':
+        raise ValueError('camera3d orthographic projection has no optical field of view')
+    result = deepcopy(optics)
+    result['projection']['focal_length_mm'] = gate[1 if axis == 'vertical' else 0] * render['overscan'] / (2 * math.tan(angle_rad / 2))
+    validate(result, 'optics')
+    return result
+
+
 def projection_matrix(optics, render):
     """Pure pinhole/orthographic reference, excluding lens distortion and DOF.
 
@@ -84,24 +160,13 @@ def projection_matrix(optics, render):
     be explicit. Overscan expands the frustum; nominal width/height stay fixed.
     """
     np, _ = _numeric()
-    from camera3d_contracts import validate
-    validate(optics,'optics');validate(render,'render')
+    width, height = optical_gate(optics, render)
     p = optics['projection']
     near,far = p['near_clip_m'],p['far_clip_m']
     aspect = render['width']*render['pixel_aspect']['numerator']/(render['height']*render['pixel_aspect']['denominator'])
     overscan = render['overscan']
     result = np.zeros((4,4))
     if p['type'] == 'perspective':
-        width,height = p['sensor_width_mm'],p['sensor_height_mm']
-        fit = p['sensor_fit']
-        if fit == 'horizontal':
-            height = width/aspect
-        elif fit == 'vertical':
-            width = height*aspect
-        elif render['gate_fit'] == 'crop':
-            width = min(width,height*aspect);height=width/aspect
-        else:
-            width = max(width,height*aspect);height=width/aspect
         result[0,0]=2*p['focal_length_mm']/(width*overscan)
         result[1,1]=2*p['focal_length_mm']/(height*overscan)
         result[0,2]=-2*p['shift_x']/overscan
