@@ -24,6 +24,14 @@ def digest(payload):
     return hashlib.sha256(payload).hexdigest()
 
 
+def clip_signature(clip):
+    """Compare decoded clip semantics without the native reader's import clock."""
+    from rig_errors import object_hash
+    value=deepcopy(clip)
+    value.get('provenance',{}).pop('created_at',None)
+    return object_hash(value)
+
+
 def signatures(library, references, destination):
     """Decode exact stored payloads and retain inspectable semantic signatures."""
     from rig_import import load_character_model
@@ -45,7 +53,7 @@ def signatures(library, references, destination):
                     positions=digest(m.positions.tobytes()),topology=digest(m.triangles.tobytes()),material=m.material)
                     for m in model.geometry.meshes],
                 skeleton=object_hash(model.skeleton),bones=len(model.skeleton['bones']) if model.skeleton else 0,
-                clips={name:object_hash(clip) for name,clip in model.clips.items()},
+                clips={name:clip_signature(clip) for name,clip in model.clips.items()},
                 materials=model.geometry.materials,textures=[digest(t.data) for t in model.geometry.images])
         result[kind]=entry
     return result
