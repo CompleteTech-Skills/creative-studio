@@ -127,7 +127,7 @@ def make_request(source,provenance):
 def _read(root, relative, maximum):
     try:
         from rig_errors import open_payload
-        with open_payload(root,relative) as stream:
+        with open_payload(root,relative) as (stream,identity):
             info=os.fstat(stream.fileno())
             if not 0<info.st_size<=maximum:
                 raise ValueError('sequence file size exceeds budget')

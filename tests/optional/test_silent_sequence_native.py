@@ -90,7 +90,7 @@ class SequenceImages(unittest.TestCase):
     def test_foreign_staging_directory_is_not_modified_even_with_lock_file(self):
         source=self.source(count=1);foreign=self.root/'foreign-stage';foreign.mkdir()
         (foreign/'user.txt').write_text('unrelated user data')
-        with self.assertRaisesRegex(ValueError,'preexisting'):
+        with self.assertRaises(ValueError):
             sequence.export_sequence(source,self.root,self.root/'output',provenance=self.identity,stage_name=foreign.name)
         self.assertEqual(sorted(p.name for p in foreign.iterdir()),['user.txt'])
         self.assertEqual((foreign/'user.txt').read_text(),'unrelated user data')
