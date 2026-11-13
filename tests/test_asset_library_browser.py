@@ -141,7 +141,7 @@ class BrowserTests(unittest.TestCase):
             import numpy as np
             from rig_animation import evaluate_animation
             from rig_skinning import evaluate_deformation
-            expected=evaluate_deformation(self.native_rig,evaluate_animation(self.native_rig,'bend',.5))
+            expected=evaluate_deformation(self.native_rig,evaluate_animation(self.native_rig,'bend',.5)['pose'])
             points=next(iter(expected.values()))['positions'][:4]
             self.assertLess(float(np.max(np.abs(np.asarray(after)-points))),1e-5)
             self.assertIn('b1',page.locator('#model-details').inner_text())
