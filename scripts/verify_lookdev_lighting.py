@@ -218,7 +218,7 @@ def main(destination):
     try:
         build_environment(bad_plan,payload=payload)
     except RigError as error:
-        assert error.code == 'TEXTURE_METADATA',error
+        assert error.report['code'] == 'TEXTURE_METADATA',error
     else:
         raise AssertionError('False HDR metadata must fail before native creation')
     assert before==(len(bpy.data.worlds),len(bpy.data.images))
