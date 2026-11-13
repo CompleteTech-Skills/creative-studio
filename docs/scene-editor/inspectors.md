@@ -22,12 +22,14 @@ optics, target or path adapters. The native rig adapter for persistent bone posi
 constraints, mirroring and morph editing is also not connected. These controls are
 explicitly unavailable rather than simulated.
 
-Material PBR editing has a tested persistence adapter, but remains disabled in the
-browser until the importer supplies a canonical slot-to-primitive mapping consumed
-by both preview and rendering. Current imported Scene3D assets contain no material
-slot references; assigning an arbitrary material to all meshes would change the
-meaning of multi-material models. The material HTTP route is a backend integration
-interface, not evidence of complete browser PBR editing or rendered appearance.
+Scalar PBR assignment consumes the canonical `material_bindings` mapping from the
+Scene3D importer. Imported source surfaces are read-only; assigning a new authored
+material replaces only the selected slot. Existing scalar native overrides can
+then be edited as immutable versions. New materials make no license assertion
+(`LicenseRef-Unspecified`). Native texture and advanced surface controls remain
+unavailable until their adapters are connected. Browser primitive targeting uses
+normalized GLB parser associations, or the canonical single-surface OBJ mapping.
+Full production-render agreement remains a separate acceptance requirement.
 Environment resource import and area light dimensions are not implemented here.
 No complete issue acceptance or production-render agreement is claimed.
 

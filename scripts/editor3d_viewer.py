@@ -88,7 +88,7 @@ def preview_snapshot(repository, snapshot):
                     # dependencies require conversion by the authoritative importer.
                     require(len(imported.source_files) == 1, 'EDITOR3D_VIEW_DEPENDENCY',
                             'Embed external GLB resources before browser preview.')
-                    assets[identifier] = dict(format='glb', data=base64.b64encode(path.read_bytes()).decode('ascii'))
+                    assets[identifier] = dict(format='glb', source_materials=imported.geometry.materials, data=base64.b64encode(path.read_bytes()).decode('ascii'))
                 else:
                     geometry = imported.geometry
                     images = []
@@ -106,6 +106,9 @@ def preview_snapshot(repository, snapshot):
             except (RigError, ValueError, OSError) as error:
                 assets[identifier] = dict(format='unavailable', message=str(error))
     result['viewport_assets'] = assets
+    if (ROOT / 'scripts/editor3d_inspectors.py').is_file():
+        from editor3d_inspectors import projected_editor_materials
+        result['viewport_materials'] = projected_editor_materials(repository, snapshot)
     result['preview'] = dict(backend='three-0.180.0', offline_render=False,
                              source_sha256=snapshot['sha256'])
     encoded = json.dumps(result, allow_nan=False, separators=(',', ':')).encode()

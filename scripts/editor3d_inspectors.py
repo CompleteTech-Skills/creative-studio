@@ -249,8 +249,108 @@ def inspector_routes():
         result = describe_inspector(snapshot, body['node_id'])
         if body['node_id'] is not None:
             result['materials'] = describe_materials(server.repository, snapshot, body['node_id'])
+        if body['node_id'] is not None:
+            try:
+                node,asset,projection=material_slot_projection(snapshot,body['node_id'])
+                result['material_projection']=projection
+            except RigError as exc:
+                result['material_mapping_unavailable']=exc.report['message']
         return result
     def material(server, body):
         apply_material_edit(server.repository, body)
         return server.snapshot()
-    return {'inspectors/describe': describe, 'inspectors/material': material}
+    def assign(server, body):
+        assign_authored_material(server.repository,body)
+        return server.snapshot()
+    return {'inspectors/describe': describe, 'inspectors/material': material, 'inspectors/assign-material': assign}
+
+
+def material_slot_projection(snapshot, node_id):
+    """Use canonical imported slots, with exact component membership."""
+    from scene3d_materials import project_material_slots
+    node = next((item for item in _scene(snapshot)['nodes'] if item['id'] == node_id), None)
+    if node is None or not node.get('asset'):
+        _fail('Select a native geometry instance to inspect material slots.')
+    reference = node['asset']
+    asset = snapshot.get('documents', {}).get(reference['path'])
+    if asset is None or asset.get('id') != reference['id'] or asset.get('version') != reference['version']:
+        _fail('Selected geometry does not match its exact asset reference.')
+    projection = project_material_slots(asset, component=node['metadata'].get('source_component'),
+                                        overrides=node['material_overrides'])
+    return node, asset, projection
+
+
+def assign_authored_material(repository, request):
+    """Assign a new scalar native PBR resource, preserving imported materials."""
+    import hashlib
+    from lookdev_contracts import canonical_bytes, validate_resource
+    from rig_errors import timestamp
+    allowed = {'node_id', 'slot', 'surface', 'expected_revision', 'expected_sha256', 'transaction_id'}
+    finite_json(request)
+    if not isinstance(request, dict) or set(request) != allowed:
+        _fail('Malformed authored material assignment.')
+    snapshot = repository.snapshot()
+    node, asset, projection = material_slot_projection(snapshot, request['node_id'])
+    if node['locked']:
+        _fail('Unlock the selected node before assigning its material.')
+    if request['slot'] not in {item['slot'] for item in projection}:
+        _fail('Choose a material slot belonging to the selected geometry.')
+    fields = {'base_color', 'metallic', 'roughness', 'opacity', 'alpha_mode', 'alpha_cutoff', 'double_sided'}
+    if not isinstance(request['surface'], dict) or not request['surface'] or set(request['surface']) - fields:
+        _fail('Choose supported scalar metallic/roughness fields.')
+    identity = hashlib.sha256(canonical_bytes(dict(node=request['node_id'], slot=request['slot'],
+                                      transaction_id=request['transaction_id']))).hexdigest()[:32]
+    surface = dict(base_color=[.8,.8,.8,1],base_color_space='linear-srgb',metallic=0,roughness=.5,
+        opacity=1,alpha_mode='OPAQUE',alpha_cutoff=.5,double_sided=False,ior=1.5,
+        normal_orientation='opengl-positive-y')
+    surface.update(deepcopy(request['surface']))
+    material = dict(schema_version=1,kind='material3d',id='editor-material-'+identity,version='1.0.0',
+        workflow='metallic-roughness',surface=surface,texture_slots={},variants={},dependencies=[],capabilities=[],
+        provenance=dict(origin='authored',tool='editor3d-authored-material-v1',created_at=timestamp(),
+            source_hashes=[node['asset']['sha256']],attribution='Authored in the local editor; source geometry unchanged.',
+            license=dict(identifier='LicenseRef-Unspecified',source='No material licensing assertion supplied.')),
+        render_policy=dict(strict=True,allow_approximations=False,required_features=['metallic-roughness'],fallback='reject'),
+        validation_status='unvalidated')
+    validate_resource(material)
+    raw=canonical_bytes(material);digest=hashlib.sha256(raw).hexdigest()
+    path='materials/editor/'+material['id']+'-'+digest+'.json'
+    reference=dict(id=material['id'],version=material['version'],kind='material',path=path,sha256=digest)
+    def builder(source_root,destination,scene_path):
+        from scene3d_contracts import load_project
+        from scene3d_graph import SceneGraph
+        from scene3d_snapshot import snapshot_project
+        graph=SceneGraph.from_bundle(load_project(source_root),scene_path,source_root=source_root)
+        target=next(item for item in graph.document()['nodes'] if item['id']==request['node_id'])
+        overrides=[item for item in target['material_overrides'] if item['slot']!=request['slot']]
+        overrides.append(dict(slot=request['slot'],material=reference))
+        graph.configure_node(request['node_id'],{'material_overrides':overrides})
+        result=snapshot_project(source_root,destination,graph,scene_path=scene_path,extra_payloads={path:raw})
+        return result['active_scene']['path']
+    return repository.transact_native(request['expected_revision'],request['transaction_id'],request,builder,
+                expected_sha256=request['expected_sha256'],label='Assign authored native material')
+
+
+def projected_editor_materials(repository, snapshot):
+    """Resolve exact native overrides and their canonical primitive targets."""
+    output = {}
+    scalar = {'base_color','base_color_space','metallic','roughness','opacity','alpha_mode',
+              'alpha_cutoff','double_sided','ior','normal_orientation'}
+    for node in _scene(snapshot)['nodes']:
+        if not node.get('asset') or not node['material_overrides']:
+            continue
+        try:
+            _, _, entries = material_slot_projection(snapshot, node['id'])
+            resolved={}
+            for entry in entries:
+                reference=entry['override']
+                if reference is None: continue
+                key=(reference['path'],reference['sha256'])
+                if key not in resolved:
+                    registry,_,_,_,_=_load_material_registry(repository,snapshot,reference)
+                    effective=registry.effective_material(registry.reference(reference['id'],reference['version']))
+                    supported=not effective['texture_slots'] and effective['graph'] is None and not set(effective['surface'])-scalar
+                    resolved[key]=dict(effective=effective,supported=supported)
+                output.setdefault(node['id'],[]).append(dict(**entry,**deepcopy(resolved[key])))
+        except RigError as exc:
+            output[node['id']]=[dict(supported=False,message=exc.report['message'])]
+    return output

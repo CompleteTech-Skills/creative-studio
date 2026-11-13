@@ -16,6 +16,25 @@ from scene3d_prefabs import PrefabLibrary
 from scene3d_snapshot import snapshot_project
 
 
+def mapped_repository(root):
+    from editor3d_repository import EditorRepository
+    from scene3d_contracts import all_refs
+    from scene3d_materials import obj_material_bindings
+    import hashlib
+    build_example(root/'source')
+    asset=json.loads((root/'source/triangle.json').read_text())
+    asset['material_bindings']=obj_material_bindings(asset['id'])
+    (root/'source/triangle.json').write_text(json.dumps(asset))
+    for _ in range(6):
+        for path in (root/'source').glob('*.json'):
+            value=json.loads(path.read_text())
+            for reference in all_refs(value):
+                target=root/'source'/reference['path']
+                if target.is_file():reference['sha256']=hashlib.sha256(target.read_bytes()).hexdigest()
+            path.write_text(json.dumps(value))
+    return EditorRepository.create(root/'source',root/'repository',scene_path='example-scene.json')
+
+
 class InspectorTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -31,6 +50,29 @@ class InspectorTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_authored_material_assignment_targets_native_slot_and_is_reversible(self):
+        from editor3d_inspectors import assign_authored_material,projected_editor_materials,describe_materials
+        repository=mapped_repository(self.base/'assignment')
+        before=repository.snapshot()
+        original=repository.read_file('triangle.obj',before['sha256'])
+        request=dict(node_id='mesh',slot='surface',surface={'base_color':[1,0,0,1],'roughness':.3},
+            expected_revision=before['revision'],expected_sha256=before['sha256'],transaction_id='assign-red')
+        after=assign_authored_material(repository,request)
+        self.assertEqual(after['revision'],1)
+        self.assertEqual(repository.read_file('triangle.obj',after['sha256']),original)
+        projection=projected_editor_materials(repository,after)['mesh']
+        self.assertEqual(len(projection),1);self.assertEqual(projection[0]['slot'],'surface')
+        self.assertTrue(projection[0]['supported'])
+        self.assertEqual(projection[0]['effective']['surface']['base_color'],[1,0,0,1])
+        self.assertEqual(describe_materials(repository,after,'mesh')[0]['effective']['surface']['roughness'],.3)
+        self.assertEqual(assign_authored_material(repository,request)['sha256'],after['sha256'])
+        with self.assertRaises(RigError):assign_authored_material(repository,dict(request,slot='foreign-slot',transaction_id='bad-slot'))
+        with self.assertRaises(RigError):assign_authored_material(repository,dict(request,transaction_id='stale-new'))
+        undone=repository.undo(after['revision'],'undo-red',expected_sha256=after['sha256'])
+        self.assertFalse(next(n for n in undone['scene']['nodes'] if n['id']=='mesh')['material_overrides'])
+        redone=repository.redo(undone['revision'],'redo-red',expected_sha256=undone['sha256'])
+        self.assertEqual(projected_editor_materials(repository,redone)['mesh'][0]['effective']['surface']['base_color'],[1,0,0,1])
 
     def test_camera_and_light_changes_use_native_validator_and_graph(self):
         before = deepcopy(self.snapshot)
@@ -176,6 +218,91 @@ class InspectorTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual browser acceptance explicitly.')
 class InspectorBrowserTests(unittest.TestCase):
+    def test_native_glb_two_material_slots_change_only_targeted_primitive(self):
+        import threading
+        from asset_library import AssetLibrary
+        from rig_gltf import GltfBuilder
+        from scene3d_import import import_gltf,add_import
+        from editor3d_repository import EditorRepository
+        from editor3d_viewer import EditorServer
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);library=AssetLibrary(root/'library',create=True)
+            license=root/'license.txt';license.write_text('CC0-1.0 engineering fixture')
+            builder=GltfBuilder();builder.json['asset']['extras']={'hatchSource':{'fixture':True}}
+            left=builder.accessor([[0,0,0],[1,0,0],[0,1,0]],'VEC3',bounds=True)
+            right=builder.accessor([[1.5,0,0],[2.5,0,0],[1.5,1,0]],'VEC3',bounds=True)
+            indices=builder.accessor([0,1,2],'SCALAR',5123)
+            builder.json['materials']=[{'name':'blue','pbrMetallicRoughness':{'baseColorFactor':[0,0,1,1]}},
+                                       {'name':'green','pbrMetallicRoughness':{'baseColorFactor':[0,1,0,1]}}]
+            builder.json['meshes']=[{'primitives':[{'attributes':{'POSITION':left},'indices':indices,'material':0},
+                                                   {'attributes':{'POSITION':right},'indices':indices,'material':1}]}]
+            builder.json['nodes']=[{'mesh':0}];builder.json['scenes']=[{'nodes':[0]}]
+            source=root/'two-surfaces.glb';builder.write(source);original=source.read_bytes()
+            imported=import_gltf(source,library,asset_id='two-surfaces',attribution='Engineering fixture',license_file=license)
+            bundle=build_example(root/'source');graph=SceneGraph.from_bundle(bundle,'example-scene.json')
+            mapping=add_import(graph,imported,'model')['mapping'];node_id=mapping['node-0']
+            manifest=library.resolve(imported.library_reference)
+            payloads={r['path']:library.read_file(imported.library_reference,r['path']) for r in manifest['files'] if r['path']!=imported.asset_reference['path']}
+            saved=snapshot_project(root/'source',root/'portable',graph,scene_path='example-scene.json',derived_documents={imported.asset_reference['path']:imported.asset},extra_payloads=payloads)
+            repository=EditorRepository.create(root/'portable',root/'repository',scene_path=saved['active_scene']['path'])
+            server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser=launch_chromium(runtime)
+                    try:
+                        page=browser.new_page(viewport={'width':1400,'height':1000})
+                        page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
+                        page.evaluate('(id)=>window.hatchEditor.select(id)',node_id)
+                        field=page.locator('#native-inspectors fieldset').filter(has=page.get_by_text('material-0',exact=True))
+                        field.get_by_role('button',name='Assign new authored material',exact=True).wait_for()
+                        for label_name,value in [('R','1'),('G','0'),('B','0')]:field.get_by_label(label_name,exact=True).fill(value)
+                        field.get_by_role('button',name='Assign new authored material',exact=True).click()
+                        page.wait_for_function("""(id)=>{const colors=[];window.hatchEditor.objects.get(id).traverse(o=>{if(o.isMesh)colors.push({color:o.material.color.toArray(),native:!!o.userData.nativeMaterialReference})});return colors.filter(c=>c.native).length===1;}""",arg=node_id)
+                        colors=page.evaluate("""(id)=>{const colors=[];window.hatchEditor.objects.get(id).traverse(o=>{if(o.isMesh)colors.push({color:o.material.color.toArray(),native:!!o.userData.nativeMaterialReference})});return colors;}""",node_id)
+                        self.assertEqual(len(colors),2)
+                        self.assertEqual(next(c['color'] for c in colors if c['native']),[1,0,0])
+                        self.assertEqual(next(c['color'] for c in colors if not c['native']),[0,1,0])
+                        self.assertEqual(source.read_bytes(),original)
+                        self.assertEqual(page.evaluate('() => window.hatchEditor.errors'),[])
+                    finally:browser.close()
+            finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
+    def test_assign_authored_material_changes_actual_mesh_and_survives_reopen(self):
+        import threading
+        from editor3d_repository import EditorRepository
+        from editor3d_viewer import EditorServer
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);repository=mapped_repository(root)
+            server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser=launch_chromium(runtime)
+                    try:
+                        page=browser.new_page(viewport={'width':1400,'height':1000})
+                        page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
+                        page.evaluate("window.hatchEditor.select('mesh')")
+                        field=page.locator('#native-inspectors fieldset').filter(has=page.get_by_text('surface',exact=True))
+                        field.get_by_role('button',name='Assign new authored material',exact=True).wait_for()
+                        before=page.locator('canvas').first.screenshot()
+                        for label_name,value in [('R','1'),('G','0'),('B','0')]:field.get_by_label(label_name,exact=True).fill(value)
+                        field.get_by_role('button',name='Assign new authored material',exact=True).click()
+                        page.wait_for_function("""() => {let mesh;window.hatchEditor.objects.get('mesh').traverse(o=>{if(o.isMesh)mesh=o});return mesh?.userData.nativeMaterialReference && mesh.material.color.r===1 && mesh.material.color.g===0;}""")
+                        after=page.locator('canvas').first.screenshot();self.assertNotEqual(before,after)
+                        evidence=os.environ.get('HATCH_EDITOR_EVIDENCE_DIR')
+                        if evidence:
+                            Path(evidence).mkdir(parents=True,exist_ok=True)
+                            (Path(evidence)/'material-before.png').write_bytes(before);(Path(evidence)/'material-after.png').write_bytes(after)
+                        page.goto('about:blank');page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
+                        state=EditorRepository(root/'repository').snapshot()
+                        self.assertEqual(state['revision'],1)
+                        self.assertEqual(page.evaluate("() => window.hatchEditor.errors"),[])
+                    finally:browser.close()
+            finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
     def test_camera_light_world_edits_persist_and_rejections_stay_visible(self):
         import threading
         from editor3d_repository import EditorRepository
