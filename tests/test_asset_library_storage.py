@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import unittest
 from contextlib import closing
 from unittest.mock import patch
@@ -216,6 +217,49 @@ library.register(json.loads(Path(sys.argv[2]).read_text()),json.loads(Path(sys.a
         self.assertEqual(AssetLibrary(self.library.root).events('lifecycle.triangle'), [first, second])
         with self.assertRaises(RigError):
             self.library.append_event('../escape', expected_revision=0, document={})
+
+    def test_readers_wait_for_active_durable_annotation_and_event_commits(self):
+        reference = self.register()
+        for kind in ('annotation', 'event'):
+            with self.subTest(kind=kind):
+                committed = threading.Event()
+                release = threading.Event()
+                reader_started = threading.Event()
+                results = []
+                errors = []
+                original = self.library.storage.append
+                def paused(*args, **kwargs):
+                    original(*args, **kwargs)
+                    committed.set()
+                    self.assertTrue(release.wait(5))
+                def writer():
+                    try:
+                        if kind == 'annotation':
+                            self.library.update_annotations(reference, expected_revision=0, tags=[], favorite=False, note='committed')
+                        else:
+                            self.library.append_event('concurrency', expected_revision=0, document={'ok': True})
+                    except BaseException as error:
+                        errors.append(error)
+                def reader():
+                    reader_started.set()
+                    try:
+                        results.append(self.library.annotations(reference) if kind == 'annotation' else self.library.events('concurrency'))
+                    except BaseException as error:
+                        errors.append(error)
+                with patch.object(self.library.storage, 'append', paused):
+                    a = threading.Thread(target=writer)
+                    a.start()
+                    self.assertTrue(committed.wait(5))
+                    b = threading.Thread(target=reader)
+                    b.start()
+                    self.assertTrue(reader_started.wait(5))
+                    b.join(.1)
+                    release.set()
+                    a.join(5)
+                    b.join(5)
+                self.assertFalse(a.is_alive() or b.is_alive())
+                self.assertEqual(errors, [])
+                self.assertTrue(results)
 
 
 if __name__ == '__main__':
