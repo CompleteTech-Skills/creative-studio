@@ -303,10 +303,12 @@ def probe(request, evidence_root, *, configuration=None):
             if operation=='blender.gpu' and not record['execution_verified']:record['fallback']='blender.cpu-requires-separate-probe-and-explicit-policy'
             record['dependency_fingerprint']=object_hash(record['dependencies'])
             record['fixture']=True
+            record['version']=version
+            record['policy_limits']={**deepcopy(LIMITS),**config.get('production_limits',{})}
             record['payloads']=payloads
             path=stage/'receipts'/(object_hash(record)+'.json');path.write_text(json.dumps(record,sort_keys=True,indent=2)+'\n',encoding='utf-8')
             reference=_reference(path,stage,payloads);refs.append(reference)
-            records.append(dict(operation=operation,version=version,status=record['status'],limits={**deepcopy(LIMITS),**config.get('production_limits',{})},
+            records.append(dict(operation=operation,version=version,status=record['status'],limits=deepcopy(record['policy_limits']),
                                 probe_evidence=[reference],execution_verified=record['execution_verified']))
             if record['status']!='available':diagnostics.append(_diagnostic('CAPABILITY_'+record['reason'].upper().replace('-','_'),operation,record['reason']))
         _need(datetime.fromisoformat(request['context']['deadline'].replace('Z','+00:00'))>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired before publication.')
@@ -350,6 +352,7 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
             for reference in item['probe_evidence']:
                 evidence=decode_json(_read_artifact(evidence_root,reference))
                 _need(evidence['operation']==operation and evidence['execution_verified'] and evidence['status']=='available','EVIDENCE','Probe evidence does not verify capability.')
+                _need(evidence['policy_limits']==item['limits'] and evidence['version']==item['version'],'EVIDENCE','Capability policy/version differs from execution receipt.')
                 for payload in reference['dependencies']:_read_artifact(evidence_root,payload)
         for resource,amount in (resources or {}).items():
             _need(resource in LIMITS and type(amount) in (int,float) and amount>=0,'RESOURCE','Unknown or invalid resource estimate.')
