@@ -87,6 +87,7 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
         page.locator('[data-id="mesh"]').focus();page.keyboard.press('Enter')
         page.keyboard.press('Control+f');page.keyboard.press('Escape')
         self.assertEqual(page.locator('#tool').input_value(),'rotate')
+        page.locator('[data-id="mesh"]').focus();page.keyboard.press('Enter')
         page.locator('#duplicate').focus();page.keyboard.press('ArrowRight')
         self.assertEqual(self.repository.snapshot()['revision'],0)
         # Extension-provided rich text must retain native editing keys too.
@@ -96,3 +97,24 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
         self.assertEqual(self.repository.snapshot()['revision'],0)
         page.get_by_label('translation X',exact=True).focus();page.keyboard.press('Control+a');page.keyboard.press('g')
         self.assertEqual(page.locator('#tool').input_value(),'rotate')
+
+    def test_native_hidden_and_locked_rows_remain_discoverable_without_selection_or_mutation(self):
+        page=self.page
+        self.repository.apply(0,dict(schema_version=1,commands=[
+            dict(operation='node-flags',parameters=dict(identifier='mesh',locked=True)),
+            dict(operation='node-flags',parameters=dict(identifier='camera',visible=False))]),'accessibility-native-flags')
+        page.goto(self.server.url);page.wait_for_function('() => window.editorReady === true')
+        before=self.repository.snapshot()
+        root=page.locator('[data-id="root"]');root.focus();page.keyboard.press('ArrowDown')
+        self.assertEqual(page.evaluate('document.activeElement.dataset.id'),'mesh')
+        self.assertEqual(page.locator('[data-id="mesh"]').get_attribute('aria-disabled'),'true')
+        page.keyboard.press('Enter');self.assertEqual(page.evaluate('window.hatchEditor.selection'),[])
+        page.keyboard.press('ArrowDown');self.assertEqual(page.evaluate('document.activeElement.dataset.id'),'camera')
+        self.assertEqual(page.locator('[data-id="camera"]').get_attribute('aria-disabled'),'true')
+        page.keyboard.press('Space');self.assertEqual(page.evaluate('window.hatchEditor.selection'),[])
+        page.keyboard.press('Home');page.keyboard.press('Enter')
+        self.assertEqual(page.evaluate('window.hatchEditor.selection'),['root'])
+        page.keyboard.press('Tab')
+        self.assertFalse(page.evaluate('document.querySelector("#outliner").contains(document.activeElement)'))
+        self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
+        self.assertEqual(self.repository.snapshot()['revision'],1)
