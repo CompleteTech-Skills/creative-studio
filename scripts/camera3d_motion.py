@@ -115,7 +115,7 @@ def sample_motion(base_transform, optics, time, duration_frames, motion, paramet
         radius=float(np.linalg.norm(delta[[0,2]]))
         rx=_number(params.get('radius_x_m',radius),'orbit X radius',1e-9,1e6)
         rz=_number(params.get('radius_z_m',radius),'orbit Z radius',1e-9,1e6)
-        azimuth=math.atan2(delta[0],delta[2])+angle*t
+        azimuth=math.atan2(delta[0]/rx,delta[2]/rz)+angle*t
         height=_number(params.get('height_m',float(delta[1])),'orbit height',-1e6,1e6)
         position=target+np.array([rx*math.sin(azimuth),height,rz*math.cos(azimuth)])
     elif motion=='shake':

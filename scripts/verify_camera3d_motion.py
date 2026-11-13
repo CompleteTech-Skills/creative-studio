@@ -9,6 +9,7 @@ import hashlib
 import json
 import sys
 import os
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -100,7 +101,17 @@ def main():
         attempts.append(dict(frame=frame, png_sha256=digest, decoded_rgba_sha256=pixel_digest))
     if np.linalg.norm(np.array(observed[0])-observed[24]) < 3:
         raise AssertionError('Native camera movement did not change the projected marker')
-    report = dict(blender=bpy.app.version_string, frames=observed, png_sha256=hashes,
+    source_names = ['verify_camera3d_motion.py','camera3d_motion.py','camera3d_paths.py',
+                    'camera3d_math.py','camera3d_contracts.py','rig_math.py','rig_errors.py']
+    sources = {name: hashlib.sha256((ROOT/'scripts'/name).read_bytes()).hexdigest()
+               for name in source_names}
+    try:
+        execution_head = subprocess.check_output(['git','-C',str(ROOT),'rev-parse','HEAD'],
+                                                 text=True,stderr=subprocess.DEVNULL).strip()
+    except (OSError,subprocess.CalledProcessError):
+        execution_head = None
+    report = dict(blender=bpy.app.version_string, source_sha256=sources,
+                  execution_git_head=execution_head, frames=observed, png_sha256=hashes,
                   decoded_rgba_sha256=pixels, attempts=attempts,
                   check='native projections agree; repeated frame 24 decoded pixels match')
     (args.output/'report.json').write_text(json.dumps(report,indent=2)+'\n')

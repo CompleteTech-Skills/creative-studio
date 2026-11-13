@@ -9,6 +9,7 @@ import tempfile
 import shutil
 import os
 import subprocess
+from contextlib import nullcontext
 
 import numpy as np
 
@@ -66,9 +67,16 @@ class CameraMotionTests(unittest.TestCase):
 
     def test_orbit_elliptical_and_dynamic_target(self):
         result=self.sample('orbit',{'angle_rad':math.pi,'radius_x_m':5,'radius_z_m':10},target_position=[2,0,0])
-        point=result['transform']['translation']; theta=math.atan2(-2,10)+math.pi/2
+        point=result['transform']['translation']; theta=math.atan2(-2/5,10/10)+math.pi/2
         np.testing.assert_allclose(point,[2+5*math.sin(theta),0,10*math.cos(theta)],atol=1e-12)
         self.assertEqual(self.sample('follow',{'offset_m':[0,2,4]},target_position=[3,0,2])['transform']['translation'],[3,2,6])
+
+    def test_elliptical_orbit_preserves_on_ellipse_start_and_endpoint(self):
+        self.base['translation']=[3,0,8]
+        parameters=dict(angle_rad=math.tau,radius_x_m=5,radius_z_m=10)
+        for frame in (0,24):
+            np.testing.assert_allclose(self.sample('orbit',parameters,frame,
+                target_position=[0,0,0])['transform']['translation'],[3,0,8],atol=1e-12)
 
     def test_crane_arc_and_easing(self):
         result=self.sample('crane',{'delta_m':[4,0,0],'arc_height_m':2})
@@ -201,6 +209,31 @@ class CameraTrackTests(unittest.TestCase):
             (directory/'optics.json').write_bytes((directory/'optics.json').read_bytes()+b' ')
             with self.assertRaises(ValueError):at(12)
 
+    def test_world_tracks_convert_to_local_under_nonidentity_parent(self):
+        from camera3d_animation import sample_camera_tracks
+        from rig_math import axis_angle
+        directory=ROOT/'examples/camera3d';registry=self.registry(directory)
+        optics=json.loads((directory/'optics.json').read_text())
+        base=dict(translation=[0,0,0],rotation=[0,0,0,1],scale=[1,1,1])
+        parent=world_transform(dict(translation=[10,2,-3],
+            rotation=axis_angle([0,1,0],math.pi/2).tolist(),scale=[1,1,1]))
+        tracks=[self.track('translation',[[12,4,-4],[12,4,-4]],'vec3'),
+                self.track('rotation',[[0,0,0,1],[0,0,0,1]],'quaternion')]
+        for track in tracks:track['coordinate_space']='world'
+        def at(values,**kwargs):
+            return sample_camera_tracks('camera',base,optics,values,dict(frame=12),
+                registry,duration_frames=24,**kwargs)
+        state=at(tracks,parent_world=parent)
+        actual=world_transform(state['transform'],parent)
+        np.testing.assert_allclose(actual[:3,3],[12,4,-4],atol=1e-12)
+        np.testing.assert_allclose(actual[:3,:3],np.eye(3),atol=1e-12)
+        local=copy.deepcopy(tracks)
+        for track in local:track['coordinate_space']='local'
+        self.assertEqual(at(local)['transform']['translation'],[12,4,-4])
+        with self.assertRaises(ValueError):at(tracks)
+        local[0]['coordinate_space']='parent'
+        with self.assertRaises(ValueError):at(local,parent_world=parent)
+
     def test_competing_fov_and_unknown_camera_are_rejected(self):
         from camera3d_animation import sample_camera_tracks
         from animation3d_registry import TargetRegistry
@@ -218,13 +251,15 @@ class CameraNativeMotionTests(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('HATCH_CAMERA_MOTION_BLENDER'),
                          'set HATCH_CAMERA_MOTION_BLENDER for actual native motion gate')
     def test_actual_blender_random_seek(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        evidence=os.environ.get('HATCH_CAMERA_MOTION_EVIDENCE')
+        with (nullcontext(evidence) if evidence else tempfile.TemporaryDirectory()) as temporary:
             result=subprocess.run([os.environ['HATCH_CAMERA_MOTION_BLENDER'], '--background',
                 '--threads','1','--python-exit-code','1','--python',
                 str(ROOT/'scripts/verify_camera3d_motion.py'),'--','--output',temporary],
                 capture_output=True,text=True,timeout=180)
             self.assertEqual(result.returncode,0,result.stdout[-3000:]+result.stderr[-3000:])
             report=json.loads((Path(temporary)/'report.json').read_text())
+            print(json.dumps(report,sort_keys=True))
             self.assertEqual(set(report['png_sha256']),{'0','12','24'})
             self.assertGreater(len(set(report['png_sha256'].values())),1)
 
