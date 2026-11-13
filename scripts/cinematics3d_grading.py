@@ -226,6 +226,9 @@ def apply_grade(root, grade, rgba, *, source_context, mask=None, max_work_bytes=
     _need(type(max_work_bytes) is int and 0 < max_work_bytes <= color.MAX_WORK_BYTES
           and 0 < count <= color.MAX_PIXELS and rgba.nbytes+count*256+lut_bytes*8 <= max_work_bytes, 'grading work budget exceeded')
     _need(bool(np.isfinite(rgba).all()) and bool(((rgba[..., 3] >= 0) & (rgba[..., 3] <= 1)).all()), 'invalid grade pixels')
+    maximum = float(np.finfo(np.float32).max)
+    _need(float(rgba.min()) >= -maximum and float(rgba.max()) <= maximum,
+          'grading source precision exceeds float32 range')
     if mask is not None:
         _need(isinstance(mask, np.ndarray) and mask.shape == rgba.shape[:-1] and mask.dtype.kind == 'f'
               and bool(np.isfinite(mask).all()) and bool(((mask >= 0) & (mask <= 1)).all()), 'invalid secondary mask')

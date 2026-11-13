@@ -95,6 +95,15 @@ class GradingTests(unittest.TestCase):
             self.assertTrue(np.isfinite(diagnostic['neutral_max_channel_spread']))
             self.assertEqual(receipt['execution_sha256'], grade.object_hash({k:v for k,v in receipt.items() if k != 'execution_sha256'}))
 
+    def test_unrepresentable_float64_source_rejects_before_operations_or_diagnostics(self):
+        operation = self.operation('channel-matrix', {'matrix': [[0., 0., 0.]]*3, 'offset': [.18]*3})
+        plan = self.plan([operation])
+        with patch.object(grade, '_operation', side_effect=AssertionError('operation began before precision admission')):
+            for value in (1e308, -1e308):
+                source = np.array([[value, value, value, 1.]], np.float64)
+                with self.assertRaisesRegex(ValueError, 'source precision'):
+                    self.apply('.', plan, source)
+
     def test_lift_gamma_gain_and_channel_matrix_have_reference_values(self):
         source = self.pixels()
         p = {'lift': [.1, 0., -.1], 'gamma': [2., 1., .5], 'gain': [1., 2., .5]}
