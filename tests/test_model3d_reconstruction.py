@@ -135,6 +135,17 @@ class ReconstructionTests(unittest.TestCase):
         with self.assertRaises(RigError):extrude_contour([[0,0],[1,0],[0,1]],thickness=.1,evidence=cycle)
         with self.assertRaises(RigError):extrude_contour([[0,0],[1,0],[-1,0],[0,1]],thickness=.1)
 
+    def test_edited_geometry_or_report_cannot_publish_stale_method_evidence(self):
+        for mutation in ('geometry','report'):
+            result=extrude_contour([[0,0],[1,0],[1,1],[0,1]],thickness=.2)
+            if mutation=='geometry':result.geometry.meshes[0].positions[:,2]*=10
+            else:result.report['parameters']['thickness_m']=.5
+            with tempfile.TemporaryDirectory() as temporary:
+                destination=Path(temporary)/'out'
+                with self.assertRaises(RigError) as caught:publish(result,destination)
+                self.assertEqual(caught.exception.report['code'],'RECON_STALE')
+                self.assertFalse(destination.exists())
+
     def test_failed_or_racing_publication_preserves_dest_and_removes_only_owned_stage(self):
         result=extrude_contour([[0,0],[1,0],[1,1],[0,1]],thickness=.1)
         from atomic_publish import _rename_no_replace

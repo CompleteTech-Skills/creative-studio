@@ -368,4 +368,5 @@ def carve_visual_hull(views, bounds, resolution, *, limits=None):
                              'All views are complete observations; outside-frame/clip cells are excluded.',
                              'No automatic calibration, image segmentation, smoothing or artistic approval is inferred.'])
     occupancy.setflags(write=False)
-    return HullResult(geometry,occupancy,report)
+    from model3d_reconstruction import _seal_result
+    return _seal_result(HullResult(geometry,occupancy,report))

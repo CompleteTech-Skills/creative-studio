@@ -48,6 +48,19 @@ class VisualHullTests(unittest.TestCase):
         self.assertEqual(result.report['completeness'],'partial')
         self.assertEqual(result.report['provider_calls'],0)
 
+    def test_publisher_rejects_stale_hull_geometry_metrics_and_occupancy(self):
+        from model3d_reconstruction import publish
+        for changed in ('geometry','metrics','occupancy'):
+            result=carve_visual_hull([view('front',[0,0,3]),view('side',[3,0,0])],[[-1]*3,[1]*3],[4]*3)
+            if changed=='geometry':result.geometry.meshes[0].positions*=.5
+            elif changed=='metrics':result.report['reprojection'][0]['iou']=.5
+            else:result.occupancy.setflags(write=True);result.occupancy[0,0,0]=True
+            with tempfile.TemporaryDirectory() as temporary:
+                destination=Path(temporary)/'out'
+                with self.assertRaises(RigError) as caught:publish(result,destination)
+                self.assertEqual(caught.exception.report['code'],'RECON_STALE')
+                self.assertFalse(destination.exists())
+
     def test_true_surface_reprojection_detects_unsupported_foreground(self):
         mask=np.zeros((16,16),bool);mask[4:12,4:12]=True;mask[0,0]=True
         result=carve_visual_hull([view('front',[0,0,3],mask),view('right',[3,0,0])],[[-1]*3,[1]*3],[4]*3)

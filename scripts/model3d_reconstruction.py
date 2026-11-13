@@ -159,10 +159,50 @@ def _result(positions,triangles, *, method, parameters, evidence=None, uv=None, 
     return Reconstruction(geometry,report)
 
 
+def _result_signature(result):
+    """Bind numerical evidence to actual native arrays and parameters, not paths."""
+    geometry=result.geometry
+    validate_geometry(geometry,DEFAULT_LIMITS)
+    digest=hashlib.sha256()
+    def metadata(value):
+        finite_json(value)
+        encoded=json.dumps(value,sort_keys=True,allow_nan=False,ensure_ascii=True,separators=(',',':')).encode('ascii')
+        require(len(encoded)<=16*1024**2,'RECON_SOURCE_LIMIT','Result metadata exceeds16MiB.')
+        digest.update(len(encoded).to_bytes(8,'little'));digest.update(encoded)
+    def array(value):
+        require(isinstance(value,np.ndarray) and value.dtype.kind in 'bifu' and value.nbytes<=128*1024**2,
+                'RECON_RESULT','Result arrays must be bounded numeric data.')
+        metadata(dict(dtype=value.dtype.str,shape=list(value.shape)))
+        digest.update(memoryview(np.ascontiguousarray(value)).cast('B'))
+    metadata(dict(report=result.report,materials=geometry.materials,textures=geometry.textures,
+                  samplers=geometry.samplers,extensions=geometry.extensions_used))
+    for image in geometry.images:
+        metadata(dict(name=image.name,mime_type=image.mime_type,bytes=len(image.data)))
+        digest.update(image.data)
+    for mesh in geometry.meshes:
+        metadata(dict(id=mesh.id,name=mesh.name,region=mesh.region,source_node=mesh.source_node,
+                      material=mesh.material,morph_defaults=mesh.morph_defaults))
+        array(mesh.positions);array(mesh.triangles)
+        for key,values in sorted(mesh.attributes.items()):metadata(key);array(values)
+        for target,channels in sorted(mesh.morphs.items()):
+            metadata(target)
+            for key,values in sorted(channels.items()):metadata(key);array(values)
+    if hasattr(result,'occupancy'):array(result.occupancy)
+    return digest.hexdigest()
+
+
+def _seal_result(result):
+    """Internal method-completion seal; edited geometry requires new evidence."""
+    result._reconstruction_signature=_result_signature(result)
+    return result
+
+
 def publish(result, destination, *, evidence=(), format='glb'):
     """Atomically publish genuine mesh, exact original observations and hash receipts."""
     from model3d_interchange import export_mesh
     require(hasattr(result,'geometry') and isinstance(result.report,dict),'RECON_RESULT','Expected a reconstruction result.')
+    require(getattr(result,'_reconstruction_signature',None)==_result_signature(result),
+            'RECON_STALE','Reconstruction geometry, occupancy or evidence changed; regenerate/recompute reconstruction evidence before publication.')
     require(isinstance(evidence,(list,tuple)) and len(evidence)<=64 and all(isinstance(e,Evidence) for e in evidence),
             'RECON_SOURCE','Supply at most64captured observations.')
     require(sum(len(e.payload) for e in evidence)<=256*1024**2,'RECON_SOURCE_LIMIT','Evidence total exceeds256MiB.')

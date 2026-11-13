@@ -8,7 +8,7 @@ from __future__ import annotations
 from fractions import Fraction
 import math
 import numpy as np
-from model3d_reconstruction import _number,_array,_budget,_result
+from model3d_reconstruction import _number,_array,_budget,_result,_seal_result
 from rig_errors import require
 
 
@@ -109,7 +109,7 @@ def extrude_contour(outer, *, holes=(), thickness, evidence=None):
             a,b=edge;triangles.extend(((a,b,b+n),(a,b+n,a+n)))
     result=_result(positions,triangles,method='contour-extrusion',parameters=dict(outer=np.asarray(outer).tolist(),holes=[np.asarray(h).tolist() for h in holes],thickness_m=thickness,axis='+Z'),evidence=evidence)
     result.report['surface_regions']=[dict(faces=[0,2*len(caps)],classification='procedurally-inferred',constraint='Cap outlines are exactly constrained by supplied planar contours; Z placement and hidden cap are inferred.'),dict(faces=[2*len(caps),len(triangles)],classification='procedurally-inferred',constraint='Sidewalls connect matching contour boundaries over explicit thickness.')]
-    return result
+    return _seal_result(result)
 
 
 def revolve_profile(profile, *, segments=32, cap_ends=True, evidence=None):
@@ -168,7 +168,7 @@ def revolve_profile(profile, *, segments=32, cap_ends=True, evidence=None):
     result.report['surface_regions']=[dict(faces=[0,len(faces)],classification='procedurally-inferred',constraint='Supplied meridian profile; rotational symmetry and hidden azimuths explicitly assumed.')]
     result.report['topology_domain']='shared geometric surface before render UV seam duplication'
     result.report['uv_seam']='Render seam duplicates u=0 at u=1; geometric topology receipt refers to welded source surface.'
-    return result
+    return _seal_result(result)
 
 
 def heightfield(heights, *, spacing, base_thickness, evidence=None):
@@ -200,7 +200,7 @@ def heightfield(heights, *, spacing, base_thickness, evidence=None):
     result=_result(positions,triangles,method='finite-heightfield',parameters=dict(spacing_m=spacing.tolist(),base_thickness_m=base,grid_shape=[h,w],heights_m=values.tolist(),surface_axes='X+Z; height+Y'),evidence=evidence,uv=uv)
     # Grid triangles alternate front/bottom; retain exact attribution by index.
     result.report['surface_regions']=[dict(face_pattern='indices4k,4k+1for k in0..'+str((h-1)*(w-1)-1),classification='geometrically-constrained',constraint='Supplied sampled heights; linear triangle interiors are inferred.'),dict(face_pattern='remaining faces',classification='procedurally-inferred',constraint='Flat bottom and closing walls use explicit base thickness.')]
-    return result
+    return _seal_result(result)
 
 
 def extrude_mask(mask, *, pixel_size, thickness, origin=(0,0), evidence=None):
@@ -236,4 +236,4 @@ def extrude_mask(mask, *, pixel_size, thickness, origin=(0,0), evidence=None):
     import hashlib
     result=_result(positions,triangles,method='binary-mask-extrusion',parameters=dict(pixel_size_m=pixel,thickness_m=depth,origin_m=origin.tolist(),mask_shape=list(values.shape),mask_sha256=hashlib.sha256(values.tobytes()).hexdigest(),foreground_pixels=len(occupied),cleanup='none; exact pixel-cell silhouette'),evidence=evidence)
     result.report['surface_regions']=[dict(faces=[0,len(triangles)],classification='procedurally-inferred',constraint='XY silhouette constrained by exact observed mask cells; all depth, hidden caps and walls use explicit thickness.')]
-    return result
+    return _seal_result(result)
