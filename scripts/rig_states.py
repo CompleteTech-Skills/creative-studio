@@ -58,7 +58,7 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
         [library.resolve(s) for s in (selected or [])]+(library.expand_pack(pack) if pack else [])))
     capabilities=rig_capabilities(rig);archetype=rig.manifest['archetype']
     if archetype not in library.archetypes:archetype='generic'
-    mapping={};compiled={}
+    mapping={};compiled={};events={}
     for name in names:
         reasons=library.incompatibilities(name,archetype,capabilities,approved_props)
         clips=resolved.get(name,[])
@@ -73,9 +73,15 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
             state=library.states[name]
             compiled[name]=dict(clips=clips,priority=state['priority'],interrupt=state['interrupt'],repeat=state['repeat'],
                 legal_transitions=state['legal_transitions'],completion=state['completion'],recovery=state['recovery'],
-                reduced_motion=deepcopy(state['reduced_motion']),cancel_state='static-neutral',
+                reduced_motion=deepcopy(state['reduced_motion']),events=deepcopy(state['events']),cancel_state='static-neutral',
                 anatomical_adaptation='Uses only existing weighted anatomy; no invented body parts.',semantic_review=state['semantic_review'])
         mapping[name]=dict(status=status,clips=clips,reason=reason)
+        if name in compiled:
+            for event in dict.fromkeys([*library.states[name]['events'], 'state:'+name,
+                                       *('state:'+alias for alias in library.states[name]['aliases'])]):
+                require(event not in events or events[event] == name, 'RIG_STATE_EVENT',
+                        'Selected catalog event identifies conflicting states.')
+                events[event] = name
     clip_ids=sorted({clip for recipe in compiled.values() for clip in recipe['clips']})
     clips=[rig.clips[name] for name in clip_ids]
     samples=sum(max(2,int(math.ceil(clip['duration']*clip['fps']))+1) for clip in clips)
@@ -90,4 +96,4 @@ def map_states(rig,*,recipes=None,selected=None,pack=None,approved_props=()):
         limitations='Position buffers only; excludes normals, textures, pose matrices, renderer memory, encoded output and repeated runtime loops.')
     return dict(schema_version=1,catalog_version=library.version,catalog_sha256=library.sha256,total_catalog_states=len(library.states),
                 selected_states=len(names),capabilities=capabilities,mapping=mapping,recipes=compiled,
-                counts=dict(Counter(v['status'] for v in mapping.values())),work_estimate=estimate,all_416_animated=False)
+                counts=dict(Counter(v['status'] for v in mapping.values())),events=events,work_estimate=estimate,all_416_animated=False)
