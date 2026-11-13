@@ -106,11 +106,13 @@ pin; no source asset or historical evidence needs rewriting.
 
 ## Review follow-up validation
 
-Fresh validation under Python 3.14.8 and Pillow 13.0.0 passed all 54 Model3D
-contract tests and the workflow's robotic-model validation command. The complete
-logs and source-bound receipt are committed in
+Retained follow-up logs record 54 passing Model3D contract tests and a successful
+robotic-model validation. The receipt metadata lists Python 3.14.8 and Pillow
+13.0.0; the retained validator output self-reports Python 3.12.15. These records
+do not establish that both commands used one shared interpreter. The logs and
+source-bound receipt are committed in
 [`pillow13-review-20261113`](../tests/results/pillow13-review-20261113/receipt.json).
-This fills the missing Model3D coverage; it does not recreate unavailable earlier
+They retain evidence for those checks; they do not recreate unavailable earlier
 security reports or browser baselines.
 
 The passing compatibility configuration uses a **separate** environment:
