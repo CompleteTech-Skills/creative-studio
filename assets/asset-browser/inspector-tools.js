@@ -29,6 +29,7 @@ export function installInspectorTools({THREE,scene,camera,orbit,renderer,element
   element.append(root);
   let model=null,meshes=[],boxHelper=null,axesHelper=null,lastBoundsUpdate=0;
   const visibilityBefore=new Map();
+  const displayName=(value,fallback='(unnamed)')=>{const text=typeof value==='string' && value ? value : fallback;return text.length>512?text.slice(0,512)+'…':text;};
   const lights=[];
   scene.traverse(object=>{if(object.isLight)lights.push({object,intensity:object.intensity,color:object.color.clone(),ground:object.groundColor?.clone()});});
   function restoreLighting(){for(const value of lights){value.object.intensity=value.intensity;value.object.color.copy(value.color);if(value.ground)value.object.groundColor.copy(value.ground);}}
@@ -37,7 +38,7 @@ export function installInspectorTools({THREE,scene,camera,orbit,renderer,element
     if(lighting.value==='neutral')return;
     for(const {object} of lights){
       if(object.isHemisphereLight || object.isAmbientLight){object.intensity=lighting.value==='studio'?2.2:lighting.value==='soft'?3.2:3.6;}
-      else {object.intensity=lighting.value==='studio'?4.5:lighting.value==='soft'?.9:0;}
+      else {object.intensity=lighting.value==='studio'?4.5:lighting.value==='soft' ? .9 : 0;}
       if(lighting.value==='studio' && object.isDirectionalLight)object.color.setHex(0xffe4c4);
     }
   }
@@ -96,16 +97,16 @@ export function installInspectorTools({THREE,scene,camera,orbit,renderer,element
     for(const [index,mesh] of meshes.entries()){
       visibilityBefore.set(mesh,mesh.visible);
       if(index>=256)continue;
-      const row=doc.createElement('label'),checkbox=input('input',{type:'checkbox','aria-label':'Show mesh '+(mesh.name||String(index+1))});
+      const row=doc.createElement('label'),checkbox=input('input',{type:'checkbox','aria-label':'Show mesh '+displayName(mesh.name,String(index+1))});
       checkbox.checked=mesh.visible;checkbox.addEventListener('change',()=>{mesh.visible=checkbox.checked;});
-      row.append(checkbox,doc.createTextNode(' '+(mesh.name||'Mesh '+String(index+1))));visibility.append(row);
+      row.append(checkbox,doc.createTextNode(' '+displayName(mesh.name,'Mesh '+String(index+1))));visibility.append(row);
     }
     if(meshes.length>256){const message=doc.createElement('p');message.textContent='Showing visibility controls for the first 256 of '+meshes.length+' meshes.';visibility.append(message);}
     const lines=[],pending=[{node:model,depth:0}];
-    while(pending.length && lines.length<512){const {node,depth}=pending.pop();lines.push('  '.repeat(depth)+(node.name||'(unnamed)')+' · '+node.type);const remaining=512-lines.length-pending.length;for(let i=Math.min(node.children.length,remaining)-1;i>=0;i--)pending.push({node:node.children[i],depth:depth+1});}
+    while(pending.length && lines.length<512){const {node,depth}=pending.pop();lines.push('  '.repeat(depth)+displayName(node.name)+' · '+node.type);const remaining=512-lines.length-pending.length;for(let i=Math.min(node.children.length,remaining)-1;i>=0;i--)pending.push({node:node.children[i],depth:depth+1});}
     if(lines.length===512)lines.push('Hierarchy display limited to 512 nodes; full native inventory remains authoritative.');
     tree.textContent=lines.join('\n');
-    materials.textContent=JSON.stringify(meshes.slice(0,256).map(mesh=>({mesh:mesh.name,materials:[].concat(mesh.material||[]).slice(0,64).map(material=>({name:material.name,type:material.type,base_color:material.color?.getHexString(),metallic:material.metalness,roughness:material.roughness,textures:Object.keys(material).filter(key=>material[key]?.isTexture)})),skin:mesh.isSkinnedMesh?{joints:mesh.skeleton.bones.map(bone=>bone.name),influences:mesh.geometry.attributes.skinWeight?.itemSize}:null})),null,2);
+    materials.textContent=JSON.stringify(meshes.slice(0,256).map(mesh=>({mesh:displayName(mesh.name),materials:[].concat(mesh.material||[]).slice(0,64).map(material=>({name:displayName(material.name),type:material.type,base_color:material.color?.getHexString(),metallic:material.metalness,roughness:material.roughness,textures:Object.keys(material).filter(key=>material[key]?.isTexture)})),skin:mesh.isSkinnedMesh?{joints:mesh.skeleton.bones.map(bone=>displayName(bone.name)),influences:mesh.geometry.attributes.skinWeight?.itemSize}:null})),null,2);
   }
   function update(){
     if(!model || !bounds.checked || performance.now()-lastBoundsUpdate<100)return;
