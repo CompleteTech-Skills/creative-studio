@@ -112,8 +112,10 @@ def _windows_record_descriptor(path):
 _WINDOWS_RECORD_IO = sys.platform == 'win32'
 
 
-def _record_bytes(path):
-    """Read a bounded regular record without following links or blocking on FIFOs."""
+def _record_bytes(path, maximum=MAX_RESPONSE_BYTES):
+    """Read admitted regular bytes; analysis JSON retains its default8MiB quota."""
+    if type(maximum) is not int or not 1 <= maximum <= 200_000_000:
+        raise ValueError('invalid regular-file byte bound')
     try:
         if _WINDOWS_RECORD_IO:
             descriptor = _windows_record_descriptor(path)
@@ -125,10 +127,10 @@ def _record_bytes(path):
         raise ValueError('analysis record cannot be opened safely: ' + str(path)) from exc
     with os.fdopen(descriptor, 'rb') as stream:
         info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_RESPONSE_BYTES:
+        if not stat.S_ISREG(info.st_mode) or info.st_size > maximum:
             raise ValueError('analysis record must be a bounded regular file: ' + str(path))
-        data = stream.read(MAX_RESPONSE_BYTES + 1)
-        if len(data) > MAX_RESPONSE_BYTES:
+        data = stream.read(maximum + 1)
+        if len(data) > maximum:
             raise ValueError('analysis record exceeds byte quota: ' + str(path))
         return data
 

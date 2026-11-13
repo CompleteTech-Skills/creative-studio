@@ -5,6 +5,8 @@ no import, doctor or inference operation downloads code or weights.
 """
 from __future__ import annotations
 import argparse
+import hashlib
+import io
 import importlib.metadata
 import json
 import math
@@ -16,9 +18,10 @@ import sys
 import tempfile
 import time
 from PIL import Image, ImageDraw
-from asset_contracts import check_image, sha
+from asset_contracts import MAX_SOURCE_BYTES
 from atomic_publish import _rename_no_replace
-from character_decomposition import create_decomposition, read_json
+from character_decomposition import create_decomposition
+from decomposition_analysis import _record_bytes, _record_json as read_json
 from decomposition_masks import binary, count, intersect, union, mask_to_runs
 from decomposition_spec import (ASSET, BOOLEAN, CONFIDENCE, HASH, NOTE, TEXT, array,
                                 obj, safe_path, validate_structure)
@@ -51,11 +54,34 @@ RECEIPT['properties']['runtime'] = obj({'torch_threads': {'enum': [1, 2]},
     'torch_interop_threads': {'const': 1}})
 
 
+def _safe_sha(path, maximum=MAX_SOURCE_BYTES):
+    return hashlib.sha256(_record_bytes(path, maximum)).hexdigest()
+
+
+def _verified_image(path, expected_hash=None):
+    """Hash and decode the same bounded admitted bytes, never reopening a path."""
+    path = Path(path)
+    if path.suffix.lower() not in ('.png', '.webp', '.jpg', '.jpeg'):
+        raise ValueError('unsupported foreground image type')
+    data = _record_bytes(path, MAX_SOURCE_BYTES)
+    if expected_hash is not None and hashlib.sha256(data).hexdigest() != expected_hash:
+        raise ValueError('proposal artifact hash mismatch: ' + str(path))
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            if image.format not in ('PNG', 'WEBP', 'JPEG') or getattr(image, 'n_frames', 1) != 1:
+                raise ValueError('foreground requires a single PNG/WebP/JPEG image')
+            if image.width * image.height > MAX_PIXELS:
+                raise ValueError('source exceeds foreground pixel bound')
+            return image.copy()
+    except (OSError, Image.DecompressionBombError) as exc:
+        raise ValueError('invalid bounded foreground image: ' + str(exc)) from exc
+
+
 def _weight(path):
     path = Path(path).expanduser()
     if path.is_symlink() or not path.is_file() or path.stat().st_size > 200_000_000:
         raise ValueError('weights must be a regular local file below 200 MB')
-    if sha(path) != MODEL_SHA256:
+    if _safe_sha(path, 200_000_000) != MODEL_SHA256:
         raise ValueError('weights are not the pinned official COCO Mask R-CNN checkpoint')
     return path.resolve()
 
@@ -84,18 +110,16 @@ def capabilities(weights=None):
 
 
 def _asset(root, relative):
-    return {'path': relative, 'sha256': sha(safe_path(root, relative))}
+    return {'path': relative, 'sha256': _safe_sha(safe_path(root, relative))}
 
 
 def _mask(root, descriptor, size):
     path = safe_path(root, descriptor['path'])
-    check_image(path)
-    if sha(path) != descriptor['sha256']:
-        raise ValueError('proposal artifact hash mismatch: ' + descriptor['path'])
-    with Image.open(path) as image:
-        if image.mode != 'L' or image.size != size or any(image.histogram()[1:255]):
-            raise ValueError('proposal masks must be binary source-sized grayscale PNGs')
-        return image.copy()
+    image = _verified_image(path, descriptor['sha256'])
+    if image.mode != 'L' or image.size != size or any(image.histogram()[1:255]):
+        raise ValueError('proposal masks must be binary source-sized grayscale PNGs')
+    return image
+
 
 
 def load(root):
@@ -116,13 +140,11 @@ def load(root):
     for name, expected in VERSIONS.items():
         if receipt['backend'][name].split('+')[0] != expected:
             raise ValueError('unrecognized foreground runtime identity')
-    source_path = safe_path(root, source['asset']['path']); check_image(source_path)
-    if sha(source_path) != source['asset']['sha256']:
-        raise ValueError('proposal source hash mismatch')
-    with Image.open(source_path) as image:
-        if image.size != size:
-            raise ValueError('source size mismatch')
-        support = binary(image.convert('RGBA').getchannel('A'))
+    source_path = safe_path(root, source['asset']['path'])
+    image = _verified_image(source_path, source['asset']['sha256'])
+    if image.size != size:
+        raise ValueError('source size mismatch')
+    support = binary(image.convert('RGBA').getchannel('A'))
     occupied = Image.new('L', size); overlaps = Image.new('L', size)
     ids = set()
     for index, candidate in enumerate(receipt['candidates'], 1):
@@ -140,12 +162,9 @@ def load(root):
     overlap = _mask(root, receipt['overlap'], size)
     if overlap.tobytes() != overlaps.tobytes():
         raise ValueError('overlap mask disagrees with independent candidate masks')
-    overlay = safe_path(root, receipt['overlay']['path']); check_image(overlay)
-    if sha(overlay) != receipt['overlay']['sha256']:
-        raise ValueError('overlay hash mismatch')
-    with Image.open(overlay) as image:
-        if image.size != size:
-            raise ValueError('overlay size mismatch')
+    overlay = _verified_image(safe_path(root, receipt['overlay']['path']), receipt['overlay']['sha256'])
+    if overlay.size != size:
+        raise ValueError('overlay size mismatch')
     return receipt
 
 
@@ -158,12 +177,16 @@ def _worker(stage, weights, threshold):
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
     source = read_json(stage / 'input.json')
-    with Image.open(stage / source['asset']['path']) as image:
-        rgba = image.convert('RGBA'); rgb = rgba.convert('RGB')
+    rgba = _verified_image(stage / source['asset']['path'], source['asset']['sha256']).convert('RGBA')
+    rgb = rgba.convert('RGB')
     _weight(weights)
     model = maskrcnn_resnet50_fpn(weights=None, weights_backbone=None,
                                    box_detections_per_img=MAX_CANDIDATES)
-    model.load_state_dict(torch.load(weights, map_location='cpu', weights_only=True))
+    checkpoint = _record_bytes(weights, 200_000_000)
+    if hashlib.sha256(checkpoint).hexdigest() != MODEL_SHA256:
+        raise ValueError('checkpoint changed before loading')
+    model.load_state_dict(torch.load(io.BytesIO(checkpoint), map_location='cpu', weights_only=True))
+    del checkpoint
     model.eval()
     tensor = torchvision.transforms.functional.pil_to_tensor(rgb).float() / 255
     with torch.inference_mode():
@@ -216,9 +239,8 @@ def propose(source, destination, *, weights, enabled=False, origin, fixture=Fals
     if not capability['available']:
         raise ValueError('foreground backend unavailable: ' + '; '.join(capability['unavailable_reasons']))
     weights = _weight(weights)
-    source = Path(source).expanduser().resolve(); check_image(source)
-    with Image.open(source) as image:
-        width, height = image.size
+    source = Path(source).expanduser().resolve()
+    width, height = _verified_image(source).size
     if width * height > MAX_PIXELS:
         raise ValueError('source exceeds foreground resource limit')
     destination = Path(destination).expanduser().absolute()
@@ -228,9 +250,9 @@ def propose(source, destination, *, weights, enabled=False, origin, fixture=Fals
     stage = Path(tempfile.mkdtemp(prefix='.' + destination.name + '-foreground-', dir=destination.parent))
     try:
         (stage / 'source').mkdir(); (stage / 'masks').mkdir()
-        source_hash = sha(source); relative = 'source/original' + source.suffix.lower()
-        shutil.copyfile(source, stage / relative)
-        if sha(source) != source_hash or sha(stage / relative) != source_hash:
+        source_hash = _safe_sha(source); relative = 'source/original' + source.suffix.lower()
+        (stage / relative).write_bytes(_record_bytes(source, MAX_SOURCE_BYTES))
+        if _safe_sha(source) != source_hash or _safe_sha(stage / relative) != source_hash:
             raise ValueError('source changed during snapshot')
         source_record = {'asset': _asset(stage, relative), 'width': width, 'height': height,
                          'origin': origin, 'fixture': fixture}
@@ -290,9 +312,15 @@ def select(root, identifiers, destination, *, name=None):
             'author': 'Explicit foreground candidate selection',
             'note': 'Only foreground selected; semantic components remain unassigned.', 'components': [],
             'extensions': {'foreground_analysis': {'receipt': 'foreground-analysis/foreground-proposals.json',
-                'receipt_sha256': sha(root / 'foreground-proposals.json'), 'selected_ids': identifiers}}}
+                'receipt_sha256': _safe_sha(root / 'foreground-proposals.json'), 'selected_ids': identifiers}}}
         run = stage / 'run'
-        result = create_decomposition(safe_path(root, source['asset']['path']), run,
+        source_bytes = _record_bytes(safe_path(root, source['asset']['path']), MAX_SOURCE_BYTES)
+        if hashlib.sha256(source_bytes).hexdigest() != source['asset']['sha256']:
+            raise ValueError('proposal source changed before selection')
+        source_snapshot = stage / 'input' / Path(source['asset']['path']).name
+        source_snapshot.parent.mkdir()
+        source_snapshot.write_bytes(source_bytes)
+        result = create_decomposition(source_snapshot, run,
             annotations=annotation, foreground_mask={'runs': mask_to_runs(selected)},
             name=name, origin=source['origin'], fixture=source['fixture'])
         kept = run / 'foreground-analysis'; kept.mkdir()
@@ -300,9 +328,9 @@ def select(root, identifiers, destination, *, name=None):
         paths.update(c['mask']['path'] for c in receipt['candidates'])
         for relative in sorted(paths):
             target = safe_path(kept, relative); target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(safe_path(root, relative), target)
+            target.write_bytes(_record_bytes(safe_path(root, relative), MAX_SOURCE_BYTES))
         load(kept)
-        if sha(kept / 'foreground-proposals.json') != annotation['extensions']['foreground_analysis']['receipt_sha256']:
+        if _safe_sha(kept / 'foreground-proposals.json') != annotation['extensions']['foreground_analysis']['receipt_sha256']:
             raise ValueError('proposal receipt changed during selection')
         _rename_no_replace(run, destination)
         return result
