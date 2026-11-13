@@ -1,0 +1,30 @@
+{
+  "source_sha": "36ee63516a481d3f3b2762a86711303a39f24fdf",
+  "tests_run": 114,
+  "failures": 0,
+  "errors": 0,
+  "skips": 5,
+  "seconds": 22.104816486942582,
+  "tracked_source_files": 1672,
+  "source_unchanged": true,
+  "environment": "rig Python3.12.15 pinned; external native flags disabled; no backend execution claimed",
+  "scope": "Partial44/52 matrix admission only; no parent closure",
+  "runtime_sha": "36ee63516a481d3f3b2762a86711303a39f24fdf",
+  "diagnostics": {
+    "singular": "RIG_SINGULAR_TRANSFORM zero/dependent axes and invalid affine forms",
+    "numeric_range": "RIG_GLTF_NUMERIC_RANGE representability of local/composed/import-scaled determinant and actual inverse linear directions"
+  },
+  "validation_boundaries": [
+    "114 selected tests: 109 passed, 5 optional external native skips; no failures/errors.",
+    "809 existing2D tests discovered with optional3D imports blocked, not executed as a whole suite.",
+    "Prior111/113 test runs and two actualAstraCHANGES_REQUIRED reports retained under their exact revisions.",
+    "No hosted CI, Blender/Chromium/Khronos execution or production visual approval claimed."
+  ],
+  "passed": 109,
+  "tested_code_sha256": {
+    "scripts/rig_gltf.py": "f5d6634e79f23cfdc5acb658080f91fcb52bff6beddff2f3cb49270ac49d891d",
+    "scripts/rig_import.py": "eab271169f1088ba98fa88e8b31a9e2a52a265b3693e818a3c0f42ad7f8b4dfc",
+    "tests/test_rig_math.py": "7c740fd2b11b1c86110225c51974d6bb5bba8d60c4bec5baa6dd4281ea082365",
+    "references/3d-rigging.md": "c6275cefe8b00b6b43e5804aea86109ecc210e12028d5b8facd3e620592b1e81"
+  }
+}

@@ -1,0 +1,18 @@
+test_actual_blender_roundtrip_and_procedural_generation (tests.test_rig_asset_import.ImportTests.test_actual_blender_roundtrip_and_procedural_generation) ... ok
+test_actual_subprocess_timeout (tests.test_rig_asset_import.ImportTests.test_actual_subprocess_timeout) ... ok
+test_cancellation_leaves_library_empty (tests.test_rig_asset_import.ImportTests.test_cancellation_leaves_library_empty) ... ok
+test_corrupt_glb_and_case_aliases (tests.test_rig_asset_import.ImportTests.test_corrupt_glb_and_case_aliases) ... ok
+test_external_actual_texture_and_missing_texture (tests.test_rig_asset_import.ImportTests.test_external_actual_texture_and_missing_texture) ... ok
+test_external_closure_and_exact_restore (tests.test_rig_asset_import.ImportTests.test_external_closure_and_exact_restore) ... ok
+test_integral_json_number_counts (tests.test_rig_asset_import.ImportTests.test_integral_json_number_counts) ... ok
+test_missing_and_unsafe_dependencies_before_blender (tests.test_rig_asset_import.ImportTests.test_missing_and_unsafe_dependencies_before_blender) ... ok
+test_request_and_path_bounds (tests.test_rig_asset_import.ImportTests.test_request_and_path_bounds) ... ok
+test_required_extension_rejected_without_blender (tests.test_rig_asset_import.ImportTests.test_required_extension_rejected_without_blender) ... ok
+test_source_ancestor_symlink_is_rejected (tests.test_rig_asset_import.ImportTests.test_source_ancestor_symlink_is_rejected) ... ok
+test_units_basis_and_preserved_channels (tests.test_rig_asset_import.ImportTests.test_units_basis_and_preserved_channels) ... ok
+test_untrusted_blend_and_unavailable_tool (tests.test_rig_asset_import.ImportTests.test_untrusted_blend_and_unavailable_tool) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 32.158s
+
+OK
