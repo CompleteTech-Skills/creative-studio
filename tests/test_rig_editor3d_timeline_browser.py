@@ -74,6 +74,17 @@ class TimelineBrowserTests(unittest.TestCase):
                         context=page.evaluate('()=>window.hatchEditor.getTimelineContext()')
                         self.assertEqual(context['revision'],baseline+2);self.assertEqual(context['sha256'],saved['sha256'])
                         self.assertEqual(context['shot_path'],selected['path']);self.assertEqual(context['frame'],dict(numerator=13,denominator=1))
+                        # An independent async extension cannot move a pending edit to another frame.
+                        page.evaluate('''()=>{window.__removeTimelineRace=window.hatchEditor.registerCommitInterceptor(async()=>{
+                          await new Promise(resolve=>setTimeout(resolve,100));
+                          const input=document.querySelector('[aria-label="Exact frame"]');input.value='14';
+                          input.dispatchEvent(new Event('input',{bubbles:true}));return null;
+                        });}''')
+                        page.get_by_label('translation X',exact=True).fill('11');page.get_by_label('translation X',exact=True).press('Tab')
+                        page.wait_for_function("()=>window.hatchEditor.errors.some(text=>text.includes('selected timeline or evaluated preview changed'))&&window.hatchEditor.objects.get('mesh').position.x===9")
+                        page.evaluate('()=>{window.__removeTimelineRace();delete window.__removeTimelineRace;}')
+                        self.assertEqual(repo.snapshot()['revision'],baseline+2)
+                        self.assertEqual(repo.snapshot()['documents'][selected['path']]['tracks'],tracks)
                         with page.expect_response('**/api/timeline/curve'):
                             page.get_by_role('button',name='Evaluate channel curve',exact=True).click()
                             page.get_by_label('Animated property',exact=True).select_option('rotation')
