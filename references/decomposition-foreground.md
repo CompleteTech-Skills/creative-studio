@@ -57,6 +57,14 @@ masks and a configurable wall-clock limit (default 120 seconds, maximum 300).
 Current receipts retain actual Torch/interop counts. Historical v1 receipts
 with two threads remain readable; current execution uses one.
 The generated schema is `profiles/decomposition-foreground.schema.json`.
+Source images and proposal artifacts are admitted through bounded regular-file
+reads. Hash verification and image decoding use the same captured bytes, and
+selection rechecks the original digest before creating the selected run. Image
+inputs retain the existing 64 MiB encoded-byte bound; JSON records retain the
+8 MiB analysis bound. Checkpoint loading hashes and deserializes the same captured
+bytes within the explicit 200 MB checkpoint bound. These checks reject malformed
+or replaced inputs; they do not provide isolation from a hostile process with the
+same operating-system account.
 `doctor` reports missing dependencies or weights without attempting inference.
 A missing backend, a failed worker or no useful candidates leaves manual
 selection available and does not create a falsely successful character.

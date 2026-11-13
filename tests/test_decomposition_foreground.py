@@ -86,6 +86,50 @@ class ForegroundContracts(unittest.TestCase):
         path.write_bytes(path.read_bytes()+b'change')
         with self.assertRaises(ValueError):fg.load(self.root)
 
+    def test_admitted_image_hash_and_decode_share_the_same_bytes(self):
+        path = self.root/'source/original.png'
+        expected = sha(path)
+        original = fg._record_bytes
+        def replace_after_read(target, maximum):
+            data = original(target, maximum)
+            Image.new('RGBA', (8, 6), (240, 20, 20, 255)).save(path)
+            return data
+        with patch.object(fg, '_record_bytes', side_effect=replace_after_read):
+            image = fg._verified_image(path, expected)
+        self.assertEqual(image.getpixel((0, 0)), (24, 60, 90, 77))
+        self.assertNotEqual(sha(path), expected)
+
+    def test_invalid_hash_rejected_before_image_decoder(self):
+        with patch.object(fg.Image, 'open', side_effect=AssertionError('decoder called')):
+            with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+                fg._verified_image(self.root/'source/original.png', '0'*64)
+
+    def test_record_byte_bounds_preserve_default_and_reject_invalid_limits(self):
+        path = self.root/'record.bin'; path.write_bytes(b'abcde')
+        self.assertEqual(fg._record_bytes(path, 5), b'abcde')
+        with self.assertRaisesRegex(ValueError, 'bounded regular'):
+            fg._record_bytes(path, 4)
+        for bound in (True, 0, -1, 200_000_001, 5.0):
+            with self.subTest(bound=bound), self.assertRaises(ValueError):
+                fg._record_bytes(path, bound)
+
+    def test_selection_rechecks_source_before_creating_decomposition(self):
+        original = fg._mask
+        calls = 0
+        def replace_source_after_selection(*args):
+            nonlocal calls
+            mask = original(*args)
+            calls += 1
+            if calls == 4:
+                Image.new('RGBA', (8, 6), (240, 20, 20, 255)).save(self.root/'source/original.png')
+            return mask
+        destination = Path(self.temp.name)/'changed-selection'
+        with patch.object(fg, '_mask', side_effect=replace_source_after_selection), \
+             patch.object(fg, 'create_decomposition', side_effect=AssertionError('unexpected create')):
+            with self.assertRaisesRegex(ValueError, 'source changed'):
+                fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+
     def test_geometry_confidence_and_identity_validation(self):
         for mutate in [lambda r:r['candidates'][0].update(pixels=1),
                        lambda r:r['candidates'][0].update(bbox=[0,0,8,6]),
