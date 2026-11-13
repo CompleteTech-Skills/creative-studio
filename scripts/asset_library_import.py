@@ -694,7 +694,7 @@ def generation_parameters(parameters):
         fail('UNSUPPORTED','Only real box/sphere generation is implemented.')
     for key,width in [('dimensions',3),('color',4)]:
         values=parameters[key]
-        if not isinstance(values,list) or len(values)!=width or any(isinstance(v,bool) or not isinstance(v,(int,float)) or not math.isfinite(v) for v in values):
+        if not isinstance(values,list) or len(values)!=width or any(isinstance(v,bool) or not isinstance(v,(int,float)) or (isinstance(v,float) and not math.isfinite(v)) for v in values):
             fail('REQUEST','Invalid numeric generator '+key)
     if any(not .001<=v<=1000 for v in parameters['dimensions']) or any(not 0<=v<=1 for v in parameters['color']):fail('REQUEST','Generator values outside bounded profile.')
     if parameters['primitive']=='sphere' and len(set(parameters['dimensions']))!=1:fail('UNSUPPORTED','Sphere generator requires equal dimensions; no ignored parameters.')

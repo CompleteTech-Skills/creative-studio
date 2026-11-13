@@ -21,7 +21,7 @@ class GenerationAdmissionTests(unittest.TestCase):
         self.assertIn('generate',self.owner.capabilities()['managed_operations'])
 
     def test_invalid_native_profiles_and_provider_substitution_do_not_create_jobs(self):
-        for patch in [dict(primitive='text-to-model'),dict(dimensions=[0,1,1]),dict(color=[1,1,1]),dict(primitive='sphere',dimensions=[1,2,3]),dict(animated='yes')]:
+        for patch in [dict(primitive='text-to-model'),dict(dimensions=[0,1,1]),dict(color=[1,1,1]),dict(primitive='sphere',dimensions=[1,2,3]),dict(animated='yes'),dict(dimensions=[10**400]*3),dict(color=[10**400]*4)]:
             p=deepcopy(self.request);p['parameters'].update(patch)
             with self.assertRaises(RigError):self.owner.submit('generate',p)
         p=deepcopy(self.request);p['provider']='remote-model'
