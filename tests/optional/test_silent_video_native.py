@@ -332,16 +332,17 @@ class DescriptorPublication(unittest.TestCase):
                 with video._private_stage(parent_fd) as (stage, descriptor):
                     (stage/'source.bin').write_bytes(b'owned source bytes')
                     name = next(root.glob('.silent-export-*'))
-                    original_open = os.open
+                    original_path = video._path
                     swapped = []
-                    def swap_before_root_open(path, flags, *args, **kwargs):
-                        if not swapped and kwargs.get('dir_fd') is None:
+                    def swap_before_payload_open(source_root, relative):
+                        selected = original_path(source_root, relative)
+                        if not swapped:
                             name.rename(root/'moved-owned-stage')
                             name.mkdir(mode=0o700)
                             (name/'source.bin').write_bytes(b'foreign replacement bytes')
                             swapped.append(True)
-                        return original_open(path, flags, *args, **kwargs)
-                    with patch.object(video.os, 'open', side_effect=swap_before_root_open):
+                        return selected
+                    with patch.object(video, '_path', side_effect=swap_before_payload_open):
                         with video._open_source(stage, 'source.bin') as stream:
                             self.assertEqual(stream.read(), b'owned source bytes')
                     self.assertTrue(swapped)
