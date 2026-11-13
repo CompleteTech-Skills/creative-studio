@@ -49,3 +49,13 @@ These are engineering fixtures and numerical checks, not aesthetic approval. Opt
 `model3d_mesh_asset.build_asset(root, geometry_record, asset_id=..., version=..., category=..., sources=..., provenance=..., files=...)` builds and payload-validates the existing Model3DAsset contract from the actual encoded native model. Source, acquisition and license statements must be supplied explicitly; the builder creates no approval or source evidence. Material texture bytes need separately hash-bound file records. Optional canonical evidence retains the exact immutable canonical reference and original namespace-bearing registry manifest, with its runtime geometry inventory hash binding checked.
 
 Parts describe the native world-space mesh view with explicit identity transforms/zero origins. These are not recovered authored hierarchy or pivots; the unchanged original GLB remains the authority for its hierarchy, skins and animation. The builder writes no caller files and creates no competing registry. Actual139 producer integration remains required independently of synthetic canonical-envelope contract tests. `test_model3d_mesh_asset.py` covers real primitive/retained-rig/textured model documents and wrong hash, measurement, mesh, reference and budget cases.
+
+## Reproduce actual geometry evidence
+
+Run `python scripts/demonstrate_model3d_mesh.py --destination output/new-mesh-demo`
+with the optional rig test dependencies installed. The destination must be new.
+The command builds six named editable shapes, applies explicit source-basis/unit/
+pivot conversion, writes and reimports all eighteen GLB/glTF/OBJ exports, then
+imports one GLB through the immutable source pipeline. Its `acceptance.json`
+records actual topology and every generated payload hash. This is an engineering
+fixture demonstration; it supplies no artistic approval or provider claim.

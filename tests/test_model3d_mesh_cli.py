@@ -42,6 +42,21 @@ class MeshCLI(unittest.TestCase):
             for name,record in report['export']['files'].items():
                 data=(root/'copy'/name).read_bytes()
                 self.assertEqual(hashlib.sha256(data).hexdigest(),record['sha256'])
+    def test_changed_snapshot_never_publishes_export(self):
+        from model3d_mesh_import import import_mesh
+        from rig_errors import RigError
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            export_mesh(primitive('box').geometry(), root/'input')
+            with import_mesh(root/'input/model.glb') as captured:
+                copied = captured.root/captured.source_records[0]['path']
+                copied.write_bytes(copied.read_bytes() + b'changed')
+                destination = root/'changed'
+                with self.assertRaises(RigError):
+                    export_mesh(captured.model.geometry, destination, source_snapshot=captured)
+                self.assertFalse(destination.exists())
+                self.assertEqual(sorted(p.name for p in root.iterdir()), ['input'])
+
     def test_structured_negative_and_destination_preservation(self):
         with tempfile.TemporaryDirectory() as tmp:
             dest=Path(tmp)/'existing';dest.mkdir();(dest/'sentinel').write_text('owned')
