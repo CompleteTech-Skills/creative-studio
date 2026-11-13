@@ -212,7 +212,12 @@ class AcquisitionGateway:
     def input_sha256(self):
         from rig_errors import object_hash
         with self.native._locked() as data:
-            return object_hash(hatch.inputs(self.root,hatch.job_for(data,self.job)))
+            selected=hatch.job_for(data,self.job)
+            try: return object_hash(hatch.inputs(self.root,selected))
+            except (OSError,ValueError):
+                if selected.get('input_hashes') and selected['status']=='running':
+                    return object_hash(selected['input_hashes'])
+                raise RigError('DIRECTOR_ACQUISITION_INPUT','Native inputs are unavailable.',stage='director')
 
     def _execute(self, method, request):
         from director_contracts import (_read_artifact, validate_document,
@@ -262,15 +267,36 @@ class AcquisitionGateway:
             require(not candidates and not params['diagnostics'],'DIRECTOR_ACQUISITION_INPUT',
                     'This native operation takes no candidates or diagnostics.')
 
+        recovery_stale=[False]
         def check(data):
+            require(datetime.fromisoformat(request['context']['deadline'].replace('Z','+00:00')) >
+                    datetime.now(timezone.utc),'DIRECTOR_ACQUISITION_DEADLINE',
+                    'Acquisition request deadline expired while waiting for native ownership.')
             selected=hatch.job_for(data,self.job)
+            pinned=selected.get('director_spec_binding')
+            require(pinned is None or pinned==spec_ref,'DIRECTOR_ACQUISITION_SPEC',
+                    'This native job is bound to a different exact Director specification.')
+            require(pinned is not None or method in ('AcquisitionGateway.prepare','AcquisitionGateway.claim'),
+                    'DIRECTOR_ACQUISITION_SPEC','Prepare or claim must establish the exact specification binding first.')
             duplicate_claim=(method=='AcquisitionGateway.claim' and selected['status']=='running' and
                              params['expected_state'] in ('pending','failed') and params['claim_id'] is None)
+            recovery=method in ('AcquisitionGateway.reconcile','AcquisitionGateway.fail')
+            recorded=selected.get('input_hashes')
+            try:
+                current=hatch.inputs(self.root,selected)
+            except (OSError,ValueError) as exc:
+                require(recovery and recorded is not None,'DIRECTOR_ACQUISITION_INPUT',
+                        'Native inputs are unavailable; only token-bound recovery is permitted.')
+                current=None
+            recovery_stale[0]=recorded is not None and current!=recorded
+            accepted_hashes={object_hash(current)} if current is not None else set()
+            if recovery and recorded is not None: accepted_hashes.add(object_hash(recorded))
             require(params['binding_id'] in (None,data['run_id']) and
                     (params['expected_state']==selected['status'] or duplicate_claim) and
-                    params['input_sha256']==object_hash(hatch.inputs(self.root,selected)),
+                    params['input_sha256'] in accepted_hashes,
                     'DIRECTOR_ACQUISITION_STALE','Native identity, input hashes or expected state changed.')
-            if method in ('AcquisitionGateway.ingest','AcquisitionGateway.fail'):
+            if (method in ('AcquisitionGateway.ingest','AcquisitionGateway.fail') or
+                    (recovery and recovery_stale[0] and selected['status']=='running')):
                 require(params['claim_id'] is not None and params['claim_id']==selected.get('token'),
                         'DIRECTOR_ACQUISITION_TOKEN','The original active native claim is required.')
             else:
@@ -296,6 +322,10 @@ class AcquisitionGateway:
                         require(policy['policy_ref'] is not None,'DIRECTOR_ACQUISITION_POLICY',
                                 'Unknown-price handoff requires exact policy evidence.')
                         _read_artifact(self.root,policy['policy_ref'])
+            if pinned is None:
+                selected['director_spec_binding']=deepcopy(spec_ref)
+                selected['history'].append(dict(event='director-spec-bound',time=time.time(),spec=deepcopy(spec_ref)))
+                hatch.save(self.root,data)
 
         if method=='AcquisitionGateway.prepare':
             result=self.native.prepare(self.job,_check=check)
@@ -308,7 +338,7 @@ class AcquisitionGateway:
                                     outcome=failure['observed'],_check=check)
         else:
             result=self.native.ingest(self.job,params['claim_id'],source,source_sha256=source_hash,
-                                      receipt=receipt,note='Exact Director candidate admitted.',_check=check)
+                                      receipt=receipt,note='Exact Director candidate bytes verified; visual review not performed.',_check=check)
         # The native manifest is mutable. Preserve an immutable evidence snapshot
         # so later operations cannot invalidate the result's exact ArtifactRef.
         with self.native._locked() as data:
@@ -339,9 +369,16 @@ class AcquisitionGateway:
         value=dict(binding=binding,claim_id=result['claim_id'] or params['claim_id'],
                    native_state=result['native_state'],provider_request_id=None,
                    outcome=result['outcome'],receipt=binding if method=='AcquisitionGateway.ingest' else None)
+        diagnostics=[]
+        if recovery_stale[0] or result['stale']:
+            diagnostics.append(dict(code='NATIVE_INPUTS_STALE',severity='warning',stage='acquisition',
+                entity_id=self.job,field_path='input.input_sha256',expected='Original native claim inputs',
+                observed='Native input bytes changed or are unavailable.',retryable=False,
+                recommended_action='Preserve the original claim until its outcome is known; repair inputs explicitly.',
+                evidence=[binding]))
         response=dict(schema_version=1,kind='director-result',method=method,status='succeeded',
                       operation_id=request['context']['request_id'],input_digest=object_hash(request),value=value,
-                      artifacts=[binding],diagnostics=[],usage=usage,provenance_receipts=[binding])
+                      artifacts=[binding],diagnostics=diagnostics,usage=usage,provenance_receipts=[binding])
         return validate_method_result(method,response,request)
 
     def prepare(self,request): return self._execute('AcquisitionGateway.prepare',request)

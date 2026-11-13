@@ -223,3 +223,48 @@ class DirectorAcquisitionEnvelopeTests(unittest.TestCase):
         request=self.request('claim');request['context']['deadline']='2000-01-01T00:00:00Z'
         with self.assertRaises(RigError):self.adapter.claim(request)
         self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['attempts'],0)
+
+    def test_changed_exact_spec_cannot_reuse_native_acquisition(self):
+        request=self.request('claim')
+        first=self.adapter.claim(request)
+        spec=json.loads((self.root/'spec.json').read_text())
+        spec.update(visual_characteristics=['Different requested design'],licensing='INCOMPATIBLE-LICENSE')
+        self.spec=self.ref('different-spec.json',json.dumps(spec).encode(),spec['id'],'director-asset-spec')
+        with self.assertRaisesRegex(RigError,'different exact Director specification'):
+            self.adapter.claim(self.request('claim','running',first['value']['claim_id']))
+        self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['attempts'],1)
+
+    def test_deadline_checked_again_after_native_lock_wait(self):
+        from contextlib import contextmanager
+        from datetime import datetime,timedelta,timezone
+        from unittest.mock import patch
+        import time
+        original=self.gateway._locked
+        @contextmanager
+        def delayed():
+            time.sleep(.08)
+            with original() as data:yield data
+        request=self.request('claim')
+        request['context']['deadline']=(datetime.now(timezone.utc)+timedelta(seconds=.05)).isoformat()
+        with patch.object(self.gateway,'_locked',delayed):
+            with self.assertRaisesRegex(RigError,'waiting for native ownership'):
+                self.adapter.claim(request)
+        self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['attempts'],0)
+
+    def test_missing_inputs_allow_token_bound_recovery_and_known_failure(self):
+        claim=self.adapter.claim(self.request('claim'))['value']['claim_id']
+        reconcile=self.request('reconcile','running',claim)
+        diagnostic=dict(code='NATIVE_ACQUISITION_OUTCOME',severity='warning',stage='acquisition',
+            entity_id='base',field_path='outcome',expected=None,observed='known',retryable=False,
+            recommended_action='Provider confirms no output; preserve failure before repair.',evidence=[])
+        fail=self.request('fail','running',claim,diagnostics=[diagnostic])
+        (self.root/'prompts/base-pet.md').unlink()
+        # Reopening the API can still compute the original recovery binding.
+        self.assertEqual(self.adapter.input_sha256(),reconcile['input']['input_sha256'])
+        result=self.adapter.reconcile(reconcile)
+        self.assertEqual(result['value']['claim_id'],claim)
+        self.assertEqual(result['value']['outcome'],'uncertain')
+        self.assertEqual(result['diagnostics'][0]['code'],'NATIVE_INPUTS_STALE')
+        result=self.adapter.fail(fail)
+        self.assertEqual(result['value']['native_state'],'failed')
+        self.assertEqual(hatch.job_for(hatch.manifest(self.root),'base')['status'],'failed')

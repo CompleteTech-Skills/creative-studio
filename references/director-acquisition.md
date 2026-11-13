@@ -30,9 +30,14 @@ The artifact project root is exactly the native run root. The request fields map
 as follows:
 
 - `spec` is an exact Director AssetSpec whose `logical_id` is the native job and
-  whose `asset_type` is `raster`.
+  whose `asset_type` is `raster`. The first prepare/claim pins the exact spec
+  reference in native job history and metadata. A different specification cannot
+  adopt that active acquisition, including changes to design or licensing.
 - `input_sha256` is `gateway.input_sha256()`, the canonical object hash of the
   current native input hash mapping. It is checked under the native lock.
+  When inputs disappear or change, reconcile/fail may bind the original recorded
+  input hashes with the original active token; they preserve a stale-input warning.
+  Missing inputs cannot authorize new work or ingestion.
 - `binding_id` is null or the pinned run ID. `expected_state` is the native job
   state (`pending`, `running`, `failed` or `generated`). An identical active
   claim may replay its pre-claim pending/failed state and receives the same token.
@@ -49,8 +54,8 @@ as follows:
   `recommended_action` text is preserved as the native failure reason. Diagnostic
   evidence remains part of the caller's hash-bound request.
 - Prepare, claim and reconcile have no candidates or diagnostics. Expired
-  requests, mismatched identity, changed inputs and stale state fail before a
-  native mutation.
+  requests, mismatched identity and stale state fail before a native mutation.
+  The deadline is checked again after acquiring native ownership.
 
 Each result references an immutable JSON copy of the native manifest under
 `director-records/<sha256>.json`; this is evidence, not a second lifecycle store.
