@@ -410,6 +410,7 @@ class EditorAdapterTests(unittest.TestCase):
 
     def test_unintegrated_owner_is_explicitly_unavailable(self):
         reference = example('scene')['native']
+        reference['owner'] = 'animation3d'
         with self.assertRaises(RigError) as raised:
             verify_native_reference(reference, ROOT)
         self.assertEqual(raised.exception.report['code'], 'EDITOR3D_UNAVAILABLE')
@@ -589,3 +590,51 @@ for call in (lambda:validate_contract({'kind':'editor3d-request'}),lambda:frame_
         result=subprocess.run([sys.executable,'-c',script],capture_output=True,text=True,
             env={**os.environ,'PYTHONPATH':str(ROOT/'scripts')})
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+
+class MergedNativeOwnerRegressions(unittest.TestCase):
+    def reference(self, owner, relative):
+        payload = (ROOT / relative).read_bytes()
+        value = json.loads(payload)
+        return dict(owner=owner, id=value['id'], version=value['version'],
+            native_kind=value['kind'], file=dict(path=relative,
+            sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload),
+            media_type='application/json'))
+
+    def test_merged_owners_validate_real_retained_manifests(self):
+        for owner, path in (
+            ('scene3d', 'examples/scene3d-contracts/example-scene.json'),
+            ('camera3d', 'examples/camera3d/main-camera.json'),
+            ('lookdev', 'examples/lookdev-contracts/ceramic.json')):
+            reference = self.reference(owner, path)
+            with self.subTest(owner=owner):
+                result = verify_native_reference(reference, ROOT)
+                self.assertEqual(result['status'], 'valid-native-contract')
+                self.assertFalse(result['transitive_resources_verified'])
+                self.assertEqual(result['review_status'], 'unreviewed')
+                for field, changed in (('id', 'different-id'), ('version', '99.0.0'),
+                                       ('native_kind', 'different-kind')):
+                    altered = deepcopy(reference); altered[field] = changed
+                    with self.assertRaises(RigError):
+                        verify_native_reference(altered, ROOT)
+
+    def test_native_semantic_failures_are_rejected_after_rebinding_bytes(self):
+        cases = (
+            ('scene3d', 'examples/scene3d-contracts/example-scene.json',
+             lambda value: value['nodes'][0]['transform'].update(rotation=[0, 0, 0, 2])),
+            ('camera3d', 'examples/camera3d/main-camera.json',
+             lambda value: value['transform'].update(rotation=[0, 0, 0, 2])),
+            ('lookdev', 'examples/lookdev-contracts/ceramic.json',
+             lambda value: value['surface'].update(roughness=-1)),
+        )
+        for owner, relative, mutate in cases:
+            with self.subTest(owner=owner), tempfile.TemporaryDirectory() as directory:
+                value = json.loads((ROOT / relative).read_bytes()); mutate(value)
+                payload = json.dumps(value).encode(); root = Path(directory)
+                (root / 'native.json').write_bytes(payload)
+                reference = dict(owner=owner, id=value['id'], version=value['version'],
+                    native_kind=value['kind'], file=dict(path='native.json',
+                    sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload),
+                    media_type='application/json'))
+                with self.assertRaises(RigError):
+                    verify_native_reference(reference, root)

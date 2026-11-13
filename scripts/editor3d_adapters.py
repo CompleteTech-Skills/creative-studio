@@ -88,7 +88,7 @@ An unmerged owner is unavailable, never silently parsed as a different format.
     if not Draft202012Validator({'$defs': _definitions(), '$ref': '#/$defs/NativeReference'}).is_valid(reference):
         _error('REFERENCE', 'Invalid native resource reference.')
     owner = reference['owner']
-    if owner not in ('rig', 'model3d', 'production2d'):
+    if owner not in ('rig', 'model3d', 'production2d', 'scene3d', 'camera3d', 'lookdev'):
         _error('UNAVAILABLE', 'Native owner is not integrated in this checkout: ' + owner)
     declared = reference['file']
     if declared['media_type'] != 'application/json' or declared['bytes'] > MAX_DOCUMENT_BYTES:
@@ -122,6 +122,24 @@ An unmerged owner is unavailable, never silently parsed as a different format.
         if value.get('kind') != kind:
             _error('KIND', 'Native Model3D kind differs.')
         native_validate(value)
+    elif owner == 'scene3d':
+        from scene3d_contracts import validate_document
+        if value.get('kind') != kind:
+            _error('KIND', 'Native Scene3D kind differs.')
+        validate_document(value)
+    elif owner == 'camera3d':
+        from camera3d_contracts import validate as native_validate
+        if value.get('kind') != kind:
+            _error('KIND', 'Native Camera3D kind differs.')
+        try:
+            native_validate(value)
+        except ValueError as exc:
+            raise RigError('EDITOR3D_KIND', str(exc), stage='editor3d') from exc
+    elif owner == 'lookdev':
+        from lookdev_contracts import validate_resource
+        if value.get('kind') != kind:
+            _error('KIND', 'Native LookDev kind differs.')
+        validate_resource(value)
     else:
         from production_contracts import validate_structure
         if kind not in ('project', 'scene', 'shot', 'cast', 'clip'):
@@ -138,7 +156,9 @@ An unmerged owner is unavailable, never silently parsed as a different format.
     if owner == 'production2d' and kind == 'shot':
         native_version = '1.0.0'
     else:
-        native_version = value.get('version', str(int(value['schema_version'])) + '.0.0')
+        native_version = value.get('version')
+        if native_version is None:
+            native_version = str(int(value['schema_version'])) + '.0.0'
     if native_version != reference['version']:
         _error('VERSION', 'Native version differs from the exact reference.')
     return {'status': 'valid-native-contract', 'owner': owner, 'id': native_id,

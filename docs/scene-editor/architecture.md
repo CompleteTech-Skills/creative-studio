@@ -1,8 +1,9 @@
 # Editor3D contract foundation
 
-This document describes the bounded #99 foundation at main baseline
-`bb5a6810afd06cf57185ffdfe2234e0fdc6e6240`. It does not describe a running
-scene editor. Persistence/undo/autosave (#100), browser authoring (#101), asset
+This document describes the bounded #99 foundation, refreshed against main
+`d2744d9` after the Scene3D, Camera3D and LookDev foundations merged.
+The original audit used `bb5a6810afd06cf57185ffdfe2234e0fdc6e6240`.
+It does not describe a running scene editor. Persistence/undo/autosave (#100), browser authoring (#101), asset
 workflows (#102), inspectors (#103), timelines (#104), rendering (#105), and
 end-to-end/security/browser acceptance (#106) remain separate requirements.
 The full parent #17 remains open.
@@ -30,8 +31,8 @@ the historical missing-media premise is not a current blanket failure claim.
 | `rig_http.py`, `rig_jobs.py`, `rig_operations.py` | Existing loopback bearer/origin/body limits and serialized native job operations. The editor's admission helpers do not add routes to this server or weaken its checks. |
 | `rig_viewer.py`, `assets/rig-viewer/` | Actual Three.js rig preview, controls and animation inspection. It is not yet an editor for multi-scene projects. |
 | `model3d_contracts.py`, `model3d_validation.py` | Strict source/model references plus actual file inspection. New editor references reuse their portable file syntax; manifest validation is not geometry acceptance. |
-| Scene3D PR #210 / issue #59 | Active independent scene contract owner, absent from this main baseline. Editor scene/node wrappers pin its future native resources. They do not create a competing scene format or copy its implementation. |
-| Camera3D, LookDev, Animation3D owners | Native camera/light/material/animation behavior stays outside this editor envelope. A missing owner fails explicitly. |
+| `scene3d_contracts.py` / issue #59 | Merged native scene contract and static transform authority. Editor scene/node wrappers pin native resources; manifest admission invokes this validator without claiming transitive payload verification or scene execution. |
+| `camera3d_contracts.py`, `lookdev_contracts.py`, Animation3D owners | Merged camera and look-development manifest validators are invoked directly. Their payload closure, evaluation and rendering stay with those owners. The unmerged Animation3D adapter remains explicitly unavailable. |
 
 The expected flow is native owner documents → hash-bound editor bindings →
 validated command request → native owner transaction → new immutable document
@@ -80,10 +81,12 @@ version `1.0.0`. Their ID and exact file hash/byte length remain mandatory, so
 this convention does not treat different shot contents as the same resource.
 
 The fixture project binds the real retained Model3D robotic manifest. Its
-scene3d reference deliberately names an unavailable owner and nonexistent file.
+scene3d reference deliberately names a nonexistent native file.
 `validate_project_bundle` validates editor closure only and explicitly returns
-`native_resources_verified: false`. `verify_native_reference` rejects this
-missing owner before opening a path. This is not a scene, model generation,
+`native_resources_verified: false`. `verify_native_reference` recognizes the
+merged Scene3D owner but rejects
+this fixture's nonexistent native file. The separate unavailable-owner check
+uses the unmerged Animation3D adapter. This is not a scene, model generation,
 interactive browser demonstration, or accepted production asset.
 
 ## Runtime admission and invariants
@@ -198,7 +201,7 @@ results for this patch.
 | #99 requirement | Implementation | Remaining boundary |
 | --- | --- | --- |
 | Audit current frontend/backend/assets/review/history and baseline | This audit, inherited owners, independent baseline logs | No claim of complete existing full-suite rerun unless the receipt says so |
-| Shared project/scene/node/asset/animation/command/revision types and equivalence | Single schema authority, generated TS, strict admission, hash closure | Native scene owner semantics and broad editor state required by parent §5 remain blocked on #59/#210 and runtime work |
+| Shared project/scene/node/asset/animation/command/revision types and equivalence | Single schema authority, generated TS, strict admission, hash closure | Merged native manifest semantics are checked; transitive payload closure and broad editor state required by parent §5 remain runtime work |
 | Persistent/session/derived separation, stable IDs, coordinate/time adapters | Closed roots, context checks, existing math and exact fractions | Scene evaluation, world-preserving reparenting, UI persistence remain separate |
 | Local API safety/revision/integration specification | Request/response types, preflight, operation matrix, native validators | No HTTP server, filesystem mutation, render job or editor control is represented as delivered |
 
