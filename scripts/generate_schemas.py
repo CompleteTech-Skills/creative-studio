@@ -55,27 +55,6 @@ def build():
     from decomposition_spec import schemas as decomposition_schemas
     from rig_contracts import schemas as rig_schemas
     from model3d_contracts import schemas as model3d_schemas
-    from model3d_mesh_contracts import schemas as model3d_mesh_schemas
-    from lookdev_contracts import schemas as lookdev_schemas
-    from scene3d_contracts import schemas as scene3d_schemas
-    from editor3d_contracts import schemas as editor3d_schemas
-    from render3d_contracts import schemas as render3d_schemas
-    return {ROOT/'profiles/profile.schema.json':profile,ROOT/'profiles/asset-inputs.schema.json':inputs,
-            ROOT/'profiles/style-catalog.schema.json':catalog_schema(),
-            **{ROOT / 'profiles' / name: value for name, value in decomposition_schemas().items()},
-            **{ROOT / 'profiles' / name: value for name, value in rig_schemas().items()},
-            **{ROOT / 'profiles' / name: value for name, value in model3d_schemas().items()},
-            **{ROOT / 'profiles' / name: value for name, value in model3d_mesh_schemas().items()},
-            **{ROOT / 'profiles' / name: value for name, value in lookdev_schemas().items()},
-            **{ROOT / 'profiles' / name: value for name, value in scene3d_schemas().items()},
-            **{ROOT / 'profiles' / name: value for name, value in editor3d_schemas().items()},
-            **{ROOT / 'profiles' / name: value for name, value in render3d_schemas().items()}}
-
-
-if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--check',action='store_true');args=p.parse_args()
-    for path,value in build().items():
-        content=json.dumps(value,indent=2)+'\n'
-        if args.check:
-            if path.read_text(encoding='utf-8')!=content:raise SystemExit('schema drift: '+str(path))
-        else:path.write_text(content,encoding='utf-8')
+            **{ROOT / 'profiles' / name: value for name, value in director_schemas().items()},
+            **{ROOT / 'profiles' / name: value for name, value in director_graph_schemas().items()},
+            **{ROOT / 'profiles' / name: value for name, value in director_planner_schemas().items()},
