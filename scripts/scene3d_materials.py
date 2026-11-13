@@ -56,9 +56,9 @@ def project_material_slots(asset, *, component=None, overrides=()):
     the exact pin with the LookDev Registry before rendering it.
     """
     from scene3d_contracts import validate_document
-    validate_document(asset, 'asset')
+    asset = validate_document(asset, 'asset')
     bindings = asset.get('material_bindings')
-    require(bindings is not None, 'Asset has no canonical material primitive mapping.',
+    require(bool(bindings), 'Asset has no canonical material primitive mapping.',
             'SCENE3D_MATERIAL_MAPPING')
     require(isinstance(overrides, (list, tuple)) and len(overrides) <= 128,
             'Material overrides must be a bounded list.')

@@ -2018,6 +2018,7 @@
                     "normalized_primitive": {
                       "anyOf": [
                         {
+                          "type": "integer",
                           "const": 0
                         },
                         {
@@ -2046,7 +2047,7 @@
               "primitives"
             ]
           },
-          "minItems": 0,
+          "minItems": 1,
           "maxItems": 65536
         }
       },
