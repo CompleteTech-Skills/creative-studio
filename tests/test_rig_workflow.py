@@ -27,6 +27,19 @@ class RigWorkflowTests(unittest.TestCase):
         r=self.rig;self.assertTrue(r.manifest['source']['fixture']);self.assertEqual(sha256(r.root/r.manifest['source']['path']),r.manifest['source']['sha256'])
         (r.root/'identity.json').write_text('{}')
         with self.assertRaises(RigError):load_rig(r.root)
+    def test_hash_consistent_malformed_identity_has_structured_diagnostics(self):
+        original=read_json(self.rig.root/'identity.json')
+        malformed=[{},[],None,dict(original,schema_version=2),dict(original,fixture=1),
+                   dict(original,import_scale=True),dict(original,import_scale=-1),
+                   dict(original,coordinate_system={}),dict(original,attribution='')]
+        for value in malformed:
+            with self.subTest(value=value):
+                atomic_json(self.rig.root/'identity.json',value)
+                manifest=deepcopy(self.rig.manifest)
+                manifest['character']['identity_sha256']=sha256(self.rig.root/'identity.json')
+                atomic_json(self.rig.root/'rig.json',manifest)
+                with self.assertRaises(RigError) as caught:load_rig(self.rig.root)
+                self.assertEqual(caught.exception.report['code'],'RIG_IDENTITY_SCHEMA')
     def test_strict_schema_rejects_unknown_and_nonfinite(self):
         for mutate in (lambda v:v.update(extra=True),lambda v:v['skeleton']['bones'][0]['head'].__setitem__(0,float('nan'))):
             value=deepcopy(self.rig.manifest);mutate(value)
