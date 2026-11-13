@@ -146,6 +146,8 @@ def build_performance(asset_root,destination,*,blender=None):
         for frame in reversed(SAMPLES):require(evaluate_frame(rigs,scene,frame)==snapshots[str(frame)],'DIRECTOR_ORDER','Frame evaluation changed with order.')
         visibility = [validate_visibility(sample) for sample in snapshots.values()]
         all_samples=[evaluate_frame(rigs,scene,frame,include_vertices=False) for frame in range(121)]
+        from director_scene_binding import bind_scene_project
+        binding = bind_scene_project(stage, stage/'scene-project', [dict(frame=s['frame'], matrix=s['key_matrix']) for s in all_samples])
         # Both robots must articulate, independently of their static placement.
         for actor in ACTORS:
             displacement=max(np.linalg.norm(np.asarray(snapshots['0']['actors'][actor]['vertices'][mesh])-np.asarray(snapshots['119']['actors'][actor]['vertices'][mesh]),axis=1).max()
@@ -191,7 +193,7 @@ def build_performance(asset_root,destination,*,blender=None):
                     maximum=max(maximum,float(np.linalg.norm(np.asarray(points)-expected,axis=1).max()))
         require(maximum<.01,'DIRECTOR_BLENDER_MATCH','Blender deformation differs from native evaluation.',observed=maximum)
         report=dict(schema_version=1,fixture=True,production_approved=False,source_assets_sha256=sha256(asset_root/'assets.json'),
-            scene_sha256=sha256(stage/'scene.json'),native_sha256=sha256(stage/'laboratory.blend'),samples=SAMPLES,visibility=visibility,
+            scene_sha256=sha256(stage/'scene.json'),scene_project=binding,native_sha256=sha256(stage/'laboratory.blend'),samples=SAMPLES,visibility=visibility,
             max_vertex_error_m=maximum,reopened=reopened,created=created,frames=120,fps=24,review_status='unreviewed')
         atomic_json(stage/'performance.json',report)
         _rename_no_replace(stage,destination)

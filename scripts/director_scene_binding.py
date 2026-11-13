@@ -73,8 +73,6 @@ def _copy_native(source, root, actor, budget):
         _check(not path.is_symlink(), 'Native source contains a symlink.')
         if path.is_dir():continue
         _check(stat.S_ISREG(path.stat().st_mode), 'Native source contains a special file.')
-        # Runtime locks are not immutable authoring content.
-        if path.name.endswith('.lock'):continue
         relative='native/'+actor+'/'+path.relative_to(original).as_posix()
         _copy_file(path,root/relative,budget);paths.append(relative)
     rig=load_rig(root/'native'/actor)
