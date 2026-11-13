@@ -38,6 +38,7 @@ Run `PYTHONPATH=scripts python -m unittest discover -s tests -p
 Use `HATCH_EDITOR_BROWSER_TEST=1 HATCH_BROWSER_EXECUTABLE=/path/to/chromium` to
 include real browser save/reload and rejection checks. In the shared development
 environment, acquire the documented native-validation flock before browser tests.
+The inspector tests also run in the `operations-archive` release gate.
 The native tests include exact source preservation, material version publication,
 reopening, stale-revision rejection, undo/redo, lock enforcement and nonfinite /
 invalid values. They use engineering fixtures, not production artwork.
