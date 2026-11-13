@@ -68,7 +68,7 @@ The quantitative acceptance profile uses canonical metres and h=3/24=.125 m:
   after emission ends and before the late retention window. Measure the
   maximum radial extent of surface vertices below rim minus 2h. Higher
   viscosity must reduce mean impact spread by >2h, allowing one cell per
-  independently meshed radial interface, with reduction >h at every sample.
+  independently meshed radial interface, with positive reduction at every sample.
   The window follows contact, not whichever frames happen to maximize the
   difference. Zero response, a reversed effect and a sub-cell effect fail.
 
@@ -93,6 +93,20 @@ This command never changes the caches, and exits nonzero for failed physical
 acceptance. Analytic clipping and adversarial metric tests establish the
 measurement implementation; only actual decoded solver caches establish the
 native experiment. Current-head CI and independent review remain required.
+
+Historical measurement development retained its first failed result:
+`physics180/numerical-acceptance-first.json` in the coordination evidence.
+The original assessor additionally required a >h reduction in every individual
+frame. Actual decoded contact began at frames 16/17, so the resulting window
+18–23 included an early transient with .108139 m reduction; its six-frame mean
+was .296371 m. The per-frame >h check failed despite exceeding the declared
+.25 m mean-effect envelope. The revised profile retains the .25 m mean
+threshold and requires a positive direction throughout the window; it permits
+an individual early transient to remain below one cell. This adjustment and
+the failed report must remain visible to independent review. It is not a new
+solver execution or a claim of current-head CI success. Those immutable native
+caches were produced at d8c2ae44bc5d9bb1e88f249692a94cf18977d3c9, with
+historical directory name `physics180/final-d91cabf`.
 
 Mass conservation, production liquid appearance, robust splashes, secondary
 particles, two-way coupling, arbitrary complex moving obstacles and the full

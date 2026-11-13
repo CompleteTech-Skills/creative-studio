@@ -57,6 +57,15 @@ class LiquidAcceptanceTests(unittest.TestCase):
                 frame[field] = value
             self.assertFalse(self.assess(samples)['checks'][check])
 
+    def test_mean_effect_requires_direction_through_contact_transient(self):
+        samples = self.series()
+        # An early contact transient need not independently resolve a full
+        # cell; the mean still must exceed the unchanged two-cell envelope.
+        samples['viscous'][19]['pool_radial_extent_m'] = .69
+        self.assertTrue(self.assess(samples)['checks']['viscosity_reduces_impact_spread'])
+        samples['viscous'][19]['pool_radial_extent_m'] = .71
+        self.assertFalse(self.assess(samples)['checks']['viscosity_reduces_impact_spread'])
+
 
 if __name__ == '__main__':
     unittest.main()

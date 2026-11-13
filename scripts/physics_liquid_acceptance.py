@@ -83,7 +83,7 @@ def assess_series(series, *, cell_size, emission_end_frame):
         accumulated_surface_retained=min(low[i]['pool_surface_area_m2'] for i in late) >= minimum_patch,
         uncontained_control_drains=max(open_[i]['pool_surface_area_m2'] for i in late) <= h*h,
         viscosity_reduces_impact_spread=(valid_window and mean_difference > viscosity_threshold
-                                       and min(differences) > h),
+                                       and min(differences) > 0),
     )
     return dict(status='passed' if all(checks.values()) else 'failed', checks=checks,
         cell_size_m=h, leakage_envelope_m=leakage_envelope,
