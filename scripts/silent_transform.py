@@ -105,7 +105,7 @@ def transform(source, root, settings, destination, *, destination_dir_fd=None, c
     estimated = len(mapping) * (settings['width'] * settings['height'] * 4 + 1024)
     if estimated > video.MAX_SOURCE_BYTES:
         raise ValueError('conservative output work-byte estimate exceeds source budget')
-    with video.destination_directory(destination, destination_dir_fd=destination_dir_fd) as (name, parent_fd):
+    with video.destination_directory(destination, destination_dir_fd=destination_dir_fd) as (destination_name, parent_fd):
         filesystem = os.fstatvfs(parent_fd)
         if filesystem.f_bavail * filesystem.f_frsize < estimated + MAX_MANIFEST_BYTES:
             raise ValueError('insufficient free storage for bounded transform')
@@ -154,7 +154,7 @@ def transform(source, root, settings, destination, *, destination_dir_fd=None, c
             (stage / 'transform.json').write_bytes(encoded)
             if cancel is not None and cancel():
                 raise ValueError('frame transform cancelled before publication')
-            _rename_no_replace('payload', name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
+            _rename_no_replace('payload', destination_name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
     return report
 
 
