@@ -154,7 +154,8 @@ def render_frame(scene, settings, output_root, index, *, pass_sockets=None):
                     sink = tree.nodes.new('CompositorNodeOutputFile');created.append(sink)
                     sink.base_path = str(stage/name)
                     sink.format.file_format = 'OPEN_EXR';sink.format.color_depth = str(plan['bit_depth'])
-                    sink.format.color_mode = 'BW' if name == 'depth' else 'RGB'
+                    sink.format.color_mode = ('BW' if name == 'depth' else
+                                              'RGBA' if name == 'albedo' and plan['alpha']=='straight' else 'RGB')
                     sink.format.exr_codec = 'ZIP'
                     sink.file_slots[0].path = 'pass-'
                     tree.links.new(sources[name],sink.inputs[0])
