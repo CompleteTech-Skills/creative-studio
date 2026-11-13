@@ -109,18 +109,22 @@ def evaluate_frame(rigs, scene, frame, *, include_vertices=True):
 
 def _copy_assets(source, destination):
     from asset_library import read_source_bytes
+    from asset_library_contracts import MAX_FILE_BYTES
     require(source.is_dir() and not source.is_symlink(), 'DIRECTOR_SOURCE', 'Asset source must be a regular directory.')
     files=[];total=0
     for path in source.rglob('*'):
         require(not path.is_symlink(), 'DIRECTOR_SOURCE', 'Asset source cannot contain symlinks.')
         require(path.is_dir() or path.is_file(), 'DIRECTOR_SOURCE', 'Asset source contains a special file.')
         if path.is_file():
+            # Native job locks are process coordination files, not rig payloads.
+            if path.parent == source and path.name in {'.rig-aster.rig.lock', '.rig-moss.rig.lock'}:
+                continue
             total+=path.stat().st_size;files.append(path)
             require(len(files)<=4096 and total<=256*1024**2, 'DIRECTOR_LIMIT', 'Asset snapshot exceeds bounds.')
     destination.mkdir()
     for path in files:
         target=destination/path.relative_to(source);target.parent.mkdir(parents=True,exist_ok=True)
-        target.write_bytes(read_source_bytes(path,256*1024**2))
+        target.write_bytes(read_source_bytes(path, MAX_FILE_BYTES))
     # The four source identities are pinned independently from derived animation.
     report=json.loads((destination/'assets.json').read_text())
     for name in ['aster','moss','laboratory','access-key']:

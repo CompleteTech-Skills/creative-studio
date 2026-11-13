@@ -4,6 +4,9 @@
 the immutable procedural assets from `director_assets.build_assets` into a
 bounded five-second performance. The source directory is copied through bounded
 regular-file reads, and original GLB hashes remain bound to their identities.
+The two native rig writer-lock files are coordination state and are omitted
+from the immutable asset copy. Every copied payload uses the shared reader's
+64 MiB per-file bound; the complete snapshot remains limited to 256 MiB.
 The destination must be new; successful publication uses the shared exclusive
 rename primitive.
 

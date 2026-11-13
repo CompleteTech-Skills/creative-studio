@@ -54,3 +54,11 @@ class DirectorSceneTests(unittest.TestCase):
             with self.assertRaises(ValueError):evaluate_frame(self.rigs,self.scene,frame)
         link=self.root/'linked';link.symlink_to(self.root/'assets',target_is_directory=True)
         with self.assertRaises(ValueError):_copy_assets(link,self.root/'copy')
+
+    def test_actual_asset_copy_preserves_source_identities_and_bytes(self):
+        destination=self.root/'snapshot'
+        _copy_assets(self.root/'assets',destination)
+        expected={p.relative_to(self.root/'assets'):p.read_bytes() for p in (self.root/'assets').rglob('*')
+                  if p.is_file() and p.name not in {'.rig-aster.rig.lock','.rig-moss.rig.lock'}}
+        actual={p.relative_to(destination):p.read_bytes() for p in destination.rglob('*') if p.is_file()}
+        self.assertEqual(actual,expected)
