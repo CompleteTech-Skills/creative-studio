@@ -137,4 +137,10 @@ Real acceptance tests create labeled synthetic PNGs and run installed media
 binaries. They do not claim 3D geometry or production-art approval. See
 `tests/results/silent-video-foundations.json` for executed results, source
 revision, versions, logs and limitations. Run focused acceptance with
-`python -m unittest discover -s tests -p test_silent_video.py -v`.
+`python -m unittest discover -s tests -p test_silent_video.py -v` runs the
+portable contract checks without optional skips. The dedicated Linux media
+gate runs `HATCH_SILENT_MEDIA_TEST=1 python -m unittest discover -s tests/optional
+-p test_silent_video_native.py -v` with real FFmpeg/ffprobe and descriptor
+publication tests. Its optional directory is intentionally not a package, so
+portable required discovery does not misreport unsupported native encoding as
+executed or relax its unexpected-skip policy.
