@@ -46,6 +46,7 @@ def inspect_scene(scene):
     finally:
         bpy.data.node_groups.remove(tree)
     original_use_nodes=scene.use_nodes
+    original_nodes=list(scene.node_tree.nodes) if scene.node_tree is not None else []
     scene.use_nodes=True
     compositor=scene.node_tree
     try:
@@ -56,6 +57,10 @@ def inspect_scene(scene):
             except (RuntimeError, TypeError):
                 pass
     finally:
+        # Enabling compositor nodes may create default nodes. They belong to
+        # this probe too; leave no disabled graph that could block pass owners.
+        for node in list(compositor.nodes):
+            if node not in original_nodes:compositor.nodes.remove(node)
         scene.use_nodes=original_use_nodes
     layer=scene.view_layers[0]
     pass_properties = {name: hasattr(layer, property_name) for name,property_name in {
