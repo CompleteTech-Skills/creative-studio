@@ -149,3 +149,12 @@ state leaves this false on the deformed node and its transform ancestors, becaus
 bind bounds do not describe the current deformation. `frame_camera` requires true
 for every selected target and asks for `sample_geometry=True` otherwise; unrelated
 static targets can still be framed from a cheap evaluation.
+
+`scene3d_import.project_imported_vertices(graph, imported, admitted_rig, deformed)`
+is the pure canonical component projection boundary for already admitted native
+rigs and evaluated deformation arrays. It checks each selected node's exact
+component/source binding and applies the importer's existing source-to-world edit
+mapping. It performs no source reads, rig decoding or deformation evaluation.
+`evaluate_imported_vertices` retains its independent admission/sampling API and
+then delegates to this same mapper. Temporal caches use the pure boundary so
+imported instances cannot bypass input/deformation budgets through a second loader.

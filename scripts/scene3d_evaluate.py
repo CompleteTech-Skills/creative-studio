@@ -392,7 +392,7 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
             # Retain the importer ownership of source transforms, component maps
             # and canonical bind-space geometry. Its evaluator avoids applying
             # the imported source hierarchy twice.
-            from scene3d_import import ImportedScene, evaluate_imported_vertices
+            from scene3d_import import ImportedScene, project_imported_vertices
             def original(suffix):
                 entries = [entry for entry in asset['dependencies'] if entry['path'].endswith(suffix)]
                 require(len(entries) == 1, 'Imported asset is missing its exact '+suffix+' record.')
@@ -407,8 +407,7 @@ def _sample_native_geometry(graph, evaluated, documents, native, root, max_verti
                     return {'nodes':[node]}
                 def evaluate_base(self, selected):
                     return graph.evaluate_base(selected)
-            sampled = evaluate_imported_vertices(ComponentView(),imported,rig_path.parent,
-                clip=reference['id'],time=float(time),loop=binding['loop'])
+            sampled = project_imported_vertices(ComponentView(),imported,rig,deformed)
             positions = sampled['nodes'][identifier]
         else:
             world = np.asarray(evaluated[identifier]['world_matrix'])

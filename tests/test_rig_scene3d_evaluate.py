@@ -180,6 +180,8 @@ class SceneEvaluationTests(unittest.TestCase):
         graph=SceneGraph(self.scene,external_references={})
         first_mapping=add_import(graph,imported,'one')['mapping']
         second_mapping=add_import(graph,imported,'two')['mapping']
+        extras=['copy-'+str(index) for index in range(6)]
+        for identifier in extras:add_import(graph,imported,identifier)
         transform=graph.transform('one');transform['translation']=[7,0,0];graph.set_transform('one',transform)
         self.bundle['documents']['example-scene.json']=graph.document()
         self.bundle['documents'][imported.asset_reference['path']]=imported.asset
@@ -188,8 +190,15 @@ class SceneEvaluationTests(unittest.TestCase):
         bend=clips[imported.report['native_clip_map']['bend']]
         neutral=clips[imported.report['native_clip_map']['neutral']]
         self.shot['bindings']=[dict(target=target,clip=ref,start_frame=0,end_frame=24,speed=1,loop=True)
-                              for target,ref in [('one',bend),('two',neutral)]]
-        out=self.evaluate(15,source_root=copied,sample_geometry=True)
+                              for target,ref in [('one',bend),('two',neutral),*[(i,bend) for i in extras]]]
+        from unittest.mock import patch
+        from rig_models import load_rig
+        from rig_skinning import evaluate_deformation
+        with patch('rig_models.load_rig',wraps=load_rig) as loader, \
+                patch('rig_skinning.evaluate_deformation',wraps=evaluate_deformation) as deformer:
+            out=self.evaluate(15,source_root=copied,sample_geometry=True)
+        self.assertEqual(loader.call_count,1)
+        self.assertEqual(deformer.call_count,2)
         expected=evaluate_imported_vertices(graph,imported,copied/'imports/imported/1.0.0/native',
                                           clip=bend['id'],time=2.5,loop=True)['nodes']
         selected=[i for i in out['native_geometry'] if i in first_mapping.values()]

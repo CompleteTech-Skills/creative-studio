@@ -609,6 +609,21 @@ def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=
         evaluated = evaluate_deformation(rig)
     else:
         evaluated = {m.id: dict(positions=m.positions) for m in rig.geometry.meshes}
+    projected = project_imported_vertices(graph,imported,rig,evaluated)
+    return dict(**projected,native_clip=clip,time=time,actual_deformation=True,production_approved=False)
+
+
+def project_imported_vertices(graph, imported, rig, evaluated):
+    """Project admitted native deformation through canonical imported edits.
+
+    The caller owns source admission and numerical deformation. This pure adapter
+    performs no file reads, decoder calls or native sampling; exact component
+    identity and source transform mapping are still checked for every node.
+    """
+    from rig_math import transform_points
+    require(rig.manifest['source']['sha256'] == imported.report['source_sha256'],
+            'Native run does not match the imported source.', 'SCENE3D_SOURCE_CHANGED')
+    require(set(evaluated) == set(rig.geometry.by_id()), 'Native deformation mesh set differs from admitted rig.')
     source_world = {h['source_node']: np.asarray(h['world_matrix']) for h in imported.hierarchy}
     by_id = rig.geometry.by_id()
     result = {}
@@ -627,4 +642,4 @@ def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=
         for mesh in imported.asset['components'][component]:
             require(mesh in by_id and by_id[mesh].source_node == index, 'Mesh component/source node mismatch.')
             result[node['id']][mesh] = transform_points(delta, evaluated[mesh]['positions']).tolist()
-    return dict(nodes=result, native_clip=clip, time=time, actual_deformation=True, production_approved=False)
+    return dict(nodes=result)
