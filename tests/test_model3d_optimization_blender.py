@@ -58,6 +58,13 @@ class BlenderOptimizationTests(unittest.TestCase):
         self.assertLess(_uv_error(source,target)['max_error'],1e-8)
         target.attributes['TEXCOORD_0']+=2
         self.assertGreater(_uv_error(source,target)['max_error'],1.)
+    def test_adjacent_shell_cannot_authenticate_wrong_uv_chart(self):
+        positions=np.array([[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]])
+        uv=np.array([[0.,0.],[1.,0.],[0.,1.]])
+        source=Mesh('shells',np.concatenate([positions,positions+[0.,0.,.0001]]),
+                    np.array([[0,1,2],[3,4,5]]),attributes={'TEXCOORD_0':np.concatenate([uv,uv+2])})
+        target=copy.deepcopy(source);target.attributes['TEXCOORD_0']=np.concatenate([uv+2,uv])
+        self.assertGreater(_uv_error(source,target,distance_tolerance=.001)['max_error'],2.8)
     def test_resource_and_numeric_admission(self):
         g=textured_cube(2)
         with self.assertRaises(RigError):_preflight(g,dict(DEFAULT_LIMITS,memory_bytes=1))
