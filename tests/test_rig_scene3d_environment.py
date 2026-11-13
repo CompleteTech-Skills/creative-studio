@@ -108,7 +108,7 @@ class EnvironmentTests(unittest.TestCase):
             original=recipe('primitive',kind='box',dimensions={})
             create_environment(first,original)
             b=load_project(first);path=b['project']['scenes'][-1]['path']
-            graph=SceneGraph(b['documents'][path]);graph.delete('test-mesh')
+            graph=SceneGraph.from_bundle(b,path,source_root=first);graph.delete('test-mesh')
             snapshot_project(first,root/'deleted',graph,scene_path=path)
             b=load_project(root/'deleted');path=b['project']['scenes'][-1]['path']
             apply_recipe(root/'deleted',root/'rooms',path,recipe(rooms=1))

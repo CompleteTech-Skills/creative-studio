@@ -13,6 +13,8 @@ import tempfile
 from scene3d_contracts import load_project
 from scene3d_environment import create_environment, load_meshes
 from scene3d_graph import SceneGraph
+from scene3d_math import to_blender, BLENDER_BASIS
+import numpy as np
 
 BLENDER_SCRIPT = r'''
 import bpy, json, sys, math
@@ -27,6 +29,10 @@ for item in data['objects']:
     obj.matrix_world=Matrix(item['matrix'])
     mat=bpy.data.materials.new('clay-'+item['id']);mat.diffuse_color=(.4,.58,.65,1) if 'floor' in item['id'] else (.7,.58,.4,1)
     obj.data.materials.append(mat)
+expected_bounds={}
+for obj in bpy.context.scene.objects:
+    coords=[obj.matrix_world @ vertex.co for vertex in obj.data.vertices]
+    expected_bounds[obj.name]=[(min(v[i] for v in coords),max(v[i] for v in coords)) for i in range(3)]
 # Export complete actual geometry, including ceilings, before cutaway inspection.
 bpy.ops.export_scene.gltf(filepath=str(root/'environment.glb'),export_format='GLB')
 expected=len(data['objects'])
@@ -36,13 +42,16 @@ meshes=[o for o in bpy.context.scene.objects if o.type=='MESH']
 assert len(meshes)==expected,(len(meshes),expected)
 for obj in meshes:
     assert len(obj.data.polygons)>0
+    coords=[obj.matrix_world @ vertex.co for vertex in obj.data.vertices]
+    actual=[(min(v[i] for v in coords),max(v[i] for v in coords)) for i in range(3)]
+    assert all(abs(a-b)<1e-5 for pair,target_pair in zip(actual,expected_bounds[obj.name]) for a,b in zip(pair,target_pair)),obj.name
     if 'ceiling' in obj.name:obj.hide_render=True
 camera_data=bpy.data.cameras.new('inspection');camera=bpy.data.objects.new('inspection',camera_data)
-bpy.context.collection.objects.link(camera);camera.location=(13,12,16)
-target=Vector((3,1,0));camera.rotation_euler=(target-camera.location).to_track_quat('-Z','Y').to_euler()
+bpy.context.collection.objects.link(camera);camera.location=(13,-16,12)
+target=Vector((3,0,1));camera.rotation_euler=(target-camera.location).to_track_quat('-Z','Y').to_euler()
 camera.data.type='ORTHO';camera.data.ortho_scale=20;bpy.context.scene.camera=camera
 light_data=bpy.data.lights.new('key','AREA');light=bpy.data.objects.new('key',light_data);bpy.context.collection.objects.link(light)
-light.location=(3,10,8);light.rotation_euler=(target-light.location).to_track_quat('-Z','Y').to_euler();light.data.energy=1800;light.data.size=10
+light.location=(3,-8,10);light.rotation_euler=(target-light.location).to_track_quat('-Z','Y').to_euler();light.data.energy=1800;light.data.size=10
 scene=bpy.context.scene;scene.render.engine='CYCLES';scene.cycles.samples=16;scene.cycles.device='CPU';scene.render.threads_mode='FIXED';scene.render.threads=2
 scene.world=bpy.data.worlds.new('inspection-world');scene.world.color=(.15,.15,.15);scene.render.resolution_x=640;scene.render.resolution_y=480;scene.render.resolution_percentage=100
 scene.render.image_settings.file_format='PNG';scene.render.filepath=str(root/'inspection.png');bpy.ops.render.render(write_still=True)
@@ -56,7 +65,9 @@ def demonstrate(destination,blender):
     create_environment(root/'project',recipe)
     bundle=load_project(root/'project');scene_path=bundle['project']['scenes'][-1]['path']
     scene=bundle['documents'][scene_path];graph=SceneGraph(scene);meshes=load_meshes(root/'project',scene_path)
-    objects=[dict(id=i,**m,matrix=graph.evaluate_base(i)['world_matrix']) for i,m in meshes.items()]
+    objects=[dict(id=i,vertices=(np.asarray(m['vertices'])@BLENDER_BASIS[:3,:3].T).tolist(),
+                  triangles=m['triangles'],matrix=to_blender(graph.evaluate_base(i)['world_matrix']).tolist())
+             for i,m in meshes.items()]
     (root/'input.json').write_text(json.dumps(dict(objects=objects),allow_nan=False))
     script=root/'native.py';script.write_text(BLENDER_SCRIPT)
     with (root/'blender.log').open('w') as log:
