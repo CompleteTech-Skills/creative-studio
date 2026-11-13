@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from editor3d_repository import EditorRepository
-from editor3d_timeline import apply_timeline, evaluate_timeline, prepare_timeline_commands
+from editor3d_timeline import apply_timeline, evaluate_timeline, prepare_timeline_commands, sample_curve
 from rig_errors import RigError
 from scene3d_example import build_example
 
@@ -98,6 +98,16 @@ class TimelineTests(unittest.TestCase):
         self.apply([dict(operation='key-upsert',document=path,target='mesh',property='translation',frame=12,value=[9,0,0])])
         self.assertEqual(apply_timeline(self.repo,body),first)
         self.assertEqual(self.repo.snapshot()['revision'],2)
+
+    def test_curve_samples_delegate_exact_native_channels_and_bound_work(self):
+        result=self.apply([self.key(0,[0,0,0]),self.key(24,[24,0,0])])
+        body=dict(revision=result['revision'],sha256=result['sha256'],shot=self.shot(result),target='mesh',property='translation',sample_count=3)
+        curve=sample_curve(self.repo,body)
+        self.assertEqual([sample['value'][0] for sample in curve['samples']],[0,11.5,23])
+        self.assertEqual(curve['samples'][1]['frame'],dict(numerator=23,denominator=2))
+        self.assertEqual(self.repo.snapshot(),result)
+        for updates in ({'sample_count':34},{'sample_count':True},{'target':'missing'},{'property':'unsupported'}):
+            with self.subTest(updates=updates),self.assertRaises(RigError):sample_curve(self.repo,{**body,**updates})
 
     def test_prepare_never_mutates_input(self):
         snap=self.repo.snapshot();before=deepcopy(snap)
