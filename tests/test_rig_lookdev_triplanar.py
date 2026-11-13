@@ -29,8 +29,9 @@ class TriplanarAdmissionTests(unittest.TestCase):
     def test_normal_reorientation_and_unsupported_sampling_reject(self):
         original = self.document()
         normal = copy.deepcopy(original)
-        normal.update(role='normal', encoding='data', normal_orientation='opengl')
-        with self.assertRaises(RigError): triplanar_plan(normal)
+        normal.update(role='normal', encoding='data', normal_orientation='opengl-positive-y')
+        with self.assertRaises(RigError) as caught: triplanar_plan(normal)
+        self.assertEqual(caught.exception.code, 'TEXTURE_PROJECTION_UNSUPPORTED')
         for key, value in (('wrap', 'mirror'), ('filter', 'mipmap')):
             changed = dict(original); changed[key] = value
             with self.assertRaises(RigError): triplanar_plan(changed)
