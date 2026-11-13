@@ -32,8 +32,11 @@ def _run(job,*,executable=None,timeout=300):
 
 def _new_output(path, code):
     path = Path(path).absolute()
-    require(not any(parent.is_symlink() for parent in (path, *path.parents)),
-            'RIG_SYMLINK', 'Export destinations must not traverse symbolic links.')
+    # The caller chooses the output parent; canonical aliases such as macOS
+    # /var are valid. The new output itself must never follow a symlink.
+    path = path.parent.resolve() / path.name
+    require(not path.is_symlink(),
+            'RIG_SYMLINK', 'Export destinations must not be symbolic links.')
     require(not path.exists(), code, 'Use a new export destination.', preserved=str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     return path.parent.resolve() / path.name

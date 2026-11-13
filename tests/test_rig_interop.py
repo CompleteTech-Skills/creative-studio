@@ -80,6 +80,21 @@ class RigExternalIntegrationTests(unittest.TestCase):
         self.assertLess(report['max_vertex_error_m'],.01);self.assertGreater(report['compared_vertices'],0)
         self.assertEqual(report['schema_version'],1);self.assertEqual(report['format'],'blend')
     @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
+    def test_blender_export_and_preview_accept_canonical_parent_alias(self):
+        from rig_blender import export_blender,render_blender_preview
+        root=Path(self.temp.name);actual=root/'actual';actual.mkdir();alias=root/'alias'
+        try:alias.symlink_to(actual,target_is_directory=True)
+        except OSError as exc:
+            if getattr(exc,'winerror',None)==1314:self.skipTest('Symlink privilege unavailable.')
+            raise
+        receipt=export_blender(self.rig,alias/'editable.blend')
+        self.assertTrue(receipt['ok']);self.assertEqual(Path(receipt['path']),actual.resolve()/'editable.blend')
+        report=render_blender_preview(self.rig,alias/'preview',clip='bend',times=[0.],
+            blend_path=receipt['path'],blend_sha256=receipt['sha256'],width=96,height=96)
+        self.assertEqual(len(report['frames']),1)
+        self.assertTrue(Path(report['frames'][0]['path']).is_file())
+
+    @unittest.skipUnless(os.environ.get('HATCH_RIG_BLENDER_TEST')=='1','Enable HATCH_RIG_BLENDER_TEST=1 for pinned Blender integration.')
     def test_blender_socket_preserves_full_native_transform_during_animation(self):
         from rig_blender import export_blender
         from rig_math import axis_angle
@@ -183,6 +198,28 @@ class RigBlenderPublicationTests(unittest.TestCase):
         with patch('rig_blender.export_blender',side_effect=RigError('TEST_FAILURE','Injected worker failure.')):
             with self.assertRaises(RigError):render_blender_preview(self.rig,target,clip='bend')
         self.assertFalse(target.exists());self.assertEqual(list(self.root.glob('.hatch-blender-render-*')),[])
+
+    def test_output_parent_alias_is_canonicalized_and_leaf_links_rejected(self):
+        from rig_blender import _new_output
+        alias=self.root/'output-parent-alias'
+        actual=self.root/'actual-output-parent';actual.mkdir()
+        try:alias.symlink_to(actual,target_is_directory=True)
+        except OSError as exc:
+            if getattr(exc,'winerror',None)==1314:self.skipTest('Symlink privilege unavailable.')
+            raise
+        target=_new_output(alias/'new-folder'/'new.blend','RIG_EXPORT_EXISTS')
+        self.assertEqual(target,actual.resolve()/'new-folder'/'new.blend')
+        self.assertFalse(target.exists())
+        outside=self.root/'outside.blend';outside.write_bytes(b'preserved')
+        leaf=actual/'leaf.blend';leaf.symlink_to(outside)
+        with self.assertRaises(RigError) as caught:
+            _new_output(alias/'leaf.blend','RIG_EXPORT_EXISTS')
+        self.assertEqual(caught.exception.report['code'],'RIG_SYMLINK')
+        self.assertEqual(outside.read_bytes(),b'preserved')
+        dangling=actual/'dangling.blend';dangling.symlink_to(actual/'missing.blend')
+        with self.assertRaises(RigError):
+            _new_output(alias/'dangling.blend','RIG_EXPORT_EXISTS')
+        self.assertTrue(dangling.is_symlink())
 
     def test_symlink_output_does_not_touch_referent(self):
         from rig_blender import export_blender
