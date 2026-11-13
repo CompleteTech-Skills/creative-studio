@@ -150,6 +150,20 @@ class BudgetTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError,'hard limits'):
             self.reserve(operation_id='next',idempotency_key='next',estimate=quantities(provider_calls=1),retry_allowance=0)
 
+    def test_cumulative_actual_overrun_retains_every_accepted_delta(self):
+        identifier=self.reserve()['reservation_id']
+        self.ledger.settle(identifier,usage=quantities(provider_calls=10**15),outcome='retry',
+            expected_revision=self.ledger.snapshot()['sha256'],idempotency_key='large',evidence=self.proof)
+        receipt=self.ledger.settle(identifier,usage=quantities(provider_calls=1),outcome='failed',
+            expected_revision=self.ledger.snapshot()['sha256'],idempotency_key='last',evidence=self.proof)
+        self.assertEqual(receipt['spent']['provider_calls'],str(10**15+1))
+        reopened=BudgetLedger(self.root).snapshot()['state']
+        self.assertEqual(reopened['revision'],3)
+        self.assertEqual(len(reopened['reservations'][identifier]['attempts']),2)
+        self.assertEqual(reopened['reservations'][identifier]['spent']['provider_calls'],str(10**15+1))
+        with self.assertRaisesRegex(RigError,'hard limits'):
+            self.reserve(operation_id='next',idempotency_key='next',estimate=quantities(provider_calls=1))
+
     def test_director_request_adapter_matches_strict_contract(self):
         import json
         from director_budget import execute

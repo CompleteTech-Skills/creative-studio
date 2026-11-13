@@ -47,23 +47,23 @@ def _id(value):
     return value
 
 
-def _number(value, metric):
+def _number(value, metric, *, maximum=10**15):
     _need(type(value) in (int, float, str, Decimal), 'INPUT', 'Budget numbers must be finite nonnegative decimal quantities.')
     _need(not isinstance(value,str) or len(value)<=256, 'INPUT', 'Decimal text exceeds bound.')
-    _need(type(value) is not int or 0 <= value <= 10**15, 'INPUT', 'Integer quantity exceeds bound.')
+    _need(type(value) is not int or 0 <= value <= maximum, 'INPUT', 'Integer quantity exceeds bound.')
     try:
         result = Decimal(str(value))
     except InvalidOperation as exc:
         raise RigError('DIRECTOR_BUDGET_INPUT', 'Invalid decimal quantity.', stage='budget') from exc
-    _need(result.is_finite() and 0 <= result <= Decimal('1e15'), 'INPUT', 'Quantity exceeds the finite budget bound.')
-    _need(result.as_tuple().exponent >= -64 and len(result.as_tuple().digits) <= 80, 'INPUT', 'Quantities support at most 64 fractional places and 80 significant digits.')
+    _need(result.is_finite() and 0 <= result <= maximum, 'INPUT', 'Quantity exceeds the finite budget bound.')
+    _need(result.as_tuple().exponent >= -64 and len(result.as_tuple().digits) <= len(str(maximum)) + 64, 'INPUT', 'Quantities exceed the bounded precision or 64 fractional places.')
     _need(metric not in COUNTS or result == result.to_integral_value(), 'INPUT', 'Count quantities must be integral.')
     return result
 
 
-def _quantities(value, *, unknown=False):
+def _quantities(value, *, unknown=False, maximum=10**15):
     _need(isinstance(value, dict) and set(value) == set(METRICS), 'INPUT', 'Every budget metric must be explicitly provided.')
-    return {key: None if unknown and value[key] is None else str(_number(value[key], key)) for key in METRICS}
+    return {key: None if unknown and value[key] is None else str(_number(value[key], key, maximum=maximum)) for key in METRICS}
 
 
 def _decimal_map(value):
@@ -101,7 +101,8 @@ def _validate_state(state):
         _need(row['id'] == identifier and row['state'] in ('reserved', 'uncertain', 'settled', 'released'), 'CORRUPT', 'Invalid reservation identity/state.')
         _id(row['operation_id']); _id(row['provider'])
         for field in ('reserved', 'spent', 'held'):
-            _quantities(row[field])
+            # Accepted usage deltas may cumulatively exceed the admission limit.
+            _quantities(row[field], maximum=128 * 10**15 if field == 'spent' else 10**15)
         _need(type(row['unknown_price']) is bool and isinstance(row['attempts'], list) and len(row['attempts']) <= 128, 'CORRUPT', 'Invalid reservation attempts.')
         for key in METRICS:
             _need(Decimal(row['held'][key]) <= max(Decimal(row['reserved'][key]) - Decimal(row['spent'][key]), Decimal(0)), 'CORRUPT', 'Held capacity exceeds unconsumed reservation.')
