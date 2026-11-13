@@ -302,6 +302,9 @@ class PrefabLibrary:
         active = set()
         clip_cache = {}
         work = 0
+        derivation_budget = dict(count=len(self._payloads), bytes=sum(map(len, self._payloads.values())))
+        require(derivation_budget['count'] <= MAX_FILES and derivation_budget['bytes'] <= MAX_TOTAL_BYTES,
+                'Prefab source context exceeds its file/byte budget.', 'SCENE3D_PREFAB_LIMIT')
         def derive_clip(reference, mapping, context, depth):
             if reference['kind'] != 'scene3d-animation':
                 return deepcopy(reference)
@@ -309,6 +312,11 @@ class PrefabLibrary:
             key = (reference['sha256'], context)
             if key in clip_cache:
                 return deepcopy(clip_cache[key])
+            # Reserve parents before recursively deriving children so every
+            # in-flight unique document consumes its own remaining slot.
+            require(derivation_budget['count'] < MAX_FILES,
+                    'Derived prefab animation count exceeds bound.', 'SCENE3D_PREFAB_LIMIT')
+            derivation_budget['count'] += 1
             clip = self.resolve(reference)
             require(clip['kind'] == 'scene3d-animation', 'Wrong clip kind.')
             clip['id'] = scoped_id(context, clip['id'], 'clip')
@@ -326,8 +334,13 @@ class PrefabLibrary:
             clip['provenance']['tool'] = 'scene3d-prefab-animation-target-map-v1'
             clip['provenance']['inputs'].append(dict(path=reference['path'], sha256=reference['sha256']))
             payload = canonical_bytes(clip)
+            require(len(payload) <= 16*1024*1024 and
+                    derivation_budget['bytes'] + len(payload) <= MAX_TOTAL_BYTES,
+                    'Derived prefab animation bytes exceed bound.', 'SCENE3D_PREFAB_LIMIT')
+            derivation_budget['bytes'] += len(payload)
             path = 'derived-animations/'+clip['id']+'/'+clip['version']+'.json'
             r = _reference(clip, payload, path)
+            require(path not in derived, 'Conflicting derived prefab animation identity.')
             derived[path] = clip
             clip_cache[key] = r
             return deepcopy(r)
