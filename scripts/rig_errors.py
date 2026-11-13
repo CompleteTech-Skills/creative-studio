@@ -205,7 +205,10 @@ def directory_capability(descriptor: int):
                 current = os.fstat(owned)
                 # An internal caller must not close cap.fd. If it did and reused
                 # that number for another object, never close the foreign object.
-                if cap is None or (current.st_dev,current.st_ino) == cap.identity:os.close(owned)
+                # Before registration/yield, this duplicate has never been
+                # exposed to callers: even a rejected borrowed-FD race leaves
+                # it exclusively ours and it must be closed.
+                if token is None or cap is None or (current.st_dev,current.st_ino) == cap.identity:os.close(owned)
             except OSError:
                 pass
 
@@ -289,10 +292,10 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
     def check_root(info):
         require(root_identity is None or (info.st_dev,info.st_ino) == root_identity,
                 'RIG_PAYLOAD_CHANGED','Selected source directory changed.',asset=name)
-    check_root(root.stat())
     flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0)
     descriptors = []
     try:
+        check_root(root.stat())
         if os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW'):
             directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
             if capability is not None:
