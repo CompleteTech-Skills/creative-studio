@@ -144,6 +144,72 @@ class EditorContractTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(RigError):
                 validate_contract(value)
 
+    def test_native_consuming_roles_reject_a_real_valid_model_manifest(self):
+        model = example('asset')['native']
+        self.assertEqual(verify_native_reference(model, ROOT)['status'], 'valid-native-contract')
+        schema = Draft202012Validator(schemas()['editor3d.schema.json'])
+        for field in ('animation', 'shots', 'color_management', 'render_presets'):
+            doc = example('animation' if field == 'animation' else 'project')
+            if field == 'animation':
+                doc['native'] = deepcopy(model)
+            else:
+                doc[field] = deepcopy(model) if field == 'color_management' else [deepcopy(model)]
+            original = deepcopy(doc)
+            with self.subTest(field=field):
+                self.assertFalse(schema.is_valid(doc))
+                with self.assertRaises(RigError):
+                    validate_contract(doc)
+                self.assertEqual(doc, original)
+
+    def test_native_consuming_roles_admit_exact_current_owner_manifests(self):
+        cases = [('animation', 'scene3d', 'examples/scene3d-contracts/example-animation.json'),
+                 ('shots', 'scene3d', 'examples/scene3d-contracts/example-shot.json'),
+                 ('color_management', 'lookdev', 'examples/lookdev-contracts/ceramic-look.json'),
+                 ('render_presets', 'lookdev', 'examples/lookdev-contracts/draft.json'),
+                 ('render_presets', 'scene3d', 'examples/scene3d-contracts/example-render.json')]
+        validator = Draft202012Validator(schemas()['editor3d.schema.json'])
+        for field, owner, name in cases:
+            payload = (ROOT / name).read_bytes(); native = json.loads(payload)
+            reference = dict(owner=owner, id=native['id'], version=native['version'],
+                native_kind=native['kind'], file=dict(path=name,
+                    sha256=hashlib.sha256(payload).hexdigest(), bytes=len(payload), media_type='application/json'))
+            with self.subTest(field=field, name=name):
+                self.assertEqual(verify_native_reference(reference, ROOT)['status'], 'valid-native-contract')
+                doc = example('animation' if field == 'animation' else 'project')
+                if field == 'animation': doc['native'] = reference
+                else: doc[field] = reference if field == 'color_management' else [reference]
+                validator.validate(doc)
+                validate_contract(doc)
+                # Pairing only the kind with a different admitted owner must fail.
+                wrong = deepcopy(doc)
+                bound = wrong['native'] if field == 'animation' else wrong[field] if field == 'color_management' else wrong[field][0]
+                bound['owner'] = 'model3d'
+                self.assertFalse(validator.is_valid(wrong))
+                with self.assertRaises(RigError): validate_contract(wrong)
+
+    def test_async_response_identity_and_partial_outputs_are_closed(self):
+        validator = Draft202012Validator(schemas()['editor3d.schema.json'])
+        response = example('response'); response.update(status='accepted', diagnostics=[])
+        for value in (None, '', '../job', 'a' * 129):
+            bad = deepcopy(response); bad['job_id'] = value
+            with self.subTest(job_id=value):
+                self.assertFalse(validator.is_valid(bad))
+                with self.assertRaises(RigError): validate_contract(bad)
+        self.assertFalse(validator.is_valid(response))
+        response['job_id'] = 'render-job-001'
+        validate_contract(response); validator.validate(response)
+        output = example('asset')['native']['file']
+        for status in ('accepted', 'cancelled', 'rejected', 'unavailable'):
+            bad = deepcopy(response); bad.update(status=status, outputs=[output])
+            if status in ('rejected', 'unavailable'): bad['diagnostics'] = example('response')['diagnostics']
+            with self.subTest(status=status):
+                self.assertFalse(validator.is_valid(bad))
+                with self.assertRaises(RigError): validate_contract(bad)
+        # Synchronous completion and old synchronous responses need no invented job.
+        response.update(status='complete', executed=True, outputs=[output])
+        del response['job_id']
+        validate_contract(response); validator.validate(response)
+
     def test_rig_asset_binding_requires_actual_rig_owner(self):
         value = example('asset'); value['asset_type'] = 'rig'
         with self.assertRaises(RigError): validate_contract(value)
