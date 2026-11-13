@@ -1,6 +1,7 @@
 """Selective, evidence-aware bridge to the unchanged 416-state catalog."""
 from collections import Counter
 from copy import deepcopy
+import numpy as np
 from rig_animation import validate_animation
 from rig_errors import require
 from state_catalog import load_library
@@ -18,7 +19,23 @@ def rig_capabilities(rig):
                        ('thigh.','legs'),('upper-leg.','legs'),('foot.','feet'),('paw.','paws'),('paw.','feet'),
                        ('tail.','tail'),('ear.','ears'),('wing-','wings')]:
         if any(role.startswith(prefix) for role in roles):capabilities.add(cap)
-    if rig.manifest['facial']['expressions']:capabilities.add('expressive-face')
+    # A neutral catalog entry is bookkeeping, not an executable facial
+    # capability. Only authored controls that can change represented geometry
+    # count when admitting states that require an expressive face.
+    bones={b['id']:b for b in rig.skeleton['bones']}
+    expressive=False
+    for expression in rig.manifest['facial']['expressions'].values():
+        for name,amount in expression['morphs'].items():
+            qualifier,morph=(name.split('::',1) if '::' in name else (None,name))
+            if amount and any((qualifier is None or mesh.id==qualifier) and morph in mesh.morphs
+                    and any(np.any(values) for values in mesh.morphs[morph].values())
+                    for mesh in rig.geometry.meshes):
+                expressive=True
+        for name,transform in expression['bones'].items():
+            if name in used and any(not np.allclose(value,bones[name]['rest'][path],rtol=0,atol=1e-12)
+                                    for path,value in transform.items()):
+                expressive=True
+    if expressive:capabilities.add('expressive-face')
     if rig.manifest['archetype']=='quadruped':capabilities.add('quadrupedal')
     library=load_library();return sorted(capabilities & set(library.capabilities))
 
