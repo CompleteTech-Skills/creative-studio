@@ -8,16 +8,14 @@ from __future__ import annotations
 from contextlib import contextmanager
 from copy import deepcopy
 import hashlib
-import os
 from pathlib import Path
 import platform
-import stat
 import struct
 import tempfile
 import zlib
 
 from render3d_contracts import Render3DError, require, validate, VERSION, frame_times, rational, definitions, _validator
-from rig_errors import RigError, object_hash, safe_path
+from rig_errors import RigError, object_hash, open_payload, normalize_root
 
 
 @contextmanager
@@ -66,21 +64,19 @@ def _captured(path, max_bytes):
     """Hash and decode the same privately captured bytes, not a mutable path."""
     path = Path(path)
     try:
-        require(not path.is_symlink(), 'corrupt-output', 'Image may not be a symlink.', path=path)
-        flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0)
-        with os.fdopen(os.open(path, flags), 'rb') as source, tempfile.TemporaryFile() as frozen:
-            require(stat.S_ISREG(os.fstat(source.fileno()).st_mode), 'corrupt-output', 'Image is not a regular file.', path=path)
+        with tempfile.TemporaryFile() as frozen:
             digest, size = hashlib.sha256(), 0
-            while chunk := source.read(min(1024*1024, max_bytes-size+1)):
-                size += len(chunk)
-                require(size <= max_bytes, 'storage-exhaustion', 'Image exceeds its verification byte budget.', path=path)
-                digest.update(chunk); frozen.write(chunk)
+            with open_payload(path.parent,path.name) as (source,_):
+                while chunk := source.read(min(1024*1024, max_bytes-size+1)):
+                    size += len(chunk)
+                    require(size <= max_bytes, 'storage-exhaustion', 'Image exceeds its verification byte budget.', path=path)
+                    digest.update(chunk); frozen.write(chunk)
             require(size > 0, 'corrupt-output', 'Image is empty.', path=path)
             frozen.seek(0)
             yield frozen, dict(bytes=size, sha256=digest.hexdigest())
     except Render3DError:
         raise
-    except (OSError, ValueError) as exc:
+    except (RigError, OSError, ValueError) as exc:
         raise Render3DError('corrupt-output', str(exc), path=path) from exc
 
 
@@ -304,6 +300,8 @@ def decode_image(path, **options):
 
 class RenderArtifactVerifier:
     def __init__(self,snapshot_root,expected_backend,*,max_total_bytes=None):
+        # Preserve the lexical root until canonical payload admission; ordinary
+        # symlink ancestors must never gain authority through path resolution.
         self.snapshot_root=Path(snapshot_root)
         self.expected_backend=deepcopy(expected_backend)
         self.max_total_bytes=max_total_bytes
@@ -322,7 +320,6 @@ class RenderArtifactVerifier:
         pending=deepcopy(result);pending['status']='partial'
         validate(pending,'RenderResult')
         root=Path(root)
-        require(not root.is_symlink(),'corrupt-output','Output root may not be a symlink.')
         require(root.is_dir(),'missing-asset','Output root is unavailable.')
         # The request authenticates the snapshot file before the owner rechecks
         # its closure. Decode and hash one captured snapshot byte buffer.
@@ -330,6 +327,9 @@ class RenderArtifactVerifier:
         with _captured(snapshot_path,32*1024**2) as (stream,reference):
             from rig_errors import decode_json
             snapshot=validate(decode_json(stream.read()),'RenderSnapshot')
+        # Admission above has already rejected ordinary symlink ancestors.
+        # Normalize only now, retaining any explicitly active descriptor anchor.
+        self.snapshot_root=normalize_root(self.snapshot_root)
         require(reference == {key:request['snapshot'][key] for key in ('bytes','sha256')},'stale-asset','Snapshot differs from request-bound bytes.')
         adapter=Scene3DAdapter() if snapshot['scope']=='scene3d' else NativeRigAdapter()
         verified=(verify_snapshot(self.snapshot_root,adapter) if self.max_total_bytes is None else
@@ -359,7 +359,9 @@ class RenderArtifactVerifier:
                 paths.add(name)
                 require(item['format']==suffix and item['bit_depth']==settings['output']['bit_depth'] and item['resolution']==settings['resolution'],
                         'corrupt-output','Image declaration differs from request settings.')
-                file=safe_path(root,name,exists=True)
+                # Do not resolve ordinary root ancestors before the canonical
+                # reader can reject them. Explicit capabilities remain lexical.
+                file=root/name
                 image=verify_image(file,output=settings['output'],resolution=settings['resolution'],pass_name=item['pass_name'],
                     max_bytes=settings['resources']['storage_bytes']-total,memory_bytes=settings['resources']['memory_bytes'])
                 require(image['sha256']==reference['sha256'] and image['bytes']==reference['bytes'],
@@ -372,6 +374,7 @@ class RenderArtifactVerifier:
                 require(remaining>=0,'storage-exhaustion','Output verification exceeds its storage budget.')
                 with captured_file_ref(root,reference,max_bytes=min(256*1024**2,remaining)) as (_,record):
                     artifacts.append(record);total+=record['bytes']
+            root=normalize_root(root)
             actual=set()
             for directory in ('frames','passes'):
                 folder=root/directory
