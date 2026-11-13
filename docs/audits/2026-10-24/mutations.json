@@ -30,7 +30,10 @@
       "gltf"
     ],
     "after_sha256": "9e1b78147910061b1c6c57f6752630ded3883442cd410fdef0b92618208d63c3",
-    "after": {}
+    "after": {},
+    "evidence_status": "Original before/after topic response bodies are unavailable; empty objects were lossy capture placeholders, not topic arrays.",
+    "hash_scope": "Historical hashes refer to original serialized API responses, not the retained empty placeholder objects or intended topic list; cannot be independently verified here.",
+    "intended_is_observation": false
   },
   {
     "utc": "2026-10-24T17:00:05.580986+00:00",

@@ -39,7 +39,10 @@ The old description, “Hatch style-flexible Codex pets - skill from openai/skil
 
 > Codex skill for reusable 2D characters, sprite animation, layered productions and optional 3D rigging, with provenance and review workflows.
 
-All six original topics were retained: `3d-animation`, `agent-skills`, `codex-pets`, `codex-skill`, `completetech`, `python`. Added `2d-animation`, `character-animation`, `sprite-animation`, `rigging`, `blender`, `gltf`. Twelve topics stay below GitHub's twenty-topic limit. These describe existing code; no physics-simulation, full AI-director or reconstruction claim was added. Recognized [character-animation](https://github.com/topics/character-animation) and [rigging](https://github.com/topics/rigging) terminology and [GitHub's topic rules](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/classifying-your-repository-with-topics) informed the additions.
+The recorded intent was to retain six topics and add six more, as listed below.
+The original topic API response bodies are unavailable: `mutations.json` retained
+lossy empty objects with historical response hashes. The table records intended
+actions, not independently verified before/after topic membership.
 
 The documentation changes correct active clone commands, preserve `skills/hatch-pet`, separate incompatible test environments, and mark the old missing-public-payload report as historical. Historical owner URLs, review identities, source receipts and provenance remain intact. The Apache-2.0 license blob exactly matches the current upstream `openai/skills` hatch-pet license (`13e25df86ce06eb6488e6a6bc5c5847f5dedc352`). Vendored Three.js has an MIT notice/hash inventory; original Flite attribution is retained. This does not grant rights to arbitrary imported assets or certify every transitive binary license.
 
@@ -131,3 +134,19 @@ Gitleaks 8.30.1 scanned all 175 reachable commits (40.73 MB). Each of its 111 ge
 Every original issue and PR has an individual recorded assessment. All twelve large source missions and their comments were read; every native dependency and parent edge was enumerated. Safe metadata, labels, selected parent/relationship corrections and PR reviews were applied. No PR merge, forced push, history rewrite, source deletion or other-repository publication occurred.
 
 Remaining engineering and governance work is explicitly recorded in existing issues or #216. Original evidence unavailable in a current checkout was identified rather than fabricated; optional tools and human/artistic acceptance were not inferred from test results. The final GitHub read-back checks the mutation ledger, counts and taxonomy separately from future implementation readiness.
+
+## Published evidence map and limitations
+
+| Earlier artifact reference | Published evidence | Status |
+| --- | --- | --- |
+| `parent-*-coverage.json`, `parents-*-coverage.json` | Matching keys inside [parent-source-coverage.json](parent-source-coverage.json) | Consolidated coverage metadata; original raw issue snapshots are local-only and not included. |
+| `pr-ledger-a.json`, `pr-ledger-b.json` | [pr-ledger.json](pr-ledger.json), indexed by PR number | Consolidated published assessments. |
+| `dependency-mismatches-b.json` | [dependency-graph.json](dependency-graph.json) and program-graph discussion | Original comparison report is unavailable; no claimed byte-equivalent replacement. |
+| Raw workflow YAML paths | [workflow-audit.json](workflow-audit.json) | Local archive paths and saved-byte hashes are historical. Main workflow entries now also include immutable repository sources and byte hashes. |
+| Security/advisory raw responses and reviewer logs | [security-history-audit.md](security-history-audit.md), [gitleaks-triage.json](gitleaks-triage.json) | Published summaries only; raw advisory responses and original execution logs are unavailable. Counts remain attributed historical claims, not newly verified evidence. |
+| Topic before/after API responses | [mutations.json](mutations.json) | Original response bodies unavailable; intended topic list is not a reconstructed observation. |
+
+The ledgers distinguish pre-application workflow recommendations from applied
+status labels. Blocker columns consistently contain JSON arrays, including #216.
+All paths described as local-only above are provenance references, not download
+links or claims that a durable archive exists.

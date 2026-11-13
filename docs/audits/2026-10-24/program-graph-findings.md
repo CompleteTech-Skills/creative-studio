@@ -11,7 +11,7 @@ Scope: 84 individual phase/task/bug issues above #106, excluding original parent
 
 ## Dependencies and sequencing
 
-All explicit leaf dependencies in the assigned range match native `blocked_by` records. Ten additional native phase prerequisites exist without a dedicated dependency paragraph in their bodies: #109→#108, #110→#109, #111→#110; #130→#129 through #136→#135. They are consistent phase integration dependencies, not spurious edges. `dependency-mismatches-b.json` is a machine comparison, not a request to remove these edges.
+Arrows in this section run from blocker to blocked work. All explicit leaf dependencies in the assigned range match native `blocked_by` records. Ten additional native phase prerequisites exist without a dedicated dependency paragraph in their bodies: #108→#109, #109→#110, #110→#111; #129→#130 through #135→#136. They are consistent phase integration dependencies, not spurious edges. `dependency-mismatches-b.json` is a machine comparison, not a request to remove these edges.
 
 Immediate foundation streams can proceed independently: bounded Asset Library #138/#207; Continuity #113/#209 after fixing existing review findings; Scene3D #59/#210 under another reviewer. Physics #168/#212 waits for actual #210 merge and exact integrated verification; Physics #169/#213 waits for #212 and needs mandatory 2D test isolation repaired. A local stacked branch does not satisfy an actual predecessor merge gate.
 

@@ -57,7 +57,10 @@
       "dcba9123c4b70fc2caa7b56267920f239fb35c12",
       "79958045b794c77ddb726002268bb3bbf9d4f6ad"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 11,
@@ -121,7 +124,10 @@
       "e97452a33e338458f5bfa4518ad49c39e3c613dd",
       "6943607c4e678a447536384566ea6230cc1a1d27"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 12,
@@ -177,7 +183,10 @@
       210
     ],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 13,
@@ -231,7 +240,10 @@
     "dependencies": [],
     "linked_prs": [],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 14,
@@ -287,7 +299,10 @@
       214
     ],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 15,
@@ -343,7 +358,10 @@
       215
     ],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 16,
@@ -397,7 +415,10 @@
     "dependencies": [],
     "linked_prs": [],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 17,
@@ -451,7 +472,10 @@
     "dependencies": [],
     "linked_prs": [],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 18,
@@ -507,7 +531,10 @@
       "d567bccb5810efd062c3d6919e6f6b44ff83c261",
       "79958045b794c77ddb726002268bb3bbf9d4f6ad"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 19,
@@ -518,7 +545,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "ready",
     "parent": 18,
     "dependencies": [],
     "text_dependencies": [],
@@ -560,7 +586,12 @@
     "linked_commits": [
       "d567bccb5810efd062c3d6919e6f6b44ff83c261"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "ready",
+    "applied_workflow_status": [
+      "needs-evidence"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 20,
@@ -571,7 +602,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "ready",
     "parent": 18,
     "dependencies": [
       19
@@ -610,7 +640,12 @@
       "scope:epic"
     ],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "ready",
+    "applied_workflow_status": [
+      "blocked"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 21,
@@ -621,7 +656,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 18,
     "dependencies": [
       20
@@ -664,6 +698,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       20
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -675,7 +713,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 18,
     "dependencies": [
       21
@@ -722,6 +759,10 @@
     ],
     "outstanding_blocker": [
       21
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -733,7 +774,6 @@
     "subsystem": "director",
     "type": "documentation",
     "priority": "p1",
-    "workflow_status": null,
     "parent": 19,
     "dependencies": [],
     "text_dependencies": [],
@@ -781,7 +821,9 @@
       "d567bccb5810efd062c3d6919e6f6b44ff83c261",
       "79958045b794c77ddb726002268bb3bbf9d4f6ad"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 24,
@@ -792,7 +834,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "ready",
     "parent": 19,
     "dependencies": [
       23
@@ -836,7 +877,11 @@
     "linked_commits": [
       "d567bccb5810efd062c3d6919e6f6b44ff83c261"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "ready",
+    "applied_workflow_status": [
+      "ready"
+    ]
   },
   {
     "number": 25,
@@ -847,7 +892,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "blocked",
     "parent": 19,
     "dependencies": [
       24
@@ -891,6 +935,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       24
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -902,7 +950,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "blocked",
     "parent": 19,
     "dependencies": [
       24,
@@ -951,6 +998,10 @@
     "outstanding_blocker": [
       24,
       25
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -962,7 +1013,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 20,
     "dependencies": [
       26
@@ -1006,6 +1056,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       26
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1017,7 +1071,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 20,
     "dependencies": [
       27
@@ -1061,6 +1114,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       27
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1072,7 +1129,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 20,
     "dependencies": [
       28
@@ -1116,6 +1172,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       28
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1127,7 +1187,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 20,
     "dependencies": [
       29
@@ -1171,6 +1230,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       29
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1182,7 +1245,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 20,
     "dependencies": [
       30
@@ -1226,6 +1288,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       30
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1237,7 +1303,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 21,
     "dependencies": [
       24,
@@ -1291,6 +1356,10 @@
       24,
       25,
       31
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1302,7 +1371,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 21,
     "dependencies": [
       24,
@@ -1351,6 +1419,10 @@
     "outstanding_blocker": [
       24,
       25
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1362,7 +1434,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 21,
     "dependencies": [
       25,
@@ -1411,6 +1482,10 @@
     "outstanding_blocker": [
       25,
       33
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1422,7 +1497,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 21,
     "dependencies": [
       26,
@@ -1476,6 +1550,10 @@
       26,
       34,
       31
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1487,7 +1565,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 21,
     "dependencies": [
       32,
@@ -1536,6 +1613,10 @@
     "outstanding_blocker": [
       32,
       35
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1547,7 +1628,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 21,
     "dependencies": [
       32,
@@ -1606,6 +1686,10 @@
       33,
       35,
       36
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1617,7 +1701,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 22,
     "dependencies": [
       31,
@@ -1666,6 +1749,10 @@
     "outstanding_blocker": [
       31,
       36
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1677,7 +1764,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 22,
     "dependencies": [
       38,
@@ -1726,6 +1812,10 @@
     "outstanding_blocker": [
       38,
       35
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1737,7 +1827,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 22,
     "dependencies": [
       39
@@ -1781,6 +1870,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       39
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1792,7 +1885,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 22,
     "dependencies": [
       37,
@@ -1841,6 +1933,10 @@
     "outstanding_blocker": [
       37,
       40
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1852,7 +1948,6 @@
     "subsystem": "director",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 22,
     "dependencies": [
       39,
@@ -1910,6 +2005,10 @@
       39,
       40,
       41
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -1921,7 +2020,6 @@
     "subsystem": "3d-model",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": null,
     "parent": 10,
     "dependencies": [],
     "text_dependencies": [],
@@ -1961,7 +2059,9 @@
     "linked_commits": [
       "dcba9123c4b70fc2caa7b56267920f239fb35c12"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 44,
@@ -1972,7 +2072,6 @@
     "subsystem": "3d-model",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "ready",
     "parent": 10,
     "dependencies": [
       43
@@ -2018,7 +2117,11 @@
     "linked_commits": [
       "dcba9123c4b70fc2caa7b56267920f239fb35c12"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "ready",
+    "applied_workflow_status": [
+      "ready"
+    ]
   },
   {
     "number": 45,
@@ -2029,7 +2132,6 @@
     "subsystem": "3d-model",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 10,
     "dependencies": [
       44
@@ -2073,6 +2175,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       44
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -2084,7 +2190,6 @@
     "subsystem": "3d-model",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 10,
     "dependencies": [
       44
@@ -2128,6 +2233,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       44
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -2139,7 +2248,6 @@
     "subsystem": "3d-model",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 10,
     "dependencies": [
       45,
@@ -2188,6 +2296,10 @@
     "outstanding_blocker": [
       45,
       46
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -2199,7 +2311,6 @@
     "subsystem": "3d-model",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 10,
     "dependencies": [
       47
@@ -2243,6 +2354,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       47
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -2254,7 +2369,6 @@
     "subsystem": "3d-model",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 10,
     "dependencies": [
       48
@@ -2298,6 +2412,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       48
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -2309,7 +2427,6 @@
     "subsystem": "3d-model",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 10,
     "dependencies": [
       49
@@ -2357,6 +2474,10 @@
     ],
     "outstanding_blocker": [
       49
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -2368,7 +2489,6 @@
     "subsystem": "rigging",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": null,
     "parent": 11,
     "dependencies": [],
     "text_dependencies": [],
@@ -2411,7 +2531,9 @@
     "linked_commits": [
       "6943607c4e678a447536384566ea6230cc1a1d27"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 52,
@@ -2422,7 +2544,6 @@
     "subsystem": "rigging",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "needs-evidence",
     "parent": 11,
     "dependencies": [
       51
@@ -2475,7 +2596,11 @@
       "e97452a33e338458f5bfa4518ad49c39e3c613dd",
       "6943607c4e678a447536384566ea6230cc1a1d27"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "needs-evidence",
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 53,
@@ -2486,7 +2611,6 @@
     "subsystem": "rigging",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "needs-evidence",
     "parent": 11,
     "dependencies": [
       52
@@ -2530,7 +2654,12 @@
     "linked_commits": [],
     "outstanding_blocker": [
       52
-    ]
+    ],
+    "recommended_workflow_status": "needs-evidence",
+    "applied_workflow_status": [
+      "blocked"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 54,
@@ -2541,7 +2670,6 @@
     "subsystem": "rigging",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "needs-evidence",
     "parent": 11,
     "dependencies": [
       53
@@ -2585,7 +2713,12 @@
     "linked_commits": [],
     "outstanding_blocker": [
       53
-    ]
+    ],
+    "recommended_workflow_status": "needs-evidence",
+    "applied_workflow_status": [
+      "blocked"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 55,
@@ -2596,7 +2729,6 @@
     "subsystem": "rigging",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "needs-evidence",
     "parent": 11,
     "dependencies": [
       54
@@ -2640,7 +2772,12 @@
     "linked_commits": [],
     "outstanding_blocker": [
       54
-    ]
+    ],
+    "recommended_workflow_status": "needs-evidence",
+    "applied_workflow_status": [
+      "blocked"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 56,
@@ -2651,7 +2788,6 @@
     "subsystem": "rigging",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "needs-evidence",
     "parent": 11,
     "dependencies": [
       55
@@ -2695,7 +2831,12 @@
     "linked_commits": [],
     "outstanding_blocker": [
       55
-    ]
+    ],
+    "recommended_workflow_status": "needs-evidence",
+    "applied_workflow_status": [
+      "blocked"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 57,
@@ -2706,7 +2847,6 @@
     "subsystem": "rigging",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "needs-evidence",
     "parent": 11,
     "dependencies": [
       56
@@ -2750,7 +2890,12 @@
     "linked_commits": [],
     "outstanding_blocker": [
       56
-    ]
+    ],
+    "recommended_workflow_status": "needs-evidence",
+    "applied_workflow_status": [
+      "blocked"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 58,
@@ -2761,7 +2906,6 @@
     "subsystem": "rigging",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "needs-evidence",
     "parent": 11,
     "dependencies": [
       57
@@ -2812,7 +2956,12 @@
     ],
     "outstanding_blocker": [
       57
-    ]
+    ],
+    "recommended_workflow_status": "needs-evidence",
+    "applied_workflow_status": [
+      "blocked"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 59,
@@ -2823,7 +2972,6 @@
     "subsystem": "scene",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "needs-review",
     "parent": 12,
     "dependencies": [],
     "text_dependencies": [],
@@ -2861,7 +3009,11 @@
       "status:needs-review"
     ],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "needs-review",
+    "applied_workflow_status": [
+      "needs-review"
+    ]
   },
   {
     "number": 60,
@@ -2872,7 +3024,6 @@
     "subsystem": "scene",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 12,
     "dependencies": [
       59
@@ -2918,6 +3069,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       59
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -2929,7 +3084,6 @@
     "subsystem": "scene",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 12,
     "dependencies": [
       60
@@ -2973,6 +3127,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       60
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -2984,7 +3142,6 @@
     "subsystem": "scene",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 12,
     "dependencies": [
       61
@@ -3028,6 +3185,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       61
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3039,7 +3200,6 @@
     "subsystem": "scene",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 12,
     "dependencies": [
       62
@@ -3083,6 +3243,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       62
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3094,7 +3258,6 @@
     "subsystem": "scene",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 12,
     "dependencies": [
       63
@@ -3138,6 +3301,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       63
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3149,7 +3316,6 @@
     "subsystem": "scene",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 12,
     "dependencies": [
       64
@@ -3193,6 +3359,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       64
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3204,7 +3374,6 @@
     "subsystem": "scene",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 12,
     "dependencies": [
       65
@@ -3250,6 +3419,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       65
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3261,7 +3434,6 @@
     "subsystem": "animation",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "ready",
     "parent": 13,
     "dependencies": [],
     "text_dependencies": [],
@@ -3295,7 +3467,11 @@
       "status:ready"
     ],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "ready",
+    "applied_workflow_status": [
+      "ready"
+    ]
   },
   {
     "number": 68,
@@ -3306,7 +3482,6 @@
     "subsystem": "animation",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 13,
     "dependencies": [
       67
@@ -3350,6 +3525,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       67
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3361,7 +3540,6 @@
     "subsystem": "animation",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 13,
     "dependencies": [
       68
@@ -3405,6 +3583,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       68
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3416,7 +3598,6 @@
     "subsystem": "animation",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 13,
     "dependencies": [
       69
@@ -3460,6 +3641,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       69
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3471,7 +3656,6 @@
     "subsystem": "animation",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 13,
     "dependencies": [
       70
@@ -3515,6 +3699,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       70
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3526,7 +3714,6 @@
     "subsystem": "animation",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 13,
     "dependencies": [
       71
@@ -3570,6 +3757,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       71
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3581,7 +3772,6 @@
     "subsystem": "animation",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 13,
     "dependencies": [
       72
@@ -3625,6 +3815,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       72
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3636,7 +3830,6 @@
     "subsystem": "animation",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 13,
     "dependencies": [
       73
@@ -3680,6 +3873,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       73
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3691,7 +3888,6 @@
     "subsystem": "camera",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "needs-review",
     "parent": 14,
     "dependencies": [],
     "text_dependencies": [],
@@ -3727,7 +3923,11 @@
       "status:needs-review"
     ],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "needs-review",
+    "applied_workflow_status": [
+      "needs-review"
+    ]
   },
   {
     "number": 76,
@@ -3738,7 +3938,6 @@
     "subsystem": "camera",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 14,
     "dependencies": [
       75
@@ -3784,6 +3983,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       75
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3795,7 +3998,6 @@
     "subsystem": "camera",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 14,
     "dependencies": [
       76
@@ -3839,6 +4041,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       76
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3850,7 +4056,6 @@
     "subsystem": "camera",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 14,
     "dependencies": [
       77
@@ -3894,6 +4099,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       77
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3905,7 +4114,6 @@
     "subsystem": "camera",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 14,
     "dependencies": [
       78
@@ -3949,6 +4157,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       78
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -3960,7 +4172,6 @@
     "subsystem": "camera",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 14,
     "dependencies": [
       79
@@ -4004,6 +4215,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       79
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4015,7 +4230,6 @@
     "subsystem": "camera",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 14,
     "dependencies": [
       80
@@ -4059,6 +4273,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       80
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4070,7 +4288,6 @@
     "subsystem": "camera",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 14,
     "dependencies": [
       81
@@ -4116,6 +4333,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       81
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4127,7 +4348,6 @@
     "subsystem": "lookdev",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "needs-review",
     "parent": 15,
     "dependencies": [],
     "text_dependencies": [],
@@ -4163,7 +4383,11 @@
       "status:needs-review"
     ],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "needs-review",
+    "applied_workflow_status": [
+      "needs-review"
+    ]
   },
   {
     "number": 84,
@@ -4174,7 +4398,6 @@
     "subsystem": "lookdev",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 15,
     "dependencies": [
       83
@@ -4220,6 +4443,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       83
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4231,7 +4458,6 @@
     "subsystem": "lookdev",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 15,
     "dependencies": [
       84
@@ -4275,6 +4501,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       84
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4286,7 +4516,6 @@
     "subsystem": "lookdev",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 15,
     "dependencies": [
       85
@@ -4330,6 +4559,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       85
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4341,7 +4574,6 @@
     "subsystem": "lookdev",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 15,
     "dependencies": [
       86
@@ -4385,6 +4617,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       86
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4396,7 +4632,6 @@
     "subsystem": "lookdev",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 15,
     "dependencies": [
       87
@@ -4440,6 +4675,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       87
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4451,7 +4690,6 @@
     "subsystem": "lookdev",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 15,
     "dependencies": [
       88
@@ -4495,6 +4733,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       88
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4506,7 +4748,6 @@
     "subsystem": "lookdev",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 15,
     "dependencies": [
       89
@@ -4552,6 +4793,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       89
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4563,7 +4808,6 @@
     "subsystem": "rendering",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "ready",
     "parent": 16,
     "dependencies": [],
     "text_dependencies": [],
@@ -4597,7 +4841,11 @@
       "status:ready"
     ],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "ready",
+    "applied_workflow_status": [
+      "ready"
+    ]
   },
   {
     "number": 92,
@@ -4608,7 +4856,6 @@
     "subsystem": "rendering",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 16,
     "dependencies": [
       91
@@ -4652,6 +4899,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       91
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4663,7 +4914,6 @@
     "subsystem": "rendering",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 16,
     "dependencies": [
       92
@@ -4707,6 +4957,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       92
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4718,7 +4972,6 @@
     "subsystem": "rendering",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 16,
     "dependencies": [
       93
@@ -4762,6 +5015,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       93
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4773,7 +5030,6 @@
     "subsystem": "rendering",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 16,
     "dependencies": [
       94
@@ -4817,6 +5073,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       94
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4828,7 +5088,6 @@
     "subsystem": "rendering",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 16,
     "dependencies": [
       95
@@ -4872,6 +5131,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       95
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4883,7 +5146,6 @@
     "subsystem": "rendering",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 16,
     "dependencies": [
       96
@@ -4927,6 +5189,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       96
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4938,7 +5204,6 @@
     "subsystem": "rendering",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 16,
     "dependencies": [
       97
@@ -4982,6 +5247,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       97
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -4993,7 +5262,6 @@
     "subsystem": "editor",
     "type": "feature",
     "priority": "p1",
-    "workflow_status": "ready",
     "parent": 17,
     "dependencies": [],
     "text_dependencies": [],
@@ -5027,7 +5295,11 @@
       "status:ready"
     ],
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "ready",
+    "applied_workflow_status": [
+      "ready"
+    ]
   },
   {
     "number": 100,
@@ -5038,7 +5310,6 @@
     "subsystem": "editor",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 17,
     "dependencies": [
       99
@@ -5082,6 +5353,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       99
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5093,7 +5368,6 @@
     "subsystem": "editor",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 17,
     "dependencies": [
       100
@@ -5137,6 +5411,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       100
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5148,7 +5426,6 @@
     "subsystem": "editor",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 17,
     "dependencies": [
       101
@@ -5192,6 +5469,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       101
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5203,7 +5484,6 @@
     "subsystem": "editor",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 17,
     "dependencies": [
       102
@@ -5247,6 +5527,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       102
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5258,7 +5542,6 @@
     "subsystem": "editor",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 17,
     "dependencies": [
       103
@@ -5302,6 +5585,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       103
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5313,7 +5600,6 @@
     "subsystem": "editor",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 17,
     "dependencies": [
       104
@@ -5357,6 +5643,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       104
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5368,7 +5658,6 @@
     "subsystem": "editor",
     "type": "feature",
     "priority": "p2",
-    "workflow_status": "blocked",
     "parent": 17,
     "dependencies": [
       105
@@ -5412,6 +5701,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       105
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5467,7 +5760,10 @@
     "linked_commits": [
       "79958045b794c77ddb726002268bb3bbf9d4f6ad"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 108,
@@ -5496,7 +5792,6 @@
     "implementation_evidence": "Parent acceptance plus child implementation ledgers #112,#113,#114,#115",
     "disposition": "Phase remains open until all child scopes and integration evidence pass; completed audit/contract subset is not phase completion.",
     "blockers": [],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -5526,7 +5821,12 @@
     "linked_commits": [
       "79958045b794c77ddb726002268bb3bbf9d4f6ad"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "needs-evidence"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 109,
@@ -5556,7 +5856,6 @@
     "blockers": [
       108
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -5587,6 +5886,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       108
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5617,7 +5920,6 @@
     "blockers": [
       109
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -5648,6 +5950,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       109
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5678,7 +5984,6 @@
     "blockers": [
       110
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -5709,6 +6014,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       110
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5732,7 +6041,6 @@
     "implementation_evidence": "references/continuity-baseline-audit.md; tests/continuity_baseline_probe.py",
     "disposition": "Bounded baseline delivered in #190; #191/#194 separately fixed repeated-instance ownership. Retain closure; this does not complete persistent 3D continuity.",
     "blockers": [],
-    "workflow_status": null,
     "proposed_labels": [
       "type:research",
       "area:continuity",
@@ -5762,7 +6070,9 @@
     "linked_commits": [
       "79958045b794c77ddb726002268bb3bbf9d4f6ad"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 113,
@@ -5790,7 +6100,6 @@
     "implementation_evidence": "PR #209: scripts/continuity_contracts.py, scripts/continuity_registry.py",
     "disposition": "Unmerged 23-model/schema and SQLite revision implementation. Current-head independent probes confirm schema-valid mapping rejection and broken-selection rollback failure. Require fixes to unresolved threads before acceptance.",
     "blockers": [],
-    "workflow_status": "needs-evidence",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -5820,7 +6129,11 @@
     "linked_commits": [
       "79958045b794c77ddb726002268bb3bbf9d4f6ad"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "needs-evidence",
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 114,
@@ -5847,7 +6160,6 @@
     "blockers": [
       113
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -5877,6 +6189,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       113
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5906,7 +6222,6 @@
     "blockers": [
       113
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -5937,6 +6252,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       113
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -5967,7 +6286,6 @@
       113,
       115
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -5999,6 +6317,10 @@
     "outstanding_blocker": [
       113,
       115
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6026,7 +6348,6 @@
     "blockers": [
       116
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -6056,6 +6377,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       116
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6086,7 +6411,6 @@
       116,
       117
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -6118,6 +6442,10 @@
     "outstanding_blocker": [
       116,
       117
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6151,7 +6479,6 @@
       117,
       118
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -6185,6 +6512,10 @@
       116,
       117,
       118
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6215,7 +6546,6 @@
       114,
       119
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -6247,6 +6577,10 @@
     "outstanding_blocker": [
       114,
       119
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6274,7 +6608,6 @@
     "blockers": [
       120
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -6304,6 +6637,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       120
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6337,7 +6674,6 @@
       114,
       115
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -6371,6 +6707,10 @@
       121,
       114,
       115
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6401,7 +6741,6 @@
       122,
       119
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -6433,6 +6772,10 @@
     "outstanding_blocker": [
       122,
       119
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6463,7 +6806,6 @@
       123,
       118
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -6495,6 +6837,10 @@
     "outstanding_blocker": [
       123,
       118
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6522,7 +6868,6 @@
     "blockers": [
       124
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:continuity",
@@ -6552,6 +6897,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       124
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6585,7 +6934,6 @@
       121,
       125
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:test",
       "area:continuity",
@@ -6619,6 +6967,10 @@
       120,
       121,
       125
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6648,7 +7000,6 @@
     "blockers": [
       126
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:test",
       "area:continuity",
@@ -6680,6 +7031,10 @@
     ],
     "outstanding_blocker": [
       126
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6739,7 +7094,10 @@
     "linked_commits": [
       "c541b8e7d6a4950b9cdd82ef6904569c520db27a"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 129,
@@ -6766,7 +7124,6 @@
     "implementation_evidence": "Parent acceptance plus child implementation ledgers #137,#138",
     "disposition": "Phase remains open until all child scopes and integration evidence pass; completed audit/contract subset is not phase completion.",
     "blockers": [],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -6796,7 +7153,12 @@
     "linked_commits": [
       "c541b8e7d6a4950b9cdd82ef6904569c520db27a"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "needs-evidence"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 130,
@@ -6824,7 +7186,6 @@
     "blockers": [
       129
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -6855,6 +7216,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       129
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6883,7 +7248,6 @@
     "blockers": [
       130
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -6914,6 +7278,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       130
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -6942,7 +7310,6 @@
     "blockers": [
       131
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -6973,6 +7340,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       131
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7001,7 +7372,6 @@
     "blockers": [
       132
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7032,6 +7402,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       132
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7060,7 +7434,6 @@
     "blockers": [
       133
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7091,6 +7464,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       133
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7119,7 +7496,6 @@
     "blockers": [
       134
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7150,6 +7526,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       134
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7178,7 +7558,6 @@
     "blockers": [
       135
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7209,6 +7588,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       135
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7233,7 +7616,6 @@
     "implementation_evidence": "references/asset-library-audit.md; tests/results/asset-library-baseline-20261022",
     "disposition": "Bounded audit delivered via #196. Historical evidence explicitly reconciles 866 distinct passes and original source restoration; retain closure, do not infer library implementation.",
     "blockers": [],
-    "workflow_status": null,
     "proposed_labels": [
       "type:research",
       "area:asset-library",
@@ -7263,7 +7645,9 @@
     "linked_commits": [
       "c541b8e7d6a4950b9cdd82ef6904569c520db27a"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 138,
@@ -7290,7 +7674,6 @@
     "implementation_evidence": "PR #207: scripts/asset_library.py, asset_library_contracts.py; tests/test_asset_library.py",
     "disposition": "Unmerged initial real-file registry/resolver; independently passed 24 focused tests at 1a21016 on Windows. Ready for final review of bounded scope; no import/render/production claim.",
     "blockers": [],
-    "workflow_status": "needs-review",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7318,7 +7701,11 @@
     ],
     "triage_disposition": "Unmerged initial real-file registry/resolver; independently passed 24 focused tests at 1a21016 on Windows. Ready for final review of bounded scope; no import/render/production claim.",
     "linked_commits": [],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "needs-review",
+    "applied_workflow_status": [
+      "needs-review"
+    ]
   },
   {
     "number": 139,
@@ -7349,7 +7736,6 @@
     "blockers": [
       138
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7379,6 +7765,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       138
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7408,7 +7798,6 @@
     "blockers": [
       139
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7438,6 +7827,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       139
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7467,7 +7860,6 @@
     "blockers": [
       140
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7497,6 +7889,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       140
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7526,7 +7922,6 @@
     "blockers": [
       141
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7556,6 +7951,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       141
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7583,7 +7982,6 @@
     "blockers": [
       142
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7613,6 +8011,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       142
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7640,7 +8042,6 @@
     "blockers": [
       143
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7670,6 +8071,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       143
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7697,7 +8102,6 @@
     "blockers": [
       144
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7727,6 +8131,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       144
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7754,7 +8162,6 @@
     "blockers": [
       145
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7784,6 +8191,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       145
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7814,7 +8225,6 @@
       140,
       142
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7846,6 +8256,10 @@
     "outstanding_blocker": [
       140,
       142
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7876,7 +8290,6 @@
       147,
       143
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7908,6 +8321,10 @@
     "outstanding_blocker": [
       147,
       143
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7938,7 +8355,6 @@
       146,
       148
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -7970,6 +8386,10 @@
     "outstanding_blocker": [
       146,
       148
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -7997,7 +8417,6 @@
     "blockers": [
       149
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:asset-library",
@@ -8027,6 +8446,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       149
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8054,7 +8477,6 @@
     "blockers": [
       150
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:test",
       "area:asset-library",
@@ -8084,6 +8506,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       150
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8111,7 +8537,6 @@
     "blockers": [
       151
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:test",
       "area:asset-library",
@@ -8141,6 +8566,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       151
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8207,7 +8636,10 @@
       "a88502ccb89891efe3de0f03f5c402ce5402df93",
       "a5dc729ebb2c31c4be0357afc3dd08e6fe15677e"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "applied_workflow_status": [
+      "needs-evidence"
+    ]
   },
   {
     "number": 154,
@@ -8232,7 +8664,6 @@
     "implementation_evidence": "references/physics-3d-audit.md; child #166; PR #193",
     "disposition": "Closed audit phase has sole closed child and retained baseline/compatibility evidence; retain closure. No solver completion implied.",
     "blockers": [],
-    "workflow_status": null,
     "proposed_labels": [
       "type:research",
       "area:physics",
@@ -8262,7 +8693,9 @@
     "linked_commits": [
       "a5dc729ebb2c31c4be0357afc3dd08e6fe15677e"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 155,
@@ -8293,7 +8726,6 @@
     "implementation_evidence": "Parent acceptance plus child implementation ledgers #167,#168,#169",
     "disposition": "Phase remains open until all child scopes and integration evidence pass; completed audit/contract subset is not phase completion.",
     "blockers": [],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8325,7 +8757,12 @@
     "linked_commits": [
       "a88502ccb89891efe3de0f03f5c402ce5402df93"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "needs-evidence"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 156,
@@ -8355,7 +8792,6 @@
     "blockers": [
       155
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8386,6 +8822,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       155
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8415,7 +8855,6 @@
     "blockers": [
       156
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8446,6 +8885,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       156
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8476,7 +8919,6 @@
     "blockers": [
       157
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8507,6 +8949,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       157
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8537,7 +8983,6 @@
     "blockers": [
       158
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8568,6 +9013,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       158
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8598,7 +9047,6 @@
     "blockers": [
       158
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8629,6 +9077,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       158
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8660,7 +9112,6 @@
     "blockers": [
       156
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8691,6 +9142,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       156
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8720,7 +9175,6 @@
     "blockers": [
       156
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8751,6 +9205,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       156
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8791,7 +9249,6 @@
       162,
       159
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8828,6 +9285,10 @@
       161,
       162,
       159
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8858,7 +9319,6 @@
     "blockers": [
       163
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8889,6 +9349,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       163
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8919,7 +9383,6 @@
     "blockers": [
       164
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -8950,6 +9413,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       164
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -8974,7 +9441,6 @@
     "implementation_evidence": "references/physics-3d-audit.md; tests/results/physics-baseline-20261022",
     "disposition": "Bounded audit delivered via #193. Historical 790-case compatibility run and explicit native gaps are documented; retain closure.",
     "blockers": [],
-    "workflow_status": null,
     "proposed_labels": [
       "type:research",
       "area:physics",
@@ -9005,7 +9471,9 @@
       "a88502ccb89891efe3de0f03f5c402ce5402df93",
       "a5dc729ebb2c31c4be0357afc3dd08e6fe15677e"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 167,
@@ -9034,7 +9502,6 @@
     "implementation_evidence": "scripts/physics_contracts.py; profiles/physics-3d-*.schema.json; tests/test_physics_contracts.py; PR #208",
     "disposition": "Strict configuration/admission contracts are on main; docstring explicitly excludes solver execution. Retain bounded closure; no claim #168/#169 or #153 complete.",
     "blockers": [],
-    "workflow_status": null,
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9062,7 +9529,9 @@
     "linked_commits": [
       "a88502ccb89891efe3de0f03f5c402ce5402df93"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 168,
@@ -9091,7 +9560,6 @@
     "implementation_evidence": "PR #212: scripts/physics_backends.py and two fixed workers; .github/workflows/physics-backends.yml",
     "disposition": "Unmerged bounded POSIX sphere/box backend lifecycle. Current PR conflicts with main and depends on actual #210 merge. Windows probe unavailable; Windows suite unsupported. No general rigid-body/physics category acceptance.",
     "blockers": [],
-    "workflow_status": "ready",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9123,7 +9591,12 @@
     "linked_commits": [
       "a88502ccb89891efe3de0f03f5c402ce5402df93"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": "ready",
+    "applied_workflow_status": [
+      "blocked"
+    ],
+    "workflow_status_note": "Pre-application recommendation; superseded by applied workflow labels in this snapshot."
   },
   {
     "number": 169,
@@ -9153,7 +9626,6 @@
     "blockers": [
       168
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9185,6 +9657,10 @@
     ],
     "outstanding_blocker": [
       168
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9214,7 +9690,6 @@
     "blockers": [
       169
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9244,6 +9719,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       169
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9271,7 +9750,6 @@
     "blockers": [
       170
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9301,6 +9779,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       170
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9328,7 +9810,6 @@
     "blockers": [
       171
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9358,6 +9839,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       171
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9385,7 +9870,6 @@
     "blockers": [
       172
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9415,6 +9899,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       172
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9442,7 +9930,6 @@
     "blockers": [
       173
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9472,6 +9959,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       173
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9499,7 +9990,6 @@
     "blockers": [
       174
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9529,6 +10019,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       174
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9559,7 +10053,6 @@
       169,
       171
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9591,6 +10084,10 @@
     "outstanding_blocker": [
       169,
       171
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9621,7 +10118,6 @@
       169,
       173
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9653,6 +10149,10 @@
     "outstanding_blocker": [
       169,
       173
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9683,7 +10183,6 @@
       169,
       171
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9715,6 +10214,10 @@
     "outstanding_blocker": [
       169,
       171
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9745,7 +10248,6 @@
       168,
       169
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9777,6 +10279,10 @@
     "outstanding_blocker": [
       168,
       169
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9807,7 +10313,6 @@
       169,
       171
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9839,6 +10344,10 @@
     "outstanding_blocker": [
       169,
       171
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9878,7 +10387,6 @@
       179,
       180
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9916,6 +10424,10 @@
       178,
       179,
       180
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -9946,7 +10458,6 @@
       171,
       172
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -9978,6 +10489,10 @@
     "outstanding_blocker": [
       171,
       172
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -10014,7 +10529,6 @@
       181,
       182
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -10050,6 +10564,10 @@
       177,
       181,
       182
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -10077,7 +10595,6 @@
     "blockers": [
       183
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -10107,6 +10624,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       183
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -10134,7 +10655,6 @@
     "blockers": [
       184
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -10164,6 +10684,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       184
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -10191,7 +10715,6 @@
     "blockers": [
       185
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -10221,6 +10744,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       185
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -10248,7 +10775,6 @@
     "blockers": [
       186
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:feature",
       "area:physics",
@@ -10278,6 +10804,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       186
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -10305,7 +10835,6 @@
     "blockers": [
       187
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:test",
       "area:physics",
@@ -10335,6 +10864,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       187
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -10362,7 +10895,6 @@
     "blockers": [
       188
     ],
-    "workflow_status": "blocked",
     "proposed_labels": [
       "type:test",
       "area:physics",
@@ -10392,6 +10924,10 @@
     "linked_commits": [],
     "outstanding_blocker": [
       188
+    ],
+    "recommended_workflow_status": "blocked",
+    "applied_workflow_status": [
+      "blocked"
     ]
   },
   {
@@ -10417,7 +10953,6 @@
     "implementation_evidence": "scripts/production_performance.py::validate_continuity; tests/test_production_contracts.py:326-405; PR #194",
     "disposition": "Repeated actors preserve instance identity while singleton aliases remain valid; current code contains fix and regression cases. Retain bounded closure.",
     "blockers": [],
-    "workflow_status": null,
     "proposed_labels": [
       "type:bug",
       "area:continuity",
@@ -10449,7 +10984,9 @@
       "d567bccb5810efd062c3d6919e6f6b44ff83c261",
       "79958045b794c77ddb726002268bb3bbf9d4f6ad"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 195,
@@ -10474,7 +11011,6 @@
     "implementation_evidence": "scripts/portable_runs.py::restore_run; rig_package.py::restore_rig; atomic_publish.py; PR #198",
     "disposition": "Both restore paths use exclusive publication and reject existing/dangling destination leaves. Current fix present; retain bounded closure, not a general hostile-filesystem guarantee.",
     "blockers": [],
-    "workflow_status": null,
     "proposed_labels": [
       "type:bug",
       "area:delivery",
@@ -10509,7 +11045,9 @@
       "bae65356567a10915658a6371c14ee9a4553db36",
       "c541b8e7d6a4950b9cdd82ef6904569c520db27a"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 197,
@@ -10532,7 +11070,6 @@
     "implementation_evidence": "scripts/production_bundle.py::create_bundle; tests/test_production_bundle.py; PR #199",
     "disposition": "Writer reuses _new_destination/_publish_stage; reviewed race and link regressions exist. Retain bounded closure; bundle restoration is a separate owner.",
     "blockers": [],
-    "workflow_status": null,
     "proposed_labels": [
       "type:bug",
       "area:delivery",
@@ -10563,7 +11100,9 @@
     "linked_commits": [
       "a08569cbdb593651807c887f4c9edd5e7b243973"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 201,
@@ -10587,7 +11126,6 @@
     "implementation_evidence": "scripts/rig_corrections.py:142; tests/test_rig_correction_validation.py; PR #203",
     "disposition": "Controller validation runs before persistence; preserve valid skeleton-only correction and transactional negatives. Retain bounded closure, not complete #52.",
     "blockers": [],
-    "workflow_status": null,
     "proposed_labels": [
       "type:bug",
       "area:rigging",
@@ -10616,7 +11154,9 @@
       "bb5a6810afd06cf57185ffdfe2234e0fdc6e6240",
       "e97452a33e338458f5bfa4518ad49c39e3c613dd"
     ],
-    "outstanding_blocker": []
+    "outstanding_blocker": [],
+    "recommended_workflow_status": null,
+    "applied_workflow_status": []
   },
   {
     "number": 216,
@@ -10647,6 +11187,11 @@
     "changes_performed": [
       "Created with evidence and acceptance criteria"
     ],
-    "outstanding_blocker": "Maintainer policy decisions and tested enforcement remain open."
+    "outstanding_blocker": [
+      "Maintainer policy decisions and tested enforcement remain open."
+    ],
+    "applied_workflow_status": [
+      "needs-design"
+    ]
   }
 ]
