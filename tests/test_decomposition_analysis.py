@@ -171,6 +171,30 @@ class AnalysisTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'lineage'):
             load_decomposition(self.root)
 
+    def test_external_cancel_can_be_explicitly_retried(self):
+        job=self.prepare()
+        analysis.cancel(self.root,job['job'])
+        self.assertEqual(analysis.status(self.root,job['job'])['status'],'cancelled')
+        self.assertEqual(analysis.retry(self.root,job['job'])['status'],'awaiting-external')
+        self.assertEqual(self.ingest(job)['status'],'proposed')
+
+    def test_cancelled_or_failed_completed_worker_can_be_explicitly_retried(self):
+        for status in ('cancelled','failed'):
+            with self.subTest(status=status):
+                model={'provider':'synthetic-fixture','name':'none','version':status,'files':[],
+                       'identity_evidence':'Synthetic recovery fixture; no model execution'}
+                with mock.patch.object(analysis,'_model',return_value=model):
+                    job=analysis.prepare(self.root,'opencv-haar',enabled=True)
+                response=self.response(job);response['model']=model
+                response['evidence']['execution']='local'
+                folder=self.root/'analysis-jobs'/job['job']
+                atomic_json(folder/'worker-response.json',response)
+                state=json.loads((folder/'state.json').read_text())
+                state.update(status=status,attempts=1);atomic_json(folder/'state.json',state)
+                self.assertEqual(analysis.retry(self.root,job['job'])['status'],'ready')
+                self.assertFalse((folder/'worker-response.json').exists())
+                self.assertTrue((folder/'attempt-1/worker-response.json').is_file())
+
     def test_external_parameters_and_selected_model_are_bound(self):
         model={'provider':'synthetic-fixture','name':'none','version':'fixture-v1','files':[],
                'identity_evidence':'Fixture only; no model executed'}

@@ -229,6 +229,8 @@ def status(root, identifier):
         raise ValueError('analysis state/request mismatch')
     if 'response_sha256' in state and sha(job / 'response.json') != state['response_sha256']:
         raise ValueError('analysis response changed')
+    if (job / 'cancel').exists() and state['status'] not in ('running', 'applied'):
+        state = {**state, 'status': 'cancelled'}
     return {'job': identifier, **state, 'request': request,
             'response_available': (job / 'response.json').is_file()}
 
@@ -417,7 +419,8 @@ def retry(root, identifier):
         except ValueError:
             pass  # Preserve invalid output in the explicit retry's attempt history.
         else:
-            raise ValueError('completed worker response must be recovered before retry')
+            if info['status'] == 'interrupted':
+                raise ValueError('completed worker response must be recovered before retry')
     history = safe_path(root, 'analysis-jobs/' + identifier + '/attempt-' + str(info['attempts']))
     history.mkdir(exist_ok=True)
     for name in ('state.json','worker.log','cancel','response.json','worker-response.json'):

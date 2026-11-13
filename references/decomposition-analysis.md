@@ -118,8 +118,9 @@ Cancellation kills a running fixed worker, waits for its exit and prevents
 proposal publication. Failed, cancelled or interrupted work requires explicit
 `decompose-analysis-retry`; it archives the earlier state, response and log.
 Retry means authorizing a new attempt when the earlier outcome is known or
-uncertain. It is never implicit in resume. A completed but unacknowledged worker
-response must be recovered before retrying. The fixed limits are 64 requests per
+uncertain. It is never implicit in resume. An interrupted job with a valid completed worker
+response must recover it before retrying. Explicit retry of a failed or cancelled
+attempt archives even a completed response instead of leaving the job stuck. The fixed limits are 64 requests per
 run, three attempts per request, four million source pixels, eight MiB per
 request/response metadata file, 30 seconds per local attempt by default (Python
 API range 1–120), one OpenCV thread and a 64 KiB worker log. Annotation component,
