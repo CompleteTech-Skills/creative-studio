@@ -5,7 +5,7 @@ from physics_backend_example import build_inputs
 from physics_backends import canonical,digest
 
 
-def build_softbody_inputs(*,frames=100,stiffness=.7,damping=.2,pins=False):
+def build_softbody_inputs(*,frames=100,stiffness=.2,damping=.2,pins=False):
     world,payloads=build_inputs(frames=frames)
     from physics_backends import parse
     points=[(.5,0,0),(-.5,0,0),(0,.5,0),(0,-.5,0),(0,0,.5),(0,0,-.5)]

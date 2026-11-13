@@ -42,3 +42,13 @@ Unsupported fields, missing bytes, changed source
 hashes, malformed topology and exceeded resource limits fail before publication.
 
 Run the explicit solver gate with `HATCH_SOFTBODY_TEST=1 HATCH_BLENDER=/path/to/blender python -B -m unittest discover -s tests -p test_rig_physics_softbody.py -v`. Ordinary 2D discovery does not execute this gate. The native workflow runs it with the existing checksum-verified Blender and isolated host dependencies. Diagnostic artwork remains an engineering fixture, and the broader stage/parent acceptance remains open.
+
+The retained default engineering fixture uses stiffness 0.2 and damping 0.2.
+At 1,000 native steps per frame, its 100-frame measured final center is about
+0.491 m above the floor and maximum final-ten-frame vertex step is 0.014 m.
+The matched stiffness-0.7 control deforms less but continues bouncing at frame 99;
+it is not labeled settled. Reducing damping from 0.2 to 0.05 at stiffness 0.7
+increases the measured tail vertex step (about 0.118 to 0.163 m). These are
+pinned-environment comparisons, not universal material calibrations. The source
+goal pin is approximate: the measured 0.024 m residual is explicitly retained,
+with a 0.03 m test tolerance rather than a hard positional-lock claim.

@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from physics_backends import BackendError,canonical,parse,digest,_run_process,_inventory
-from physics_softbody import SoftBodyBackend,admit,_component_meshes,verify_cache,_validate_output
+from physics_softbody import SoftBodyBackend,admit,_component_meshes,verify_cache,_validate_output,metrics
 from physics_softbody_example import build_softbody_inputs
 
 
@@ -161,3 +161,20 @@ class NativeSoftBodyTests(unittest.TestCase):
                 (destination/'deformation.json').write_bytes(b'{}')
                 with self.assertRaises(BackendError):verify_cache(destination)
             finally:backend.cleanup(prepared)
+
+    def test_real_stiffness_damping_and_approximate_goal_controls(self):
+        measured={}
+        with tempfile.TemporaryDirectory() as name:
+            for label,settings in [('stiff',dict(stiffness=.7)),('soft',dict(stiffness=.2)),('lowdamp',dict(stiffness=.7,damping=.05)),('pinned',dict(pins=True))]:
+                backend=SoftBodyBackend(os.environ['HATCH_BLENDER']);world,payloads=build_softbody_inputs(**settings)
+                prepared=backend.prepare(world,payloads)
+                try:
+                    result=backend.simulate(prepared);destination=Path(name)/label;backend.bake(result,destination)
+                    measured[label]=metrics(destination)
+                finally:backend.cleanup(prepared)
+            self.assertGreater(measured['soft']['maximum_centered_radius_change'],measured['stiff']['maximum_centered_radius_change']*1.2)
+            self.assertGreater(measured['lowdamp']['maximum_tail_vertex_step'],measured['stiff']['maximum_tail_vertex_step']*1.1)
+            self.assertLess(abs(measured['soft']['final_center'][1]-.5),.1)
+            self.assertLess(measured['soft']['maximum_tail_vertex_step'],.05)
+            self.assertLess(measured['pinned']['maximum_pin_error'],.03)
+            self.assertLess(measured['pinned']['maximum_tail_vertex_step'],.001)
