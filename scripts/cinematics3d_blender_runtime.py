@@ -92,7 +92,7 @@ def inspect_scene(scene):
 
 
 def _finite(value,low,high,label):
-    _require(type(value) in (int,float) and math.isfinite(value) and low<=value<=high,
+    _require(type(value) in (int,float) and low<=value<=high and math.isfinite(value),
              'Invalid cinematic '+label)
 
 

@@ -91,7 +91,8 @@ class Compiler(unittest.TestCase):
     def test_runtime_protocol_strictness(self):
         registry,stack=bundle([]);plan=compile_plan(registry,stack,request(),inventory())['plan']
         for change in (lambda p:p.update(schema_version=True),lambda p:p.update(hidden=1),
-                       lambda p:p['effective_settings'].update(exposure=float('nan'))):
+                       lambda p:p['effective_settings'].update(exposure=float('nan')),
+                       lambda p:p['effective_settings'].update(exposure=10**1000)):
             changed=deepcopy(plan);change(changed)
             with self.assertRaises(ValueError):validate_plan(changed)
 

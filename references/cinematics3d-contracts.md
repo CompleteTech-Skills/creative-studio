@@ -52,7 +52,7 @@ The executable integration sequence remains:
 | #242 immutable closure/history / A3 | Hash, missing/conflicting/alias bytes, identity, inheritance, bypass, scope, ordering and history roundtrip tests. `cinematics3d_example.py` relocates exact bytes and invokes the actual Scene3D loader. |
 | #242 capability distinction / A3 | Admission tests cover unavailable, supported, explicit approximate and disabled states; every result retains `executed: false`. |
 | #242 baseline/compatibility / A2 | Evidence records original main, environment, schema/math, legacy production tests, unchanged legacy files and failed first environment attempt. |
-| #243 backend | Unavailable here; requires real process probing and trusted native worker integration. |
+| #243 backend | Optional [canonical Blender adapter](cinematics3d-backend.md), native property/device probe, bounded CPU execution and retained config. `cinematics3d_backend_example.py` executes and decodes engineering PNG/EXR fixtures; full cinematic film acceptance is separate. |
 | #244–#245 optics/motion | Registry/reference admission only; no blur or animated focus render proof. |
 | #246–#247 HDR/color | Explicit contracts/units; no EXR decoder, OCIO/LUT execution or pixel proof. |
 | #248–#250 lens, volumes, materials | Typed requirements only; real scene/render integration and before/after pixel evidence remain open. |

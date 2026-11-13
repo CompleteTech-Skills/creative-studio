@@ -58,7 +58,7 @@ Use the existing optional rig dependencies below. The [executable example](examp
 reuses unchanged source and animated GLB files; missing or corrupt required content
 fails verification. Structural-only checks explicitly leave payloads unverified.
 
-The additive [cinematic authoring contracts](references/cinematics3d-contracts.md) define versioned effect stacks, immutable references and explicit capability admission. These are authoring contracts; effect execution and final silent cinematic delivery remain separate acceptance work.
+The additive [cinematic authoring contracts](references/cinematics3d-contracts.md) define versioned effect stacks, immutable references and explicit capability admission. The optional [Blender cinematic adapter](references/cinematics3d-backend.md) uses the canonical renderer for actual capability probing and bounded CPU mappings. Final silent cinematic delivery and the complete effects program remain separate acceptance work.
 
 ## Real 3D rigs and animation
 
