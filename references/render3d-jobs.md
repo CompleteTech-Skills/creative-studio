@@ -24,7 +24,10 @@ result = store.materialize(job, 'output/delivery', verifier.verify)
 Each claim reserves declared worker/memory/storage capacities transactionally
 and takes an unpredictable lease token bound to its owning process. Priority is
 descending, then submission order and frame index. Progress, attempts, ownership,
-heartbeats, revision and append-only events are persisted. Heartbeat expiry alone
+heartbeats, revision and append-only events are persisted. Retained cache and
+staging bytes, including failed or orphaned worker outputs, reduce capacity
+available for the next claim. Live worker outputs are covered by their existing
+reservation and are not counted twice. Heartbeat expiry alone
 never authorizes takeover of a live process. `recover()` requeues only dead
 process claims, honoring maximum attempts and cancellation. This store requires
 local same-host storage; it does not claim distributed leases or cross-host
@@ -57,8 +60,10 @@ or backend differences cannot qualify as the same cache entry.
 
 `materialize()` revalidates the source and every frame cache, creates relative
 frame paths and per-frame provenance files, independently verifies the complete
-sequence, and publishes a complete portable delivery. Existing destinations
-remain untouched. The full request, manifest, result and verifier identity are
+sequence, and publishes a complete portable delivery. Every published image and metadata byte, including provenance, manifest,
+verification and result JSON, counts against the request storage budget. Output
+usage reports the complete directory size. Existing destinations remain untouched. Store/cache metadata uses bounded nonblocking regular-file reads and strict JSON
+decoding. The full request, manifest, result and verifier identity are
 hash-bound; the output is not a claim of artistic approval.
 
 `list_jobs(limit=..., offset=...)` and `status(event_limit=...)` bound query output.
@@ -87,3 +92,7 @@ It executes actual per-frame native rig rendering, independently decodes the
 portable delivery, reuses verified pixels without a renderer, repairs one
 corrupted frame while retaining its bytes, and cancels a real worker through the
 durable job callback. The fixture is synthetic and carries no visual approval.
+
+Portable delivery retains historical per-frame receipt JSON and current pixel
+verification. Raw historical worker logs/reports remain in the JobStore cache;
+the archive integration must include them for a full executed-evidence archive.

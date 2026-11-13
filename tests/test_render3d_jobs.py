@@ -75,6 +75,87 @@ else:raise AssertionError('FIFO input accepted')
                               str(self.root/'copy')],capture_output=True,text=True,timeout=20)
         self.assertEqual(child.returncode,0,child.stderr)
 
+    def test_metadata_fifo_replacements_reject_without_blocking(self):
+        import os
+        if not hasattr(os,'mkfifo'):self.skipTest('FIFO races apply to POSIX')
+        code="""import sys,os
+sys.path[:0]=[sys.argv[1],sys.argv[2]]
+from unittest.mock import patch
+from test_render3d_jobs import JobTests
+import render3d_jobs as jobs
+from render3d_contracts import Render3DError
+case=JobTests();case.setUp()
+try:
+ name=sys.argv[3]
+ if name=='cache.json':
+  job=case.submit();lease=case.store.claim(job);output,result=case.output(lease)
+  case.store.publish(lease,output,result,case.verify)
+ original=jobs.safe_path
+ def replace(root,name_,*a,**k):
+  path=original(root,name_,*a,**k)
+  if name_==name:path.unlink();os.mkfifo(path)
+  return path
+ with patch.object(jobs,'safe_path',side_effect=replace):
+  try:
+   if name=='store.json':jobs.JobStore(case.root/'jobs')
+   else:case.store._verify_cache(lease,case.verify)
+  except Render3DError:pass
+  else:raise AssertionError('FIFO metadata accepted')
+finally:case.tearDown()
+"""
+        for name in ('store.json','cache.json'):
+            with self.subTest(name=name):
+                child=subprocess.run([sys.executable,'-c',code,str(ROOT/'scripts'),str(ROOT/'tests'),name],
+                                     capture_output=True,text=True,timeout=20)
+                self.assertEqual(child.returncode,0,child.stderr)
+
+    def test_failed_and_crash_leftover_outputs_reserve_capacity(self):
+        self.request['settings']['resources']['storage_bytes']=128
+        self.store=JobStore(self.root/'tiny-jobs',storage_bytes=128)
+        job=self.submit()
+        class Failing:
+            calls=0
+            def render_frames(worker,request,snapshot,output,**kwargs):
+                worker.calls+=1;output.mkdir();(output/'retained.log').write_bytes(b'x'*128)
+                raise Render3DError('worker-crash','bounded failed attempt')
+        worker=Failing()
+        with self.assertRaises(Render3DError):self.store.run_one(worker,self.verify,job=job)
+        self.assertIsNone(self.store.run_one(worker,self.verify,job=job))
+        self.assertEqual(worker.calls,1)
+        self.assertEqual(self.store._retained_cache_bytes(),128)
+        self.assertEqual(self.store.status(job)['frames'][0]['attempts'],1)
+        # Reopening retains accounting even when no live process owns the files.
+        reopened=JobStore(self.root/'tiny-jobs',storage_bytes=128)
+        self.assertIsNone(reopened.claim(job))
+        self.assertEqual(reopened._retained_cache_bytes(),128)
+        orphan=JobStore(self.root/'crash-leftover',storage_bytes=128)
+        orphan_job=orphan.submit(self.request,self.root/'snapshot',self.backend)
+        leftover=orphan.root/'staging/run-dead';leftover.mkdir()
+        (leftover/'partial').write_bytes(b'x'*128)
+        self.assertIsNone(orphan.claim(orphan_job))
+
+    def test_running_output_is_not_double_counted_against_its_reservation(self):
+        self.request['settings']['resources']['storage_bytes']=128
+        self.store=JobStore(self.root/'parallel',workers=2,storage_bytes=256)
+        job=self.submit();first=self.store.claim(job)
+        output=self.store.root/'staging'/('run-'+first['token']);output.mkdir()
+        (output/'active.log').write_bytes(b'x'*128)
+        self.assertIsNotNone(self.store.claim(job))
+
+    def test_delivery_metadata_budget_failure_preserves_destination(self):
+        self.request['settings']['resources']['storage_bytes']=512
+        job=self.submit()
+        for _ in range(2):
+            lease=self.store.claim(job);output,result=self.output(lease)
+            self.store.publish(lease,output,result,self.verify)
+        destination=self.root/'too-small'
+        with self.assertRaises(Render3DError) as caught:
+            self.store.materialize(job,destination,self.verify)
+        self.assertEqual(caught.exception.report['category'],'storage-exhaustion')
+        self.assertFalse(destination.exists())
+        self.assertEqual(self.store.status(job)['state'],'complete')
+        self.assertFalse(list(self.root.glob('.render3d-delivery-*')))
+
     def test_idempotent_submission_and_destination_ownership(self):
         job=self.submit();self.assertEqual(job,self.submit())
         changed=deepcopy(self.request);changed['id']='different'
@@ -201,6 +282,8 @@ else:raise AssertionError('FIFO input accepted')
         destination=self.root/'delivered'
         result=self.store.materialize(job,destination,self.verify)
         self.assertEqual(result['status'],'complete')
+        actual=sum(p.stat().st_size for p in destination.rglob('*') if p.is_file())
+        self.assertEqual(result['usage']['output_bytes'],actual)
         self.assertEqual(len(result['images']),2)
         self.assertEqual([i['file']['path'] for i in result['images']],
                          ['frames/000005.png','frames/000006.png'])

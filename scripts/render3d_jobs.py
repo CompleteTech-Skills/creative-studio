@@ -19,8 +19,8 @@ import time
 import uuid
 
 from atomic_publish import _rename_no_replace
-from rig_errors import atomic_json, object_hash, safe_path, sha256
-from render3d_contracts import Render3DError, require, validate, make_frame_spec, frame_times, rational
+from rig_errors import RigError, atomic_bytes, atomic_json, decode_json, object_hash, safe_path, sha256
+from render3d_contracts import Render3DError, require, validate, make_frame_spec, frame_times, rational, open_regular
 
 VERSION = 1
 TERMINAL = ('complete', 'cancelled', 'failed')
@@ -28,6 +28,16 @@ TERMINAL = ('complete', 'cancelled', 'failed')
 
 def _dump(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+
+
+def _metadata(path):
+    """Decode bounded metadata from the same admitted regular descriptor."""
+    limit=32*1024**2
+    try:
+        with open_regular(path,limit) as stream:
+            return decode_json(stream.read(limit+1),max_bytes=limit)
+    except (OSError,RigError) as exc:
+        raise Render3DError('invalid-input',str(exc),path=path) from exc
 
 
 def _alive(pid):
@@ -101,7 +111,7 @@ class JobStore:
                 pass
             finally:
                 if stage.exists(): shutil.rmtree(stage)
-        marker = json.loads(safe_path(self.root,'store.json',exists=True).read_text())
+        marker = _metadata(safe_path(self.root,'store.json',exists=True))
         require(marker == dict(version=VERSION, host=socket.gethostname(), capacity=self.capacity),
                 'ownership', 'Store host, version or capacities differ; open with its original configuration.')
         safe_path(self.root,'jobs.sqlite3',exists=True)
@@ -195,16 +205,26 @@ class JobStore:
             entries.append(dict(key=child.name,bytes=size))
         return entries
 
-    def _retained_cache_bytes(self):
-        """Quarantined corrupt entries remain evidence and consume the quota."""
+    def _retained_cache_bytes(self, *, active_tokens=()):
+        """All staging bytes consume capacity, including failed worker evidence."""
         total=0
-        for entry in safe_path(self.root,'staging').glob('corrupt-*'):
-            require(entry.is_dir() and not entry.is_symlink(),
-                    'ownership','Invalid retained cache evidence.')
-            for path in entry.rglob('*'):
-                require(not path.is_symlink(),'ownership','Retained cache contains a symlink.')
-                if path.is_file():total+=path.stat().st_size
+        active={'run-'+token for token in active_tokens}
+        staging=safe_path(self.root,'staging')
+        for path in staging.rglob('*'):
+            if path.relative_to(staging).parts[0] in active:continue
+            require(not path.is_symlink(),'ownership','Staging contains a symlink.')
+            try:
+                info=path.stat()
+            except FileNotFoundError:
+                # A live worker may finish an intermediate file during scanning.
+                continue
+            require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode),
+                    'ownership','Staging contains a nonregular artifact.')
+            if stat.S_ISREG(info.st_mode):total+=info.st_size
         return total
+
+    def _stored_output_bytes(self, *, active_tokens=()):
+        return sum(entry['bytes'] for entry in self._cache_entries())+self._retained_cache_bytes(active_tokens=active_tokens)
 
     def cache_inventory(self):
         with self._transaction() as db:
@@ -245,9 +265,10 @@ class JobStore:
     def claim(self, job=None):
         """Claim one priority-ordered frame only when global reservations permit."""
         with self._transaction() as db:
-            live=list(db.execute('SELECT j.request,j.backend FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'))
+            live=list(db.execute('SELECT j.request,j.backend,f.token FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'))
             used={name:sum(json.loads(r['request'])['settings']['resources'][name] for r in live)
                   for name in ('workers','memory_bytes','storage_bytes')}
+            used['storage_bytes']+=self._stored_output_bytes(active_tokens=[row['token'] for row in live])
             gpu_used=sum(json.loads(r['backend'])['device']!='cpu' for r in live)
             query='SELECT f.*,j.request,j.backend,j.snapshot FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="queued" AND j.cancel=0'
             args=[]
@@ -355,7 +376,7 @@ class JobStore:
     def _verify_cache(self, lease, verifier):
         path=safe_path(self.root,'cache/'+lease['cache_key'])
         require(path.is_dir() and not path.is_symlink(),'missing-asset','Cache entry unavailable.')
-        record=json.loads(safe_path(path,'cache.json',exists=True).read_text())
+        record=_metadata(safe_path(path,'cache.json',exists=True))
         require(record['cache_key']==lease['cache_key'] and record['spec']['cache_key']==lease['spec']['cache_key'] and record['backend']==lease['backend'],
                 'stale-cache','Cache identity differs from requested frame.')
         require({k:v for k,v in record['spec'].items() if k!='destination'} ==
@@ -421,9 +442,8 @@ class JobStore:
                 require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
                         'cancelled','Cancellation requested before publication.')
                 destination=safe_path(self.root,'cache/'+lease['cache_key'])
-                used=sum(entry['bytes'] for entry in self._cache_entries())+self._retained_cache_bytes()
-                staged=sum(path.stat().st_size for path in stage.rglob('*') if path.is_file())
-                require(destination.exists() or used+staged<=self.capacity['storage_bytes'],
+                used=self._stored_output_bytes()
+                require(destination.exists() or used<=self.capacity['storage_bytes'],
                         'storage-exhaustion','Verified cache publication exceeds store capacity.')
                 try:_rename_no_replace(stage,destination)
                 except FileExistsError:
@@ -432,7 +452,7 @@ class JobStore:
                     except (Render3DError,ValueError,OSError,KeyError):
                         # Preserve corrupt bytes as evidence before installing a
                         # newly rendered and independently verified replacement.
-                        require(used+staged<=self.capacity['storage_bytes'],
+                        require(used<=self.capacity['storage_bytes'],
                                 'storage-exhaustion','Cache repair would exceed capacity while retaining corrupt evidence.')
                         quarantine=safe_path(self.root,'staging/corrupt-'+uuid.uuid4().hex)
                         _rename_no_replace(destination,quarantine)
@@ -491,6 +511,14 @@ class JobStore:
         stage=Path(tempfile.mkdtemp(prefix='.render3d-delivery-',dir=destination.parent))
         try:
             images=[];logs=[];total=0
+            budget=request['settings']['resources']['storage_bytes']
+            def write_metadata(name,value):
+                nonlocal total
+                payload=(json.dumps(value,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+                require(len(payload)<=budget-total,'storage-exhaustion',
+                        'Delivery metadata exceeds request storage budget.')
+                atomic_bytes(safe_path(stage,name),payload)
+                total+=len(payload)
             for frame in state['frames']:
                 spec=make_frame_spec(request,frame['frame'],Path(state['snapshot'])/'snapshot.json')
                 lease=dict(request=request,frame=frame['frame'],cache_key=frame['cache_key'],
@@ -510,11 +538,11 @@ class JobStore:
                     _copy_artifact(src,dst,old)
                     image['file']=dict(old,path=newpath);images.append(image)
                 provenance='provenance/'+format(frame['frame'],'08d')+'.json'
-                target=safe_path(stage,provenance);atomic_json(target,record)
+                target=safe_path(stage,provenance);write_metadata(provenance,record)
                 logs.append(dict(path=provenance,sha256=sha256(target),bytes=target.stat().st_size))
             manifest=dict(version=1,job=job,request_sha256=object_hash(request),backend=backend,
                           images=images,provenance=logs)
-            atomic_json(stage/'manifest.json',manifest)
+            write_metadata('manifest.json',manifest)
             manifest_ref=dict(path='manifest.json',sha256=sha256(stage/'manifest.json'),bytes=(stage/'manifest.json').stat().st_size)
             indices=[frame['frame'] for frame in state['frames']]
             result=dict(schema_version=1,kind='render3d-result',job=job,request_sha256=object_hash(request),
@@ -526,11 +554,19 @@ class JobStore:
             report=verifier(request,result,stage)
             require(isinstance(report,dict) and isinstance(report.get('verifier'),dict),
                     'verification-failed','Verifier did not return its identity.')
-            atomic_json(stage/'verification.json',report)
+            write_metadata('verification.json',report)
             result['verification']=dict(status='passed',verifier=report['verifier'],evidence=dict(
                 path='verification.json',sha256=sha256(stage/'verification.json'),bytes=(stage/'verification.json').stat().st_size))
             result['status']='complete';validate(result,'RenderResult')
-            atomic_json(stage/'result.json',result)
+            # Include the result's own bytes in its truthful output usage.
+            for _ in range(8):
+                payload=(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+                actual=total+len(payload)
+                if result['usage']['output_bytes']==actual:break
+                result['usage']['output_bytes']=actual
+            else:raise Render3DError('invalid-input','Unable to encode stable delivery usage.')
+            require(actual<=budget,'storage-exhaustion','Complete delivery exceeds request storage budget.')
+            atomic_bytes(stage/'result.json',payload)
             with self._transaction() as db:
                 live=db.execute('SELECT revision,state FROM jobs WHERE id=?',(job,)).fetchone()
                 require(live['revision']==state['revision'] and live['state']=='complete',
