@@ -11,7 +11,8 @@ from pathlib import Path
 import tempfile
 
 from asset_library_contracts import canonical_bytes, seal, validate, portable_path
-from rig_errors import RigError, decode_json, object_hash
+from rig_errors import RigError, object_hash, timestamp
+from asset_dependency_schemas import validate as validate_document
 
 MAX_NODES = 4096
 MAX_EDGES = 65536
@@ -191,7 +192,7 @@ class DependencyGraph:
                     edges=edges,diagnostics=diagnostics,complete=not any(d['required'] for d in diagnostics))
         if strict and not result['complete']:
             fail('INVALID','Required dependency closure failed: '+str(diagnostics)[:4096])
-        return result
+        return validate_document(result,'graph')
 
     def catalog(self):
         roots=[]
@@ -216,9 +217,10 @@ class DependencyGraph:
         result=dict(schema_version=1,kind='asset-dependency-lock',
                     include_optional=include_optional,graph=graph)
         result['sha256']=object_hash(result)
-        return result
+        return validate_document(result,'lock')
 
     def verify_lock(self, lock):
+        validate_document(lock,'lock')
         if not isinstance(lock,dict) or set(lock)!={'schema_version','kind','include_optional','graph','sha256'}:
             fail('LOCK','Invalid lock document.')
         if lock['schema_version']!=1 or lock['kind']!='asset-dependency-lock':fail('LOCK','Unsupported lock version.')
@@ -279,10 +281,17 @@ def native_signature(graph, value, path):
         bones=[] if skeleton is None else sorted(skeleton['bones'],key=lambda b:b['id'])
         hierarchy=[{k:b[k] for k in ('id','parent','role','deform','mirror')} for b in bones]
         rest=[{k:b[k] for k in ('id','rest','head','tail','length','roll')} for b in bones]
+        def array_digest(value,dtype):
+            import numpy as np
+            array=np.ascontiguousarray(value,dtype=dtype)
+            digest=hashlib.sha256(canonical_bytes(dict(dtype=dtype,shape=list(array.shape))))
+            view=memoryview(array).cast('B')
+            for start in range(0,len(view),1024*1024):digest.update(view[start:start+1024*1024])
+            return digest.hexdigest()
         skins=[]
         for name,skin in sorted(model.weights.items()):
-            skins.append(dict(mesh=name,joints=skin.joints,indices=skin.indices.tolist(),
-                              weights=skin.weights.tolist(),inverse_bind=skin.inverse_bind.tolist()))
+            skins.append(dict(mesh=name,joints=skin.joints,indices_sha256=array_digest(skin.indices,'<i8'),
+                              weights_sha256=array_digest(skin.weights,'<f8'),inverse_bind_sha256=array_digest(skin.inverse_bind,'<f8')))
         morphs=[dict(mesh=m.id,targets=sorted(m.morphs)) for m in model.geometry.meshes]
         root_modes=sorted({clip.get('root_motion','embedded') for clip in model.clips.values()})
         return dict(skeleton_sha256=object_hash(hierarchy),rest_pose_sha256=object_hash(rest),
@@ -303,7 +312,7 @@ _NATIVE_REQUIREMENTS={'skeleton_sha256','rest_pose_sha256','skin_sha256','morph_
 def check_compatibility(graph,value,requirements,*,native_path=None):
     if not isinstance(requirements,dict) or set(requirements)-_REQUIREMENTS:
         fail('COMPATIBILITY','Unknown compatibility requirement.')
-    canonical_bytes(requirements)
+    validate_document(requirements,'requirements')
     manifest=graph.inspect(value)
     actual=deepcopy(manifest['compatibility']);native=None
     if set(requirements)&_NATIVE_REQUIREMENTS:
@@ -344,6 +353,14 @@ def replacement_plan(graph,old,new,*,consumers,requirements=None,native_path=Non
         if not isinstance(purposes,list) or not purposes or len(purposes)>256 or any(not isinstance(p,str) or not p for p in purposes) or len(set(purposes))!=len(purposes):
             fail('REPLACEMENT','Choose unique exact dependency purposes.')
         manifest=graph.inspect(source);indices=[]
+        if graph.choose(old['reference'],source['library'])!=old:
+            fail('REPLACEMENT','Selected old library differs from the binding resolution.')
+        if graph.choose(new['reference'],source['library'])!=new:
+            fail('REPLACEMENT','Selected replacement library cannot be preserved by this consumer.')
+        # The current canonical store admits dependencies in its own library.
+        # Cross-library project activation needs the scoped owner adapter.
+        if source['library']!=new['library']:
+            fail('REPLACEMENT','Cross-library bindings require an explicit scoped consumer adapter.')
         for purpose in purposes:
             matches=[i for i,d in enumerate(manifest['dependencies']) if d['purpose']==purpose and d['target']==old['reference']]
             if len(matches)!=1:fail('REPLACEMENT','Target binding is absent or ambiguous.',purpose)
@@ -360,7 +377,7 @@ def replacement_plan(graph,old,new,*,consumers,requirements=None,native_path=Non
                 old_lock=graph.lock([c['asset'] for c in changes]),new_lock=graph.lock([new]),
                 project_files_modified=False)
     result['sha256']=object_hash(result)
-    return result
+    return validate_document(result,'plan')
 
 
 def apply_replacement(graph,plan,*,versions):
@@ -370,6 +387,7 @@ def apply_replacement(graph,plan,*,versions):
     and native scene payloads remain unchanged; production activation is #149.
     Each publication is an independent library transaction, documented in receipts.
     """
+    validate_document(plan,'plan')
     if not isinstance(plan,dict) or plan.get('kind')!='asset-replacement-plan' or plan.get('schema_version')!=1:
         fail('REPLACEMENT','Invalid replacement plan.')
     if object_hash({k:v for k,v in plan.items() if k!='sha256'})!=plan.get('sha256'):
@@ -379,8 +397,15 @@ def apply_replacement(graph,plan,*,versions):
         fail('REPLACEMENT','Choose a new explicit version for every changed consumer.')
     # Validate all changes before the first mutation; no transaction spans libraries.
     prepared=[]
+    consumer_ids=[c['asset']['reference']['id'] for c in plan['changes']]
+    if len(set(consumer_ids))!=len(consumer_ids):
+        fail('REPLACEMENT','Version selections require unique consumer identities.')
     for change in plan['changes']:
-        source=change['asset'];manifest=graph.inspect(source);updated=deepcopy(manifest)
+        source=location(change['asset']);manifest=graph.inspect(source);updated=deepcopy(manifest)
+        if graph.choose(plan['old']['reference'],source['library'])!=plan['old'] or graph.choose(plan['new']['reference'],source['library'])!=plan['new']:
+            fail('STALE','Source-library binding resolution changed.')
+        if source['library']!=plan['new']['library']:
+            fail('REPLACEMENT','Cross-library activation requires the scoped consumer adapter.')
         updated['version']=versions[manifest['identity']['id']]
         if updated['version']==manifest['version']:fail('REPLACEMENT','Existing versions cannot be replaced.')
         for index in change['indices']:
@@ -392,6 +417,19 @@ def apply_replacement(graph,plan,*,versions):
         updated['provenance']['edits']=list(updated['provenance']['edits'])+['Dependency binding replacement plan '+plan['sha256']]
         updated=seal(updated)
         prepared.append((source,manifest,updated))
+    # Validate full proposed runtime closures, including unchanged transitive
+    # bindings, before creating any immutable version. These are planned exact
+    # manifests, not substituted runtime payloads; all copied bytes were verified.
+    overrides={location_key(locator(source['library'],dict(id=updated['identity']['id'],version=updated['version'],sha256=updated['manifest_sha256']))):updated
+               for source,manifest,updated in prepared}
+    class PlannedGraph(DependencyGraph):
+        def inspect(self,value,*,verify_payloads=True):
+            token=location_key(location(value))
+            if token in overrides:return deepcopy(overrides[token])
+            return super().inspect(value,verify_payloads=verify_payloads)
+    preview=PlannedGraph(graph.libraries,max_nodes=graph.max_nodes,max_edges=graph.max_edges)
+    for token in overrides:
+        preview.closure([locator(token[0],dict(id=token[1],version=token[2],sha256=token[3]))])
     published=[]
     for source,manifest,updated in prepared:
         library=graph.owner(source)
@@ -405,6 +443,58 @@ def apply_replacement(graph,plan,*,versions):
                               rollback=source,plan_sha256=plan['sha256']))
     return dict(published=published,atomic_scope='one-consumer-version',
                 existing_projects_unchanged=True,invalidated=deepcopy(plan['invalidated']))
+
+
+def normalize_static_units(graph,value,path,*,version):
+    """Explicit local unit conversion, returning a new verified derived version.
+
+    Only static geometry is supported. Rigged/animated data must use an owning
+    retarget/conversion adapter; it is rejected instead of losing channels.
+    """
+    from asset_library import file_record
+    from rig_import import load_character_model
+    from rig_gltf import export_geometry
+    import numpy as np
+    value=location(value);portable_path(path)
+    library=graph.owner(value);manifest=graph.inspect(value)
+    if manifest['compatibility']['coordinate_system']!='right-handed-y-up-z-forward':
+        fail('CONVERSION','This adapter only converts units in canonical 3D coordinates.')
+    if Path(path).suffix.lower() not in ('.obj','.gltf','.glb'):
+        fail('CONVERSION','Choose a static OBJ, glTF or GLB payload.')
+    if version==manifest['version']:fail('CONVERSION','Conversion needs a new immutable version.')
+    scale=manifest['compatibility']['unit_scale']
+    with tempfile.TemporaryDirectory(prefix='hatch-dependency-conversion-') as temporary:
+        root=Path(temporary);sources={}
+        for record in manifest['files']:
+            target=root/record['path'];target.parent.mkdir(parents=True,exist_ok=True)
+            target.write_bytes(library.read_own_file(value['reference'],record['path']));sources[record['path']]=target
+        if path not in sources:fail('CONVERSION','Native entry is not inventoried.')
+        model=load_character_model(sources[path],scale=scale)
+        if model.skeleton or model.weights or model.clips:
+            fail('CONVERSION','Rigged or animated content requires its native conversion owner.')
+        output='derived/unit-normalized.glb'
+        if output in sources:fail('CONVERSION','Reserved normalized output already exists; preserve it in a separate version plan.')
+        target=root/output;target.parent.mkdir(parents=True,exist_ok=True)
+        export_geometry(model.geometry,target,provenance=dict(fixture=manifest['provenance']['fixture'],
+                                                            operation='explicit-unit-normalization',source_sha256=value['reference']['sha256']))
+        reopened=load_character_model(target)
+        if reopened.geometry.vertex_count!=model.geometry.vertex_count or reopened.geometry.triangle_count!=model.geometry.triangle_count:
+            fail('CONVERSION','Converted geometry changed topology.')
+        for expected,actual in zip(model.geometry.meshes,reopened.geometry.meshes):
+            if not np.array_equal(expected.triangles,actual.triangles) or not np.allclose(expected.positions,actual.positions,rtol=1e-6,atol=1e-7):
+                fail('CONVERSION','Independent reopened geometry differs from normalized coordinates.')
+        record=file_record(target,output,'runtime');sources[output]=target
+        updated=deepcopy(manifest);updated['version']=version;updated['files'].append(record)
+        updated['compatibility']['unit_scale']=1;updated['compatibility']['formats']=['glb']
+        updated['publication']['inventory'].append(output)
+        provenance=updated['provenance'];provenance['method']='derived';provenance['parents'].append(value['reference'])
+        provenance['conversions']=provenance.get('conversions',[])+[dict(tool='asset-dependency-static-units',version='1.0.0',timestamp=timestamp(),
+            operation='Explicit canonical static unit normalization; reopened geometry verified.',inputs=[next(f for f in manifest['files'] if f['path']==path)],outputs=[record])]
+        derived=library.register(seal(updated),sources)
+    graph.closure([locator(value['library'],derived)])
+    return dict(asset=locator(value['library'],derived),native_path=output,source=value,
+                conversion='canonical-static-unit-normalization',geometry_verified=True,
+                production_approved=False)
 
 
 def dot(graph_report):

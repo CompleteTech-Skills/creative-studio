@@ -124,4 +124,48 @@ class DependencyTests(unittest.TestCase):
         with self.assertRaises(RigError):check_compatibility(self.graph,self.at(new),{'skeleton_sha256':'a'*64})
 
 
+
+class ReplacementRegressionTests(unittest.TestCase):
+    setUp=DependencyTests.setUp
+    publish=DependencyTests.publish
+    at=DependencyTests.at
+    def test_new_transitive_version_conflict_never_publishes(self):
+        old=self.publish('mesh');new=self.publish('mesh',version='2.0.0')
+        material=self.publish('material',[(old,'base-mesh',True)])
+        consumer=self.publish('character',[(old,'body',True),(material,'surface',True)])
+        plan=replacement_plan(self.graph,self.at(old),self.at(new),consumers=[dict(asset=self.at(consumer),purposes=['body'])])
+        before=self.library.list_references()
+        with self.assertRaisesRegex(RigError,'VERSION_CONFLICT'):
+            apply_replacement(self.graph,plan,versions={'character':'2.0.0'})
+        self.assertEqual(self.library.list_references(),before)
+
+    def test_selected_library_cannot_be_discarded_by_replacement(self):
+        old=self.publish('mesh');new=self.publish('mesh',version='2.0.0')
+        consumer=self.publish('character',[(old,'body',True)])
+        donor=AssetLibrary(self.root/'donor',create=True)
+        donor.register(self.library.resolve(old),self.sources);donor.register(self.library.resolve(new),self.sources)
+        self.graph=DependencyGraph({'local':self.library,'donor':donor})
+        for oldloc,newloc in [(locator('donor',old),locator('donor',new)),(self.at(old),locator('donor',new))]:
+            with self.subTest(old=oldloc,new=newloc),self.assertRaisesRegex(RigError,'library'):
+                replacement_plan(self.graph,oldloc,newloc,consumers=[dict(asset=self.at(consumer),purposes=['body'])])
+
+class DependencyAdmissionTests(unittest.TestCase):
+    setUp=DependencyTests.setUp
+    publish=DependencyTests.publish
+    at=DependencyTests.at
+
+    def test_self_cycle_and_untrusted_nested_requirements_fail_structurally(self):
+        with self.assertRaisesRegex(RigError,'itself'):
+            self.publish('self',[(dict(id='self',version='1.0.0',sha256='f'*64),'loop',True)])
+        item=self.publish('item')
+        for req in ({'formats':[{}]},{'unit_scale':float('nan')},{'unit_scale':True}):
+            with self.subTest(requirements=req),self.assertRaises(RigError):
+                check_compatibility(self.graph,self.at(item),req)
+
+    def test_schema_generation_matches_retained_contracts(self):
+        from asset_dependency_schemas import schemas
+        for name,schema in schemas().items():
+            self.assertEqual(json.loads((ROOT/'profiles'/name).read_text()),schema)
+
+
 if __name__=='__main__':unittest.main()

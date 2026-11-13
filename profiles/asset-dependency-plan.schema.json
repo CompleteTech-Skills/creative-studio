@@ -1,0 +1,840 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "asset-dependency-graph"
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "library": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "reference": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                    "maxLength": 64
+                  },
+                  "version": {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                    "maxLength": 32
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                  }
+                },
+                "required": [
+                  "id",
+                  "version",
+                  "sha256"
+                ]
+              }
+            },
+            "required": [
+              "library",
+              "reference"
+            ]
+          },
+          "maxItems": 4096
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "library": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "reference": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                    "maxLength": 64
+                  },
+                  "version": {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                    "maxLength": 32
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                  }
+                },
+                "required": [
+                  "id",
+                  "version",
+                  "sha256"
+                ]
+              },
+              "library_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 1024,
+                      "pattern": "^(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm]1|[Cc][Oo][Mm]2|[Cc][Oo][Mm]3|[Cc][Oo][Mm]4|[Cc][Oo][Mm]5|[Cc][Oo][Mm]6|[Cc][Oo][Mm]7|[Cc][Oo][Mm]8|[Cc][Oo][Mm]9|[Ll][Pp][Tt]1|[Ll][Pp][Tt]2|[Ll][Pp][Tt]3|[Ll][Pp][Tt]4|[Ll][Pp][Tt]5|[Ll][Pp][Tt]6|[Ll][Pp][Tt]7|[Ll][Pp][Tt]8|[Ll][Pp][Tt]9)(?:\\.|/|$))[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?(?:/(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm]1|[Cc][Oo][Mm]2|[Cc][Oo][Mm]3|[Cc][Oo][Mm]4|[Cc][Oo][Mm]5|[Cc][Oo][Mm]6|[Cc][Oo][Mm]7|[Cc][Oo][Mm]8|[Cc][Oo][Mm]9|[Ll][Pp][Tt]1|[Ll][Pp][Tt]2|[Ll][Pp][Tt]3|[Ll][Pp][Tt]4|[Ll][Pp][Tt]5|[Ll][Pp][Tt]6|[Ll][Pp][Tt]7|[Ll][Pp][Tt]8|[Ll][Pp][Tt]9)(?:\\.|/|$))[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_-])?)*$(?![\\s\\S])"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                    },
+                    "bytes": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 67108864
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "sha256",
+                    "bytes"
+                  ]
+                },
+                "maxItems": 256
+              }
+            },
+            "required": [
+              "library",
+              "reference",
+              "library_id",
+              "files"
+            ]
+          },
+          "maxItems": 4096
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "library": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "reference": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                        "maxLength": 64
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                        "maxLength": 32
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "sha256"
+                    ]
+                  }
+                },
+                "required": [
+                  "library",
+                  "reference"
+                ]
+              },
+              "target": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "library": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "reference": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                        "maxLength": 64
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                        "maxLength": 32
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "sha256"
+                    ]
+                  }
+                },
+                "required": [
+                  "library",
+                  "reference"
+                ]
+              },
+              "purpose": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "status": {
+                "enum": [
+                  "resolved",
+                  "excluded",
+                  "unavailable",
+                  "cycle"
+                ]
+              }
+            },
+            "required": [
+              "source",
+              "target",
+              "purpose",
+              "required",
+              "status"
+            ]
+          },
+          "maxItems": 65536
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "asset": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "library": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "reference": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                        "maxLength": 64
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                        "maxLength": 32
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "sha256"
+                    ]
+                  }
+                },
+                "required": [
+                  "library",
+                  "reference"
+                ]
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "cause": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": [
+              "code",
+              "asset",
+              "required"
+            ]
+          },
+          "maxItems": 65536
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "roots",
+        "nodes",
+        "edges",
+        "diagnostics",
+        "complete"
+      ]
+    },
+    "lock": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "asset-dependency-lock"
+        },
+        "include_optional": {
+          "type": "boolean"
+        },
+        "graph": {
+          "$ref": "#/$defs/graph"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "include_optional",
+        "graph",
+        "sha256"
+      ]
+    },
+    "requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "coordinate_system": {
+          "enum": [
+            "right-handed-y-up-z-forward",
+            "legacy-2d"
+          ]
+        },
+        "unit_scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000.0
+        },
+        "skeleton_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "rest_pose_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "skin_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "morph_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "material_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "rig_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "root_motion": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "material_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "texture_channels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "animation_channels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "renderers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "maxItems": 128,
+          "uniqueItems": true
+        }
+      },
+      "required": []
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "asset-replacement-plan"
+        },
+        "old": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "library": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "reference": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                  "maxLength": 64
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                  "maxLength": 32
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                }
+              },
+              "required": [
+                "id",
+                "version",
+                "sha256"
+              ]
+            }
+          },
+          "required": [
+            "library",
+            "reference"
+          ]
+        },
+        "new": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "library": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "reference": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                  "maxLength": 64
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                  "maxLength": 32
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                }
+              },
+              "required": [
+                "id",
+                "version",
+                "sha256"
+              ]
+            }
+          },
+          "required": [
+            "library",
+            "reference"
+          ]
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "asset": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "library": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "reference": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                        "maxLength": 64
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                        "maxLength": 32
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "sha256"
+                    ]
+                  }
+                },
+                "required": [
+                  "library",
+                  "reference"
+                ]
+              },
+              "indices": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                },
+                "maxItems": 256
+              },
+              "purposes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                "maxItems": 256
+              },
+              "original_manifest_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+              }
+            },
+            "required": [
+              "asset",
+              "indices",
+              "purposes",
+              "original_manifest_sha256"
+            ]
+          },
+          "maxItems": 4096
+        },
+        "compatibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "compatible": {
+              "type": "boolean"
+            },
+            "mismatches": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "expected": {},
+                  "actual": {}
+                },
+                "required": [
+                  "field",
+                  "expected",
+                  "actual"
+                ]
+              },
+              "maxItems": 128
+            },
+            "native": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "skeleton_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                    },
+                    "rest_pose_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                    },
+                    "skin_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                    },
+                    "morph_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                    },
+                    "material_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                    },
+                    "rig_type": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096
+                    },
+                    "root_motion": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                      },
+                      "maxItems": 128,
+                      "uniqueItems": true
+                    },
+                    "bone_count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 256
+                    },
+                    "mesh_count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 4096
+                    },
+                    "coordinate_system": {
+                      "const": "right-handed-y-up-z-forward"
+                    },
+                    "unit_scale": {
+                      "type": "number",
+                      "const": 1
+                    }
+                  },
+                  "required": [
+                    "skeleton_sha256",
+                    "rest_pose_sha256",
+                    "skin_sha256",
+                    "morph_sha256",
+                    "material_sha256",
+                    "rig_type",
+                    "root_motion",
+                    "bone_count",
+                    "mesh_count",
+                    "coordinate_system",
+                    "unit_scale"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "renderer_execution_verified": {
+              "const": false
+            }
+          },
+          "required": [
+            "compatible",
+            "mismatches",
+            "native",
+            "renderer_execution_verified"
+          ]
+        },
+        "invalidated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "library": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "reference": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_-]{0,63}$(?![\\s\\S])",
+                    "maxLength": 64
+                  },
+                  "version": {
+                    "type": "string",
+                    "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$(?![\\s\\S])",
+                    "maxLength": 32
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+                  }
+                },
+                "required": [
+                  "id",
+                  "version",
+                  "sha256"
+                ]
+              }
+            },
+            "required": [
+              "library",
+              "reference"
+            ]
+          },
+          "maxItems": 4096
+        },
+        "old_lock": {
+          "$ref": "#/$defs/lock"
+        },
+        "new_lock": {
+          "$ref": "#/$defs/lock"
+        },
+        "project_files_modified": {
+          "const": false
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "old",
+        "new",
+        "changes",
+        "compatibility",
+        "invalidated",
+        "old_lock",
+        "new_lock",
+        "project_files_modified",
+        "sha256"
+      ]
+    }
+  },
+  "$ref": "#/$defs/plan",
+  "title": "Asset dependency plan v1"
+}
