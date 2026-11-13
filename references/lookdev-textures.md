@@ -229,3 +229,9 @@ linear/data values with `Non-Color`; graph adapters must not reapply the origina
 sRGB transfer function. Consumers must verify the descriptor, pixels and exact
 source hash before admitting a predecoded image, rather than infer interpretation
 from an image merely being float-backed.
+
+The native sampler gate accepts `HATCH_LOOKDEV_TEST_SITE` for an isolated
+jsonschema dependency directory matching Blender Python (3.11 for Blender 4.5).
+This directory is passed only to the trusted Blender fixture. Keep host Python
+3.12 dependencies on the host search path; compiled dependency wheels must not
+be shared across Python ABIs.

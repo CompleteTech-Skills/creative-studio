@@ -9,6 +9,10 @@ import numpy as np
 
 job=json.loads(Path(sys.argv[sys.argv.index('--')+1]).read_text())
 sys.path.insert(0,job['scripts'])
+# Blender has a different Python ABI from the host test runner. Keep its
+# optional validator dependencies out of the host process search path.
+if job.get('native_site'):
+    sys.path.insert(0,job['native_site'])
 from lookdev_texture_blender import create_cached_blender_image
 from lookdev_texture_cache import DerivedTextureCache, UploadProfile
 from lookdev_textures import DecodedTexture
