@@ -128,13 +128,15 @@ def definitions() -> dict:
                  'linear_velocity', 'angular_velocity', 'colliders', 'animation'])
     body['properties']['sleep'] = obj(dict(enabled={'type': 'boolean'}, initially_sleeping={'type': 'boolean'},
         linear_threshold=dict(type='number', minimum=0, maximum=100), angular_threshold=dict(type='number', minimum=0, maximum=100)), ['enabled', 'initially_sleeping'])
-    joint = obj(dict(id=identifier, type={'enum': ['fixed', 'hinge', 'slider', 'ball', 'spring', 'generic-6dof']},
+    joint = obj(dict(id=identifier, type={'enum': ['fixed', 'hinge', 'slider', 'ball', 'point', 'spring', 'generic-6dof']},
                      body_a=identifier, body_b=identifier, anchor_a=transform, anchor_b=transform,
                      axis=vector, limits=arr(number, 2, 2), stiffness=nonnegative,
                      damping=nonnegative, motor_velocity=number, motor_max_force=nonnegative,
                      break_force=positive, collide_connected={'type': 'boolean'}),
                 ['id', 'type', 'body_a', 'body_b', 'anchor_a', 'anchor_b', 'axis', 'limits',
                  'stiffness', 'damping', 'motor_velocity', 'motor_max_force', 'collide_connected'])
+    joint['properties']['linear_limits'] = arr(arr(number, 2, 2), 3, 3)
+    joint['properties']['angular_limits'] = arr(arr(number, 2, 2), 3, 3)
     force = obj(dict(id=identifier, type={'enum': ['force', 'impulse', 'torque', 'angular-impulse', 'wind', 'drag', 'turbulence', 'vortex']},
                      bodies=arr(identifier, 1, 10000), vector=vector, point=vector,
                      frame_range=frame_range, strength=nonnegative, seed=integer,

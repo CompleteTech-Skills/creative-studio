@@ -1650,6 +1650,7 @@
                   "hinge",
                   "slider",
                   "ball",
+                  "point",
                   "spring",
                   "generic-6dof"
                 ]
@@ -1769,6 +1770,36 @@
               },
               "collide_connected": {
                 "type": "boolean"
+              },
+              "linear_limits": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": -1000000000000.0,
+                    "maximum": 1000000000000.0
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "angular_limits": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "minimum": -1000000000000.0,
+                    "maximum": 1000000000000.0
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "minItems": 3,
+                "maxItems": 3
               }
             },
             "required": [
