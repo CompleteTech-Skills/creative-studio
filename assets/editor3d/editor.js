@@ -438,9 +438,25 @@ function nativeCommands(commands) {
     throw Error("Unsupported editor command.");
   });
 }
+function setBusy(value) {
+  busy = value;
+  inspect();
+  attach();
+  $("undo").disabled = busy || !currentSnapshot?.undo_available;
+  $("redo").disabled = busy || !currentSnapshot?.redo_available;
+  document.querySelectorAll("#group,#ungroup,#duplicate,#delete,#show-all,#collections input")
+    .forEach((control) => { control.disabled = busy; });
+  document.querySelectorAll("#outliner [data-id]")
+    .forEach((control) => { control.draggable = !busy && !nodes.get(control.dataset.id)?.locked; });
+}
+function rejectPendingEdit() {
+  if (!busy) return false;
+  $("status").textContent = "Save in progress; retry this edit when saving finishes.";
+  return true;
+}
 async function commit(commands) {
-  if (busy || !commands.length) return;
-  busy = true;
+  if (rejectPendingEdit() || !commands.length) return;
+  setBusy(true);
   gizmo?.detach();
   $("status").textContent = "Saving command…";
   try {
@@ -477,8 +493,7 @@ async function commit(commands) {
     diagnostic(error);
     await reload(false);
   } finally {
-    busy = false;
-    attach();
+    setBusy(false);
   }
 }
 function select(id, add = false, toggle = false) {
@@ -678,6 +693,7 @@ async function assetObject(asset) {
         materialFromNative(asset.materials[mesh.material] || {}, asset.images),
       );
       object.name = mesh.name || mesh.id;
+      object.userData.nativeMeshId = mesh.id;
       group.add(object);
     }
     return group;
@@ -690,8 +706,8 @@ async function install(snapshot) {
   lastEvaluation = null;
   previewActive = false;
   currentSnapshot = snapshot;
-  $("undo").disabled = !snapshot.undo_available;
-  $("redo").disabled = !snapshot.redo_available;
+  $("undo").disabled = busy || !snapshot.undo_available;
+  $("redo").disabled = busy || !snapshot.redo_available;
   const epoch = ++loadEpoch,
     assets = snapshot.viewport_assets || {};
   doc = snapshot.scene;
@@ -719,7 +735,14 @@ async function install(snapshot) {
     if (["prefab_instance", "billboard_2d"].includes(node.type)) unavailableNodes.set(node.id, "No exact viewport adapter for " + node.type);
     if (node.asset) {
       const reference = node.asset;
-      const asset = assets[JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])];
+      const component = node.metadata?.source_component;
+      let asset = component !== undefined ? snapshot.viewport_nodes?.[node.id] :
+        assets[JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])];
+      if (component !== undefined && asset?.format !== "unavailable" &&
+          (asset?.source_component !== component || !asset.asset_reference ||
+           JSON.stringify([asset.asset_reference.id, asset.asset_reference.version, asset.asset_reference.path, asset.asset_reference.sha256]) !==
+           JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])))
+        asset = {format: "unavailable", message: "No exact native component projection."};
       if (asset && asset.format !== "unavailable") {
         try {
           const actual = await assetObject(asset);
@@ -879,7 +902,7 @@ function buildOutliner() {
       button.title = node.id;
       button.onclick = (e) =>
         select(node.id, e.shiftKey, e.ctrlKey || e.metaKey);
-      button.draggable = !node.locked;
+      button.draggable = !busy && !node.locked;
       button.ondragstart = (e) => e.dataTransfer.setData("text/plain", node.id);
       button.ondragover = (e) => e.preventDefault();
       button.ondrop = (e) => {
@@ -915,6 +938,7 @@ function buildCollections() {
       input = document.createElement("input");
     input.type = "checkbox";
     input.checked = collection.visible;
+    input.disabled = busy;
     input.onchange = () =>
       commit([
         { op: "set-collection", id: collection.id, visible: input.checked },
@@ -1422,8 +1446,8 @@ $("time").oninput = () => {
   $("clock").textContent = animationTime.toFixed(2) + " s";
 };
 async function historyCommand(name) {
-  if (busy) return;
-  busy = true;
+  if (rejectPendingEdit()) return;
+  setBusy(true);
   try {
     await install(
       await api(name, {
@@ -1436,8 +1460,7 @@ async function historyCommand(name) {
   } catch (e) {
     diagnostic(e);
   } finally {
-    busy = false;
-    attach();
+    setBusy(false);
   }
 }
 $("undo").onclick = () => historyCommand("undo");

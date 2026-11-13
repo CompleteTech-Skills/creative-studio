@@ -193,3 +193,23 @@ supported. `registerTimelineProvider` supplies the one authoritative selected sh
 and rational frame to other extensions. `getTimelineContext` returns a copied,
 validated current context, returns null when absent, and rejects multiple/stale
 providers or a frame outside the active saved shot.
+
+### Imported component projection
+
+Canonical imported scene nodes share one normalized asset containing all imported
+mesh instances. The viewport does not attach that whole asset to each component.
+`editor3d_components` calls the native importer's `evaluate_imported_vertices`,
+uses its exact component mesh IDs and expresses the returned world positions in
+the saved node's local coordinates. The browser consumes only that node's bound
+projection and tags meshes with their native IDs. Original hierarchy transforms
+therefore apply once, and each native component contains only its own meshes.
+
+The projection verifies the immutable asset, native rig, hierarchy and import
+report identities, caches encoded image/material resources per asset, enforces a
+cumulative resource payload budget before publishing each component, retains
+native topology/material/UV data and counts actual
+component instances against the existing viewport budget. Unknown or unsupported
+component mappings produce a diagnostic and no geometry; they never fall back
+to the full normalized GLB. This is an authored bind-pose projection; canonical
+selected-frame pose integration remains a separate adapter.
+

@@ -331,6 +331,62 @@ class EditorBrowserTests(EditorHttpTests):
 
 @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual editor browser acceptance explicitly.')
 class EditorPersistentBrowserTests(unittest.TestCase):
+    def test_pending_and_consecutive_numeric_edits_preserve_control_state(self):
+        from tempfile import TemporaryDirectory
+        from editor3d_repository import EditorRepository
+        from playwright.sync_api import sync_playwright, expect
+        from browser_runtime import launch_chromium
+        with TemporaryDirectory() as directory:
+            repository = EditorRepository.create(ROOT / 'examples/scene3d-contracts', Path(directory) / 'saved')
+            server = EditorServer(repository)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser = launch_chromium(runtime)
+                    try:
+                        page = browser.new_page(viewport={'width': 1400, 'height': 900})
+                        page.goto(server.url)
+                        page.wait_for_function('() => window.editorReady === true')
+                        page.locator('[data-id="mesh"]').click()
+                        pending = []
+                        page.route('**/api/commands', lambda route: pending.append(route))
+                        x = page.get_by_label('translation X', exact=True)
+                        y = page.get_by_label('translation Y', exact=True)
+                        x.fill('3'); x.press('Tab')
+                        page.wait_for_timeout(100)
+                        self.assertEqual(len(pending), 1)
+                        self.assertTrue(x.is_disabled())
+                        self.assertTrue(y.is_disabled())
+                        self.assertTrue(page.locator('#undo').is_disabled())
+                        self.assertTrue(page.locator('#group').is_disabled())
+                        self.assertFalse(page.locator('[data-id="mesh"]').evaluate('(node) => node.draggable'))
+                        page.locator('body').focus()
+                        page.keyboard.press('ArrowRight')
+                        self.assertIn('retry this edit', page.locator('#status').inner_text())
+                        pending.pop().continue_()
+                        page.unroute('**/api/commands')
+                        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1')
+                        expect(y).to_be_enabled()
+                        expect(page.locator('#group')).to_be_enabled()
+                        y.fill('1'); y.press('Tab')
+                        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2')
+                        expect(x).to_be_enabled()
+                        saved = EditorRepository(repository.root).snapshot()
+                        self.assertEqual(next(n for n in saved['scene']['nodes'] if n['id'] == 'mesh')['transform']['translation'], [3, 1, 0])
+                        page.click('#undo')
+                        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 3')
+                        expect(y).to_be_enabled()
+                        self.assertEqual(y.input_value(), '0')
+                        page.click('#redo')
+                        page.wait_for_function('() => window.hatchEditor.snapshot.revision === 4')
+                        expect(y).to_be_enabled()
+                        self.assertEqual(y.input_value(), '1')
+                    finally:
+                        browser.close()
+            finally:
+                server.shutdown(); server.server_close(); thread.join(timeout=5)
+
     def test_extension_transactions_lifecycle_and_bound_camera_capture(self):
         from tempfile import TemporaryDirectory
         from fractions import Fraction
