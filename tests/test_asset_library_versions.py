@@ -130,6 +130,42 @@ class VersionTests(unittest.TestCase):
         self.assertEqual(resolver.bindings('project_name')['bindings']['actor'], binding)
         self.assertEqual(self.versions.state('asset_name')['promoted'], reference)
 
+    def test_concurrent_first_versions_cannot_bypass_parent_and_attribution(self):
+        barrier = threading.Barrier(2); outcomes = []
+        def writer(version, author):
+            versions = AssetVersions(AssetLibrary(self.library.root))
+            initial_history = versions.history
+            def synchronized_history(asset_id):
+                result = initial_history(asset_id)
+                barrier.wait()
+                return result
+            manifest = deepcopy(self.manifest)
+            manifest['version'] = version; manifest['metadata']['author'] = author
+            try:
+                with patch.object(versions, 'history', side_effect=synchronized_history):
+                    versions.create(seal(manifest), self.sources)
+                outcomes.append('ok')
+            except RigError: outcomes.append('conflict')
+        threads = [threading.Thread(target=writer, args=('1.0.0', 'Alice')),
+                   threading.Thread(target=writer, args=('2.0.0', 'Bob'))]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+        self.assertCountEqual(outcomes, ['ok', 'conflict'])
+        self.assertEqual(len(self.versions.history('triangle')), 1)
+
+    def test_direct_registry_writer_invalidates_lifecycle_snapshot(self):
+        original = self.versions.history
+        def changed_history(asset_id):
+            result = original(asset_id)
+            other = AssetLibrary(self.library.root)
+            concurrent = deepcopy(self.manifest)
+            concurrent['version'] = '2.0.0'; concurrent['metadata']['author'] = 'Other author'
+            other.register(seal(concurrent), self.sources)
+            return result
+        with patch.object(self.versions, 'history', side_effect=changed_history):
+            with self.assertRaises(RigError): self.versions.create(self.manifest, self.sources)
+        self.assertEqual([r['version'] for r in original('triangle')], ['2.0.0'])
+
     def test_stale_revisions_and_concurrent_promotions_are_rejected(self):
         first = self.initial(); barrier = threading.Barrier(2); outcomes = []
         def writer():

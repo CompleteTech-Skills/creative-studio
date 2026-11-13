@@ -22,7 +22,12 @@ versions.promote(reference, expected_revision=plan['expected_revision'],
 Create a new version with `create(manifest, sources, previous=exact_reference)`.
 It must retain its parent, stable identity, author, license and original license
 evidence; allowed uses cannot broaden. An existing identity requires an explicit
-parent. A major version is required for coordinate/unit or rig/skeleton signature
+parent. Creation supplies `expected_identity_refs` to the registry; the complete
+identity-history snapshot is compared under its writer lock before publication.
+A concurrent direct registry write therefore invalidates lifecycle admission
+instead of bypassing parent and attribution checks. Existing direct registration
+callers retain their prior behavior unless they request this optional guard.
+A major version is required for coordinate/unit or rig/skeleton signature
 changes, removed capabilities, or removed required files. Added capabilities
 require a minor version; remaining corrections require a patch version. These
 rules inspect declared interfaces rather than trusting the version number.
