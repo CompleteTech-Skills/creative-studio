@@ -38,7 +38,7 @@ def _bpy():
 def _features(engine):
     require(engine in ('CYCLES', 'BLENDER_EEVEE_NEXT'), 'LOOKDEV_BLENDER_ENGINE',
             'Choose Cycles or EEVEE.')
-    return BASE_FEATURES if engine == 'CYCLES' else BASE_FEATURES - {'subsurface', 'transmission', 'iridescence'}
+    return BASE_FEATURES if engine == 'CYCLES' else BASE_FEATURES - {'subsurface', 'transmission', 'iridescence', 'anisotropy', 'sheen'}
 
 
 def probe():
@@ -246,7 +246,7 @@ def assign_material(obj, material, *, slots=None):
             face.material_index = index
     else:
         for i in slots:
-            obj.data.materials[i] = material
+            obj.material_slots[i].material = material
     return {'mesh': obj.name, 'material': material.name,
             'plan_sha256': material['hatch_plan_sha256'], 'polygons': len(obj.data.polygons)}
 

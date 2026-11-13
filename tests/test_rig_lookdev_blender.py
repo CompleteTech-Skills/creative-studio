@@ -71,7 +71,8 @@ class BlenderMaterialAdmissionTests(unittest.TestCase):
             plan(value)
 
     def test_eevee_rejects_strict_physical_scattering_and_transmission(self):
-        for changes in ({'transmission': 0.8}, {'subsurface': {'weight': 0.8,
+        for changes in ({'transmission': 0.8}, {'anisotropy': {'strength': 0.5, 'direction': [1, 0], 'rotation_radians': 0}},
+                        {'sheen': {'weight': 0.5, 'color': [1, 1, 1], 'roughness': 0.5}}, {'subsurface': {'weight': 0.8,
                 'radius_meters': [0.1, 0.2, 0.3], 'color': [0.2, 0.3, 0.4], 'method': 'random-walk'}}):
             resource = surface_resource(**changes)
             registry = Registry([('surface.json', canonical_bytes(resource))])
@@ -95,8 +96,8 @@ class BlenderMaterialAdmissionTests(unittest.TestCase):
                 _validate_plan(altered)
 
     def test_engine_capabilities_match_admission(self):
-        self.assertTrue({'subsurface', 'transmission', 'iridescence'} <= _features('CYCLES'))
-        self.assertFalse({'subsurface', 'transmission', 'iridescence'} & _features('BLENDER_EEVEE_NEXT'))
+        self.assertTrue({'subsurface', 'transmission', 'iridescence', 'anisotropy', 'sheen'} <= _features('CYCLES'))
+        self.assertFalse({'subsurface', 'transmission', 'iridescence', 'anisotropy', 'sheen'} & _features('BLENDER_EEVEE_NEXT'))
         with self.assertRaises(RigError):
             _features('UNKNOWN')
 
@@ -170,7 +171,7 @@ class ActualBlenderMaterialTests(unittest.TestCase):
         report = json.loads((target / 'report.json').read_text())
         self.assertEqual(report['engine'], 'BLENDER_EEVEE_NEXT')
         self.assertTrue(report['linked_instances_isolated'])
-        self.assertFalse({'subsurface', 'transmission', 'iridescence'} & set(report['probe']['features']))
+        self.assertFalse({'subsurface', 'transmission', 'iridescence', 'anisotropy', 'sheen'} & set(report['probe']['features']))
         a = Image.open(target / 'glossy.png').convert('RGB')
         b = Image.open(target / 'rough.png').convert('RGB')
         mean = sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / 3
