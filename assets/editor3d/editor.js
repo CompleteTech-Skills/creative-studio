@@ -437,6 +437,19 @@ function nativeCommands(commands) {
     throw Error("Unsupported editor command.");
   });
 }
+function previewCommitContext() {
+  if (!previewActive || !lastEvaluation) return null;
+  return {revision: lastEvaluation.revision, sha256: lastEvaluation.snapshot_sha256,
+    scene_path: lastEvaluation.scene?.path, shot_path: lastEvaluation.shot?.path,
+    frame: structuredClone(lastEvaluation.frame), selection: [...selection].sort(), roots: roots().sort()};
+}
+function checkCommitContext(envelope, previewEdit) {
+  if (revision !== envelope.expected_revision || sha256 !== envelope.expected_sha256 ||
+      JSON.stringify(getTimelineContext()) !== JSON.stringify(envelope.timeline_context) ||
+      JSON.stringify(previewCommitContext()) !== JSON.stringify(envelope.preview_context) ||
+      (previewEdit && !canEditPreview()))
+    throw Error("The selected timeline or evaluated preview changed while preparing the edit. Reapply at the intended frame.");
+}
 async function commit(commands) {
   if (busy || !commands.length) return;
   busy = true;
@@ -444,15 +457,15 @@ async function commit(commands) {
   $("status").textContent = "Saving command…";
   try {
     const envelope = {expected_revision: revision, expected_sha256: sha256,
-      transaction_id: crypto.randomUUID(), commands: nativeCommands(commands), snapshot: structuredClone(currentSnapshot)};
+      transaction_id: crypto.randomUUID(), commands: nativeCommands(commands), snapshot: structuredClone(currentSnapshot),
+      timeline_context: getTimelineContext(), preview_context: previewCommitContext()};
     const previewEdit = previewActive;
     if (previewEdit && (!canEditPreview() || envelope.commands.some(command => command.operation !== "transform" || !roots().includes(command.parameters?.identifier))))
       throw Error("Evaluated preview edits require authorized atomic transform autokey.");
-    const intercepted = [];
-    for (const callback of commitInterceptors) {
-      const handled = await callback(structuredClone(envelope));
-      if (handled != null) intercepted.push(handled);
-    }
+    // Start each independent interceptor before yielding to user interaction.
+    const intercepted = (await Promise.all([...commitInterceptors].map(async callback =>
+      callback(structuredClone(envelope))))).filter(handled => handled != null);
+    checkCommitContext(envelope, previewEdit);
     if (previewEdit && intercepted.length !== 1) throw Error("Preview edits require one atomic native command interceptor.");
     if (intercepted.length > 1) throw Error("More than one extension claimed this command transaction.");
     let result;
@@ -467,7 +480,7 @@ async function commit(commands) {
       result = await api("snapshot");
       if (acknowledged.revision !== result.revision || acknowledged.sha256 !== result.sha256)
         throw Error("The acknowledged extension revision changed before reload.");
-    } else result = await api("commands", {...envelope, snapshot: undefined,
+    } else result = await api("commands", {...envelope, snapshot: undefined, timeline_context: undefined, preview_context: undefined,
       commands: {schema_version: 1, commands: envelope.commands}});
     await install(result);
     clearDiagnostic();
