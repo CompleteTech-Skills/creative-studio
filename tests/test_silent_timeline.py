@@ -60,6 +60,16 @@ class TimelineTests(unittest.TestCase):
         self.assertEqual(result['mapping'][3]['pts'], {'numerator': 1001, 'denominator': 8000})
         self.assertEqual([x['source_index'] for x in result['mapping']], [1, 2, 1, 2, 1, 2])
 
+    def test_owner_context_survives_assembly_and_document_verification(self):
+        context = {key: {'id': key + '-a', 'version': '1.0.0'} for key in ('project', 'scene', 'shot')}
+        self.shots[0]['context'] = context
+        result = timeline.assemble(self.shots, self.destination)
+        self.assertEqual(result['shots'][0]['context'], context)
+        self.assertEqual(timeline.validate_document(result), result)
+        self.shots[0]['context'] = {'unrecognized': 'value'}
+        with self.assertRaises(ValueError):
+            timeline.assemble(self.shots, self.root / 'invalid')
+
     def test_incompatible_sources_and_invalid_ranges_fail_before_publication(self):
         for field, value in [('fps', {'numerator': 30, 'denominator': 1}), ('width', 128)]:
             shots = deepcopy(self.shots)
@@ -126,10 +136,21 @@ class TimelineTests(unittest.TestCase):
         for profile, suffix in [('h264-mp4', '.mp4'), ('vp9-webm', '.webm')]:
             with self.subTest(profile=profile):
                 request = video.make_request(result['source'], profile)
-                receipt = video.encode(request, self.destination, self.root / (profile + suffix))
+                artifact = self.root / (profile + suffix)
+                envelope = timeline.encode(self.destination, artifact, profile)
+                receipt = envelope['verification']
                 self.assertEqual(receipt['frame_count'], 240)
                 self.assertEqual(receipt['audio_stream_count'], 0)
                 self.assertEqual(receipt['duration'], {'numerator': 10, 'denominator': 1})
+                self.assertTrue(timeline.verify_export(artifact, envelope, root=self.destination)['verified'])
+                forged = deepcopy(envelope)
+                forged['timeline']['shots'][0]['id'] = 'forged'
+                with self.assertRaises(ValueError):
+                    timeline.verify_export(artifact, forged)
+                forged = deepcopy(envelope)
+                forged['timeline_sha256'] = '0' * 64
+                with self.assertRaises(ValueError):
+                    timeline.verify_export(artifact, forged)
 
 
 if __name__ == '__main__': unittest.main()

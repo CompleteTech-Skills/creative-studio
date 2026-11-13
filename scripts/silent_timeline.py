@@ -21,6 +21,9 @@ from production_render import fps_fraction
 import silent_video as video
 
 MAX_SHOTS = 1024
+REFERENCE = video._obj({'id': {'type': 'string', 'minLength': 1, 'maxLength': 128},
+                        'version': {'type': 'string', 'minLength': 1, 'maxLength': 128}})
+CONTEXT = {'anyOf': [{'type': 'null'}, video._obj({name: REFERENCE for name in ('project', 'scene', 'shot')})]}
 
 
 def schema():
@@ -29,7 +32,7 @@ def schema():
     result = video._obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-timeline'},
         'source': video.SOURCE,
         'shots': {'type': 'array', 'minItems': 1, 'maxItems': MAX_SHOTS, 'items': video._obj({
-            'id': identity, 'source': video.SOURCE, 'source_sha256': video.SHA,
+            'id': identity, 'context': CONTEXT, 'source': video.SOURCE, 'source_sha256': video.SHA,
             'start': video._int(0, video.MAX_FRAMES - 1), 'end': video._int(1, video.MAX_FRAMES),
             'output_start': video._int(0, video.MAX_FRAMES - 1), 'output_end': video._int(1, video.MAX_FRAMES)})},
         'mapping': {'type': 'array', 'minItems': 1, 'maxItems': video.MAX_FRAMES, 'items': video._obj({
@@ -55,8 +58,11 @@ def _prepare(shots):
     planned, identities, total, total_bytes, baseline = [], set(), 0, 0, None
     input_count, input_bytes = 0, 0
     for item in shots:
-        if not isinstance(item, dict) or set(item) != {'id', 'root', 'source', 'start', 'end'}:
+        if (not isinstance(item, dict) or not {'id', 'root', 'source', 'start', 'end'} <= set(item) or
+                set(item) - {'id', 'root', 'source', 'start', 'end', 'context'}):
             raise ValueError('shot requires id, root, source and half-open start/end')
+        context = copy.deepcopy(item.get('context'))
+        video._structural(context, CONTEXT, 'shot context')
         identity = _identity(item['id'])
         if identity in identities:
             raise ValueError('shot identities must be unique')
@@ -78,7 +84,7 @@ def _prepare(shots):
         total_bytes += sum(frame['bytes'] for frame in source['frames'][start:end])
         if total > video.MAX_FRAMES or total_bytes > video.MAX_SOURCE_BYTES:
             raise ValueError('timeline exceeds bounded frame/byte budget')
-        planned.append({**item, 'source': source})
+        planned.append({**item, 'source': source, 'context': context})
     return planned, baseline, total_bytes
 
 
@@ -118,7 +124,7 @@ def assemble(shots, destination, *, cancel=None):
                         inventory.append({**frame, 'index': index, 'path': relative})
                         mapping.append({'index': index, 'shot_id': shot['id'], 'source_index': frame['index'],
                                         'source_sha256': frame['sha256'], 'pts': _ratio(Fraction(index, 1) / fps)})
-                retained.append({'id': shot['id'], 'source': source, 'source_sha256': video._digest(source),
+                retained.append({'id': shot['id'], 'context': shot['context'], 'source': source, 'source_sha256': video._digest(source),
                                  'start': shot['start'], 'end': shot['end'],
                                  'output_start': output_start, 'output_end': len(inventory)})
             output_source = {**planned[0]['source'], 'origin': 'assembled', 'fps': _ratio(fps), 'frames': inventory}
@@ -146,6 +152,16 @@ def validate(root):
         if os.fstat(stream.fileno()).st_size > MAX_MANIFEST_BYTES:
             raise ValueError('timeline manifest exceeds byte budget')
         manifest = read_json(Path('/proc/self/fd') / str(stream.fileno()))
+    validate_document(manifest)
+    video._snapshot(video.make_request(manifest['source']), root, None)
+    actual_names = {path.name for path in (root / 'frames').iterdir()}
+    if actual_names != {'%06d.png' % i for i in range(len(manifest['source']['frames']))}:
+        raise ValueError('unexpected or missing frame in timeline')
+    return manifest
+
+
+def validate_document(manifest):
+    """Validate the self-contained source/map relationships without file I/O."""
     video._structural(manifest, schema(), 'silent timeline')
     keys = {'schema_version', 'kind', 'source', 'shots', 'mapping', 'duration', 'audio_policy', 'visual_review'}
     if (not isinstance(manifest, dict) or set(manifest) != keys or type(manifest['schema_version']) is not int or
@@ -160,11 +176,11 @@ def validate(root):
         raise ValueError('invalid timeline shots')
     arguments = []
     for shot in shots:
-        if not isinstance(shot, dict) or set(shot) != {'id', 'source', 'source_sha256', 'start', 'end', 'output_start', 'output_end'}:
+        if not isinstance(shot, dict) or set(shot) != {'id', 'context', 'source', 'source_sha256', 'start', 'end', 'output_start', 'output_end'}:
             raise ValueError('invalid retained shot')
         if shot['source_sha256'] != video._digest(shot['source']):
             raise ValueError('retained source identity mismatch')
-        arguments.append({key: shot[key] for key in ('id', 'source', 'start', 'end')} | {'root': root})
+        arguments.append({key: shot[key] for key in ('id', 'context', 'source', 'start', 'end')} | {'root': None})
     planned, signature, _ = _prepare(arguments)
     expected_map, index = [], 0
     for shot, retained in zip(planned, shots):
@@ -185,8 +201,39 @@ def validate(root):
     if (source != expected_header or index != len(source['frames']) or video._digest(manifest['mapping']) != video._digest(expected_map) or
             video._digest(manifest['duration']) != video._digest(_ratio(Fraction(index, 1) / signature[2]))):
         raise ValueError('timeline mapping, format or duration mismatch')
-    video._snapshot(video.make_request(source), root, None)
-    actual_names = {path.name for path in (root / 'frames').iterdir()}
-    if actual_names != {'%06d.png' % i for i in range(index)}:
-        raise ValueError('unexpected or missing frame in timeline')
     return manifest
+
+
+def encode(root, destination, profile='h264-mp4', **options):
+    """Encode a timeline with a self-contained hash-bound shot-map receipt.
+
+    The normalized manifest is captured after relationship validation. Encoding
+    rechecks every source byte; later edits to original metadata cannot alter
+    the retained mapping or its identity in this returned envelope.
+    """
+    manifest = copy.deepcopy(validate(root))
+    request = video.make_request(manifest['source'], profile)
+    receipt = video.encode(request, root, destination, **options)
+    return {'schema_version': 1, 'kind': 'silent-timeline-export',
+            'timeline_sha256': video._digest(manifest), 'timeline': manifest,
+            'request': request, 'verification': receipt, 'visual_review': 'not-performed'}
+
+
+def verify_export(artifact, envelope, *, root=None, **options):
+    """Independently recheck movie bytes and retained timeline/request binding."""
+    keys = {'schema_version', 'kind', 'timeline_sha256', 'timeline', 'request', 'verification', 'visual_review'}
+    if (not isinstance(envelope, dict) or set(envelope) != keys or type(envelope['schema_version']) is not int or
+            envelope['schema_version'] != 1 or envelope['kind'] != 'silent-timeline-export' or
+            envelope['visual_review'] != 'not-performed'):
+        raise ValueError('invalid timeline export envelope')
+    manifest = validate_document(envelope['timeline'])
+    if envelope['timeline_sha256'] != video._digest(manifest):
+        raise ValueError('timeline export identity mismatch')
+    request = video.validate_request(envelope['request'])
+    if video._digest(request['source']) != video._digest(manifest['source']):
+        raise ValueError('timeline export request differs from mapped source')
+    if root is not None and video._digest(validate(root)) != envelope['timeline_sha256']:
+        raise ValueError('current timeline differs from export')
+    video.validate_receipt(envelope['verification'], artifact, request, root=root, **options)
+    return {'verified': True, 'timeline_sha256': envelope['timeline_sha256'],
+            'artifact_sha256': envelope['verification']['artifact_sha256'], 'visual_review': 'not-performed'}

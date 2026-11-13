@@ -133,6 +133,84 @@
             "type": "string",
             "pattern": "[A-Za-z0-9][A-Za-z0-9_.-]{0,127}"
           },
+          "context": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "project": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version"
+                    ]
+                  },
+                  "scene": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version"
+                    ]
+                  },
+                  "shot": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      },
+                      "version": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version"
+                    ]
+                  }
+                },
+                "required": [
+                  "project",
+                  "scene",
+                  "shot"
+                ]
+              }
+            ]
+          },
           "source": {
             "type": "object",
             "additionalProperties": false,
@@ -271,6 +349,7 @@
         },
         "required": [
           "id",
+          "context",
           "source",
           "source_sha256",
           "start",

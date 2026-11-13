@@ -168,3 +168,22 @@ suite verifies those cuts and actual audio-free MP4/WebM encoding using labeled
 synthetic pixels. Genuine three-shot 3D production acceptance, EXR/HDR/alpha
 preservation and the full CLI/jobs integration remain separate requirements;
 this API does not report them complete or supply visual approval.
+
+Use `silent_timeline.encode(root, movie_path, profile)` when delivering a whole
+film. Its returned `silent-timeline-export` envelope retains the complete,
+validated shot map, canonical timeline SHA-256, exact encoder request and actual
+video verification receipt. `silent_timeline.verify_export(movie, envelope,
+root=optional_timeline_root)` rechecks both mapping identity and the real movie;
+a movie plus this envelope retains shot boundaries without the original folder.
+Each shot can also carry strict `context` references for project, scene and shot
+IDs/versions; these remain declared identities and are not artistic approval.
+
+`silent_render3d.prepare` uses the canonical Render3D `verify_result` authority
+before admitting combined PNG8 frames; the caller supplies the observed backend
+identity and snapshot root. It retains that verification, original request/result
+and per-frame native hashes in `source.json`. Originals stay read-only. Opaque
+sources copy without pixel changes. Transparent straight-alpha inputs require
+an explicit three-integer sRGB background, using sRGB decoding, linear-light
+over and sRGB encoding; 50% white over black yields approximately188 rather
+than128. This optional adapter uses NumPy and does not belong to 2D-only import
+paths. EXR/HDR inputs are rejected until a separate verified transform is selected.
