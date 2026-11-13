@@ -99,13 +99,14 @@ class DirectorAcquisitionTests(unittest.TestCase):
 
     def test_adapter_import_does_not_require_optional_3d(self):
         code='''import sys
+sys.path.insert(0,sys.argv[1])
 class Block:
  def find_spec(self,fullname,path=None,target=None):
   if fullname.split('.')[0] in {'numpy','pygltflib','bpy','scipy'}:raise RuntimeError(fullname)
 sys.meta_path.insert(0,Block())
 import director_acquisition
 '''
-        result=subprocess.run([sys.executable,'-c',code],capture_output=True,text=True)
+        result=subprocess.run([sys.executable,'-c',code,str(Path(__file__).resolve().parents[1]/'scripts')],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
 
