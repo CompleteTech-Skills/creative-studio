@@ -12,6 +12,14 @@ emitted nodes). The same recipe produces the same geometry and node IDs.
 `primitive` accepts `kind` and `dimensions`; the available kinds are box, plane,
 cylinder, cone, sphere, capsule, torus, stairs, ramp, pipe, beam, platform, door,
 window, polygon (simple convex or concave XZ polygon), extrude (simple XZ polygon), and curve (capped straight spans).
+`apply_recipes(source, destination, scene_path, recipes, offsets=None, parents=None)`
+prepares up to sixteen distinct named recipes and publishes one snapshot. A
+failure anywhere publishes nothing. Optional maps select recipe IDs: offsets are
+local three-vectors and parents are exact node IDs (including earlier batch
+outputs). Placements are recorded beside each persisted recipe. One batch
+increments the scene revision once. `create_environments(destination, recipes,
+offsets=None, parents=None)` constructs a first project through this batch API.
+
 Meshes use meters, right-handed Y-up coordinates and counterclockwise exterior
 triangles. OBJ resources contain actual triangles, explicit flat normals and
 per-triangle UVs; they are not textured material demonstrations.

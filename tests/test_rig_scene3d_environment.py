@@ -9,7 +9,7 @@ import numpy as np
 from rig_errors import RigError
 from scene3d_geometry import primitive, wall, extrude, curve, polygon
 from scene3d_terrain import Heightfield, scatter
-from scene3d_environment import plan, create_environment, apply_recipe, fingerprint
+from scene3d_environment import plan, create_environment, apply_recipe, apply_recipes, fingerprint
 from scene3d_contracts import load_project
 from scene3d_graph import SceneGraph
 from scene3d_snapshot import snapshot_project
@@ -114,6 +114,26 @@ class EnvironmentTests(unittest.TestCase):
         with self.assertRaises(RigError):plan(recipe(width=1,door_width=2))
         with self.assertRaises(RigError):plan(dict(recipe(),budget=2))
         with self.assertRaises(RigError):plan(recipe('caves'))
+
+    def test_multi_recipe_snapshot_is_atomic_and_records_local_placement(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);first=root/'first';create_environment(first,recipe(rooms=1))
+            b=load_project(first);path=b['project']['scenes'][-1]['path'];original=b['documents'][path]
+            left=dict(recipe('primitive',kind='box',dimensions={}),id='left')
+            right=dict(recipe('primitive',kind='sphere',dimensions={}),id='right')
+            result=apply_recipes(first,root/'batch',path,[left,right],offsets={'left':[3,0,0],'right':[0,2,0]},parents={'right':'left-mesh'})
+            final=load_project(root/'batch');scene=final['documents'][final['project']['scenes'][-1]['path']]
+            self.assertEqual(scene['revision'],original['revision']+1)
+            self.assertEqual(len(final['project']['scenes']),len(b['project']['scenes'])+1)
+            graph=SceneGraph(scene)
+            np.testing.assert_allclose(np.asarray(graph.evaluate_base('right-mesh')['world_matrix'])[:3,3],[3,2,0])
+            stored=[json.loads((root/'batch'/r['path']).read_text()) for r in scene['recipes']]
+            self.assertTrue(any(r.get('placement',{}).get('parent')=='left-mesh' for r in stored))
+            invalid=dict(right,parameters={'kind':'box','dimensions':{'width':0}})
+            with self.assertRaises(RigError):apply_recipes(first,root/'failed',path,[left,invalid])
+            self.assertFalse((root/'failed').exists())
+            self.assertEqual(load_project(first)['documents'][path],original)
+            with self.assertRaises(RigError):apply_recipes(first,root/'duplicate',path,[left,left])
 
     def test_deleted_nodes_stay_deleted_across_generator_switch(self):
         with tempfile.TemporaryDirectory() as temp:

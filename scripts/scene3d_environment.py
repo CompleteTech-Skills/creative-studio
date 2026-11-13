@@ -6,6 +6,7 @@ There is no implicit renderer, material translator, cave generator or AI depende
 from copy import deepcopy
 import hashlib
 import json
+import math
 from pathlib import Path
 import tempfile
 
@@ -101,14 +102,13 @@ def plan(recipe):
     return objects
 
 
-def apply_recipe(source,destination,scene_path,recipe,*,policy='preserve'):
-    """Publish a new validated snapshot. Edited nodes survive; conflicts are returned.
-
-    `policy=reject` fails without writing if any generated node has changed. Deleting
-    a generated node is also a manual override and remains deleted under preserve.
-    """
+def _prepare_recipe(bundle,scene,recipe,*,policy='preserve',offset=None,parent=None):
+    """Prepare one recipe entirely in memory; publication is owned by apply_recipes."""
     require(policy in ('preserve','reject'),'Regeneration policy must be preserve or reject.')
-    objects=plan(recipe);bundle=load_project(source);scene=deepcopy(bundle['documents'][scene_path])
+    objects=plan(recipe);scene=deepcopy(scene)
+    offset=[0,0,0] if offset is None else offset
+    require(isinstance(offset,(list,tuple)) and len(offset)==3 and all(type(x) in (int,float) and math.isfinite(x) and abs(x)<=1000000 for x in offset),'Offset must be a bounded finite vector.')
+    require(parent is None or isinstance(parent,str),'Parent must be a node ID or null.')
     require(scene['kind']=='scene3d-scene','Select a scene manifest.')
     rid=recipe['id'];old={n['id']:n for n in scene['nodes'] if n['metadata'].get('generator_id')==rid}
     records=scene['metadata'].get('generator_nodes_'+rid,'[]');previous=json.loads(records)
@@ -140,13 +140,15 @@ def apply_recipe(source,destination,scene_path,recipe,*,policy='preserve'):
         if asset_path not in bundle['documents']:documents[asset_path]=asset
         else:require(bundle['documents'][asset_path]==asset,'Generated asset identity collision.')
         refs.append(reference)
-        n=node(identifier,'mesh_instance');n['asset']=reference;n['transform']['translation']=item['position']
+        n=node(identifier,'mesh_instance',parent);n['asset']=reference
+        n['transform']['translation']=[a+b for a,b in zip(item['position'],offset)]
         if item['rotation'] is not None:n['transform']['rotation']=item['rotation']
         n['bounds']=mesh.bounds;n['metadata']={'generator_id':rid,'generator_version':1}
         n['metadata']['generated_fingerprint']=fingerprint(n);scene['nodes'].append(n)
-    recipe_raw=encode(recipe);recipe_path='generated/recipe-'+digest(recipe)+'.json';payloads[recipe_path]=recipe_raw
+    persisted=deepcopy(recipe) if offset==[0,0,0] and parent is None else dict(recipe=recipe,placement=dict(offset=list(offset),parent=parent))
+    recipe_raw=encode(persisted);recipe_path='generated/recipe-'+digest(persisted)+'.json';payloads[recipe_path]=recipe_raw
     old_recipe=scene['metadata'].get('generator_recipe_'+rid)
-    scene['recipes']=[r for r in scene['recipes'] if r['path']!=old_recipe]+[dict(path=recipe_path,sha256=digest(recipe))]
+    scene['recipes']=[r for r in scene['recipes'] if r['path']!=old_recipe]+[dict(path=recipe_path,sha256=digest(persisted))]
     scene['metadata']['generator_recipe_'+rid]=recipe_path
     scene['metadata']['generator_deleted_'+rid]=json.dumps(sorted(deleted),separators=(',',':'))
     require(len(scene['metadata']['generator_deleted_'+rid])<=4096,'Generator deletion history exceeds metadata budget.')
@@ -155,20 +157,63 @@ def apply_recipe(source,destination,scene_path,recipe,*,policy='preserve'):
     existing={(r['id'],r['version']):r for r in scene['dependencies']}
     for ref in refs:existing[(ref['id'],ref['version'])]=ref
     scene['dependencies']=list(existing.values());_inventories(scene)
+    return dict(scene=scene,documents=documents,payloads=payloads,conflicts=conflicts,
+                generated=len(objects)-len(set(o['id'] for o in objects)&(modified|deleted)),
+                triangles=sum(len(o['mesh'].triangles) for o in objects))
+
+
+def apply_recipes(source,destination,scene_path,recipes,*,policy='preserve',offsets=None,parents=None):
+    """Prepare up to 16 named recipes, validate together, and publish one snapshot.
+
+    Offsets are local translations and parents are exact node IDs. Both are
+    recorded beside each recipe; existing SceneGraph owns hierarchy evaluation.
+    A failure in any recipe leaves the source and destination unchanged.
+    """
+    require(isinstance(recipes,(list,tuple)) and 1<=len(recipes)<=16,'A batch contains one to sixteen recipes.')
+    require(all(isinstance(r,dict) and isinstance(r.get('id'),str) for r in recipes),'Recipes need text IDs.')
+    ids=[r['id'] for r in recipes];require(len(set(ids))==len(ids),'Duplicate recipe IDs in one batch.')
+    offsets={} if offsets is None else offsets;parents={} if parents is None else parents
+    require(isinstance(offsets,dict) and isinstance(parents,dict) and not (set(offsets)|set(parents))-set(ids),'Placement maps must select batch recipe IDs.')
+    bundle=load_project(source)
+    require(scene_path in bundle['documents'],'Unknown selected scene.')
+    scene=deepcopy(bundle['documents'][scene_path]);documents={};payloads={};conflicts=[];generated=0;triangles=0
+    context=dict(bundle);context['documents']=dict(bundle['documents'])
+    for recipe in recipes:
+        prepared=_prepare_recipe(context,scene,recipe,policy=policy,offset=offsets.get(recipe['id']),parent=parents.get(recipe['id']))
+        scene=prepared['scene'];generated+=prepared['generated'];triangles+=prepared['triangles']
+        require(len(scene['nodes'])<=10000 and triangles<=200000,'Aggregate generator batch budget exceeded.')
+        for path,raw in prepared['payloads'].items():
+            require(path not in payloads or payloads[path]==raw,'Generated payload collision.')
+            payloads[path]=raw
+        documents.update(prepared['documents']);context['documents'].update(prepared['documents']);conflicts+=prepared['conflicts']
+    scene['revision']+=1
     graph=SceneGraph(scene)
     result=snapshot_project(source,destination,graph,scene_path=scene_path,derived_documents=documents,extra_payloads=payloads)
-    return dict(snapshot=result,conflicts=conflicts,generated=len(objects)-len(set(o['id'] for o in objects)&(modified|deleted)))
+    return dict(snapshot=result,conflicts=sorted(set(conflicts)),generated=generated)
 
 
-def create_environment(destination,recipe):
-    """Create a first editable project through the same snapshot and validation path."""
+def apply_recipe(source,destination,scene_path,recipe,*,policy='preserve',offset=None,parent=None):
+    """Publish one recipe; preserve changed nodes and persistent deleted-node tombstones."""
+    identifier=recipe.get('id') if isinstance(recipe,dict) else None
+    return apply_recipes(source,destination,scene_path,[recipe],policy=policy,
+                         offsets=None if offset is None else {identifier:offset},
+                         parents=None if parent is None else {identifier:parent})
+
+
+def create_environments(destination,recipes,*,offsets=None,parents=None):
+    """Create a first project from an atomic batch through the existing snapshot owner."""
     destination=Path(destination).absolute()
     with tempfile.TemporaryDirectory(prefix='scene3d-generator-') as temp:
         source=Path(temp)/'source';build_example(source)
         project=json.loads((source/'project.json').read_text())
         project['budgets'].update(max_nodes=10000,max_files=4096,max_bytes=256*1024*1024)
         (source/'project.json').write_bytes(canonical_bytes(project))
-        return apply_recipe(source,destination,'example-scene.json',recipe)
+        return apply_recipes(source,destination,'example-scene.json',recipes,offsets=offsets,parents=parents)
+
+
+def create_environment(destination,recipe):
+    """Create a first editable project containing one generated environment."""
+    return create_environments(destination,[recipe])
 
 
 def load_meshes(root, scene_path):
