@@ -252,7 +252,16 @@ class RenderArtifactVerifier:
                     require(not folder.is_symlink(),'corrupt-output','Image directory may not be a symlink.')
                     for path in folder.rglob('*'):
                         require(not path.is_symlink(),'corrupt-output','Image inventory contains a symlink.')
-                        if path.is_file():actual.add(path.relative_to(root).as_posix())
+                        if path.is_dir():
+                            relative=path.relative_to(root).parts
+                            require(len(relative)==2 and relative[0]=='passes'
+                                    and relative[1] in settings['output']['passes'],
+                                    'corrupt-output','Unexpected image directory.')
+                        elif path.is_file():
+                            actual.add(path.relative_to(root).as_posix())
+                            require(len(actual)<=len(paths),'incomplete-output','Unexpected extra image files.')
+                        else:
+                            raise Render3DError('corrupt-output','Nonregular entry in image inventory.')
             require(actual==paths,'incomplete-output','Unexpected or missing output images.')
         except RigError as exc:
             raise Render3DError('corrupt-output',str(exc)) from exc
