@@ -21,7 +21,7 @@ from typing import Protocol
 
 from atomic_publish import _rename_no_replace
 from render3d_contracts import (COORDINATES, MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES,
-                                Render3DError, require, validate, load, snapshot_hash, VERSION)
+                                Render3DError, require, validate, load, snapshot_hash, VERSION, open_regular)
 from rig_errors import RigError, atomic_json, safe_path, sha256
 
 
@@ -237,7 +237,13 @@ def verify_snapshot(root, adapter: SceneAdapter):
                 'unsupported-feature', 'Snapshot requires a different source adapter.')
         for item in document['files']:
             path = safe_path(root, item['path'], exists=True)
-            require(path.stat().st_size == item['bytes'] and sha256(path) == item['sha256'],
+            digest, count = hashlib.sha256(), 0
+            with open_regular(path, MAX_FILE_BYTES) as stream:
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    count += len(block)
+                    require(count <= MAX_FILE_BYTES, 'storage-exhaustion', 'Frozen source exceeds byte budget.')
+                    digest.update(block)
+            require(count == item['bytes'] and digest.hexdigest() == item['sha256'],
                     'stale-asset', 'Frozen source changed.', path=item['path'])
         description = adapter.describe(root)
         require(description.files == tuple((f['path'], f['sha256']) for f in document['files'])

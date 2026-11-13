@@ -111,6 +111,36 @@ class Render3DIndependentTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
+    @unittest.skipUnless(hasattr(os, 'mkfifo') and hasattr(os, 'O_NONBLOCK'),
+                         'FIFO and nonblocking file descriptors required')
+    def test_fifo_replacement_rejected_at_each_public_read_boundary(self):
+        from unittest.mock import patch
+        import render3d_contracts as contracts
+        for boundary in ('load', 'plan', 'verify'):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary); source = root / 'source'; source.mkdir()
+                adapter = SyntheticFileAdapter()
+                (source / 'source.bin').write_bytes(adapter.files['source.bin'])
+                destination = root / 'snapshot'
+                create_snapshot(source, destination, adapter)
+                path = destination / 'snapshot.json'
+                value = request(); value['snapshot'] = file_ref('snapshot/snapshot.json', path.read_bytes())
+                target = destination / ('source.bin' if boundary == 'verify' else 'snapshot.json')
+                real_open = os.open
+                def replace_before_open(name, flags, *args, **kwargs):
+                    if Path(name) == target:
+                        self.assertTrue(flags & os.O_NONBLOCK)
+                        target.unlink(); os.mkfifo(target)
+                    return real_open(name, flags, *args, **kwargs)
+                with patch.object(contracts.os, 'open', side_effect=replace_before_open):
+                    with self.assertRaises(Render3DError):
+                        if boundary == 'load':
+                            load(path, 'RenderSnapshot')
+                        elif boundary == 'plan':
+                            make_frame_spec(value, 17, path, adapter=adapter)
+                        else:
+                            verify_snapshot(destination, adapter)
+
     def sources(self, adapter=None):
         adapter = adapter or SyntheticFileAdapter()
         source = self.root / 'source'
