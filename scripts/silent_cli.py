@@ -60,6 +60,11 @@ def add_parsers(command):
         child.add_argument('--quality', choices=('draft', 'preview', 'standard', 'high', 'master'))
         child.add_argument('--job-root', help='Create and execute a persistent resumable job')
         child.add_argument('--resume', action='store_true')
+        child.add_argument('--resolution', help='Explicit WIDTHxHEIGHT')
+        child.add_argument('--fps', help='Exact integer or P/Q frame rate')
+        child.add_argument('--fit', choices=('preserve', 'letterbox', 'fill', 'stretch'))
+        child.add_argument('--fps-policy', choices=('preserve', 'nearest'))
+        child.add_argument('--prepared-dir', help='New immutable converted-frame directory')
 
 
 def dispatch(args):
@@ -96,10 +101,12 @@ def dispatch(args):
         return sequence.export_sequence(request['source'], args.root, args.destination,
                                         provenance=request['provenance'])
     media = _module('silent_video')
+    conversion = any((args.resolution, args.fps, args.fit, args.fps_policy, args.prepared_dir))
+    preparation = None
     if args.resume:
         if not args.job_root:
             raise ValueError('--resume requires --job-root')
-        if any((args.request, args.timeline, args.render_dir, args.root, args.destination, args.profile, args.quality)):
+        if any((args.request, args.timeline, args.render_dir, args.root, args.destination, args.profile, args.quality, conversion)):
             raise ValueError('--resume uses the captured immutable request; source/destination/profile overrides are forbidden')
         return _module('silent_jobs').resume(args.job_root)
     if not args.destination or not any((args.request, args.timeline, args.render_dir)):
@@ -111,19 +118,44 @@ def dispatch(args):
             raise ValueError('--root is required with --request')
         if args.profile and args.profile != request['profile']:
             raise ValueError('--profile cannot override a captured request')
-        if args.quality:
-            raise ValueError('--quality cannot override a captured request')
+        if args.quality or conversion:
+            raise ValueError('quality/conversion flags cannot override a captured request')
         root = args.root
     else:
         if args.root:
             raise ValueError('--root cannot override --timeline or --render-dir')
         if args.timeline:
-            if args.quality or args.job_root:
+            if args.quality or args.job_root or conversion:
                 raise ValueError('timeline quality/jobs require captured timeline integration; use a verified explicit request')
             return _module('silent_timeline').encode(args.timeline, args.destination, args.profile or 'h264-mp4')
         else:
             root = args.render_dir
             source = media.source_from_production(root)
+        if conversion:
+            if not args.prepared_dir:
+                raise ValueError('explicit conversion requires a new --prepared-dir')
+            import re
+            from fractions import Fraction
+            width, height = source['width'], source['height']
+            if args.resolution:
+                match = re.fullmatch(r'([0-9]{1,4})x([0-9]{1,4})', args.resolution)
+                if not match or not args.fit:
+                    raise ValueError('--resolution requires WIDTHxHEIGHT and an explicit --fit')
+                width, height = map(int, match.groups())
+            rate = source['fps']
+            if args.fps:
+                if not re.fullmatch(r'[0-9]{1,6}(?:/[0-9]{1,5})?', args.fps):
+                    raise ValueError('--fps requires an exact positive integer or P/Q')
+                value = Fraction(args.fps)
+                rate = {'numerator': value.numerator, 'denominator': value.denominator}
+                if rate != source['fps'] and args.fps_policy != 'nearest':
+                    raise ValueError('changed FPS requires explicit --fps-policy nearest')
+            transform = _module('silent_transform')
+            settings = transform.profile(width,height,rate,fit=args.fit or 'preserve',
+                                         fps_policy=args.fps_policy or 'preserve')
+            preparation = transform.transform(source,root,settings,args.prepared_dir)
+            transform.verify(args.prepared_dir,source_root=root)
+            source, root = preparation['source'], args.prepared_dir
         profile = args.profile or 'h264-mp4'
         encoding = None
         if args.quality:
@@ -134,7 +166,12 @@ def dispatch(args):
         jobs = _module('silent_jobs')
         jobs.create(request, root, args.job_root, args.destination)
         return jobs.run(args.job_root)
-    return media.encode(request, root, args.destination)
+    receipt = media.encode(request, root, args.destination)
+    if preparation is not None:
+        return {'schema_version': 1, 'kind': 'silent-prepared-video-export',
+                'preparation': preparation, 'request': request, 'verification': receipt,
+                'visual_review': 'not-performed'}
+    return receipt
 
 
 def prepare_preview(source, root, destination, *, width=320):
