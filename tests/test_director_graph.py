@@ -230,6 +230,48 @@ class DirectorGraphTests(unittest.TestCase):
                 node['execution_metadata']['estimated_usage'][metric]['value']=0
             self.request['input']['budget']['max_'+metric]=100
 
+    def test_v1_legacy_float_budget_semantics_are_preserved(self):
+        for node,value in zip(self.plan['nodes'],(.1,.2,0)):
+            node['estimated_seconds']=value
+        self.request['input']['budget']['max_cpu_seconds']=.3
+        self.refresh()
+        if not self.require_secure_reads():return
+        with self.assertRaisesRegex(RigError,'Estimated CPU work exceeds budget'):
+            self.compile()
+
+    def test_v2_legacy_and_mixed_resource_decimal_boundaries(self):
+        self.plan=dg.migrate_plan_v2(self.plan,{n['id']:self.planned_metadata(n['id']) for n in self.plan['nodes']})
+        for resource in ('cpu', 'io', 'render', 'gpu'):
+            metric='gpu_seconds' if resource == 'gpu' else 'cpu_seconds'
+            operation='blender.gpu' if resource == 'gpu' else 'blender.cpu' if resource == 'render' else 'native-cpu'
+            limits=deepcopy(self.snapshot['capabilities'][0]['limits'])
+            receipt=self.write('boundary-'+operation,dict(operation=operation,status='available',
+                execution_verified=True,fixture=True,version='test',policy_limits=limits,payloads=[]),kind='evidence')
+            self.snapshot['capabilities']=[dict(operation=operation,version='test',status='available',
+                execution_verified=True,limits=limits,probe_evidence=[receipt])]
+            self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+            for node in self.plan['nodes']:
+                node.update(resource_class=resource,required_capabilities=[operation])
+                if resource in ('gpu','render'):
+                    node.update(operation='RenderAdapter.submit',native_owner='RenderAdapter',output_schema='job-snapshot')
+                else:
+                    node.update(operation='FrameEvaluator.evaluate',native_owner='FrameEvaluator',output_schema='evaluated-frame')
+            for mixed in (False, True):
+                for second,accepted in ((.2,True),(.2000000000000001,False)):
+                    with self.subTest(resource=resource,mixed=mixed,second=second):
+                        for index,(node,value) in enumerate(zip(self.plan['nodes'],(.1,second,0))):
+                            node['estimated_seconds']=None if mixed and index == 1 else value
+                            usage=node['execution_metadata']['estimated_usage']
+                            usage['classification']='estimated'
+                            usage[metric]['value']=value if mixed and index == 1 else None
+                        self.request['input']['budget']['max_'+metric]=.3
+                        self.refresh()
+                        if accepted:
+                            self.assertEqual(self.compile()['status'],'succeeded')
+                        else:
+                            with self.assertRaisesRegex(RigError,'project budget: '+metric):self.compile()
+            self.request['input']['budget']['max_'+metric]=100
+
     def test_v2_integral_float_provider_calls(self):
         self.plan=dg.migrate_plan_v2(self.plan,{n['id']:self.planned_metadata(n['id']) for n in self.plan['nodes']})
         limits=deepcopy(self.request['input']['budget'])

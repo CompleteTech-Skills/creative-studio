@@ -285,9 +285,10 @@ def compile_graph(request, root, *, now=None):
         if node['resource_class'] == 'provider':
             _require(request['context']['policy']['network'] == 'allow-configured', 'POLICY',
                      'Provider nodes require explicit configured-network policy.')
-    _require(estimates['cpu'] + estimates['io'] + estimates['render'] <= data['budget']['max_cpu_seconds'],
-             'BUDGET', 'Estimated CPU work exceeds budget.')
-    _require(estimates['gpu'] <= data['budget']['max_gpu_seconds'], 'BUDGET', 'Estimated GPU work exceeds budget.')
+    if plan['schema_version'] == 1:
+        _require(estimates['cpu'] + estimates['io'] + estimates['render'] <= data['budget']['max_cpu_seconds'],
+                 'BUDGET', 'Estimated CPU work exceeds budget.')
+        _require(estimates['gpu'] <= data['budget']['max_gpu_seconds'], 'BUDGET', 'Estimated GPU work exceeds budget.')
     provider_calls = sum(node['resource_class'] == 'provider' for node in plan['nodes'])
     _require(provider_calls <= data['budget']['max_provider_calls'], 'BUDGET',
              'Estimated provider invocations exceed budget.')
