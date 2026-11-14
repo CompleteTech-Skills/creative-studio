@@ -512,6 +512,8 @@ def encode_final_media(store, root, bindings, destinations, *, narrative=None, r
         retained, _ = _read_json(root if receipt_root is None else receipt_root,
                                  reference['path'], expected=reference)
         _need(retained == receipt, 'The checkpoint differs from the verified media receipt.')
+        _need(not guarded_cancel(), 'Final native state changed or delivery was canceled during checkpoint.')
+        _recheck_delivery_sources(store, root, bindings, admission, narrative)
         receipts[profile], requests[profile] = receipt, request
         receipt_references[profile] = reference
     return dict(schema_version=1, kind='director-final-media', render_admission=admission,

@@ -193,6 +193,41 @@ class FinalEvidenceTests(unittest.TestCase):
                         destinations, checkpoint=checkpoint)
             self.assertEqual(len(captured), 1)
 
+    def test_last_checkpoint_cancellation_cannot_finalize_media(self):
+        import json
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ('jobs', 'snapshot', 'masters'):
+                (root/name).mkdir()
+            destinations = {'h264-mp4': root/'movie.mp4', 'vp9-webm': root/'movie.webm'}
+            binding = {'directory': 'masters', 'snapshot_directory': 'snapshot'}
+            cancelled = False
+            checkpoints = []
+            def checkpoint(profile, receipt, request):
+                nonlocal cancelled
+                raw = json.dumps(receipt).encode()
+                name = 'receipt-'+profile+'.json'
+                (root/name).write_bytes(raw)
+                checkpoints.append(profile)
+                cancelled = profile == 'vp9-webm'
+                return dict(path=name, sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw))
+            verification = dict(frame_count=720, fps=dict(numerator=24, denominator=1),
+                video_stream_count=1, audio_stream_count=0, other_stream_count=0,
+                duration=dict(numerator=30, denominator=1),
+                timebase_tolerance=dict(numerator=1, denominator=1000))
+            with patch('director_final_delivery.assemble_final_frames', return_value={'source': {}}), \
+                 patch('director_final_delivery._live_native_guard'), \
+                 patch('director_final_delivery._recheck_delivery_sources'), \
+                 patch('silent_video.make_request', side_effect=lambda source, profile: {'profile': profile, 'limits': {}}), \
+                 patch('silent_video.validate_request'), \
+                 patch('silent_video.encode', return_value={'receipt': 'phase-fixture'}), \
+                 patch('silent_video.validate_receipt', return_value=verification):
+                with self.assertRaisesRegex(RigError, 'canceled during checkpoint'):
+                    encode_final_media(SimpleNamespace(root=root/'jobs'), root, [binding],
+                        destinations, checkpoint=checkpoint, cancel=lambda: cancelled)
+            self.assertEqual(checkpoints, ['h264-mp4', 'vp9-webm'])
+
     def test_invalid_media_configuration_fails_before_reading_720_frames(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
