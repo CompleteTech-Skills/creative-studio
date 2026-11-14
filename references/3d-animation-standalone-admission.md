@@ -97,3 +97,25 @@ work/memory/callback bounds, mutable callbacks, path aliases, namespace resource
 bounds, restrictive whole-float policies and independent rational clip clocks.
 The source inventory is checked unchanged. These are synthetic engineering
 fixtures and make no production-artwork or visual-approval claim.
+
+## Aggregate batch admission
+
+`admit_clips(root, exact_references, *, budgets=None, reader=None)` admits up to
+64 clip roots with **one** Snapshot, one typed visitor and one native owner cache.
+A shared rig path is decoded once, even when several clip versions reference it.
+The work/memory/file/track/key ceilings apply to the complete batch. Duplicate
+references can share the same inventory entry; they do not create another native
+load. The roots iterable is consumed only through its 65th item before an excess
+root-count failure, and no source reader is called for an invalid count.
+
+The batch result has `clips` keyed by logical root path and detached `roots`,
+alongside the same documents/inventory/budget/context fields. `admit_clip` delegates
+to this single batch authority and adds its `clip` convenience field. Scene
+validation should collect its external clip roots and call the batch once,
+instead of repeatedly decoding shared native assets through single-root calls.
+
+Before calling the trusted reader or constructing an input BytesIO, this owner
+passes at most the smaller remaining work-byte and memory allowance, including
+already charged namespace and retained-native data. An oversized callback return
+fails before input materialization. Native data admission and fixed host callback
+bounds remain estimates and trust contracts, without a process RSS guarantee.

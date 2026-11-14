@@ -19,6 +19,7 @@ from rig_errors import RigError, decode_json, open_payload, require, safe_path, 
 MAX_FILES = 4096
 MAX_BYTES = 256 * 1024**2
 MAX_DEPTH = 64
+MAX_CLIP_ROOTS = 64
 ALIASES = {'clip': KINDS['clip'], 'state-machine': KINDS['state-machine'],
            'retarget': KINDS['retarget'], 'sequence': KINDS['sequence'],
            'project': KINDS['project'], 'scene': KINDS['scene']}
@@ -259,10 +260,14 @@ def _capture_snapshot(snapshot, starts):
     """One exact-byte visitor shared by project and standalone admission."""
     documents, edges, active, native = {}, {}, set(), {}
     identities = {}
+    decoded = {}
     def visit(path, expected=None, depth=0):
         require(depth <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Animation dependency depth exceeded.')
         require(path not in active, 'ANIMATION_CYCLE', 'Animation dependency cycle.')
-        value = snapshot.json(path, None if expected is None else expected['sha256'])
+        snapshot.copy(path, None if expected is None else expected['sha256'])
+        if path not in decoded:
+            decoded[path] = snapshot.json(path, None if expected is None else expected['sha256'])
+        value = decoded[path]
         require(isinstance(value, dict), 'ANIMATION_KIND', 'Animation dependency must be an object.')
         if value.get('kind') not in KINDS.values():
             require(expected is not None, 'ANIMATION_KIND', 'Expected typed native source.')
@@ -342,7 +347,14 @@ def _standalone_budgets(supplied):
 
 @_admission
 def admit_clip(root, exact_reference, *, budgets=None, reader=None):
-    """Admit one exact clip and its actual owner closure without publishing files.
+    """Single-root convenience API using the same aggregate batch authority."""
+    receipt = admit_clips(root, [exact_reference], budgets=budgets, reader=reader)
+    return dict(receipt, clip=deepcopy(receipt['clips'][exact_reference['path']]))
+
+
+@_admission
+def admit_clips(root, exact_references, *, budgets=None, reader=None):
+    """Admit bounded clip roots with one snapshot, visitor and native cache.
 
     ``reader(path, max_bytes)`` is a fixed trusted host callback, never document
     configuration. Rootless byte-map and scoped-FD callers retain their source
@@ -350,27 +362,38 @@ def admit_clip(root, exact_reference, *, budgets=None, reader=None):
     """
     from animation3d_contracts import _definitions
     from jsonschema import Draft202012Validator
-    require(isinstance(exact_reference, dict) and
-            Draft202012Validator(dict(_definitions()['asset'])).is_valid(exact_reference),
-            'ANIMATION_REFERENCE', 'Standalone clip requires a complete exact asset reference.')
-    require(exact_reference['kind'] in ('clip', KINDS['clip']),
-            'ANIMATION_KIND', 'Standalone reference must identify an Animation3D clip.')
+    from itertools import islice
+    references_to_admit = list(islice(iter(exact_references), MAX_CLIP_ROOTS+1))
+    require(1 <= len(references_to_admit) <= MAX_CLIP_ROOTS,
+            'ANIMATION_LIMIT', 'Admit 1..64 standalone clip roots per bounded batch.')
+    asset_schema = _definitions()['asset']
+    validator = Draft202012Validator(asset_schema)
+    for reference in references_to_admit:
+        require(isinstance(reference, dict) and len(reference) == len(asset_schema['properties']) and validator.is_valid(reference),
+                'ANIMATION_REFERENCE', 'Standalone clip requires a complete exact asset reference.')
+        require(reference['kind'] in ('clip', KINDS['clip']),
+                'ANIMATION_KIND', 'Standalone reference must identify an Animation3D clip.')
+    references_to_admit = deepcopy(references_to_admit)
     policy = _standalone_budgets(budgets)
     with TemporaryDirectory(prefix='animation3d-clip-') as temporary:
         snapshot = Snapshot(root, temporary, policy['max_work_bytes'], reader=reader)
         snapshot.memory_limit = policy['max_memory_bytes']
-        reference = deepcopy(exact_reference)
-        documents, native = _capture_snapshot(snapshot, [(reference['path'], reference)])
-        clip = documents.get(reference['path'])
-        require(clip is not None and clip['kind'] == KINDS['clip'], 'ANIMATION_KIND', 'Standalone source is not a clip.')
-        # The common binder uses an in-memory owner envelope, not another file
+        documents, native = _capture_snapshot(snapshot, [(r['path'], r) for r in references_to_admit])
+        clips = {}
+        for reference in references_to_admit:
+            clip = documents.get(reference['path'])
+            require(clip is not None and clip['kind'] == KINDS['clip'], 'ANIMATION_KIND', 'Standalone source is not a clip.')
+            clips[reference['path']] = clip
+        first = clips[references_to_admit[0]['path']]
+        # The common binder uses one in-memory owner envelope, not another file
         # or a separately interpreted clip schema. Original raw bytes stay exact.
-        envelope = dict(schema_version=1, kind=KINDS['project'], id='admit-'+reference['sha256'][:24],
-            version=clip['version'], name='Standalone exact clip admission', fixture=clip['provenance']['fixture'],
-            fps=deepcopy(clip['fps']), coordinate_system=dict(handedness='right', up_axis='Y', unit='meters'),
-            scene_assets=[], character_assets=[], rig_assets=[], clips=[dict(reference,kind='clip')],
+        fixture = any(c['provenance']['fixture'] for c in clips.values())
+        envelope = dict(schema_version=1, kind=KINDS['project'], id='admit-'+references_to_admit[0]['sha256'][:24],
+            version=first['version'], name='Standalone exact clip admission', fixture=fixture,
+            fps=deepcopy(first['fps']), coordinate_system=dict(handedness='right', up_axis='Y', unit='meters'),
+            scene_assets=[], character_assets=[], rig_assets=[], clips=[dict(r,kind='clip') for r in references_to_admit],
             state_machines=[], retarget_profiles=[], sequences=[], budgets=policy,
-            provenance=dict(origin='Standalone clip owner admission', kind='derived', fixture=clip['provenance']['fixture'], sources=[]))
+            provenance=dict(origin='Standalone clip owner admission', kind='derived', fixture=fixture, sources=[]))
         validate_contract(envelope)
         _validate_bindings(envelope, documents, native, snapshot.destination)
         bindings = []
@@ -379,11 +402,11 @@ def admit_clip(root, exact_reference, *, budgets=None, reader=None):
                 bindings.append(dict(path=path, id=value.manifest['id'], version=value.manifest['version'],
                     sha256=snapshot.inventory[path]['sha256'], kind='rig', skeleton_signature=object_hash(value.skeleton),
                     vertices=value.geometry.vertex_count, bones=len(value.skeleton['bones']), fixture=value.manifest['source']['fixture']))
-        return dict(clip=deepcopy(clip), documents=deepcopy(documents), inventory=deepcopy(snapshot.inventory),
+        return dict(clips=deepcopy(clips), roots=references_to_admit, documents=deepcopy(documents), inventory=deepcopy(snapshot.inventory),
             bytes=snapshot.total, memory_admission=dict(limit_bytes=snapshot.memory_limit,
                 estimated_bytes=snapshot.expanded_bytes+snapshot.native_memory, native_estimated_bytes=snapshot.native_memory,
                 method='canonical-native-plus-snapshot-v1', scope='conservative data admission; not process RSS'),
-            native_context=dict(rig_bindings=bindings, actor_ids=sorted({t['target']['actor_id'] for t in clip['tracks'] if 'actor_id' in t['target']})),
+            native_context=dict(rig_bindings=bindings, actor_ids=sorted({t['target']['actor_id'] for c in clips.values() for t in c['tracks'] if 'actor_id' in t['target']})),
             source_ready=True, scope='exact clip/native target admission; no scene evaluation, publication or visual approval')
 
 

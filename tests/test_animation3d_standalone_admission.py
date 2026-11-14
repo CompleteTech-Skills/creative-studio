@@ -6,7 +6,7 @@ import sys
 import unittest
 
 sys.path[:0]=[str(Path(__file__).resolve().parents[1]/'scripts'),str(Path(__file__).resolve().parent)]
-from animation3d_assets import admit_clip
+from animation3d_assets import admit_clip, admit_clips
 from animation3d_clips import source_time
 from animation3d_contracts import KINDS
 from rig_errors import RigError, object_hash
@@ -119,6 +119,56 @@ class StandaloneAdmissionTests(unittest.TestCase):
         reader.assert_not_called()
         with self.assertRaises(RigError):admit_clip(None,dict(self.reference,kind='scene'),reader=reader)
         reader.assert_not_called()
+
+    def test_batch_reuses_one_actual_native_decoder_and_aggregate_budget(self):
+        from unittest.mock import patch
+        from rig_models import load_rig
+        second=deepcopy(self.clip);second.update(id='second',version='2.0.0',fps=dict(numerator=30,denominator=1))
+        second_ref=self.f.put('second.json',second,'clip')
+        refs=[self.reference,second_ref]
+        files=self.sources();calls=[]
+        original=self.reader(files)
+        def reader(name,maximum):calls.append(name);return original(name,maximum)
+        with patch('rig_models.load_rig',wraps=load_rig) as native:
+            receipt=admit_clips(None,refs,reader=reader)
+        self.assertEqual(native.call_count,1)
+        self.assertEqual(set(receipt['clips']),{'clip.json','second.json'})
+        self.assertEqual(len(calls),len(set(calls)))
+        self.assertEqual(len(receipt['native_context']['rig_bindings']),1)
+        self.assertEqual(receipt['roots'],refs)
+        self.assertEqual(receipt['bytes'],sum(len(files[name]) for name in receipt['inventory']))
+        self.assertEqual(self.sources(),files)
+        with self.assertRaises(RigError) as memory:
+            admit_clips(None,refs,reader=original,budgets=dict(max_memory_bytes=receipt['memory_admission']['estimated_bytes']-1))
+        self.assertEqual(memory.exception.report['code'],'ANIMATION_LIMIT')
+        with self.assertRaises(RigError):admit_clips(None,refs,reader=original,budgets=dict(max_work_bytes=receipt['bytes']-1))
+        with self.assertRaises(RigError):admit_clips(None,refs,reader=original,budgets=dict(max_tracks=1))
+
+    def test_batch_root_count_is_bounded_before_iteration_or_source_read(self):
+        from unittest.mock import Mock
+        consumed=[]
+        def roots():
+            for i in range(10000):consumed.append(i);yield self.reference
+        reader=Mock(side_effect=AssertionError('root count must be checked before source capture'))
+        with self.assertRaises(RigError) as rejected:admit_clips(None,roots(),reader=reader)
+        self.assertEqual(rejected.exception.report['code'],'ANIMATION_LIMIT')
+        self.assertEqual(len(consumed),65)
+        reader.assert_not_called()
+        with self.assertRaises(RigError):admit_clips(None,[],reader=reader)
+        reader.assert_not_called()
+
+    def test_low_memory_callback_cap_precedes_bytesio_materialization(self):
+        from unittest.mock import Mock,patch
+        payload=self.sources()['clip.json'];observed=[]
+        def reader(name,maximum):observed.append(maximum);return payload
+        with patch('animation3d_assets.io.BytesIO',side_effect=AssertionError('oversized callback materialized')) as materialize:
+            with self.assertRaises(RigError) as rejected:
+                admit_clip(None,self.reference,budgets=dict(max_memory_bytes=1000,max_work_bytes=1_000_000),reader=reader)
+        self.assertEqual(rejected.exception.report['code'],'ANIMATION_LIMIT')
+        self.assertEqual(len(observed),1)
+        self.assertLessEqual(observed[0],1000)
+        self.assertLess(observed[0],1_000_000)
+        materialize.assert_not_called()
 
     def test_reader_namespace_rejects_parent_case_aliases(self):
         from animation3d_assets import Snapshot
