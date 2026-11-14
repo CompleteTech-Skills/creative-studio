@@ -106,6 +106,25 @@ class ContinuityInspectionTests(unittest.TestCase):
         self.assertTrue(result['source_byte_identity']);self.assertFalse(result['byte_identity'])
         self.assertFalse(result['material_identity']);self.assertTrue(result['needs_visual_review'])
 
+    def test_comparison_rechecks_left_source_after_actual_right_inspection(self):
+        from unittest.mock import patch
+        a,_=gltf(self.root,'a.glb');b,_=gltf(self.root,'b.glb')
+        calls=0
+        def actual_inspection_then_external_change(*args,**kwargs):
+            nonlocal calls
+            result=inspect_asset(*args,**kwargs)
+            calls+=1
+            if calls==2:
+                a.write_bytes(a.read_bytes()+b' ')
+            return result
+        # Both native inspections execute. The wrapper injects an external
+        # source mutation at the publication race boundary; it supplies no fake
+        # parsed geometry, capability snapshot or positive execution result.
+        with patch('continuity_inspection.inspect_asset',actual_inspection_then_external_change):
+            with self.assertRaisesRegex(ValueError,'CONTINUITY_HASH'):
+                compare_assets(self.root,dict(source=pointer(self.root,a)),dict(source=pointer(self.root,b)))
+        self.assertEqual(calls,2)
+
     def test_native_rig_inspection_measures_real_bind_weights_and_sockets(self):
         rig=fixture(self.root,animated=False)
         request=native_request(self.root,rig)
@@ -213,6 +232,19 @@ class ContinuityInspectionTests(unittest.TestCase):
         b.json['nodes']=[dict(mesh=0),dict(mesh=0)];b.json['scenes']=[dict(nodes=[0,1])];b.write(path)
         with self.assertRaisesRegex(ValueError,'INSPECTION_LIMIT'):
             inspect_asset(self.root,pointer(self.root,path),limits=dict(vertices=4))
+
+    def test_optional_unhandled_extensions_remain_explicitly_partial(self):
+        path,b=gltf(self.root)
+        b.json['extensionsUsed']=['EXT_fixture_unknown'];b.json['nodes'][0]['extensions']={'EXT_fixture_unknown':{'authored':True}}
+        b.write(path);source=pointer(self.root,path)
+        result=inspect_asset(self.root,source)['inspection']
+        self.assertEqual(result['status'],'partial')
+        self.assertIn('EXT_fixture_unknown',result['source_features']['unsupported_extensions'])
+        (self.root/'evidence').mkdir();owner=NativeInspectionOwner(self.root,source,'evidence')
+        with owner.reserve(None):
+            executed=owner.execute(None)
+        self.assertEqual(executed['outcome'],'partial')
+        self.assertNotIn('extensions-and-channels',executed['verified_fields'])
 
     def test_actual_capability_admission_executes_and_retains_source_bound_receipt(self):
         from continuity_capabilities import Admission,Policy

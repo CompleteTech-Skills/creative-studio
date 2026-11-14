@@ -115,6 +115,7 @@ def _loaded(root, source, dependencies, requested):
                                       world_matrix=world[i].tolist(), mesh=document.json['nodes'][i].get('mesh'),
                                       skin=document.json['nodes'][i].get('skin')) for i in order]
                     model = load_character_model(path, limits=limits)
+                    model.report['source_features'] = _source_features(document)
                 yield model, hierarchy, refs, limits, total
             except MemoryError:
                 fail('LIMIT','native allocation failed inside admitted inspection')
@@ -173,6 +174,31 @@ def _rig_hierarchy(rig):
     return [dict(bone_id=b['id'], parent=b['parent'], rest=deepcopy(b['rest']),
                  world_matrix=world[b['id']].tolist(), semantic_role=b['role'],
                  role_evidence=deepcopy(b['evidence'])) for b in rig.skeleton['bones']]
+
+
+def _source_features(document):
+    """Retain original extension/channel coverage, including unsupported inputs."""
+    from rig_gltf import MATERIAL_EXTENSIONS
+    body=document.json
+    used=body.get('extensionsUsed',[])
+    required=body.get('extensionsRequired',[])
+    if any(not isinstance(v,list) or len(v)>128 or any(not isinstance(x,str) or not 1<=len(x)<=128 for x in v) for v in (used,required)):
+        fail('NATIVE_DOCUMENT','invalid glTF extension inventory')
+    unsupported=set(used)-MATERIAL_EXTENSIONS
+    containers=[('root',body)]
+    for category in ('nodes','meshes','textures','samplers','accessors','skins','animations'):
+        containers.extend((category,item) for item in body.get(category,[]))
+    for category,item in containers:
+        extensions=item.get('extensions',{})
+        if not isinstance(extensions,dict):
+            fail('NATIVE_DOCUMENT','invalid extension object')
+        unsupported.update(category+'/'+name for name in extensions)
+    for material in body.get('materials',[]):
+        unsupported.update(set(material.get('extensions',{}))-MATERIAL_EXTENSIONS)
+    channels=[dict(animation=i,target_node=c['target']['node'],path=c['target']['path'])
+              for i,a in enumerate(body.get('animations',[])) for c in a.get('channels',[])]
+    return dict(extensions_used=used,extensions_required=required,
+                unsupported_extensions=sorted(unsupported),animation_channels=channels)
 
 
 def _validate_rig(rig,limits):
@@ -299,6 +325,9 @@ def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=No
                        maximum_weight_sum_error=float(abs(value.weights.sum(axis=1)-1).max()))
                 for key,value in model.weights.items()}
         skeleton = model.manifest.get('skeleton') if hasattr(model, 'manifest') else model.skeleton
+        features=model.report['source_features'] if hasattr(model,'report') else dict(
+            extensions_used=list(geometry.extensions_used),extensions_required=None,
+            unsupported_extensions=[],animation_channels=None)
         controllers = deepcopy(model.manifest['controllers']) if hasattr(model,'manifest') else None
         sockets = deepcopy(model.manifest['attachments']) if hasattr(model,'manifest') else []
         measurements = _measure(geometry, {} if landmarks is None else landmarks,
@@ -320,6 +349,7 @@ def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=No
             textures=textures, texture_bindings=deepcopy(geometry.textures), samplers=deepcopy(geometry.samplers),
             texture_color_spaces=_color_spaces(geometry.materials),
             extensions=list(geometry.extensions_used), skeleton=deepcopy(skeleton), skins=skin,
+            source_features=features,status='partial' if features['unsupported_extensions'] else 'inspected-supported-data',
             controllers=controllers, sockets=sockets, measurements=measurements,
             facial_controls=deepcopy(model.manifest['facial']) if hasattr(model,'manifest') else None,
             native_approval_status=model.manifest['review']['status'] if hasattr(model,'manifest') else 'unreviewed',
@@ -348,13 +378,23 @@ def compare_assets(root, left, right):
         import posixpath
         parent=Path(value['source']['path']).parent.as_posix()
         return sorted(('$source' if r==value['source'] else posixpath.relpath(r['path'],parent),r['sha256']) for r in value['dependencies'])
-    return dict(left=a,right=b,byte_identity=closure(x)==closure(y),
+    result = dict(left=a,right=b,byte_identity=closure(x)==closure(y),
                 source_byte_identity=x['source']['sha256']==y['source']['sha256'],
                 geometry_identity=x['geometry_sha256']==y['geometry_sha256'],
                 attribute_morph_identity=x['attribute_morph_sha256']==y['attribute_morph_sha256'],
                 scale_normalized_geometry_identity=x['scale_normalized_sha256'] is not None and x['scale_normalized_sha256']==y['scale_normalized_sha256'],
                 material_identity=x['material_sha256']==y['material_sha256'],
                 semantic_equivalence='unverified',visual_approval=False,needs_visual_review=True)
+    return _finish_comparison(root,result,[a,b])
+
+
+def _finish_comparison(root,result,receipts):
+    """Recheck both exact closures together at the result publication boundary."""
+    canonical_bytes(result)
+    refs=[r for receipt in receipts for r in
+          receipt['inspection']['dependencies']+receipt['inspection']['variant_references']]
+    verify_references(root,refs,maximum_bytes=2*CAPS['dependency_bytes'])
+    return result
 
 
 class NativeInspectionOwner(OwnerAdapter):
@@ -427,10 +467,13 @@ class NativeInspectionOwner(OwnerAdapter):
             fail('LIMIT','snapshot plus inspection receipt exceeds disk reservation')
         from continuity_capability_owners import _write_new
         evidence=_write_new(self.root,self.folder,payload)
-        fields=['geometry','materials','skins','morphs','extensions-and-channels']
+        fields=['geometry','materials','skins','morphs']
+        unsupported=result['inspection']['source_features']['unsupported_extensions']
+        if not unsupported:
+            fields.append('extensions-and-channels')
         if self.source['kind']!='hatch-3d-rig':
             fields.append('source-hierarchy')
-        return dict(outcome='executed',evidence=[evidence],verified_fields=fields,
+        return dict(outcome='partial' if unsupported else 'executed',evidence=[evidence],verified_fields=fields,
             measurements=dict(inspection_sha256=result['sha256'],vertices=result['inspection']['analysis']['vertices'],
                               triangles=result['inspection']['analysis']['triangles'],fixture=result['inspection']['fixture'],
                               visual_approval=False),limitations=result['inspection']['limitations'])
@@ -457,12 +500,14 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
     result=dict(status='unverified',source=a,target=b,issues=[],profile=profile,review=review,
                 visual_approval=False,production_artwork_approved=False,
                 limitations=['Structural/pose compatibility only; full clip timing, contacts and artistic identity require their owning validators.'])
+    def finish():
+        return _finish_comparison(root,result,[a,b])
     if x['skeleton'] is None or y['skeleton'] is None:
         result['issues'].append(dict(code='MISSING_SKELETON',message='actual source/target skeleton is unavailable'))
-        return result
+        return finish()
     if any(set(v['skins'])!={m['id'] for m in v['meshes']} for v in (x,y)):
         result['issues'].append(dict(code='MISSING_SKIN',message='actual binding for every represented rig mesh is required'))
-        return result
+        return finish()
     source_bones={v['id'] for v in x['skeleton']['bones']}
     target_bones={v['id'] for v in y['skeleton']['bones']}
     source_sockets={v['id']:v for v in x['sockets']}
@@ -474,7 +519,7 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
                 result['issues'].append(dict(code='MISSING_'+kind.upper(),id=name))
     if result['issues']:
         result['status']='incompatible'
-        return result
+        return finish()
     same=(x['skeleton']==y['skeleton'] and x['skins']==y['skins'] and
           x['controllers']==y['controllers'] and x['sockets']==y['sockets'] and
           x['geometry_sha256']==y['geometry_sha256'] and x['attribute_morph_sha256']==y['attribute_morph_sha256'])
@@ -483,7 +528,7 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
         result['structure_and_binding_equal']=True
         if result['status']=='unverified':
             result['issues'].append(dict(code='APPROVAL_REQUIRED',message='equal measured structures do not establish approved rig identity'))
-        return result
+        return finish()
     if profile is None or review is None:
         sb={v['id']:v for v in x['skeleton']['bones']}
         tb={v['id']:v for v in y['skeleton']['bones']}
@@ -492,7 +537,7 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
         result['verified_rest_joint_overlap']=overlap
         result['status']='partial' if overlap else 'unverified'
         result['issues'].append(dict(code='APPROVED_MAPPING_REQUIRED',message='different measured rigs require an exact approved retarget profile'))
-        return result
+        return finish()
     _references(profile,[review])
     verify_references(root,[profile,review])
     mapping=decode_json(read_reference_bytes(root,profile))
@@ -515,12 +560,12 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
             result['issues'].append(dict(code='INCOMPATIBLE_SOCKET',id=socket))
     if result['issues']:
         result['status']='incompatible'
-        return result
+        return finish()
     # Supported retarget execution belongs to the native rig authority. Imported
     # glTF inspection alone cannot fabricate rig controllers or approval state.
     if source['source']['kind']!='hatch-3d-rig' or target['source']['kind']!='hatch-3d-rig':
         result['issues'].append(dict(code='NATIVE_RETARGET_ADAPTER_REQUIRED'))
-        return result
+        return finish()
     from rig_retarget import retarget_pose
     from rig_skeleton import neutral_pose,rotate_bone,evaluate_fk
     from rig_skinning import evaluate_deformation
@@ -555,13 +600,15 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
             result['native_pose_proof']=dict(evaluated_bones=len(evaluate_fk(tr.skeleton,output)),
                 deformed_vertices=sum(len(v['positions']) for v in deformation.values()),
                 maximum_displacement_m=max(float(np.linalg.norm(v['positions']-tr.geometry.by_id()[k].positions,axis=1).max()) for k,v in deformation.items()))
+            result['native_pose_proof']['software_source_sha256']={name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
+                for name in ('rig_retarget.py','rig_skeleton.py','rig_skinning.py','rig_constraints.py','rig_math.py')}
     omissions=sorted(source_bones-set(mapping['mapping']))
     morph_omissions=sorted(name for name in source_morphs if mapping['morph_mapping'].get(name,name) not in target_morphs)
     result['status']='partial' if omissions or mapping['omissions'] or morph_omissions else 'retargetable'
     result['unmapped_bones']=omissions
     result['unmapped_morphs']=morph_omissions
     verify_references(root,[profile,review,decision])
-    return result
+    return finish()
 
 
 def main(argv=None):

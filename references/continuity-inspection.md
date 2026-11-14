@@ -76,6 +76,11 @@ indices and attributes retain separate fingerprints. It remains topology
 sensitive. Equal counts, names or fingerprints do not prove semantic identity.
 Every comparison retains `semantic_equivalence: unverified`,
 `needs_visual_review: true`, and `visual_approval: false`.
+Both exact source closures are rechecked together before a comparison or rig
+classification is published. Optional glTF extensions outside the native
+decoder's observed coverage are retained explicitly and make inspection partial;
+the capability adapter withholds the extensions/channels gate. Unsupported
+required extensions remain native decoder errors.
 
 ## Rig classification
 
