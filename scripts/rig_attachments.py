@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 import numpy as np
-from rig_errors import require
+from rig_errors import RigError, require
 from rig_ik import solve_ik
-from rig_math import decompose, qinverse, qmatrix, qmul, transform_matrix
+from rig_math import decompose, qangle, qinverse, qmatrix, qmul, quaternion, transform_matrix
 from rig_skeleton import evaluate_fk
 
 
@@ -39,12 +40,57 @@ def detach_prop(rig, pose, prop: dict) -> dict:
     return result
 
 
-def transfer_prop(source, source_pose, target, target_pose, prop: dict, target_socket: str, *, tolerance=.01) -> dict:
+def _prop_grip_matrix(grip):
+    require(isinstance(grip, dict) and set(grip) == {'translation', 'rotation', 'scale'},
+            'RIG_HANDOFF_GRIP', 'A prop-local grip requires complete translation, rotation and scale.')
+    for field, size in [('translation', 3), ('rotation', 4), ('scale', 3)]:
+        values = grip[field]
+        require(isinstance(values, (list, tuple)) and len(values) == size
+                and all(type(value) in (int, float) and abs(value) <= 1e9
+                        and math.isfinite(value) for value in values),
+                'RIG_HANDOFF_GRIP', 'Prop-local grip '+field+' must be a finite native numeric vector.')
+    try:
+        # The canonical math owner checks finite vectors and positive,
+        # nonsingular scale. Grip quaternions follow the strict native contract.
+        quaternion(grip['rotation'], strict=True)
+        return transform_matrix(grip)
+    except RigError:
+        raise
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise RigError('RIG_HANDOFF_GRIP', 'Malformed prop-local grip transform.') from exc
+
+
+def transfer_prop(source, source_pose, target, target_pose, prop: dict, target_socket: str, *, tolerance=.01,
+                  source_grip=None, target_grip=None, orientation_tolerance=.01) -> dict:
+    """Transfer one owner without moving the prop.
+
+    Without explicit grips the established coincident-socket contact check is
+    retained. Paired grips are complete object-local TRS transforms: each hand
+    must meet its own prop grip within ``tolerance`` meters and
+    ``orientation_tolerance`` radians. The hands need not coincide.
+    """
     require(prop.get('owner') == source.manifest['character']['id'], 'RIG_PROP_OWNER', 'Source character does not own this prop.')
+    require((source_grip is None) == (target_grip is None), 'RIG_HANDOFF_GRIP',
+            'Supply both prop-local grips together, or neither for legacy contact.')
     current_socket = socket_world(source, source_pose, prop['socket']);destination = socket_world(target, target_pose, target_socket)
-    error = float(np.linalg.norm(current_socket[:3, 3]-destination[:3, 3]))
-    require(error <= tolerance, 'RIG_HANDOFF_CONTACT', 'Handoff hands do not meet in world space.', expected=tolerance, observed=error)
-    world = prop_world(source, source_pose, prop);result = deepcopy(prop)
+    if source_grip is None:
+        error = float(np.linalg.norm(current_socket[:3, 3]-destination[:3, 3]))
+        require(error <= tolerance, 'RIG_HANDOFF_CONTACT', 'Handoff hands do not meet in world space.', expected=tolerance, observed=error)
+        world = prop_world(source, source_pose, prop)
+    else:
+        for name, limit in [('position', tolerance), ('orientation', orientation_tolerance)]:
+            require(type(limit) in (int, float) and 0 <= limit <= 1e9 and math.isfinite(limit),
+                    'RIG_HANDOFF_TOLERANCE', 'Paired-grip '+name+' tolerance must be finite and within [0, 1e9].')
+        world = prop_world(source, source_pose, prop)
+        for side, actual, grip in [('source', current_socket, source_grip), ('target', destination, target_grip)]:
+            expected = world @ _prop_grip_matrix(grip)
+            position_error = float(np.linalg.norm(actual[:3, 3]-expected[:3, 3]))
+            angle_error = qangle(decompose(actual)['rotation'], decompose(expected)['rotation'])
+            require(position_error <= tolerance and angle_error <= orientation_tolerance,
+                    'RIG_HANDOFF_CONTACT', 'Handoff '+side+' hand does not meet its prop-local grip.',
+                    expected=dict(position_m=tolerance, orientation_rad=orientation_tolerance),
+                    observed=dict(position_m=position_error, orientation_rad=angle_error))
+    result = deepcopy(prop)
     result.update(owner=target.manifest['character']['id'], socket=target_socket,
                   transform=decompose(np.linalg.inv(destination) @ world))
     return result
