@@ -50,7 +50,7 @@ def _recipe(statement):
             'parameters': parameters, 'budget': 256}
 
 
-def _preflight_project(graph, recipes):
+def _preflight_project(graph, recipes, *, destination=None):
     """Use the actual generator and snapshot owners before claiming readiness."""
     from scene3d_contracts import load_project, validate_prefab_instances
     from scene3d_graph import SceneGraph
@@ -84,7 +84,8 @@ def _preflight_project(graph, recipes):
     candidate = SceneGraph(scene)
     # The destination is never created in dry-run mode. Its trusted parent is
     # the already selected project parent; no user-controlled output is opened.
-    snapshot_project(source, Path(source).absolute().parent / ('.scene3d-language-preflight-' + uuid4().hex),
+    output = destination if destination is not None else Path(source).absolute().parent / ('.scene3d-language-preflight-' + uuid4().hex)
+    snapshot_project(source, output,
                      candidate, scene_path=scene_path, derived_documents=documents,
                      extra_payloads=payloads, dry_run=True)
 
@@ -171,6 +172,8 @@ def apply_environment_plan(source, destination, scene_path, plan, *, dry_run=Fal
             'Environment plan is unresolved or differs from its deterministic original description.',
             'SCENE3D_LANGUAGE_HASH')
     if dry_run:
+        from scene3d_snapshot import _new_destination
+        _new_destination(destination)
         return {'dry_run': True, 'plan': plan, 'destination': str(destination)}
     result = apply_recipes(source, destination, scene_path, plan['recipes'])
     result['language_plan'] = plan

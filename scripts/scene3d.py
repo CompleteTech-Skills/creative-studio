@@ -101,9 +101,7 @@ def execute(args):
     if args.command == "inspect":
         return {"status": bundle["status"], "project": bundle["project"], "inventory": bundle["inventory"]}
     if args.command == "snapshot":
-        if args.dry_run:
-            return {"dry_run": True, "status": bundle["status"], "files": len(bundle["inventory"]), "destination": str(args.destination)}
-        return snapshot_project(args.project, args.destination)
+        return snapshot_project(args.project, args.destination, dry_run=args.dry_run)
     from scene3d_language import compile_description, apply_plan
     graph = SceneGraph.from_bundle(bundle, args.scene, source_root=args.project)
     if args.command == "scene-state":
@@ -120,11 +118,8 @@ def execute(args):
         commands = decode_json(read_source_bytes(args.file, 1024 * 1024))
         library = PrefabLibrary.from_files(args.project, bundle)
         applied = apply_commands(graph, library, commands)
-        if args.dry_run:
-            return {"dry_run": True, "revision": graph.revision, "scene_sha256": graph.digest,
-                    "operations": len(applied["results"]), "destination": str(args.destination)}
         result = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
-                                  derived_documents=applied["derived_documents"])
+                                  derived_documents=applied["derived_documents"], dry_run=args.dry_run)
         result["operations"] = len(applied["results"])
         return result
     if args.command in ("apply-plan", "generate"):
@@ -148,11 +143,8 @@ def execute(args):
         return apply_environment_plan(args.project, args.destination, args.scene, plan, dry_run=args.dry_run)
     library = PrefabLibrary.from_files(args.project, bundle)
     applied = apply_plan(graph, library, plan)
-    if args.dry_run:
-        return {"dry_run": True, "plan": plan, "revision": graph.revision,
-                "scene_sha256": graph.digest, "destination": str(args.destination)}
     result = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
-                              derived_documents=applied["derived_documents"])
+                              derived_documents=applied["derived_documents"], dry_run=args.dry_run)
     result["language_plan"] = plan
     return result
 
