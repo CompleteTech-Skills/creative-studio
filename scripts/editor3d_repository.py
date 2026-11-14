@@ -380,7 +380,8 @@ class EditorRepository:
                 library = PrefabLibrary.from_files(source, bundle)
                 batch = apply_commands(graph, library, commands)
                 result = snapshot_project(source, destination, graph, scene_path=record['scene_path'],
-                                          derived_documents=batch['derived_documents'], max_bytes=self.limits['max_bytes'])
+                                          derived_documents=batch['derived_documents'], max_bytes=self.limits['max_bytes'],
+                                          expected_project_sha256=record['inventory']['project.json']['sha256'])
                 return result['active_scene']['path']
             return self._commit(head, transaction_id, request, label, 'apply', build, head['undo'] + [head['revision']], [])
 

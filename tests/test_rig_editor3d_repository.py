@@ -40,6 +40,54 @@ class EditorRepositoryTests(unittest.TestCase):
         self.assertEqual(self.mesh_x(self.repo.snapshot(0)),2)
         self.assertEqual(result['revision'],1)
 
+    def test_apply_rejects_source_project_replaced_after_revision_validation(self):
+        import editor3d_repository as module
+        import scene3d_snapshot
+        from scene3d_contracts import canonical_bytes, load_project
+        for phase in ('before-working-load', 'before-snapshot-load'):
+            with self.subTest(phase=phase):
+                self.repo = EditorRepository.create(self.source, self.root/('editor-'+phase))
+                before = self.repo.snapshot()
+                head_bytes = (self.repo.root/'HEAD.json').read_bytes()
+                project_path = self.repo.root/'revisions/00000000/native/project.json'
+                original = project_path.read_bytes()
+                foreign = json.loads(original)
+                foreign['name'] = 'A valid but unadmitted project revision'
+                replacement = canonical_bytes(foreign)
+                observed = []
+                def replace_source():
+                    project_path.write_bytes(replacement)
+                    # This remains a valid native project; rejection must bind
+                    # the originally admitted revision, not merely its schema.
+                    load_project(project_path.parent)
+                    observed.append(phase)
+                real_load = module.load_project
+                real_snapshot = scene3d_snapshot.snapshot_project
+                calls = []
+                def load(source):
+                    calls.append(source)
+                    if phase == 'before-working-load' and len(calls) == 2:
+                        replace_source()
+                    return real_load(source)
+                def snapshot(*args, **kwargs):
+                    if phase == 'before-snapshot-load':
+                        replace_source()
+                    return real_snapshot(*args, **kwargs)
+                try:
+                    with patch.object(module, 'load_project', side_effect=load), \
+                         patch.object(scene3d_snapshot, 'snapshot_project', side_effect=snapshot):
+                        with self.assertRaises(RigError) as caught:
+                            self.repo.apply(0, self.move(8), 'changed-project-'+phase)
+                    self.assertEqual(caught.exception.report['code'], 'SCENE3D_SOURCE_CHANGED')
+                    self.assertEqual(observed, [phase])
+                    self.assertEqual(project_path.read_bytes(), replacement)
+                    self.assertEqual((self.repo.root/'HEAD.json').read_bytes(), head_bytes)
+                    self.assertFalse(self.repo.recovery())
+                    self.assertEqual(sorted(p.name for p in (self.repo.root/'revisions').iterdir()), ['00000000'])
+                finally:
+                    project_path.write_bytes(original)
+                self.assertEqual(EditorRepository(self.repo.root).snapshot(), before)
+
     def test_compound_failure_keeps_head_and_native_source_unchanged(self):
         before=self.repo.snapshot();batch=self.move(9)
         batch['commands'].append({'operation':'reparent','parameters':{'identifier':'root','parent':'mesh'}})
