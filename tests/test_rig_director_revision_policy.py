@@ -228,5 +228,89 @@ class LogicalRevisionPolicyTests(unittest.TestCase):
         self.assertEqual(contracts._read_artifact(self.root, self.project_ref), _bytes(self.project))
 
 
+class LogicalV2RevisionPolicyTests(unittest.TestCase):
+    # Reuse byte-writing fixture utilities, without inheriting and duplicating
+    # the v1 test suite. V2 records come from the actual canonical v2 fixture.
+    store = LogicalRevisionPolicyTests.store
+    publisher = LogicalRevisionPolicyTests.publisher
+    repatch = LogicalRevisionPolicyTests.repatch
+
+    def setUp(self):
+        LogicalRevisionPolicyTests.setUp(self)
+        import json
+        fixture = json.loads((ROOT/'examples/director-contracts/project-v2-fixture.json').read_bytes())
+        envelopes = json.loads((ROOT/'examples/director-contracts/contracts.json').read_bytes())
+        review_envelope = next(d for d in envelopes if d['kind'] == 'director-result' and
+                               d['method'] == 'QAService.record_review')
+        contracts.validate_document(review_envelope)
+        self.other_review = self.store(_bytes(review_envelope), artifact_id='other-review', kind='director-result')
+        self.project['reviews'] = [self.review, self.other_review]
+        self.project['schema_version'] = fixture['schema_version']
+        self.project['milestones'] = deepcopy(fixture['milestones'])
+        for milestone in self.project['milestones']:
+            milestone.update(status='passed', evidence=[self.resource], authority='human',
+                required_inputs=[self.before, self.brief], artifact_refs=[self.resource],
+                evidence_refs=[self.resource], remaining_work=[], failure_reason=None,
+                validation_results=[dict(check='unit-fixture-only', status='passed',
+                                          evidence=[self.resource], diagnostics=[])])
+        contracts.validate_document(self.project)
+        self.project_ref = self.store(_bytes(self.project), artifact_id=self.project['id'],
+                                      kind='director-project', schema_version=2)
+        self.binding['logical_project'] = self.project_ref
+        self.timestamp = '2026-11-13T12:01:00Z'
+
+    def prepare(self, **kwargs):
+        return self.policy.prepare(self.project_ref, self.patch_ref,
+            expected_project_sha256=kwargs.get('expected', self.project_ref['sha256']),
+            next_version=kwargs.get('version', '1.0.1'),
+            revision_timestamp=kwargs.get('timestamp', self.timestamp))
+
+    def test_v2_exact_records_invalidation_publication_and_rollback(self):
+        prepared = self.prepare()
+        candidate = prepared['project']
+        self.assertEqual(candidate['schema_version'], 2)
+        for old, new in zip(self.project['milestones'], candidate['milestones']):
+            if old['name'] in ('planning', 'assets', 'motion'):
+                self.assertEqual(new, old)
+            else:
+                self.assertEqual(new['timestamp'], self.timestamp)
+                self.assertEqual(new['required_inputs'], [self.after, self.brief, self.patch_ref])
+                for field in ('evidence', 'evidence_refs', 'artifact_refs', 'validation_results'):
+                    self.assertEqual(new[field], [])
+                self.assertIsNone(new['failure_reason'])
+                self.assertTrue(new['remaining_work'])
+                self.assertEqual(new['status'], 'unverified')
+        receipt = self.policy.publish(prepared)
+        self.assertEqual(receipt['project']['schema_version'], 2)
+        self.assertEqual(contracts._read_artifact(self.root, receipt['project']), _bytes(candidate))
+        self.assertFalse(self.policy.rollback(receipt)['native_mutation'])
+        self.assertEqual(contracts._read_artifact(self.root, self.project_ref), _bytes(self.project))
+        self.assertEqual(contracts._read_artifact(self.root, self.before), b'old native snapshot fixture')
+        self.assertEqual(contracts._read_artifact(self.root, self.review), b'historical affected review')
+        self.assertEqual(candidate['original_request'], self.project['original_request'])
+        self.assertEqual(candidate['brief'], self.project['brief'])
+        self.assertEqual(candidate['characters'], self.project['characters'])
+        self.assertEqual(candidate['reviews'], [self.other_review])
+
+    def test_v2_missing_malformed_stale_and_future_timestamp_fail(self):
+        for timestamp in (None, 'not-a-time', '2026-11-13T11:59:59Z', '2999-01-01T00:00:00Z'):
+            with self.subTest(timestamp=timestamp), self.assertRaises(RigError):
+                self.prepare(timestamp=timestamp)
+        self.assertEqual(self.calls, [])
+
+    def test_v2_no_retained_approval_and_publication_failure_cannot_change_sources(self):
+        prepared = self.prepare()
+        prepared['project']['milestones'][2]['evidence_refs'] = [self.review]
+        with self.assertRaises(RigError): self.policy.publish(prepared)
+        self.assertEqual(self.calls, [])
+        prepared = self.prepare()
+        def fail(*args, **kwargs):
+            raise RigError('FIXTURE_PUBLISH_FAILURE', 'V2 fixture publication failure.')
+        self.policy.publish_artifact = fail
+        with self.assertRaises(RigError): self.policy.publish(prepared)
+        self.assertEqual(contracts._read_artifact(self.root, self.project_ref), _bytes(self.project))
+        self.assertEqual(contracts._read_artifact(self.root, self.resource), b'unchanged native source bytes')
+
+
 if __name__ == '__main__':
     unittest.main()

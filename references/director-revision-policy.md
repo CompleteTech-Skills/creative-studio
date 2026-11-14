@@ -1,7 +1,7 @@
 # Logical Director revision policy
 
 `director_revision_policy.LogicalRevisionPolicy` prepares and publishes an
-**unselected immutable candidate** from an exact DirectorProject v1 and exact
+**unselected immutable candidate** from an exact DirectorProject v1 or v2 and exact
 native revision patch. It never writes an EditorRepository, changes ONE HEAD,
 activates a pair, executes regeneration, approves protected native edits, or
 removes immutable bytes. `rollback` abandons an unselected candidate and retains
@@ -38,6 +38,17 @@ Duration, ending and story edits fail with a dependency diagnostic until the
 logical story/shot owner can perform exact semantic updates; no metadata-only
 duration success is reported.
 
+V2 preparation additionally requires `revision_timestamp`, the actual time the
+invalidation was observed. It uses the canonical RFC3339 parser and must be at
+least as recent as the existing milestone timestamps and no later than now.
+Affected v2 milestones replace exact changed required-input refs, add the exact
+new native refs and patch, and clear `artifact_refs`, `validation_results`, both
+evidence aliases and `failure_reason`. They state remaining validation,
+regeneration and review work. The timestamp records invalidation, and makes no
+claim that regeneration or review occurred. Unaffected v2 records remain exact.
+The policy preserves the input schema version; it does not migrate v1 records
+or invent observations for missing v2 fields.
+
 Every referenced file is read using the canonical hash-verifying artifact
 reader, including resource dependency refs and historical Director documents.
 Director documents use the canonical validator. Changed native payload format
@@ -69,7 +80,7 @@ reader and preactivation concurrency check.
 Production integration remains blocked on canonical full native snapshot
 registration, the Root preactivation/ONE HEAD hook, and the final trusted
 DocumentPublisher wiring. The storage owner's candidate is not implicitly
-integrated or approved here. DirectorProject v2 requires its owner's explicit
-integration. Unit tests write actual fixture bytes and exercise publication
+integrated or approved here. V2 uses the merged canonical contract and fixture.
+Unit tests write actual fixture bytes and exercise publication
 readback, preservation and rejection behavior; they establish neither production
 native publication nor full issue 36 acceptance.

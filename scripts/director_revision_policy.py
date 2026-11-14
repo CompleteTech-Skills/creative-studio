@@ -4,6 +4,7 @@ Bindings and publication are installed application owners. This helper provides
 neither native snapshot registration nor the Root preactivation/ONE HEAD hook.
 """
 from copy import deepcopy
+from datetime import datetime, timezone
 import hashlib
 import unicodedata
 
@@ -60,10 +61,13 @@ class LogicalRevisionPolicy:
 
     def _document(self, reference):
         document = contracts.validate_document(decode_json(self._read(reference)))
-        _need((document.get('id'), document.get('kind'), document.get('schema_version'),
-               document.get('semantic_version')) ==
-              (reference['artifact_id'], reference['kind'], reference['schema_version'],
-               reference['semantic_version']), 'IDENTITY', 'Document identity differs from its exact reference.')
+        _need(document.get('kind') == reference['kind'] and
+              document.get('schema_version') == reference['schema_version'] and
+              ('id' not in document or document['id'] == reference['artifact_id']) and
+              ('semantic_version' not in document or document['semantic_version'] == reference['semantic_version']),
+              'IDENTITY', 'Document identity differs from its exact reference.')
+        # Method request/result envelopes intentionally have no document ID or
+        # semantic version fields; their exact ArtifactRef names their bytes.
         return document
 
     def _closure(self, value):
@@ -93,13 +97,23 @@ class LogicalRevisionPolicy:
                             for key, ref in unique.items()}, 'logical revision artifact')
         return list(unique.values())
 
-    def prepare(self, project_ref, patch_ref, *, expected_project_sha256, next_version):
+    def prepare(self, project_ref, patch_ref, *, expected_project_sha256, next_version,
+                revision_timestamp=None):
         """Read exact immutable inputs and return a candidate; no bytes are written."""
         _need(callable(self.binding_resolver), 'DEPENDENCY',
               'Canonical full native snapshot registration and exact binding owner are required.')
         project = self._document(project_ref)
-        _need(project['kind'] == 'director-project' and project['schema_version'] == 1,
-              'DEPENDENCY', 'This bounded policy accepts DirectorProject v1; v2 needs owner integration.')
+        _need(project['kind'] == 'director-project' and project['schema_version'] in (1, 2),
+              'DEPENDENCY', 'Use a canonical DirectorProject v1 or v2.')
+        if project['schema_version'] == 2:
+            _need(revision_timestamp is not None, 'TIMESTAMP',
+                  'Supply the actual invalidation observation timestamp for a v2 candidate.')
+            observed = contracts.parse_rfc3339(revision_timestamp)
+            _need(max(contracts.parse_rfc3339(m['timestamp']) for m in project['milestones']) <= observed
+                  <= datetime.now(timezone.utc), 'TIMESTAMP',
+                  'Invalidation timestamp must follow existing records and cannot claim a future observation.')
+        else:
+            _need(revision_timestamp is None, 'TIMESTAMP', 'V1 has no milestone observation timestamp field.')
         _need(project_ref['sha256'] == expected_project_sha256, 'STALE',
               'Expected logical project hash differs from the immutable input.')
         self._ref(patch_ref)
@@ -195,6 +209,19 @@ class LogicalRevisionPolicy:
             if milestone['name'] in invalidated:
                 milestone.update(status='unverified', evidence=[], diagnostics=[], authority='automated',
                                  scope='Changed native inputs; regeneration and current review are pending.')
+                if project['schema_version'] == 2:
+                    inputs = deepcopy(milestone['required_inputs'])
+                    for replacement in replacements:
+                        inputs = [deepcopy(replacement['after']) if ref == replacement['before'] else ref
+                                  for ref in inputs]
+                        if replacement['after'] not in inputs:
+                            inputs.append(deepcopy(replacement['after']))
+                    if patch_ref not in inputs:
+                        inputs.append(deepcopy(patch_ref))
+                    milestone.update(timestamp=revision_timestamp, required_inputs=inputs,
+                        artifact_refs=[], validation_results=[], evidence_refs=[], failure_reason=None,
+                        remaining_work=['Validate changed native inputs and regenerate affected outputs through their owners.',
+                                        'Obtain current evidence and applicable scoped review.'])
         candidate.update(semantic_version=next_version, status='in-progress')
         contracts.validate_document(candidate)
         _need(_version(next_version) > _version(project['semantic_version']), 'VERSION',
@@ -204,27 +231,28 @@ class LogicalRevisionPolicy:
         return dict(state='immutable-candidate-unselected', project=candidate,
                     project_ref=deepcopy(project_ref), patch_ref=deepcopy(patch_ref),
                     expected_project_sha256=expected_project_sha256, next_version=next_version,
+                    revision_timestamp=revision_timestamp,
                     dependencies=dependencies, sha256=hashlib.sha256(_bytes(candidate)).hexdigest())
 
     def publish(self, prepared):
         """Publish immutable bytes only; Root must separately activate the pair."""
         _need(callable(self.publish_artifact), 'DEPENDENCY', 'Canonical DocumentPublisher is required.')
         _need(isinstance(prepared, dict) and set(prepared) == {'state', 'project', 'project_ref', 'patch_ref',
-              'expected_project_sha256', 'next_version', 'dependencies', 'sha256'},
+              'expected_project_sha256', 'next_version', 'revision_timestamp', 'dependencies', 'sha256'},
               'CANDIDATE', 'Use the complete prepared immutable candidate.')
         checked = self.prepare(prepared['project_ref'], prepared['patch_ref'],
                                expected_project_sha256=prepared['expected_project_sha256'],
-                               next_version=prepared['next_version'])
+                               next_version=prepared['next_version'], revision_timestamp=prepared['revision_timestamp'])
         _need(prepared == checked, 'CANDIDATE', 'Candidate or trusted bindings changed before publication.')
         project = checked['project']; payload = _bytes(project)
         fixture = checked['project_ref']['fixture'] or checked['patch_ref']['fixture'] or any(
             ref['fixture'] for ref in self._closure(project))
         reference = self.publish_artifact(payload, artifact_id=project['id'], kind='director-project',
-            schema_version=1, semantic_version=project['semantic_version'],
+            schema_version=project['schema_version'], semantic_version=project['semantic_version'],
             dependencies=deepcopy(checked['dependencies']), fixture=fixture)
         self._ref(reference)
         _need(reference['artifact_id'] == project['id'] and reference['kind'] == 'director-project' and
-              reference['schema_version'] == 1 and reference['semantic_version'] == project['semantic_version'] and
+              reference['schema_version'] == project['schema_version'] and reference['semantic_version'] == project['semantic_version'] and
               reference['dependencies'] == checked['dependencies'] and reference['fixture'] == fixture and
               self._read(reference) == payload, 'PUBLICATION',
               'Canonical publisher did not preserve exact project bytes and predecessor/patch dependencies.')
