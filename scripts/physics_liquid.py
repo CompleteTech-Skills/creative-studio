@@ -6,6 +6,7 @@ certified. Cache hashes provide integrity, not authenticated provenance.
 """
 from pathlib import Path
 import io
+import os
 import shutil
 import tempfile
 import time
@@ -16,9 +17,9 @@ from physics_liquid_settings import admit
 from physics_liquid_validation import verify_geometry
 
 
-def _verify_cache_snapshot(root, *, expected_world_sha256=None):
+def _verify_cache_snapshot(root, *, expected_world_sha256=None, directory_fd=None):
     """Return the public report and immutable bytes from its verified snapshot."""
-    with core._Reader(root) as reader:
+    with (core._Reader(root) if directory_fd is None else core._Reader.from_descriptor(directory_fd)) as reader:
         manifest_bytes=reader.read('liquid-cache.json',1024*1024)
         manifest=core.parse(manifest_bytes)
         core.require(type(manifest) is dict and set(manifest)=={'protocol','kind','world_sha256','settings_sha256','files','backend','resources','project_manifest'} and
@@ -129,50 +130,70 @@ def verify_cache(root, *, expected_world_sha256=None):
     return report
 
 
+def _verify_cache_at(directory_fd, *, expected_world_sha256=None):
+    report,_=_verify_cache_snapshot(None,expected_world_sha256=expected_world_sha256,directory_fd=directory_fd)
+    return report
+
+
 def simulate(world, source_payloads, destination, *, settings, executable=None, project_manifest='project.json', cancel_token=None):
+    from atomic_publish import private_stage_fd,rename_no_replace_at
     world,settings=admit(world,settings)
     destination=core._new_destination(destination)
-    core.require(type(source_payloads) is dict and all(type(v) is bytes for v in source_payloads.values()) and sum(len(v) for v in source_payloads.values())<=core.MAX_INPUT_BYTES,
+    core.require(type(source_payloads) is dict,'PHYSICS_INPUTS','Liquid sources must be an exact byte mapping.')
+    source_payloads=dict(source_payloads)
+    core.require(all(type(v) is bytes for v in source_payloads.values()) and sum(len(v) for v in source_payloads.values())<=core.MAX_INPUT_BYTES,
         'PHYSICS_INPUTS','Liquid sources exceed input bound.')
-    stage=Path(tempfile.mkdtemp(prefix='.'+destination.name+'.liquid-',dir=destination.parent))
-    try:
-        backend=core.BlenderBackend(executable);identity=backend._discover()
-        identity={**identity,'solver_name':'Blender Mantaflow liquid','solver_version':'bundled with Blender'}
-        for name,payload in source_payloads.items():
-            core.path_name(name);core.require(type(payload) is bytes,'PHYSICS_INPUTS','Source payload must be bytes.')
-            core._write(stage/'inputs'/name,payload)
-        bundle,meshes,_,_=core._source_admission(stage/'inputs',world,project_manifest)
-        core.require(set(bundle['inventory'])==set(source_payloads),'PHYSICS_INPUTS','Source mapping must equal native dependency closure.')
-        worker=Path(__file__).with_name('physics_liquid_worker.py').read_bytes()
-        core._write(stage/'worker.py',worker)
-        core._write(stage/'world.json',core.canonical(world));core._write(stage/'liquid-settings.json',core.canonical(settings))
-        job=dict(protocol=1,mode='simulate',expected_blend_sha256=None,world=world,settings=settings,meshes=meshes,
-            worker_sha256=core.digest(worker),world_sha256=core.digest(core.canonical(world)),settings_sha256=core.digest(core.canonical(settings)))
-        core._write(stage/'liquid-job.json',core.canonical(job))
-        command=[backend.executable,'--background','--factory-startup','--disable-autoexec','--threads',str(min(2,world['budgets']['cpu_workers'])),
-            '--python-exit-code','2','--python',str(stage/'worker.py'),'--',str(stage/'liquid-job.json')]
-        deadline=time.monotonic()+min(180,world['budgets']['timeout_seconds'])
-        resources=[]
-        for mode in ['simulate','reopen']:
-            if mode=='reopen':
-                job.update(mode=mode,expected_blend_sha256=core.digest((stage/'scene.blend').read_bytes()))
-                (stage/'liquid-job.json').unlink();core._write(stage/'liquid-job.json',core.canonical(job))
-            resources.append(core._run_process(command,stage,timeout=core._remaining(deadline),
-                memory_bytes=min(2*1024**3,world['budgets']['memory_bytes']),
-                output_bytes=min(256*1024**2,world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']),cancel_token=cancel_token,label=mode))
-        with core._Reader(stage) as reader:verify_geometry(reader,world)
-        manifest=dict(protocol=1,kind='hatch-native-liquid-cache',world_sha256=job['world_sha256'],
-            settings_sha256=job['settings_sha256'],files=core._inventory(stage),backend=identity,resources=resources,project_manifest=project_manifest)
-        manifest_bytes=core.canonical(manifest)
-        core.require(sum(x['bytes'] for x in manifest['files'])+len(manifest_bytes)<=min(core.MAX_CACHE_BYTES,world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']) and
-            len(manifest_bytes)<=world['budgets']['bake_file_bytes'] and all(x['bytes']<=world['budgets']['bake_file_bytes'] for x in manifest['files']),
-            'PHYSICS_RESOURCE_LIMIT','Liquid output exceeds admitted storage limits.')
-        core._write(stage/'liquid-cache.json',manifest_bytes)
-        result=verify_cache(stage,expected_world_sha256=job['world_sha256'])
-        core._publish(stage,destination)
-        return result
-    finally:
-        if stage.exists():shutil.rmtree(stage)
+    core._paths(source_payloads)
+    with core._Reader(destination.parent) as parent, private_stage_fd(parent.fd,prefix='.'+destination.name+'.liquid-') as stage_fd:
+        os.mkdir('payload',mode=0o700,dir_fd=stage_fd)
+        payload_fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=stage_fd)
+        try:
+            for name,payload in source_payloads.items():core._write_relative(payload_fd,'inputs/'+name,payload)
+            # Native admission consumes a detached byte snapshot; no mutable
+            # publication pathname is given to the scene/geometry authorities.
+            with tempfile.TemporaryDirectory(prefix='hatch-liquid-admission-') as temporary:
+                source=Path(temporary)
+                for name,payload in source_payloads.items():core._write(source/name,payload)
+                bundle,meshes,_,_=core._source_admission(source,world,project_manifest)
+            core.require(set(bundle['inventory'])==set(source_payloads),'PHYSICS_INPUTS','Source mapping must equal native dependency closure.')
+            backend=core.BlenderBackend(executable);identity=backend._discover()
+            identity={**identity,'solver_name':'Blender Mantaflow liquid','solver_version':'bundled with Blender'}
+            worker=Path(__file__).with_name('physics_liquid_worker.py').read_bytes()
+            core._write_relative(payload_fd,'worker.py',worker)
+            core._write_relative(payload_fd,'world.json',core.canonical(world))
+            core._write_relative(payload_fd,'liquid-settings.json',core.canonical(settings))
+            job=dict(protocol=1,mode='simulate',expected_blend_sha256=None,world=world,settings=settings,meshes=meshes,
+                worker_sha256=core.digest(worker),world_sha256=core.digest(core.canonical(world)),settings_sha256=core.digest(core.canonical(settings)))
+            core._write_relative(payload_fd,'liquid-job.json',core.canonical(job))
+            command=[backend.executable,'--background','--factory-startup','--disable-autoexec','--threads',str(min(2,world['budgets']['cpu_workers'])),
+                '--python-exit-code','2','--python','worker.py','--','liquid-job.json']
+            deadline=time.monotonic()+min(180,world['budgets']['timeout_seconds']);resources=[]
+            for mode in ['simulate','reopen']:
+                if mode=='reopen':
+                    with core._Reader.from_descriptor(payload_fd) as reader:blend=reader.read('scene.blend')
+                    job.update(mode=mode,expected_blend_sha256=core.digest(blend))
+                    os.unlink('liquid-job.json',dir_fd=payload_fd)
+                    core._write_relative(payload_fd,'liquid-job.json',core.canonical(job))
+                resources.append(core._run_process_at(command,payload_fd,timeout=core._remaining(deadline),
+                    memory_bytes=min(2*1024**3,world['budgets']['memory_bytes']),
+                    output_bytes=min(256*1024**2,world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']),
+                    cancel_token=cancel_token,label=mode))
+            with core._Reader.from_descriptor(payload_fd) as reader:verify_geometry(reader,world)
+            manifest=dict(protocol=1,kind='hatch-native-liquid-cache',world_sha256=job['world_sha256'],
+                settings_sha256=job['settings_sha256'],files=core._inventory_relative(payload_fd),backend=identity,resources=resources,project_manifest=project_manifest)
+            manifest_bytes=core.canonical(manifest)
+            core.require(sum(x['bytes'] for x in manifest['files'])+len(manifest_bytes)<=min(core.MAX_CACHE_BYTES,world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']) and
+                len(manifest_bytes)<=world['budgets']['bake_file_bytes'] and all(x['bytes']<=world['budgets']['bake_file_bytes'] for x in manifest['files']),
+                'PHYSICS_RESOURCE_LIMIT','Liquid output exceeds admitted storage limits.')
+            core._write_relative(payload_fd,'liquid-cache.json',manifest_bytes)
+            result=_verify_cache_at(payload_fd,expected_world_sha256=job['world_sha256'])
+            try:rename_no_replace_at(stage_fd,'payload',parent.fd,destination.name)
+            except FileExistsError as exc:
+                raise core.BackendError('PHYSICS_DESTINATION_EXISTS','A destination created during staging was preserved.',category='invalid-input') from exc
+            except OSError as exc:
+                raise core.BackendError('PHYSICS_PUBLICATION_UNAVAILABLE','Exclusive output publication failed safely: '+str(exc)) from exc
+            return result
+        finally:os.close(payload_fd)
 
 
 def main(argv=None):

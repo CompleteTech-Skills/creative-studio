@@ -4,6 +4,8 @@ import gzip
 import struct
 import json
 import math
+import os
+import stat
 from pathlib import Path
 import sys
 
@@ -49,8 +51,17 @@ def render(scene,root,settings,prefix):
 
 
 def main():
-    root=Path(__file__).resolve().parent
-    arg=Path(sys.argv[sys.argv.index('--')+1]).resolve()
+    descriptor=os.environ.get('HATCH_PHYSICS_DIRECTORY_FD')
+    if descriptor is None:
+        root=Path(__file__).resolve().parent
+        arg=Path(sys.argv[sys.argv.index('--')+1]).resolve()
+    else:
+        if not descriptor.isascii() or not descriptor.isdigit():raise ValueError('Invalid pinned worker directory.')
+        owned=os.fstat(int(descriptor));cwd=os.stat('.')
+        if not stat.S_ISDIR(owned.st_mode) or (owned.st_dev,owned.st_ino)!=(cwd.st_dev,cwd.st_ino):
+            raise ValueError('Pinned worker directory differs from its cwd.')
+        root=Path('.')
+        arg=Path(sys.argv[sys.argv.index('--')+1])
     if arg!=root/'liquid-job.json':raise ValueError('Unexpected liquid job path.')
     job=json.loads(arg.read_bytes())
     fields={'protocol','mode','expected_blend_sha256','world','settings','meshes','worker_sha256','world_sha256','settings_sha256'}

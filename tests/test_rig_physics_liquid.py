@@ -34,7 +34,23 @@ class NativeLiquidTests(unittest.TestCase):
             world['components'][0]['resolution']=[float(v) for v in world['components'][0]['resolution']]
             original_world=core.canonical(world)
             original=dict(payloads)
-            report=simulate(world,payloads,root,settings=settings)
+            import atomic_publish
+            original_rename=atomic_publish.rename_no_replace_at
+            changed=[]
+            def rename(source_fd,source_name,destination_fd,destination_name):
+                if destination_name==root.name:
+                    info=os.fstat(source_fd)
+                    stage=next(p for p in root.parent.iterdir() if
+                        (p.stat().st_dev,p.stat().st_ino)==(info.st_dev,info.st_ino))
+                    stage.rename(root.parent/(stage.name+'.owned'))
+                    stage.mkdir();(stage/'foreign-marker').write_bytes(b'preserve replacement')
+                    changed.append(stage)
+                return original_rename(source_fd,source_name,destination_fd,destination_name)
+            with patch.object(atomic_publish,'rename_no_replace_at',side_effect=rename):
+                report=simulate(world,payloads,root,settings=settings)
+            self.assertEqual(len(changed),1)
+            self.assertEqual((changed[0]/'foreign-marker').read_bytes(),b'preserve replacement')
+            self.assertFalse((root/'foreign-marker').exists())
             self.assertEqual(payloads,original)
             self.assertEqual(core.canonical(world),original_world)
             self.assertEqual((root/'world.json').read_bytes(),original_world)
