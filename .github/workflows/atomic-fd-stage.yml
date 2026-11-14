@@ -22,11 +22,14 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m unittest discover -s tests -p test_atomic_fd_stage.py -v 2>&1 | tee atomic-fd-stage.log
+      - run: python -m unittest discover -s tests -p test_atomic_verified_file.py -v 2>&1 | tee atomic-verified-file.log
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: atomic-fd-stage-${{ runner.os }}-${{ github.sha }}
-          path: atomic-fd-stage.log
+          path: |
+            atomic-fd-stage.log
+            atomic-verified-file.log
           if-no-files-found: error
           retention-days: 30
   registered-directory-consumer:
