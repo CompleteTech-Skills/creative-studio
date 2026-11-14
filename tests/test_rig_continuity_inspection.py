@@ -44,14 +44,15 @@ def gltf(root,name='source.glb',*,color=(20,40,60),width=1.,external=False):
                NORMAL=b.accessor([[0,0,1]]*3,'VEC3'),TANGENT=b.accessor([[1,0,0,1]]*3,'VEC4'),
                TEXCOORD_0=b.accessor([[0,0],[1,0],[0,1]],'VEC2'))
     primitive=dict(attributes=attrs,material=0,targets=[dict(POSITION=b.accessor([[0,0,.1]]*3,'VEC3'))])
+    images=[dict(uri='texture.png')] if external else [dict(mimeType='image/png',bufferView=b.view(image.getvalue()))]
     b.json.update(nodes=[dict(name='Actual parent',translation=[3,0,0],children=[1]),dict(name='Actual mesh',mesh=0)],
                   meshes=[dict(name='same descriptive metadata',extras=dict(targetNames=['smile']),primitives=[primitive])],
-                  scenes=[dict(nodes=[0])],images=[dict(mimeType='image/png',bufferView=b.view(image.getvalue()))],
+                  scenes=[dict(nodes=[0])],images=images,
                   materials=[dict(name='same descriptive material',pbrMetallicRoughness=dict(baseColorTexture=dict(index=0)))],
                   textures=[dict(source=0)])
     b.json['asset']['extras']=dict(hatchSource=dict(fixture=True))
     if external:
-        (root/'texture.png').write_bytes(image.getvalue());b.json['images']=[dict(uri='texture.png')]
+        (root/'texture.png').write_bytes(image.getvalue())
     b.write(root/name)
     return root/name,b
 

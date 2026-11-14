@@ -68,7 +68,9 @@ inferring that a state, costume or scale change has been approved.
 `compare_assets(root, left_request, right_request)` executes both inspections.
 It reports byte identity, triangle-surface identity, attribute/morph identity,
 height-normalized geometry identity and material/texture/assignment identity
-separately. The triangle fingerprint quantizes coordinates to 1e-9 meters and
+separately. `source_byte_identity` concerns only the main file;
+`byte_identity` covers its pinned dependency closure as well, so an unchanged
+glTF document cannot hide a changed external texture. The triangle fingerprint quantizes coordinates to 1e-9 meters and
 sorts triangle vertices/triangles, ignoring winding and serialization; original
 indices and attributes retain separate fingerprints. It remains topology
 sensitive. Equal counts, names or fingerprints do not prove semantic identity.
