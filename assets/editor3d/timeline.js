@@ -1,5 +1,32 @@
 /* Exact saved-revision timeline. All persistent edits receive backend acknowledgement. */
-export function mountTimeline({container,api,getSnapshot,getSelection,preview,clearPreview,reload,onSelect,registerCommitInterceptor,registerPreviewEditAuthorizer,refreshPreviewEditState,registerTimelineProvider}) {
+function timelineReferences(snapshot) { return ['scenes','shots','animations'].flatMap(field => snapshot.project[field] || []); }
+export function rebindTimelinePath(path, before, after, preferred = null) {
+  const original = timelineReferences(before).filter(reference => reference.path === path);
+  if (original.length !== 1) throw Error('Select one registered native timeline resource.');
+  let current = timelineReferences(after).filter(reference => reference.kind === original[0].kind && reference.id === original[0].id);
+  if (original[0].kind === 'scene3d-scene' && path === before.scene_path)
+    current = current.filter(reference => reference.path === after.scene_path);
+  else if (original[0].kind === 'scene3d-shot' && before.documents[path]?.scene.path === before.scene_path)
+    current = current.filter(reference => after.documents[reference.path]?.scene.path === after.scene_path);
+  if (preferred && current.some(reference => reference.path === preferred)) return preferred;
+  if (current.length === 1) return current[0].path;
+  // Foreign immutable resources remain exact selections; never choose the first retained version.
+  if (before.documents[path]?.kind !== 'scene3d-shot' || before.documents[path]?.scene.path !== before.scene_path) {
+    const exact = current.filter(reference => reference.path === path && reference.sha256 === original[0].sha256);
+    if (exact.length === 1) return exact[0].path;
+  }
+  throw Error('The selected timeline resource changed while saving; reselect it.');
+}
+export function rebindTimelineCommands(commands, before, after, selectedBefore = null, selectedAfter = null) {
+  return commands.map(command => {
+    const result = structuredClone(command);
+    for (const field of ['document','source','clip']) if (field in result)
+      result[field] = rebindTimelinePath(result[field],before,after,result[field] === selectedBefore ? selectedAfter : null);
+    if (result.operation === 'project-order') result.paths = result.paths.map(path => rebindTimelinePath(path,before,after,path === selectedBefore ? selectedAfter : null));
+    return result;
+  });
+}
+export function mountTimeline({container,api,getSnapshot,getSelection,preview,clearPreview,reload,runSavedAction,returnToSavedViewport,onSelect,registerCommitInterceptor,registerPreviewEditAuthorizer,refreshPreviewEditState,registerTimelineProvider}) {
   let snapshot=null,shotPath='',request=0,disposed=false,playing=false,clock=0,firstFrame=0,raf=0;
   const root=document.createElement('section');root.setAttribute('aria-label','Animation timeline');
   const status=document.createElement('p');status.setAttribute('role','status');
@@ -58,26 +85,31 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   function message(text){if(!disposed)status.textContent=text;}
   function button(label,fn){const b=document.createElement('button');b.textContent=label;b.addEventListener('click',()=>Promise.resolve().then(fn).catch(e=>message(e.message)));return b;}
   function target(){const selected=getSelection();if(property.value==='world_exposure')return 'world';if(selected.length!==1)throw Error('Select one object for this channel.');return selected[0];}
-  async function edit(commands){stop();const s=getSnapshot();await api('timeline/edit',{expected_revision:s.revision,expected_sha256:s.sha256,transaction_id:crypto.randomUUID(),commands});await reload();message('Timeline edit saved.');}
+  async function edit(commands){stop();const before=getSnapshot(),selectedBefore=shotPath;if(typeof runSavedAction!=='function')throw Error('Saved timeline actions are unavailable in this viewport.');await runSavedAction(async action=>{const s=action.snapshot;await action.api('timeline/edit',{expected_revision:s.revision,expected_sha256:s.sha256,transaction_id:crypto.randomUUID(),commands:rebindTimelineCommands(commands,before,s,selectedBefore,shotPath)});await action.reload();});message('Timeline edit saved.');}
   function command(operation){return {operation,document:shotPath,target:target(),property:property.value};}
   async function scrub(at=Number(frame.value)){
-    if(!snapshot||!shotPath)return;const serial=++request;const s=getSnapshot();
-    if(s.documents[shotPath]?.scene.path!==s.scene_path)throw Error('Switch to the shot scene before preview.');
-    const result=await api('timeline/evaluate',{revision:s.revision,sha256:s.sha256,shot:shotPath,frame:at,sample_geometry:true});
-    if(disposed||serial!==request)return;if(result.scene.path!==getSnapshot().scene_path)throw Error('Preview scene changed; reload before scrubbing.');preview(result);refreshPreviewEditState?.();message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
+    if(!snapshot||!shotPath)return;const serial=++request,before=getSnapshot(),requestedShot=shotPath;
+    if(typeof runSavedAction!=='function')throw Error('Saved timeline preview is unavailable in this viewport.');
+    await runSavedAction(async action=>{
+      const s=action.snapshot,chosen=rebindTimelinePath(requestedShot,before,s,shotPath);
+      if(s.documents[chosen]?.scene.path!==s.scene_path)throw Error('Switch to the shot scene before preview.');
+      const result=await action.api('timeline/evaluate',{revision:s.revision,sha256:s.sha256,shot:chosen,frame:at,sample_geometry:true});
+      if(disposed||serial!==request)return;if(result.scene.path!==getSnapshot().scene_path)throw Error('Preview scene changed; reload before scrubbing.');
+      action.preview(result);refreshPreviewEditState?.();message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
+    });
   }
   function stop(){playing=false;++request;cancelAnimationFrame(raf);play.textContent='Play';refreshPreviewEditState?.();}
   async function tick(now){if(!playing||disposed)return;const doc=snapshot.documents[shotPath],fps=doc.fps.numerator/doc.fps.denominator;
-    const current=firstFrame+Math.floor((now-clock)*fps/1000);
+    const current=firstFrame+Math.floor(Math.max(0,now-clock)*fps/1000);
     if(current>=doc.duration_frames){stop();return;}frame.value=String(current);
     try{await scrub(current);}catch(e){stop();message(e.message);return;}
     if(playing)raf=requestAnimationFrame(tick);
   }
-  const play=button('Play',async()=>{if(playing){stop();return;}playing=true;play.textContent='Pause';refreshPreviewEditState?.();firstFrame=Number(frame.value);try{await scrub(firstFrame);}catch(error){stop();throw error;}if(!playing||disposed)return;clock=performance.now();raf=requestAnimationFrame(tick);});
+  const play=button('Play',async()=>{if(playing){stop();return;}firstFrame=Number(frame.value);try{await scrub(firstFrame);}catch(error){stop();throw error;}if(disposed)return;playing=true;play.textContent='Pause';refreshPreviewEditState?.();clock=performance.now();raf=requestAnimationFrame(tick);});
   const move=document.createElement('input');move.type='number';move.min='0';move.step='1';move.value='1';move.setAttribute('aria-label','Move selected key to frame');
   const duration=document.createElement('input');duration.type='number';duration.min='1';duration.step='1';duration.setAttribute('aria-label','Shot duration in frames');
   const camera=document.createElement('select');camera.setAttribute('aria-label','Shot camera');
-  root.append(autoLabel,shot,frame,button('Scrub',()=>scrub()),play,button('Return to authored scene',()=>{stop();++request;clearPreview();}),property,value,interpolation,
+  root.append(autoLabel,shot,frame,button('Scrub',()=>scrub()),play,button('Return to authored scene',async()=>{stop();if(typeof returnToSavedViewport!=='function')throw Error('Saved viewport restoration is unavailable.');await returnToSavedViewport();}),property,value,interpolation,
     button('Insert or replace key',()=>edit([{...command('key-upsert'),frame:Number(frame.value),value:JSON.parse(value.value),interpolation:interpolation.value}])),
     button('Delete key',()=>edit([{...command('key-delete'),frame:Number(frame.value)}])),move,
     button('Move key',()=>edit([{...command('key-move'),frame:Number(frame.value),to_frame:Number(move.value)}])),
@@ -90,7 +122,7 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
   const speed=document.createElement('input');speed.type='number';speed.min='0.001';speed.step='any';speed.value='1';speed.setAttribute('aria-label','Clip playback speed');
   const loop=document.createElement('input');loop.type='checkbox';loop.setAttribute('aria-label','Loop clip');
   const sceneSelect=document.createElement('select');sceneSelect.setAttribute('aria-label','Project scene');
-  root.insertBefore(sceneSelect,status);root.insertBefore(button('Open scene',async()=>{stop();const s=getSnapshot();await api('timeline/select-scene',{expected_revision:s.revision,expected_sha256:s.sha256,transaction_id:crypto.randomUUID(),scene:sceneSelect.value});await reload();message('Scene opened from saved native project.');}),status);
+  root.insertBefore(sceneSelect,status);root.insertBefore(button('Open scene',async()=>{stop();const before=getSnapshot(),selected=sceneSelect.value;if(typeof runSavedAction!=='function')throw Error('Saved scene actions are unavailable.');await runSavedAction(async action=>{const s=action.snapshot;await action.api('timeline/select-scene',{expected_revision:s.revision,expected_sha256:s.sha256,transaction_id:crypto.randomUUID(),scene:rebindTimelinePath(selected,before,s)});await action.reload();});message('Scene opened from saved native project.');}),status);
   for(const [label,operation] of [['Duplicate scene','scene-duplicate'],['Create empty scene','scene-create']])root.insertBefore(button(label,()=>edit([{operation,source:snapshot.scene_path,id:resourceID.value,name:resourceName.value}])),status);
   root.insertBefore(button('Rename scene',()=>edit([{operation:'scene-rename',document:snapshot.scene_path,name:resourceName.value}])),status);
   root.insertBefore(button('Delete scene',()=>edit([{operation:'scene-delete',document:snapshot.scene_path}])),status);
@@ -107,6 +139,6 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
       for(const key of track.keys){line.append(button(String(key.frame),()=>{frame.value=String(key.frame);if(track.target!=='world')onSelect?.(track.target);property.value=track.property;interpolation.value=track.interpolation;value.value=JSON.stringify(key.value);return scrub();}));}tracks.append(line);}
   }
   property.addEventListener('change',()=>{++request;curve.replaceChildren();curveLegend.textContent='Choose Evaluate channel curve to sample this channel.';});
-  shot.addEventListener('change',()=>{const selected=shot.value;stop();++request;shotPath=selected;clearPreview();renderShot();});
+  shot.addEventListener('change',()=>{const selected=shot.value,before=getSnapshot();stop();Promise.resolve().then(async()=>{if(typeof runSavedAction!=='function')throw Error('Saved shot actions are unavailable.');await runSavedAction(action=>{shotPath=rebindTimelinePath(selected,before,action.snapshot);shot.value=shotPath;renderShot();});}).catch(error=>message(error.message));});
   return {refresh(next){if(snapshot?.revision===next.revision&&snapshot?.sha256===next.sha256&&snapshot?.scene_path===next.scene_path)return;stop();++request;const previous=snapshot?.documents[shotPath],previousActive=snapshot?.scene_path;snapshot=next;sceneSelect.replaceChildren();for(const ref of next.project.scenes){const option=document.createElement('option');option.value=ref.path;option.textContent=next.documents[ref.path].name;sceneSelect.append(option);}sceneSelect.value=next.scene_path;clip.replaceChildren();for(const ref of next.project.animations){const option=document.createElement('option');option.value=ref.path;option.textContent=ref.id+' '+ref.version;clip.append(option);}shot.replaceChildren();for(const ref of next.project.shots){const o=document.createElement('option');o.value=ref.path;o.textContent=next.documents[ref.path].name;shot.append(o);}if(!next.documents[shotPath]||!next.project.shots.some(r=>r.path===shotPath))shotPath=next.project.shots.find(ref=>ref.id===previous?.id&&next.documents[ref.path].scene.id===previous?.scene.id)?.path||next.project.shots[0]?.path||'';if(previousActive!==next.scene_path&&next.documents[shotPath]?.scene.path!==next.scene_path)shotPath=next.project.shots.find(ref=>next.documents[ref.path].scene.path===next.scene_path)?.path||'';shot.value=shotPath;renderShot();if(autokey.checked&&shotPath)queueMicrotask(()=>scrub().catch(e=>message(e.message)));},dispose(){disposed=true;stop();++request;unregisterTimeline?.();unregisterPreview?.();unregister?.();root.remove();}};
 }

@@ -152,6 +152,10 @@ class TimelineBrowserTests(unittest.TestCase):
                     browser=launch_chromium(runtime)
                     try:
                         page=browser.new_page(viewport={'width':1600,'height':1100});errors=[]
+                        page.add_init_script("""(() => {const schedule=window.requestAnimationFrame.bind(window);let first=true;
+                          window.requestAnimationFrame=callback=>schedule(timestamp=>{
+                            if(first&&callback.name==='tick'){first=false;callback(timestamp-1000);}else callback(timestamp);
+                          });})();""")
                         page.on('pageerror',lambda error:errors.append(str(error)))
                         page.goto(server.url);page.wait_for_function('() => window.editorReady===true')
                         page.locator('[data-id="mesh"]').click()
@@ -230,6 +234,103 @@ class TimelineBrowserTests(unittest.TestCase):
                             return {error,unchanged:before===JSON.stringify(positions())};}""",changed)
                         self.assertIn('Native deformed geometry',value['error']);self.assertTrue(value['unchanged'])
                         self.assertEqual(repo.snapshot()['sha256'],native['sha256'])
+                    finally:browser.close()
+            finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
+    def test_saved_timeline_actions_wait_for_inspector_save_and_rebind_active_versions(self):
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);bundle=build_example(root/'source')
+            scene=deepcopy(bundle['documents']['example-scene.json']);scene.update(id='foreign-scene',name='Foreign scene',shots=['foreign-shot'])
+            scene_ref=dict(kind=scene['kind'],id=scene['id'],version=scene['version'],path='foreign-scene.json',sha256=hashlib.sha256(canonical_bytes(scene)).hexdigest())
+            foreign=deepcopy(bundle['documents']['example-shot.json']);foreign.update(id='foreign-shot',name='Foreign',scene=scene_ref)
+            snapshot_project(root/'source',root/'foreign',derived_documents={'foreign-scene.json':scene,'foreign-shot.json':foreign})
+            repo=EditorRepository.create(root/'foreign',root/'saved');server=EditorServer(repo,routes=routes())
+            thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser=launch_chromium(runtime)
+                    try:
+                        page=browser.new_page(viewport={'width':1600,'height':1100})
+                        page.goto(server.url);page.wait_for_function('() => window.editorReady===true')
+                        page.locator('[data-id="mesh"]').click()
+                        page.get_by_label('Key value as JSON',exact=True).fill('[8,0,0]')
+                        pending=[];timeline=[]
+                        page.route('**/api/commands',lambda route:pending.append(route))
+                        page.route('**/api/timeline/edit',lambda route:timeline.append(route))
+                        page.get_by_label('translation X',exact=True).fill('5')
+                        page.get_by_role('button',name='Insert or replace key',exact=True).click()
+                        for _ in range(100):
+                            if pending:break
+                            page.wait_for_timeout(20)
+                        self.assertEqual(len(pending),1);page.wait_for_timeout(80)
+                        self.assertEqual(len(timeline),0);self.assertEqual(repo.snapshot()['revision'],0)
+                        pending.pop().continue_();page.unroute('**/api/commands')
+                        for _ in range(100):
+                            if timeline:break
+                            page.wait_for_timeout(20)
+                        self.assertEqual(len(timeline),1)
+                        self.assertEqual(timeline[0].request.post_data_json['expected_revision'],1)
+                        timeline.pop().continue_();page.unroute('**/api/timeline/edit')
+                        page.wait_for_function('() => hatchEditor.snapshot.revision===2')
+                        saved=repo.snapshot();self.assertEqual(next(n for n in saved['scene']['nodes'] if n['id']=='mesh')['transform']['translation'],[5,0,0])
+                        selected=next(ref for ref in saved['project']['shots'] if ref['id']=='example-shot' and saved['documents'][ref['path']]['scene']['path']==saved['scene_path'])
+                        self.assertEqual(saved['documents'][selected['path']]['tracks'][0]['keys'],[dict(frame=0,value=[8,0,0])])
+                        page.get_by_label('Project scene',exact=True).select_option(label='Foreign scene')
+                        pending=[];opening=[]
+                        page.route('**/api/commands',lambda route:pending.append(route))
+                        page.route('**/api/timeline/select-scene',lambda route:opening.append(route))
+                        page.get_by_label('translation X',exact=True).fill('6')
+                        page.get_by_role('button',name='Open scene',exact=True).click()
+                        for _ in range(100):
+                            if pending:break
+                            page.wait_for_timeout(20)
+                        self.assertEqual(len(pending),1);page.wait_for_timeout(80)
+                        self.assertEqual(len(opening),0);self.assertEqual(repo.snapshot()['revision'],2)
+                        pending.pop().continue_();page.unroute('**/api/commands')
+                        for _ in range(100):
+                            if opening:break
+                            page.wait_for_timeout(20)
+                        self.assertEqual(len(opening),1)
+                        self.assertEqual(opening[0].request.post_data_json['expected_revision'],3)
+                        opening.pop().continue_();page.unroute('**/api/timeline/select-scene')
+                        page.wait_for_function('() => hatchEditor.snapshot.revision===4')
+                        self.assertEqual(repo.snapshot()['scene']['id'],'foreign-scene')
+                        page.click('#undo');page.wait_for_function('() => hatchEditor.snapshot.revision===5')
+                        self.assertEqual(next(n for n in repo.snapshot()['scene']['nodes'] if n['id']=='mesh')['transform']['translation'],[6,0,0])
+                        self.assertEqual(page.evaluate('() => hatchEditor.errors'),[])
+                        self.assertEqual(EditorRepository(repo.root).snapshot()['revision'],5)
+                    finally:browser.close()
+            finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
+    def test_authored_canonical_material_override_cannot_fall_back_to_embedded_material(self):
+        from scene3d_graph import SceneGraph
+        from lookdev_contracts import canonical_bytes as material_bytes,validate_resource
+        from test_lookdev_contracts import material
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);bundle=build_example(root/'source')
+            graph=SceneGraph.from_bundle(bundle,'example-scene.json',source_root=root/'source')
+            red=material();red['surface']['base_color']=[1,0,0,1];validate_resource(red)
+            payload=material_bytes(red);reference=dict(kind='material',id=red['id'],version=red['version'],path='red.json',sha256=hashlib.sha256(payload).hexdigest())
+            graph.configure_node('mesh',{'material_overrides':[dict(slot='default',material=reference)]})
+            saved=snapshot_project(root/'source',root/'portable',graph,scene_path='example-scene.json',extra_payloads={'red.json':payload})
+            repo=EditorRepository.create(root/'portable',root/'saved',scene_path=saved['active_scene']['path']);before=repo.snapshot()
+            server=EditorServer(repo,routes=routes());thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser=launch_chromium(runtime)
+                    try:
+                        page=browser.new_page();page.goto(server.url);page.wait_for_function('() => window.editorReady===true')
+                        self.assertTrue(any('material overrides' in error for error in page.evaluate('() => hatchEditor.errors')))
+                        self.assertEqual(page.evaluate("() => {let count=0;hatchEditor.objects.get('mesh').traverse(node=>{if(node.isMesh)count++;});return count;}"),0)
+                        page.get_by_role('button',name='Scrub',exact=True).click()
+                        page.wait_for_function("() => document.querySelector('[aria-label=\"Animation timeline\"] [role=status]').textContent.includes('material')")
+                        self.assertNotIn('Saved revision',page.locator('[aria-label="Animation timeline"] [role=status]').inner_text())
+                        self.assertEqual(repo.snapshot()['sha256'],before['sha256'])
+                        self.assertEqual(repo.snapshot()['revision'],before['revision'])
                     finally:browser.close()
             finally:server.shutdown();server.server_close();thread.join(timeout=5)
 

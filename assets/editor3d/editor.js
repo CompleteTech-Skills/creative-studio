@@ -42,6 +42,7 @@ let renderer,
   previewActive = false;
 const collapsed = new Set();
 const extensions = [];
+const savedViewTransition = Symbol("saved-view-transition");
 let pendingCommit = null, lastCommitResult = true, guardedAction = false, actionAuthority = null, lifecycleGeneration = 0;
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
 let activeNativeCameraId = null;
@@ -320,7 +321,7 @@ async function capturePreview(metadata) {
         evaluated.frame?.numerator !== metadata.frame || evaluated.frame?.denominator !== 1 ||
         JSON.stringify(evaluated.time) !== JSON.stringify(time)) throw Error("Native evaluation differs from capture metadata.");
     for (const [id, node] of Object.entries(evaluated.nodes)) {
-      if (!objects.has(id) || node.native_clip || node.native_pose || node.native_pose_evaluated || node.native_state || JSON.stringify(node.material_overrides || []) !== JSON.stringify(nodes.get(id)?.material_overrides || []))
+      if (!objects.has(id) || node.native_clip || node.native_pose || node.native_pose_evaluated || node.native_state || node.material_overrides?.length || nodes.get(id)?.material_overrides?.length)
         throw Error("This evaluated geometry/material binding has no exact browser capture adapter.");
       if (node.visible !== false && unavailableNodes.has(id)) throw Error(unavailableNodes.get(id));
       if (node.camera_visible === false) throw Error("Separate native camera-ray visibility has no exact browser capture adapter.");
@@ -357,8 +358,8 @@ async function capturePreview(metadata) {
     busy = false; attach();
   }
 }
-function preview(scene) {
-  if (guardedAction) throw Error("Another editor action is in progress.");
+function preview(scene, authority = null) {
+  if (guardedAction && authority !== actionAuthority) throw Error("Another editor action is in progress.");
   if (scene.world && (!Number.isFinite(scene.world.exposure) || scene.world.exposure < -20 || scene.world.exposure > 20))
     throw Error("Evaluated preview exposure is supported from -20 to +20 stops.");
   if (scene.revision !== undefined && (scene.revision !== revision || scene.snapshot_sha256 !== sha256 ||
@@ -368,7 +369,7 @@ function preview(scene) {
       node.native_clip || node.native_pose || node.native_pose_evaluated || node.native_state))
     throw Error("Native deformed geometry preview requires the canonical installed geometry adapter.");
   for (const [id, node] of entries) {
-    if (JSON.stringify(node.material_overrides || []) !== JSON.stringify(nodes.get(id)?.material_overrides || []))
+    if (node.material_overrides?.length || nodes.get(id)?.material_overrides?.length)
       throw Error("Evaluated material changes require the canonical installed material adapter.");
     if (node.camera) {
       const actual = objects.get(id)?.children.find(child => child.isCamera);
@@ -386,8 +387,8 @@ function preview(scene) {
   previewActive = true;
   refreshSelection();
 }
-function clearPreview() {
-  if (guardedAction) throw Error("Another editor action is in progress.");
+function clearPreview(authority = null) {
+  if (guardedAction && authority !== actionAuthority) throw Error("Another editor action is in progress.");
   lastEvaluation = null;
   applyNativeState(savedNativeState.nodes);
   for (const node of doc.nodes) applyNativeProperties(objects.get(node.id), node);
@@ -567,10 +568,11 @@ async function performCommit(commands) {
     setBusy(false);
   }
 }
-async function runGuardedAction(callback) {
+async function runGuardedAction(callback, transition = null) {
   if (typeof callback !== "function") throw Error("An editor action must be a function.");
   if (guardedAction) throw Error("Another editor action is in progress.");
-  const lifecycleUsable = () => !disposed && !lost && !drag && !previewActive;
+  const allowSavedPreview = transition === savedViewTransition;
+  const lifecycleUsable = () => !disposed && !lost && !drag && (!previewActive || allowSavedPreview);
   const usable = () => lifecycleUsable() && window.editorReady;
   if (!lifecycleUsable() || (!window.editorReady && !pendingCommit)) throw Error("Finish the active viewport interaction before this action.");
   // Blur dispatches the ordinary field change handler before we claim the action.
@@ -607,6 +609,19 @@ async function runGuardedAction(callback) {
     if (ownsBusy) setBusy(false);
   }
 }
+async function runSavedAction(callback) {
+  if (typeof callback !== "function") throw Error("A saved-scene action must be a function.");
+  return runGuardedAction(async action => {
+    const authority = actionAuthority;
+    clearPreview(authority);
+    const savedAction = {...action, preview(value) {
+      if (!action.isCurrent()) throw Error("The saved-scene action was cancelled or has finished.");
+      preview(value, authority);
+    }};
+    return callback(savedAction);
+  }, savedViewTransition);
+}
+async function returnToSavedViewport() { return runSavedAction(() => undefined); }
 function select(id, add = false, toggle = false) {
   selectedBone = null;
   if (!add && !toggle) selection.clear();
@@ -837,6 +852,8 @@ async function install(snapshot, assertCurrent = null) {
            JSON.stringify([asset.asset_reference.id, asset.asset_reference.version, asset.asset_reference.path, asset.asset_reference.sha256]) !==
            JSON.stringify([reference.id, reference.version, reference.path, reference.sha256])))
         asset = {format: "unavailable", message: "No exact native component projection."};
+      if (node.material_overrides?.length)
+        asset = {format: "unavailable", message: "Authored material overrides have no verified viewport adapter; no embedded-material substitute is displayed."};
       if (asset && asset.format !== "unavailable") {
         try {
           const actual = await assetObject(asset);
@@ -1849,6 +1866,8 @@ window.hatchEditor = {
       getScene: () => world,
       getCamera: () => camera,
       runGuardedAction,
+      runSavedAction,
+      returnToSavedViewport,
       reload,
       preview,
       applyNativeState,
