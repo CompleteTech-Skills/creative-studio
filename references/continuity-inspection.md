@@ -135,6 +135,11 @@ reuses native `LoadBudget`, restrictive effective limits and the canonical JSON
 expansion factor. The caller supplies its measured captured-closure byte count;
 the helper never reopens source paths or alters descriptor APIs. Conservative
 memory accounting can narrow the encoded-byte caps further.
+That shared helper covers geometry only. Before the importer decodes any image,
+the inspector separately reuses native `image_dimensions` and `LoadBudget` to
+combine admitted geometry/metadata with every image's four RGBA working copies.
+The native PNG/JPEG decoder still validates complete containers and actual pixels;
+an image header is capacity evidence, not integrity or visual approval.
 
 Capability reservations additionally check native whole-process lifetime peak,
 reserve 32 MiB inspection workspace, narrow native loading limits to remaining

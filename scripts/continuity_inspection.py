@@ -114,6 +114,7 @@ def _loaded(root, source, dependencies, requested):
                             or len(document.json.get('images',[]))>64):
                         fail('LIMIT','bounded inspector report inventory exceeded')
                     admission = preflight_gltf(document, encoded_bytes=total, limits=limits)
+                    image_admission = _image_admission(document, admission, limits)
                     parents, world, order = scene_graph(document)
                     hierarchy = [dict(node_id=i, name=document.json['nodes'][i].get('name'),
                                       parent=parents.get(i), local_matrix=node_matrix(document.json['nodes'][i]).tolist(),
@@ -122,6 +123,7 @@ def _loaded(root, source, dependencies, requested):
                     model = load_character_model(path, limits=limits)
                     model.report['source_features'] = _source_features(document)
                     model.report['source_preflight'] = admission
+                    model.report['image_preflight'] = image_admission
                 yield model, hierarchy, refs, limits, total
             except MemoryError:
                 fail('LIMIT','native allocation failed inside admitted inspection')
@@ -140,6 +142,34 @@ def _rig_hierarchy(rig):
     return [dict(bone_id=b['id'], parent=b['parent'], rest=deepcopy(b['rest']),
                  world_matrix=world[b['id']].tolist(), semantic_role=b['role'],
                  role_evidence=deepcopy(b['evidence'])) for b in rig.skeleton['bones']]
+
+
+def _image_admission(document,geometry_admission,limits):
+    """Use native image framing and native load accounting before decoding."""
+    from rig_load_limits import LoadBudget,image_dimensions
+    budget=LoadBudget(limits)
+    retained=geometry_admission['estimated_memory_bytes']
+    budget.add(retained-budget.memory,'retained native geometry/metadata admission')
+    budget.input_bytes=geometry_admission['input_bytes']
+    budget.json_bytes=geometry_admission['json_bytes']
+    budget.array_bytes=geometry_admission['array_bytes']
+    images=[]
+    for i,item in enumerate(document.json.get('images',[])):
+        if 'uri' in item:
+            payload=document.uri(item['uri'])
+        else:
+            buffer,offset,length,_=document.view(item['bufferView'])
+            payload=buffer[offset:offset+length]
+        width,height=image_dimensions(payload)
+        rgba=width*height*4
+        # Same canonical decoded working-copy accounting as scan_bundle;
+        # full PNG/JPEG integrity/pixel decoding stays with rig_import.
+        budget.texture_rgba_bytes+=rgba
+        budget.add(rgba*4,'image-'+str(i)+': decoded texture working set')
+        images.append(dict(index=i,width=width,height=height,encoded_bytes=len(payload),
+                           sha256=hashlib.sha256(payload).hexdigest()))
+    return dict(budget.report(),method='native-gltf-image-capacity-v1',images=images,
+                scope='native image headers and combined geometry/decoded-texture capacity; not pixel integrity')
 
 
 def _source_features(document):
@@ -326,6 +356,7 @@ def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=No
             extensions=list(geometry.extensions_used), skeleton=deepcopy(skeleton), skins=skin,
             source_features=features,status='partial' if features['unsupported_extensions'] else 'inspected-supported-data',
             native_load_admission=model.report['source_preflight'] if hasattr(model,'report') else model.resource_usage,
+            native_image_admission=model.report['image_preflight'] if hasattr(model,'report') else None,
             controllers=controllers, sockets=sockets, measurements=measurements,
             facial_controls=deepcopy(model.manifest['facial']) if hasattr(model,'manifest') else None,
             native_approval_status=model.manifest['review']['status'] if hasattr(model,'manifest') else 'unreviewed',
@@ -390,6 +421,7 @@ class NativeInspectionOwner(OwnerAdapter):
         if self.source['kind'] not in ('mesh','model3d-asset','hatch-3d-rig'):
             fail('REFERENCE','capability input must use the existing mesh/model3d-asset/hatch-3d-rig native-reference kinds')
         self.folder=portable_path(evidence_folder)
+        self._reservation_lock=__import__('threading').Lock()
         self._active=False
         with self.reserve(None):
             probe=self.execute(None)
@@ -409,6 +441,16 @@ class NativeInspectionOwner(OwnerAdapter):
 
     @contextmanager
     def reserve(self,check):
+        if not self._reservation_lock.acquire(blocking=False):
+            fail('OWNERSHIP','inspection adapter already reserved')
+        try:
+            with self._reserve(check):
+                yield
+        finally:
+            self._reservation_lock.release()
+
+    @contextmanager
+    def _reserve(self,check):
         from continuity_capabilities import _peak_memory_bytes
         if self._active:
             fail('OWNERSHIP','inspection adapter already reserved')

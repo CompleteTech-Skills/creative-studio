@@ -248,6 +248,34 @@ class ContinuityInspectionTests(unittest.TestCase):
         self.assertEqual(executed['outcome'],'partial')
         self.assertNotIn('extensions-and-channels',executed['verified_fields'])
 
+    def test_combined_texture_capacity_precedes_pixel_decode(self):
+        from unittest.mock import patch
+        from rig_errors import RigError
+        path,b=gltf(self.root)
+        image=io.BytesIO();Image.new('RGBA',(512,512),(20,40,60,255)).save(image,format='PNG')
+        b.json['images']=[dict(mimeType='image/png',bufferView=b.view(image.getvalue()))]
+        b.write(path)
+        accepted=inspect_asset(self.root,pointer(self.root,path),limits=dict(memory_bytes=8*1024**2))
+        self.assertEqual(accepted['inspection']['native_image_admission']['images'][0]['width'],512)
+        b.json['images'].append(dict(mimeType='image/png',bufferView=b.view(image.getvalue())))
+        b.write(path)
+        with patch('PIL.Image.open',side_effect=AssertionError('pixel decoder must not run before capacity admission')):
+            with self.assertRaises(RigError) as caught:
+                inspect_asset(self.root,pointer(self.root,path),limits=dict(memory_bytes=8*1024**2))
+        self.assertEqual(caught.exception.report['code'],'RIG_LIMIT_MEMORY')
+
+    def test_inspection_owner_reservation_excludes_concurrent_caller(self):
+        from concurrent.futures import ThreadPoolExecutor
+        path,_=gltf(self.root);(self.root/'evidence').mkdir()
+        owner=NativeInspectionOwner(self.root,pointer(self.root,path),'evidence')
+        def attempt():
+            with owner.reserve(None):
+                return 'incorrectly-reserved'
+        with owner.reserve(None):
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                with self.assertRaisesRegex(ValueError,'INSPECTION_OWNERSHIP'):
+                    pool.submit(attempt).result(timeout=5)
+
     def test_actual_capability_admission_executes_and_retains_source_bound_receipt(self):
         from continuity_capabilities import Admission,Policy
         path,_=gltf(self.root);source=pointer(self.root,path)
