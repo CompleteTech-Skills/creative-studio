@@ -273,6 +273,15 @@ class DocumentPublicationTests(unittest.TestCase):
                 self.publisher.read_ref({**ref, 'path': path})
         self.assertEqual(len(self.library.list_references()), 1)
 
+    def test_unrelated_damaged_source_cannot_poison_exact_read_or_retry(self):
+        ref = self.publish()
+        unrelated = self.publish(b'{"unrelated":true}', artifact_id='unrelated')
+        (self.root / unrelated['path']).write_bytes(b'corrupt')
+        self.assertEqual(self.publisher.read_ref(ref), b'{"kind":"director-project","id":"project"}')
+        self.assertEqual(self.publish(), ref)
+        with self.assertRaises(RigError):
+            self.publisher.read_ref(unrelated)
+
     def test_source_blob_symlink_and_root_replacement_fail_closed(self):
         ref = self.publish()
         blob = self.root / ref['path']

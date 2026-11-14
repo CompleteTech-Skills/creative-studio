@@ -140,7 +140,10 @@ class DocumentPublisher:
         # registration: different IDs have independent identity-history CAS and
         # can race. A conflicting publication remains unselected on failure.
         for target in self.library.list_references():
-            manifest = self.library.resolve(target)
+            # Inspect only the unrelated immutable manifest for collision
+            # filtering. The candidate source/closure is always fully resolved
+            # below; unrelated damaged payloads do not belong to its closure.
+            manifest = self.library.inspect(target, verify_payloads=False)
             if manifest['identity']['kind'] == 'document':
                 payload = next(file for file in manifest['files'] if file['path'] == 'document.payload')
                 candidate_path = self.prefix + 'records/blobs/' + payload['sha256']
