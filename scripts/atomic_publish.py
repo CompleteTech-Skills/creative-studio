@@ -82,7 +82,7 @@ def windows_private_stage(parent, **policies):
 # New staging capabilities intentionally have a narrower platform contract than
 # the legacy path-based exclusive rename above. Never silently fall back to an
 # unpinned temporary pathname on an unsupported host.
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from pathlib import Path
 import re
 import shutil
@@ -142,6 +142,8 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
     descriptor = None
     identity = None
     body_error = None
+    borrowed = None
+    operation_error = None
     try:
         borrowed = os.fstat(parent)
         if (borrowed.st_dev, borrowed.st_ino) != (parent_identity.st_dev, parent_identity.st_ino):
@@ -179,15 +181,35 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
                         raise
                     if hasattr(body_error, 'add_note'):
                         body_error.add_note('Pinned staging cleanup also failed: ' + str(cleanup_error))
+    except BaseException as exc:
+        operation_error = exc
+        raise
     finally:
-        if descriptor is not None:
+        # An ambient caller ``except`` also appears in sys.exc_info() on a
+        # normal generator exit. Only this invocation's error is primary.
+        primary = operation_error
+        closing_errors = []
+        # Never retry close(): an error may be reported after the OS has already
+        # released the descriptor, and retrying could close a reused foreign FD.
+        # Close the owned parent even if closing the stage itself fails.
+        for owned, expected in ((descriptor, identity), (parent, borrowed)):
+            if owned is None:
+                continue
             try:
-                current = os.fstat(descriptor)
-                if identity is None or (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
-                    os.close(descriptor)
-            except OSError:
-                pass
-        os.close(parent)
+                current = os.fstat(owned)
+                if expected is not None and (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
+                    raise OSError(errno.ESTALE, 'private stage owned descriptor was closed and reused')
+                os.close(owned)
+            except BaseException as closing_error:
+                closing_errors.append(closing_error)
+        if closing_errors:
+            first = primary if primary is not None else closing_errors[0]
+            if hasattr(first, 'add_note'):
+                for closing_error in closing_errors:
+                    if closing_error is not first:
+                        first.add_note('Pinned staging descriptor close also failed: ' + str(closing_error))
+            if primary is None:
+                raise first
 
 
 def private_stage_supported():
@@ -404,15 +426,16 @@ def _copy_verified_file(source_fd, target_fd, expected_sha256, expected_size):
 
 
 class VerifiedFileCleanupError(OSError):
-    """Verified bytes were committed, but owned cleanup or closing failed."""
+    """Verified bytes committed, but durability completion or cleanup failed."""
     committed = True
 
     def __init__(self, receipt):
-        super().__init__(errno.EIO, 'verified file committed; owned cleanup is pending')
+        super().__init__(errno.EIO, 'verified file committed; completion or cleanup is pending')
         self.receipt = dict(receipt)
 
 
-def publish_verified_file(source_fd, destination, *, expected_sha256, expected_size, max_bytes):
+def publish_verified_file(source_fd, destination, *, expected_sha256, expected_size, max_bytes,
+                          staging_parent=None, expected_parent_identity=None):
     """Exclusively publish a bounded exact copy of an already admitted file FD.
 
     The caller must open its source without following unsafe paths and verify
@@ -426,6 +449,13 @@ def publish_verified_file(source_fd, destination, *, expected_sha256, expected_s
     and byte count describe the verified copied bytes, not a later lookup of
     the mutable public destination. No callback is accepted. Namespace ownership
     has the same boundary as private stages (not hostile same-user isolation).
+
+    Optional staging_parent keeps retained empty wrappers in a separate existing
+    mutable directory on the same filesystem. Destination admission occurs first.
+    expected_parent_identity=(st_dev, st_ino) rejects a different destination
+    directory after pinning, before creating any staging. POSIX fsyncs its held
+    destination directory after rename; completion failures carry a committed
+    receipt through VerifiedFileCleanupError.
     """
     if type(source_fd) is not int or source_fd < 0:
         raise ValueError('verified publication source must be an open file descriptor')
@@ -437,6 +467,18 @@ def publish_verified_file(source_fd, destination, *, expected_sha256, expected_s
     destination = Path(destination).absolute()
     if '..' in destination.parts or destination.name in ('', '.', '..'):
         raise ValueError('verified publication destination cannot traverse parents')
+    if staging_parent is not None:
+        staging_parent = Path(staging_parent).absolute()
+        if '..' in staging_parent.parts:
+            raise ValueError('verified publication staging parent cannot traverse parents')
+    if expected_parent_identity is not None:
+        if (type(expected_parent_identity) is not tuple or len(expected_parent_identity) != 2
+                or any(type(value) is not int or value < 0 for value in expected_parent_identity)):
+            raise ValueError('expected parent identity must be a (device, inode) integer tuple')
+    def admit_parent(info):
+        if expected_parent_identity is not None and (info.st_dev, info.st_ino) != expected_parent_identity:
+            raise OSError(errno.ESTALE, 'verified publication destination parent identity changed')
+
     receipt = {'sha256': expected_sha256, 'byte_size': expected_size}
     published = False
     try:
@@ -446,14 +488,24 @@ def publish_verified_file(source_fd, destination, *, expected_sha256, expected_s
             if not stat.S_ISREG(info.st_mode) or info.st_size != expected_size:
                 raise ValueError('verified publication requires the expected regular file size')
             if os.name == 'nt':
-                from atomic_windows import private_file
-                with private_file(destination.parent) as payload:
-                    _copy_verified_file(source, payload.fd, expected_sha256, expected_size)
-                    payload.publish_to(destination)
-                    published = True
+                from atomic_windows import private_file, pinned_directory as windows_pinned_directory
+                # The destination stays pinned from admission through copying,
+                # even when private staging is on a separate mutable parent.
+                with windows_pinned_directory(destination.parent) as parent:
+                    admit_parent(os.stat(parent.path, follow_symlinks=False))
+                    with private_file(parent.path if staging_parent is None else staging_parent) as payload:
+                        _copy_verified_file(source, payload.fd, expected_sha256, expected_size)
+                        payload.publish_to(parent.path / destination.name)
+                        published = True
             else:
-                with pinned_directory_fd(destination.parent) as parent:
-                    with private_stage_fd(parent, prefix='.file-') as stage:
+                with pinned_directory_fd(destination.parent) as parent, ExitStack() as staging_contexts:
+                    admitted_parent = os.fstat(parent)
+                    admit_parent(admitted_parent)
+                    stage_parent = parent if staging_parent is None else staging_contexts.enter_context(
+                        pinned_directory_fd(staging_parent))
+                    if os.fstat(stage_parent).st_dev != admitted_parent.st_dev:
+                        raise OSError(errno.EXDEV, 'verified publication staging must share the destination filesystem')
+                    with private_stage_fd(stage_parent, prefix='.file-') as stage:
                         payload = os.open('payload', os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                                           0o600, dir_fd=stage)
                         try:
@@ -464,6 +516,9 @@ def publish_verified_file(source_fd, destination, *, expected_sha256, expected_s
                                 raise OSError(errno.ESTALE, 'verified publication payload name changed')
                             rename_no_replace_at(stage, 'payload', parent, destination.name)
                             published = True
+                            # A failure now is a committed completion failure,
+                            # never a claim that the destination is absent.
+                            os.fsync(parent)
                         finally:
                             os.close(payload)
         finally:

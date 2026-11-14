@@ -181,3 +181,40 @@ If owned cleanup or descriptor closing fails after the exclusive rename,
 `cleanup_pending` diagnostics, rather than reporting failed/absent output or
 retrying publication. Its chained exception retains the cleanup failure. Before
 commit, errors preserve their ordinary type and no success receipt is returned.
+
+Descriptor-only staging propagates final owned-descriptor close failures. If
+body validation or cleanup already failed, that primary exception is preserved
+and secondary close failures are attached as notes. Closing is attempted only
+once and only for descriptors whose directory identity still matches; a closed
+or reused descriptor is never retried or closed as a foreign object.
+
+## Separate mutable staging and destination admission
+
+`publish_verified_file` additionally accepts `staging_parent=None` and
+`expected_parent_identity=None`. Defaults retain existing staging placement.
+An explicit `staging_parent` must be an existing physical directory on the same
+filesystem as the destination parent. The retained empty wrappers live there,
+so an immutable destination directory receives only its published file and
+retains an exact hash inventory. The helper pins the destination before private
+staging or copying, separately pins the staging parent and uses the same
+exclusive rename authority across those directories. POSIX rejects differing
+devices before creating any private wrapper; Windows native by-handle rename
+fails closed across volumes without copying as a fallback. Unsupported,
+missing, traversal, symlink or reparse staging paths fail closed.
+
+`expected_parent_identity=(st_dev, st_ino)` is an optional tuple of two
+nonnegative integers captured by a configured parent owner. The canonical
+publisher checks it after pinning the destination and before any staging write:
+`fstat` on POSIX, or a no-follow `stat` of the Windows held/pinned physical path.
+A mismatch raises `OSError(ESTALE)` and creates no wrapper or payload. This
+compares the admitted directory object; it does not prove that its original
+public pathname stays selected on POSIX. Consumers returning a reference rooted
+in a configured project must independently enforce their root locator contract.
+
+After POSIX exclusive rename, the publisher fsyncs the held destination parent
+for directory-entry durability. The commit flag is already set: a directory
+fsync error produces `VerifiedFileCleanupError(committed=True, receipt=...)`
+rather than falsely reporting absent output. The retained class name supports
+existing callers; its message covers completion or cleanup pending. Native
+Windows still fsyncs the held file before by-handle rename; no POSIX directory
+fsync claim or new Windows directory durability claim is implied.
