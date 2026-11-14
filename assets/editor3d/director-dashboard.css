@@ -1,0 +1,15 @@
+#director-dashboard { border-top: 1px solid #456; margin-top: 1rem; padding-top: .8rem; }
+#director-dashboard h2 { margin-top: 0; }
+#director-dashboard p { line-height: 1.4; }
+#director-dashboard details { margin: .5rem 0; padding: .35rem; border: 1px solid #36434d; border-radius: .25rem; }
+#director-dashboard summary { cursor: pointer; text-transform: capitalize; }
+#director-dashboard pre { max-height: 16rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .75rem; }
+#director-dashboard select, #director-dashboard input:not([type=checkbox]), #director-dashboard textarea { display: block; width: 100%; margin: .4rem 0; }
+#director-dashboard textarea { min-height: 5rem; resize: vertical; }
+#director-dashboard button { margin: .3rem .3rem .3rem 0; }
+#director-dashboard label { display: block; margin: .5rem 0; }
+#director-dashboard img, #director-dashboard video { max-width: 100%; display: block; }
+#director-error { color: #ffb5a5; }
+.director-milestone { display: grid; grid-template-columns: 1fr auto; gap: .2rem .5rem; padding: .4rem 0; border-bottom: 1px solid #293640; }
+.director-milestone strong { text-transform: capitalize; }
+.director-milestone small { grid-column: 1 / -1; color: #aab8c5; }

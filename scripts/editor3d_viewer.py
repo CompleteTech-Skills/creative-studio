@@ -240,7 +240,7 @@ class EditorHandler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' data: blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' data: blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'")
         self.end_headers()
         self.wfile.write(payload)
 
@@ -285,7 +285,7 @@ class EditorHandler(BaseHTTPRequestHandler):
                 path = ROOT / 'assets/editor3d/index.html'
             elif route.path.startswith('/editor/'):
                 relative = route.path.removeprefix('/editor/')
-                require(relative in ('editor.js', 'editor.css', 'TransformControls.js', 'asset-browser.js', 'inspectors.js', 'timeline.js', 'render-panel.js'), 'EDITOR3D_VIEW_PATH', 'Unknown editor asset.')
+                require(relative in ('editor.js', 'editor.css', 'TransformControls.js', 'asset-browser.js', 'inspectors.js', 'timeline.js', 'render-panel.js', 'director-dashboard.js', 'director-dashboard.css'), 'EDITOR3D_VIEW_PATH', 'Unknown editor asset.')
                 path = ROOT / 'assets/editor3d' / relative
             elif route.path.startswith('/vendor/'):
                 path = safe_path(ROOT / 'assets/rig-viewer/vendor', route.path.removeprefix('/vendor/'), exists=True)
@@ -300,6 +300,8 @@ class EditorHandler(BaseHTTPRequestHandler):
                         ('timeline.js','mountTimeline','timeline'),('render-panel.js','mountRenderPanel','render-panel')):
                     if (ROOT / 'assets/editor3d' / filename).is_file():
                         extensions.append(f"const {{{symbol}}} = await import('/editor/{filename}'); window.hatchEditor.registerExtension({symbol}, document.getElementById('{container}'));")
+                if 'director/status' in self.server.routes and (ROOT / 'assets/editor3d/director-dashboard.js').is_file():
+                    extensions.append("const {mountDirectorDashboard} = await import('/editor/director-dashboard.js'); window.hatchEditor.registerExtension(mountDirectorDashboard, document.getElementById('director-dashboard'));")
                 if extensions:
                     boot = "<script type='module'>await import('/editor/editor.js');" + ''.join(extensions) + "</script>"
                     payload = payload.replace(b'</body>', boot.encode() + b'</body>')
