@@ -1,0 +1,12 @@
+{
+  "task": "<REFERRING_EXPRESSION_SEGMENTATION>",
+  "text": "scarf",
+  "raw_output": "</s><s> <loc_240> <loc_426> <loc_245> <loc_423> <loc_250> <loc_422> <loc_257> <loc_422> <loc_266> <loc_423> <loc_274> <loc_425> <loc_281> <loc_426> <loc_283> <loc_427> <loc_290> <loc_429> <loc_297> <loc_430> <loc_307> <loc_430> <loc_315> <loc_431> <loc_317> <loc_433> <loc_325> <loc_434> <loc_333> <loc_435> <loc_343> <loc_437> <loc_351> <loc_438> <loc_361> <loc_439> <loc_371> <loc_440> <loc_382> <loc_442> <loc_394> <loc_443> <loc_406> <loc_444> <loc_419> <loc_445> <loc_434> <loc_446> <loc_453> <loc_448> <loc_474> <loc_449> <loc_502> <loc_449> <loc_528> <loc_448> <loc_546> <loc_446> <loc_562> <loc_445> <loc_578> <loc_444> <loc_591> <loc_443> <loc_604> <loc_442> <loc_616> <loc_440> <loc_618> <loc_439> <loc_627> <loc_438> <loc_637> <loc_437> <loc_649> <loc_437> <loc_660> <loc_435> <loc_662> <loc_434> <loc_669> <loc_433> <loc_678> <loc_431> <loc_686> <loc_430> <loc_697> <loc_429> <loc_706> <loc_427> <loc_716> <loc_426> <loc_723> <loc_426> <loc_730> <loc_427> <loc_735> <loc_429> <loc_740> <loc_431> <loc_745> <loc_434> <loc_750> <loc_438> <loc_752> <loc_442> <loc_752> <loc_451> <loc_754> <loc_454> <loc_759> <loc_456> <loc_761> <loc_456> <loc_768> <loc_459> <loc_773> <loc_461> <loc_778> <loc_464> <loc_783> <loc_468> <loc_789> <loc_473> <loc_794> <loc_477> </s>",
+  "parsed": {
+    "<REFERRING_EXPRESSION_SEGMENTATION>": {
+      "polygons": [],
+      "labels": []
+    }
+  },
+  "generated_token_count": 129
+}

@@ -1,0 +1,9 @@
+test_actual_model_loads_only_captured_bytes_after_all_external_names_replaced (test_decomposition_clipseg_backend.CapturedModelExecution.test_actual_model_loads_only_captured_bytes_after_all_external_names_replaced) ... Using a slow image processor as `use_fast` is unset and a slow processor was saved with this model. `use_fast=True` will be the default behavior in v4.52, even if the model was saved with a slow processor. This will result in minor differences in outputs. You'll still be able to use a slow processor with `use_fast=False`.
+/home/complete/.cache/hatch-coordination-20261112/clipseg-venv/lib/python3.14/site-packages/transformers/image_processing_utils.py:51: UserWarning: The following named arguments are not valid for `ViTImageProcessor.preprocess` and were ignored: 'padding'
+  return self.preprocess(images, **kwargs)
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 21.673s
+
+OK

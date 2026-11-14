@@ -1,0 +1,50 @@
+{
+  "kind": "actual-captured-clipseg-model-execution",
+  "semantic_approval": false,
+  "source_hashes": {
+    "decomposition_clipseg.py": "eeed1857dda879081f845a1e11f6c5f976a1f67587bc31c868c85c52b7e4a313",
+    "decomposition_analysis.py": "a9652b7e5304096049d684248e59a542a10a9d41354534861d1ddbcf6a18378e",
+    "rig_errors.py": "cadfb681881a1e391f3e3ff1069ddb9036f2868c9ebec3f7a1663801f7216fed"
+  },
+  "test_sha256": "b6d3143c58339561365d1cdd9176c4a97fdfb7e68cde58361a77664d51d818bf",
+  "model_files": {
+    "config.json": "c023375966d31b3b1392764f7bd91df47098ce19f62f11b0263d8eedcf708bcd",
+    "merges.txt": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a",
+    "preprocessor_config.json": "4fb09ebcfd7651205ca8299b993c30088e5535ef350a72d46c5c4580eeac0440",
+    "special_tokens_map.json": "c4864a9376a8401918425bed71fc14fc0e81f9b59ec45c1cf96cccb2df508eac",
+    "tokenizer_config.json": "4c75d57fd9bd0be8478ad2d6f8b9cebdd4a45338eb108547329c2b6333476ca6",
+    "vocab.json": "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349",
+    "model.safetensors": "d00ca85d6b859f9d07b7cfb8ef26fe9771cb275b34c9368f2ecf603139307f55"
+  },
+  "original_model_hashes_after_proof": {
+    "config.json": "c023375966d31b3b1392764f7bd91df47098ce19f62f11b0263d8eedcf708bcd",
+    "merges.txt": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a",
+    "preprocessor_config.json": "4fb09ebcfd7651205ca8299b993c30088e5535ef350a72d46c5c4580eeac0440",
+    "special_tokens_map.json": "c4864a9376a8401918425bed71fc14fc0e81f9b59ec45c1cf96cccb2df508eac",
+    "tokenizer_config.json": "4c75d57fd9bd0be8478ad2d6f8b9cebdd4a45338eb108547329c2b6333476ca6",
+    "vocab.json": "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349",
+    "model.safetensors": "d00ca85d6b859f9d07b7cfb8ef26fe9771cb275b34c9368f2ecf603139307f55"
+  },
+  "all_external_model_names_replaced": true,
+  "replacement_recapture_rejected": true,
+  "modified_captured_config_rejected": true,
+  "tokenizer_parity_queries": 11,
+  "processor_tensor_parity": [
+    "input_ids",
+    "attention_mask",
+    "pixel_values"
+  ],
+  "actual_logits_shape": [
+    2,
+    352,
+    352
+  ],
+  "logits_sha256": "3cfb995dc58fdd4564529fd56bae6b00a539b5441cde50c01ee4f0a6ac0102fc",
+  "source_image_sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+  "source_unchanged": true,
+  "torch_threads": 1,
+  "interop_threads": 1,
+  "memory_admission_kib": 10322048,
+  "peak_rss_kib": 2177792,
+  "elapsed_seconds": 21.64654701600375
+}

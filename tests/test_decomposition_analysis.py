@@ -370,8 +370,11 @@ class AnalysisTests(unittest.TestCase):
                 folder=self.root/'analysis-jobs'/job['job']
                 original_response=(folder/'response.json').read_bytes()
                 real_atomic=analysis.atomic_json
+                state_path=analysis._job(self.root,job['job'])/'state.json'
+                writes=[]
                 def interrupted(path, value):
-                    if Path(path) == folder/'state.json':
+                    if Path(path) == state_path:
+                        writes.append(value.copy())
                         if after_write:
                             real_atomic(path,value)
                         raise RuntimeError('Injected controller crash')
@@ -379,6 +382,8 @@ class AnalysisTests(unittest.TestCase):
                 with mock.patch.object(analysis,'atomic_json',side_effect=interrupted):
                     with self.assertRaisesRegex(RuntimeError,'Injected'):
                         analysis.retry(self.root,job['job'])
+                self.assertEqual(len(writes),1)
+                self.assertEqual(writes[0]['status'],'awaiting-external')
                 self.assertTrue((folder/'retry.json').is_file())
                 self.assertEqual((folder/'attempt-1/response.json').read_bytes(),original_response)
                 recovered=analysis.status(self.root,job['job'])
@@ -387,6 +392,43 @@ class AnalysisTests(unittest.TestCase):
                 self.assertFalse(recovered['response_available'])
                 self.assertEqual(self.ingest(job)['attempts'],2)
                 self.assertEqual(self.original,(self.root/'decomposition.json').read_bytes())
+
+    def test_retry_crash_hook_with_root_alias(self):
+        alias=self.home/'run-alias'
+        try:
+            alias.symlink_to(self.root, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest('directory symlinks unavailable')
+        self.root=alias
+        self.assertNotEqual(self.root,analysis._job(self.root,'0'*64).parent.parent)
+        self.test_retry_crash_recovers_before_and_after_final_state_write()
+
+    def test_retry_flushes_history_records_before_publication(self):
+        import atomic_publish
+        job=self.prepare()
+        failed=self.response(job);failed.update(status='failed',errors=['Fixture failure'])
+        failed['annotation']['components']=[]
+        self.ingest(job,failed)
+        synced=set()
+        real_fsync=os.fsync
+        real_publish=atomic_publish._rename_no_replace
+        published=[]
+        def record_sync(fd):
+            info=os.fstat(fd)
+            synced.add((info.st_dev,info.st_ino))
+            return real_fsync(fd)
+        def check_publish(source,destination,**kwargs):
+            info=Path(source).stat()
+            self.assertIn((info.st_dev,info.st_ino),synced)
+            published.append(Path(destination).name)
+            return real_publish(source,destination,**kwargs)
+        with mock.patch.object(analysis.os,'fsync',side_effect=record_sync), \
+             mock.patch.object(atomic_publish,'_rename_no_replace',side_effect=check_publish):
+            result=analysis.retry(self.root,job['job'])
+        self.assertEqual(result['status'],'awaiting-external')
+        self.assertIn('state.json',published)
+        self.assertIn('response.json',published)
+        self.assertEqual(self.original,(self.root/'decomposition.json').read_bytes())
 
     def test_retry_rejects_nonregular_history_records_without_blocking(self):
         for name in ('state.json','worker.log','cancel','response.json','worker-response.json'):
