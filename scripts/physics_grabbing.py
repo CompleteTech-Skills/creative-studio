@@ -248,6 +248,7 @@ def _promoted_snapshot(payloads, graph, scene_path):
     """Delegate closure versioning to the existing Scene3D snapshot owner."""
     from physics_backends import MAX_FILES, MAX_INPUT_BYTES, _paths, _write, digest
     from scene3d_snapshot import snapshot_project
+    from scene3d_contracts import load_project
     from asset_library import read_source_bytes
     require(len(payloads) <= MAX_FILES and 0 < sum(map(len, payloads.values())) <= MAX_INPUT_BYTES,
             'PHYSICS_GRIP_SOURCE_LIMIT', 'Source snapshot exceeds the bounded physical input profile.')
@@ -257,6 +258,9 @@ def _promoted_snapshot(payloads, graph, scene_path):
         source = root/'source';source.mkdir(mode=0o700)
         for path, payload in payloads.items():
             _write(source/path, payload)
+        bundle = load_project(source)
+        require(set(bundle['inventory']) == set(payloads), 'PHYSICS_GRIP_SOURCE',
+                'Source payloads must equal the canonical project dependency closure.')
         destination = root/'snapshot'
         receipt = snapshot_project(source, destination, graph, scene_path=scene_path, max_bytes=MAX_INPUT_BYTES)
         # The authoritative owner already validates this closed inventory and
@@ -277,7 +281,7 @@ def compile_release(world, payloads, body_id, release):
     release record; no dynamic output poses are authored or predicted here.
     Only an existing single-root primitive body may be released in this profile.
     """
-    from physics_backends import canonical, digest, parse
+    from physics_backends import digest, parse, BlenderBackend, PyBulletBackend
     from physics_contracts import validate_contract
     from scene3d_contracts import validate_document
     from scene3d_graph import SceneGraph
@@ -346,9 +350,18 @@ def compile_release(world, payloads, body_id, release):
     old_reference = {**reference, 'kind': 'scene3d-scene'}
     require(project['scenes'].count(old_reference) == 1 and project['dependency_lock'].count(old_reference) == 1,
             'PHYSICS_GRIP_SOURCE', 'Project must bind the exact source scene once in scenes and dependency lock.')
+    backend_id = result['solver']['backend']
+    require(backend_id in ('blender', 'pybullet'), 'PHYSICS_GRIP_UNSUPPORTED',
+            'Release execution requires an existing admitted rigid-body backend.')
+    backend = PyBulletBackend() if backend_id == 'pybullet' else BlenderBackend()
+    # Pure canonical admission/estimation launches no native executable. Apply
+    # resource policy before materializing the source snapshot, then recheck the
+    # final promoted closure, whose history adds immutable source bytes.
+    backend.estimate_resources(result, source_bytes=sum(map(len, sources.values())))
     sources, snapshot = _promoted_snapshot(sources, graph, reference['path'])
     result['scene'] = {**snapshot['active_scene'], 'kind': 'scene'}
     validate_contract(result)
+    backend.estimate_resources(result, source_bytes=sum(map(len, sources.values())))
     return result, sources, dict(release_sha256=object_hash(release), source_world_sha256=object_hash(world),
                                 released_world_sha256=object_hash(result),
                                 status='compiled; native execution and ownership transaction not performed')

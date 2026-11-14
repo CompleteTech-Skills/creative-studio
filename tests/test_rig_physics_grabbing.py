@@ -5,12 +5,13 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from physics_backend_example import build_inputs
-from physics_backends import canonical, digest, parse
+from physics_backends import canonical, digest, parse, BackendError
 from physics_grabbing import (rigid_transform, reach_report, attach_kinematic, attachment_pose,
     detach_kinematic, handoff_kinematic, release_state, compile_release, capabilities)
 from rig_errors import RigError
@@ -77,7 +78,8 @@ def assert_native_source_admission(payloads, world):
         root = Path(temporary)
         for name, payload in payloads.items():
             target = root/name;target.parent.mkdir(parents=True, exist_ok=True);target.write_bytes(payload)
-        load_project(root)
+        bundle = load_project(root)
+        if set(bundle['inventory']) != set(payloads):raise AssertionError('Native input inventory differs from source payloads')
         _source_admission(root, world, 'project.json')
 
 
@@ -298,6 +300,18 @@ class ReleaseTests(unittest.TestCase):
         state = release();state['linear_velocity'][0] = 2
         with self.assertRaises(RigError) as error:compile_release(world, payloads, 'ball', state)
         self.assertEqual(error.exception.report['code'], 'PHYSICS_GRIP_COM')
+
+    def test_snapshot_policy_rejects_unreferenced_bytes_and_prechecks_memory(self):
+        world, payloads = build_inputs(backend='pybullet')
+        payloads['unreferenced.txt'] = b'preserve unknown original bytes'
+        with self.assertRaises(RigError) as error:compile_release(world, payloads, 'ball', release())
+        self.assertEqual(error.exception.report['code'], 'PHYSICS_GRIP_SOURCE')
+        self.assertEqual(payloads['unreferenced.txt'], b'preserve unknown original bytes')
+        del payloads['unreferenced.txt']
+        world['budgets']['memory_bytes'] = 1
+        with patch('physics_grabbing.tempfile.TemporaryDirectory', side_effect=AssertionError('Snapshot must not start')):
+            with self.assertRaises(BackendError) as error:compile_release(world, payloads, 'ball', release())
+        self.assertEqual(error.exception.report['code'], 'PHYSICS_RESOURCE_LIMIT')
 
 
 if __name__ == '__main__':unittest.main()
