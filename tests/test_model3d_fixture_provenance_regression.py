@@ -125,7 +125,7 @@ class FixtureProvenanceRegression(unittest.TestCase):
             originals = {item['path']: library.read_file(ref, item['path']) for item in manifest['files']}
             self.assertTrue(manifest['provenance']['fixture'])
             with import_canonical(library, ref) as captured:
-                self.assertIsNot(captured.model.report.get('fixture'), True)
+                self.assertIs(captured.model.report.get('fixture'), True)
                 for fmt in ('glb', 'gltf'):
                     dest = root / fmt
                     export_mesh(captured.model.geometry, dest, format=fmt, source_snapshot=captured)

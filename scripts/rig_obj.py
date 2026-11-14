@@ -5,6 +5,7 @@ import math
 import hashlib
 from pathlib import Path
 import shlex
+import uuid
 import numpy as np
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import require, safe_path, sha256, slug, normalize_root
@@ -12,7 +13,7 @@ from rig_geometry import analyze_geometry
 from rig_models import Geometry, Mesh, TextureImage, validate_geometry
 
 
-def import_obj(path: Path, *, scale=1., limits=None, source_reader=None):
+def import_obj(path: Path, *, scale=1., limits=None, source_reader=None, budget=None):
     from rig_import import ImportedModel, _decode_texture
     limits = limits or DEFAULT_LIMITS;path = Path(path)
     path = path.absolute() if source_reader is not None else normalize_root(path.parent)/path.name
@@ -64,7 +65,8 @@ def import_obj(path: Path, *, scale=1., limits=None, source_reader=None):
                 require(values and not values[0].startswith('-'), 'RIG_MTL', 'Bake MTL texture options before import.')
                 texture = safe_path(p.parent, ' '.join(values), exists=True)
                 data = read_source(texture, limits['source_bytes'])
-                mime, pixels = _decode_texture(data, limits, total_texture_pixels)
+                mime, pixels = _decode_texture(data, limits, total_texture_pixels, budget=budget,
+                                               reservation_key=uuid.uuid4().hex if budget else None)
                 total_texture_pixels += pixels
                 dependencies.append(texture);images.append(TextureImage(texture.name, mime, data))
                 textures.append(dict(source=len(images)-1))

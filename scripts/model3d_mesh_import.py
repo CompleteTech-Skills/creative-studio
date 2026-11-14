@@ -52,10 +52,10 @@ class MeshImport:
         self.close()
 
 
-def _load(path, *, scale, limits):
+def _load(path, *, scale, limits, budget=None):
     from rig_import import load_character_model
     try:
-        return load_character_model(path, scale=scale, limits=limits)
+        return load_character_model(path, scale=scale, limits=limits, budget=budget)
     except RigError:
         raise
     except (ValueError, TypeError, KeyError, IndexError, AttributeError, OverflowError, OSError) as exc:
@@ -109,18 +109,25 @@ def select_canonical_geometry(manifest, *, entry=None):
     return copy.deepcopy(selected)
 
 
-def import_canonical(library, ref, *, entry=None, limits=None):
-    """Decode an exact canonical-library version through its public reader.
+def import_canonical(library, ref, *, entry=None, limits=None, budget=None):
+    """Decode an exact canonical-library version through one captured closure.
 
     The library authenticates its manifest and payloads. This adapter verifies
     the returned bytes again, retains the complete manifest (including namespace,
     original source provenance and uncertainty), and applies no second coordinate
     conversion to an already canonical asset. Legacy-2D records are rejected.
+    A supplied budget is committed only after the complete import succeeds.
     """
     from asset_library_contracts import validate, load_manifest, canonical_bytes
-    limits = _limits(limits)
+    from rig_load_limits import LoadBudget, effective_limits
+    limits = effective_limits(DEFAULT_LIMITS, _limits(limits))
+    require(budget is None or type(budget) is LoadBudget, 'MODEL3D_LIMITS', 'Invalid caller load budget.')
+    caller = budget
+    budget = budget.fork(limits) if budget is not None else LoadBudget(limits)
+    limits = budget.limits
     validate(ref, 'AssetRef')
-    manifest = load_manifest(canonical_bytes(library.resolve(copy.deepcopy(ref))))
+    manifest, payloads = library.capture_for_validation(copy.deepcopy(ref), budget=budget)
+    manifest = load_manifest(canonical_bytes(manifest))
     require(manifest['manifest_sha256'] == ref['sha256'] and
             manifest['identity']['id'] == ref['id'] and manifest['version'] == ref['version'],
             'MODEL3D_REFERENCE', 'Registry returned a different immutable version.')
@@ -135,20 +142,29 @@ def import_canonical(library, ref, *, entry=None, limits=None):
     try:
         records = []
         for name,item in inventory.items():
-            payload = library.read_file(copy.deepcopy(ref), name)
+            payload = payloads.get(name)
             require(isinstance(payload, bytes) and len(payload) == item['bytes']
                     and hashlib.sha256(payload).hexdigest() == item['sha256'],
                     'MODEL3D_HASH', 'Public reader bytes disagree with immutable inventory.', asset=name)
             target = root/name; target.parent.mkdir(parents=True, exist_ok=True)
             with target.open('xb') as output: output.write(payload)
             records.append(dict(path=name, bytes=len(payload), sha256=item['sha256']))
-        model = _load(root/entry, scale=1., limits=limits)
+        # OBJ's legacy parser does not yet accept a ledger. Admit its text and
+        # geometry workspace against this transaction before entering it.
+        if selected['format'] == 'obj':
+            budget.add(sum(len(payloads[name]) for name in inventory) * 132,
+                       'canonical OBJ parser workspace')
+        model = _load(root/entry, scale=1., limits=limits, budget=budget)
         actual = {p.relative_to(root).as_posix() for p in model.source_files}
         require(actual <= set(inventory), 'MODEL3D_INVENTORY', 'Model references a non-inventoried dependency.')
-        return MeshImport(model, records, dict(authority='AssetLibrary.resolve/read_file',
+        model.report['fixture'] = model.report.get('fixture') is True or manifest['provenance']['fixture'] is True
+        result = MeshImport(model, records, dict(authority='AssetLibrary.capture_for_validation',
                           canonical_ref=copy.deepcopy(ref), manifest=copy.deepcopy(manifest),
                           source_entry=entry, normalization='retained canonical bytes; no additional conversion'),
                           root, temporary, (canonical_bytes(manifest), canonical_bytes(ref), entry),
                           (entry, tuple((r['path'], r['bytes'], r['sha256']) for r in records)))
+        if caller is not None:
+            caller.commit(budget)
+        return result
     except BaseException:
         temporary.cleanup(); raise

@@ -422,7 +422,7 @@ def load_character_model(path: str | Path, *, scale=1., limits=None, blender=Non
     suffix = path.suffix.lower()
     if suffix == '.obj':
         from rig_obj import import_obj
-        return import_obj(path, scale=scale, limits=limits, source_reader=source_reader)
+        return import_obj(path, scale=scale, limits=limits, source_reader=source_reader, budget=budget)
     if suffix == '.blend':
         require(source_reader is None, 'RIG_SOURCE_READER', 'Controlled source readers support GLB, glTF and OBJ only.')
         from rig_blender import import_blend

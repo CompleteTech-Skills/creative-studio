@@ -251,8 +251,56 @@ class MeshImportTests(unittest.TestCase):
         with patch.object(library,'read_file',wraps=library.read_file) as read:
             with self.assertRaises(RigError):import_canonical(library,ref,limits={'source_bytes':1})
             read.assert_not_called()
-        with patch.object(library,'read_file',return_value=b'corrupt'):
+        capture = library.capture_for_validation
+        def corrupt(*args, **kwargs):
+            manifest, payloads = capture(*args, **kwargs)
+            payloads[manifest['files'][0]['path']] = b'corrupt'
+            return manifest, payloads
+        with patch.object(library,'capture_for_validation',side_effect=corrupt):
             with self.assertRaises(RigError):import_canonical(library,ref)
+
+    def test_canonical_transaction_cumulative_and_retry(self):
+        from rig_load_limits import LoadBudget
+        from rig_contracts import DEFAULT_LIMITS
+        for make in (self.canonical, self.normalized_canonical):
+            library, _, ref, *_ = make()
+            probe = LoadBudget(dict(DEFAULT_LIMITS))
+            with import_canonical(library, ref, budget=probe) as result:
+                self.assertTrue(result.model.report['fixture'])
+            used = probe.memory
+            budget = LoadBudget(dict(DEFAULT_LIMITS, memory_bytes=used))
+            with import_canonical(library, ref, budget=budget):
+                pass
+            before = budget.report()
+            with self.assertRaises(RigError):
+                import_canonical(library, ref, budget=budget)
+            self.assertEqual(budget.report(), before)
+            fresh = LoadBudget(dict(DEFAULT_LIMITS, memory_bytes=used))
+            with import_canonical(library, ref, budget=fresh):
+                pass
+
+    def test_canonical_tampered_manifest_rolls_back(self):
+        from rig_load_limits import LoadBudget
+        from rig_contracts import DEFAULT_LIMITS
+        library, _, ref = self.canonical()
+        budget = LoadBudget(dict(DEFAULT_LIMITS)); before = budget.report()
+        with library._connect() as db:
+            db.execute('UPDATE versions SET manifest=?', (b'{"invalid":true}',))
+        with self.assertRaises(RigError):
+            import_canonical(library, ref, budget=budget)
+        self.assertEqual(budget.report(), before)
+
+    def test_canonical_corrupt_registry_blob_rolls_back(self):
+        from rig_load_limits import LoadBudget
+        from rig_contracts import DEFAULT_LIMITS
+        library, manifest, ref = self.canonical()
+        budget = LoadBudget(dict(DEFAULT_LIMITS)); before = budget.report()
+        digest = manifest['files'][0]['sha256']
+        with library._connect() as db:
+            db.execute('UPDATE blobs SET payload=? WHERE sha256=?', (b'corrupt', digest))
+        with self.assertRaises(RigError):
+            import_canonical(library, ref, budget=budget)
+        self.assertEqual(budget.report(), before)
 
     def test_public_canonical_selector_returns_independent_exact_active_record(self):
         library,manifest,ref=self.canonical()
@@ -309,7 +357,7 @@ class MeshImportTests(unittest.TestCase):
         wrong_ref=dict(ref,sha256=wrong['manifest_sha256'])
         with patch.object(library,'resolve',return_value=wrong),patch.object(library,'read_file',wraps=library.read_file) as read:
             with self.assertRaises(RigError) as caught:import_canonical(library,wrong_ref,entry=normalized)
-            self.assertEqual(caught.exception.report['code'],'MODEL3D_ENTRY');read.assert_not_called()
+            self.assertEqual(caught.exception.report['code'],'LIBRARY_HASH');read.assert_not_called()
 
     def test_actual_external_gltf_binary_image_closure(self):
         import base64,io
