@@ -742,6 +742,8 @@ def retry(root, identifier):
                 try:
                     with open(descriptor, 'wb', closefd=True) as output:
                         output.write(_record_bytes(path))
+                        output.flush()
+                        os.fsync(output.fileno())
                     from atomic_publish import _rename_no_replace
                     _rename_no_replace(temporary, target)
                 finally:
