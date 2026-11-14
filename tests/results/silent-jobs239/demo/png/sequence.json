@@ -1,0 +1,283 @@
+{
+  "schema_version": 1,
+  "kind": "silent-image-sequence",
+  "source": {
+    "fps": {
+      "denominator": 1,
+      "numerator": 24
+    },
+    "frames": [
+      {
+        "bytes": 188,
+        "index": 0,
+        "path": "frames/000000.png",
+        "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+        "source_index": 0,
+        "source_path": "0.png"
+      },
+      {
+        "bytes": 192,
+        "index": 1,
+        "path": "frames/000001.png",
+        "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+        "source_index": 1,
+        "source_path": "1.png"
+      },
+      {
+        "bytes": 190,
+        "index": 2,
+        "path": "frames/000002.png",
+        "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+        "source_index": 2,
+        "source_path": "2.png"
+      },
+      {
+        "bytes": 190,
+        "index": 3,
+        "path": "frames/000003.png",
+        "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+        "source_index": 3,
+        "source_path": "3.png"
+      },
+      {
+        "bytes": 192,
+        "index": 4,
+        "path": "frames/000004.png",
+        "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+        "source_index": 4,
+        "source_path": "4.png"
+      },
+      {
+        "bytes": 190,
+        "index": 5,
+        "path": "frames/000005.png",
+        "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+        "source_index": 5,
+        "source_path": "5.png"
+      }
+    ],
+    "identity_sha256": "8b6a417811b45e3e95cc047aad30dee303816f0cb457f0280b23154cd5930fec",
+    "kind": "silent-sequence-source",
+    "origin": "imported",
+    "output": {
+      "alpha": "opaque",
+      "bit_depth": 8,
+      "color_space": "srgb",
+      "format": "png",
+      "passes": [
+        "combined"
+      ]
+    },
+    "resolution": [
+      64,
+      64
+    ],
+    "schema_version": 1
+  },
+  "source_sha256": "8abb8dbfaea762edf47e0efaab281f5960f642a534621ac4881d839368106757",
+  "request_sha256": "06abace7fe4ee82f5eeaaa9716c39f69319d68c2db9fa1b8fc134ba61686aafb",
+  "provenance": {
+    "job": "a9a4eb28957023a2f650000539f344dfb6ce345bb3c996fd16f3a5705b092831",
+    "source": {
+      "fixture": "Imported procedural PNGs; no native render claim",
+      "video_source_sha256": "274fefa257af2a7e5f9293acc9901bb0c6c4967acf95a0df1de08b11862135f6"
+    }
+  },
+  "provenance_sha256": "22cc97f6976d4bc170e0a4942182917a6855f0c28942da856cf8587f90ffbcc3",
+  "decoded": [
+    {
+      "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+      "bytes": 188,
+      "format": "png",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 8,
+      "channels": {
+        "R": {
+          "type": "uint8",
+          "minimum": 0.0784313725490196,
+          "maximum": 0.9019607843137255
+        },
+        "G": {
+          "type": "uint8",
+          "minimum": 0.1568627450980392,
+          "maximum": 0.5490196078431373
+        },
+        "B": {
+          "type": "uint8",
+          "minimum": 0.23529411764705882,
+          "maximum": 0.27450980392156865
+        }
+      },
+      "requested_color_space": "srgb",
+      "requested_alpha": "opaque",
+      "decoder": "pypng",
+      "decoder_version": "0.20220715.0",
+      "compression": "deflate"
+    },
+    {
+      "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+      "bytes": 192,
+      "format": "png",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 8,
+      "channels": {
+        "R": {
+          "type": "uint8",
+          "minimum": 0.0784313725490196,
+          "maximum": 0.9019607843137255
+        },
+        "G": {
+          "type": "uint8",
+          "minimum": 0.1568627450980392,
+          "maximum": 0.5490196078431373
+        },
+        "B": {
+          "type": "uint8",
+          "minimum": 0.23529411764705882,
+          "maximum": 0.27450980392156865
+        }
+      },
+      "requested_color_space": "srgb",
+      "requested_alpha": "opaque",
+      "decoder": "pypng",
+      "decoder_version": "0.20220715.0",
+      "compression": "deflate"
+    },
+    {
+      "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+      "bytes": 190,
+      "format": "png",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 8,
+      "channels": {
+        "R": {
+          "type": "uint8",
+          "minimum": 0.0784313725490196,
+          "maximum": 0.9019607843137255
+        },
+        "G": {
+          "type": "uint8",
+          "minimum": 0.1568627450980392,
+          "maximum": 0.5490196078431373
+        },
+        "B": {
+          "type": "uint8",
+          "minimum": 0.23529411764705882,
+          "maximum": 0.27450980392156865
+        }
+      },
+      "requested_color_space": "srgb",
+      "requested_alpha": "opaque",
+      "decoder": "pypng",
+      "decoder_version": "0.20220715.0",
+      "compression": "deflate"
+    },
+    {
+      "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+      "bytes": 190,
+      "format": "png",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 8,
+      "channels": {
+        "R": {
+          "type": "uint8",
+          "minimum": 0.0784313725490196,
+          "maximum": 0.9019607843137255
+        },
+        "G": {
+          "type": "uint8",
+          "minimum": 0.1568627450980392,
+          "maximum": 0.5490196078431373
+        },
+        "B": {
+          "type": "uint8",
+          "minimum": 0.23529411764705882,
+          "maximum": 0.27450980392156865
+        }
+      },
+      "requested_color_space": "srgb",
+      "requested_alpha": "opaque",
+      "decoder": "pypng",
+      "decoder_version": "0.20220715.0",
+      "compression": "deflate"
+    },
+    {
+      "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+      "bytes": 192,
+      "format": "png",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 8,
+      "channels": {
+        "R": {
+          "type": "uint8",
+          "minimum": 0.0784313725490196,
+          "maximum": 0.9019607843137255
+        },
+        "G": {
+          "type": "uint8",
+          "minimum": 0.1568627450980392,
+          "maximum": 0.5490196078431373
+        },
+        "B": {
+          "type": "uint8",
+          "minimum": 0.23529411764705882,
+          "maximum": 0.27450980392156865
+        }
+      },
+      "requested_color_space": "srgb",
+      "requested_alpha": "opaque",
+      "decoder": "pypng",
+      "decoder_version": "0.20220715.0",
+      "compression": "deflate"
+    },
+    {
+      "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+      "bytes": 190,
+      "format": "png",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 8,
+      "channels": {
+        "R": {
+          "type": "uint8",
+          "minimum": 0.0784313725490196,
+          "maximum": 0.9019607843137255
+        },
+        "G": {
+          "type": "uint8",
+          "minimum": 0.1568627450980392,
+          "maximum": 0.5490196078431373
+        },
+        "B": {
+          "type": "uint8",
+          "minimum": 0.23529411764705882,
+          "maximum": 0.27450980392156865
+        }
+      },
+      "requested_color_space": "srgb",
+      "requested_alpha": "opaque",
+      "decoder": "pypng",
+      "decoder_version": "0.20220715.0",
+      "compression": "deflate"
+    }
+  ],
+  "transform": "byte-preserving-copy",
+  "visual_review": "not-performed"
+}

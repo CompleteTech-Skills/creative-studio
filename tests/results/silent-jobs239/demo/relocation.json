@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "description": "Exact delivery/source subset from retained execution workspace; private job directories remain in author evidence and are not required to independently decode deliveries",
+  "original_execution_sha256": "e3d3863dde86069da309ba5ae27ad0d858f56aca855104572bb2f733522e652d",
+  "new_render_execution": false,
+  "copied_roots": [
+    "source",
+    "mp4",
+    "webm",
+    "png",
+    "native"
+  ],
+  "inventory": {
+    "execution-original.json": {
+      "sha256": "e3d3863dde86069da309ba5ae27ad0d858f56aca855104572bb2f733522e652d",
+      "bytes": 92870
+    },
+    "source/0.png": {
+      "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+      "bytes": 188
+    },
+    "source/1.png": {
+      "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+      "bytes": 192
+    },
+    "source/2.png": {
+      "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+      "bytes": 190
+    },
+    "source/3.png": {
+      "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+      "bytes": 190
+    },
+    "source/4.png": {
+      "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+      "bytes": 192
+    },
+    "source/5.png": {
+      "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+      "bytes": 190
+    },
+    "mp4/video.mp4": {
+      "sha256": "ded6157b1951fd37a7b295d3f3ed7b4bfc941ef8bb8052813c8be3135eecc908",
+      "bytes": 1980
+    },
+    "mp4/receipt.json": {
+      "sha256": "1a2fed2a3186006f0585a9e4054c256830fd43331c9df11ff1b29efb4111c89b",
+      "bytes": 13811
+    },
+    "webm/video.webm": {
+      "sha256": "bc2aee74a66c7cd7402d6c65761121257f07d81640cfd8d1f42468ea4ba07950",
+      "bytes": 831
+    },
+    "webm/receipt.json": {
+      "sha256": "679de8ed4d15956a8c61b1ef1f505f74e050a70c5029c22371dee3f514c6dfa0",
+      "bytes": 13037
+    },
+    "png/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "png/plan.json": {
+      "sha256": "f5b45e4c17b69a77fc0ccfced4dab8a1e1a32cae36c6e68d50630e28fdedfaad",
+      "bytes": 2231
+    },
+    "png/sequence.json": {
+      "sha256": "5484d50843416fde43190caba19b50ebdc040e3d273e9a0d09d01ff4528903bc",
+      "bytes": 7569
+    },
+    "native/job.json": {
+      "sha256": "dc28955a4ab77b118716233abda7c7d892d626b0f468217b01571d913d134c0e",
+      "bytes": 462
+    },
+    "native/sequence/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "native/sequence/plan.json": {
+      "sha256": "22f521f9a3da9fafcd251bf9b3576b5b218915e5a58db6bf0a7a21137ea8fc5a",
+      "bytes": 11867
+    },
+    "native/sequence/sequence.json": {
+      "sha256": "749fc795915b621a124faf15f4deab8fff18c0a0f9f9fc84fdb1a5d1e919be67",
+      "bytes": 14790
+    },
+    "native/sequence/frames/000000.png": {
+      "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+      "bytes": 2111
+    },
+    "native/sequence/frames/000001.png": {
+      "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+      "bytes": 2178
+    },
+    "native/sequence/frames/000002.png": {
+      "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+      "bytes": 2123
+    },
+    "png/frames/000000.png": {
+      "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+      "bytes": 188
+    },
+    "png/frames/000001.png": {
+      "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+      "bytes": 192
+    },
+    "png/frames/000002.png": {
+      "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+      "bytes": 190
+    },
+    "png/frames/000003.png": {
+      "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+      "bytes": 190
+    },
+    "png/frames/000004.png": {
+      "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+      "bytes": 192
+    },
+    "png/frames/000005.png": {
+      "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+      "bytes": 190
+    }
+  }
+}

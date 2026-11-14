@@ -1,0 +1,9 @@
+{
+  "job": "6aeb4298a4fa9b68419ff4871a0ccbf2ec57b70b7f72ead278196576b5be65d4",
+  "kind": "silent-native-sequence-delivery",
+  "plan_sha256": "3c7d93fa20b5240e951c19d549ddb7893272923ea08001a5937839349f2d2556",
+  "schema_version": 1,
+  "sequence_receipt_sha256": "749fc795915b621a124faf15f4deab8fff18c0a0f9f9fc84fdb1a5d1e919be67",
+  "source_identity_sha256": "9ed136bbb9fd326a316d1268141cb76011d9a9179305af61a255eec29054f1a6",
+  "visual_review": "not-performed"
+}

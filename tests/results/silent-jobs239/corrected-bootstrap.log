@@ -1,0 +1,6 @@
+test_bootstrap_partial_plan_recovers_without_adapter_preinspection (test_silent_sequence_jobs_native.ActualSequenceJobs.test_bootstrap_partial_plan_recovers_without_adapter_preinspection) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.474s
+
+OK

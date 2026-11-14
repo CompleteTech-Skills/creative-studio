@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "source_head": "56f23dd5065ebeef44908c938e724a110320c407",
+  "integrated_main": "e2765dd494125a2f4dbfe13e4f4a66a3a5aba5dd",
+  "canonical_fd_head": "9f70ed852ebff5d3244508e163417ccb5424c61b",
+  "source_hashes": {
+    "scripts/silent_jobs.py": "9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe",
+    "scripts/silent_sequence_jobs.py": "716115b737fd5642022319c97c3b2372ea9bbe00fa99c8b5951d88f241241d8f",
+    "scripts/silent_native_sequence_jobs.py": "add91dbe64844bbc4d8e54e8d5b7dc8f42769f8d9435847946b1ded8fab95b79",
+    "scripts/silent_sequence.py": "07bc5b4769127e201ebaa9e5b5771fe6f28e81241cc69b19882a1bfa4c04b253",
+    "scripts/silent_video.py": "9fd2eb7e57ea0fd7a03158d7ac5cb291092d945e605493586c80b94f895ab45a",
+    "scripts/rig_errors.py": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+    "scripts/atomic_publish.py": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567",
+    "scripts/render3d_verify.py": "ddc91b3a7aa35d879614f0ac877b884017a6d87ab25777613cc24aa0515bb92b"
+  },
+  "validation": {
+    "actual_cohort": {
+      "head": "a300414f",
+      "tests": 44,
+      "passed": 43,
+      "failures": 1,
+      "skipped": 0,
+      "failure": "Bootstrap fixture serialized pre-persist key order instead of the immutable persisted canonical plan; product sources unchanged",
+      "log": "actual-with-fixture-failure.log"
+    },
+    "corrected_case": {
+      "head": "56f23dd5065ebeef44908c938e724a110320c407",
+      "passed": 1,
+      "skipped": 0,
+      "log": "corrected-bootstrap.log"
+    },
+    "portable": {
+      "passed": 14,
+      "skipped": 0,
+      "log": "portable.log"
+    },
+    "schema_math": {
+      "tests": 268,
+      "passed": 267,
+      "skipped": 1,
+      "skip": "explicit actual Blender optical acceptance gate",
+      "log": "schema-math.log"
+    },
+    "legacy_discovery": {
+      "count": 1139,
+      "execution": false,
+      "optional_3d_imports_blocked": true
+    }
+  },
+  "demo": {
+    "phases": [
+      "completed",
+      "completed",
+      "completed",
+      "completed"
+    ],
+    "new_render_execution": false,
+    "imported_video_and_png_frames": 6,
+    "native_retained_geometry_frames": 3,
+    "native_fixture_source_sha256": "a4e103642923aa1e498af239131a977bb22864133410c5b3f6755760ef0a20d3",
+    "repeat_encode_attempts": [
+      1,
+      1
+    ],
+    "independent_video_audio_streams": [
+      0,
+      0
+    ],
+    "relocation": "demo/relocation.json"
+  },
+  "review_findings": {
+    "candidate": "8f4160ce",
+    "findings": [
+      {
+        "severity": "P2",
+        "issue": "status reads checkpoint before ownership attempt",
+        "fix": "d8724309: read state after flock; actual video and sequence race regressions passed"
+      },
+      {
+        "severity": "P2",
+        "issue": "adapter preinventory rejects canonical recoverable partials",
+        "fix": "44bf6323 + e0aeb5f5: canonical per-frame verified observers under lock replace adapter preinventory; actual partial and bootstrap cases covered"
+      },
+      {
+        "severity": "P2",
+        "issue": "huge video budget yields raw OverflowError",
+        "fix": "d8724309: typed admission wrapper; 401-digit resource/request regressions passed"
+      }
+    ],
+    "final_new_review": "pending"
+  },
+  "limitations": [
+    "Linux-only persistent workers; other platforms explicitly unavailable",
+    "Preview jobs await canonical preview preparation integration",
+    "No new Blender execution or visual/artistic approval in this job export increment",
+    "No complete issue239 acceptance or closure claim"
+  ]
+}

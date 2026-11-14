@@ -1,0 +1,19 @@
+test_cli_streams_observed_progress_separately_from_result (test_silent_jobs.PortableJobContracts.test_cli_streams_observed_progress_separately_from_result) ... ok
+test_committed_schema_parity (test_silent_jobs.PortableJobContracts.test_committed_schema_parity) ... ok
+test_hidden_worker_never_signals_an_unowned_session (test_silent_jobs.PortableJobContracts.test_hidden_worker_never_signals_an_unowned_session) ... ok
+test_missing_scoped_boundary_is_explicitly_blocked (test_silent_jobs.PortableJobContracts.test_missing_scoped_boundary_is_explicitly_blocked) ... ok
+test_schemas_are_strict_and_checkpoints_have_explicit_terminal_states (test_silent_jobs.PortableJobContracts.test_schemas_are_strict_and_checkpoints_have_explicit_terminal_states) ... ok
+test_unsupported_staging_fails_before_tool_discovery_or_job_creation (test_silent_jobs.PortableJobContracts.test_unsupported_staging_fails_before_tool_discovery_or_job_creation) ... ok
+test_invalid_native_resource_inventory_is_typed (test_silent_native_sequence_jobs.NativeSequenceJobContracts.test_invalid_native_resource_inventory_is_typed) ... ok
+test_unavailable_native_boundary_fails_before_snapshot_access (test_silent_native_sequence_jobs.NativeSequenceJobContracts.test_unavailable_native_boundary_fails_before_snapshot_access) ... ok
+test_batch_bounds_and_duplicates_precede_io (test_silent_sequence_jobs.SequenceJobContracts.test_batch_bounds_and_duplicates_precede_io) ... ok
+test_batch_failure_does_not_prevent_independent_job (test_silent_sequence_jobs.SequenceJobContracts.test_batch_failure_does_not_prevent_independent_job) ... ok
+test_extreme_resource_numbers_fail_with_typed_admission (test_silent_sequence_jobs.SequenceJobContracts.test_extreme_resource_numbers_fail_with_typed_admission) ... ok
+test_malformed_checkpoint_has_a_typed_failure (test_silent_sequence_jobs.SequenceJobContracts.test_malformed_checkpoint_has_a_typed_failure) ... ok
+test_missing_canonical_decoder_is_explicitly_unavailable (test_silent_sequence_jobs.SequenceJobContracts.test_missing_canonical_decoder_is_explicitly_unavailable) ... ok
+test_unavailable_staging_does_not_touch_inputs (test_silent_sequence_jobs.SequenceJobContracts.test_unavailable_staging_does_not_touch_inputs) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.090s
+
+OK

@@ -1,0 +1,2119 @@
+{
+  "schema_version": 1,
+  "fixture": "Procedural 2D moving rectangle; actual encodes/sequence decode, no renderer or visual approval",
+  "elapsed_seconds": 2.801516129999982,
+  "python": "3.12.15",
+  "batch": {
+    "schema_version": 1,
+    "kind": "silent-export-batch-result",
+    "concurrency": 1,
+    "jobs": [
+      {
+        "plan": {
+          "budget": {
+            "max_attempts": 3,
+            "max_memory_bytes": 1073741824,
+            "max_runs": 8,
+            "max_work_bytes": 8589934592,
+            "wall_seconds": 1200
+          },
+          "context": {
+            "fixture": "Actual encoding of six procedural PNG frames; no renderer or visual approval",
+            "timeline_source_sha256": "274fefa257af2a7e5f9293acc9901bb0c6c4967acf95a0df1de08b11862135f6"
+          },
+          "destination": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/mp4",
+          "estimate": {
+            "decoded_memory_estimate": 134414336,
+            "gpu_bytes": 0,
+            "peak_work_bytes": 2785021282,
+            "source_bytes": 1142,
+            "threads": 1
+          },
+          "id": "fd298a3f25c34c6c7fe0697ef0366ba62bda1c5e744f14f16225e2a3d42f0a11",
+          "implementation": {
+            "controller": "9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe",
+            "encoder": "9fd2eb7e57ea0fd7a03158d7ac5cb291092d945e605493586c80b94f895ab45a",
+            "path_boundary": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+            "profiles": "f27d39cbfc12532d0dad2f5481ec56a0f81e886968657eb0627f8560631ad616",
+            "publication": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567"
+          },
+          "kind": "silent-video-job-plan",
+          "request": {
+            "audio": {
+              "policy": "forbidden"
+            },
+            "kind": "silent-video-request",
+            "limits": {
+              "max_log_bytes": 4194304,
+              "max_output_bytes": 536870912,
+              "timeout_seconds": 300
+            },
+            "profile": "h264-mp4",
+            "schema_version": 1,
+            "source": {
+              "alpha": "opaque",
+              "color": "untagged-sdr",
+              "format": "png",
+              "fps": {
+                "denominator": 1,
+                "numerator": 24
+              },
+              "frames": [
+                {
+                  "bytes": 188,
+                  "index": 0,
+                  "path": "0.png",
+                  "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554"
+                },
+                {
+                  "bytes": 192,
+                  "index": 1,
+                  "path": "1.png",
+                  "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19"
+                },
+                {
+                  "bytes": 190,
+                  "index": 2,
+                  "path": "2.png",
+                  "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c"
+                },
+                {
+                  "bytes": 190,
+                  "index": 3,
+                  "path": "3.png",
+                  "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644"
+                },
+                {
+                  "bytes": 192,
+                  "index": 4,
+                  "path": "4.png",
+                  "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99"
+                },
+                {
+                  "bytes": 190,
+                  "index": 5,
+                  "path": "5.png",
+                  "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9"
+                }
+              ],
+              "height": 64,
+              "kind": "silent-frame-source",
+              "origin": "synthetic",
+              "precision": 8,
+              "schema_version": 1,
+              "width": 64
+            }
+          },
+          "schema_version": 1,
+          "source_root": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/source",
+          "tools": {
+            "ffmpeg": {
+              "bytes": 428296,
+              "path": "/usr/bin/ffmpeg",
+              "sha256": "ba5be4f60d2ec3ab668e3d60a1092f65ad2697957c2319dcbfb056ae58202c46",
+              "version_stdout": "ffmpeg version n9.0.2 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 16 (GCC)\nconfiguration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-lcms2 --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan --disable-decoder=magicyuv\nlibavutil      61.  1.102 / 61.  1.102\nlibavcodec     63.  1.102 / 63.  1.102\nlibavformat    63.  1.102 / 63.  1.102\nlibavdevice    63.  1.102 / 63.  1.102\nlibavfilter    12.  1.102 / 12.  1.102\nlibswscale     10.  1.102 / 10.  1.102\nlibswresample   7.  1.102 /  7.  1.102\n\nExiting with exit code 0\n"
+            },
+            "ffprobe": {
+              "bytes": 202944,
+              "path": "/usr/bin/ffprobe",
+              "sha256": "b9170e6e9da249120590cb6c76064d38295b3beb65615b73db7c1d9148884f99",
+              "version_stdout": "ffprobe version n9.0.2 Copyright (c) 2007-2026 the FFmpeg developers\nbuilt with gcc 16 (GCC)\nconfiguration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-lcms2 --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan --disable-decoder=magicyuv\nlibavutil      61.  1.102 / 61.  1.102\nlibavcodec     63.  1.102 / 63.  1.102\nlibavformat    63.  1.102 / 63.  1.102\nlibavdevice    63.  1.102 / 63.  1.102\nlibavfilter    12.  1.102 / 12.  1.102\nlibswscale     10.  1.102 / 10.  1.102\nlibswresample   7.  1.102 /  7.  1.102\n"
+            }
+          }
+        },
+        "state": {
+          "artifact": {
+            "bytes": 1980,
+            "path": "video.mp4",
+            "sha256": "ded6157b1951fd37a7b295d3f3ed7b4bfc941ef8bb8052813c8be3135eecc908"
+          },
+          "attempts": 1,
+          "cached_created": 6,
+          "cached_reused": 0,
+          "elapsed_seconds": 0.6788388709999253,
+          "error": null,
+          "job": "fd298a3f25c34c6c7fe0697ef0366ba62bda1c5e744f14f16225e2a3d42f0a11",
+          "kind": "silent-video-job-state",
+          "phase": "completed",
+          "progress": {
+            "frame": 6,
+            "phase": "completed"
+          },
+          "receipt": {
+            "bytes": 13811,
+            "sha256": "1a2fed2a3186006f0585a9e4054c256830fd43331c9df11ff1b29efb4111c89b"
+          },
+          "runs": 1,
+          "schema_version": 1
+        },
+        "owned": false,
+        "worker_exit_status": 0
+      },
+      {
+        "plan": {
+          "budget": {
+            "max_attempts": 3,
+            "max_memory_bytes": 1073741824,
+            "max_runs": 8,
+            "max_work_bytes": 8589934592,
+            "wall_seconds": 1200
+          },
+          "context": {
+            "fixture": "Actual encoding of six procedural PNG frames; no renderer or visual approval",
+            "timeline_source_sha256": "274fefa257af2a7e5f9293acc9901bb0c6c4967acf95a0df1de08b11862135f6"
+          },
+          "destination": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/webm",
+          "estimate": {
+            "decoded_memory_estimate": 134414336,
+            "gpu_bytes": 0,
+            "peak_work_bytes": 2785021282,
+            "source_bytes": 1142,
+            "threads": 1
+          },
+          "id": "9a157f6648e77e53733d61edb1941f19803952aba89b337bd27d7aa9b84f0ed1",
+          "implementation": {
+            "controller": "9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe",
+            "encoder": "9fd2eb7e57ea0fd7a03158d7ac5cb291092d945e605493586c80b94f895ab45a",
+            "path_boundary": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+            "profiles": "f27d39cbfc12532d0dad2f5481ec56a0f81e886968657eb0627f8560631ad616",
+            "publication": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567"
+          },
+          "kind": "silent-video-job-plan",
+          "request": {
+            "audio": {
+              "policy": "forbidden"
+            },
+            "kind": "silent-video-request",
+            "limits": {
+              "max_log_bytes": 4194304,
+              "max_output_bytes": 536870912,
+              "timeout_seconds": 300
+            },
+            "profile": "vp9-webm",
+            "schema_version": 1,
+            "source": {
+              "alpha": "opaque",
+              "color": "untagged-sdr",
+              "format": "png",
+              "fps": {
+                "denominator": 1,
+                "numerator": 24
+              },
+              "frames": [
+                {
+                  "bytes": 188,
+                  "index": 0,
+                  "path": "0.png",
+                  "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554"
+                },
+                {
+                  "bytes": 192,
+                  "index": 1,
+                  "path": "1.png",
+                  "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19"
+                },
+                {
+                  "bytes": 190,
+                  "index": 2,
+                  "path": "2.png",
+                  "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c"
+                },
+                {
+                  "bytes": 190,
+                  "index": 3,
+                  "path": "3.png",
+                  "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644"
+                },
+                {
+                  "bytes": 192,
+                  "index": 4,
+                  "path": "4.png",
+                  "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99"
+                },
+                {
+                  "bytes": 190,
+                  "index": 5,
+                  "path": "5.png",
+                  "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9"
+                }
+              ],
+              "height": 64,
+              "kind": "silent-frame-source",
+              "origin": "synthetic",
+              "precision": 8,
+              "schema_version": 1,
+              "width": 64
+            }
+          },
+          "schema_version": 1,
+          "source_root": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/source",
+          "tools": {
+            "ffmpeg": {
+              "bytes": 428296,
+              "path": "/usr/bin/ffmpeg",
+              "sha256": "ba5be4f60d2ec3ab668e3d60a1092f65ad2697957c2319dcbfb056ae58202c46",
+              "version_stdout": "ffmpeg version n9.0.2 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 16 (GCC)\nconfiguration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-lcms2 --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan --disable-decoder=magicyuv\nlibavutil      61.  1.102 / 61.  1.102\nlibavcodec     63.  1.102 / 63.  1.102\nlibavformat    63.  1.102 / 63.  1.102\nlibavdevice    63.  1.102 / 63.  1.102\nlibavfilter    12.  1.102 / 12.  1.102\nlibswscale     10.  1.102 / 10.  1.102\nlibswresample   7.  1.102 /  7.  1.102\n\nExiting with exit code 0\n"
+            },
+            "ffprobe": {
+              "bytes": 202944,
+              "path": "/usr/bin/ffprobe",
+              "sha256": "b9170e6e9da249120590cb6c76064d38295b3beb65615b73db7c1d9148884f99",
+              "version_stdout": "ffprobe version n9.0.2 Copyright (c) 2007-2026 the FFmpeg developers\nbuilt with gcc 16 (GCC)\nconfiguration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-lcms2 --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan --disable-decoder=magicyuv\nlibavutil      61.  1.102 / 61.  1.102\nlibavcodec     63.  1.102 / 63.  1.102\nlibavformat    63.  1.102 / 63.  1.102\nlibavdevice    63.  1.102 / 63.  1.102\nlibavfilter    12.  1.102 / 12.  1.102\nlibswscale     10.  1.102 / 10.  1.102\nlibswresample   7.  1.102 /  7.  1.102\n"
+            }
+          }
+        },
+        "state": {
+          "artifact": {
+            "bytes": 831,
+            "path": "video.webm",
+            "sha256": "bc2aee74a66c7cd7402d6c65761121257f07d81640cfd8d1f42468ea4ba07950"
+          },
+          "attempts": 1,
+          "cached_created": 6,
+          "cached_reused": 0,
+          "elapsed_seconds": 0.7645620010000584,
+          "error": null,
+          "job": "9a157f6648e77e53733d61edb1941f19803952aba89b337bd27d7aa9b84f0ed1",
+          "kind": "silent-video-job-state",
+          "phase": "completed",
+          "progress": {
+            "frame": 6,
+            "phase": "completed"
+          },
+          "receipt": {
+            "bytes": 13037,
+            "sha256": "679de8ed4d15956a8c61b1ef1f505f74e050a70c5029c22371dee3f514c6dfa0"
+          },
+          "runs": 1,
+          "schema_version": 1
+        },
+        "owned": false,
+        "worker_exit_status": 0
+      },
+      {
+        "plan": {
+          "budget": {
+            "max_memory_bytes": 1073741824,
+            "max_runs": 8,
+            "max_work_bytes": 8589934592,
+            "wall_seconds": 1200
+          },
+          "destination": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/png",
+          "id": "a9a4eb28957023a2f650000539f344dfb6ce345bb3c996fd16f3a5705b092831",
+          "implementation": {
+            "controller": "716115b737fd5642022319c97c3b2372ea9bbe00fa99c8b5951d88f241241d8f",
+            "decoder": "ddc91b3a7aa35d879614f0ac877b884017a6d87ab25777613cc24aa0515bb92b",
+            "jobs": "9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe",
+            "package:OpenEXR": "3.5.4",
+            "package:Pillow": "13.0.0",
+            "package:numpy": "2.5.4",
+            "path_boundary": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+            "publication": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567",
+            "sequence": "07bc5b4769127e201ebaa9e5b5771fe6f28e81241cc69b19882a1bfa4c04b253"
+          },
+          "kind": "silent-sequence-job",
+          "provenance": {
+            "fixture": "Imported procedural PNGs; no native render claim",
+            "video_source_sha256": "274fefa257af2a7e5f9293acc9901bb0c6c4967acf95a0df1de08b11862135f6"
+          },
+          "schema_version": 1,
+          "source": {
+            "fps": {
+              "denominator": 1,
+              "numerator": 24
+            },
+            "frames": [
+              {
+                "bytes": 188,
+                "index": 0,
+                "path": "frames/000000.png",
+                "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+                "source_index": 0,
+                "source_path": "0.png"
+              },
+              {
+                "bytes": 192,
+                "index": 1,
+                "path": "frames/000001.png",
+                "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+                "source_index": 1,
+                "source_path": "1.png"
+              },
+              {
+                "bytes": 190,
+                "index": 2,
+                "path": "frames/000002.png",
+                "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+                "source_index": 2,
+                "source_path": "2.png"
+              },
+              {
+                "bytes": 190,
+                "index": 3,
+                "path": "frames/000003.png",
+                "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+                "source_index": 3,
+                "source_path": "3.png"
+              },
+              {
+                "bytes": 192,
+                "index": 4,
+                "path": "frames/000004.png",
+                "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+                "source_index": 4,
+                "source_path": "4.png"
+              },
+              {
+                "bytes": 190,
+                "index": 5,
+                "path": "frames/000005.png",
+                "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+                "source_index": 5,
+                "source_path": "5.png"
+              }
+            ],
+            "identity_sha256": "8b6a417811b45e3e95cc047aad30dee303816f0cb457f0280b23154cd5930fec",
+            "kind": "silent-sequence-source",
+            "origin": "imported",
+            "output": {
+              "alpha": "opaque",
+              "bit_depth": 8,
+              "color_space": "srgb",
+              "format": "png",
+              "passes": [
+                "combined"
+              ]
+            },
+            "resolution": [
+              64,
+              64
+            ],
+            "schema_version": 1
+          },
+          "source_root": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/source"
+        },
+        "state": {
+          "error": null,
+          "job": "a9a4eb28957023a2f650000539f344dfb6ce345bb3c996fd16f3a5705b092831",
+          "phase": "completed",
+          "progress": {
+            "stage": "completed",
+            "frames": 6,
+            "cached_reused": 0,
+            "cached_created": 6,
+            "elapsed_seconds": 0.152852866999865
+          },
+          "receipt_sha256": "5484d50843416fde43190caba19b50ebdc040e3d273e9a0d09d01ff4528903bc",
+          "runs": 1,
+          "schema_version": 1
+        }
+      },
+      {
+        "plan": {
+          "budget": {
+            "max_memory_bytes": 1073741824,
+            "max_runs": 8,
+            "max_work_bytes": 8589934592,
+            "wall_seconds": 1200
+          },
+          "destination": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/native",
+          "id": "6aeb4298a4fa9b68419ff4871a0ccbf2ec57b70b7f72ead278196576b5be65d4",
+          "implementation": {
+            "controller": "716115b737fd5642022319c97c3b2372ea9bbe00fa99c8b5951d88f241241d8f",
+            "decoder": "ddc91b3a7aa35d879614f0ac877b884017a6d87ab25777613cc24aa0515bb92b",
+            "jobs": "9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe",
+            "native_controller": "add91dbe64844bbc4d8e54e8d5b7dc8f42769f8d9435847946b1ded8fab95b79",
+            "package:OpenEXR": "3.5.4",
+            "package:Pillow": "13.0.0",
+            "package:numpy": "2.5.4",
+            "path_boundary": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+            "publication": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567",
+            "sequence": "07bc5b4769127e201ebaa9e5b5771fe6f28e81241cc69b19882a1bfa4c04b253"
+          },
+          "kind": "silent-native-sequence-job",
+          "proof": {
+            "expected_backend": {
+              "adapter_version": "1.0.0",
+              "application_version": "Blender 4.5.3 LTS",
+              "device": "cpu",
+              "engine": "cycles",
+              "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+              "id": "blender",
+              "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+              "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59"
+            },
+            "request": {
+              "cache_policy": "verify-reuse",
+              "camera": "front",
+              "destination": {
+                "owner_token": "backend-recovery-owner",
+                "path": "render"
+              },
+              "fps": {
+                "denominator": 1,
+                "numerator": 4
+              },
+              "frame_range": {
+                "end": 3,
+                "start": 0
+              },
+              "id": "backend-recovery",
+              "kind": "render3d-request",
+              "max_attempts": 1,
+              "mode": "3d",
+              "playback_rate": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "priority": 0,
+              "project": {
+                "id": "fixture",
+                "version": "1.0.0"
+              },
+              "scene": {
+                "id": "fixture",
+                "version": "1.0.0"
+              },
+              "schema_version": 1,
+              "settings": {
+                "allow_cpu_fallback": false,
+                "denoise": false,
+                "device": "cpu",
+                "device_policy": "cpu",
+                "engine": "cycles",
+                "exposure": 0,
+                "output": {
+                  "alpha": "straight",
+                  "bit_depth": 8,
+                  "color_space": "srgb",
+                  "format": "png",
+                  "passes": [
+                    "combined"
+                  ]
+                },
+                "resolution": [
+                  64,
+                  64
+                ],
+                "resources": {
+                  "max_frames": 10,
+                  "memory_bytes": 2147483648,
+                  "storage_bytes": 134217728,
+                  "timeout_seconds": 120,
+                  "workers": 1
+                },
+                "samples": 2,
+                "seed": 4,
+                "view_transform": "standard"
+              },
+              "shot": {
+                "id": "motion",
+                "version": "1.0.0"
+              },
+              "snapshot": {
+                "bytes": 1733,
+                "path": "snapshot.json",
+                "sha256": "20e172024463cc2ed4fcccfdd1e7a218c4330b099e36481cc13d1dff5721dde4"
+              },
+              "source_start": {
+                "denominator": 1,
+                "numerator": 0
+              }
+            },
+            "result": {
+              "backend": {
+                "adapter_version": "1.0.0",
+                "application_version": "Blender 4.5.3 LTS",
+                "device": "cpu",
+                "engine": "cycles",
+                "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+                "id": "blender",
+                "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+                "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59"
+              },
+              "diagnostics": [],
+              "failed": [],
+              "images": [
+                {
+                  "bit_depth": 8,
+                  "file": {
+                    "bytes": 2111,
+                    "path": "frames/000000.png",
+                    "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072"
+                  },
+                  "format": "png",
+                  "frame": 0,
+                  "pass_name": "combined",
+                  "resolution": [
+                    64,
+                    64
+                  ]
+                },
+                {
+                  "bit_depth": 8,
+                  "file": {
+                    "bytes": 2178,
+                    "path": "frames/000001.png",
+                    "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695"
+                  },
+                  "format": "png",
+                  "frame": 1,
+                  "pass_name": "combined",
+                  "resolution": [
+                    64,
+                    64
+                  ]
+                },
+                {
+                  "bit_depth": 8,
+                  "file": {
+                    "bytes": 2123,
+                    "path": "frames/000002.png",
+                    "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785"
+                  },
+                  "format": "png",
+                  "frame": 2,
+                  "pass_name": "combined",
+                  "resolution": [
+                    64,
+                    64
+                  ]
+                }
+              ],
+              "job": "backend-recovery",
+              "kind": "render3d-result",
+              "logs": [
+                {
+                  "bytes": 15536,
+                  "path": "blender.log",
+                  "sha256": "cef57bad992444d24da1b5a4e5089b05f1079dda5736ef9789b675fe52b5af88"
+                }
+              ],
+              "manifest": {
+                "bytes": 7317,
+                "path": "manifest.json",
+                "sha256": "2e307743b7f1aca8752ac44de05238ca82342242563258076e5bde51fcb36a6b"
+              },
+              "request_sha256": "873c27e62d3428c08f3c83118bd448d755cc06a907aa0bceb13e018b44545fe9",
+              "requested_frames": [
+                0,
+                1,
+                2
+              ],
+              "reused": [],
+              "schema_version": 1,
+              "skipped": [],
+              "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+              "status": "complete",
+              "successful": [
+                0,
+                1,
+                2
+              ],
+              "usage": {
+                "elapsed_seconds": 0.5050398460007273,
+                "measurement": "measured",
+                "output_bytes": 57242,
+                "peak_memory_bytes": 424038400
+              },
+              "verification": {
+                "evidence": {
+                  "bytes": 4368,
+                  "path": "verification.json",
+                  "sha256": "fc33e8abe3e38620f9128b0e50e2484d292155c5a3878e2c8f5158fcb361cea4"
+                },
+                "status": "passed",
+                "verifier": {
+                  "code_sha256": "0903f4ff8555d08e0851d082724944cfd1eade62cf94a487d2fb989595246097",
+                  "id": "render3d-independent-pixels",
+                  "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+                  "version": "1.0.0"
+                }
+              }
+            },
+            "verification": {
+              "artifacts": [],
+              "backend": {
+                "adapter_version": "1.0.0",
+                "application_version": "Blender 4.5.3 LTS",
+                "device": "cpu",
+                "engine": "cycles",
+                "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+                "id": "blender",
+                "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+                "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59"
+              },
+              "decoded_frames": 3,
+              "decoded_images": 3,
+              "images": [
+                {
+                  "bit_depth": 8,
+                  "bytes": 2111,
+                  "channels": {
+                    "A": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "B": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "G": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "R": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    }
+                  },
+                  "decoder": "pypng",
+                  "decoder_version": "0.20220715.0",
+                  "format": "png",
+                  "frame": 0,
+                  "pass_name": "combined",
+                  "path": "frames/000000.png",
+                  "presentation_time": {
+                    "denominator": 1,
+                    "numerator": 0
+                  },
+                  "requested_alpha": "straight",
+                  "requested_color_space": "srgb",
+                  "resolution": [
+                    64,
+                    64
+                  ],
+                  "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+                  "source_time": {
+                    "denominator": 1,
+                    "numerator": 0
+                  }
+                },
+                {
+                  "bit_depth": 8,
+                  "bytes": 2178,
+                  "channels": {
+                    "A": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "B": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "G": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "R": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    }
+                  },
+                  "decoder": "pypng",
+                  "decoder_version": "0.20220715.0",
+                  "format": "png",
+                  "frame": 1,
+                  "pass_name": "combined",
+                  "path": "frames/000001.png",
+                  "presentation_time": {
+                    "denominator": 4,
+                    "numerator": 1
+                  },
+                  "requested_alpha": "straight",
+                  "requested_color_space": "srgb",
+                  "resolution": [
+                    64,
+                    64
+                  ],
+                  "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+                  "source_time": {
+                    "denominator": 4,
+                    "numerator": 1
+                  }
+                },
+                {
+                  "bit_depth": 8,
+                  "bytes": 2123,
+                  "channels": {
+                    "A": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "B": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "G": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "R": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    }
+                  },
+                  "decoder": "pypng",
+                  "decoder_version": "0.20220715.0",
+                  "format": "png",
+                  "frame": 2,
+                  "pass_name": "combined",
+                  "path": "frames/000002.png",
+                  "presentation_time": {
+                    "denominator": 2,
+                    "numerator": 1
+                  },
+                  "requested_alpha": "straight",
+                  "requested_color_space": "srgb",
+                  "resolution": [
+                    64,
+                    64
+                  ],
+                  "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+                  "source_time": {
+                    "denominator": 2,
+                    "numerator": 1
+                  }
+                }
+              ],
+              "kind": "render3d-verification",
+              "limitation": "Decoded integrity and input binding do not establish semantic scene correctness or visual approval.",
+              "output_bytes": 6412,
+              "request_sha256": "873c27e62d3428c08f3c83118bd448d755cc06a907aa0bceb13e018b44545fe9",
+              "schema_version": 1,
+              "settings_sha256": "51d189f904f9ae809c7ee4642598ba1ef5725e624de185b9e7c316071f8d3cb4",
+              "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+              "status": "passed",
+              "verifier": {
+                "code_sha256": "ddc91b3a7aa35d879614f0ac877b884017a6d87ab25777613cc24aa0515bb92b",
+                "id": "render3d-independent-pixels",
+                "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+                "version": "1.0.0"
+              }
+            }
+          },
+          "render_root": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-jobs239/tests/fixtures/silent-native-sequence/render",
+          "schema_version": 1,
+          "snapshot_root": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-jobs239/tests/fixtures/silent-native-sequence/render/snapshot",
+          "source": {
+            "fps": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "frames": [
+              {
+                "bytes": 2111,
+                "index": 0,
+                "path": "frames/000000.png",
+                "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+                "source_index": 0,
+                "source_path": "frames/000000.png"
+              },
+              {
+                "bytes": 2178,
+                "index": 1,
+                "path": "frames/000001.png",
+                "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+                "source_index": 1,
+                "source_path": "frames/000001.png"
+              },
+              {
+                "bytes": 2123,
+                "index": 2,
+                "path": "frames/000002.png",
+                "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+                "source_index": 2,
+                "source_path": "frames/000002.png"
+              }
+            ],
+            "identity_sha256": "9ed136bbb9fd326a316d1268141cb76011d9a9179305af61a255eec29054f1a6",
+            "kind": "silent-sequence-source",
+            "origin": "blender3d",
+            "output": {
+              "alpha": "straight",
+              "bit_depth": 8,
+              "color_space": "srgb",
+              "format": "png",
+              "passes": [
+                "combined"
+              ]
+            },
+            "resolution": [
+              64,
+              64
+            ],
+            "schema_version": 1
+          }
+        },
+        "state": {
+          "error": null,
+          "job": "6aeb4298a4fa9b68419ff4871a0ccbf2ec57b70b7f72ead278196576b5be65d4",
+          "phase": "completed",
+          "progress": {
+            "stage": "completed",
+            "frames": 3,
+            "cached_reused": 0,
+            "cached_created": 3,
+            "elapsed_seconds": 0.17524931200000538
+          },
+          "receipt_sha256": "dc28955a4ab77b118716233abda7c7d892d626b0f468217b01571d913d134c0e",
+          "runs": 1,
+          "schema_version": 1
+        }
+      }
+    ]
+  },
+  "repeat": {
+    "schema_version": 1,
+    "kind": "silent-export-batch-result",
+    "concurrency": 1,
+    "jobs": [
+      {
+        "plan": {
+          "budget": {
+            "max_attempts": 3,
+            "max_memory_bytes": 1073741824,
+            "max_runs": 8,
+            "max_work_bytes": 8589934592,
+            "wall_seconds": 1200
+          },
+          "context": {
+            "fixture": "Actual encoding of six procedural PNG frames; no renderer or visual approval",
+            "timeline_source_sha256": "274fefa257af2a7e5f9293acc9901bb0c6c4967acf95a0df1de08b11862135f6"
+          },
+          "destination": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/mp4",
+          "estimate": {
+            "decoded_memory_estimate": 134414336,
+            "gpu_bytes": 0,
+            "peak_work_bytes": 2785021282,
+            "source_bytes": 1142,
+            "threads": 1
+          },
+          "id": "fd298a3f25c34c6c7fe0697ef0366ba62bda1c5e744f14f16225e2a3d42f0a11",
+          "implementation": {
+            "controller": "9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe",
+            "encoder": "9fd2eb7e57ea0fd7a03158d7ac5cb291092d945e605493586c80b94f895ab45a",
+            "path_boundary": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+            "profiles": "f27d39cbfc12532d0dad2f5481ec56a0f81e886968657eb0627f8560631ad616",
+            "publication": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567"
+          },
+          "kind": "silent-video-job-plan",
+          "request": {
+            "audio": {
+              "policy": "forbidden"
+            },
+            "kind": "silent-video-request",
+            "limits": {
+              "max_log_bytes": 4194304,
+              "max_output_bytes": 536870912,
+              "timeout_seconds": 300
+            },
+            "profile": "h264-mp4",
+            "schema_version": 1,
+            "source": {
+              "alpha": "opaque",
+              "color": "untagged-sdr",
+              "format": "png",
+              "fps": {
+                "denominator": 1,
+                "numerator": 24
+              },
+              "frames": [
+                {
+                  "bytes": 188,
+                  "index": 0,
+                  "path": "0.png",
+                  "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554"
+                },
+                {
+                  "bytes": 192,
+                  "index": 1,
+                  "path": "1.png",
+                  "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19"
+                },
+                {
+                  "bytes": 190,
+                  "index": 2,
+                  "path": "2.png",
+                  "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c"
+                },
+                {
+                  "bytes": 190,
+                  "index": 3,
+                  "path": "3.png",
+                  "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644"
+                },
+                {
+                  "bytes": 192,
+                  "index": 4,
+                  "path": "4.png",
+                  "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99"
+                },
+                {
+                  "bytes": 190,
+                  "index": 5,
+                  "path": "5.png",
+                  "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9"
+                }
+              ],
+              "height": 64,
+              "kind": "silent-frame-source",
+              "origin": "synthetic",
+              "precision": 8,
+              "schema_version": 1,
+              "width": 64
+            }
+          },
+          "schema_version": 1,
+          "source_root": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/source",
+          "tools": {
+            "ffmpeg": {
+              "bytes": 428296,
+              "path": "/usr/bin/ffmpeg",
+              "sha256": "ba5be4f60d2ec3ab668e3d60a1092f65ad2697957c2319dcbfb056ae58202c46",
+              "version_stdout": "ffmpeg version n9.0.2 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 16 (GCC)\nconfiguration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-lcms2 --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan --disable-decoder=magicyuv\nlibavutil      61.  1.102 / 61.  1.102\nlibavcodec     63.  1.102 / 63.  1.102\nlibavformat    63.  1.102 / 63.  1.102\nlibavdevice    63.  1.102 / 63.  1.102\nlibavfilter    12.  1.102 / 12.  1.102\nlibswscale     10.  1.102 / 10.  1.102\nlibswresample   7.  1.102 /  7.  1.102\n\nExiting with exit code 0\n"
+            },
+            "ffprobe": {
+              "bytes": 202944,
+              "path": "/usr/bin/ffprobe",
+              "sha256": "b9170e6e9da249120590cb6c76064d38295b3beb65615b73db7c1d9148884f99",
+              "version_stdout": "ffprobe version n9.0.2 Copyright (c) 2007-2026 the FFmpeg developers\nbuilt with gcc 16 (GCC)\nconfiguration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-lcms2 --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan --disable-decoder=magicyuv\nlibavutil      61.  1.102 / 61.  1.102\nlibavcodec     63.  1.102 / 63.  1.102\nlibavformat    63.  1.102 / 63.  1.102\nlibavdevice    63.  1.102 / 63.  1.102\nlibavfilter    12.  1.102 / 12.  1.102\nlibswscale     10.  1.102 / 10.  1.102\nlibswresample   7.  1.102 /  7.  1.102\n"
+            }
+          }
+        },
+        "state": {
+          "artifact": {
+            "bytes": 1980,
+            "path": "video.mp4",
+            "sha256": "ded6157b1951fd37a7b295d3f3ed7b4bfc941ef8bb8052813c8be3135eecc908"
+          },
+          "attempts": 1,
+          "cached_created": 6,
+          "cached_reused": 0,
+          "elapsed_seconds": 0.6788388709999253,
+          "error": null,
+          "job": "fd298a3f25c34c6c7fe0697ef0366ba62bda1c5e744f14f16225e2a3d42f0a11",
+          "kind": "silent-video-job-state",
+          "phase": "completed",
+          "progress": {
+            "frame": 6,
+            "phase": "completed"
+          },
+          "receipt": {
+            "bytes": 13811,
+            "sha256": "1a2fed2a3186006f0585a9e4054c256830fd43331c9df11ff1b29efb4111c89b"
+          },
+          "runs": 1,
+          "schema_version": 1
+        },
+        "owned": false,
+        "cancellation_requested": false
+      },
+      {
+        "plan": {
+          "budget": {
+            "max_attempts": 3,
+            "max_memory_bytes": 1073741824,
+            "max_runs": 8,
+            "max_work_bytes": 8589934592,
+            "wall_seconds": 1200
+          },
+          "context": {
+            "fixture": "Actual encoding of six procedural PNG frames; no renderer or visual approval",
+            "timeline_source_sha256": "274fefa257af2a7e5f9293acc9901bb0c6c4967acf95a0df1de08b11862135f6"
+          },
+          "destination": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/webm",
+          "estimate": {
+            "decoded_memory_estimate": 134414336,
+            "gpu_bytes": 0,
+            "peak_work_bytes": 2785021282,
+            "source_bytes": 1142,
+            "threads": 1
+          },
+          "id": "9a157f6648e77e53733d61edb1941f19803952aba89b337bd27d7aa9b84f0ed1",
+          "implementation": {
+            "controller": "9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe",
+            "encoder": "9fd2eb7e57ea0fd7a03158d7ac5cb291092d945e605493586c80b94f895ab45a",
+            "path_boundary": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+            "profiles": "f27d39cbfc12532d0dad2f5481ec56a0f81e886968657eb0627f8560631ad616",
+            "publication": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567"
+          },
+          "kind": "silent-video-job-plan",
+          "request": {
+            "audio": {
+              "policy": "forbidden"
+            },
+            "kind": "silent-video-request",
+            "limits": {
+              "max_log_bytes": 4194304,
+              "max_output_bytes": 536870912,
+              "timeout_seconds": 300
+            },
+            "profile": "vp9-webm",
+            "schema_version": 1,
+            "source": {
+              "alpha": "opaque",
+              "color": "untagged-sdr",
+              "format": "png",
+              "fps": {
+                "denominator": 1,
+                "numerator": 24
+              },
+              "frames": [
+                {
+                  "bytes": 188,
+                  "index": 0,
+                  "path": "0.png",
+                  "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554"
+                },
+                {
+                  "bytes": 192,
+                  "index": 1,
+                  "path": "1.png",
+                  "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19"
+                },
+                {
+                  "bytes": 190,
+                  "index": 2,
+                  "path": "2.png",
+                  "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c"
+                },
+                {
+                  "bytes": 190,
+                  "index": 3,
+                  "path": "3.png",
+                  "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644"
+                },
+                {
+                  "bytes": 192,
+                  "index": 4,
+                  "path": "4.png",
+                  "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99"
+                },
+                {
+                  "bytes": 190,
+                  "index": 5,
+                  "path": "5.png",
+                  "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9"
+                }
+              ],
+              "height": 64,
+              "kind": "silent-frame-source",
+              "origin": "synthetic",
+              "precision": 8,
+              "schema_version": 1,
+              "width": 64
+            }
+          },
+          "schema_version": 1,
+          "source_root": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/source",
+          "tools": {
+            "ffmpeg": {
+              "bytes": 428296,
+              "path": "/usr/bin/ffmpeg",
+              "sha256": "ba5be4f60d2ec3ab668e3d60a1092f65ad2697957c2319dcbfb056ae58202c46",
+              "version_stdout": "ffmpeg version n9.0.2 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 16 (GCC)\nconfiguration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-lcms2 --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan --disable-decoder=magicyuv\nlibavutil      61.  1.102 / 61.  1.102\nlibavcodec     63.  1.102 / 63.  1.102\nlibavformat    63.  1.102 / 63.  1.102\nlibavdevice    63.  1.102 / 63.  1.102\nlibavfilter    12.  1.102 / 12.  1.102\nlibswscale     10.  1.102 / 10.  1.102\nlibswresample   7.  1.102 /  7.  1.102\n\nExiting with exit code 0\n"
+            },
+            "ffprobe": {
+              "bytes": 202944,
+              "path": "/usr/bin/ffprobe",
+              "sha256": "b9170e6e9da249120590cb6c76064d38295b3beb65615b73db7c1d9148884f99",
+              "version_stdout": "ffprobe version n9.0.2 Copyright (c) 2007-2026 the FFmpeg developers\nbuilt with gcc 16 (GCC)\nconfiguration: --prefix=/usr --disable-debug --disable-static --disable-stripping --enable-amf --enable-avisynth --enable-cuda-llvm --enable-lto --enable-fontconfig --enable-frei0r --enable-gmp --enable-gnutls --enable-gpl --enable-ladspa --enable-lcms2 --enable-libaom --enable-libass --enable-libbluray --enable-libbs2b --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfreetype --enable-libfribidi --enable-libgsm --enable-libharfbuzz --enable-libiec61883 --enable-libjack --enable-libjxl --enable-libmodplug --enable-libmp3lame --enable-libopencore_amrnb --enable-libopencore_amrwb --enable-libopenjpeg --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librsvg --enable-librubberband --enable-libsnappy --enable-libsoxr --enable-libspeex --enable-libsrt --enable-libssh --enable-libsvtav1 --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvmaf --enable-libvorbis --enable-libvpl --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-nvdec --enable-nvenc --enable-opencl --enable-opengl --enable-shared --enable-vapoursynth --enable-version3 --enable-vulkan --disable-decoder=magicyuv\nlibavutil      61.  1.102 / 61.  1.102\nlibavcodec     63.  1.102 / 63.  1.102\nlibavformat    63.  1.102 / 63.  1.102\nlibavdevice    63.  1.102 / 63.  1.102\nlibavfilter    12.  1.102 / 12.  1.102\nlibswscale     10.  1.102 / 10.  1.102\nlibswresample   7.  1.102 /  7.  1.102\n"
+            }
+          }
+        },
+        "state": {
+          "artifact": {
+            "bytes": 831,
+            "path": "video.webm",
+            "sha256": "bc2aee74a66c7cd7402d6c65761121257f07d81640cfd8d1f42468ea4ba07950"
+          },
+          "attempts": 1,
+          "cached_created": 6,
+          "cached_reused": 0,
+          "elapsed_seconds": 0.7645620010000584,
+          "error": null,
+          "job": "9a157f6648e77e53733d61edb1941f19803952aba89b337bd27d7aa9b84f0ed1",
+          "kind": "silent-video-job-state",
+          "phase": "completed",
+          "progress": {
+            "frame": 6,
+            "phase": "completed"
+          },
+          "receipt": {
+            "bytes": 13037,
+            "sha256": "679de8ed4d15956a8c61b1ef1f505f74e050a70c5029c22371dee3f514c6dfa0"
+          },
+          "runs": 1,
+          "schema_version": 1
+        },
+        "owned": false,
+        "cancellation_requested": false
+      },
+      {
+        "plan": {
+          "budget": {
+            "max_memory_bytes": 1073741824,
+            "max_runs": 8,
+            "max_work_bytes": 8589934592,
+            "wall_seconds": 1200
+          },
+          "destination": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/png",
+          "id": "a9a4eb28957023a2f650000539f344dfb6ce345bb3c996fd16f3a5705b092831",
+          "implementation": {
+            "controller": "716115b737fd5642022319c97c3b2372ea9bbe00fa99c8b5951d88f241241d8f",
+            "decoder": "ddc91b3a7aa35d879614f0ac877b884017a6d87ab25777613cc24aa0515bb92b",
+            "jobs": "9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe",
+            "package:OpenEXR": "3.5.4",
+            "package:Pillow": "13.0.0",
+            "package:numpy": "2.5.4",
+            "path_boundary": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+            "publication": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567",
+            "sequence": "07bc5b4769127e201ebaa9e5b5771fe6f28e81241cc69b19882a1bfa4c04b253"
+          },
+          "kind": "silent-sequence-job",
+          "provenance": {
+            "fixture": "Imported procedural PNGs; no native render claim",
+            "video_source_sha256": "274fefa257af2a7e5f9293acc9901bb0c6c4967acf95a0df1de08b11862135f6"
+          },
+          "schema_version": 1,
+          "source": {
+            "fps": {
+              "denominator": 1,
+              "numerator": 24
+            },
+            "frames": [
+              {
+                "bytes": 188,
+                "index": 0,
+                "path": "frames/000000.png",
+                "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+                "source_index": 0,
+                "source_path": "0.png"
+              },
+              {
+                "bytes": 192,
+                "index": 1,
+                "path": "frames/000001.png",
+                "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+                "source_index": 1,
+                "source_path": "1.png"
+              },
+              {
+                "bytes": 190,
+                "index": 2,
+                "path": "frames/000002.png",
+                "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+                "source_index": 2,
+                "source_path": "2.png"
+              },
+              {
+                "bytes": 190,
+                "index": 3,
+                "path": "frames/000003.png",
+                "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+                "source_index": 3,
+                "source_path": "3.png"
+              },
+              {
+                "bytes": 192,
+                "index": 4,
+                "path": "frames/000004.png",
+                "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+                "source_index": 4,
+                "source_path": "4.png"
+              },
+              {
+                "bytes": 190,
+                "index": 5,
+                "path": "frames/000005.png",
+                "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+                "source_index": 5,
+                "source_path": "5.png"
+              }
+            ],
+            "identity_sha256": "8b6a417811b45e3e95cc047aad30dee303816f0cb457f0280b23154cd5930fec",
+            "kind": "silent-sequence-source",
+            "origin": "imported",
+            "output": {
+              "alpha": "opaque",
+              "bit_depth": 8,
+              "color_space": "srgb",
+              "format": "png",
+              "passes": [
+                "combined"
+              ]
+            },
+            "resolution": [
+              64,
+              64
+            ],
+            "schema_version": 1
+          },
+          "source_root": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/source"
+        },
+        "state": {
+          "error": null,
+          "job": "a9a4eb28957023a2f650000539f344dfb6ce345bb3c996fd16f3a5705b092831",
+          "phase": "completed",
+          "progress": {
+            "cached_created": 6,
+            "cached_reused": 0,
+            "elapsed_seconds": 0.152852866999865,
+            "frames": 6,
+            "stage": "completed"
+          },
+          "receipt_sha256": "5484d50843416fde43190caba19b50ebdc040e3d273e9a0d09d01ff4528903bc",
+          "runs": 1,
+          "schema_version": 1
+        },
+        "owned": false
+      },
+      {
+        "plan": {
+          "budget": {
+            "max_memory_bytes": 1073741824,
+            "max_runs": 8,
+            "max_work_bytes": 8589934592,
+            "wall_seconds": 1200
+          },
+          "destination": "/home/complete/.cache/hatch-coordination-20261112/silent-jobs239-proof-output-v3/native",
+          "id": "6aeb4298a4fa9b68419ff4871a0ccbf2ec57b70b7f72ead278196576b5be65d4",
+          "implementation": {
+            "controller": "716115b737fd5642022319c97c3b2372ea9bbe00fa99c8b5951d88f241241d8f",
+            "decoder": "ddc91b3a7aa35d879614f0ac877b884017a6d87ab25777613cc24aa0515bb92b",
+            "jobs": "9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe",
+            "native_controller": "add91dbe64844bbc4d8e54e8d5b7dc8f42769f8d9435847946b1ded8fab95b79",
+            "package:OpenEXR": "3.5.4",
+            "package:Pillow": "13.0.0",
+            "package:numpy": "2.5.4",
+            "path_boundary": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+            "publication": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567",
+            "sequence": "07bc5b4769127e201ebaa9e5b5771fe6f28e81241cc69b19882a1bfa4c04b253"
+          },
+          "kind": "silent-native-sequence-job",
+          "proof": {
+            "expected_backend": {
+              "adapter_version": "1.0.0",
+              "application_version": "Blender 4.5.3 LTS",
+              "device": "cpu",
+              "engine": "cycles",
+              "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+              "id": "blender",
+              "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+              "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59"
+            },
+            "request": {
+              "cache_policy": "verify-reuse",
+              "camera": "front",
+              "destination": {
+                "owner_token": "backend-recovery-owner",
+                "path": "render"
+              },
+              "fps": {
+                "denominator": 1,
+                "numerator": 4
+              },
+              "frame_range": {
+                "end": 3,
+                "start": 0
+              },
+              "id": "backend-recovery",
+              "kind": "render3d-request",
+              "max_attempts": 1,
+              "mode": "3d",
+              "playback_rate": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "priority": 0,
+              "project": {
+                "id": "fixture",
+                "version": "1.0.0"
+              },
+              "scene": {
+                "id": "fixture",
+                "version": "1.0.0"
+              },
+              "schema_version": 1,
+              "settings": {
+                "allow_cpu_fallback": false,
+                "denoise": false,
+                "device": "cpu",
+                "device_policy": "cpu",
+                "engine": "cycles",
+                "exposure": 0,
+                "output": {
+                  "alpha": "straight",
+                  "bit_depth": 8,
+                  "color_space": "srgb",
+                  "format": "png",
+                  "passes": [
+                    "combined"
+                  ]
+                },
+                "resolution": [
+                  64,
+                  64
+                ],
+                "resources": {
+                  "max_frames": 10,
+                  "memory_bytes": 2147483648,
+                  "storage_bytes": 134217728,
+                  "timeout_seconds": 120,
+                  "workers": 1
+                },
+                "samples": 2,
+                "seed": 4,
+                "view_transform": "standard"
+              },
+              "shot": {
+                "id": "motion",
+                "version": "1.0.0"
+              },
+              "snapshot": {
+                "bytes": 1733,
+                "path": "snapshot.json",
+                "sha256": "20e172024463cc2ed4fcccfdd1e7a218c4330b099e36481cc13d1dff5721dde4"
+              },
+              "source_start": {
+                "denominator": 1,
+                "numerator": 0
+              }
+            },
+            "result": {
+              "backend": {
+                "adapter_version": "1.0.0",
+                "application_version": "Blender 4.5.3 LTS",
+                "device": "cpu",
+                "engine": "cycles",
+                "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+                "id": "blender",
+                "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+                "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59"
+              },
+              "diagnostics": [],
+              "failed": [],
+              "images": [
+                {
+                  "bit_depth": 8,
+                  "file": {
+                    "bytes": 2111,
+                    "path": "frames/000000.png",
+                    "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072"
+                  },
+                  "format": "png",
+                  "frame": 0,
+                  "pass_name": "combined",
+                  "resolution": [
+                    64,
+                    64
+                  ]
+                },
+                {
+                  "bit_depth": 8,
+                  "file": {
+                    "bytes": 2178,
+                    "path": "frames/000001.png",
+                    "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695"
+                  },
+                  "format": "png",
+                  "frame": 1,
+                  "pass_name": "combined",
+                  "resolution": [
+                    64,
+                    64
+                  ]
+                },
+                {
+                  "bit_depth": 8,
+                  "file": {
+                    "bytes": 2123,
+                    "path": "frames/000002.png",
+                    "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785"
+                  },
+                  "format": "png",
+                  "frame": 2,
+                  "pass_name": "combined",
+                  "resolution": [
+                    64,
+                    64
+                  ]
+                }
+              ],
+              "job": "backend-recovery",
+              "kind": "render3d-result",
+              "logs": [
+                {
+                  "bytes": 15536,
+                  "path": "blender.log",
+                  "sha256": "cef57bad992444d24da1b5a4e5089b05f1079dda5736ef9789b675fe52b5af88"
+                }
+              ],
+              "manifest": {
+                "bytes": 7317,
+                "path": "manifest.json",
+                "sha256": "2e307743b7f1aca8752ac44de05238ca82342242563258076e5bde51fcb36a6b"
+              },
+              "request_sha256": "873c27e62d3428c08f3c83118bd448d755cc06a907aa0bceb13e018b44545fe9",
+              "requested_frames": [
+                0,
+                1,
+                2
+              ],
+              "reused": [],
+              "schema_version": 1,
+              "skipped": [],
+              "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+              "status": "complete",
+              "successful": [
+                0,
+                1,
+                2
+              ],
+              "usage": {
+                "elapsed_seconds": 0.5050398460007273,
+                "measurement": "measured",
+                "output_bytes": 57242,
+                "peak_memory_bytes": 424038400
+              },
+              "verification": {
+                "evidence": {
+                  "bytes": 4368,
+                  "path": "verification.json",
+                  "sha256": "fc33e8abe3e38620f9128b0e50e2484d292155c5a3878e2c8f5158fcb361cea4"
+                },
+                "status": "passed",
+                "verifier": {
+                  "code_sha256": "0903f4ff8555d08e0851d082724944cfd1eade62cf94a487d2fb989595246097",
+                  "id": "render3d-independent-pixels",
+                  "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+                  "version": "1.0.0"
+                }
+              }
+            },
+            "verification": {
+              "artifacts": [],
+              "backend": {
+                "adapter_version": "1.0.0",
+                "application_version": "Blender 4.5.3 LTS",
+                "device": "cpu",
+                "engine": "cycles",
+                "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+                "id": "blender",
+                "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+                "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59"
+              },
+              "decoded_frames": 3,
+              "decoded_images": 3,
+              "images": [
+                {
+                  "bit_depth": 8,
+                  "bytes": 2111,
+                  "channels": {
+                    "A": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "B": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "G": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "R": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    }
+                  },
+                  "decoder": "pypng",
+                  "decoder_version": "0.20220715.0",
+                  "format": "png",
+                  "frame": 0,
+                  "pass_name": "combined",
+                  "path": "frames/000000.png",
+                  "presentation_time": {
+                    "denominator": 1,
+                    "numerator": 0
+                  },
+                  "requested_alpha": "straight",
+                  "requested_color_space": "srgb",
+                  "resolution": [
+                    64,
+                    64
+                  ],
+                  "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+                  "source_time": {
+                    "denominator": 1,
+                    "numerator": 0
+                  }
+                },
+                {
+                  "bit_depth": 8,
+                  "bytes": 2178,
+                  "channels": {
+                    "A": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "B": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "G": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "R": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    }
+                  },
+                  "decoder": "pypng",
+                  "decoder_version": "0.20220715.0",
+                  "format": "png",
+                  "frame": 1,
+                  "pass_name": "combined",
+                  "path": "frames/000001.png",
+                  "presentation_time": {
+                    "denominator": 4,
+                    "numerator": 1
+                  },
+                  "requested_alpha": "straight",
+                  "requested_color_space": "srgb",
+                  "resolution": [
+                    64,
+                    64
+                  ],
+                  "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+                  "source_time": {
+                    "denominator": 4,
+                    "numerator": 1
+                  }
+                },
+                {
+                  "bit_depth": 8,
+                  "bytes": 2123,
+                  "channels": {
+                    "A": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "B": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "G": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    },
+                    "R": {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "uint8"
+                    }
+                  },
+                  "decoder": "pypng",
+                  "decoder_version": "0.20220715.0",
+                  "format": "png",
+                  "frame": 2,
+                  "pass_name": "combined",
+                  "path": "frames/000002.png",
+                  "presentation_time": {
+                    "denominator": 2,
+                    "numerator": 1
+                  },
+                  "requested_alpha": "straight",
+                  "requested_color_space": "srgb",
+                  "resolution": [
+                    64,
+                    64
+                  ],
+                  "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+                  "source_time": {
+                    "denominator": 2,
+                    "numerator": 1
+                  }
+                }
+              ],
+              "kind": "render3d-verification",
+              "limitation": "Decoded integrity and input binding do not establish semantic scene correctness or visual approval.",
+              "output_bytes": 6412,
+              "request_sha256": "873c27e62d3428c08f3c83118bd448d755cc06a907aa0bceb13e018b44545fe9",
+              "schema_version": 1,
+              "settings_sha256": "51d189f904f9ae809c7ee4642598ba1ef5725e624de185b9e7c316071f8d3cb4",
+              "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+              "status": "passed",
+              "verifier": {
+                "code_sha256": "ddc91b3a7aa35d879614f0ac877b884017a6d87ab25777613cc24aa0515bb92b",
+                "id": "render3d-independent-pixels",
+                "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+                "version": "1.0.0"
+              }
+            }
+          },
+          "render_root": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-jobs239/tests/fixtures/silent-native-sequence/render",
+          "schema_version": 1,
+          "snapshot_root": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-jobs239/tests/fixtures/silent-native-sequence/render/snapshot",
+          "source": {
+            "fps": {
+              "denominator": 1,
+              "numerator": 4
+            },
+            "frames": [
+              {
+                "bytes": 2111,
+                "index": 0,
+                "path": "frames/000000.png",
+                "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+                "source_index": 0,
+                "source_path": "frames/000000.png"
+              },
+              {
+                "bytes": 2178,
+                "index": 1,
+                "path": "frames/000001.png",
+                "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+                "source_index": 1,
+                "source_path": "frames/000001.png"
+              },
+              {
+                "bytes": 2123,
+                "index": 2,
+                "path": "frames/000002.png",
+                "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+                "source_index": 2,
+                "source_path": "frames/000002.png"
+              }
+            ],
+            "identity_sha256": "9ed136bbb9fd326a316d1268141cb76011d9a9179305af61a255eec29054f1a6",
+            "kind": "silent-sequence-source",
+            "origin": "blender3d",
+            "output": {
+              "alpha": "straight",
+              "bit_depth": 8,
+              "color_space": "srgb",
+              "format": "png",
+              "passes": [
+                "combined"
+              ]
+            },
+            "resolution": [
+              64,
+              64
+            ],
+            "schema_version": 1
+          }
+        },
+        "state": {
+          "error": null,
+          "job": "6aeb4298a4fa9b68419ff4871a0ccbf2ec57b70b7f72ead278196576b5be65d4",
+          "phase": "completed",
+          "progress": {
+            "cached_created": 3,
+            "cached_reused": 0,
+            "elapsed_seconds": 0.17524931200000538,
+            "frames": 3,
+            "stage": "completed"
+          },
+          "receipt_sha256": "dc28955a4ab77b118716233abda7c7d892d626b0f468217b01571d913d134c0e",
+          "runs": 1,
+          "schema_version": 1
+        },
+        "owned": false
+      }
+    ]
+  },
+  "inventory": {
+    "source/0.png": {
+      "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+      "bytes": 188
+    },
+    "source/1.png": {
+      "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+      "bytes": 192
+    },
+    "source/2.png": {
+      "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+      "bytes": 190
+    },
+    "source/3.png": {
+      "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+      "bytes": 190
+    },
+    "source/4.png": {
+      "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+      "bytes": 192
+    },
+    "source/5.png": {
+      "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+      "bytes": 190
+    },
+    "job-mp4/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "job-mp4/plan.json": {
+      "sha256": "eb9407419d7f8d2f5b37882609dc285cf1ec0edf2ba3ef1492ba41d363ad9b67",
+      "bytes": 6827
+    },
+    "job-mp4/state.json": {
+      "sha256": "ef85a7dd29b784b3ee0f059c728ecca58cd813fb722b6618dd1f28cbc4d7fbff",
+      "bytes": 625
+    },
+    "job-webm/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "job-webm/plan.json": {
+      "sha256": "4db5c7bf68571e9ddd8bf0c539f25bebc19c6b24f75865161a4a3a96f932f061",
+      "bytes": 6828
+    },
+    "job-webm/state.json": {
+      "sha256": "b525ff7ffdb7448b91f47550bc9e57450055654b49ce64b3a5808d64fd243450",
+      "bytes": 625
+    },
+    "job-png/plan.json": {
+      "sha256": "b36964d9c74eba4710b2d079f10b64417731b0d891b481c1f82e0223e80c3c77",
+      "bytes": 3233
+    },
+    "job-png/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "job-png/state.json": {
+      "sha256": "157195e182f4f6fd5455fec7de0da426260aa3588679ec9a9666cb78d89f01c3",
+      "bytes": 399
+    },
+    "job-native/plan.json": {
+      "sha256": "936ac7fa85ad5c8135b5f27bd757d0f0488d016af29fed5a0fff332b1233a452",
+      "bytes": 13255
+    },
+    "job-native/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "job-native/state.json": {
+      "sha256": "5c3bf8098f609457a8d528594747fe54fcf94c3a4f3afca2415f816bf322c09a",
+      "bytes": 401
+    },
+    "mp4/video.mp4": {
+      "sha256": "ded6157b1951fd37a7b295d3f3ed7b4bfc941ef8bb8052813c8be3135eecc908",
+      "bytes": 1980
+    },
+    "mp4/receipt.json": {
+      "sha256": "1a2fed2a3186006f0585a9e4054c256830fd43331c9df11ff1b29efb4111c89b",
+      "bytes": 13811
+    },
+    "webm/video.webm": {
+      "sha256": "bc2aee74a66c7cd7402d6c65761121257f07d81640cfd8d1f42468ea4ba07950",
+      "bytes": 831
+    },
+    "webm/receipt.json": {
+      "sha256": "679de8ed4d15956a8c61b1ef1f505f74e050a70c5029c22371dee3f514c6dfa0",
+      "bytes": 13037
+    },
+    ".sequence-job-a9a4eb28957023a2f650000539f344df/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    ".sequence-job-a9a4eb28957023a2f650000539f344df/plan.json": {
+      "sha256": "f5b45e4c17b69a77fc0ccfced4dab8a1e1a32cae36c6e68d50630e28fdedfaad",
+      "bytes": 2231
+    },
+    ".sequence-job-a9a4eb28957023a2f650000539f344df/sequence.json": {
+      "sha256": "5484d50843416fde43190caba19b50ebdc040e3d273e9a0d09d01ff4528903bc",
+      "bytes": 7569
+    },
+    "png/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "png/plan.json": {
+      "sha256": "f5b45e4c17b69a77fc0ccfced4dab8a1e1a32cae36c6e68d50630e28fdedfaad",
+      "bytes": 2231
+    },
+    "png/sequence.json": {
+      "sha256": "5484d50843416fde43190caba19b50ebdc040e3d273e9a0d09d01ff4528903bc",
+      "bytes": 7569
+    },
+    "native/job.json": {
+      "sha256": "dc28955a4ab77b118716233abda7c7d892d626b0f468217b01571d913d134c0e",
+      "bytes": 462
+    },
+    "job-mp4/cache/000000.png": {
+      "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+      "bytes": 188
+    },
+    "job-mp4/cache/000001.png": {
+      "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+      "bytes": 192
+    },
+    "job-mp4/cache/000002.png": {
+      "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+      "bytes": 190
+    },
+    "job-mp4/cache/000003.png": {
+      "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+      "bytes": 190
+    },
+    "job-mp4/cache/000004.png": {
+      "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+      "bytes": 192
+    },
+    "job-mp4/cache/000005.png": {
+      "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+      "bytes": 190
+    },
+    "job-mp4/attempts/worker-0001.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "job-mp4/input/0.png": {
+      "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+      "bytes": 188
+    },
+    "job-mp4/input/1.png": {
+      "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+      "bytes": 192
+    },
+    "job-mp4/input/2.png": {
+      "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+      "bytes": 190
+    },
+    "job-mp4/input/3.png": {
+      "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+      "bytes": 190
+    },
+    "job-mp4/input/4.png": {
+      "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+      "bytes": 192
+    },
+    "job-mp4/input/5.png": {
+      "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+      "bytes": 190
+    },
+    "job-mp4/attempts/0001/video.mp4": {
+      "sha256": "ded6157b1951fd37a7b295d3f3ed7b4bfc941ef8bb8052813c8be3135eecc908",
+      "bytes": 1980
+    },
+    "job-mp4/attempts/0001/receipt-run-0001.json": {
+      "sha256": "9035c5f4b112b20dd2f381bb68ed602487832dbca8af56c7ca7981840566e031",
+      "bytes": 7361
+    },
+    "job-webm/cache/000000.png": {
+      "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+      "bytes": 188
+    },
+    "job-webm/cache/000001.png": {
+      "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+      "bytes": 192
+    },
+    "job-webm/cache/000002.png": {
+      "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+      "bytes": 190
+    },
+    "job-webm/cache/000003.png": {
+      "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+      "bytes": 190
+    },
+    "job-webm/cache/000004.png": {
+      "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+      "bytes": 192
+    },
+    "job-webm/cache/000005.png": {
+      "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+      "bytes": 190
+    },
+    "job-webm/attempts/worker-0001.log": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "job-webm/input/0.png": {
+      "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+      "bytes": 188
+    },
+    "job-webm/input/1.png": {
+      "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+      "bytes": 192
+    },
+    "job-webm/input/2.png": {
+      "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+      "bytes": 190
+    },
+    "job-webm/input/3.png": {
+      "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+      "bytes": 190
+    },
+    "job-webm/input/4.png": {
+      "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+      "bytes": 192
+    },
+    "job-webm/input/5.png": {
+      "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+      "bytes": 190
+    },
+    "job-webm/attempts/0001/video.webm": {
+      "sha256": "bc2aee74a66c7cd7402d6c65761121257f07d81640cfd8d1f42468ea4ba07950",
+      "bytes": 831
+    },
+    "job-webm/attempts/0001/receipt-run-0001.json": {
+      "sha256": "4c93c4a0f71760a58c52dfa4e369ea5b2bf7664359dbb429a26949adef92646e",
+      "bytes": 6591
+    },
+    "job-native/.native-sequence-cache/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "job-native/.native-sequence-cache/plan.json": {
+      "sha256": "22f521f9a3da9fafcd251bf9b3576b5b218915e5a58db6bf0a7a21137ea8fc5a",
+      "bytes": 11867
+    },
+    "job-native/.native-sequence-cache/sequence.json": {
+      "sha256": "749fc795915b621a124faf15f4deab8fff18c0a0f9f9fc84fdb1a5d1e919be67",
+      "bytes": 14790
+    },
+    "job-native/native-sequence/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "job-native/native-sequence/plan.json": {
+      "sha256": "22f521f9a3da9fafcd251bf9b3576b5b218915e5a58db6bf0a7a21137ea8fc5a",
+      "bytes": 11867
+    },
+    "job-native/native-sequence/sequence.json": {
+      "sha256": "749fc795915b621a124faf15f4deab8fff18c0a0f9f9fc84fdb1a5d1e919be67",
+      "bytes": 14790
+    },
+    "job-native/.native-sequence-cache/frames/000000.png": {
+      "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+      "bytes": 2111
+    },
+    "job-native/.native-sequence-cache/frames/000001.png": {
+      "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+      "bytes": 2178
+    },
+    "job-native/.native-sequence-cache/frames/000002.png": {
+      "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+      "bytes": 2123
+    },
+    "job-native/native-sequence/frames/000000.png": {
+      "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+      "bytes": 2111
+    },
+    "job-native/native-sequence/frames/000001.png": {
+      "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+      "bytes": 2178
+    },
+    "job-native/native-sequence/frames/000002.png": {
+      "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+      "bytes": 2123
+    },
+    ".sequence-job-a9a4eb28957023a2f650000539f344df/frames/000000.png": {
+      "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+      "bytes": 188
+    },
+    ".sequence-job-a9a4eb28957023a2f650000539f344df/frames/000001.png": {
+      "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+      "bytes": 192
+    },
+    ".sequence-job-a9a4eb28957023a2f650000539f344df/frames/000002.png": {
+      "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+      "bytes": 190
+    },
+    ".sequence-job-a9a4eb28957023a2f650000539f344df/frames/000003.png": {
+      "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+      "bytes": 190
+    },
+    ".sequence-job-a9a4eb28957023a2f650000539f344df/frames/000004.png": {
+      "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+      "bytes": 192
+    },
+    ".sequence-job-a9a4eb28957023a2f650000539f344df/frames/000005.png": {
+      "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+      "bytes": 190
+    },
+    "png/frames/000000.png": {
+      "sha256": "5a6c9da6f9a67b00ab5060ace48580ddea118f8df440864938e3ebc720768554",
+      "bytes": 188
+    },
+    "png/frames/000001.png": {
+      "sha256": "70c410891015e1a65ade51fd340a226b3b6b902b83fd6687c026241222af5a19",
+      "bytes": 192
+    },
+    "png/frames/000002.png": {
+      "sha256": "fc827e498c9d3a13e2714ccfec004a7e6eebd38de2f31d16328eb0a830648a2c",
+      "bytes": 190
+    },
+    "png/frames/000003.png": {
+      "sha256": "13650f579eea3a1f219a9339e3351967a7e9a6b8c213c511d909a8654cb0e644",
+      "bytes": 190
+    },
+    "png/frames/000004.png": {
+      "sha256": "1fce430db4d26981aef22ca82d06e72fee104f7d8c9f6d084e79fdb96c05ab99",
+      "bytes": 192
+    },
+    "png/frames/000005.png": {
+      "sha256": "4873f066835a275a9f08285f4cce3b324a741789d66a06ce2db7139d4452f8d9",
+      "bytes": 190
+    },
+    "native/sequence/lock": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "native/sequence/plan.json": {
+      "sha256": "22f521f9a3da9fafcd251bf9b3576b5b218915e5a58db6bf0a7a21137ea8fc5a",
+      "bytes": 11867
+    },
+    "native/sequence/sequence.json": {
+      "sha256": "749fc795915b621a124faf15f4deab8fff18c0a0f9f9fc84fdb1a5d1e919be67",
+      "bytes": 14790
+    },
+    "native/sequence/frames/000000.png": {
+      "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+      "bytes": 2111
+    },
+    "native/sequence/frames/000001.png": {
+      "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+      "bytes": 2178
+    },
+    "native/sequence/frames/000002.png": {
+      "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+      "bytes": 2123
+    }
+  },
+  "implementations": {
+    "controller": "9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe",
+    "encoder": "9fd2eb7e57ea0fd7a03158d7ac5cb291092d945e605493586c80b94f895ab45a",
+    "publication": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567",
+    "path_boundary": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+    "profiles": "f27d39cbfc12532d0dad2f5481ec56a0f81e886968657eb0627f8560631ad616"
+  },
+  "native_source_evidence_sha256": "a4e103642923aa1e498af239131a977bb22864133410c5b3f6755760ef0a20d3",
+  "native_render_executed": false
+}
