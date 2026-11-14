@@ -1,0 +1,34 @@
+{
+  "source_commit": "cb66cb6d46721d53dc0cf7423546c559a18141fa",
+  "current_integration_commit": "e445e0c2ecf362621480033f29a675ac2fc62cd3",
+  "source_and_tests_sha256": {
+    "scripts/decomposition_analysis.py": "0c8fb60c478b6eadebf4bd34c4457f5e57201f70262e1b3a7c200179799a04b4",
+    "tests/test_decomposition_analysis.py": "8db102672aaabfb75861fc61979bb3728a989f1efa6bd722cfa471e557797b8c",
+    "tests/optional/test_decomposition_analysis_backend.py": "6e406617c08de3f1bd0f6687d3e686baf6df9c9d7afb6bbf94cb7986183cbcc7"
+  },
+  "core": {
+    "ran": 37,
+    "passed": 37,
+    "skipped": 0,
+    "seconds": 33.376
+  },
+  "actual_opencv": {
+    "ran": 6,
+    "passed": 6,
+    "skipped": 0,
+    "seconds": 45.442
+  },
+  "artifact_sha256": {
+    "baseline-receipt.json": "d9fcde87c9dd00ebc1a792d43255507af7aa6b34bb556436d8df6ee71f6aed48",
+    "baseline-response.json": "0008f87263eae53acb6f3ee3d639d4b2af17efcfc6d95b898887afa9ec4e142f",
+    "fixed-receipt.json": "9959bf6ada2540dccd2d62153c9f12d4dd41e485b596b326bb119acd76e05d0d",
+    "fixed-response.json": "5bbed927b6ea9b57e8c77d91c86a4c48f192bc8f61bdd84cbcfcba11201bada0",
+    "core.log": "156beca5eb1a2e348c947a770a90eb2a33e7ec56787c559b35f270b139d60295",
+    "native.log": "37b717f4c102f0676d6ffc739a41df185213f7e32ddc66638172d6fc690f8479"
+  },
+  "limits": [
+    "Fixed execution is real worker inference with constructor instrumentation, not a semantic quality evaluation.",
+    "Baseline requested face-only proposals; fixed witness also requests eyes. Proposal counts are not an output-quality comparison.",
+    "Existing merged analysis receipts and source/model assets are preserved."
+  ]
+}
