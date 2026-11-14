@@ -61,7 +61,8 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-#viewport:focus-visible {
+#viewport:focus-visible,
+#diagnostic:focus-visible {
   outline: 2px solid #65d9ff;
   outline-offset: 2px;
 }
@@ -238,3 +239,6 @@ dialog::backdrop { background: #000a; }
 dialog input { width: 100%; margin: 0.5rem 0; }
 dialog li { margin: 0.7rem 0; }
 #outliner button:focus-visible { outline: 2px solid #65d9ff; outline-offset: -2px; }
+
+#diagnostic { max-height: min(40vh, 420px); overflow: auto; }
+#diagnostic p { margin: 0.4rem 0; }
