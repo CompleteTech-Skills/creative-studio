@@ -4,6 +4,7 @@ Validation runs against private copied bytes, never a mixture of live revisions.
 The returned inventory is evidence of admission, not rendering or visual approval.
 """
 from copy import deepcopy
+from contextlib import contextmanager
 import hashlib
 import io
 from types import SimpleNamespace
@@ -13,7 +14,7 @@ import zipfile
 from functools import wraps
 
 from animation3d_contracts import KINDS, _walk, validate_contract
-from rig_errors import RigError, decode_json, open_payload, require, safe_path
+from rig_errors import RigError, decode_json, open_payload, require, safe_path, portable_name, object_hash
 
 MAX_FILES = 4096
 MAX_BYTES = 256 * 1024**2
@@ -44,10 +45,19 @@ def references(document):
 
 class Snapshot:
     """A temporary immutable-by-convention closure owned only by this call."""
-    def __init__(self, root, destination, max_bytes=MAX_BYTES):
-        self.root = Path(root).resolve(strict=True)
+    def __init__(self, root, destination, max_bytes=MAX_BYTES, *, reader=None):
+        require(reader is None or callable(reader), 'ANIMATION_SOURCE', 'Source reader must be a trusted callable.')
+        self.reader = reader
+        if reader is not None:
+            self.root = None
+        else:
+            # Newer canonical helpers retain explicit scoped FD authority.
+            # Ordinary installations continue to use their established roots.
+            import rig_errors
+            normalize = getattr(rig_errors, 'normalize_root', None)
+            self.root = normalize(root) if normalize is not None else Path(root).resolve(strict=True)
         self.destination = Path(destination)
-        self.max_bytes = min(max_bytes, MAX_BYTES)
+        self.max_bytes = int(min(max_bytes, MAX_BYTES))
         self.inventory = {}
         self.aliases = {}
         self.total = 0
@@ -56,13 +66,39 @@ class Snapshot:
         self.native_memory = 0
         self.memory_charges = {}
 
+    @contextmanager
+    def _source(self, name, maximum):
+        if self.reader is not None:
+            payload = self.reader(name, maximum)
+            require(type(payload) is bytes, 'ANIMATION_SOURCE', 'Trusted source reader must return immutable bytes.')
+            require(len(payload) <= maximum, 'ANIMATION_LIMIT', 'Source reader exceeded its requested byte allowance.')
+            with io.BytesIO(payload) as stream:
+                yield stream, SimpleNamespace(st_size=len(payload))
+        else:
+            source = safe_path(self.root, name, exists=True)
+            require(not any(getattr(p, 'is_junction', lambda: False)() for p in (source, *source.parents) if p != self.root.parent),
+                    'ANIMATION_PATH', 'Junction sources are not supported.')
+            with open_payload(self.root, name) as value:
+                yield value
+
     def copy(self, name, digest=None):
-        source = safe_path(self.root, name, exists=True)
-        require(not any(getattr(p, 'is_junction', lambda: False)() for p in (source, *source.parents) if p != self.root.parent),
-                'ANIMATION_PATH', 'Junction sources are not supported.')
-        alias = name.casefold()
-        require(self.aliases.get(alias, name) == name, 'ANIMATION_PATH', 'Portable path alias collision.')
-        self.aliases[alias] = name
+        name = portable_name(name)
+        components = Path(name).parts
+        require(len(name) <= 1024 and len(components) <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Dependency path exceeds name/depth policy.')
+        pending = {}
+        for length in range(1, len(components)+1):
+            prefix = '/'.join(components[:length])
+            alias = prefix.casefold()
+            require(self.aliases.get(alias, prefix) == prefix, 'ANIMATION_PATH', 'Portable path alias collision.')
+            if alias not in self.aliases:
+                pending[alias] = prefix
+        # Prefix bookkeeping must not amplify short encoded inputs outside the
+        # same admission ceiling used for snapshot/native data.
+        namespace_bytes = sum(256 + 2*(len(alias.encode('utf-8'))+len(prefix.encode('utf-8'))) for alias,prefix in pending.items())
+        require(self.expanded_bytes + self.native_memory + namespace_bytes <= self.memory_limit,
+                'ANIMATION_LIMIT', 'Dependency namespace exceeds memory admission budget.')
+        self.aliases.update(pending)
+        self.expanded_bytes += namespace_bytes
         if name in self.inventory:
             require(digest is None or self.inventory[name]['sha256'] == digest,
                     'ANIMATION_HASH', 'Conflicting exact dependency hash.')
@@ -71,8 +107,9 @@ class Snapshot:
         target = self.destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
         hashed = hashlib.sha256(); count = 0
-        with open_payload(self.root, name) as (inp, metadata):
-            require(metadata.st_size <= self.max_bytes - self.total,
+        maximum = int(max(0, min(self.max_bytes-self.total, self.memory_limit-self.expanded_bytes-self.native_memory)))
+        with self._source(name, maximum) as (inp, metadata):
+            require(metadata.st_size <= maximum,
                     'ANIMATION_LIMIT', 'Dependency byte limit exceeded.')
             with target.open('xb') as out:
                 while block := inp.read(min(1024**2, self.max_bytes - self.total + 1)):
@@ -218,6 +255,49 @@ def verify_native(root, reference):
         return kind, value
 
 
+def _capture_snapshot(snapshot, starts):
+    """One exact-byte visitor shared by project and standalone admission."""
+    documents, edges, active, native = {}, {}, set(), {}
+    identities = {}
+    def visit(path, expected=None, depth=0):
+        require(depth <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Animation dependency depth exceeded.')
+        require(path not in active, 'ANIMATION_CYCLE', 'Animation dependency cycle.')
+        value = snapshot.json(path, None if expected is None else expected['sha256'])
+        require(isinstance(value, dict), 'ANIMATION_KIND', 'Animation dependency must be an object.')
+        if value.get('kind') not in KINDS.values():
+            require(expected is not None, 'ANIMATION_KIND', 'Expected typed native source.')
+            require(value.get('id') == expected['id'] and value.get('version') == expected['version'],
+                    'ANIMATION_IDENTITY', 'Native source identity/version differs.')
+            kind, admitted = native[path] if path in native else snapshot.native(path, expected, depth)
+            allowed = {'rig': {'hatch-3d-rig'}, 'scene': {'scene3d-project'},
+                       'model': {'scene3d-project'}, 'character': {'hatch-3d-rig'},
+                       'render-profile': {'camera3d-registry'}}
+            require(kind in allowed.get(expected['kind'], {expected['kind']}),
+                    'ANIMATION_OWNER', 'Reference points to wrong native owner kind.')
+            identity = (kind, expected['id'], expected['version'])
+            require(identities.get(identity, path) == path, 'ANIMATION_IDENTITY', 'Duplicate native source identity.')
+            identities[identity] = path
+            native[path] = (kind, admitted)
+            return
+        validate_contract(value)
+        if expected:
+            require(value.get('id') == expected['id'] and value.get('version') == expected['version'] and
+                    value['kind'] == ALIASES.get(expected['kind'], expected['kind']),
+                    'ANIMATION_IDENTITY', 'Animation reference identity/version/kind differs.')
+        if path in documents: return
+        identity = (value['kind'], value.get('id'), value.get('version'))
+        require(identities.get(identity, path) == path, 'ANIMATION_IDENTITY', 'Duplicate document identity.')
+        identities[identity] = path
+        documents[path] = value; active.add(path); edges[path] = []
+        for reference in references(value):
+            edges[path].append(reference['path'])
+            visit(reference['path'], reference, depth+1)
+        active.remove(path)
+    for path, expected in starts:
+        visit(path, expected)
+    return documents, native
+
+
 @_admission
 def load_project(root, name='animation-project.json'):
     """Verify complete animation references, budgets and cross-file bindings.
@@ -227,55 +307,84 @@ def load_project(root, name='animation-project.json'):
     """
     with TemporaryDirectory(prefix='animation3d-project-') as temporary:
         snapshot = Snapshot(root, temporary)
-        documents, edges, active, native = {}, {}, set(), {}
-        identities = {}
         project = snapshot.json(name)
         validate_contract(project)
         require(project['kind'] == KINDS['project'], 'ANIMATION_KIND', 'Expected animation project root.')
-        snapshot.max_bytes = min(MAX_BYTES, project['budgets']['max_work_bytes'])
-        snapshot.memory_limit = min(MAX_BYTES, project['budgets']['max_memory_bytes'])
+        snapshot.max_bytes = int(min(MAX_BYTES, project['budgets']['max_work_bytes']))
+        snapshot.memory_limit = int(min(MAX_BYTES, project['budgets']['max_memory_bytes']))
         require(snapshot.expanded_bytes <= snapshot.memory_limit, 'ANIMATION_LIMIT', 'Project exceeds memory admission budget.')
         require(snapshot.total <= snapshot.max_bytes, 'ANIMATION_LIMIT', 'Project exceeds work byte budget.')
-        def visit(path, expected=None, depth=0):
-            require(depth <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Animation dependency depth exceeded.')
-            require(path not in active, 'ANIMATION_CYCLE', 'Animation dependency cycle.')
-            value = snapshot.json(path, None if expected is None else expected['sha256'])
-            require(isinstance(value, dict), 'ANIMATION_KIND', 'Animation dependency must be an object.')
-            if value.get('kind') not in KINDS.values():
-                require(expected is not None, 'ANIMATION_KIND', 'Expected typed native source.')
-                require(value.get('id') == expected['id'] and value.get('version') == expected['version'],
-                        'ANIMATION_IDENTITY', 'Native source identity/version differs.')
-                kind, admitted = native[path] if path in native else snapshot.native(path, expected, depth)
-                allowed = {'rig': {'hatch-3d-rig'}, 'scene': {'scene3d-project'},
-                           'model': {'scene3d-project'}, 'character': {'hatch-3d-rig'},
-                           'render-profile': {'camera3d-registry'}}
-                require(kind in allowed.get(expected['kind'], {expected['kind']}),
-                        'ANIMATION_OWNER', 'Reference points to wrong native owner kind.')
-                identity = (kind, expected['id'], expected['version'])
-                require(identities.get(identity, path) == path, 'ANIMATION_IDENTITY', 'Duplicate native source identity.')
-                identities[identity] = path
-                native[path] = (kind, admitted)
-                return
-            validate_contract(value)
-            if expected:
-                require(value.get('id') == expected['id'] and value.get('version') == expected['version'] and
-                        value['kind'] == ALIASES.get(expected['kind'], expected['kind']),
-                        'ANIMATION_IDENTITY', 'Animation reference identity/version/kind differs.')
-            if path in documents: return
-            identity = (value['kind'], value.get('id'), value.get('version'))
-            require(identities.get(identity, path) == path, 'ANIMATION_IDENTITY', 'Duplicate document identity.')
-            identities[identity] = path
-            documents[path] = value; active.add(path); edges[path] = []
-            for reference in references(value):
-                edges[path].append(reference['path'])
-                visit(reference['path'], reference, depth+1)
-            active.remove(path)
-        visit(name)
+        documents, native = _capture_snapshot(snapshot, [(name, None)])
         _validate_bindings(project, documents, native, snapshot.destination)
         return {'project': deepcopy(project), 'documents': deepcopy(documents),
                 'inventory': deepcopy(snapshot.inventory), 'bytes': snapshot.total,
                 'memory_admission': dict(limit_bytes=snapshot.memory_limit, estimated_bytes=snapshot.expanded_bytes + snapshot.native_memory, native_estimated_bytes=snapshot.native_memory, method='canonical-native-plus-snapshot-v1', scope='conservative data admission; not process RSS'),
                 'source_ready': True, 'scope': 'exact dependency and native target admission; no evaluated scene or render'}
+
+
+def _standalone_budgets(supplied):
+    from rig_contracts import DEFAULT_LIMITS
+    import math
+    result = dict(max_frames=10_000_000, max_tracks=4096, max_keyframes=DEFAULT_LIMITS['keyframes'],
+        max_actors=4096, max_bones_per_rig=DEFAULT_LIMITS['bones'], max_vertices=DEFAULT_LIMITS['vertices'],
+        max_morph_targets=DEFAULT_LIMITS['morphs'], max_scene_nodes=100000,
+        max_memory_bytes=MAX_BYTES, max_work_bytes=MAX_BYTES, max_render_pixels=MAX_BYTES, max_parallel_jobs=1)
+    require(supplied is None or isinstance(supplied, dict) and set(supplied) <= set(result),
+            'ANIMATION_LIMIT', 'Standalone budgets must use canonical ResourceBudget3D fields.')
+    for key, value in (supplied or {}).items():
+        ceiling = 2**40 if key in ('max_memory_bytes', 'max_work_bytes', 'max_render_pixels') else 10_000_000
+        require(type(value) in (int, float) and 1 <= value <= ceiling
+                and (type(value) is int or math.isfinite(value) and value.is_integer()),
+                'ANIMATION_LIMIT', 'Standalone caller budgets must be bounded positive integers.')
+        result[key] = min(result[key], int(value))
+    return result
+
+
+@_admission
+def admit_clip(root, exact_reference, *, budgets=None, reader=None):
+    """Admit one exact clip and its actual owner closure without publishing files.
+
+    ``reader(path, max_bytes)`` is a fixed trusted host callback, never document
+    configuration. Rootless byte-map and scoped-FD callers retain their source
+    authority through that callback; native owners read only our private copy.
+    """
+    from animation3d_contracts import _definitions
+    from jsonschema import Draft202012Validator
+    require(isinstance(exact_reference, dict) and
+            Draft202012Validator(dict(_definitions()['asset'])).is_valid(exact_reference),
+            'ANIMATION_REFERENCE', 'Standalone clip requires a complete exact asset reference.')
+    require(exact_reference['kind'] in ('clip', KINDS['clip']),
+            'ANIMATION_KIND', 'Standalone reference must identify an Animation3D clip.')
+    policy = _standalone_budgets(budgets)
+    with TemporaryDirectory(prefix='animation3d-clip-') as temporary:
+        snapshot = Snapshot(root, temporary, policy['max_work_bytes'], reader=reader)
+        snapshot.memory_limit = policy['max_memory_bytes']
+        reference = deepcopy(exact_reference)
+        documents, native = _capture_snapshot(snapshot, [(reference['path'], reference)])
+        clip = documents.get(reference['path'])
+        require(clip is not None and clip['kind'] == KINDS['clip'], 'ANIMATION_KIND', 'Standalone source is not a clip.')
+        # The common binder uses an in-memory owner envelope, not another file
+        # or a separately interpreted clip schema. Original raw bytes stay exact.
+        envelope = dict(schema_version=1, kind=KINDS['project'], id='admit-'+reference['sha256'][:24],
+            version=clip['version'], name='Standalone exact clip admission', fixture=clip['provenance']['fixture'],
+            fps=deepcopy(clip['fps']), coordinate_system=dict(handedness='right', up_axis='Y', unit='meters'),
+            scene_assets=[], character_assets=[], rig_assets=[], clips=[dict(reference,kind='clip')],
+            state_machines=[], retarget_profiles=[], sequences=[], budgets=policy,
+            provenance=dict(origin='Standalone clip owner admission', kind='derived', fixture=clip['provenance']['fixture'], sources=[]))
+        validate_contract(envelope)
+        _validate_bindings(envelope, documents, native, snapshot.destination)
+        bindings = []
+        for path, (kind, value) in native.items():
+            if kind == 'hatch-3d-rig':
+                bindings.append(dict(path=path, id=value.manifest['id'], version=value.manifest['version'],
+                    sha256=snapshot.inventory[path]['sha256'], kind='rig', skeleton_signature=object_hash(value.skeleton),
+                    vertices=value.geometry.vertex_count, bones=len(value.skeleton['bones']), fixture=value.manifest['source']['fixture']))
+        return dict(clip=deepcopy(clip), documents=deepcopy(documents), inventory=deepcopy(snapshot.inventory),
+            bytes=snapshot.total, memory_admission=dict(limit_bytes=snapshot.memory_limit,
+                estimated_bytes=snapshot.expanded_bytes+snapshot.native_memory, native_estimated_bytes=snapshot.native_memory,
+                method='canonical-native-plus-snapshot-v1', scope='conservative data admission; not process RSS'),
+            native_context=dict(rig_bindings=bindings, actor_ids=sorted({t['target']['actor_id'] for t in clip['tracks'] if 'actor_id' in t['target']})),
+            source_ready=True, scope='exact clip/native target admission; no scene evaluation, publication or visual approval')
 
 
 def _validate_bindings(project, documents, native, snapshot_root):
@@ -460,7 +569,7 @@ def _validate_bindings(project, documents, native, snapshot_root):
     for d in documents.values():
         if 'duration_frames' in d:
             require(d['duration_frames'] <= budgets['max_frames'], 'ANIMATION_LIMIT', 'Animation duration exceeds project budget.')
-        if 'fps' in d:
+        if 'fps' in d and d['kind'] != KINDS['clip']:
             from animation3d_time import rate
             require(rate(d['fps']) == rate(project['fps']), 'ANIMATION_RATE', 'Project documents use inconsistent frame rates.')
         if d['kind'] == KINDS['scene']:
