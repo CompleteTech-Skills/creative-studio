@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from rig_gltf import GltfBuilder,read_gltf,preflight_gltf
@@ -15,11 +16,12 @@ class GltfPreflightTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name)
 
-    def document(self,*,instances=2,accessor_copies=0,vertices=None):
+    def document(self,*,instances=2,accessor_copies=0,vertices=None,node_transform=None):
         builder=GltfBuilder()
         position=builder.accessor(vertices if vertices is not None else [[0,0,0],[1,0,0],[0,1,0]],'VEC3')
         builder.json.update(nodes=[dict(mesh=0) for _ in range(instances+1)],
             meshes=[dict(primitives=[dict(attributes=dict(POSITION=position))])],scenes=[dict(nodes=list(range(instances)))])
+        builder.json['nodes'][0].update(deepcopy(node_transform or {}))
         for _ in range(accessor_copies):builder.json['accessors'].append(deepcopy(builder.json['accessors'][0]))
         path=self.root/'actual.glb';builder.write(path);size=path.stat().st_size
         return read_gltf(path),size
@@ -67,6 +69,48 @@ class GltfPreflightTests(unittest.TestCase):
             with self.assertRaises(RigError):preflight_gltf(document,encoded_bytes=size,limits=invalid)
         for invalid in (0,-1,False,None):
             with self.assertRaises(RigError):preflight_gltf(document,encoded_bytes=invalid)
+
+    def test_real_glb_text_transform_values_have_structured_diagnostics(self):
+        for field,value in [('translation',['bad',0,0]),('scale',['bad',1,1]),
+                            ('rotation',['bad',0,0,1]),('matrix',['bad']*16)]:
+            with self.subTest(field=field):
+                document,size=self.document(node_transform={field:value})
+                source=document.path.read_bytes();metadata=deepcopy(document.json)
+                with patch.object(document,'accessor',side_effect=AssertionError('preflight must not materialize accessors')) as materialize:
+                    with self.assertRaises(RigError) as caught:
+                        preflight_gltf(document,encoded_bytes=size)
+                self.assertEqual(caught.exception.report['code'],'RIG_GLTF_PREFLIGHT')
+                materialize.assert_not_called()
+                self.assertEqual(document.path.read_bytes(),source)
+                self.assertEqual(document.json,metadata)
+
+    def test_real_glb_valid_transform_controls_preserve_sources_without_materialization(self):
+        controls=[('translation',[1,2,3]),('scale',[1,2,3]),('rotation',[0,0,0,1]),
+                  ('matrix',[1,0,0,0,0,1,0,0,0,0,1,0,1,2,3,1])]
+        for field,value in controls:
+            with self.subTest(field=field):
+                document,size=self.document(node_transform={field:value})
+                source=document.path.read_bytes();metadata=deepcopy(document.json)
+                with patch.object(document,'accessor',side_effect=AssertionError('preflight must not materialize accessors')) as materialize:
+                    result=preflight_gltf(document,encoded_bytes=size)
+                self.assertEqual((result['vertices'],result['triangles']),(6,2))
+                self.assertFalse(result['images_admitted'])
+                materialize.assert_not_called()
+                self.assertEqual(document.path.read_bytes(),source)
+                self.assertEqual(document.json,metadata)
+
+    def test_existing_native_transform_errors_keep_their_original_codes(self):
+        for field,value,code in [('rotation',[0,0,0,0],'RIG_QUATERNION'),
+                                 ('scale',[1,0,1],'RIG_SINGULAR_TRANSFORM')]:
+            with self.subTest(field=field):
+                document,size=self.document(node_transform={field:value})
+                source=document.path.read_bytes()
+                with patch.object(document,'accessor',side_effect=AssertionError('preflight must not materialize accessors')) as materialize:
+                    with self.assertRaises(RigError) as caught:
+                        preflight_gltf(document,encoded_bytes=size)
+                self.assertEqual(caught.exception.report['code'],code)
+                materialize.assert_not_called()
+                self.assertEqual(document.path.read_bytes(),source)
 
 
 if __name__=='__main__':unittest.main()

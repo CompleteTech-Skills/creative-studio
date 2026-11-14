@@ -307,7 +307,7 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -
         raise
     except MemoryError as exc:
         raise RigError('RIG_LIMIT_MEMORY', 'Native glTF preflight allocation failed.') from exc
-    except (KeyError, IndexError, TypeError, AttributeError, OverflowError, RecursionError) as exc:
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError, OverflowError, RecursionError) as exc:
         raise RigError('RIG_GLTF_PREFLIGHT', 'Malformed native glTF metadata: ' + type(exc).__name__) from exc
 
 
