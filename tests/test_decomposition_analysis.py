@@ -136,6 +136,36 @@ class AnalysisTests(unittest.TestCase):
             with self.subTest(bound=bound):
                 with self.assertRaisesRegex(ValueError,'bound'): analysis._record_bytes(path,bound)
 
+    def test_missing_in_memory_model_support_is_explicit_and_failure_isolated(self):
+        import types
+        with mock.patch.dict(sys.modules, {'cv2': types.SimpleNamespace()}):
+            result=analysis.capabilities()
+            self.assertFalse(result['opencv-haar']['available'])
+            self.assertIn('in-memory',result['opencv-haar']['unavailable_reason'])
+            self.assertTrue(result['external']['available'])
+        self.assertEqual((self.root/'decomposition.json').read_bytes(),self.original)
+
+    def test_classifier_requires_bounded_immutable_model_bytes(self):
+        for payload in (None,bytearray(b'xml'),b'',b'x'*(analysis.MAX_RESPONSE_BYTES+1)):
+            with self.subTest(kind=type(payload).__name__,size=len(payload) if payload is not None else 0):
+                with self.assertRaisesRegex(ValueError,'bounded immutable'):
+                    analysis._classifier_from_xml(None,payload,'synthetic.xml')
+
+    def test_model_capture_checks_size_before_reading_or_parsing(self):
+        import types
+        models=self.home/'models';models.mkdir()
+        with (models/analysis.MODEL_FILES[0]).open('wb') as stream:
+            stream.truncate(analysis.MAX_RESPONSE_BYTES+1)
+        class UnsupportedFixtureCascade:
+            def read(self,node): raise AssertionError('no parsing oversized fixture')
+        fixture=types.SimpleNamespace(FileStorage=lambda *args: None,
+            CascadeClassifier=UnsupportedFixtureCascade,FILE_STORAGE_READ=0,FILE_STORAGE_MEMORY=4,
+            data=types.SimpleNamespace(haarcascades=str(models)),__version__='synthetic-fixture')
+        with mock.patch.dict(sys.modules,{'cv2':fixture}):
+            with self.assertRaisesRegex(ValueError,'8 MiB'):
+                analysis._capture_model()
+        self.assertEqual((self.root/'decomposition.json').read_bytes(),self.original)
+
     def test_disabled_requires_permission_and_is_failure_isolated(self):
         with self.assertRaisesRegex(ValueError,'disabled'):
             analysis.prepare(self.root,'external')

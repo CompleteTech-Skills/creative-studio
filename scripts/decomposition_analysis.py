@@ -161,17 +161,59 @@ def schemas():
         for name, value in [('request', REQUEST), ('response', RESPONSE), ('state', STATE)]}
 
 
-def _model():
+def _capture_model():
+    """Capture the exact bounded XML bytes used to identify and load a model."""
     try:
         import cv2
     except ImportError as exc:
         raise ValueError('OpenCV analysis is unavailable; install optional requirements-analysis.txt') from exc
-    files = [Path(cv2.data.haarcascades) / name for name in MODEL_FILES]
-    if any(not p.is_file() or p.is_symlink() for p in files):
-        raise ValueError('OpenCV installed cascades unavailable')
-    return {'provider': 'local-opencv', 'name': 'opencv-haar-face-eye', 'version': cv2.__version__,
-            'files': [{'name': p.name, 'sha256': _record_sha(p)} for p in files],
-            'identity_evidence': 'Installed OpenCV version and exact cascade bytes; not a remote call.'}
+    if (not callable(getattr(cv2, 'FileStorage', None)) or
+            not callable(getattr(cv2, 'CascadeClassifier', None)) or
+            not callable(getattr(cv2.CascadeClassifier, 'read', None)) or
+            not all(type(getattr(cv2, name, None)) is int for name in
+                    ('FILE_STORAGE_READ', 'FILE_STORAGE_MEMORY'))):
+        raise ValueError('OpenCV analysis requires in-memory cascade loading support')
+    from rig_errors import open_payload
+    root = Path(cv2.data.haarcascades).resolve()
+    captured = {}
+    for name in MODEL_FILES:
+        with open_payload(root, name) as (stream, info):
+            if info.st_size > MAX_RESPONSE_BYTES:
+                raise ValueError('OpenCV cascade exceeds the 8 MiB model byte quota')
+            payload = stream.read(MAX_RESPONSE_BYTES + 1)
+            if len(payload) > MAX_RESPONSE_BYTES:
+                raise ValueError('OpenCV cascade exceeds the 8 MiB model byte quota')
+        captured[name] = payload
+    model = {'provider': 'local-opencv', 'name': 'opencv-haar-face-eye', 'version': cv2.__version__,
+             'files': [{'name': name, 'sha256': hashlib.sha256(captured[name]).hexdigest()}
+                       for name in MODEL_FILES],
+             'identity_evidence': 'Installed OpenCV version and exact cascade bytes; not a remote call.'}
+    return model, captured
+
+
+def _model():
+    return _capture_model()[0]
+
+
+def _classifier_from_xml(cv2, payload, name):
+    """Load only captured bytes; never pass a model filename to OpenCV."""
+    if type(payload) is not bytes or not payload or len(payload) > MAX_RESPONSE_BYTES:
+        raise ValueError('OpenCV cascade requires bounded immutable XML bytes')
+    try:
+        storage = cv2.FileStorage(payload.decode('utf-8'),
+                                 cv2.FILE_STORAGE_READ | cv2.FILE_STORAGE_MEMORY)
+        try:
+            if not storage.isOpened():
+                raise ValueError('captured XML storage did not open')
+            classifier = cv2.CascadeClassifier()
+            if not classifier.read(storage.getFirstTopLevelNode()) or classifier.empty():
+                raise ValueError('captured XML is not a supported cascade')
+            return classifier
+        finally:
+            storage.release()
+    except Exception as exc:
+        raise ValueError('OpenCV cannot load captured cascade ' + name +
+                         ' in memory (' + type(exc).__name__ + ')') from None
 
 
 def capabilities():
@@ -622,14 +664,14 @@ def _worker(root, identifier):
     job = _job(root, identifier)
     request = _record_json(job / 'request.json')
     _source(root, request)
-    if _model() != request['model']:
+    model, captured = _capture_model()
+    if model != request['model']:
         raise ValueError('local cascade identity changed')
     started = time.monotonic()
     cv2.setNumThreads(1)
     rgb = np.asarray(_source_image(root, request))
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-    face = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / MODEL_FILES[0]))
-    eyes = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / MODEL_FILES[1]))
+    face, eyes = [_classifier_from_xml(cv2, captured[name], name) for name in MODEL_FILES]
     parts = []
     def add(identifier, name, category, box, parent=None):
         x,y,w,h = map(int, box)
@@ -649,7 +691,7 @@ def _worker(root, identifier):
                 add(f'eye-region-{i+1}-{j+1}', f'Eye region {i+1}.{j+1}', 'face/eye-region', (x+ex,y+ey,ew,eh), ident if 'face/region' in request['taxonomy'] else None)
     response = {'schema_version': 1, 'kind': 'decomposition-analysis-response',
         'request_sha256': identifier, 'source_sha256': request['source']['sha256'],
-        'status': 'proposed' if parts else 'unsupported', 'model': _model(),
+        'status': 'proposed' if parts else 'unsupported', 'model': model,
         'annotation': {'schema_version': 1, 'source_sha256': request['source']['sha256'],
             'author': 'Local OpenCV Haar detector', 'note': 'Actual local inference; coarse human face/eye regions only, not general character segmentation.', 'components': parts},
         'evidence': {'execution': 'local', 'call_id': None,
