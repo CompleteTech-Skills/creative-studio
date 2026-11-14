@@ -72,7 +72,11 @@ The dedicated `editor3d-cross-browser.yml` workflow installs Playwright's exact
 pinned Firefox/WebKit builds and their libraries on Ubuntu 24.04. It executes the
 same five native keyboard/persistence/focus cases, requires every collected case
 to execute with zero skips, and retains the current source SHA, engine logs and a
-result receipt. It does not duplicate Blender jobs or certify unrelated editor
+result receipt. Raw logs stay outside the uploaded artifact directory; published
+logs redact Authorization bearers and loopback launch URL fragment/query tokens,
+with separate raw and redacted SHA256 values. Engine versions, source hashes and
+ordinary failure diagnostics are retained. Synthetic boundary tests verify the
+redaction before browser execution. It does not duplicate Blender jobs or certify unrelated editor
 extensions. A successful workflow establishes these bounded flows only; manual
 screen-reader checks and full #106/#17 acceptance remain separate.
 

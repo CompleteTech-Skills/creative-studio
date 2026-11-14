@@ -39,12 +39,15 @@ jobs:
       - run: python -m pip install -r requirements-rig-test.txt
       - name: Install the requested real browser and its system libraries
         run: python -m playwright install --with-deps '${{ matrix.engine }}'
+      - name: Verify public-evidence credential redaction
+        run: python -m unittest -v test_rig_editor3d_browser_evidence
       - name: Execute native keyboard, persistence and focus workflows
         run: |
           mkdir -p editor-cross-browser-evidence
           git rev-parse HEAD > editor-cross-browser-evidence/head.txt
           python -m playwright --version > editor-cross-browser-evidence/playwright-version.txt
-          python - <<'PY' 2>&1 | sed -E 's/([Aa]uthorization: Bearer )[^[:space:]]+/\1[REDACTED]/g' | tee editor-cross-browser-evidence/tests.log
+          test_status=0
+          python - <<'PY' > editor-browser-private.log 2>&1 || test_status=$?
           import json, os, unittest
           from pathlib import Path
           suite = unittest.defaultTestLoader.loadTestsFromName('test_rig_editor3d_accessibility')
@@ -56,6 +59,18 @@ jobs:
           Path('editor-cross-browser-evidence/result.json').write_text(json.dumps(receipt, indent=2)+'\n')
           raise SystemExit(not (expected >= 5 and result.testsRun == expected and result.wasSuccessful() and not result.skipped))
           PY
+          python scripts/editor3d_browser_evidence.py < editor-browser-private.log > editor-cross-browser-evidence/tests.redacted.log
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          raw = Path('editor-browser-private.log').read_bytes()
+          public = Path('editor-cross-browser-evidence/tests.redacted.log').read_bytes()
+          receipt = dict(raw_sha256=hashlib.sha256(raw).hexdigest(), redacted_sha256=hashlib.sha256(public).hexdigest(),
+                         publication='Only the redacted log is published; raw log remains private to this job workspace.')
+          Path('editor-cross-browser-evidence/log-publication.json').write_text(json.dumps(receipt, indent=2)+'\n')
+          PY
+          cat editor-cross-browser-evidence/tests.redacted.log
+          exit "$test_status"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
