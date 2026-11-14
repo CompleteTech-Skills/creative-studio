@@ -95,7 +95,7 @@ def _definitions():
     character_native = native_role(('rig', ('Rig',)), ('model3d', ('model3d-asset',)),
         ('scene3d', ('scene3d-asset',)), ('production2d', ('cast',)))
     project_native = native_role(('scene3d', ('scene3d-project',)),
-        ('production2d', ('project',)))
+        ('production2d', ('project',)), ('camera3d', ('camera3d-registry',)))
     pointer = obj(dict(id=ident, sha256=digest))
     fps = obj(dict(numerator=dict(type='integer', minimum=1, maximum=240000),
                    denominator=dict(type='integer', minimum=1, maximum=10000)))

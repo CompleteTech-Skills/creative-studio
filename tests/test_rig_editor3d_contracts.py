@@ -148,7 +148,7 @@ class EditorContractTests(unittest.TestCase):
         model = example('asset')['native']
         self.assertEqual(verify_native_reference(model, ROOT)['status'], 'valid-native-contract')
         schema = Draft202012Validator(schemas()['editor3d.schema.json'])
-        for field in ('animation', 'shots', 'color_management', 'render_presets'):
+        for field in ('animation', 'shots', 'color_management', 'render_presets', 'source_projects'):
             doc = example('animation' if field == 'animation' else 'project')
             if field == 'animation':
                 doc['native'] = deepcopy(model)
@@ -165,6 +165,7 @@ class EditorContractTests(unittest.TestCase):
         cases = [('animation', 'scene3d', 'examples/scene3d-contracts/example-animation.json'),
                  ('shots', 'scene3d', 'examples/scene3d-contracts/example-shot.json'),
                  ('color_management', 'lookdev', 'examples/lookdev-contracts/ceramic-look.json'),
+                 ('source_projects', 'camera3d', 'examples/camera3d/registry.json'),
                  ('render_presets', 'lookdev', 'examples/lookdev-contracts/draft.json'),
                  ('render_presets', 'scene3d', 'examples/scene3d-contracts/example-render.json')]
         validator = Draft202012Validator(schemas()['editor3d.schema.json'])
@@ -186,6 +187,18 @@ class EditorContractTests(unittest.TestCase):
                 bound['owner'] = 'model3d'
                 self.assertFalse(validator.is_valid(wrong))
                 with self.assertRaises(RigError): validate_contract(wrong)
+
+    def test_camera_source_requires_a_registry_instead_of_a_camera_or_shot(self):
+        validator = Draft202012Validator(schemas()['editor3d.schema.json'])
+        for kind in ('camera3d-camera', 'camera3d-shot'):
+            doc = example('project')
+            reference = deepcopy(example('asset')['native'])
+            reference.update(owner='camera3d', native_kind=kind)
+            doc['source_projects'] = [reference]
+            with self.subTest(kind=kind):
+                self.assertFalse(validator.is_valid(doc))
+                with self.assertRaises(RigError):
+                    validate_contract(doc)
 
     def test_asset_discriminators_reject_valid_manifests_of_the_wrong_role(self):
         model = example('asset')['native']

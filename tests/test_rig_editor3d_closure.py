@@ -252,10 +252,10 @@ class EditorNativeClosureTests(unittest.TestCase):
         edited[0]['dependency_manifest'].extend([source,camera])
         edited[2][1]['native']=camera
         edited[2][1]['native_node_id']='does-not-exist'
-        edited[1][0]['nodes']=[dict(id=n['id'],sha256=contract_hash(n)) for n in edited[2]]
-        edited[0]['scenes']=[dict(id=edited[1][0]['id'],sha256=contract_hash(edited[1][0]))]
+        # The role contract rejects this binding before closure hashes or the
+        # native owner are consulted. Invalid nodes cannot be contract-hashed.
         with self.assertRaises(RigError) as raised:verify_editor_bundle(*edited,self.root)
-        self.assertEqual(raised.exception.report['code'],'EDITOR3D_UNAVAILABLE')
+        self.assertEqual(raised.exception.report['code'],'EDITOR3D_SCHEMA')
 
     def test_native_metadata_is_not_a_file_reference(self):
         scene_path=self.root/'native/example-scene.json'
