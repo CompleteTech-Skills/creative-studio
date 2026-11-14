@@ -1,0 +1,353 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "const": "director-qa-profile"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "operation": {
+            "enum": [
+              "artifact.bytes",
+              "director.document",
+              "director.bundle",
+              "scene3d.project",
+              "native.rig",
+              "native.motion",
+              "image.decode",
+              "render3d.frames",
+              "silent.video",
+              "native.reopen",
+              "archive.restore"
+            ]
+          },
+          "artifact": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "options": {
+            "type": "object"
+          },
+          "scene": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shot": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "frames": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "start": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2000000000
+                  },
+                  "end": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2000000000
+                  }
+                },
+                "required": [
+                  "start",
+                  "end"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "operation",
+          "artifact",
+          "options",
+          "scene",
+          "shot",
+          "frames"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 256
+    },
+    "milestones": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planning": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "assets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "scene": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "motion": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "rendering": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "video": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "native_editability": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "visual_qa": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "delivery": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "planning",
+        "assets",
+        "scene",
+        "motion",
+        "rendering",
+        "video",
+        "native_editability",
+        "visual_qa",
+        "delivery"
+      ]
+    },
+    "review_dependencies": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+      },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/artifact-ref"
+        },
+        "minItems": 1,
+        "maxItems": 128
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_checks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "max_total_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "max_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        }
+      },
+      "required": [
+        "max_checks",
+        "max_total_bytes",
+        "max_seconds"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "id",
+    "checks",
+    "milestones",
+    "review_dependencies",
+    "limits"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "artifact-ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999
+        },
+        "semantic_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "byte_size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "provenance_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/artifact-ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "artifact_id",
+        "kind",
+        "schema_version",
+        "semantic_version",
+        "path",
+        "sha256",
+        "byte_size",
+        "media_type",
+        "provenance_ref",
+        "fixture",
+        "dependencies"
+      ]
+    }
+  },
+  "title": "Director exact-artifact QA profile v1",
+  "description": "Structural profile only; runtime checks IDs, frame ordering, milestone operation coverage, exact bytes and resource admission."
+}

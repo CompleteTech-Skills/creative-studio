@@ -7,6 +7,7 @@ contract. Review receipts are explicit attestations, not inferred art approval.
 from __future__ import annotations
 import copy
 from contextlib import ExitStack
+from functools import lru_cache
 import hashlib
 import json
 import os
@@ -90,8 +91,14 @@ def _state(root, bundle=None):
     for key, minimum, maximum in (('max_calls', 0, 256), ('attempts_per_job', 1, 100), ('concurrency', 1, 16)):
         if type(limits[key]) is not int or not minimum <= limits[key] <= maximum:
             raise ValueError('invalid production generation limit: ' + key)
+    _validate_review_chain(value['reviews'])
+    return value
+
+
+def _validate_review_chain(entries):
+    """Shared append-only review authority; existing v2 digests stay unchanged."""
     prior = None
-    for entry in value['reviews']:
+    for entry in entries:
         if not isinstance(entry, dict) or entry.get('previous_sha256') != prior:
             raise ValueError('production review history chain differs; preserve and inspect the original evidence')
         if not isinstance(entry.get('receipt'), dict) or not isinstance(entry['receipt'].get('dimensions'), dict):
@@ -100,7 +107,6 @@ def _state(root, bundle=None):
         if entry.get('sha256') != expected:
             raise ValueError('production review history was modified; receipt hash differs')
         prior = entry['sha256']
-    return value
 
 
 def _event(state, name, **values):
@@ -109,6 +115,576 @@ def _event(state, name, **values):
 
 def _save(root, state):
     hatch.atomic(Path(root) / WORKFLOW_FILE, state)
+
+
+class NativeReviewJournal:
+    """Director scopes in the existing production review journal and owner lock.
+
+    The artifact owner supplies exact current dependencies for each dimension.
+    This adapter checks those bytes; it does not infer creative approval or turn
+    a native project into a 2D project. Reviewer identities are attestations,
+    explicitly not authentication by a third-party identity service.
+    """
+    KIND = 'director-native-production-workflow'
+    MAX_RECORDS = 4096
+    MAX_ARTIFACT_BYTES = 1024**3
+    MAX_INSPECTED_PIXELS = 128 * 1024**2
+    PROJECT_PHASES = frozenset(('planned', 'native_prepared', 'logical_prepared', 'complete', 'failed'))
+
+    def __init__(self, root, project_reference, *, artifact_root=None):
+        from rig_errors import RigError
+        self.root = Path(root).absolute()
+        self.artifact_root = Path(artifact_root if artifact_root is not None else root).absolute()
+        self.project_reference = copy.deepcopy(project_reference)
+        self._bounded(self.project_reference)
+        self._reference(self.project_reference)
+        for path in (self.root, self.artifact_root):
+            if path.is_symlink() or not path.is_dir():
+                raise RigError('NATIVE_REVIEW_PATH', 'Open an existing owned journal and artifact directory.')
+        info = self.root.stat()
+        self._identity = (info.st_dev, info.st_ino)
+        self.project_id, self.fixture = self._project_context()
+
+    @staticmethod
+    def _need(condition, code, message):
+        from rig_errors import require
+        require(condition, 'NATIVE_REVIEW_' + code, message, stage='review')
+
+    @classmethod
+    def _bounded(cls, value):
+        from rig_errors import finite_json
+        finite_json(value)
+        try:
+            size = len(json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False).encode('utf-8')) + 1
+        except (ValueError, TypeError, RecursionError) as exc:
+            from rig_errors import RigError
+            raise RigError('NATIVE_REVIEW_INPUT', 'Use bounded finite JSON review data.') from exc
+        cls._need(size <= MAX_REVIEW_BYTES, 'LIMIT', 'Review journal exceeds the 8 MiB bound.')
+
+    @classmethod
+    def _name(cls, value):
+        cls._need(isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', value),
+                  'INPUT', 'Use a bounded review identity or dimension name.')
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _reference_validator():
+        # Imports stay lazy: legacy 2D review loading acquires no new dependency.
+        from director_schema import definitions
+        from jsonschema import Draft202012Validator
+        schema = {'$defs': definitions(), '$ref': '#/$defs/artifact-ref'}
+        return Draft202012Validator(schema)
+
+    @classmethod
+    def _reference(cls, value):
+        cls._need(next(cls._reference_validator().iter_errors(value), None) is None, 'REFERENCE',
+                  'Review artifacts must use the exact Director ArtifactRef contract.')
+        from rig_errors import portable_name
+        portable_name(value['path'])
+
+    def _read_reference(self, reference):
+        from director_contracts import _read_artifact
+        self._reference(reference)
+        self._not_mutable_journal(reference)
+        return _read_artifact(self.artifact_root, reference)
+
+    def _not_mutable_journal(self, reference):
+        target = os.path.abspath(self.artifact_root / reference['path'])
+        self._need(target != os.path.abspath(self.root / WORKFLOW_FILE), 'SELF_REFERENCE',
+                   'Current input signatures must exclude the mutable production review journal.')
+
+    def _project_context(self):
+        from director_contracts import validate_document, artifact_references
+        from rig_errors import decode_json
+        self._need(isinstance(self.project_reference, dict) and
+                   self.project_reference.get('byte_size', MAX_REVIEW_BYTES + 1) <= MAX_REVIEW_BYTES,
+                   'LIMIT', 'Director project context exceeds the journal bound.')
+        project = validate_document(decode_json(self._read_reference(self.project_reference)))
+        self._need(project['kind'] == 'director-project' and
+                   self.project_reference['kind'] == project['kind'] and
+                   self.project_reference['artifact_id'] == project['id'] and
+                   self.project_reference['schema_version'] == project['schema_version'] and
+                   self.project_reference['semantic_version'] == project['semantic_version'],
+                   'IDENTITY', 'Review context must bind the exact native Director project.')
+        fixture = self.project_reference['fixture'] or any(r['fixture'] for r in artifact_references(project))
+        for reference in artifact_references(project):
+            self._not_mutable_journal(reference)
+        return project['id'], fixture
+
+    def _check_context(self):
+        info = self.root.stat()
+        self._need(not self.root.is_symlink() and (info.st_dev, info.st_ino) == self._identity,
+                   'PATH', 'Review journal directory changed.')
+        self._need(self._project_context() == (self.project_id, self.fixture),
+                   'IDENTITY', 'Director project identity or fixture classification changed.')
+
+    def _load(self):
+        import stat
+        from rig_errors import decode_json
+        self._check_context()
+        path = self.root / WORKFLOW_FILE
+        if not path.exists() and not path.is_symlink():
+            return dict(schema_version=WORKFLOW_VERSION, kind=self.KIND, project_id=self.project_id,
+                        fixture=self.fixture, reviews=[], validations=[], history=[])
+        try:
+            flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_BINARY', 0)
+            self._need(not path.is_symlink(), 'PATH', 'Review journal must not be a symbolic link.')
+            with os.fdopen(os.open(path, flags), 'rb') as stream:
+                self._need(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), 'PATH', 'Review journal must be a regular file.')
+                raw = stream.read(MAX_REVIEW_BYTES + 1)
+            self._need(len(raw) <= MAX_REVIEW_BYTES, 'LIMIT', 'Review journal exceeds the 8 MiB bound.')
+            value = decode_json(raw)
+        except OSError as exc:
+            from rig_errors import RigError
+            raise RigError('NATIVE_REVIEW_PATH', 'Review journal is missing or unsafe.') from exc
+        base_keys = {'schema_version', 'kind', 'project_id', 'fixture', 'reviews', 'validations', 'history'}
+        extension_keys = {'native_project_schema_version', 'project_events'}
+        self._need(isinstance(value, dict) and base_keys <= set(value) and
+                   (set(value) == base_keys or set(value) == base_keys | extension_keys) and
+                   value['schema_version'] == WORKFLOW_VERSION and value['kind'] == self.KIND and
+                   value['project_id'] == self.project_id and value['fixture'] is self.fixture,
+                   'IDENTITY', 'Existing workflow belongs to another project or review authority; preserve it.')
+        self._need(all(isinstance(value[k], list) for k in ('reviews', 'validations', 'history')) and
+                   len(value['reviews']) + len(value['validations']) <= self.MAX_RECORDS,
+                   'LIMIT', 'Review history exceeds its record bound.')
+        if 'project_events' in value:
+            self._need(type(value['native_project_schema_version']) in (int, float) and
+                       value['native_project_schema_version'] == 1 and isinstance(value['project_events'], list),
+                       'VERSION', 'Unsupported native project event extension.')
+        project_events = value.get('project_events', [])
+        self._need(len(value['reviews']) + len(value['validations']) + len(project_events) <= self.MAX_RECORDS,
+                   'LIMIT', 'Combined workflow history exceeds its record bound.')
+        _validate_review_chain(value['reviews'])
+        prior = None
+        for entry in value['validations']:
+            self._need(isinstance(entry, dict) and entry.get('previous_sha256') == prior and
+                       isinstance(entry.get('report'), dict) and entry.get('sha256') ==
+                       hash_object({k: v for k, v in entry.items() if k != 'sha256'}),
+                       'HISTORY', 'Structural validation history changed; preserve the original evidence.')
+            prior = entry['sha256']
+        prior = None
+        for entry in project_events:
+            self._need(isinstance(entry, dict) and entry.get('previous_sha256') == prior and
+                       isinstance(entry.get('event'), dict) and entry.get('sha256') ==
+                       hash_object({k: v for k, v in entry.items() if k != 'sha256'}),
+                       'HISTORY', 'Native project event history changed.')
+            self._project_event_value(entry['event'])
+            self._reference(entry.get('project_reference'))
+            self._not_mutable_journal(entry['project_reference'])
+            self._need(entry.get('expected_selected_sha256') == entry['project_reference']['sha256'],
+                       'HISTORY', 'Project event lost its exact selected input binding.')
+            prior = entry['sha256']
+        identities = []
+        for entry in [*value['reviews'], *value['validations'], *project_events]:
+            self._name(entry.get('transaction_id'))
+            self._need(isinstance(entry.get('request_sha256'), str) and
+                       re.fullmatch('[0-9a-f]{64}', entry['request_sha256']), 'HISTORY', 'Missing idempotency binding.')
+            identities.append(entry['transaction_id'])
+        self._need(len(identities) == len(set(identities)), 'HISTORY', 'Duplicate review transaction identities.')
+        self._need(len(value['history']) == len(identities), 'HISTORY', 'Review event history is incomplete.')
+        records = {e['transaction_id']: (e, 'native-review-recorded') for e in value['reviews']}
+        records.update({e['transaction_id']: (e, 'native-validation-recorded') for e in value['validations']})
+        records.update({e['transaction_id']: (e, 'native-project-event-recorded') for e in project_events})
+        observed = set()
+        for event in value['history']:
+            self._need(isinstance(event, dict) and set(event) == {'event', 'time', 'receipt_sha256', 'transaction_id'} and
+                       event['transaction_id'] in records and event['transaction_id'] not in observed,
+                       'HISTORY', 'Review event identity changed.')
+            entry, name = records[event['transaction_id']]
+            self._need(event['event'] == name and event['receipt_sha256'] == entry['sha256'] and
+                       type(event['time']) in (int, float) and event['time'] >= 0,
+                       'HISTORY', 'Review event differs from its immutable record.')
+            observed.add(event['transaction_id'])
+        return value
+
+    def _references(self, value):
+        from director_contracts import ARTIFACT_KEYS
+        pending = [value]
+        count = total = 0
+        while pending:
+            item = pending.pop()
+            if isinstance(item, dict):
+                if set(item) == ARTIFACT_KEYS or {'path', 'sha256'} <= set(item):
+                    self._reference(item)
+                    self._not_mutable_journal(item)
+                    count += 1
+                    total += item['byte_size']
+                    self._need(count <= 4096 and total <= self.MAX_ARTIFACT_BYTES,
+                               'LIMIT', 'Review evidence exceeds the bounded byte or reference profile.')
+                    yield item
+                pending.extend(item.values())
+            elif isinstance(item, list):
+                pending.extend(item)
+
+    def _verify_references(self, value):
+        references = list(self._references(value))
+        for reference in references:
+            self._read_reference(reference)
+
+    def _dependencies(self, value, *, verify, allow_empty=False):
+        self._need(isinstance(value, dict) and (0 if allow_empty else 1) <= len(value) <= 128,
+                   'INPUT', 'Supply exact current scoped dependencies.')
+        self._bounded(value)
+        for name, refs in value.items():
+            self._name(name)
+            self._need(isinstance(refs, list) and 0 < len(refs) <= 256, 'INPUT', 'Each review dimension needs actual dependencies.')
+            for reference in refs:
+                self._reference(reference)
+        list(self._references(value))
+        if verify:
+            self._verify_references(value)
+        return copy.deepcopy(value)
+
+    def _visual_image(self, evidence, inspected):
+        from io import BytesIO
+        from rig_errors import RigError
+        artifact = evidence['artifact']
+        if not artifact['media_type'].startswith('image/') or evidence['method'] != 'visual_inspection':
+            return False
+        key = hash_object(artifact)
+        if key in inspected['keys']:
+            return True
+        try:
+            with Image.open(BytesIO(self._read_reference(artifact))) as image:
+                inspected['pixels'] += image.width * image.height
+                self._need(inspected['pixels'] <= self.MAX_INSPECTED_PIXELS, 'LIMIT', 'Inspection exceeds the per-review pixel bound; split the review into scopes.')
+                image.load()
+        except (OSError, ValueError, Image.DecompressionBombError) as exc:
+            raise RigError('NATIVE_REVIEW_IMAGE', 'Visual review needs an actual decodable bounded image.') from exc
+        inspected['keys'].add(key)
+        return True
+
+    def _receipt(self, value, current):
+        value = copy.deepcopy(value)
+        self._bounded(value)
+        # Enforce reference/byte bounds before image decoding or any artifact I/O.
+        list(self._references(value))
+        self._need(isinstance(value, dict) and set(value) ==
+                   {'schema_version', 'kind', 'project_id', 'fixture', 'reviewer', 'dimensions'} and
+                   type(value['schema_version']) in (int, float) and value['schema_version'] == 1 and
+                   value['kind'] == 'director-native-review' and value['project_id'] == self.project_id and
+                   value['fixture'] is self.fixture, 'IDENTITY', 'Review must preserve native context and fixture identity.')
+        reviewer = value['reviewer']
+        self._need(isinstance(reviewer, dict) and set(reviewer) == {'kind', 'id', 'name'} and
+                   reviewer['kind'] in ('human', 'assistant', 'synthetic'), 'REVIEWER', 'Identify the actual review authority.')
+        self._name(reviewer['id'])
+        self._need(isinstance(reviewer['name'], str) and 0 < len(reviewer['name']) <= 4096,
+                   'REVIEWER', 'Supply the actual reviewer name.')
+        dimensions = value['dimensions']
+        self._need(isinstance(dimensions, dict) and 0 < len(dimensions) <= 128 and
+                   set(dimensions) <= set(current), 'SCOPE', 'Review only declared current dimensions.')
+        inspected = dict(keys=set(), pixels=0)
+        for name, dimension in dimensions.items():
+            self._need(isinstance(dimension, dict) and set(dimension) == {'verdict', 'notes', 'dependencies', 'evidence'} and
+                       dimension['verdict'] in ('pass', 'fail') and isinstance(dimension['notes'], str) and
+                       0 < len(dimension['notes']) <= 4096 and dimension['dependencies'] == current[name],
+                       'STALE', 'Review requires explicit decisions and exact current scoped dependencies.')
+            evidence = dimension['evidence']
+            self._need(isinstance(evidence, list) and 0 < len(evidence) <= 256, 'EVIDENCE', 'Every decision needs inspected evidence.')
+            actual_visual = False
+            for item in evidence:
+                self._need(isinstance(item, dict) and set(item) == {'artifact', 'method', 'frames', 'note'} and
+                           item['method'] in ('visual_inspection', 'timed_playback', 'automated_check') and
+                           isinstance(item['note'], str) and 0 < len(item['note']) <= 4096,
+                           'EVIDENCE', 'Identify actual inspected artifacts and inspection methods.')
+                self._reference(item['artifact'])
+                self._need(item['artifact'] in dimension['dependencies'], 'EVIDENCE',
+                           'Inspected evidence must be among the dimension\'s exact current dependencies.')
+                frames = item['frames']
+                self._need(frames is None or isinstance(frames, dict) and set(frames) == {'start', 'end'} and
+                           all(type(frames[k]) in (int, float) and 0 <= frames[k] <= 2_000_000_000 and
+                               frames[k] == int(frames[k]) for k in frames) and frames['start'] < frames['end'],
+                           'EVIDENCE', 'Inspection frame intervals must be bounded and half-open.')
+                actual_visual = self._visual_image(item, inspected) or actual_visual
+            if dimension['verdict'] == 'pass':
+                self._need(reviewer['kind'] != 'synthetic', 'SYNTHETIC', 'Synthetic checks cannot grant visual review approval.')
+                self._need(actual_visual, 'EVIDENCE', 'A passing review must include an actually decoded inspected image; movies and metrics are supplemental.')
+        self._verify_references(value)
+        return value
+
+    def _previous(self, state, transaction_id, request_hash):
+        for entry in [*state['reviews'], *state['validations'], *state.get('project_events', [])]:
+            if entry['transaction_id'] == transaction_id:
+                self._need(entry['request_sha256'] == request_hash, 'IDEMPOTENCY', 'Transaction identity was used for different review content.')
+                return copy.deepcopy(entry)
+        return None
+
+    @classmethod
+    def _admission(cls, admit):
+        cls._need(admit is None or callable(admit), 'INPUT',
+                  'Admission must be a trusted in-process callback, never JSON data.')
+
+    def _write(self, state, *, admit=None):
+        self._need(len(state['reviews']) + len(state['validations']) + len(state.get('project_events', [])) <= self.MAX_RECORDS,
+                   'LIMIT', 'Review history has reached its bounded record capacity.')
+        self._bounded(state)
+        self._check_context()
+        self._need(not (self.root / WORKFLOW_FILE).is_symlink(), 'PATH', 'Review journal must not be a link.')
+        if admit is not None:
+            admit()
+        _save(self.root, state)
+
+    def record(self, receipt, transaction_id, *, current_dependencies, admit=None):
+        self._name(transaction_id)
+        self._admission(admit)
+        with hatch.ownership(self.root):
+            state = self._load()
+            current = self._dependencies(current_dependencies, verify=False)
+            value = self._receipt(receipt, current)
+            request_hash = hash_object(dict(kind='review', receipt=value))
+            previous = self._previous(state, transaction_id, request_hash)
+            if previous is not None:
+                return previous
+            record = dict(receipt=value, recorded_at=time.time(), transaction_id=transaction_id,
+                          request_sha256=request_hash, project_reference=copy.deepcopy(self.project_reference),
+                          passes=all(d['verdict'] == 'pass' for d in value['dimensions'].values()),
+                          human_review=value['reviewer']['kind'] == 'human',
+                          reviewer_identity_verification='self-attested', production_art_acceptance=False,
+                          synthetic_gate_only=value['reviewer']['kind'] == 'synthetic',
+                          previous_sha256=state['reviews'][-1]['sha256'] if state['reviews'] else None)
+            record['sha256'] = hash_object(record)
+            state['reviews'].append(record)
+            _event(state, 'native-review-recorded', receipt_sha256=record['sha256'], transaction_id=transaction_id)
+            self._write(state, admit=admit)
+            return copy.deepcopy(record)
+
+    def status(self, current_dependencies):
+        current = self._dependencies(current_dependencies, verify=False, allow_empty=True)
+        state = self._load()
+        selected = {}
+        for name in current:
+            candidates = [e for e in state['reviews'] if name in e['receipt']['dimensions']]
+            if candidates:
+                selected[name] = candidates[-1]
+        list(self._references(dict(current=current,
+            decisions=[e['receipt']['dimensions'][name] for name, e in selected.items()])))
+        result = {}
+        for name, expected in current.items():
+            if name not in selected:
+                result[name] = dict(status='unreviewed', production_art_acceptance=False)
+                continue
+            entry = selected[name]
+            dimension = entry['receipt']['dimensions'][name]
+            stale = dimension['dependencies'] != expected
+            reason = 'dependency references changed' if stale else None
+            try:
+                self._verify_references(dict(current=expected, decision=dimension))
+            except (ValueError, OSError, TypeError) as exc:
+                stale, reason = True, 'evidence missing, modified or unsafe'
+            result[name] = dict(status='stale' if stale else dimension['verdict'],
+                                receipt_sha256=entry['sha256'], stale_reason=reason,
+                                reviewer=copy.deepcopy(entry['receipt']['reviewer']),
+                                reviewer_identity_verification='self-attested', production_art_acceptance=False,
+                                synthetic_gate_only=entry['synthetic_gate_only'])
+        return dict(dimensions=result, history_count=len(state['reviews']),
+                    current_pass=bool(result) and all(d['status'] == 'pass' for d in result.values()),
+                    production_art_acceptance=False)
+
+    def append_validation(self, report, transaction_id, *, admit=None):
+        self._name(transaction_id)
+        self._admission(admit)
+        self._bounded(report)
+        self._need(isinstance(report, dict) and report.get('kind') == 'director-qa-report' and
+                   type(report.get('schema_version')) in (int, float) and report['schema_version'] == 1 and report.get('project_id') == self.project_id and
+                   report.get('fixture') is self.fixture and report.get('status') in
+                   ('passed', 'failed', 'partial', 'unverified', 'unavailable', 'canceled', 'awaiting_review') and
+                   report.get('project') == self.project_reference and
+                   isinstance(report.get('inputs'), list) and bool(report['inputs']) and
+                   isinstance(report.get('checks'), list), 'VALIDATION', 'Record an actual typed structural QA report.')
+        self._need(report.get('production_art_acceptance', False) is False,
+                   'VALIDATION', 'Structural validation cannot grant artistic acceptance.')
+        self._need(all(key not in report or type(report[key]) is bool for key in ('canceled', 'deadline_exceeded')),
+                   'VALIDATION', 'QA cancellation and deadline flags must be explicit booleans.')
+        self._need(report['status'] != 'passed' or report['checks'] and
+                   all(isinstance(c, dict) and c.get('status') == 'passed' for c in report['checks']) and
+                   not report.get('canceled', False) and not report.get('deadline_exceeded', False),
+                   'VALIDATION', 'A passed report requires nonempty passed checks without cancellation or deadline failure.')
+        references = self._validation_references(report)
+        with hatch.ownership(self.root):
+            state = self._load()
+            # Failed expected references are evidence of the failure, not a
+            # requirement that the broken/missing input suddenly verify. The
+            # exact active project/profile and every claimed passed check must
+            # still verify before a historical report can be appended.
+            positive = [report['project'], report['profile']]
+            if report['status'] == 'passed':
+                positive = references
+            else:
+                for check in report['checks']:
+                    if check['status'] == 'passed':
+                        positive.extend([check['artifact'], *check['evidence']])
+            # A project's/profile's dependency declarations can deliberately
+            # include the very missing input being diagnosed. Reverify the
+            # positive roles' primary files, rather than promoting their whole
+            # dependency declarations to successful verification on failure.
+            for reference in {hash_object(r): r for r in positive}.values():
+                self._read_reference(reference)
+            request_hash = hash_object(dict(kind='validation', report=report))
+            previous = self._previous(state, transaction_id, request_hash)
+            if previous is not None:
+                return previous
+            record = dict(report=copy.deepcopy(report), recorded_at=time.time(), transaction_id=transaction_id,
+                          request_sha256=request_hash, project_reference=copy.deepcopy(self.project_reference),
+                          all_required_inputs_verified=report['status'] == 'passed',
+                          production_art_acceptance=False,
+                          previous_sha256=state['validations'][-1]['sha256'] if state['validations'] else None)
+            record['sha256'] = hash_object(record)
+            state['validations'].append(record)
+            _event(state, 'native-validation-recorded', receipt_sha256=record['sha256'], transaction_id=transaction_id)
+            self._write(state, admit=admit)
+            return copy.deepcopy(record)
+
+    def _validation_references(self, report):
+        """Validate typed positions without interpreting native report details.
+
+        Native owners may retain their own path/hash descriptor formats inside
+        details. Only Director ArtifactRefs and declared typed positions carry
+        Director read authority. Failed references are never read here.
+        """
+        from director_contracts import artifact_references
+        refs = [report['project'], report.get('profile'), *report['inputs']]
+        self._reference(report.get('profile'))
+        self._need(report['profile']['kind'] == 'director-qa-profile', 'VALIDATION',
+                   'Structural report must bind its actual QA profile.')
+        check_ids = []
+        for check in report['checks']:
+            self._need(isinstance(check, dict) and check.get('status') in
+                       ('passed', 'failed', 'blocked', 'unavailable', 'unverified', 'canceled', 'pending') and
+                       isinstance(check.get('evidence'), list) and len(check['evidence']) <= 256,
+                       'VALIDATION', 'Each structural check needs a typed status, target and bounded evidence.')
+            self._name(check.get('id'))
+            check_ids.append(check['id'])
+            self._need(check['status'] != 'passed' or bool(check['evidence']), 'VALIDATION',
+                       'A claimed passing check needs actual evidence references.')
+            refs.extend([check.get('artifact'), *check['evidence']])
+        self._need(len(check_ids) == len(set(check_ids)), 'VALIDATION', 'Structural check identities must be unique.')
+        findings = report.get('findings', [])
+        self._need(isinstance(findings, list) and len(findings) <= 256, 'VALIDATION',
+                   'Structural findings must be a bounded list.')
+        for finding in findings:
+            self._need(isinstance(finding, dict) and 'artifact' in finding, 'VALIDATION',
+                       'Every structural finding must bind its expected target artifact.')
+            refs.append(finding['artifact'])
+        refs.extend(artifact_references(report))
+        unique = {}
+        for reference in refs:
+            self._reference(reference)
+            self._not_mutable_journal(reference)
+            unique[hash_object(reference)] = reference
+        references = list(unique.values())
+        # Include transitive reference byte budgets before any positive reads.
+        list(self._references(references))
+        return references
+
+    def validation_history(self):
+        """Historical reports only; callers must revalidate before current use."""
+        state = self._load()
+        return dict(records=copy.deepcopy(state['validations']), history_count=len(state['validations']),
+                    current_execution_verified=False, production_art_acceptance=False)
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _diagnostic_validator():
+        from director_schema import definitions
+        from jsonschema import Draft202012Validator
+        return Draft202012Validator({'$defs': definitions(), '$ref': '#/$defs/diagnostic'})
+
+    def _project_event_value(self, event):
+        self._bounded(event)
+        self._need(isinstance(event, dict) and set(event) ==
+                   {'schema_version', 'phase', 'project_id', 'fixture', 'planned_refs', 'verified_refs', 'details', 'diagnostics'} and
+                   type(event['schema_version']) in (int, float) and event['schema_version'] == 1 and
+                   isinstance(event['phase'], str) and event['phase'] in self.PROJECT_PHASES and event['project_id'] == self.project_id and
+                   event['fixture'] is self.fixture, 'PROJECT_EVENT', 'Native project event must preserve its explicit phase and context.')
+        for key in ('planned_refs', 'verified_refs'):
+            self._need(isinstance(event[key], list) and len(event[key]) <= 256, 'PROJECT_EVENT',
+                       'Project event references must be bounded lists of existing immutable documents.')
+            for reference in event[key]:
+                self._reference(reference)
+        if event['phase'] in ('native_prepared', 'logical_prepared', 'complete'):
+            self._need(bool(event['verified_refs']), 'PROJECT_EVENT', 'Prepared events require actual verified candidate documents.')
+        allowed = {'native_project_id', 'native_before_revision', 'native_before_snapshot_sha256',
+                   'native_candidate_snapshot_sha256', 'patch_sha256', 'input_digest'}
+        details = event['details']
+        self._need(isinstance(details, dict) and set(details) <= allowed, 'PROJECT_EVENT',
+                   'Project event details cannot introduce another path, store or current pointer.')
+        for name, value in details.items():
+            if name == 'native_project_id':
+                self._name(value)
+            elif name == 'native_before_revision':
+                self._need(type(value) in (int, float) and 0 <= value <= 2_000_000_000 and value == int(value),
+                           'PROJECT_EVENT', 'Native revision must be a bounded integer.')
+            elif name == 'native_candidate_snapshot_sha256' and value is None:
+                self._need(event['phase'] in ('planned', 'failed'), 'PROJECT_EVENT',
+                           'A prepared candidate must identify its actual native snapshot.')
+            else:
+                self._need(isinstance(value, str) and re.fullmatch('[0-9a-f]{64}', value),
+                           'PROJECT_EVENT', 'Native project details require exact owner-provided digests.')
+        self._need(isinstance(event['diagnostics'], list) and len(event['diagnostics']) <= 128,
+                   'PROJECT_EVENT', 'Project event diagnostics must be a bounded canonical list.')
+        for diagnostic in event['diagnostics']:
+            self._need(next(self._diagnostic_validator().iter_errors(diagnostic), None) is None,
+                       'PROJECT_EVENT', 'Use the canonical Director diagnostic contract.')
+        list(self._references(event))
+        return event
+
+    def selected_project(self):
+        """Legacy constructor fallback only; event history never selects a HEAD.
+
+        The authoritative native HEAD selector is a separate owner integration.
+        Until installed, an event cannot activate another logical project.
+        """
+        self._load()
+        return copy.deepcopy(self.project_reference)
+
+    def append_project_event(self, event, transaction_id, *, expected_selected_sha256,
+                             select_reference=None, admit=None):
+        self._name(transaction_id)
+        self._admission(admit)
+        self._need(isinstance(expected_selected_sha256, str) and
+                   re.fullmatch('[0-9a-f]{64}', expected_selected_sha256), 'PROJECT_EVENT',
+                   'Bind the exact currently selected logical project digest.')
+        event = self._project_event_value(copy.deepcopy(event))
+        self._need(select_reference is None and event['phase'] != 'complete', 'PROJECT_SELECTOR',
+                   'Complete selection requires the authoritative native HEAD selector; audit events never activate it.')
+        request_hash = hash_object(dict(kind='project-event', event=event,
+            expected_selected_sha256=expected_selected_sha256, select_reference=select_reference))
+        with hatch.ownership(self.root):
+            state = self._load()
+            previous = self._previous(state, transaction_id, request_hash)
+            if previous is not None:
+                return previous
+            current = self.selected_project()
+            self._need(current['sha256'] == expected_selected_sha256, 'STALE',
+                       'Reload the current native-selected logical project before recording its event.')
+            self._verify_references(event)
+            if 'project_events' not in state:
+                state['native_project_schema_version'] = 1
+                state['project_events'] = []
+            record = dict(event=copy.deepcopy(event), recorded_at=time.time(), transaction_id=transaction_id,
+                          request_sha256=request_hash, project_reference=current,
+                          expected_selected_sha256=expected_selected_sha256, select_reference=None,
+                          production_art_acceptance=False,
+                          previous_sha256=state['project_events'][-1]['sha256'] if state['project_events'] else None)
+            record['sha256'] = hash_object(record)
+            state['project_events'].append(record)
+            _event(state, 'native-project-event-recorded', receipt_sha256=record['sha256'], transaction_id=transaction_id)
+            def final_admission():
+                self._need(self.selected_project() == current, 'STALE', 'Native-selected logical project changed during event validation.')
+                if admit is not None:
+                    admit()
+            self._write(state, admit=final_admission)
+            return copy.deepcopy(record)
+
+    def project_history(self):
+        """Historical audit events, never an alternate active project pointer."""
+        state = self._load()
+        records = copy.deepcopy(state.get('project_events', []))
+        return dict(records=records, history_count=len(records), current_execution_verified=False,
+                    production_art_acceptance=False)
+
+    def history(self):
+        return copy.deepcopy(self._load())
 
 
 def _object_without(value, *keys):
