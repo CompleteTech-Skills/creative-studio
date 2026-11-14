@@ -214,6 +214,31 @@ class VerifiedFilePublication(unittest.TestCase):
         self.assertEqual(self.output.read_bytes(), self.data)
         self.assertEqual(os.fstat(self.fd).st_size, len(self.data))
 
+    def test_posix_final_stage_close_failure_reports_committed_receipt(self):
+        if os.name == 'nt': return  # POSIX owned stage FD; native HANDLE tests are separate.
+        close = os.close
+        stage_closes = []
+        def fail_after_actual_final_stage_close(fd):
+            info = os.fstat(fd)
+            wrappers = [p for p in self.root.iterdir() if p.name.startswith('.file-')]
+            matching = any((info.st_dev, info.st_ino) == (p.stat().st_dev, p.stat().st_ino)
+                           for p in wrappers)
+            close(fd)
+            if matching:
+                stage_closes.append(fd)
+                # First close is a fresh cleanup directory stream; second is
+                # the owned stage itself, after the output is committed.
+                if len(stage_closes) == 2:
+                    raise OSError(errno.EIO, 'final stage close failed after actual close')
+        with mock.patch.object(atomic.os, 'close', side_effect=fail_after_actual_final_stage_close):
+            with self.assertRaises(atomic.VerifiedFileCleanupError) as caught: self.publish()
+        self.assertEqual(len(stage_closes), 2)
+        self.assertEqual(caught.exception.receipt,
+                         {'sha256': self.digest, 'byte_size': len(self.data)})
+        self.assertTrue(caught.exception.committed)
+        self.assertEqual(self.output.read_bytes(), self.data)
+        self.assertEqual(os.fstat(self.fd).st_size, len(self.data))
+
     def test_linux_descriptor_lifetimes_on_success_and_failure(self):
         if not sys.platform.startswith('linux'): return
         before = len(list(Path('/proc/self/fd').iterdir()))

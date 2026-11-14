@@ -181,3 +181,9 @@ If owned cleanup or descriptor closing fails after the exclusive rename,
 `cleanup_pending` diagnostics, rather than reporting failed/absent output or
 retrying publication. Its chained exception retains the cleanup failure. Before
 commit, errors preserve their ordinary type and no success receipt is returned.
+
+Descriptor-only staging propagates final owned-descriptor close failures. If
+body validation or cleanup already failed, that primary exception is preserved
+and secondary close failures are attached as notes. Closing is attempted only
+once and only for descriptors whose directory identity still matches; a closed
+or reused descriptor is never retried or closed as a foreign object.
