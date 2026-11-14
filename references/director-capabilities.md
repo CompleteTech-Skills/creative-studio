@@ -17,6 +17,40 @@ omitting an operation from that list permits discovery only. Discovery yields
 - `importer.obj`, `importer.glb`, `importer.gltf`: feed real triangle geometry
   through the existing native rig importer and check three vertices/one triangle.
 
+The complete parent inventory additionally has explicit identifiers:
+
+- `runtime.python`: records the actual executing interpreter, implementation and
+  pointer width after the Director validators import. This is not verification
+  of the complete supported OS/device matrix.
+- `resource.memory`, `resource.storage`: measure available host physical memory
+  and free space on the evidence destination filesystem. Receipts separate these
+  observations from policy ceilings. Resource admission checks both the observed
+  bytes and policy. Observations can become stale and do not reserve resources,
+  establish per-user quota availability, or replace native worker enforcement.
+  Missing supported memory APIs produce explicit unavailable evidence.
+- `blender.engines`: starts Blender and checks accepted render-engine settings;
+  it records the actual installed engine identifiers/version. This does not
+  render through every engine; CPU/GPU renders require their separate probes.
+- `format.image`: saves and independently reads four RGBA PNG pixels using
+  Pillow, retaining the actual PNG and exact alpha values.
+- `rigging.native`, `animation.native`: discover the existing native tool owners;
+  they remain untested until those owners supply actual execution evidence.
+- `procedural.native`: creates real robotic fixture geometry through
+  `rig_demo.make_geometry`, exports GLB and reimports/counts its vertices and
+  triangles through the native geometry owner. It neither creates a full film
+  nor certifies arbitrary creative specifications.
+- `geometry.provider`, `motion.provider`, `visual-qa.provider`: record explicit
+  unconfigured or configured-but-untested provider states. Public configuration
+  descriptors use `geometry_provider`, `motion_provider`, `visual_qa_provider`
+  with the same strict fields as `planning_provider`; credentials and endpoints
+  are rejected. No descriptor authenticates a provider or starts a paid call.
+
+Every receipt includes backend, supported operation/format descriptions,
+permissions, policy limits and explicitly unknown performance information.
+Declared formats are not execution proof; availability and execution verification
+remain separate. New probes retain the v1 request/result interface and existing
+capability names.
+
 `importer.blend`, `native.acquisition`, `module.scene3d`, `module.camera3d`,
 `module.lookdev3d`, `module.animation3d`, `module.render3d`, `module.editor3d`,
 and `planning.provider` return explicit unavailable/untested evidence. Finding
