@@ -600,7 +600,7 @@ def _check_gltf(path, limits, captured_document=None):
     _graph_admission(document.json)
     try:scene_graph(document)
     except RigError:raise
-    except (TypeError,ValueError,KeyError,IndexError,RecursionError) as exc:fail('FORMAT','Invalid native scene graph: '+str(exc)[:1024])
+    except (TypeError,ValueError,OverflowError,KeyError,IndexError,RecursionError) as exc:fail('FORMAT','Invalid native scene graph: '+str(exc)[:1024])
     for i in range(len(accessors)):document.accessor(i)
     report=validate_gltf(path,timeout=min(120,limits['timeout_seconds']))
     if not report.get('ok'):fail('VALIDATION','Independent Khronos reader rejected actual output.')
