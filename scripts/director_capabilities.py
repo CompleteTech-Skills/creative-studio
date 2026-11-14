@@ -354,7 +354,8 @@ def _provider_receipt_price(evidence, limits):
 def assert_admission(snapshot, required_operations, *, evidence_root=None, now=None,
                      resources=None, network_policy='deny', price_per_call=None,
                      budget_reservation_id=None, allow_unknown_price=False,
-                     budget_currency=None, budget_amount=None, paid_policy='deny', allowed_providers=()):
+                     budget_currency=None, budget_amount=None, paid_policy='deny', allowed_providers=(),
+                     verified_provider_costs=None):
     """Fail closed for missing/stale/unexecuted native capabilities or resources."""
     _need(isinstance(snapshot,dict),'SCHEMA','Capability snapshot must be an object.')
     if snapshot.get('kind')=='director-result':
@@ -428,6 +429,8 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                       'PRICE','Known provider price requires a finite bounded capability amount.')
                 _need(Fraction(str(price))*calls<=Fraction(str(policy_amount)),
                       'RESOURCE','Estimated provider amount exceeds capability policy.')
+                if verified_provider_costs is not None:
+                    verified_provider_costs.append(Fraction(str(price))*calls)
     return deepcopy(value)
 
 
