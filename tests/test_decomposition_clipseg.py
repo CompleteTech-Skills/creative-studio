@@ -20,7 +20,7 @@ class ClipSegContracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp)/'config.json';path.write_bytes(b'contract fixture')
             with patch.dict(os.environ,{'HATCH_CLIPSEG_MODEL_DIR':temp}),patch.object(clip,'FILES',{'config.json':clip._hash(path)}):
-                self.assertEqual(clip.model_directory(),Path(temp))
+                self.assertEqual(clip.model_directory(),Path(temp).resolve())
                 path.write_bytes(b'altered')
                 with self.assertRaisesRegex(ValueError,'pinned'):clip.model_directory()
                 path.unlink();target=Path(temp)/'actual.json';target.write_bytes(b'contract fixture');path.symlink_to(target)
@@ -36,7 +36,7 @@ class ClipSegContracts(unittest.TestCase):
     def test_capture_binds_immutable_bytes_and_rejects_later_replacement(self):
         import hashlib
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);path=root/'config.json';path.write_bytes(b'{"fixture":true}')
+            root=Path(temp).resolve();path=root/'config.json';path.write_bytes(b'{"fixture":true}')
             pinned={'config.json':hashlib.sha256(path.read_bytes()).hexdigest()}
             with patch.object(clip,'FILES',pinned):
                 captured=clip._capture_model(root)
@@ -47,16 +47,26 @@ class ClipSegContracts(unittest.TestCase):
     def test_capture_rejects_symlink_directory_instead_of_resolving_it(self):
         import hashlib
         with tempfile.TemporaryDirectory() as temp:
-            base=Path(temp);root=base/'actual';root.mkdir()
+            base=Path(temp).resolve();root=base/'actual';root.mkdir()
             path=root/'config.json';path.write_bytes(b'{}')
             alias=base/'alias';alias.symlink_to(root,target_is_directory=True)
             with patch.object(clip,'FILES',{'config.json':hashlib.sha256(b'{}').hexdigest()}):
                 with self.assertRaises(ValueError):clip._capture_model(alias)
 
+    def test_capture_rejects_symlink_ancestor_and_accepts_canonical_path(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as temp:
+            base=Path(temp).resolve();actual=base/'actual';actual.mkdir()
+            root=actual/'model';root.mkdir();(root/'config.json').write_bytes(b'{}')
+            alias=base/'alias';alias.symlink_to(actual,target_is_directory=True)
+            with patch.object(clip,'FILES',{'config.json':hashlib.sha256(b'{}').hexdigest()}):
+                with self.assertRaises(ValueError):clip._capture_model(alias/'model')
+                self.assertEqual(clip._capture_model((alias/'model').resolve()),{'config.json':b'{}'})
+
     def test_capture_enforces_configuration_and_aggregate_bounds(self):
         import hashlib
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);path=root/'config.json';path.write_bytes(b'123456789')
+            root=Path(temp).resolve();path=root/'config.json';path.write_bytes(b'123456789')
             pinned={'config.json':hashlib.sha256(path.read_bytes()).hexdigest()}
             with patch.object(clip,'FILES',pinned):
                 with patch.object(clip,'MAX_CONFIG_FILE_BYTES',8),self.assertRaisesRegex(ValueError,'byte bound'):
@@ -79,7 +89,7 @@ class ClipSegContracts(unittest.TestCase):
 
     def test_input_hash_and_decode_share_admitted_bytes(self):
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);source=root/'source.png';mask=root/'mask.png'
+            root=Path(temp).resolve();source=root/'source.png';mask=root/'mask.png'
             Image.new('RGBA',(8,6),(40,80,120,77)).save(source)
             Image.new('L',(8,6),255).save(mask)
             request={'source':{'path':'source.png','sha256':clip._hash(source),'width':8,'height':6},
@@ -98,7 +108,7 @@ class ClipSegContracts(unittest.TestCase):
 
     def test_mismatched_reference_geometry_and_resource_bounds_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
-            root=Path(temp);source=root/'source.png';mask=root/'mask.png'
+            root=Path(temp).resolve();source=root/'source.png';mask=root/'mask.png'
             Image.new('RGBA',(8,6)).save(source);Image.new('L',(4,6),255).save(mask)
             request={'source':{'path':'source.png','sha256':clip._hash(source),'width':8,'height':6},
                      'references':[{'path':'mask.png','sha256':clip._hash(mask)}],
