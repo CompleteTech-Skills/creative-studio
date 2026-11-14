@@ -33,12 +33,64 @@ process claims, honoring maximum attempts and cancellation. This store requires
 local same-host storage; it does not claim distributed leases or cross-host
 failover.
 
+## Shared admission and resource reservations
+
+New stores use scheduler marker version 2; immutable cache records retain
+version 1. Older clients therefore reject a new resource-aware store rather
+than ignoring its reservations. Existing version-1 stores remain readable and
+render-resumable without changing their marker. They cannot acquire generic
+reservations: create a new version-2 store for that workflow. Check
+`store.supports_resource_reservations` before adding orchestration tables;
+`store.store_version` exposes the admitted marker version.
+
+`claim(job, admit=hook)` and `run_one(..., admit=hook)` call
+`hook(connection, record)` inside the same immediate transaction as the native
+frame claim. The record binds job, frame, request, backend, snapshot and cache
+key. The hook must return a strict boolean and use bounded SQL checks or updates
+only. A false result rolls back its savepoint and defers that candidate without
+incrementing attempts; an exception rolls back the whole transaction. Do not
+perform filesystem/provider calls, acquire budget locks, reenter JobStore, or
+control the transaction from this hook. Persist a budget dispatch fence before
+asking the native owner to claim work.
+
+`reserve_resources(operation_id, resources, admit=hook)` reserves capacity for
+an operation whose execution claim remains owned by its native subsystem.
+The complete resource vector contains nonnegative integer `cpu_workers`,
+`gpu_workers`, `provider_workers`, `memory_bytes` and `storage_bytes`; at least
+one worker is required. CPU capacity is the existing `workers` setting, GPU
+capacity is `gpu_workers`, and explicit `provider_workers` defaults to one.
+Provider capacity is persisted in version-2 SQLite settings and cannot silently
+change on reopen. Generic reservations and ordinary frame claims count against
+the same capacities, including retained output bytes.
+
+The returned lease contains exactly `operation_id`, `token` and `pid`.
+Repeating an identical reservation from the same process returns its original
+lease without readmitting or consuming another budget fence. Different resource
+requirements for that operation reject. A process nonce also prevents a reused
+PID from acquiring an earlier process's lease. `heartbeat_resources(lease)`
+returns its cancellation flag; `cancel_resources(operation_id)` requests
+cancellation without freeing capacity; `release_resources(lease)` requires the
+original process and token. The native owner must reconcile execution before
+the caller releases resources.
+
+`recover_resources(admit=hook)` never reclaims a live PID based on heartbeat
+age. Dead CPU/GPU-only reservations can be released. A departed provider
+reservation stays held by default: its SQL admission hook must confirm an
+already persisted, verified native terminal outcome before release. Pending or
+uncertain external execution cannot qualify. `resources_status()` reports
+capacity and reservations while redacting tokens and process nonces. These are
+declared reservations, not process isolation, provider execution or a second
+execution queue.
+
 `cancel(job, expected_revision=...)` records cancellation and prevents further
 claims and publication. The backend receives a cancellation callback that also
 updates heartbeat. Backend process-tree termination and execution timeouts must
 be enforced by its supervisor. `resume(job, verifier=...)` rechecks existing
 completed outputs and source snapshots; invalid cached outputs return to the
 queue if attempts remain. A stale expected revision rejects the mutation.
+Dead-owner recovery and resume transitions share the final revision-checked
+transaction, so a fresh revision does not reject its own recovery and a stale
+revision cannot partially recover a job.
 
 Outputs are independently verified before and after copying into private cache
 staging, then published through the repository's exclusive native rename.
