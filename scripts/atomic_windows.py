@@ -454,3 +454,53 @@ def private_stage(parent, *, prefix='.publish-', cleanup=True, cleanup_on_error=
             if payload_handle is not None:
                 _close(payload_handle)
             _close(wrapper_handle)
+
+
+class _PrivateFile:
+    def __init__(self, fd):
+        self.fd = fd
+        self.active = True
+        self.published = False
+
+    def publish_to(self, destination):
+        if not self.active or self.published:
+            raise ValueError('private file is inactive or already published')
+        import msvcrt
+        destination = _path(destination)
+        _component(destination.name)
+        with pinned_directory(destination.parent) as parent:
+            _rename_handle(msvcrt.get_osfhandle(self.fd), parent.path / destination.name)
+        self.published = True
+
+
+@contextmanager
+def private_file(parent):
+    """Internal held FILE adapter for canonical verified-file publication.
+
+    Existing protected private directory/ancestor ownership is reused. The new
+    file HANDLE permits read/write/delete for its owner, denies write/delete
+    sharing, and stays open from exclusive creation through by-handle rename.
+    CRT descriptor ownership closes the HANDLE exactly once on every exit.
+    """
+    _api()
+    import msvcrt
+    with private_stage(parent, prefix='.file-') as stage:
+        path = stage.path / 'file'
+        handle = _api().CreateFileW(str(path), 0xC0010000, 1, None, 1,
+                                   0x00200000, None)  # READ|WRITE|DELETE; CREATE_NEW
+        if handle == _INVALID:
+            raise _error(path)
+        try:
+            attributes = _attributes(handle)
+            if attributes & (_DIRECTORY | _REPARSE):
+                raise ValueError('private publication payload must be an ordinary file')
+            descriptor = msvcrt.open_osfhandle(handle, os.O_RDWR | os.O_BINARY)
+        except BaseException:
+            _close(handle)
+            raise
+        payload = _PrivateFile(descriptor)
+        try:
+            yield payload
+        finally:
+            payload.active = False
+            os.close(descriptor)

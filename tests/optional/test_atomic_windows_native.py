@@ -190,6 +190,56 @@ class ActualWindowsPublicationTests(unittest.TestCase):
             stage.publish_to(destination)
         self.assertEqual((destination / 'verified').read_bytes(), b'original')
 
+    def test_actual_verified_file_handle_publication_and_sharing(self):
+        import hashlib
+        from unittest import mock
+        source = self.root / 'source.zip'; data = b'actual held FILE bytes' * 4096
+        source.write_bytes(data)
+        destination = self.root / 'published.zip'
+        original_copy = publication._copy_verified_file
+        def copy_and_attack(source_fd, target_fd, digest, size):
+            payloads = list(self.root.glob('.file-*/payload/file'))
+            self.assertEqual(len(payloads), 1)
+            payload = payloads[0]
+            with self.assertRaises(OSError): payload.rename(self.root / 'substituted')
+            with self.assertRaises(OSError): payload.write_bytes(b'foreign bytes')
+            with self.assertRaises(OSError): payload.parent.rename(self.root / 'moved-stage')
+            original_copy(source_fd, target_fd, digest, size)
+        with source.open('rb') as stream:
+            with mock.patch.object(publication, '_copy_verified_file', side_effect=copy_and_attack):
+                receipt = publication.publish_verified_file(stream.fileno(), destination,
+                    expected_sha256=hashlib.sha256(data).hexdigest(), expected_size=len(data),
+                    max_bytes=1048576)
+        self.assertEqual(destination.read_bytes(), data)
+        self.assertEqual(receipt, {'sha256': hashlib.sha256(data).hexdigest(), 'byte_size': len(data)})
+        self.assertFalse((self.root / 'substituted').exists())
+
+    def test_actual_verified_file_cleanup_failure_reports_committed_receipt(self):
+        import hashlib
+        source = self.root / 'source'; source.write_bytes(b'original')
+        destination = self.root / 'result.zip'
+        with source.open('rb') as stream, mock.patch.object(windows, '_clear_owned',
+                side_effect=OSError('cleanup failure after publication')):
+            with self.assertRaises(publication.VerifiedFileCleanupError) as caught:
+                publication.publish_verified_file(stream.fileno(), destination,
+                    expected_sha256=hashlib.sha256(b'original').hexdigest(),
+                    expected_size=8, max_bytes=1024)
+        self.assertTrue(caught.exception.committed)
+        self.assertEqual(caught.exception.receipt,
+            {'sha256': hashlib.sha256(b'original').hexdigest(), 'byte_size': 8})
+        self.assertEqual(destination.read_bytes(), b'original')
+
+    def test_actual_verified_file_junction_parent_rejected(self):
+        import hashlib
+        source = self.root / 'source'; source.write_bytes(b'original')
+        foreign = self.root / 'foreign'; foreign.mkdir()
+        link = self.root / 'link'; self.junction(link, foreign)
+        with source.open('rb') as stream, self.assertRaises(ValueError):
+            publication.publish_verified_file(stream.fileno(), link / 'result.zip',
+                expected_sha256=hashlib.sha256(b'original').hexdigest(), expected_size=8,
+                max_bytes=1024)
+        self.assertEqual(list(foreign.iterdir()), [])
+
     def test_invalid_names_and_drive_relative_paths_fail_closed(self):
         for path in ('C:relative', self.root / '..' / 'escape'):
             with self.subTest(path=path), self.assertRaises(ValueError):
