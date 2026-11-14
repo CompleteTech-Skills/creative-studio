@@ -336,3 +336,21 @@ bitstream valid without a decoder warning. Exact preserved bytes and an
 independently supplied original SHA-256 remain the separate authenticity gate;
 neither codec success nor numerical checks create visual approval or close the
 broader #52/#44/#139 packages.
+
+### IK orientation goals and retargeted contacts
+
+An IK endpoint orientation is a world-space goal. Declared joint constraints remain
+in force after that goal is applied. The result reports `orientation_residual_rad`
+when an orientation was requested, and `null` for position-only solves. A solve is
+`converged` only when its positional residual meets the chain's meter tolerance
+and its requested orientation is within `1e-5` radians. A reachable position can
+therefore have `reachable: true` and `converged: false` when a joint limit prevents
+the orientation. Contact and grasp reports retain this angular residual.
+
+Retargeting transforms an authored contact orientation using the endpoint's
+calibrated rest-orientation offset. It does not replace that goal with the target
+rest pose. Position-only contacts remain position-only; their orientation is not
+silently pinned. These numerical checks do not establish visual or anatomical
+approval. Likewise, a neutral-only or zero-effect expression catalog does not
+admit states requiring an expressive face: a nonzero authored morph deformation
+or a changed weighted-bone transform must exist.

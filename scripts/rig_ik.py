@@ -8,7 +8,7 @@ import numpy as np
 from rig_contracts import validate_contract
 from rig_constraints import apply_constraints, constraint_order
 from rig_errors import require
-from rig_math import (decompose, qbetween, qinverse, qmul, quaternion, unit, vector)
+from rig_math import (decompose, qangle, qbetween, qinverse, qmul, quaternion, unit, vector)
 from rig_skeleton import evaluate_fk
 
 
@@ -20,11 +20,13 @@ class IKResult:
     converged: bool
     iterations: int
     constraints_applied: list[dict]
+    orientation_residual_rad: float | None = None
 
     def report(self) -> dict:
         return dict(pose=self.pose, residual_m=self.residual_m, reachable=self.reachable,
                     converged=self.converged, iterations=self.iterations,
-                    constraints_applied=self.constraints_applied)
+                    constraints_applied=self.constraints_applied,
+                    orientation_residual_rad=self.orientation_residual_rad)
 
 
 def _chain_points_and_lengths(skeleton: dict, names: list[str], pose=None):
@@ -96,6 +98,13 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
     reachable = lower-1e-7 <= distance <= lengths.sum()+1e-7
     direction = unit(target-origin) if distance > 1e-9 else unit(points[-1]-origin) if np.linalg.norm(points[-1]-origin) > 1e-9 else np.array([0., 1., 0.])
     constrained = constraint_order(skeleton, list(constraints))
+    orientation = orientation if orientation is not None else chain.get('orientation')
+    rotational = ('hinge', 'ball', 'swing-twist', 'locked', 'aim', 'copy-rotation')
+    endpoint_constraints = ([c for c in constrained if c['bone'] == names[-1] and c['type'] in rotational]
+                            if orientation is not None else [])
+    # These constraints affect the endpoint's orientation, not the chain's
+    # positional solve. Evaluate them once against its final requested pose.
+    constrained = [c for c in constrained if c not in endpoint_constraints]
     changes, iterations = [], 0
     tolerance = chain['tolerance']
     limit = chain['iterations']
@@ -136,15 +145,23 @@ def solve_ik(skeleton: dict, pose: dict, chain: dict, target, *, pole=None,
             world = evaluate_fk(skeleton, result)
             points = np.array([world[name][:3, 3] for name in names])
             if np.linalg.norm(points[-1]-target) <= tolerance or not reachable:break
-    orientation = orientation if orientation is not None else chain.get('orientation')
     if orientation is not None:
         world = evaluate_fk(skeleton, result)
         parent = next(b['parent'] for b in skeleton['bones'] if b['id'] == names[-1])
         parent_q = decompose(world[parent])['rotation'] if parent else [0, 0, 0, 1]
         result['bones'].setdefault(names[-1], {})['rotation'] = quaternion(qmul(qinverse(parent_q), quaternion(orientation))).tolist()
-    final = evaluate_fk(skeleton, result)[names[-1]][:3, 3]
-    error = float(np.linalg.norm(final-target))
-    return IKResult(result, error, bool(reachable), bool(reachable and error <= tolerance), iterations, changes)
+        # The endpoint orientation is a requested pose, not permission to bypass
+        # its joint limits. Do not replay unrelated fractional constraints:
+        # a second pass would change their authored influence.
+        if endpoint_constraints:
+            result, current = apply_constraints(skeleton, result, endpoint_constraints, ordered=True)
+            changes.extend(current)
+    final = evaluate_fk(skeleton, result)[names[-1]]
+    error = float(np.linalg.norm(final[:3, 3]-target))
+    orientation_error = (qangle(decompose(final)['rotation'], orientation)
+                         if orientation is not None else None)
+    converged = reachable and error <= tolerance and (orientation_error is None or orientation_error <= 1e-5)
+    return IKResult(result, error, bool(reachable), bool(converged), iterations, changes, orientation_error)
 
 
 def match_fk_to_ik(skeleton: dict, pose: dict, chain: dict) -> dict:

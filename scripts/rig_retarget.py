@@ -96,7 +96,15 @@ def retarget_animation(source, target, clip: dict | str, *, profile=None, partia
         before, after = sr[source_chain['bones'][-1]][:3, 3], tr[chain['bones'][-1]][:3, 3]
         value = deepcopy(contact);value['chain'] = chain['id']
         value['target'] = (after+(np.asarray(contact['target'])-before)*profile['root_scale']).tolist()
-        value['orientation'] = decompose(tr[chain['bones'][-1]])['rotation'];contacts.append(value)
+        if 'orientation' in contact:
+            # Contact orientations are world-space goals. Calibrate the
+            # authored goal like the endpoint rotation instead of replacing
+            # it with the target's rest orientation. Positional-only contacts
+            # must remain free to inherit the animated endpoint orientation.
+            endpoint = source_chain['bones'][-1]
+            value['orientation'] = quaternion(qmul(contact['orientation'],
+                profile['orientation_offsets'][endpoint])).tolist()
+        contacts.append(value)
     result = clip_from_poses(target, clip['id']+'-retargeted', times, poses, fps=clip['fps'], loop=clip['loop'],
         contacts=contacts, events=clip['events'], root_motion=clip['root_motion'], provenance=clip['provenance'])
     target_error = 0.
