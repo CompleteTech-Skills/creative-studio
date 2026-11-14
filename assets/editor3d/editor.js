@@ -403,15 +403,15 @@ function disposeContent() {
 }
 function materialFromNative(value, images) {
   const pbr = value.pbrMetallicRoughness || {},
-    rgba = pbr.baseColorFactor || [0.7, 0.75, 0.8, 1],
+    rgba = pbr.baseColorFactor || [1, 1, 1, 1],
     m = new THREE.MeshStandardMaterial({
       color: new THREE.Color(...rgba.slice(0, 3)),
       opacity: rgba[3],
       transparent: value.alphaMode === "BLEND",
       alphaTest: value.alphaMode === "MASK" ? (value.alphaCutoff ?? 0.5) : 0,
       side: value.doubleSided ? THREE.DoubleSide : THREE.FrontSide,
-      metalness: pbr.metallicFactor ?? 0,
-      roughness: pbr.roughnessFactor ?? 0.7,
+      metalness: pbr.metallicFactor ?? 1,
+      roughness: pbr.roughnessFactor ?? 1,
     });
   const image = images?.[pbr.baseColorTexture?.index];
   if (image) {
