@@ -226,8 +226,10 @@ def release_state(previous, current, *, center_of_mass=(0., 0., 0.), impulse=(0.
             'A half-turn between samples has no unique angular direction; sample more frequently.')
     if delta[3] < 0:
         delta = -delta
-    sine = float(np.linalg.norm(delta[:3]))
-    angular = np.zeros(3) if sine < 1e-12 else delta[:3]/sine*(2*math.atan2(sine, delta[3])/float(dt))
+    sine = math.hypot(*delta[:3])
+    # Tiny angular differences can still imply substantial velocity at an
+    # exact short timestep or offset COM. Do not discard them with an epsilon.
+    angular = np.zeros(3) if sine == 0 else delta[:3]/sine*(2*math.atan2(sine, delta[3])/float(dt))
     com = _vector(center_of_mass, 3, 'center of mass', maximum=1000)
     arm = qmatrix(after['rotation']) @ com
     linear = origin_velocity + np.cross(angular, arm)
@@ -250,7 +252,8 @@ def _promoted_snapshot(payloads, graph, scene_path):
     from scene3d_snapshot import snapshot_project
     from scene3d_contracts import load_project
     from asset_library import read_source_bytes
-    require(len(payloads) <= MAX_FILES and 0 < sum(map(len, payloads.values())) <= MAX_INPUT_BYTES,
+    # The native owner reserves32 entries for worker/cache artifacts.
+    require(1 <= len(payloads) <= MAX_FILES-32 and 0 < sum(map(len, payloads.values())) <= MAX_INPUT_BYTES,
             'PHYSICS_GRIP_SOURCE_LIMIT', 'Source snapshot exceeds the bounded physical input profile.')
     _paths(payloads)
     with tempfile.TemporaryDirectory(prefix='hatch-grip-source-') as temporary:
@@ -263,6 +266,8 @@ def _promoted_snapshot(payloads, graph, scene_path):
                 'Source payloads must equal the canonical project dependency closure.')
         destination = root/'snapshot'
         receipt = snapshot_project(source, destination, graph, scene_path=scene_path, max_bytes=MAX_INPUT_BYTES)
+        require(len(receipt['inventory']) <= MAX_FILES-32, 'PHYSICS_GRIP_SOURCE_LIMIT',
+                'Promoted closure must leave the native reserved worker/cache inventory capacity.')
         # The authoritative owner already validates this closed inventory and
         # retains old scene/shot bytes alongside new immutable versions.
         result = {}
