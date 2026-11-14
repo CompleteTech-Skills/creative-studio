@@ -15,7 +15,7 @@ import stat
 import tempfile
 
 from asset_library_contracts import canonical_bytes, load_manifest, validate
-from atomic_publish import _rename_no_replace
+from atomic_publish import publish_verified_file, VerifiedFileCleanupError
 from rig_errors import RigError, decode_json, object_hash
 
 MAX_RECORDS = 65536
@@ -80,20 +80,35 @@ class Storage:
             if self._read(destination, max(len(payload), 1)) != payload:
                 _fail('Existing immutable content differs from its digest.')
             return
-        fd, temporary = tempfile.mkstemp(prefix='write-', dir=self.root / 'staging')
-        temporary = Path(temporary)
-        try:
-            with os.fdopen(fd, 'wb') as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
-            _rename_no_replace(temporary, destination)
-            _sync_directory(directory)
-            if self._read(destination, max(len(payload), 1)) != payload:
-                _fail('Published bytes differ from the verified staged bytes.')
-        finally:
-            if temporary.exists():
-                temporary.unlink()
+        # Keep the admitted bytes on one open temporary file. The canonical
+        # publisher copies that descriptor into its pinned private namespace;
+        # neither publication nor cleanup reopens a mutable staging basename.
+        with tempfile.TemporaryFile(mode='w+b') as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+            try:
+                publish_verified_file(stream.fileno(), destination,
+                    expected_sha256=hashlib.sha256(payload).hexdigest(),
+                    expected_size=len(payload), max_bytes=max(len(payload), 1),
+                    staging_parent=self.root / 'staging')
+            except VerifiedFileCleanupError as exc:
+                # A file commit is not a claim that its enclosing SQLite
+                # transaction committed. Preserve the exact file receipt and
+                # let the caller roll back its index; recovery can replay a
+                # completed canonical commit record if one was already written.
+                raise RigError('LIBRARY_PUBLICATION_CLEANUP',
+                    'Canonical file committed; owned publication cleanup is pending.',
+                    asset=str(destination), observed=dict(file_committed=True, receipt=exc.receipt),
+                    preserved=str(destination), retryable=True,
+                    correction='Retain the committed file. Resolve owned cleanup, then recover any canonical/index split before retrying.') from exc
+            except (OSError, ValueError) as exc:
+                raise RigError('LIBRARY_DURABILITY', 'Canonical file publication failed: ' + str(exc),
+                               asset=str(destination)) from exc
+        self._check()
+        _sync_directory(directory)
+        if self._read(destination, max(len(payload), 1)) != payload:
+            _fail('Published bytes differ from the verified staged bytes.')
 
     def ready(self):
         self._publish(self.root, 'READY', b'asset-library-canonical-storage-v1\n')

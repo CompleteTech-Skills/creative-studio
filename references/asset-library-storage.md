@@ -27,6 +27,20 @@ Conflicting retries fail until recovery; they cannot silently overwrite the
 durable revision. Partial files in `records/staging` are never interpreted as
 committed assets or deleted by garbage collection.
 
+Canonical file publication uses one admitted temporary descriptor and the shared
+verified-file authority. Its owned wrappers live under `records/staging`, outside
+the strict blob/commit inventories. Empty ownership-retained wrappers are not
+commit records or payloads. Namespace replacement cannot redirect a staged-file
+lookup or cause cleanup to delete a foreign replacement. An exclusive destination
+collision preserves the pre-existing bytes.
+
+If a file is committed but owned publisher cleanup fails, publication raises
+`LIBRARY_PUBLICATION_CLEANUP` with `observed.file_committed=true`, the exact verified
+file receipt, and its preserved path. This does not claim that the enclosing
+SQLite transaction committed. Its index transaction rolls back; `recover()` can
+replay a completed canonical commit after cleanup is addressed. A blob-only
+interruption remains an unreferenced exact blob and does not create a version.
+
 If the SQLite file is lost, `AssetLibrary.rebuild_index(root)` builds a new index
 in a temporary file from verified canonical records and publishes it exclusively.
 It rejects an existing database, including a racing empty destination. Restore a

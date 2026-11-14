@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
 import unittest
 from contextlib import closing
 from unittest.mock import patch
@@ -30,6 +31,147 @@ class StorageTests(unittest.TestCase):
 
     def register(self):
         return self.fixture.register()
+
+    def test_canonical_publish_rejects_changed_admitted_bytes_without_index_commit(self):
+        import asset_library_storage as storage
+        actual = storage.publish_verified_file
+        def corrupt_source(source_fd, destination, **kwargs):
+            os.lseek(source_fd, 0, os.SEEK_SET)
+            os.write(source_fd, b'changed admitted bytes')
+            return actual(source_fd, destination, **kwargs)
+        with patch.object(storage, 'publish_verified_file', side_effect=corrupt_source):
+            with self.assertRaises(RigError) as caught:
+                self.register()
+        self.assertEqual(caught.exception.report['code'], 'LIBRARY_DURABILITY')
+        self.assertEqual(self.library.list_references(), [])
+        self.assertEqual(list((self.library.storage.root/'blobs').glob('[0-9a-f]'*64)), [])
+        self.assertEqual(list((self.library.storage.root/'commits').iterdir()), [])
+        self.assertEqual(list((self.library.storage.root/'staging').iterdir()), [])
+
+    def test_canonical_file_cleanup_failure_retains_commit_for_explicit_recovery(self):
+        import asset_library_storage as storage
+        actual = storage.publish_verified_file
+        def interrupt_after_commit(source_fd, destination, **kwargs):
+            receipt = actual(source_fd, destination, **kwargs)
+            if Path(destination).parent.name == 'commits':
+                raise storage.VerifiedFileCleanupError(receipt)
+            return receipt
+        with patch.object(storage, 'publish_verified_file', side_effect=interrupt_after_commit):
+            with self.assertRaises(RigError) as caught:
+                self.register()
+        report = caught.exception.report
+        self.assertEqual(report['code'], 'LIBRARY_PUBLICATION_CLEANUP')
+        self.assertTrue(report['observed']['file_committed'])
+        retained = Path(report['preserved'])
+        self.assertEqual(hashlib.sha256(retained.read_bytes()).hexdigest(), report['observed']['receipt']['sha256'])
+        self.assertEqual(self.library.list_references(), [])
+        result = self.library.recover()
+        self.assertEqual(result['versions'], 1)
+        reference, = self.library.list_references()
+        self.assertEqual(self.library.resolve(reference), self.fixture.manifest)
+
+    @unittest.skipUnless(os.name == 'posix', 'Actual POSIX descriptor namespace interleaving.')
+    def test_canonical_publish_preserves_foreign_stage_replacements(self):
+        import atomic_publish
+        actual = atomic_publish.rename_no_replace_at
+        for interrupt in (False, True):
+            with self.subTest(interrupt=interrupt):
+                payload = b'immutable native publication ' + str(interrupt).encode()
+                digest = hashlib.sha256(payload).hexdigest()
+                destination = self.library.storage.root/'blobs'/digest
+                held = []
+                def replace_outer(source_fd, source_name, destination_fd, destination_name):
+                    identity = os.fstat(source_fd)
+                    stage_root = self.library.storage.root/'staging'
+                    outer = next(path.name for path in stage_root.iterdir()
+                        if path.name.startswith('.file-') and
+                        (lambda info: (info.st_dev, info.st_ino) == (identity.st_dev, identity.st_ino))(
+                            path.stat(follow_symlinks=False)))
+                    wrapper = stage_root/outer
+                    preserved = wrapper.with_name(wrapper.name+'-retained')
+                    wrapper.rename(preserved)
+                    wrapper.mkdir(mode=0o700)
+                    sentinel = wrapper/'foreign-sentinel'
+                    sentinel.write_bytes(b'foreign replacement must survive')
+                    held.append((preserved, sentinel))
+                    if interrupt:
+                        raise OSError('injected publication interruption')
+                    return actual(source_fd, source_name, destination_fd, destination_name)
+                with patch.object(atomic_publish, 'rename_no_replace_at', side_effect=replace_outer):
+                    if interrupt:
+                        with self.assertRaises(RigError):
+                            self.library.storage._publish(destination.parent, digest, payload)
+                    else:
+                        self.library.storage._publish(destination.parent, digest, payload)
+                preserved, sentinel = held[0]
+                self.assertEqual(sentinel.read_bytes(), b'foreign replacement must survive')
+                self.assertEqual(list(preserved.iterdir()), [])
+                if interrupt:
+                    self.assertFalse(destination.exists())
+                else:
+                    self.assertEqual(destination.read_bytes(), payload)
+
+    def test_canonical_publish_preserves_a_racing_foreign_destination(self):
+        import asset_library_storage as storage
+        actual = storage.publish_verified_file
+        payload = b'admitted bytes'
+        digest = hashlib.sha256(payload).hexdigest()
+        destination = self.library.storage.root/'blobs'/digest
+        def race(source_fd, target, **kwargs):
+            Path(target).write_bytes(b'foreign destination')
+            return actual(source_fd, target, **kwargs)
+        with patch.object(storage, 'publish_verified_file', side_effect=race):
+            with self.assertRaises(RigError):
+                self.library.storage._publish(destination.parent, digest, payload)
+        self.assertEqual(destination.read_bytes(), b'foreign destination')
+
+    def test_two_process_document_retries_publish_one_exact_canonical_version(self):
+        code = '''
+import json, sys, time
+from pathlib import Path
+from asset_library import AssetLibrary
+from asset_library_documents import DocumentPublisher
+root, ready, gate = map(Path, sys.argv[1:])
+publisher = DocumentPublisher(AssetLibrary(root))
+ready.write_text('ready')
+deadline = time.monotonic() + 20
+while not gate.exists():
+    if time.monotonic() > deadline: raise RuntimeError('publication gate timed out')
+    time.sleep(.01)
+reference = publisher.publish_document(b'{"fixture":"two-process-publication"}',
+    'two-process', 'director-project', 1, '1.0.0', [], True)
+print(json.dumps(reference))
+'''
+        env = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1]/'scripts'))
+        gate = self.root/'publication-go'
+        ready = [self.root/f'publisher-{index}.ready' for index in range(2)]
+        workers = [subprocess.Popen([sys.executable, '-c', code, str(self.library.root),
+                    str(marker), str(gate)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, env=env) for marker in ready]
+        try:
+            deadline = time.monotonic() + 20
+            while not all(marker.exists() for marker in ready) and time.monotonic() < deadline:
+                if any(worker.poll() is not None for worker in workers):
+                    break
+                time.sleep(.01)
+            self.assertTrue(all(marker.exists() for marker in ready), 'Both actual publishers must reach the gate.')
+            gate.write_text('publish')
+            references = []
+            for worker in workers:
+                output, error = worker.communicate(timeout=30)
+                self.assertEqual(worker.returncode, 0, error)
+                references.append(json.loads(output))
+            self.assertEqual(references[0], references[1])
+            reopened = AssetLibrary(self.library.root)
+            self.assertEqual(len(reopened.list_references()), 1)
+            from asset_library_documents import DocumentPublisher
+            self.assertEqual(DocumentPublisher(reopened).read_ref(references[0]),
+                             b'{"fixture":"two-process-publication"}')
+        finally:
+            for worker in workers:
+                if worker.poll() is None:
+                    worker.kill()
+                worker.communicate(timeout=5)
 
     def test_canonical_records_survive_total_index_loss_and_relocation(self):
         reference = self.register()
