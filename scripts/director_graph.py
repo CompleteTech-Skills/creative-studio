@@ -308,14 +308,20 @@ def compile_graph(request, root, *, now=None):
                 legacy['provider_calls'] = 1
             for metric, value in legacy.items():
                 values[metric] = max(value, values[metric] if values[metric] is not None else 0)
+            # The validated schema permits integral JSON numbers such as 2.0.
+            # Capability admission requires a Python integer for provider calls.
+            if values['provider_calls'] is not None:
+                values['provider_calls'] = int(values['provider_calls'])
             reconciled[node['id']] = values
             _require(usage['currency'] in (None, data['budget']['currency']),
                      'BUDGET','Declared node cost currency differs from the project budget.')
         for metric, limit in metrics.items():
             if metric == 'amount':
                 continue  # Include verified receipt prices after capability admission.
-            known = sum(values[metric] for values in reconciled.values() if values[metric] is not None)
-            _require(known == 0 or (data['budget'][limit] is not None and known <= data['budget'][limit]),
+            known = sum(Fraction(str(values[metric])) for values in reconciled.values()
+                        if values[metric] is not None)
+            _require(known == 0 or (data['budget'][limit] is not None and
+                                    known <= Fraction(str(data['budget'][limit]))),
                      'BUDGET','Declared node usage exceeds the project budget: '+metric)
     predecessors = {item['id']: [] for item in plan['nodes']}
     for edge in plan['edges']:

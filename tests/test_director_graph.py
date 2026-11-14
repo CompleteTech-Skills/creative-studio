@@ -209,6 +209,58 @@ class DirectorGraphTests(unittest.TestCase):
         self.refresh()
         with self.assertRaisesRegex(RigError,'Declared node usage exceeds'):self.compile()
 
+    def test_v2_resource_totals_use_exact_decimals(self):
+        self.plan=dg.migrate_plan_v2(self.plan,{n['id']:self.planned_metadata(n['id']) for n in self.plan['nodes']})
+        for node in self.plan['nodes']:
+            node['estimated_seconds']=None
+            node['execution_metadata']['estimated_usage']['classification']='estimated'
+        if not self.require_secure_reads():return
+        for metric in ('cpu_seconds','gpu_seconds'):
+            for values,limit,accepted in [((.1,.2,0),.3,True),((1,1e-16,0),1,False)]:
+                with self.subTest(metric=metric,values=values):
+                    for node,value in zip(self.plan['nodes'],values):
+                        node['execution_metadata']['estimated_usage'][metric]['value']=value
+                    self.request['input']['budget']['max_'+metric]=limit
+                    self.refresh()
+                    if accepted:
+                        self.assertEqual(self.compile()['status'],'succeeded')
+                    else:
+                        with self.assertRaisesRegex(RigError,'project budget: '+metric):self.compile()
+            for node in self.plan['nodes']:
+                node['execution_metadata']['estimated_usage'][metric]['value']=0
+            self.request['input']['budget']['max_'+metric]=100
+
+    def test_v2_integral_float_provider_calls(self):
+        self.plan=dg.migrate_plan_v2(self.plan,{n['id']:self.planned_metadata(n['id']) for n in self.plan['nodes']})
+        limits=deepcopy(self.request['input']['budget'])
+        limits.update(currency='USD',max_amount=10,max_provider_calls=10)
+        caps=[]
+        for operation,extra in [('native-cpu',{}),('planning.provider',dict(
+                price_availability='known',price_per_call=1,currency='USD',provider_id='fixture-provider'))]:
+            receipt=self.write('count-'+operation,dict(operation=operation,status='available',
+                execution_verified=True,fixture=True,version='test',policy_limits=limits,payloads=[],**extra),kind='evidence')
+            caps.append(dict(operation=operation,version='test',status='available',execution_verified=True,
+                             limits=deepcopy(limits),probe_evidence=[receipt]))
+        self.snapshot['capabilities']=caps
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        node=self.plan['nodes'][0]
+        node.update(operation='PlanningProvider.generate_structured',native_owner='PlanningProvider',
+                    output_schema='planning-artifact',resource_class='provider',required_capabilities=['planning.provider'])
+        self.request['input']['budget']=deepcopy(limits)
+        self.request['context']['policy'].update(network='allow-configured',paid='bounded',providers=['fixture-provider'],
+            policy_ref=self.write('count-policy',{'fixture':True}))
+        self.request['context']['budget_reservation_id']='fixture-reservation'
+        usage=node['execution_metadata']['estimated_usage']
+        usage['classification']='estimated'
+        for count in (2,2.0,1.5):
+            with self.subTest(count=count):
+                usage['provider_calls']['value']=count
+                self.refresh()
+                if count == 1.5:
+                    with self.assertRaises(RigError):self.compile()
+                elif self.require_secure_reads():
+                    self.assertEqual(self.compile()['status'],'succeeded')
+
     def test_v2_typed_usage_obeys_exact_capability_limit(self):
         metadata={node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']}
         self.plan=dg.migrate_plan_v2(self.plan,metadata)
