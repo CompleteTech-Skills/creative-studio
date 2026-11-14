@@ -245,3 +245,17 @@ than clearing it as a successful display. Unused/component-only asset documents
 skip the generic geometry adapter. Cached native geometry and sampled component
 vertices each have aggregate bounds, in addition to instance and resource-byte
 limits; failed cache entries retain only diagnostic text, not exception frames.
+
+Shared editor extensions can call `context.runGuardedAction(async action => ...)`
+for an operation that depends on the saved viewport. It commits the focused
+inspector field through the ordinary transaction, waits for an existing save,
+and refuses the operation if saving failed, a gizmo drag or evaluated preview is
+active, or the viewport was lost or disposed. The busy lock lasts until the
+callback settles, including its reload. The callback receives the post-save
+`snapshot` and lifecycle-checked `api`, `reload`, and `isCurrent` helpers; derive
+revision/hash bindings from that snapshot, and use those helpers for requests.
+Callback helpers expire when the callback settles. A response to a cancelled
+guarded reload is rejected before installing it into the viewport.
+A failed last edit must be retried successfully before guarded actions resume.
+This does not cancel a server transaction that already committed before a
+context loss; callers must inspect the saved revision after recovery.
