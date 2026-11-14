@@ -177,7 +177,10 @@ class EditorServer(HTTPServer):
         self.token = token or secrets.token_urlsafe(32)
         require(isinstance(self.token, str) and len(self.token) >= 24,
                 'EDITOR3D_VIEW_TOKEN', 'Use a bearer token of at least 24 characters.')
-        self.slots = threading.BoundedSemaphore(workers)
+        # Keep execution bounded while a browser's module burst can wait for
+        # requests from its previous document to finish. At most one request
+        # per execution worker may queue; excess requests receive HTTP 503.
+        self.slots = threading.BoundedSemaphore(workers * 2)
         self.executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix='editor-http')
         self.cache = OrderedDict()
         self.cache_lock = threading.Lock()
@@ -185,14 +188,30 @@ class EditorServer(HTTPServer):
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):
-            request.close()
+            try:
+                # Admission has not parsed a Host, body or bearer token. Return
+                # no content and spend at most 250 ms reporting overload.
+                request.settimeout(.25)
+                request.sendall(b'HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\nRetry-After: 1\r\nCache-Control: no-store\r\n\r\n')
+            except OSError:
+                pass
+            finally:
+                request.close()
             return
         try:
-            self.executor.submit(self._handle, request, client_address)
+            future = self.executor.submit(self._handle, request, client_address)
+            future.add_done_callback(lambda completed: self._cancel_queued(request) if completed.cancelled() else None)
         except BaseException:
             self.slots.release()
             request.close()
             raise
+
+    def _cancel_queued(self, request):
+        """An executor-cancelled request never enters _handle's finalizer."""
+        try:
+            self.shutdown_request(request)
+        finally:
+            self.slots.release()
 
     def _handle(self, request, client_address):
         try:
@@ -321,6 +340,8 @@ class EditorHandler(BaseHTTPRequestHandler):
                     boot = "<script type='module'>await import('/editor/editor.js');" + ''.join(extensions) + "</script>"
                     payload = payload.replace(b'</body>', boot.encode() + b'</body>')
             self.respond(200, payload, mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
+        except (BrokenPipeError, ConnectionResetError):
+            return  # The document was closed; _handle still owns all cleanup.
         except (RigError, ValueError, OSError, TypeError) as exc:
             report = exc.report if isinstance(exc, RigError) else dict(code='EDITOR3D_VIEW_INPUT', message=str(exc))
             status = 401 if report['code'] == 'EDITOR3D_VIEW_AUTH' else 409 if any(word in report['code'] for word in ('STALE', 'CONFLICT')) else 400
