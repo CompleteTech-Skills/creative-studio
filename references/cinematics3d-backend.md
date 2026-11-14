@@ -80,7 +80,7 @@ production artwork, motion-blur validation or the final three-shot film. Parent
 For shared development hosts, acquire the coordination native-validation flock
 for the entire example invocation.
 
-The [current validation receipt](../examples/cinematics3d/backend-current/receipt.json)
+The [current validation receipt](../examples/cinematics3d/backend-retained-provenance/receipt.json)
 records exact source hashes, actual tool/settings and independently decoded
 outputs. Its adjacent `engineering-evidence.zip` preserves the complete native
 fixture deliveries and test logs with a verified per-file inventory. The receipt
@@ -95,3 +95,5 @@ and directories. Progress callbacks run before this audit. The worker report is
 parsed and hashed from one bounded capture, and its retained file, actual supervisor log, worker job and declared sanitized
 geometry inputs are audited too. A final audit after evidence writes rejects
 changed provenance instead of publishing a result that declares earlier bytes.
+
+The prior [descriptor-publication receipt](../examples/cinematics3d/backend-current/receipt.json) is retained as historical evidence. The current provenance receipt includes nine actual post-worker mutation rejections and an unchanged publication control, plus the native deformation, output precision and outer-stage replacement regression. The standalone image verifier and this publication audit remain separate callable interfaces; cache/archive consumers must verify retained declarations against authentic expected references as well as decode images.
