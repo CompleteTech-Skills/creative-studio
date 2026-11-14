@@ -268,6 +268,38 @@ def _definitions():
     defs.update({name:document(name, properties) for name,properties in fields.items()})
     defs.update({'input-'+name:obj(properties) for name,properties in inputs.items()})
     defs.update({'output-'+name:obj(properties) for name,properties in outputs.items()})
+    # Explicit additive revisions keep historical v1 schemas and receipts intact.
+    validation_result = obj(dict(check=ID, status={'enum':['unverified','passed','failed','blocked']},
+        evidence=artifacts, diagnostics=arr(diagnostic,0,128)))
+    milestone_v2 = deepcopy(milestone)
+    milestone_fields = dict(schema_version={'const':2},
+        timestamp=dict(type='string',format='date-time',maxLength=64), required_inputs=artifacts,
+        artifact_refs=artifacts, validation_results=arr(ref('validation-result'),0,128),
+        evidence_refs=artifacts, failure_reason=nullable(TEXT), remaining_work=texts)
+    milestone_v2['properties'].update(milestone_fields)
+    milestone_v2['required'].extend(milestone_fields)
+    defs['validation-result'] = validation_result
+    defs['milestone-v2'] = milestone_v2
+    defs['project-v2'] = deepcopy(defs['project'])
+    defs['project-v2']['properties']['schema_version'] = {'const':2}
+    defs['project-v2']['properties']['milestones'] = arr(ref('milestone-v2'),9,9)
+    defs['execution-metadata'] = obj(dict(schema_version={'const':2},
+        estimated_usage=ref('usage'), actual_usage=ref('usage'),
+        retry_classification={'enum':['unclassified','retryable','permanent']},
+        idempotency_key=ID,
+        execution_status={'enum':['planned','blocked_capability','blocked_budget','ready','claimed',
+            'running','awaiting_external_result','awaiting_review','artifact_available','validating',
+            'validated','failed','canceled','stale']},
+        checkpoint_refs=artifacts, output_artifacts=artifacts,
+        validation_results=arr(ref('validation-result'),0,128), provenance=artifacts,
+        failure_reason=nullable(TEXT), native_job_ref=nullable(ref('artifact-ref'))))
+    graph_v2 = deepcopy(defs['output-execution-graph'])
+    graph_v2['properties']['schema_version'] = {'const':2}
+    graph_v2['required'].append('schema_version')
+    graph_node_v2 = graph_v2['properties']['nodes']['items']
+    graph_node_v2['properties']['execution_metadata'] = ref('execution-metadata')
+    graph_node_v2['required'].append('execution_metadata')
+    defs['output-execution-graph-v2'] = graph_v2
     requests, results = [], []
     for method,(request,response,effects) in METHODS.items():
         key=method.replace('.','-')
@@ -277,12 +309,15 @@ def _definitions():
             method={'const':method},status=status,operation_id=ID,input_digest=HASH,
             value=nullable(ref('output-'+response)),artifacts=artifacts,
             diagnostics=arr(diagnostic,0,128),usage=usage,provenance_receipts=artifacts))
+        if method == 'GraphCompiler.compile':
+            defs['result-'+key]['properties']['value'] = nullable({'oneOf':[
+                ref('output-execution-graph'),ref('output-execution-graph-v2')]})
         requests.append(ref('request-'+key));results.append(ref('result-'+key))
     defs['request']={'oneOf':requests};defs['result']={'oneOf':results}
     return defs
 
 
-DOCUMENTS = ['creative-brief','story-plan','shot-plan','asset-spec','character-identity','project','request','result']
+DOCUMENTS = ['creative-brief','story-plan','shot-plan','asset-spec','character-identity','project','project-v2','request','result']
 
 
 def definitions():

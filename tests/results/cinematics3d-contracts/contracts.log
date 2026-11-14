@@ -1,0 +1,34 @@
+test_all_effects_have_explicit_defaults_units_and_unavailable_status (test_rig_cinematics3d_contracts.CinematicsTests.test_all_effects_have_explicit_defaults_units_and_unavailable_status) ... ok
+test_all_families_schema_runtime_roundtrip (test_rig_cinematics3d_contracts.CinematicsTests.test_all_families_schema_runtime_roundtrip) ... ok
+test_disabled_effects_do_not_require_execution (test_rig_cinematics3d_contracts.CinematicsTests.test_disabled_effects_do_not_require_execution) ... ok
+test_duplicate_effect_order_and_disabled_bypass (test_rig_cinematics3d_contracts.CinematicsTests.test_duplicate_effect_order_and_disabled_bypass) ... ok
+test_duplicate_keys_and_invalid_json (test_rig_cinematics3d_contracts.CinematicsTests.test_duplicate_keys_and_invalid_json) ... ok
+test_explicit_admission_and_approximation (test_rig_cinematics3d_contracts.CinematicsTests.test_explicit_admission_and_approximation) ... ok
+test_external_input_hash_and_no_mutation (test_rig_cinematics3d_contracts.CinematicsTests.test_external_input_hash_and_no_mutation) ... ok
+test_graph_connections_types_cycles_and_unknown_nodes (test_rig_cinematics3d_contracts.CinematicsTests.test_graph_connections_types_cycles_and_unknown_nodes) ... ok
+test_graph_operation_rules (test_rig_cinematics3d_contracts.CinematicsTests.test_graph_operation_rules) ... ok
+test_history_roundtrip (test_rig_cinematics3d_contracts.CinematicsTests.test_history_roundtrip) ... ok
+test_id_suffix_and_version_rejection (test_rig_cinematics3d_contracts.CinematicsTests.test_id_suffix_and_version_rejection) ... ok
+test_immutable_registry_copies_and_exact_hash (test_rig_cinematics3d_contracts.CinematicsTests.test_immutable_registry_copies_and_exact_hash) ... ok
+test_input_kind_and_unknown_capability_rejected (test_rig_cinematics3d_contracts.CinematicsTests.test_input_kind_and_unknown_capability_rejected) ... ok
+test_missing_conflicting_and_alias_inputs (test_rig_cinematics3d_contracts.CinematicsTests.test_missing_conflicting_and_alias_inputs) ... ok
+test_optional_runtime_dependencies_are_not_imported (test_rig_cinematics3d_contracts.CinematicsTests.test_optional_runtime_dependencies_are_not_imported) ... ok
+test_order_inheritance_override_bypass (test_rig_cinematics3d_contracts.CinematicsTests.test_order_inheritance_override_bypass) ... ok
+test_path_security (test_rig_cinematics3d_contracts.CinematicsTests.test_path_security) ... ok
+test_public_lookup_and_migration_reject_malformed_inputs (test_rig_cinematics3d_contracts.CinematicsTests.test_public_lookup_and_migration_reject_malformed_inputs) ... ok
+test_read_cli_and_schema_drift (test_rig_cinematics3d_contracts.CinematicsTests.test_read_cli_and_schema_drift) ... ok
+test_real_example_and_relocation (test_rig_cinematics3d_contracts.CinematicsTests.test_real_example_and_relocation) ... ok
+test_reference_identity_not_just_hash (test_rig_cinematics3d_contracts.CinematicsTests.test_reference_identity_not_just_hash) ... ok
+test_registry_and_definitions_are_defensive_copies (test_rig_cinematics3d_contracts.CinematicsTests.test_registry_and_definitions_are_defensive_copies) ... ok
+test_render_budget_time_and_audio (test_rig_cinematics3d_contracts.CinematicsTests.test_render_budget_time_and_audio) ... ok
+test_schema_rejects_parameter_bounds_and_unknown_fields (test_rig_cinematics3d_contracts.CinematicsTests.test_schema_rejects_parameter_bounds_and_unknown_fields) ... ok
+test_scope_binding_mismatch_rejected (test_rig_cinematics3d_contracts.CinematicsTests.test_scope_binding_mismatch_rejected) ... ok
+test_scope_reversal_and_invalid_bypass (test_rig_cinematics3d_contracts.CinematicsTests.test_scope_reversal_and_invalid_bypass) ... ok
+test_unknown_effect_and_parameters (test_rig_cinematics3d_contracts.CinematicsTests.test_unknown_effect_and_parameters) ... ok
+test_version_migration_fails_closed (test_rig_cinematics3d_contracts.CinematicsTests.test_version_migration_fails_closed) ... ok
+test_wrong_bounds_types_and_nonfinite (test_rig_cinematics3d_contracts.CinematicsTests.test_wrong_bounds_types_and_nonfinite) ... ok
+
+----------------------------------------------------------------------
+Ran 29 tests in 1.801s
+
+OK
