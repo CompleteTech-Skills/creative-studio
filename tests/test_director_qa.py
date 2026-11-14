@@ -146,11 +146,12 @@ class StructuralQATests(unittest.TestCase):
         validator.validate(profile)
         validate_profile(profile)
         self.assertEqual(json.dumps(profile, sort_keys=True), before)
-        for edit in ('version', 'limit', 'frame'):
+        for edit in ('version', 'limit', 'frame', 'newline'):
             bad = deepcopy(profile)
             if edit == 'version': bad['schema_version'] = True
             elif edit == 'limit': bad['limits']['max_checks'] = True
-            else: bad['checks'][0]['frames']['start'] = False
+            elif edit == 'frame': bad['checks'][0]['frames']['start'] = False
+            else: bad['id'] += '\n'
             with self.subTest(edit=edit):
                 self.assertTrue(list(validator.iter_errors(bad)))
                 with self.assertRaises(RigError): validate_profile(bad)

@@ -312,7 +312,7 @@ def main(argv=None):
     try:
         from editor3d_repository import EditorRepository
         service = DashboardService(EditorRepository(args.repository), args.artifact_root,
-            _read_json_file(args.project_reference), _read_json_file(args.profile_reference))
+            decode_json(_read_json_file(args.project_reference)), decode_json(_read_json_file(args.profile_reference)))
         native = service.repository.snapshot()
         body = dict(native_revision=native['revision'], native_sha256=native['sha256'])
         if args.operation == 'serve':
@@ -327,7 +327,7 @@ def main(argv=None):
             args.operation = 'qa'
         if args.operation in ('qa', 'review', 'action') or args.operation in CLI_METHODS:
             if args.request is not None:
-                body['request'] = _read_json_file(args.request)
+                body['request'] = decode_json(_read_json_file(args.request))
             need(args.operation == 'qa' or 'request' in body, 'INPUT', 'This operation requires an exact request file.')
             if args.operation in CLI_METHODS:
                 need(body['request'].get('method') in CLI_METHODS[args.operation], 'INPUT',
