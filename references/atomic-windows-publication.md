@@ -13,8 +13,11 @@ Reparse ancestors, traversal, device namespaces, drive-relative paths, alternate
 streams and UNC paths fail closed. New wrapper ACLs are protected and inherited
 by children, allowing the owner and LocalSystem. The payload handle retains
 DELETE access while denying delete sharing to other opens. Publication uses
-`SetFileInformationByHandle(FileRenameInfo)` with `ReplaceIfExists=False` and a
-pinned destination directory handle. Cleanup pins descendants, does not follow
+`SetFileInformationByHandle(FileRenameInfo)` with `ReplaceIfExists=False` and an
+absolute destination whose directory ancestors remain pinned. The Win32
+NULL-`RootDirectory` form avoids the relative-root parameter rejection observed
+on the actual Windows runner; source publication still uses its held handle.
+Cleanup pins descendants, does not follow
 junctions, deletes exact held objects, and leaves the empty outer wrapper.
 `cleanup=False` retains contents; `cleanup_on_error=False` retains diagnostics.
 Writers must finish before publication and cleanup. Same-user hostile process

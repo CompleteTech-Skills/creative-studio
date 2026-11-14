@@ -172,19 +172,22 @@ def pinned_directory(path):
             _close(handle)
 
 
-def _rename_handle(handle, target_parent, name):
-    _component(name)
-    encoded = name.encode('utf-16-le')
+def _rename_handle(handle, destination):
+    # All destination ancestors are already held without delete sharing. The
+    # fully qualified spelling is therefore stable for this operation. Use the
+    # documented NULL-RootDirectory form: the Win32 adapter on supported runners
+    # rejects a non-NULL relative root with ERROR_INVALID_PARAMETER.
+    encoded = str(destination).encode('utf-16-le')
     offset = _RenameInfo.name.offset
     size = max(ctypes.sizeof(_RenameInfo), offset + len(encoded) + 2)
     buffer = ctypes.create_string_buffer(size)
     header = _RenameInfo.from_buffer(buffer)
     header.replace = 0
-    header.root = target_parent
+    header.root = None
     header.name_bytes = len(encoded)
     ctypes.memmove(ctypes.addressof(buffer) + offset, encoded, len(encoded))
     if not _api().SetFileInformationByHandle(handle, 3, buffer, size):
-        raise _error(name)
+        raise _error(destination)
 
 
 def _delete_handle(handle):
@@ -230,7 +233,7 @@ class PrivateStage:
         destination = _path(destination)
         _component(destination.name)
         with pinned_directory(destination.parent) as parent:
-            _rename_handle(self._handle, parent._handle, destination.name)
+            _rename_handle(self._handle, parent.path / destination.name)
         self.published = True
 
 
