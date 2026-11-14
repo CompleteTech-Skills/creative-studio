@@ -440,6 +440,9 @@ class AnalysisTests(unittest.TestCase):
 
     def test_missing_posix_flags_dispatches_to_windows_safe_descriptor(self):
         record=self.home/'portable.json';record.write_bytes(b'{"kind":"fixture"}')
+        # Build with the host's real publication authority; the context below
+        # emulates Windows record-reader dispatch, not Windows directory handles.
+        job=self.prepare()
         real_open=os.open
         with mock.patch.object(analysis,'_WINDOWS_RECORD_IO',True), mock.patch.object(
                 analysis,'_windows_record_descriptor',side_effect=lambda path: real_open(path,os.O_RDONLY)) as windows:
@@ -448,7 +451,6 @@ class AnalysisTests(unittest.TestCase):
             with mock.patch.dict(os.__dict__):
                 os.__dict__.pop('O_NOFOLLOW',None);os.__dict__.pop('O_NONBLOCK',None)
                 self.assertEqual(analysis._record_json(record),{'kind':'fixture'})
-                job=self.prepare()
                 self.assertEqual(analysis.status(self.root,job['job'])['status'],'awaiting-external')
                 self.assertEqual(self.ingest(job)['status'],'proposed')
         self.assertTrue(windows.called)
@@ -502,6 +504,148 @@ class AnalysisTests(unittest.TestCase):
         self.assertFalse(json.loads(result.stdout)['semantic_model_called'])
         result=subprocess.run([sys.executable,str(cli),'decompose-analyze','--run-dir',str(self.root),'--analysis-backend','external','--enable-analysis'],capture_output=True,text=True,check=True)
         self.assertEqual(json.loads(result.stdout)['status'],'awaiting-external')
+
+    def publication_hook(self, action):
+        """Interleave real namespace operations at the canonical publish boundary."""
+        if os.name == 'nt':
+            from atomic_windows import PrivateStage
+            original=PrivateStage.publish_to
+            def publish(stage,destination):
+                action(stage.path.parent,Path(destination))
+                return original(stage,destination)
+            return mock.patch.object(PrivateStage,'publish_to',new=publish)
+        import atomic_publish
+        original=atomic_publish.rename_no_replace_at
+        def publish(stage,name,parent,destination):
+            identity=os.fstat(stage)
+            wrapper=next(p for p in (self.root/'.analysis-staging').iterdir()
+                         if (p.stat().st_dev,p.stat().st_ino)==(identity.st_dev,identity.st_ino))
+            action(wrapper,self.root/'analysis-jobs'/destination)
+            return original(stage,name,parent,destination)
+        return mock.patch.object(atomic_publish,'rename_no_replace_at',side_effect=publish)
+
+    def test_prepare_outer_stage_replacement_never_deletes_foreign_directory(self):
+        paths=[]
+        def interleave(wrapper,destination):
+            displaced=wrapper.with_name(wrapper.name+'-preserved')
+            if os.name=='nt':
+                with self.assertRaises(OSError):wrapper.rename(displaced)
+                foreign=self.home/'foreign';foreign.mkdir();(foreign/'sentinel').write_bytes(b'foreign')
+                paths.append((foreign,None))
+            else:
+                wrapper.rename(displaced);wrapper.mkdir();(wrapper/'sentinel').write_bytes(b'foreign')
+                paths.append((wrapper,displaced))
+            raise RuntimeError('publication interrupted after namespace attempt')
+        with self.publication_hook(interleave),self.assertRaisesRegex(RuntimeError,'publication interrupted'):
+            self.prepare()
+        foreign,displaced=paths[0]
+        self.assertEqual((foreign/'sentinel').read_bytes(),b'foreign')
+        if displaced is not None:self.assertEqual(list(displaced.iterdir()),[])
+        self.assertEqual((self.root/'decomposition.json').read_bytes(),self.original)
+        self.assertEqual(list((self.root/'analysis-jobs').iterdir()),[])
+
+    def test_prepare_root_namespace_replacement_preserves_foreign_and_never_reports_success(self):
+        displaced=self.root.with_name('preserved-run')
+        def interleave(wrapper,destination):
+            if os.name=='nt':
+                with self.assertRaises(OSError):self.root.rename(displaced)
+                raise RuntimeError('Windows denied parent namespace replacement')
+            self.root.rename(displaced);self.root.mkdir();(self.root/'foreign').write_bytes(b'foreign')
+        with self.publication_hook(interleave),self.assertRaises((ValueError,RuntimeError)):
+            self.prepare()
+        if os.name=='nt':
+            self.assertEqual((self.root/'decomposition.json').read_bytes(),self.original)
+        else:
+            self.assertEqual([p.name for p in self.root.iterdir()],['foreign'])
+            self.assertEqual((self.root/'foreign').read_bytes(),b'foreign')
+            self.assertEqual((displaced/'decomposition.json').read_bytes(),self.original)
+
+    def test_prepare_jobs_parent_replacement_never_writes_foreign_namespace(self):
+        displaced=self.root/'preserved-jobs'
+        def interleave(wrapper,destination):
+            jobs=destination.parent
+            if os.name=='nt':
+                with self.assertRaises(OSError):jobs.rename(displaced)
+                raise RuntimeError('Windows denied jobs namespace replacement')
+            jobs.rename(displaced);jobs.mkdir();(jobs/'foreign').write_bytes(b'foreign')
+        with self.publication_hook(interleave),self.assertRaises((ValueError,RuntimeError)):
+            self.prepare()
+        jobs=self.root/'analysis-jobs'
+        if os.name!='nt':
+            self.assertEqual([p.name for p in jobs.iterdir()],['foreign'])
+            self.assertEqual((jobs/'foreign').read_bytes(),b'foreign')
+        self.assertEqual((self.root/'decomposition.json').read_bytes(),self.original)
+
+    def test_prepare_outer_stage_replacement_before_writes_uses_owned_payload(self):
+        if os.name=='nt':
+            # Windows pins the wrapper before yielding, preventing the rename.
+            def denied(wrapper,destination):
+                with self.assertRaises(OSError):wrapper.rename(wrapper.with_name('moved-wrapper'))
+            with self.publication_hook(denied):job=self.prepare()
+            self.assertEqual(job['status'],'awaiting-external')
+            return
+        import atomic_publish
+        from contextlib import contextmanager
+        original=atomic_publish.private_stage_fd
+        paths=[]
+        @contextmanager
+        def swapped(parent,**kwargs):
+            with original(parent,**kwargs) as fd:
+                wrapper=next((self.root/'.analysis-staging').iterdir())
+                displaced=wrapper.with_name(wrapper.name+'-preserved');wrapper.rename(displaced)
+                wrapper.mkdir();(wrapper/'foreign').write_bytes(b'foreign')
+                paths.append((wrapper,displaced));yield fd
+        with mock.patch.object(atomic_publish,'private_stage_fd',new=swapped):job=self.prepare()
+        foreign,displaced=paths[0]
+        self.assertEqual([p.name for p in foreign.iterdir()],['foreign'])
+        self.assertEqual((foreign/'foreign').read_bytes(),b'foreign')
+        self.assertEqual(list(displaced.iterdir()),[])
+        self.assertEqual(analysis.status(self.root,job['job'])['status'],'awaiting-external')
+
+    def test_prepare_racing_destination_is_never_replaced(self):
+        destinations=[]
+        def interleave(wrapper,destination):
+            destination.mkdir();(destination/'foreign').write_bytes(b'existing destination')
+            destinations.append(destination)
+        with self.publication_hook(interleave),self.assertRaises(FileExistsError):
+            self.prepare()
+        self.assertEqual((destinations[0]/'foreign').read_bytes(),b'existing destination')
+        self.assertEqual([p.name for p in destinations[0].iterdir()],['foreign'])
+        self.assertEqual((self.root/'decomposition.json').read_bytes(),self.original)
+
+    def test_prepare_publication_interruption_cleans_only_owned_payload_and_can_retry(self):
+        def interrupt(wrapper,destination):raise RuntimeError('controlled publication interruption')
+        with self.publication_hook(interrupt),self.assertRaisesRegex(RuntimeError,'controlled publication'):
+            self.prepare()
+        self.assertEqual(list((self.root/'analysis-jobs').iterdir()),[])
+        self.assertTrue(all(not list(p.iterdir()) for p in (self.root/'.analysis-staging').iterdir()))
+        job=self.prepare()
+        self.assertEqual(job['status'],'awaiting-external')
+        self.assertEqual(self.prepare()['job'],job['job'])
+        self.assertEqual((self.root/'decomposition.json').read_bytes(),self.original)
+
+    def test_prepare_staging_wrappers_do_not_reduce_job_quota_and_are_separately_bounded(self):
+        with mock.patch.object(analysis,'MAX_JOBS',2):
+            self.prepare(prompt='first');self.prepare(prompt='second')
+            with self.assertRaisesRegex(ValueError,'job quota'):self.prepare(prompt='third')
+        staging=self.root/'.analysis-staging'
+        for i in range(8): (staging/('retained-'+str(i))).mkdir()
+        with mock.patch.object(analysis,'MAX_JOBS',2):
+            # A separate run leaves room under the job quota while exhausting stages.
+            import shutil
+            for p in (self.root/'analysis-jobs').iterdir():shutil.rmtree(p)
+            with self.assertRaisesRegex(ValueError,'staging quota'):self.prepare(prompt='new')
+
+    def test_prepare_rejects_replaced_selected_manifest_before_creating_job_directories(self):
+        original=analysis._publish_prepared_job
+        def changed(root,identifier,request,state):
+            annotation=json.loads((self.root/'annotations/current.json').read_text())
+            rebuild_from_annotation(self.root,annotation,reason='Manual change during preparation',author='Test')
+            return original(root,identifier,request,state)
+        with mock.patch.object(analysis,'_publish_prepared_job',side_effect=changed),self.assertRaisesRegex(ValueError,'changed before'):
+            self.prepare()
+        self.assertFalse((self.root/'analysis-jobs').exists())
+        self.assertTrue(load_decomposition(self.root)['validation']['ok'])
 
 
 if __name__=='__main__':unittest.main()

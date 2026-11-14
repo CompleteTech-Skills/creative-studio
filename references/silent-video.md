@@ -82,6 +82,16 @@ requests can reduce these or increase them within documented schema maxima.
 Storage admission requires enough available bytes for the snapshot and maximum
 output. This is an admission check, not a global disk reservation.
 
+The codec and input guard share one held private input-directory descriptor.
+Every captured input is hashed and its inode, size, mtime and ctime are recorded
+before progress callbacks. A metadata fence runs before encoding, and complete
+hash/identity checks run after all encoding and verification callbacks, before
+publication. This detects replacement and modify/restore writes even when the
+original bytes and mtime are restored. The fence detects filesystem mutation;
+it is not an OS seal or hostile-process isolation. It adds bounded streaming
+hash passes and one directory authority, without holding every frame open or
+changing the representative decoded-pixel comparison contract.
+
 Independent verification copies the encoded bytes into another private snapshot
 so a mutable source pathname cannot switch between probe and decode. It runs:
 

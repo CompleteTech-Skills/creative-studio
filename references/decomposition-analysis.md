@@ -108,6 +108,21 @@ call as locally verified and does not authenticate model-supplied metadata.
 
 ## Recovery, cancellation and resource limits
 
+New analysis jobs use the shared owned staging/publication authority: descriptor-relative
+records and exclusive publication on Linux/macOS, and pinned directory handles on
+Windows. Replacing a public staging name cannot redirect writes or recursive cleanup.
+Changed run/job directory identities fail without reporting successful publication;
+a concurrently created destination is preserved. Selected manifest bytes are checked
+again through the pinned run before any job directories are created. Unsupported
+secure publication capabilities fail explicitly rather than use an unpinned fallback.
+
+The shared authority deliberately retains empty outer staging wrappers. They live
+under `.analysis-staging/`, separately from the existing 64-job limit. At most 256
+staging entries are admitted per run, including interrupted attempts; exhaustion
+fails with `analysis staging quota exceeded`. Retained wrappers and diagnostic
+orphans are not automatically removed by pathname. This is bounded operational
+storage, not a second job index or a source/review identity change.
+
 The identical request returns the existing job. After a successful call,
 `decompose-analysis-run` reuses the validated immutable response. A crash after
 worker completion ingests that output; a running job without output becomes
