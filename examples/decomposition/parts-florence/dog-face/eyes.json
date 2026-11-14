@@ -1,0 +1,12 @@
+{
+  "task": "<REFERRING_EXPRESSION_SEGMENTATION>",
+  "text": "eyes",
+  "raw_output": "</s><s> <loc_308> <loc_502> <loc_312> <loc_500> <loc_318> <loc_498> <loc_337> <loc_498> <loc_345> <loc_500> <loc_351> <loc_502> <loc_355> <loc_504> <loc_361> <loc_508> <loc_365> <loc_512> <loc_369> <loc_518> <loc_371> <loc_522> <loc_373> <loc_528> <loc_375> <loc_535> <loc_375> <loc_561> <loc_373> <loc_570> <loc_371> <loc_576> <loc_369> <loc_582> <loc_365> <loc_590> <loc_361> <loc_596> <loc_355> <loc_602> <loc_349> <loc_606> <loc_345> <loc_608> <loc_339> <loc_610> <loc_318> <loc_610> <loc_312> <loc_608> <loc_308> <loc_606> <loc_302> <loc_602> <loc_298> <loc_598> <loc_293> <loc_592> <loc_289> <loc_584> <loc_287> <loc_578> <loc_285> <loc_572> <loc_285> <loc_539> <loc_287> <loc_531> <loc_289> <loc_526> <loc_293> <loc_518> <loc_296> <loc_512> <loc_302> <loc_506> </s>",
+  "parsed": {
+    "<REFERRING_EXPRESSION_SEGMENTATION>": {
+      "polygons": [],
+      "labels": []
+    }
+  },
+  "generated_token_count": 79
+}

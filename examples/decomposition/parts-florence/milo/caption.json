@@ -1,0 +1,9 @@
+{
+  "task": "<MORE_DETAILED_CAPTION>",
+  "text": "",
+  "raw_output": "</s><s>The image is a digital illustration of a brown teddy bear standing on all fours. The bear has a round face with big, round eyes and a small nose. It has a pink scarf around its neck and is standing on its hind legs with its front paws resting on its hips. The background is black with yellow and red splashes of paint. The overall style of the illustration is cartoon-like and playful.</s>",
+  "parsed": {
+    "<MORE_DETAILED_CAPTION>": "The image is a digital illustration of a brown teddy bear standing on all fours. The bear has a round face with big, round eyes and a small nose. It has a pink scarf around its neck and is standing on its hind legs with its front paws resting on its hips. The background is black with yellow and red splashes of paint. The overall style of the illustration is cartoon-like and playful."
+  },
+  "generated_token_count": 87
+}

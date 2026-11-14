@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "kind": "experimental-recorded-florence-evaluation",
+  "recorded_utc": "2026-11-13T16:38:28.868208+00:00",
+  "issue_226_complete": false,
+  "semantic_approval": false,
+  "independent_semantic_review": "pending: fresh reviewer unavailable at team thread limit; author observations only",
+  "production_adapter_executed": false,
+  "inference": {
+    "status": "completed",
+    "started_utc": "2026-11-13T14:13:23.737199+00:00",
+    "pid": 197503,
+    "completed_model_calls": 6,
+    "maximum_model_calls": 6,
+    "execution_budget_seconds": 600,
+    "semantic_approval": false,
+    "held_out_acceptance": false,
+    "source_script_sha256": "c5526f7e27cf453e1dbc6d582afe3b93de63013aec1a3862b1ab1445b3112231",
+    "memory_admission": {
+      "available_kib": 14245088,
+      "minimum_available_kib": 4194304
+    },
+    "phase": "finished",
+    "elapsed_seconds": 44.79873495000356,
+    "observed_peak_rss": 1745364,
+    "peak_rss_units": "KiB on this Linux host",
+    "model": {
+      "name": "florence-community/Florence-2-base",
+      "revision": "00921df66db728a9ceb750f5eca43e5c203a2051",
+      "weights_sha256": "62f3e696da74f8869a68ddb529a9b3e14eb25b21c592cb3dea6179bf944df6a0",
+      "weight_bytes": 463178864,
+      "remote_code": false
+    },
+    "runtime": {
+      "torch": "2.10.0+cpu",
+      "transformers": "4.57.6",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "device": "cpu",
+      "dtype": "torch.float32",
+      "max_new_tokens": 128,
+      "num_beams": 1,
+      "do_sample": false
+    },
+    "current_image": "dog-face",
+    "current_task": "<REFERRING_EXPRESSION_SEGMENTATION>",
+    "current_text": "mouth",
+    "ended_utc": "2026-11-13T14:14:08.535919+00:00"
+  },
+  "diagnostic": {
+    "kind": "offline-recorded-output-diagnostic",
+    "semantic_approval": false,
+    "production_adapter_executed": false,
+    "new_model_calls": 0,
+    "algorithm": "Only diagnostic extraction of complete whitespace-separated loc tokens; original1000bin center integer coordinates; raw output untouched; alpha-intersected polygon closure is visualization, not semantic validation.",
+    "source_script_sha256": "97bc9403f37eb1a8380b4d16d09c9beb6a5a9266ddc205a80e76e98b7e0da5b3",
+    "cases": [
+      {
+        "name": "milo",
+        "source": {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+          "sha256": "fc1302fadee9991289c9cb5458680e8cae18927b0a1fab93e6b2895ca50b7065",
+          "width": 370,
+          "height": 720,
+          "original_pixels_edited": false
+        },
+        "proposals": [
+          {
+            "name": "eyes",
+            "recorded_output": {
+              "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/florence-probe-1/milo/eyes.json",
+              "sha256": "36f23eb6fcbf0cefc9d4e6c5ca1b7cbf843d0cd1f598886accbe4ceb0b30cb42"
+            },
+            "builtin_parser_polygon_count": 0,
+            "diagnostic_vertices": 39,
+            "mask": {
+              "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/florence-offline-decode-1/milo/eyes-diagnostic.png",
+              "sha256": "486095f57048ce967d2436457ca62ffe0f586aef7e68e200c80383729841cfb4",
+              "pixels": 1666
+            },
+            "generation_at_token_budget": false,
+            "semantic_status": "unreviewed",
+            "warning": "Polygon closure and token budget may omit anatomy; no production claim."
+          },
+          {
+            "name": "scarf",
+            "recorded_output": {
+              "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/florence-probe-1/milo/scarf.json",
+              "sha256": "47c862a08df4cf7a810af4307915435eb0bc02d409bee4d5f6206739261f5237"
+            },
+            "builtin_parser_polygon_count": 0,
+            "diagnostic_vertices": 63,
+            "mask": {
+              "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/florence-offline-decode-1/milo/scarf-diagnostic.png",
+              "sha256": "fbd8600f01efed457d5029a0d9c66384f6f183af65f6cec7218d13e6c9f7009d",
+              "pixels": 1923
+            },
+            "generation_at_token_budget": true,
+            "semantic_status": "unreviewed",
+            "warning": "Polygon closure and token budget may omit anatomy; no production claim."
+          }
+        ]
+      },
+      {
+        "name": "dog-face",
+        "source": {
+          "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+          "sha256": "3bedccab42abb94e34896bed1f855315b315a9c3f001a409673167dbcca06424",
+          "width": 512,
+          "height": 512,
+          "original_pixels_edited": false
+        },
+        "proposals": [
+          {
+            "name": "eyes",
+            "recorded_output": {
+              "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/florence-probe-1/dog-face/eyes.json",
+              "sha256": "2478b0cb1fc55c9b11b0aed5116ea1ab791fc8d6e85250320272abd3dd8a3ce1"
+            },
+            "builtin_parser_polygon_count": 0,
+            "diagnostic_vertices": 38,
+            "mask": {
+              "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/florence-offline-decode-1/dog-face/eyes-diagnostic.png",
+              "sha256": "68b1c2d4133660743ec46260d927b3e0a0dde5568e7d3e566b351d9abd17fbf6",
+              "pixels": 2264
+            },
+            "generation_at_token_budget": false,
+            "semantic_status": "unreviewed",
+            "warning": "Polygon closure and token budget may omit anatomy; no production claim."
+          },
+          {
+            "name": "mouth",
+            "recorded_output": {
+              "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/florence-probe-1/dog-face/mouth.json",
+              "sha256": "6a99dbed6744475f81951c226b18bb696b75f510888c02bf9990781b8d986916"
+            },
+            "builtin_parser_polygon_count": 0,
+            "diagnostic_vertices": 39,
+            "mask": {
+              "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/florence-offline-decode-1/dog-face/mouth-diagnostic.png",
+              "sha256": "04748a29b8868e9915ca8327aad7f85cf8f4b4c09284149b2fd13855741ecf2e",
+              "pixels": 3057
+            },
+            "generation_at_token_budget": false,
+            "semantic_status": "unreviewed",
+            "warning": "Polygon closure and token budget may omit anatomy; no production claim."
+          }
+        ]
+      }
+    ],
+    "inference_progress": {
+      "status": "completed",
+      "started_utc": "2026-11-13T14:13:23.737199+00:00",
+      "pid": 197503,
+      "completed_model_calls": 6,
+      "maximum_model_calls": 6,
+      "execution_budget_seconds": 600,
+      "semantic_approval": false,
+      "held_out_acceptance": false,
+      "source_script_sha256": "c5526f7e27cf453e1dbc6d582afe3b93de63013aec1a3862b1ab1445b3112231",
+      "memory_admission": {
+        "available_kib": 14245088,
+        "minimum_available_kib": 4194304
+      },
+      "phase": "finished",
+      "elapsed_seconds": 44.79873495000356,
+      "observed_peak_rss": 1745364,
+      "peak_rss_units": "KiB on this Linux host",
+      "model": {
+        "name": "florence-community/Florence-2-base",
+        "revision": "00921df66db728a9ceb750f5eca43e5c203a2051",
+        "weights_sha256": "62f3e696da74f8869a68ddb529a9b3e14eb25b21c592cb3dea6179bf944df6a0",
+        "weight_bytes": 463178864,
+        "remote_code": false
+      },
+      "runtime": {
+        "torch": "2.10.0+cpu",
+        "transformers": "4.57.6",
+        "torch_threads": 1,
+        "torch_interop_threads": 1,
+        "device": "cpu",
+        "dtype": "torch.float32",
+        "max_new_tokens": 128,
+        "num_beams": 1,
+        "do_sample": false
+      },
+      "current_image": "dog-face",
+      "current_task": "<REFERRING_EXPRESSION_SEGMENTATION>",
+      "current_text": "mouth",
+      "ended_utc": "2026-11-13T14:14:08.535919+00:00"
+    },
+    "contact_sheet": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/florence-offline-decode-1/contact-sheet.png",
+      "sha256": "1f1b9e5ce524f02d48ade615e1e111140863032195870963e20ec35735e12290"
+    }
+  },
+  "author_visual_observations": [
+    "Both plural eyes queries select one of the two visible eyes; grouped/disconnected part coverage fails.",
+    "Dog mouth query selects the tongue and omits the surrounding visible mouth region.",
+    "Milo scarf query reaches the generation token budget; reconstructed polygon is partial and is not accepted as complete scarf geometry."
+  ],
+  "conclusion": "Actual model output is retained, but this experiment does not establish acceptable semantic part detection. Keep issue226 open.",
+  "raw_records": [
+    {
+      "path": "milo/caption.json",
+      "sha256": "52e82ba73544f756370dd30271494535ff8e72cd77373178ec5cb4c36f5655c4"
+    },
+    {
+      "path": "milo/eyes.json",
+      "sha256": "36f23eb6fcbf0cefc9d4e6c5ca1b7cbf843d0cd1f598886accbe4ceb0b30cb42"
+    },
+    {
+      "path": "milo/scarf.json",
+      "sha256": "47c862a08df4cf7a810af4307915435eb0bc02d409bee4d5f6206739261f5237"
+    },
+    {
+      "path": "milo/selection.json",
+      "sha256": "4b3896dea760a993213342c2e9f9f532dbd0455ade659e682e8f165897193c5d"
+    },
+    {
+      "path": "milo/source.json",
+      "sha256": "d72e9b9b4cfea73039121fc5760a2b841b62c013d340f00826079a31d5e89293"
+    },
+    {
+      "path": "dog-face/caption.json",
+      "sha256": "539f329f89db7fbda6bf2f2ddb80d0becb82a10bad993dc4bbd4b0d8fee68007"
+    },
+    {
+      "path": "dog-face/eyes.json",
+      "sha256": "2478b0cb1fc55c9b11b0aed5116ea1ab791fc8d6e85250320272abd3dd8a3ce1"
+    },
+    {
+      "path": "dog-face/mouth.json",
+      "sha256": "6a99dbed6744475f81951c226b18bb696b75f510888c02bf9990781b8d986916"
+    },
+    {
+      "path": "dog-face/selection.json",
+      "sha256": "13bd8134d93ae15d9a2f07e79222250107d7177e8ee656edf68628fc899e9218"
+    },
+    {
+      "path": "dog-face/source.json",
+      "sha256": "43879321142c769d4a8264365509dc55393056fd2271d48f707c99d3c9761e97"
+    }
+  ]
+}

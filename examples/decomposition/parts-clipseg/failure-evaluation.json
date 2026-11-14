@@ -1,0 +1,1654 @@
+{
+  "schema_version": 1,
+  "kind": "failed-experimental-part-model-evaluation",
+  "recorded_utc": "2026-11-13T13:25:57.018375+00:00",
+  "semantic_approval": false,
+  "release_approval": false,
+  "issue_226_complete": false,
+  "integrated_adapter_exercised": false,
+  "implementation": "Standalone raw model probe; this is not an accepted analysis-controller execution receipt.",
+  "probe": {
+    "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/pilot.py",
+    "sha256": "7983472b40f4f60781350ed757ff4dceeaa79d15fdd49c02f138cea09fa8cc23",
+    "model": "CIDAS/clipseg-rd64-refined",
+    "model_revision": "999e0328d9e10b484360c477313983f9afdd7050",
+    "safetensors_sha256": "d00ca85d6b859f9d07b7cfb8ef26fe9771cb275b34c9368f2ecf603139307f55",
+    "versions": {
+      "torch": "2.10.0+cpu",
+      "transformers": "4.57.6",
+      "Pillow": "13.0.0",
+      "numpy": "2.5.4",
+      "safetensors": "0.8.0"
+    },
+    "queries": 75,
+    "threads": {
+      "torch": 1,
+      "torch_interop": 1,
+      "OPENBLAS_NUM_THREADS": 1,
+      "OMP_NUM_THREADS": 1,
+      "MKL_NUM_THREADS": 1
+    },
+    "timing": "Measured per-case inference/preprocessing/mask-output sum134.006s; queued wait and initial model load excluded. Peak RSS and exact lock-held duration were not collected.",
+    "execution_timeout": "No separate raw execution timeout was imposed; finite75queries completed. Future inference requires an explicit post-lock deadline.",
+    "log": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/pilot.log",
+      "sha256": "c2033a789b33582bf448900bbb5137253201e028de9fb40234f9c860b4b878d8"
+    }
+  },
+  "quality_summary": {
+    "queries": 75,
+    "torch_threads": [
+      1
+    ],
+    "torch_interop_threads": [
+      1
+    ],
+    "default_presence_threshold": 0.7,
+    "mask_threshold": 0.5,
+    "hypotheses_status": "predeclared evaluation hypotheses, pending independent semantic review",
+    "source_model_training_overlap": "unknown",
+    "semantic_approval": false,
+    "cases": [
+      {
+        "case": "human",
+        "queries": 15,
+        "detected_visible_hypotheses": [
+          "head",
+          "helmet"
+        ],
+        "missed_visible_hypotheses": [
+          "eyes",
+          "mouth"
+        ],
+        "false_positive_hypotheses": [],
+        "true_negative_hypotheses": [
+          "wings",
+          "horns",
+          "wheels",
+          "tail",
+          "antenna"
+        ]
+      },
+      {
+        "case": "milo",
+        "queries": 15,
+        "detected_visible_hypotheses": [
+          "head",
+          "eyes",
+          "ears",
+          "feet",
+          "torso",
+          "scarf"
+        ],
+        "missed_visible_hypotheses": [
+          "mouth",
+          "hands"
+        ],
+        "false_positive_hypotheses": [],
+        "true_negative_hypotheses": [
+          "wings",
+          "horns",
+          "wheels",
+          "helmet",
+          "tail",
+          "antenna"
+        ]
+      },
+      {
+        "case": "dragon",
+        "queries": 15,
+        "detected_visible_hypotheses": [
+          "head",
+          "mouth"
+        ],
+        "missed_visible_hypotheses": [
+          "eyes",
+          "horns",
+          "tail",
+          "feet"
+        ],
+        "false_positive_hypotheses": [
+          {
+            "query": "helmet",
+            "max_score": 0.7370619773864746,
+            "pixels": 5936
+          }
+        ],
+        "true_negative_hypotheses": [
+          "wings",
+          "wheels",
+          "scarf",
+          "vest"
+        ]
+      },
+      {
+        "case": "robot-face",
+        "queries": 15,
+        "detected_visible_hypotheses": [
+          "head",
+          "antenna"
+        ],
+        "missed_visible_hypotheses": [
+          "eyes",
+          "mouth"
+        ],
+        "false_positive_hypotheses": [],
+        "true_negative_hypotheses": [
+          "torso",
+          "hands",
+          "feet",
+          "tail",
+          "wings",
+          "horns",
+          "helmet",
+          "scarf",
+          "vest"
+        ]
+      },
+      {
+        "case": "dog-face",
+        "queries": 15,
+        "detected_visible_hypotheses": [
+          "head",
+          "mouth",
+          "ears"
+        ],
+        "missed_visible_hypotheses": [
+          "eyes"
+        ],
+        "false_positive_hypotheses": [
+          {
+            "query": "torso",
+            "max_score": 0.7235342264175415,
+            "pixels": 2686
+          },
+          {
+            "query": "tail",
+            "max_score": 0.7870458960533142,
+            "pixels": 30739
+          },
+          {
+            "query": "helmet",
+            "max_score": 0.859268069267273,
+            "pixels": 134851
+          }
+        ],
+        "true_negative_hypotheses": [
+          "hands",
+          "feet",
+          "wings",
+          "horns",
+          "wheels",
+          "antenna",
+          "scarf",
+          "vest"
+        ]
+      }
+    ],
+    "observed_case_inference_seconds": [
+      {
+        "case": "human",
+        "seconds": 21.09065842400014
+      },
+      {
+        "case": "milo",
+        "seconds": 19.145082082992303
+      },
+      {
+        "case": "dragon",
+        "seconds": 18.652349732001312
+      },
+      {
+        "case": "robot-face",
+        "seconds": 32.83169558599184
+      },
+      {
+        "case": "dog-face",
+        "seconds": 42.28622954500315
+      }
+    ],
+    "sum_case_inference_seconds": 134.00601536998875
+  },
+  "predeclared_hypotheses": {
+    "status": "predeclared evaluation hypotheses, pending independent semantic review",
+    "model_training_overlap": "unknown; these are separate implementation inputs, not a claim of held-out training data",
+    "hypotheses_not_model_inputs": true,
+    "cases": [
+      {
+        "case": "human",
+        "source": "/home/complete/.cache/hatch-coordination-20261112/worktrees/decomposition-parts226/examples/decomposition/analysis/astronaut.png",
+        "source_sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+        "expected_visible": [
+          "head",
+          "eyes",
+          "mouth",
+          "helmet"
+        ],
+        "expected_not_visible": [
+          "wings",
+          "horns",
+          "wheels",
+          "tail",
+          "antenna"
+        ],
+        "origin": "NASA public-domain image already retained in repository"
+      },
+      {
+        "case": "milo",
+        "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+        "source_sha256": "fc1302fadee9991289c9cb5458680e8cae18927b0a1fab93e6b2895ca50b7065",
+        "expected_visible": [
+          "head",
+          "eyes",
+          "mouth",
+          "ears",
+          "hands",
+          "feet",
+          "torso",
+          "scarf"
+        ],
+        "expected_not_visible": [
+          "wings",
+          "horns",
+          "wheels",
+          "helmet",
+          "tail",
+          "antenna"
+        ],
+        "origin": "Retained original imagegen artwork, explicit first-view crop; source lineage in foreground execution receipt"
+      },
+      {
+        "case": "dragon",
+        "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+        "source_sha256": "96aa3f978496590e0a127bcd46885a25ece503d1082706ebe683fa2dba8ab47e",
+        "expected_visible": [
+          "head",
+          "eyes",
+          "mouth",
+          "horns",
+          "tail",
+          "feet"
+        ],
+        "expected_not_visible": [
+          "wings",
+          "wheels",
+          "helmet",
+          "scarf",
+          "vest"
+        ],
+        "origin": "Google Noto Emoji PNG; image-resource license statement retained in sources/noto-README.md"
+      },
+      {
+        "case": "robot-face",
+        "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+        "source_sha256": "98f6f4bdbd98d55100c0c379a25a70f63d347fb869e8e55d6f7b6bb8c1b1bc3b",
+        "expected_visible": [
+          "head",
+          "eyes",
+          "mouth",
+          "antenna"
+        ],
+        "expected_not_visible": [
+          "torso",
+          "hands",
+          "feet",
+          "tail",
+          "wings",
+          "horns",
+          "helmet",
+          "scarf",
+          "vest"
+        ],
+        "origin": "Google Noto Emoji PNG; only face is depicted"
+      },
+      {
+        "case": "dog-face",
+        "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+        "source_sha256": "3bedccab42abb94e34896bed1f855315b315a9c3f001a409673167dbcca06424",
+        "expected_visible": [
+          "head",
+          "eyes",
+          "mouth",
+          "ears"
+        ],
+        "expected_not_visible": [
+          "torso",
+          "hands",
+          "feet",
+          "tail",
+          "wings",
+          "horns",
+          "wheels",
+          "antenna",
+          "helmet",
+          "scarf",
+          "vest"
+        ],
+        "origin": "Google Noto Emoji PNG; only face is depicted"
+      }
+    ]
+  },
+  "source_provenance": {
+    "repository_revision": "99701e07d3d1fe1bdbcdb14964547f0fd592966f",
+    "sources": [
+      {
+        "case": "dragon",
+        "url": "https://raw.githubusercontent.com/googlefonts/noto-emoji/99701e07d3d1fe1bdbcdb14964547f0fd592966f/2D/png/512/emoji_u1f409.png",
+        "sha256": "96aa3f978496590e0a127bcd46885a25ece503d1082706ebe683fa2dba8ab47e",
+        "copyright": "Noto Emoji contributors",
+        "image_license": "Apache-2.0 according to publisher README image-resource section",
+        "source_license_statement_sha256": "1ae0343308fe8c7e6e679cd12688df7586aa87df286be19d8bb2969b8abcac64"
+      },
+      {
+        "case": "robot-face",
+        "url": "https://raw.githubusercontent.com/googlefonts/noto-emoji/99701e07d3d1fe1bdbcdb14964547f0fd592966f/2D/png/512/emoji_u1f916.png",
+        "sha256": "98f6f4bdbd98d55100c0c379a25a70f63d347fb869e8e55d6f7b6bb8c1b1bc3b",
+        "copyright": "Noto Emoji contributors",
+        "image_license": "Apache-2.0 according to publisher README image-resource section",
+        "source_license_statement_sha256": "1ae0343308fe8c7e6e679cd12688df7586aa87df286be19d8bb2969b8abcac64"
+      },
+      {
+        "case": "dog-face",
+        "url": "https://raw.githubusercontent.com/googlefonts/noto-emoji/99701e07d3d1fe1bdbcdb14964547f0fd592966f/2D/png/512/emoji_u1f436.png",
+        "sha256": "3bedccab42abb94e34896bed1f855315b315a9c3f001a409673167dbcca06424",
+        "copyright": "Noto Emoji contributors",
+        "image_license": "Apache-2.0 according to publisher README image-resource section",
+        "source_license_statement_sha256": "1ae0343308fe8c7e6e679cd12688df7586aa87df286be19d8bb2969b8abcac64"
+      }
+    ]
+  },
+  "raw_results": [
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "head",
+      "maximum_raw_pixel_probability": 0.9001594185829163,
+      "max_probability": 0.9001594185829163,
+      "mean_probability": 0.0702352449297905,
+      "pixels_above_half": 17028
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "eyes",
+      "maximum_raw_pixel_probability": 0.19562551379203796,
+      "max_probability": 0.19562551379203796,
+      "mean_probability": 0.007193060591816902,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "mouth",
+      "maximum_raw_pixel_probability": 0.18733879923820496,
+      "max_probability": 0.18733879923820496,
+      "mean_probability": 0.012162866070866585,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "hands",
+      "maximum_raw_pixel_probability": 0.6111525893211365,
+      "max_probability": 0.6111525893211365,
+      "mean_probability": 0.0789487436413765,
+      "pixels_above_half": 5738
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "feet",
+      "maximum_raw_pixel_probability": 0.20803390443325043,
+      "max_probability": 0.20803390443325043,
+      "mean_probability": 0.015400133095681667,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "torso",
+      "maximum_raw_pixel_probability": 0.4025023281574249,
+      "max_probability": 0.4025023281574249,
+      "mean_probability": 0.04210766404867172,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "ears",
+      "maximum_raw_pixel_probability": 0.510775625705719,
+      "max_probability": 0.510775625705719,
+      "mean_probability": 0.008457285352051258,
+      "pixels_above_half": 16
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "tail",
+      "maximum_raw_pixel_probability": 0.15308594703674316,
+      "max_probability": 0.15308594703674316,
+      "mean_probability": 0.01150866225361824,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "wings",
+      "maximum_raw_pixel_probability": 0.41818371415138245,
+      "max_probability": 0.41818371415138245,
+      "mean_probability": 0.023409193381667137,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "horns",
+      "maximum_raw_pixel_probability": 0.06518344581127167,
+      "max_probability": 0.06518344581127167,
+      "mean_probability": 0.011269102804362774,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "wheels",
+      "maximum_raw_pixel_probability": 0.2080705612897873,
+      "max_probability": 0.2080705612897873,
+      "mean_probability": 0.037769705057144165,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "scarf",
+      "maximum_raw_pixel_probability": 0.7922471761703491,
+      "max_probability": 0.7922471761703491,
+      "mean_probability": 0.06458822637796402,
+      "pixels_above_half": 17095
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "helmet",
+      "maximum_raw_pixel_probability": 0.7723351120948792,
+      "max_probability": 0.7723351120948792,
+      "mean_probability": 0.09868250787258148,
+      "pixels_above_half": 24085
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "vest",
+      "maximum_raw_pixel_probability": 0.8876062035560608,
+      "max_probability": 0.8876062035560608,
+      "mean_probability": 0.21730618178844452,
+      "pixels_above_half": 60969
+    },
+    {
+      "case": "human",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "examples/decomposition/analysis/astronaut.png",
+      "prompt": "antenna",
+      "maximum_raw_pixel_probability": 0.3074743449687958,
+      "max_probability": 0.3074743449687958,
+      "mean_probability": 0.034617047756910324,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "head",
+      "maximum_raw_pixel_probability": 0.7538090944290161,
+      "max_probability": 0.7538090944290161,
+      "mean_probability": 0.19700364768505096,
+      "pixels_above_half": 68448
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "eyes",
+      "maximum_raw_pixel_probability": 0.8374878168106079,
+      "max_probability": 0.8374878168106079,
+      "mean_probability": 0.007353001739829779,
+      "pixels_above_half": 1257
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "mouth",
+      "maximum_raw_pixel_probability": 0.25800758600234985,
+      "max_probability": 0.25800758600234985,
+      "mean_probability": 0.010392341762781143,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "hands",
+      "maximum_raw_pixel_probability": 0.28731945157051086,
+      "max_probability": 0.28731945157051086,
+      "mean_probability": 0.02509646862745285,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "feet",
+      "maximum_raw_pixel_probability": 0.8231588006019592,
+      "max_probability": 0.8231588006019592,
+      "mean_probability": 0.04106302186846733,
+      "pixels_above_half": 8482
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "torso",
+      "maximum_raw_pixel_probability": 0.7136199474334717,
+      "max_probability": 0.7136199474334717,
+      "mean_probability": 0.09778893738985062,
+      "pixels_above_half": 17348
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "ears",
+      "maximum_raw_pixel_probability": 0.8963099718093872,
+      "max_probability": 0.8963099718093872,
+      "mean_probability": 0.06687919050455093,
+      "pixels_above_half": 16608
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "tail",
+      "maximum_raw_pixel_probability": 0.43262341618537903,
+      "max_probability": 0.43262341618537903,
+      "mean_probability": 0.06149081885814667,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "wings",
+      "maximum_raw_pixel_probability": 0.26008665561676025,
+      "max_probability": 0.26008665561676025,
+      "mean_probability": 0.00821984838694334,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "horns",
+      "maximum_raw_pixel_probability": 0.03878172114491463,
+      "max_probability": 0.03878172114491463,
+      "mean_probability": 0.002162228338420391,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "wheels",
+      "maximum_raw_pixel_probability": 0.003999499138444662,
+      "max_probability": 0.003999499138444662,
+      "mean_probability": 0.00021678657503798604,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "scarf",
+      "maximum_raw_pixel_probability": 0.9752687215805054,
+      "max_probability": 0.9752687215805054,
+      "mean_probability": 0.046659257262945175,
+      "pixels_above_half": 11385
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "helmet",
+      "maximum_raw_pixel_probability": 0.550762951374054,
+      "max_probability": 0.550762951374054,
+      "mean_probability": 0.1003604456782341,
+      "pixels_above_half": 3458
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "vest",
+      "maximum_raw_pixel_probability": 0.11499292403459549,
+      "max_probability": 0.11499292403459549,
+      "mean_probability": 0.011515150777995586,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "milo",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/foreground-evidence/milo-front-cropped.png",
+      "prompt": "antenna",
+      "maximum_raw_pixel_probability": 0.18435266613960266,
+      "max_probability": 0.18435266613960266,
+      "mean_probability": 0.0022600821685045958,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "head",
+      "maximum_raw_pixel_probability": 0.8634873032569885,
+      "max_probability": 0.8634873032569885,
+      "mean_probability": 0.0916644036769867,
+      "pixels_above_half": 26441
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "eyes",
+      "maximum_raw_pixel_probability": 0.3508477210998535,
+      "max_probability": 0.3508477210998535,
+      "mean_probability": 0.0071098776534199715,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "mouth",
+      "maximum_raw_pixel_probability": 0.7556014060974121,
+      "max_probability": 0.7556014060974121,
+      "mean_probability": 0.012604275718331337,
+      "pixels_above_half": 1399
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "hands",
+      "maximum_raw_pixel_probability": 0.2563193440437317,
+      "max_probability": 0.2477501481771469,
+      "mean_probability": 0.011412585154175758,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "feet",
+      "maximum_raw_pixel_probability": 0.059350356459617615,
+      "max_probability": 0.05909081548452377,
+      "mean_probability": 0.0037655693013221025,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "torso",
+      "maximum_raw_pixel_probability": 0.45514628291130066,
+      "max_probability": 0.45514628291130066,
+      "mean_probability": 0.042618557810783386,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "ears",
+      "maximum_raw_pixel_probability": 0.3876286447048187,
+      "max_probability": 0.3876286447048187,
+      "mean_probability": 0.01364646852016449,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "tail",
+      "maximum_raw_pixel_probability": 0.6279574036598206,
+      "max_probability": 0.6279574036598206,
+      "mean_probability": 0.07882039248943329,
+      "pixels_above_half": 5185
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "wings",
+      "maximum_raw_pixel_probability": 0.5191916823387146,
+      "max_probability": 0.5191916823387146,
+      "mean_probability": 0.07648187130689621,
+      "pixels_above_half": 10
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "horns",
+      "maximum_raw_pixel_probability": 0.4128108024597168,
+      "max_probability": 0.4128108024597168,
+      "mean_probability": 0.013448810204863548,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "wheels",
+      "maximum_raw_pixel_probability": 0.06600508093833923,
+      "max_probability": 0.06600508093833923,
+      "mean_probability": 0.012258934788405895,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "scarf",
+      "maximum_raw_pixel_probability": 0.1594480276107788,
+      "max_probability": 0.1594480276107788,
+      "mean_probability": 0.010469681583344936,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "helmet",
+      "maximum_raw_pixel_probability": 0.7370619773864746,
+      "max_probability": 0.7370619773864746,
+      "mean_probability": 0.04521679878234863,
+      "pixels_above_half": 5936
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "vest",
+      "maximum_raw_pixel_probability": 0.16525350511074066,
+      "max_probability": 0.16525350511074066,
+      "mean_probability": 0.016290271654725075,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dragon",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dragon.png",
+      "prompt": "antenna",
+      "maximum_raw_pixel_probability": 0.22561462223529816,
+      "max_probability": 0.22561462223529816,
+      "mean_probability": 0.015645427629351616,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "head",
+      "maximum_raw_pixel_probability": 0.7821668386459351,
+      "max_probability": 0.7821668386459351,
+      "mean_probability": 0.33448657393455505,
+      "pixels_above_half": 113171
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "eyes",
+      "maximum_raw_pixel_probability": 0.5099442601203918,
+      "max_probability": 0.5099442601203918,
+      "mean_probability": 0.019299887120723724,
+      "pixels_above_half": 12
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "mouth",
+      "maximum_raw_pixel_probability": 0.1901727169752121,
+      "max_probability": 0.1901727169752121,
+      "mean_probability": 0.028512874618172646,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "hands",
+      "maximum_raw_pixel_probability": 0.03241710737347603,
+      "max_probability": 0.03241710737347603,
+      "mean_probability": 0.007013299036771059,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "feet",
+      "maximum_raw_pixel_probability": 0.0054416353814303875,
+      "max_probability": 0.0054416353814303875,
+      "mean_probability": 0.000470932136522606,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "torso",
+      "maximum_raw_pixel_probability": 0.46575474739074707,
+      "max_probability": 0.46575474739074707,
+      "mean_probability": 0.08868389576673508,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "ears",
+      "maximum_raw_pixel_probability": 0.2869893014431,
+      "max_probability": 0.2869893014431,
+      "mean_probability": 0.03751811757683754,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "tail",
+      "maximum_raw_pixel_probability": 0.0293210931122303,
+      "max_probability": 0.0293210931122303,
+      "mean_probability": 0.005976825021207333,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "wings",
+      "maximum_raw_pixel_probability": 0.03292296081781387,
+      "max_probability": 0.03292296081781387,
+      "mean_probability": 0.00341921579092741,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "horns",
+      "maximum_raw_pixel_probability": 0.0184840876609087,
+      "max_probability": 0.0184840876609087,
+      "mean_probability": 0.0018800668185576797,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "wheels",
+      "maximum_raw_pixel_probability": 0.022147180512547493,
+      "max_probability": 0.022147180512547493,
+      "mean_probability": 0.003031378611922264,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "scarf",
+      "maximum_raw_pixel_probability": 0.01892961747944355,
+      "max_probability": 0.01892961747944355,
+      "mean_probability": 0.0024543774779886007,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "helmet",
+      "maximum_raw_pixel_probability": 0.17710858583450317,
+      "max_probability": 0.17710858583450317,
+      "mean_probability": 0.026898786425590515,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "vest",
+      "maximum_raw_pixel_probability": 0.03818511962890625,
+      "max_probability": 0.03818511962890625,
+      "mean_probability": 0.01005589123815298,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "robot-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-robot-face.png",
+      "prompt": "antenna",
+      "maximum_raw_pixel_probability": 0.7720170617103577,
+      "max_probability": 0.7720170617103577,
+      "mean_probability": 0.06602514535188675,
+      "pixels_above_half": 2683
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "head",
+      "maximum_raw_pixel_probability": 0.8581492304801941,
+      "max_probability": 0.8581492304801941,
+      "mean_probability": 0.4138212502002716,
+      "pixels_above_half": 139529
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "eyes",
+      "maximum_raw_pixel_probability": 0.4127253592014313,
+      "max_probability": 0.4127253592014313,
+      "mean_probability": 0.015892790630459785,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "mouth",
+      "maximum_raw_pixel_probability": 0.7802621722221375,
+      "max_probability": 0.7802621722221375,
+      "mean_probability": 0.02756628580391407,
+      "pixels_above_half": 2788
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "hands",
+      "maximum_raw_pixel_probability": 0.022015031427145004,
+      "max_probability": 0.022015031427145004,
+      "mean_probability": 0.0029272481333464384,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "feet",
+      "maximum_raw_pixel_probability": 0.0021430819761008024,
+      "max_probability": 0.0021430819761008024,
+      "mean_probability": 0.0003376317326910794,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "torso",
+      "maximum_raw_pixel_probability": 0.7235342264175415,
+      "max_probability": 0.7235342264175415,
+      "mean_probability": 0.0364951454102993,
+      "pixels_above_half": 2686
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "ears",
+      "maximum_raw_pixel_probability": 0.8877372145652771,
+      "max_probability": 0.8877372145652771,
+      "mean_probability": 0.1440896987915039,
+      "pixels_above_half": 40416
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "tail",
+      "maximum_raw_pixel_probability": 0.7870458960533142,
+      "max_probability": 0.7870458960533142,
+      "mean_probability": 0.11192645877599716,
+      "pixels_above_half": 30739
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "wings",
+      "maximum_raw_pixel_probability": 0.08688881248235703,
+      "max_probability": 0.08688881248235703,
+      "mean_probability": 0.018537119030952454,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "horns",
+      "maximum_raw_pixel_probability": 0.5510578751564026,
+      "max_probability": 0.5510578751564026,
+      "mean_probability": 0.07584968209266663,
+      "pixels_above_half": 391
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "wheels",
+      "maximum_raw_pixel_probability": 0.007307200226932764,
+      "max_probability": 0.007307200226932764,
+      "mean_probability": 0.0006926662754267454,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "scarf",
+      "maximum_raw_pixel_probability": 0.06512622535228729,
+      "max_probability": 0.06512622535228729,
+      "mean_probability": 0.00867350772023201,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "helmet",
+      "maximum_raw_pixel_probability": 0.859268069267273,
+      "max_probability": 0.859268069267273,
+      "mean_probability": 0.384429931640625,
+      "pixels_above_half": 134851
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "vest",
+      "maximum_raw_pixel_probability": 0.08477912843227386,
+      "max_probability": 0.08477912843227386,
+      "mean_probability": 0.008824152871966362,
+      "pixels_above_half": 0
+    },
+    {
+      "case": "dog-face",
+      "torch_threads": 1,
+      "torch_interop_threads": 1,
+      "source": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/sources/noto-dog-face.png",
+      "prompt": "antenna",
+      "maximum_raw_pixel_probability": 0.03947136178612709,
+      "max_probability": 0.03947136178612709,
+      "mean_probability": 0.010458317585289478,
+      "pixels_above_half": 0
+    }
+  ],
+  "mask_artifacts": [
+    {
+      "case": "human",
+      "query": "head",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/head.png",
+      "sha256": "60979b6adc6758da8668ae2764f466b3d73ffa5e6bb082e81dc464f1036300b1"
+    },
+    {
+      "case": "human",
+      "query": "eyes",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/eyes.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "human",
+      "query": "mouth",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/mouth.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "human",
+      "query": "hands",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/hands.png",
+      "sha256": "20a1274d6540c034113d94929276e82c4347454d06cd3c693e33b4e0f5e6e7c0"
+    },
+    {
+      "case": "human",
+      "query": "feet",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/feet.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "human",
+      "query": "torso",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/torso.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "human",
+      "query": "ears",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/ears.png",
+      "sha256": "2f653e4664d03434e954517af5cff5b005403191a5fb6aecf0b491756131574b"
+    },
+    {
+      "case": "human",
+      "query": "tail",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/tail.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "human",
+      "query": "wings",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/wings.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "human",
+      "query": "horns",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/horns.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "human",
+      "query": "wheels",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/wheels.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "human",
+      "query": "scarf",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/scarf.png",
+      "sha256": "cc3a06f472da76af3acc11be6e4ceadcc0037ce0543f3620aa6e5d2b0aedf404"
+    },
+    {
+      "case": "human",
+      "query": "helmet",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/helmet.png",
+      "sha256": "57775f6b29c1104eac1bdce72d00e058aa82262febcb47b084b897ffd1282b7e"
+    },
+    {
+      "case": "human",
+      "query": "vest",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/vest.png",
+      "sha256": "078707f80f1cf78846f44ebba6ee1381052d4226d779527357207b6cd34d52fc"
+    },
+    {
+      "case": "human",
+      "query": "antenna",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/human/antenna.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "milo",
+      "query": "head",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/head.png",
+      "sha256": "03f047cc08b13848c59d928b6c1a5973e2045e4d1fcd53f2570e80b1ad9f3991"
+    },
+    {
+      "case": "milo",
+      "query": "eyes",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/eyes.png",
+      "sha256": "5407f33d0f491f05705b83d89bec305c95f15261a1c16d1147029ab82c8692ce"
+    },
+    {
+      "case": "milo",
+      "query": "mouth",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/mouth.png",
+      "sha256": "9930392a798e81e127b91caf827effb90cf1cd6390f6f606fba3f3d50e359f57"
+    },
+    {
+      "case": "milo",
+      "query": "hands",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/hands.png",
+      "sha256": "9930392a798e81e127b91caf827effb90cf1cd6390f6f606fba3f3d50e359f57"
+    },
+    {
+      "case": "milo",
+      "query": "feet",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/feet.png",
+      "sha256": "7a2f30ea98727416cb9b4a330c08ab0f88dfb888473c7db23f176fdfcb6beafd"
+    },
+    {
+      "case": "milo",
+      "query": "torso",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/torso.png",
+      "sha256": "d56b4fcd15891db67f5fbded8829f802efad16f007035a306ee3e77bd0ab52ee"
+    },
+    {
+      "case": "milo",
+      "query": "ears",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/ears.png",
+      "sha256": "5348c76b29604a3a6fd825b8a75ffbb16da1422c7ce125d972aca16d022165c7"
+    },
+    {
+      "case": "milo",
+      "query": "tail",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/tail.png",
+      "sha256": "9930392a798e81e127b91caf827effb90cf1cd6390f6f606fba3f3d50e359f57"
+    },
+    {
+      "case": "milo",
+      "query": "wings",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/wings.png",
+      "sha256": "9930392a798e81e127b91caf827effb90cf1cd6390f6f606fba3f3d50e359f57"
+    },
+    {
+      "case": "milo",
+      "query": "horns",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/horns.png",
+      "sha256": "9930392a798e81e127b91caf827effb90cf1cd6390f6f606fba3f3d50e359f57"
+    },
+    {
+      "case": "milo",
+      "query": "wheels",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/wheels.png",
+      "sha256": "9930392a798e81e127b91caf827effb90cf1cd6390f6f606fba3f3d50e359f57"
+    },
+    {
+      "case": "milo",
+      "query": "scarf",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/scarf.png",
+      "sha256": "b9d625df18f5b685356a4bc913bea4b7259a08a5f08af3d6a74de618507476db"
+    },
+    {
+      "case": "milo",
+      "query": "helmet",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/helmet.png",
+      "sha256": "8a09ebae95838ad7fac7ec472b0f00625def065d09a30c68b92697c2500b68e0"
+    },
+    {
+      "case": "milo",
+      "query": "vest",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/vest.png",
+      "sha256": "9930392a798e81e127b91caf827effb90cf1cd6390f6f606fba3f3d50e359f57"
+    },
+    {
+      "case": "milo",
+      "query": "antenna",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/milo/antenna.png",
+      "sha256": "9930392a798e81e127b91caf827effb90cf1cd6390f6f606fba3f3d50e359f57"
+    },
+    {
+      "case": "dragon",
+      "query": "head",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/head.png",
+      "sha256": "d502ac83335bbfe1be37124325faacfeab23aa32a8f853b078fa07eb32abaac9"
+    },
+    {
+      "case": "dragon",
+      "query": "eyes",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/eyes.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dragon",
+      "query": "mouth",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/mouth.png",
+      "sha256": "3bc07fdc09731171e63189228bc3f87721b56d1cfe2db8ec3a7f0028368be057"
+    },
+    {
+      "case": "dragon",
+      "query": "hands",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/hands.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dragon",
+      "query": "feet",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/feet.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dragon",
+      "query": "torso",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/torso.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dragon",
+      "query": "ears",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/ears.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dragon",
+      "query": "tail",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/tail.png",
+      "sha256": "628492c97349f24dae026a16a7fa1a59d4a9907bc189e9edb584a5d4991d1ade"
+    },
+    {
+      "case": "dragon",
+      "query": "wings",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/wings.png",
+      "sha256": "f4151027312e19f6fd93de2ae2de645bc121ece0ba4b1278b2b059232e5559e0"
+    },
+    {
+      "case": "dragon",
+      "query": "horns",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/horns.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dragon",
+      "query": "wheels",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/wheels.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dragon",
+      "query": "scarf",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/scarf.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dragon",
+      "query": "helmet",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/helmet.png",
+      "sha256": "34be6461d73c7ebad0bed7e3e0cee9616319ceb24755e197779d4ba8a1a2f107"
+    },
+    {
+      "case": "dragon",
+      "query": "vest",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/vest.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dragon",
+      "query": "antenna",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dragon/antenna.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "head",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/head.png",
+      "sha256": "a9b031d8f74e8af97897e6bcb6c91dd15d7fceeaff4579869d5db6aaf77e9de7"
+    },
+    {
+      "case": "robot-face",
+      "query": "eyes",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/eyes.png",
+      "sha256": "0a60753142681004d43da6870ea6d1b841e5e9d83cf8b642016ea58668ecdae1"
+    },
+    {
+      "case": "robot-face",
+      "query": "mouth",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/mouth.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "hands",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/hands.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "feet",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/feet.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "torso",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/torso.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "ears",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/ears.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "tail",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/tail.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "wings",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/wings.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "horns",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/horns.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "wheels",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/wheels.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "scarf",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/scarf.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "helmet",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/helmet.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "vest",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/vest.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "robot-face",
+      "query": "antenna",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/robot-face/antenna.png",
+      "sha256": "813b2db4fe406274375a19168ea75a61c90bf73334c755dd00618674a93bdb53"
+    },
+    {
+      "case": "dog-face",
+      "query": "head",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/head.png",
+      "sha256": "53061d7c45734711e7f38d2fd1cccc69daa9d6c5ce6d904ed1628595fa28ce4b"
+    },
+    {
+      "case": "dog-face",
+      "query": "eyes",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/eyes.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dog-face",
+      "query": "mouth",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/mouth.png",
+      "sha256": "022ee5b4219befa0fe909bb92e705961ebfce0cdc5fdf21701e85130136e681e"
+    },
+    {
+      "case": "dog-face",
+      "query": "hands",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/hands.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dog-face",
+      "query": "feet",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/feet.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dog-face",
+      "query": "torso",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/torso.png",
+      "sha256": "7580030a189926817ce5fc864631f80fbf28dddac0f0e60eaa91e7dcccf77488"
+    },
+    {
+      "case": "dog-face",
+      "query": "ears",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/ears.png",
+      "sha256": "39f7f4e322b1425888c0f694a12a37973478e0920e906300b9ef6ed1fdfb3585"
+    },
+    {
+      "case": "dog-face",
+      "query": "tail",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/tail.png",
+      "sha256": "aa69c39f1336acfe2721a98234194768b797ecb93a86509228f2178c98af0bd9"
+    },
+    {
+      "case": "dog-face",
+      "query": "wings",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/wings.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dog-face",
+      "query": "horns",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/horns.png",
+      "sha256": "2c94879a34e723074780bcba9a4ecc5ab51deaa52976ace793cb81f0e5d81751"
+    },
+    {
+      "case": "dog-face",
+      "query": "wheels",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/wheels.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dog-face",
+      "query": "scarf",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/scarf.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dog-face",
+      "query": "helmet",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/helmet.png",
+      "sha256": "77ccb7fcb425befd6f67d031bd8bba7cacf5eef3a14433ab9944df8796fe0213"
+    },
+    {
+      "case": "dog-face",
+      "query": "vest",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/vest.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    },
+    {
+      "case": "dog-face",
+      "query": "antenna",
+      "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/dog-face/antenna.png",
+      "sha256": "ef2a4c8949cdab1ef24e678bdb88cc276b1fd75e62066e47011c2ce53996efe6"
+    }
+  ],
+  "inspection": {
+    "scope": "Owner actually viewed a30-overlay contact sheet; not independent semantic approval.",
+    "path": "/home/complete/.cache/hatch-coordination-20261112/parts226-evidence/inspection-contact-sheet.png",
+    "sha256": "e0c53350766430befe0ab28f9faa396ee264be7cc4216161fbad747e8e7b2556",
+    "findings": [
+      "Absent helmet queries color head regions on the dragon/dog; dog tail also colors ear/head regions.",
+      "Photographic human eyes/mouth and robot eyes/mouth are missed at the default gate.",
+      "Broad named-label threshold response counts do not establish correct mask shapes or source-faithful semantic boundaries."
+    ]
+  },
+  "limitations": [
+    "Visibility hypotheses are pending independent review; model-training overlap with these inputs is unknown.",
+    "Do not tune thresholds on these same cases and report them as held-out proof.",
+    "All raw scores, masks and false positives are retained; no accepted automatic anatomy capability follows."
+  ]
+}
