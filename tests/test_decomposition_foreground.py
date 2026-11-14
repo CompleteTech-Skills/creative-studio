@@ -96,6 +96,39 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(foreign.read_text(), 'untouched')
         self.assertEqual(list(moved.iterdir()), [])
 
+    def test_propose_publishes_valid_receipt_with_backend_provenance(self):
+        versions = {'torch': '2.10.0+cpu', 'torchvision': '0.25.0+cpu'}
+        destination = Path(self.temp.name) / 'published'
+        source = self.root / 'source/original.png'
+
+        def worker(command, **kwargs):
+            stage = Path(command[3])
+            self.assertIn(int(command[6]), kwargs['pass_fds'])
+            for relative in ('masks/candidate-1.png', 'masks/candidate-2.png',
+                             'masks/overlap.png', 'overlay.png'):
+                (stage / relative).write_bytes((self.root / relative).read_bytes())
+            output = {key: self.receipt[key] for key in ('candidates', 'overlap', 'overlay')}
+            output['runtime'] = {'torch_threads': 1, 'torch_interop_threads': 1}
+            fg.atomic_json(stage / 'output.json', output)
+            return fg.subprocess.CompletedProcess(command, 0)
+
+        with patch.object(fg, 'capabilities', return_value={'available': True, 'versions': versions}), \
+             patch.object(fg, '_weight', return_value=Path('unused')), \
+             patch.object(fg.subprocess, 'run', side_effect=worker):
+            receipt = fg.propose(source, destination, weights='unused', enabled=True,
+                                 origin='Synthetic source', fixture=True)
+
+        self.assertEqual(fg.load(destination), receipt)
+        self.assertEqual({name: receipt['backend'][name] for name in versions}, versions)
+        self.assertEqual(receipt['backend']['weights_sha256'], fg.MODEL_SHA256)
+        self.assertEqual(receipt['source']['origin'], 'Synthetic source')
+        self.assertTrue(receipt['source']['fixture'])
+        self.assertEqual(receipt['source']['asset']['sha256'], sha(source))
+        self.assertEqual((destination / receipt['source']['asset']['path']).read_bytes(), source.read_bytes())
+        self.assertEqual(receipt['runtime'], {'torch_threads': 1, 'torch_interop_threads': 1})
+        self.assertEqual(len(receipt['candidates']), 2)
+        self.assertEqual(receipt['review_status'], 'pending')
+
     def test_selection_namespace_replacement_preserves_foreign_tree(self):
         real_create = fg.create_decomposition
         moved = Path(self.temp.name) / 'moved-wrapper'

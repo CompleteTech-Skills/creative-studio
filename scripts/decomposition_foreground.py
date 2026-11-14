@@ -234,9 +234,9 @@ def propose(source, destination, *, weights, enabled=False, origin, fixture=Fals
         raise ValueError('runtime limit must be an integer between 1 and 300 seconds')
     if type(fixture) is not bool or not isinstance(origin, str) or not origin.strip():
         raise ValueError('provide source attribution and an explicit fixture boolean')
-    capability = capabilities(weights)
-    if not capability['available']:
-        raise ValueError('foreground backend unavailable: ' + '; '.join(capability['unavailable_reasons']))
+    backend_capability = capabilities(weights)
+    if not backend_capability['available']:
+        raise ValueError('foreground backend unavailable: ' + '; '.join(backend_capability['unavailable_reasons']))
     weights = _weight(weights)
     source = Path(source).expanduser().resolve()
     width, height = _verified_image(source).size
@@ -268,7 +268,7 @@ def propose(source, destination, *, weights, enabled=False, origin, fixture=Fals
             output = read_json(stage / 'output.json')
             receipt = {'schema_version': 1, 'kind': 'foreground-proposals', 'source': source_record,
                 'backend': {'name': 'torchvision-maskrcnn-coco-v1', 'weights_sha256': MODEL_SHA256,
-                    'execution': 'local', **capability['versions']},
+                    'execution': 'local', **backend_capability['versions']},
                 'parameters': {'score_threshold': score_threshold, 'mask_threshold': .5, 'threads': 1, 'max_seconds': max_seconds, 'max_pixels': MAX_PIXELS},
                 'elapsed_seconds': time.monotonic()-started, **output,
                 'uncertainty': ['Object classes are model proposals, not semantic review or anatomy.',
