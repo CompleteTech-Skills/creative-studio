@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "kind": "render3d-verification",
+  "status": "passed",
+  "verifier": {
+    "id": "render3d-independent-pixels",
+    "version": "1.0.0",
+    "code_sha256": "0903f4ff8555d08e0851d082724944cfd1eade62cf94a487d2fb989595246097",
+    "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+  },
+  "request_sha256": "ad6b5d122a001836b5c5f79ec384660b809a0a9d069f66902daf5a401fe38d39",
+  "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+  "settings_sha256": "b64f321be0806b4680990f0a0aaf3600ae3bed1e2e74406c9c6d3b4582635014",
+  "backend": {
+    "id": "blender",
+    "adapter_version": "1.0.0",
+    "application_version": "Blender 4.5.3 LTS",
+    "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+    "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+    "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+    "engine": "cycles",
+    "device": "cpu"
+  },
+  "images": [
+    {
+      "frame": 0,
+      "path": "frames/000000.png",
+      "presentation_time": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "source_time": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "bytes": 1262,
+      "sha256": "2710ad3e096f0887585e20b943d9721a47089bf76944208a06c03cfd66c0ff10",
+      "channels": {
+        "R": {
+          "type": "uint16",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "G": {
+          "type": "uint16",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "B": {
+          "type": "uint16",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "A": {
+          "type": "uint16",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      },
+      "decoder": "pypng",
+      "decoder_version": "0.20220715.0",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 16,
+      "format": "png",
+      "pass_name": "combined",
+      "requested_color_space": "srgb",
+      "requested_alpha": "straight"
+    }
+  ],
+  "decoded_frames": 1,
+  "decoded_images": 1,
+  "output_bytes": 1262,
+  "limitation": "Decoded integrity and input binding do not establish semantic scene correctness or visual approval."
+}

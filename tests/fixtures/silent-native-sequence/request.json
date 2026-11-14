@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "kind": "render3d-request",
+  "id": "backend-recovery",
+  "project": {
+    "id": "fixture",
+    "version": "1.0.0"
+  },
+  "scene": {
+    "id": "fixture",
+    "version": "1.0.0"
+  },
+  "shot": {
+    "id": "motion",
+    "version": "1.0.0"
+  },
+  "mode": "3d",
+  "snapshot": {
+    "path": "snapshot.json",
+    "bytes": 1733,
+    "sha256": "20e172024463cc2ed4fcccfdd1e7a218c4330b099e36481cc13d1dff5721dde4"
+  },
+  "fps": {
+    "numerator": 4,
+    "denominator": 1
+  },
+  "frame_range": {
+    "start": 0,
+    "end": 3
+  },
+  "source_start": {
+    "numerator": 0,
+    "denominator": 1
+  },
+  "playback_rate": {
+    "numerator": 1,
+    "denominator": 1
+  },
+  "camera": "front",
+  "priority": 0,
+  "max_attempts": 1,
+  "cache_policy": "verify-reuse",
+  "destination": {
+    "path": "render",
+    "owner_token": "backend-recovery-owner"
+  },
+  "settings": {
+    "engine": "cycles",
+    "device_policy": "cpu",
+    "device": "cpu",
+    "allow_cpu_fallback": false,
+    "resolution": [
+      64,
+      64
+    ],
+    "samples": 2,
+    "seed": 4,
+    "denoise": false,
+    "output": {
+      "format": "png",
+      "bit_depth": 8,
+      "passes": [
+        "combined"
+      ],
+      "alpha": "straight",
+      "color_space": "srgb"
+    },
+    "exposure": 0,
+    "view_transform": "standard",
+    "resources": {
+      "memory_bytes": 2147483648,
+      "storage_bytes": 134217728,
+      "timeout_seconds": 120,
+      "workers": 1,
+      "max_frames": 10
+    }
+  }
+}

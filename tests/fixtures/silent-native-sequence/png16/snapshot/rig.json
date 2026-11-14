@@ -1,0 +1,298 @@
+{
+  "schema_version": 1,
+  "kind": "hatch-3d-rig",
+  "id": "fixture",
+  "version": "1.0.2",
+  "revision": 2,
+  "character": {
+    "schema_version": 1,
+    "id": "fixture",
+    "version": "1.0.0",
+    "identity_sha256": "59fff471d947d1823236016b81c771f610bacf6638c495fbddcee8ace16a2ce2"
+  },
+  "source": {
+    "schema_version": 1,
+    "path": "source/fixture.glb",
+    "sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e",
+    "origin": "procedural-fixture",
+    "fixture": true,
+    "attribution": "User-supplied model; see original source files.",
+    "dependencies": [
+      {
+        "path": "source/fixture.glb",
+        "sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e"
+      }
+    ]
+  },
+  "coordinate_system": {
+    "handedness": "right",
+    "right": "+X",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "angles": "radian",
+    "quaternion": "XYZW",
+    "matrices": "column-vectors",
+    "time": "second"
+  },
+  "archetype": "custom",
+  "geometry": {
+    "schema_version": 1,
+    "version": "1.0.0",
+    "data": {
+      "path": "geometry/f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a.npz",
+      "sha256": "f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a"
+    },
+    "meshes": [
+      "strip"
+    ],
+    "vertices": 4,
+    "triangles": 2
+  },
+  "skeleton": {
+    "schema_version": 1,
+    "id": "skeleton",
+    "version": "1.0.0",
+    "root": "b0",
+    "bones": [
+      {
+        "schema_version": 1,
+        "id": "b0",
+        "role": "joint-0",
+        "parent": null,
+        "rest": {
+          "translation": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "head": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tail": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "length": 1.0,
+        "roll": 0.0,
+        "deform": true,
+        "mirror": null,
+        "evidence": {
+          "source": "procedural-fixture",
+          "reference": "Independent unit chain",
+          "confidence": 1.0
+        }
+      },
+      {
+        "schema_version": 1,
+        "id": "b1",
+        "role": "joint-1",
+        "parent": "b0",
+        "rest": {
+          "translation": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "head": [
+          0.0,
+          1.0,
+          0.0
+        ],
+        "tail": [
+          0.0,
+          2.0,
+          0.0
+        ],
+        "length": 1.0,
+        "roll": 0.0,
+        "deform": true,
+        "mirror": null,
+        "evidence": {
+          "source": "procedural-fixture",
+          "reference": "Independent unit chain",
+          "confidence": 1.0
+        }
+      },
+      {
+        "schema_version": 1,
+        "id": "b2",
+        "role": "joint-2",
+        "parent": "b1",
+        "rest": {
+          "translation": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "rotation": [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "head": [
+          0.0,
+          2.0,
+          0.0
+        ],
+        "tail": [
+          0.0,
+          3.0,
+          0.0
+        ],
+        "length": 1.0,
+        "roll": 0.0,
+        "deform": true,
+        "mirror": null,
+        "evidence": {
+          "source": "procedural-fixture",
+          "reference": "Independent unit chain",
+          "confidence": 1.0
+        }
+      }
+    ]
+  },
+  "skins": [
+    {
+      "schema_version": 1,
+      "id": "strip-skin",
+      "version": "1.0.2",
+      "mesh": "strip",
+      "joints": [
+        "b0",
+        "b1",
+        "b2"
+      ],
+      "data": {
+        "path": "rig/weights/aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66.npz",
+        "sha256": "aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66"
+      },
+      "method": "diffusion",
+      "locked_vertices": [],
+      "fallback_reason": null
+    }
+  ],
+  "controllers": {
+    "ik": [
+      {
+        "schema_version": 1,
+        "id": "arm",
+        "bones": [
+          "b0",
+          "b1",
+          "b2"
+        ],
+        "solver": "two-bone",
+        "pole": [
+          0,
+          0,
+          1
+        ],
+        "tolerance": 1e-06,
+        "iterations": 32
+      }
+    ],
+    "constraints": []
+  },
+  "facial": {
+    "schema_version": 1,
+    "eyes": [],
+    "morph_targets": {
+      "strip": [
+        "blink"
+      ]
+    },
+    "expressions": {
+      "blink": {
+        "schema_version": 1,
+        "morphs": {
+          "blink": 1.0
+        },
+        "bones": {},
+        "incompatible": []
+      }
+    }
+  },
+  "attachments": [],
+  "animations": [
+    {
+      "id": "bend",
+      "version": "1.0.0",
+      "path": "animations/bend-49de809d5e4e1c0d376c73fdcaa4df352c00a66a24d684979dc55d8b50bc7628.json",
+      "sha256": "92a48e8fd7b2d6fa52d88f22963a42e32e08ef199c985e09bd7cab3957fdf672"
+    }
+  ],
+  "state_mapping": {},
+  "uncertainties": [],
+  "provenance": {
+    "schema_version": 1,
+    "tool_version": "1.0.0",
+    "operation": "render-backend-recovery",
+    "created_at": "2026-11-13T06:24:22Z",
+    "input_hashes": {
+      "previous": "714f7940c143bb69c627e5e1308cd652d2cc8e0950619e769b21ed1fac5d6f9f"
+    },
+    "ancestry": [
+      "96f39eeb1d4c498e409b0d412516dd28f5282b20705eb5766fc451b63e2b0d2f",
+      "714f7940c143bb69c627e5e1308cd652d2cc8e0950619e769b21ed1fac5d6f9f"
+    ]
+  },
+  "limits": {
+    "source_bytes": 268435456,
+    "dependency_bytes": 1073741824,
+    "vertices": 1000000,
+    "triangles": 2000000,
+    "bones": 256,
+    "influences": 4,
+    "morphs": 128,
+    "clips": 64,
+    "keyframes": 250000,
+    "duration": 120,
+    "fps": 60,
+    "memory_bytes": 2147483648,
+    "solver_iterations": 128,
+    "timeout_seconds": 300,
+    "archive_files": 10000,
+    "archive_bytes": 1073741824,
+    "attempts": 3
+  },
+  "review": {
+    "status": "pending",
+    "receipts": []
+  },
+  "validation": []
+}

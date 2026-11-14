@@ -1,0 +1,60 @@
+test_batch_duplicate_destination_rejected (test_silent_jobs_linux.JobFixtures.test_batch_duplicate_destination_rejected) ... ok
+test_changed_controller_or_encoder_identity_requires_new_job (test_silent_jobs_linux.JobFixtures.test_changed_controller_or_encoder_identity_requires_new_job) ... ok
+test_changed_request_or_state_never_reuses_identity (test_silent_jobs_linux.JobFixtures.test_changed_request_or_state_never_reuses_identity) ... ok
+test_create_strict_identity_and_checkpoint (test_silent_jobs_linux.JobFixtures.test_create_strict_identity_and_checkpoint) ... ok
+test_duplicate_job_owner_and_destination_no_overwrite (test_silent_jobs_linux.JobFixtures.test_duplicate_job_owner_and_destination_no_overwrite) ... ok
+test_exact_cache_reuse_and_stale_or_corrupt_rejection (test_silent_jobs_linux.JobFixtures.test_exact_cache_reuse_and_stale_or_corrupt_rejection) ... ok
+test_extreme_request_and_budget_numbers_fail_before_creation (test_silent_jobs_linux.JobFixtures.test_extreme_request_and_budget_numbers_fail_before_creation) ... ok
+test_foreign_root_and_unowned_partial_are_preserved (test_silent_jobs_linux.JobFixtures.test_foreign_root_and_unowned_partial_are_preserved) ... ok
+test_hidden_worker_cannot_signal_an_unowned_process_group (test_silent_jobs_linux.JobFixtures.test_hidden_worker_cannot_signal_an_unowned_process_group) ... ok
+test_invalid_resource_and_no_disk_admission (test_silent_jobs_linux.JobFixtures.test_invalid_resource_and_no_disk_admission) ... ok
+test_lost_active_owner_becomes_interrupted_without_dispatch (test_silent_jobs_linux.JobFixtures.test_lost_active_owner_becomes_interrupted_without_dispatch) ... ok
+test_malformed_checkpoint_references_fail_before_artifact_access (test_silent_jobs_linux.JobFixtures.test_malformed_checkpoint_references_fail_before_artifact_access) ... ok
+test_stale_original_before_snapshot_fails_without_final_output (test_silent_jobs_linux.JobFixtures.test_stale_original_before_snapshot_fails_without_final_output) ... ok
+test_storage_measurement_tolerates_owned_checkpoint_rename_only (test_silent_jobs_linux.JobFixtures.test_storage_measurement_tolerates_owned_checkpoint_rename_only) ... ok
+test_unsafe_job_records_and_cancel_fifo_fail_without_blocking (test_silent_jobs_linux.JobFixtures.test_unsafe_job_records_and_cancel_fifo_fail_without_blocking) ... ok
+test_actual_delivery_survives_crash_before_checkpoint_ack (test_silent_jobs_media.ActualMediaJobs.test_actual_delivery_survives_crash_before_checkpoint_ack) ... ok
+test_actual_encode_survives_crash_before_finalization (test_silent_jobs_media.ActualMediaJobs.test_actual_encode_survives_crash_before_finalization) ... ok
+test_cancel_after_actual_encoder_progress_then_retry (test_silent_jobs_media.ActualMediaJobs.test_cancel_after_actual_encoder_progress_then_retry) ... ok
+test_encoding_interruption_restarts_complete_attempt (test_silent_jobs_media.ActualMediaJobs.test_encoding_interruption_restarts_complete_attempt) ... ok
+test_independent_probe_interruption_restarts_complete_attempt (test_silent_jobs_media.ActualMediaJobs.test_independent_probe_interruption_restarts_complete_attempt) ... ok
+test_mixed_video_sequence_batch_reuses_exact_source_pngs (test_silent_jobs_media.ActualMediaJobs.test_mixed_video_sequence_batch_reuses_exact_source_pngs) ... ok
+test_parent_death_stops_owned_worker_and_actual_ffmpeg (test_silent_jobs_media.ActualMediaJobs.test_parent_death_stops_owned_worker_and_actual_ffmpeg) ... ok
+test_preflight_interruption_resumes (test_silent_jobs_media.ActualMediaJobs.test_preflight_interruption_resumes) ... ok
+test_preparation_interrupt_cancellation_retry_and_cache_reuse (test_silent_jobs_media.ActualMediaJobs.test_preparation_interrupt_cancellation_retry_and_cache_reuse) ... ok
+test_real_job_complete_and_portable_receipt (test_silent_jobs_media.ActualMediaJobs.test_real_job_complete_and_portable_receipt) ... ok
+test_real_sequential_mp4_webm_batch_and_no_repeat (test_silent_jobs_media.ActualMediaJobs.test_real_sequential_mp4_webm_batch_and_no_repeat) ... ok
+test_status_observes_completion_after_lock_acquisition (test_silent_jobs_media.ActualMediaJobs.test_status_observes_completion_after_lock_acquisition) ... ok
+test_actual_publication_recovers_after_lost_checkpoint_ack (test_silent_native_sequence_jobs_actual.ActualNativeSequenceJobs.test_actual_publication_recovers_after_lost_checkpoint_ack) ... ok
+test_cancel_and_retry_preserve_verified_native_cache_bytes (test_silent_native_sequence_jobs_actual.ActualNativeSequenceJobs.test_cancel_and_retry_preserve_verified_native_cache_bytes) ... ok
+test_cancellation_during_private_finalization_prevents_publication (test_silent_native_sequence_jobs_actual.ActualNativeSequenceJobs.test_cancellation_during_private_finalization_prevents_publication) ... ok
+test_native_geometry_closure_and_actual_frame_bytes_in_outer_delivery (test_silent_native_sequence_jobs_actual.ActualNativeSequenceJobs.test_native_geometry_closure_and_actual_frame_bytes_in_outer_delivery) ... ok
+test_native_snapshot_tampering_invalidates_execution_before_publication (test_silent_native_sequence_jobs_actual.ActualNativeSequenceJobs.test_native_snapshot_tampering_invalidates_execution_before_publication) ... ok
+test_publication_wrapper_substitution_preserves_foreign_and_verified_output (test_silent_native_sequence_jobs_actual.ActualNativeSequenceJobs.test_publication_wrapper_substitution_preserves_foreign_and_verified_output) ... ok
+test_renamed_job_directory_keeps_owned_fd_and_preserves_foreign_replacement (test_silent_native_sequence_jobs_actual.ActualNativeSequenceJobs.test_renamed_job_directory_keeps_owned_fd_and_preserves_foreign_replacement) ... ok
+test_status_reads_checkpoint_after_lock_acquisition (test_silent_native_sequence_jobs_actual.ActualNativeSequenceJobs.test_status_reads_checkpoint_after_lock_acquisition) ... ok
+test_active_owner_and_corrupt_completed_output (test_silent_sequence_jobs_native.ActualSequenceJobs.test_active_owner_and_corrupt_completed_output) ... ok
+test_actual_batch_and_complete_hash_inventory (test_silent_sequence_jobs_native.ActualSequenceJobs.test_actual_batch_and_complete_hash_inventory) ... ok
+test_actual_cancellation_retains_cache_and_retry_reuses_exact_bytes (test_silent_sequence_jobs_native.ActualSequenceJobs.test_actual_cancellation_retains_cache_and_retry_reuses_exact_bytes) ... ok
+test_bootstrap_partial_plan_recovers_without_adapter_preinspection (test_silent_sequence_jobs_native.ActualSequenceJobs.test_bootstrap_partial_plan_recovers_without_adapter_preinspection) ... FAIL
+test_declared_memory_and_storage_budgets_fail_before_job_creation (test_silent_sequence_jobs_native.ActualSequenceJobs.test_declared_memory_and_storage_budgets_fail_before_job_creation) ... ok
+test_retained_png16_exr_half_and_float_batches_preserve_precision (test_silent_sequence_jobs_native.ActualSequenceJobs.test_retained_png16_exr_half_and_float_batches_preserve_precision) ... ok
+test_retry_delegates_owned_partial_recovery_to_canonical_exporter (test_silent_sequence_jobs_native.ActualSequenceJobs.test_retry_delegates_owned_partial_recovery_to_canonical_exporter) ... ok
+test_source_and_implementation_mismatch_preserve_outputs (test_silent_sequence_jobs_native.ActualSequenceJobs.test_source_and_implementation_mismatch_preserve_outputs) ... ok
+test_status_observes_completion_after_lock_acquisition (test_silent_sequence_jobs_native.ActualSequenceJobs.test_status_observes_completion_after_lock_acquisition) ... ok
+
+======================================================================
+FAIL: test_bootstrap_partial_plan_recovers_without_adapter_preinspection (test_silent_sequence_jobs_native.ActualSequenceJobs.test_bootstrap_partial_plan_recovers_without_adapter_preinspection)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-jobs239/tests/optional/test_silent_sequence_jobs_native.py", line 117, in test_bootstrap_partial_plan_recovers_without_adapter_preinspection
+    self.assertEqual(result['state']['phase'],'completed',result)
+AssertionError: 'failed' != 'completed'
+- failed
++ completed
+ : {'plan': {'budget': {'max_memory_bytes': 1073741824, 'max_runs': 8, 'max_work_bytes': 8589934592, 'wall_seconds': 1200}, 'destination': '/home/complete/.cache/hatch-coordination-20261112/silent-delivery-tmp/tmpta1j3vd8/job-out', 'id': '6944cfd23c5038fad7f488443b7ba78a141a2dbd779bfa02ebca90e3cf2dfacf', 'implementation': {'controller': '716115b737fd5642022319c97c3b2372ea9bbe00fa99c8b5951d88f241241d8f', 'decoder': 'ddc91b3a7aa35d879614f0ac877b884017a6d87ab25777613cc24aa0515bb92b', 'jobs': '9992a7250a4bcbf2a49a23660546143e2c153e32063a4b298eff1405bdbdc4fe', 'package:OpenEXR': '3.5.4', 'package:Pillow': '13.0.0', 'package:numpy': '2.5.4', 'path_boundary': 'd5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b', 'publication': '87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567', 'sequence': '07bc5b4769127e201ebaa9e5b5771fe6f28e81241cc69b19882a1bfa4c04b253'}, 'kind': 'silent-sequence-job', 'provenance': {'fixture': 'Actual PNG sequence controller'}, 'schema_version': 1, 'source': {'fps': {'denominator': 1, 'numerator': 24}, 'frames': [{'bytes': 86, 'index': 0, 'path': 'frames/000000.png', 'sha256': 'ec4a8ab1df9492ee02b660199932a808da67e41a0e20bb6aab577898a5d0eb18', 'source_index': 0, 'source_path': '0.png'}, {'bytes': 86, 'index': 1, 'path': 'frames/000001.png', 'sha256': '446c709da0fa3f378d37f5adf786cb2a52b799b3f8275cc002cad24f2ee8ee46', 'source_index': 1, 'source_path': '1.png'}, {'bytes': 86, 'index': 2, 'path': 'frames/000002.png', 'sha256': 'e0e561ef567c2aac4bb6a0a92b30600aa979d627ce968eb4860537d45d799c0b', 'source_index': 2, 'source_path': '2.png'}], 'identity_sha256': '25550e728408d448d930b70eb7e34833c7fea59ae7d50f6d885a93061d69cfb2', 'kind': 'silent-sequence-source', 'origin': 'imported', 'output': {'alpha': 'straight', 'bit_depth': 8, 'color_space': 'srgb', 'format': 'png', 'passes': ['combined']}, 'resolution': [16, 16], 'schema_version': 1}, 'source_root': '/home/complete/.cache/hatch-coordination-20261112/silent-delivery-tmp/tmpta1j3vd8/source'}, 'state': {'error': 'incomplete staging plan does not match request', 'job': '6944cfd23c5038fad7f488443b7ba78a141a2dbd779bfa02ebca90e3cf2dfacf', 'phase': 'failed', 'progress': {'stage': 'canonical-sequence-copy', 'checkpoint': 1, 'cached_reused': 0, 'cached_created': 0}, 'receipt_sha256': None, 'runs': 1, 'schema_version': 1}}
+
+----------------------------------------------------------------------
+Ran 44 tests in 41.958s
+
+FAILED (failures=1)

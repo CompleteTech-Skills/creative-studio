@@ -1,0 +1,68 @@
+name: Persistent silent export jobs
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  contracts:
+    name: Portable silent job contracts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-delivery.txt
+      - run: python -m unittest discover -s tests -p 'test_silent_*jobs.py' -v 2>&1 | tee portable-jobs.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: silent-jobs-portable-${{ runner.os }}-${{ github.sha }}
+          path: portable-jobs.log
+          if-no-files-found: error
+          retention-days: 30
+  media:
+    name: Actual job cancellation, retry and recovery
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      HATCH_MEDIA_JOBS_TEST: '1'
+      HATCH_SEQUENCE_JOBS_TEST: '1'
+      HATCH_NATIVE_SEQUENCE_JOBS_TEST: '1'
+      HATCH_NATIVE_SEQUENCE_FIXTURE: tests/fixtures/silent-native-sequence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-delivery.txt -r requirements-sequence.txt
+      - run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+      - run: python -m unittest discover -s tests/optional -p test_silent_jobs_linux.py -v 2>&1 | tee linux-jobs.log
+      - run: python -m unittest discover -s tests/optional -p test_silent_jobs_media.py -v 2>&1 | tee actual-jobs.log
+      - run: python -m unittest discover -s tests/optional -p test_silent_sequence_jobs_native.py -v 2>&1 | tee sequence-jobs.log
+      - run: python -m unittest discover -s tests/optional -p test_silent_native_sequence_jobs_actual.py -v 2>&1 | tee native-sequence-jobs.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: silent-jobs-actual-${{ github.sha }}
+          path: |
+            linux-jobs.log
+            actual-jobs.log
+            sequence-jobs.log
+            native-sequence-jobs.log
+          if-no-files-found: error
+          retention-days: 30

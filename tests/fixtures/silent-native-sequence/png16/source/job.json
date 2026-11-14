@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "mode": "render",
+  "settings": {
+    "engine": "cycles",
+    "device_policy": "cpu",
+    "device": "cpu",
+    "allow_cpu_fallback": false,
+    "resolution": [
+      64,
+      64
+    ],
+    "samples": 2,
+    "seed": 4,
+    "denoise": false,
+    "output": {
+      "format": "png",
+      "bit_depth": 16,
+      "passes": [
+        "combined"
+      ],
+      "alpha": "straight",
+      "color_space": "srgb"
+    },
+    "exposure": 0,
+    "view_transform": "standard",
+    "resources": {
+      "memory_bytes": 2147483648,
+      "storage_bytes": 134217728,
+      "timeout_seconds": 120,
+      "workers": 1,
+      "max_frames": 10
+    }
+  },
+  "scene": {
+    "nodes": [
+      {
+        "id": "native",
+        "type": "skinned_character",
+        "asset": {
+          "path": "asset-0.glb",
+          "sha256": "14594c2aa35476fa66507674206df3ce667bbf5d74e151419a9a3664cd757f80",
+          "vertices": 4,
+          "triangles": 2,
+          "rigged": true,
+          "clips": {
+            "bend": {
+              "duration": 1.0
+            }
+          }
+        },
+        "cast_shadow": true,
+        "frames": [
+          {
+            "index": 0,
+            "matrix": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ],
+            "visible": true,
+            "clip": {
+              "id": "bend",
+              "time": 0.0
+            }
+          }
+        ]
+      }
+    ],
+    "frames": [
+      {
+        "index": 0,
+        "source_time": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "world": {
+          "background": [
+            0.08,
+            0.08,
+            0.08
+          ],
+          "exposure": 0
+        },
+        "spec": {
+          "schema_version": 1,
+          "kind": "render3d-frame",
+          "project": {
+            "id": "fixture",
+            "version": "1.0.0"
+          },
+          "scene": {
+            "id": "fixture",
+            "version": "1.0.0"
+          },
+          "shot": {
+            "id": "motion",
+            "version": "1.0.0"
+          },
+          "index": 0,
+          "local_index": 0,
+          "presentation_time": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "source_time": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "camera": "front",
+          "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+          "settings_sha256": "b64f321be0806b4680990f0a0aaf3600ae3bed1e2e74406c9c6d3b4582635014",
+          "dependencies": [
+            "92a48e8fd7b2d6fa52d88f22963a42e32e08ef199c985e09bd7cab3957fdf672",
+            "f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a",
+            "59fff471d947d1823236016b81c771f610bacf6638c495fbddcee8ace16a2ce2",
+            "0f3424ddf5d0d180b004dae9b00b0d6f950f3993515d5b7cc53c9bfeb0bbf7cb",
+            "aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66",
+            "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e"
+          ],
+          "output": {
+            "format": "png",
+            "bit_depth": 16,
+            "passes": [
+              "combined"
+            ],
+            "alpha": "straight",
+            "color_space": "srgb"
+          },
+          "destination": "png16",
+          "cache_key": "f617c5c259900a53058a4dfd06efea4fb4aa019623f43e08ec3276b428a3586e"
+        }
+      }
+    ],
+    "camera": "front",
+    "native_preview": true,
+    "geometry_vertices": 4,
+    "geometry_triangles": 2
+  },
+  "output": "../frames",
+  "report": "../worker-report.json"
+}

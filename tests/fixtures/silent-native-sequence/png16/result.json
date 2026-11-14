@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "kind": "render3d-result",
+  "job": "png16",
+  "request_sha256": "ad6b5d122a001836b5c5f79ec384660b809a0a9d069f66902daf5a401fe38d39",
+  "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+  "backend": {
+    "id": "blender",
+    "adapter_version": "1.0.0",
+    "application_version": "Blender 4.5.3 LTS",
+    "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+    "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+    "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+    "engine": "cycles",
+    "device": "cpu"
+  },
+  "status": "complete",
+  "requested_frames": [
+    0
+  ],
+  "successful": [
+    0
+  ],
+  "failed": [],
+  "skipped": [],
+  "reused": [],
+  "images": [
+    {
+      "frame": 0,
+      "file": {
+        "path": "frames/000000.png",
+        "sha256": "2710ad3e096f0887585e20b943d9721a47089bf76944208a06c03cfd66c0ff10",
+        "bytes": 1262
+      },
+      "format": "png",
+      "bit_depth": 16,
+      "pass_name": "combined",
+      "resolution": [
+        64,
+        64
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "usage": {
+    "elapsed_seconds": 0.810839762998512,
+    "peak_memory_bytes": 339492864,
+    "output_bytes": 31074,
+    "measurement": "measured"
+  },
+  "logs": [
+    {
+      "path": "blender.log",
+      "sha256": "a212eb19cd4331710caa9bb60d525221ee712f908ea5708c1cdcf78754bf2e4b",
+      "bytes": 5418
+    }
+  ],
+  "manifest": {
+    "path": "manifest.json",
+    "sha256": "fa62df35195e853830a48938509424811f2f18701049a710c4cfef22cfe54795",
+    "bytes": 2952
+  },
+  "verification": {
+    "status": "passed",
+    "verifier": {
+      "id": "render3d-independent-pixels",
+      "version": "1.0.0",
+      "code_sha256": "0903f4ff8555d08e0851d082724944cfd1eade62cf94a487d2fb989595246097",
+      "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+    },
+    "evidence": {
+      "path": "verification.json",
+      "sha256": "0d61917e1ea4692b9f2109ca73b329b4a16086a5b0ed124ea32e51fec6cc61b0",
+      "bytes": 2263
+    }
+  }
+}

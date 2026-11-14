@@ -477,6 +477,36 @@
             "verifier",
             "evidence"
           ]
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 268435456
+              }
+            },
+            "required": [
+              "path",
+              "sha256",
+              "bytes"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
         }
       },
       "required": [

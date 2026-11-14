@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "kind": "render3d-result",
+  "job": "exr16",
+  "request_sha256": "33d3d9b717fb1bbce98959670d624789a04fd1a53d554f27087491237b4bda81",
+  "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+  "backend": {
+    "id": "blender",
+    "adapter_version": "1.0.0",
+    "application_version": "Blender 4.5.3 LTS",
+    "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+    "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+    "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+    "engine": "cycles",
+    "device": "cpu"
+  },
+  "status": "complete",
+  "requested_frames": [
+    0
+  ],
+  "successful": [
+    0
+  ],
+  "failed": [],
+  "skipped": [],
+  "reused": [],
+  "images": [
+    {
+      "frame": 0,
+      "file": {
+        "path": "frames/000000.exr",
+        "sha256": "813278f25cdbf5458cb03a697b5971cdab4387e7262e20ce157a885553300fc6",
+        "bytes": 2453
+      },
+      "format": "exr",
+      "bit_depth": 16,
+      "pass_name": "combined",
+      "resolution": [
+        64,
+        64
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "usage": {
+    "elapsed_seconds": 0.6068885049971868,
+    "peak_memory_bytes": 307716096,
+    "output_bytes": 32271,
+    "measurement": "measured"
+  },
+  "logs": [
+    {
+      "path": "blender.log",
+      "sha256": "8a9afe92151ff213385262ad7c4b2c7c463c8bae53b053dd6f2f46be5d086ebd",
+      "bytes": 5418
+    }
+  ],
+  "manifest": {
+    "path": "manifest.json",
+    "sha256": "9549c76c000925b9a7d67fed26ded866548b4a6e23fba8747ee221e2534ad661",
+    "bytes": 2954
+  },
+  "verification": {
+    "status": "passed",
+    "verifier": {
+      "id": "render3d-independent-pixels",
+      "version": "1.0.0",
+      "code_sha256": "0903f4ff8555d08e0851d082724944cfd1eade62cf94a487d2fb989595246097",
+      "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+    },
+    "evidence": {
+      "path": "verification.json",
+      "sha256": "7a42aff517b9d3acd9a9c611916a6a452a37f21909269b63e60c9d6e6089a7d4",
+      "bytes": 2273
+    }
+  }
+}
