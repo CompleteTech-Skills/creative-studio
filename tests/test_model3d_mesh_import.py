@@ -15,6 +15,36 @@ from rig_gltf import export_geometry
 from rig_models import Geometry, Mesh
 
 class MeshImportTests(unittest.TestCase):
+    def test_obj_controlled_reader_runs_after_admission_handle_closes(self):
+        from contextlib import contextmanager
+        import rig_errors
+        from rig_import import load_character_model
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            source = root/'source'; source.mkdir()
+            data = b'o mesh\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n'
+            (source/'mesh.obj').write_bytes(data)
+            original = rig_errors.open_payload
+            streams = []
+            @contextmanager
+            def track(*args, **kwargs):
+                with original(*args, **kwargs) as value:
+                    streams.append(value[0])
+                    yield value
+            def reader(path, maximum):
+                self.assertTrue(streams)
+                self.assertTrue(all(stream.closed for stream in streams))
+                # Windows denies this rename if the admission file remains open.
+                source.rename(root/'moved')
+                try:
+                    self.assertEqual(maximum, len(data))
+                    return (root/'moved'/path.name).read_bytes()
+                finally:
+                    (root/'moved').rename(source)
+            with patch.object(rig_errors, 'open_payload', track):
+                model = load_character_model(source/'mesh.obj', source_reader=reader)
+            self.assertEqual(model.geometry.vertex_count, 3)
+
     def test_instance_budgets_precede_real_geometry_on_snapshot_and_canonical_paths(self):
         from asset_library import AssetLibrary
         from asset_library_contracts import seal

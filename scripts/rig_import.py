@@ -459,9 +459,15 @@ def load_character_model(path: str | Path, *, scale=1., limits=None, blender=Non
                 # output and analysis may coexist. Charge before parser reads.
                 child.add(size * 1024, 'OBJ parsing and normalized geometry output')
                 reads += 1
-                data = source_reader(source, size) if source_reader is not None else stream.read(size + 1)
-                require(len(data) == size, 'RIG_SOURCE_CHANGED', 'OBJ source size changed during reading.')
-                return data
+                if source_reader is None:
+                    data = stream.read(size + 1)
+            # A controlled reader reopens and validates its own source. Close
+            # the admission handle first: Windows otherwise denies renaming
+            # the source directory while that file is open.
+            if source_reader is not None:
+                data = source_reader(source, size)
+            require(len(data) == size, 'RIG_SOURCE_CHANGED', 'OBJ source size changed during reading.')
+            return data
 
         model = import_obj(path, scale=scale, limits=child.limits, source_reader=admitted_read, budget=child)
         budget.commit(child)
