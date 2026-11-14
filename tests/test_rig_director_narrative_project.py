@@ -177,6 +177,33 @@ class NativeNarrativeProjectBoundaryTests(unittest.TestCase):
 
 
 class NarrativePublicationDependencyTests(unittest.TestCase):
+    def test_unverified_publication_profiles_fail_before_private_authoring(self):
+        for platform, supported in [('linux', False), ('darwin', True)]:
+            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory).resolve()
+                stage = root/'private'
+                stage.mkdir()
+                with patch.object(narrative.sys, 'platform', platform), \
+                     patch('atomic_publish.private_stage_supported', return_value=supported):
+                    with self.assertRaises(RigError) as caught:
+                        narrative.build_narrative(root/'absent-source', root/'delivery', stage=stage)
+                self.assertEqual(caught.exception.report['code'], 'DIRECTOR_NARRATIVE_DEPENDENCY')
+                self.assertEqual(list(stage.iterdir()), [])
+                self.assertFalse((root/'delivery').exists())
+
+    def test_retained_native_motion_input_is_checked_before_source_copy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            stage = root/'private'
+            stage.mkdir()
+            with patch.object(narrative.sys, 'platform', 'linux'), \
+                 patch('atomic_publish.private_stage_supported', return_value=True):
+                with self.assertRaises(RigError) as caught:
+                    narrative.build_narrative(root/'absent-source', root/'delivery', stage=stage, motions=[])
+            self.assertEqual(caught.exception.report['code'], 'DIRECTOR_NARRATIVE_CLIPS')
+            self.assertEqual(list(stage.iterdir()), [])
+            self.assertFalse((root/'delivery').exists())
+
     def test_missing_capture_hash_guard_fails_before_private_authoring(self):
         import scene3d_snapshot
         # This old API shape deliberately lacks the canonical expected hash.
