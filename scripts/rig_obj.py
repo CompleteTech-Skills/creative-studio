@@ -7,14 +7,15 @@ from pathlib import Path
 import shlex
 import numpy as np
 from rig_contracts import DEFAULT_LIMITS
-from rig_errors import require, safe_path, sha256, slug
+from rig_errors import require, safe_path, sha256, slug, normalize_root
 from rig_geometry import analyze_geometry
 from rig_models import Geometry, Mesh, TextureImage, validate_geometry
 
 
 def import_obj(path: Path, *, scale=1., limits=None, source_reader=None):
     from rig_import import ImportedModel, _decode_texture
-    limits = limits or DEFAULT_LIMITS;path = Path(path).absolute() if source_reader is not None else Path(path).resolve()
+    limits = limits or DEFAULT_LIMITS;path = Path(path)
+    path = path.absolute() if source_reader is not None else normalize_root(path.parent)/path.name
     payload_sizes = {}
     def read_source(source, maximum):
         if source_reader is None:
