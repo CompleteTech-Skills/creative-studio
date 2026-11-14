@@ -1,0 +1,32 @@
+{
+  "reviewed_head": "53a4ee463cf15f1cc379c60aaa9fccc53cd02ef8",
+  "review_verdict": "CHANGES_REQUIRED",
+  "latest_repair_tests": {
+    "count": 41,
+    "seconds": 11.691,
+    "failures": 0,
+    "skips": 0,
+    "scope": "own admission repairs, source then committed; not final integrated review"
+  },
+  "resolved_in_code_pending_independent_verification": [
+    "native fixedmanifest filename",
+    "project and retained evidence postcheck integrity",
+    "categorical fallback invariants",
+    "validated bounded native responses/check reports",
+    "per-operation and postreservation expiry",
+    "retained exact snapshot and safe host policy",
+    "opaque typed schema traversal and nullable integer copies",
+    "truthful hierarchy/extension limits, unknown backend versions, CPU andwall accounting"
+  ],
+  "remaining": [
+    "authoritative native caller memory budget API from rig_resource_limits",
+    "final113 typed reference list API and freshdependencyreview",
+    "final integrated frozen tests and actualAstrareview",
+    "published exactheadCI/no GitHubwritelease"
+  ],
+  "source_sha256": {
+    "scripts/continuity_capabilities.py": "c63a20a9c11cd19a8a339db3835b2a1d4da99be867170659886e762addc0523a",
+    "scripts/continuity_capability_owners.py": "de856c591bb97f33774767d3ce7c6089db1be5c16c2839f1eef7fb0f98d43433",
+    "tests/test_rig_continuity_capabilities.py": "899979dd8ebac6cffbe7efa5379ea3beeca33d2caf761a98449bf4c2f309a88c"
+  }
+}

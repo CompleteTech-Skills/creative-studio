@@ -84,6 +84,12 @@ The additive [Scene3D contract foundation](references/scene3d-contracts.md) defi
 
 The [physics integration audit](references/physics-3d-audit.md) records current subsystem ownership, coordinate and timing decisions, and the executed compatibility baseline for future simulation work. No physics solver is implemented by that audit.
 
+The [continuity capability admission guide](references/continuity-capability-admission.md)
+separates discovery from actual native rig and image-master probes. It retains
+exact source/evidence references and reports unavailable backends, incomplete
+fields, and visual approval separately; fallback never grants missing authority.
+
+
 <div align="center">
 <img src="assets/art/story-1-ready.jpg" width="24%" alt="Chapter 1: an egg in a nest of sketches and swatches">
 <img src="assets/art/story-2-imagine.jpg" width="24%" alt="Chapter 2: the egg dreams of Pip's silhouette">

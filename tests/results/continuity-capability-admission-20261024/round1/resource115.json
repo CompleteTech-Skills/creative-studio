@@ -1,0 +1,9 @@
+{
+  "outcome": "supported_fallback",
+  "error": null,
+  "requested_memory_bytes": 35651584,
+  "retained_image_bytes": 37789008,
+  "pre_load_native_memory_limit": 2147483648,
+  "admission_estimate": 33822720,
+  "rig_vertices": 706
+}
