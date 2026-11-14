@@ -21,11 +21,14 @@ def plan_repository_description(repository, text, *, environment=False):
     snapshot = repository.snapshot()
     native = repository.native_snapshot(snapshot['revision'], snapshot['sha256'])
     root, scene_path = native['root'], native['scene_path']
-    graph = SceneGraph.from_bundle(load_project(root), scene_path, source_root=root)
+    bundle = load_project(root)
+    require(bundle['inventory']['project.json']['sha256'] == native['inventory']['project.json']['sha256'],
+            'Source project differs from the expected exact revision.', 'SCENE3D_SOURCE_CHANGED')
+    graph = SceneGraph.from_bundle(bundle, scene_path, source_root=root)
     planner = compile_environment_description if environment else compile_description
     return {'schema_version': 1, 'kind': 'scene3d-editor-language-plan',
             'expected_revision': snapshot['revision'], 'expected_sha256': snapshot['sha256'],
-            'scene_plan': planner(graph, text)}
+            'scene_plan': planner(graph, text, expected_project_sha256=native['inventory']['project.json']['sha256'])}
 
 
 def apply_repository_plan(repository, plan, transaction_id):
@@ -47,12 +50,14 @@ def apply_repository_plan(repository, plan, transaction_id):
     require(plan['scene_plan'].get('status') == 'ready', 'Resolve the language plan before applying it.')
     def build(root, destination, scene_path):
         inner = plan['scene_plan']
-        if inner.get('kind') == 'scene3d-environment-language-plan':
-            result = apply_environment_plan(root, destination, scene_path, inner)
-            return result['snapshot']['active_scene']['path']
         bundle = load_project(root)
+        if inner.get('kind') == 'scene3d-environment-language-plan':
+            result = apply_environment_plan(root, destination, scene_path, inner,
+                expected_project_sha256=bundle['inventory']['project.json']['sha256'])
+            return result['snapshot']['active_scene']['path']
         graph = SceneGraph.from_bundle(bundle, scene_path, source_root=root)
-        result = apply_plan(graph, PrefabLibrary.from_files(root, bundle), inner)
+        result = apply_plan(graph, PrefabLibrary.from_files(root, bundle), inner,
+            expected_project_sha256=bundle['inventory']['project.json']['sha256'])
         receipt = snapshot_project(root, destination, graph, scene_path=scene_path,
                                    derived_documents=result['derived_documents'],
                                    expected_project_sha256=bundle['inventory']['project.json']['sha256'])

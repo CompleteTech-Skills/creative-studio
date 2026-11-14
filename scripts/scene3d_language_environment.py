@@ -50,7 +50,7 @@ def _recipe(statement):
             'parameters': parameters, 'budget': 256}
 
 
-def _preflight_project(graph, recipes, *, destination=None):
+def _preflight_project(graph, recipes, *, destination=None, expected_project_sha256=None):
     """Use the actual generator and snapshot owners before claiming readiness."""
     from scene3d_contracts import load_project, validate_prefab_instances
     from scene3d_graph import SceneGraph
@@ -64,6 +64,8 @@ def _preflight_project(graph, recipes, *, destination=None):
             'SCENE3D_LANGUAGE_CONTEXT')
     source, scene_path = context
     bundle = load_project(source)
+    require(expected_project_sha256 is None or type(expected_project_sha256) is str and bundle['inventory']['project.json']['sha256'] == expected_project_sha256,
+            'Source project differs from the expected exact revision.', 'SCENE3D_SOURCE_CHANGED')
     selected = SceneGraph.from_bundle(bundle, scene_path, source_root=source)
     require(selected.digest == graph.digest,
             'Scene changed before environment resource planning.', 'SCENE3D_LANGUAGE_STALE')
@@ -85,13 +87,13 @@ def _preflight_project(graph, recipes, *, destination=None):
     # The destination is never created in dry-run mode. Its trusted parent is
     # the already selected project parent; no user-controlled output is opened.
     output = destination if destination is not None else Path(source).absolute().parent / ('.scene3d-language-preflight-' + uuid4().hex)
-    snapshot_project(source, output,
+    return snapshot_project(source, output,
                      candidate, scene_path=scene_path, derived_documents=documents,
                      extra_payloads=payloads, dry_run=True,
                      expected_project_sha256=bundle['inventory']['project.json']['sha256'])
 
 
-def _preflight_edit(graph, candidate):
+def _preflight_edit(graph, candidate, *, expected_project_sha256=None):
     """Check a persisted ordinary edit with the same complete snapshot engine."""
     from scene3d_contracts import load_project
     from scene3d_graph import SceneGraph
@@ -100,11 +102,15 @@ def _preflight_edit(graph, candidate):
     from uuid import uuid4
     context = graph.planning_source()
     if context is None:
+        require(expected_project_sha256 is None, 'Project-bound planning requires a verified source context.',
+                'SCENE3D_LANGUAGE_CONTEXT')
         # A standalone graph has no project limits or closure to authenticate.
         # Its plan remains an explicitly scene-only in-memory operation.
         return 'scene-only'
     source, scene_path = context
     bundle = load_project(source)
+    require(expected_project_sha256 is None or type(expected_project_sha256) is str and bundle['inventory']['project.json']['sha256'] == expected_project_sha256,
+            'Source project differs from the expected exact revision.', 'SCENE3D_SOURCE_CHANGED')
     selected = SceneGraph.from_bundle(bundle, scene_path, source_root=source)
     require(selected.digest == graph.digest, 'Scene changed before language planning.', 'SCENE3D_LANGUAGE_STALE')
     document = candidate.document()
@@ -119,7 +125,7 @@ def _preflight_edit(graph, candidate):
     return 'project-closure'
 
 
-def compile_environment_description(graph, text):
+def compile_environment_description(graph, text, *, expected_project_sha256=None):
     from scene3d_environment import plan as geometry_plan
     statements = _text(text)
     require(len(statements) <= 16, 'Environment prose supports one to sixteen template statements.')
@@ -141,7 +147,7 @@ def compile_environment_description(graph, text):
             break
     if not diagnostics:
         try:
-            _preflight_project(graph, recipes)
+            _preflight_project(graph, recipes, expected_project_sha256=expected_project_sha256)
         except RigError as exc:
             diagnostics.append({'statement': len(statements) - 1, 'text': statements[-1],
                                 'code': exc.report['code'], 'message': exc.report['message']})
@@ -160,24 +166,27 @@ def compile_environment_description(graph, text):
     return value
 
 
-def apply_environment_plan(source, destination, scene_path, plan, *, dry_run=False):
+def apply_environment_plan(source, destination, scene_path, plan, *, dry_run=False, expected_project_sha256=None):
     from scene3d_contracts import load_project
     from scene3d_graph import SceneGraph
     from scene3d_environment import apply_recipes
     require(isinstance(plan, dict) and isinstance(plan.get('original_text'), str), 'Invalid environment plan.')
     bundle = load_project(source)
+    require(expected_project_sha256 is None or type(expected_project_sha256) is str and bundle['inventory']['project.json']['sha256'] == expected_project_sha256,
+            'Source project differs from the expected exact revision.', 'SCENE3D_SOURCE_CHANGED')
     graph = SceneGraph.from_bundle(bundle, scene_path, source_root=source)
     require(type(plan.get('base_revision')) is int and plan['base_revision'] == graph.revision and
             plan.get('base_sha256') == graph.digest, 'Scene changed after environment planning.',
             'SCENE3D_LANGUAGE_STALE')
-    expected = compile_environment_description(graph, plan['original_text'])
+    expected = compile_environment_description(graph, plan['original_text'],
+        expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     require(expected == plan and expected['status'] == 'ready' and not plan['substitutions'],
             'Environment plan is unresolved or differs from its deterministic original description.',
             'SCENE3D_LANGUAGE_HASH')
     if dry_run:
-        from scene3d_snapshot import _new_destination
-        _new_destination(destination)
-        return {'dry_run': True, 'plan': plan, 'destination': str(destination)}
+        report = _preflight_project(graph, plan['recipes'], destination=destination,
+            expected_project_sha256=bundle['inventory']['project.json']['sha256'])
+        return dict(report, plan=plan, destination=str(destination))
     result = apply_recipes(source, destination, scene_path, plan['recipes'],
                            expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     result['language_plan'] = plan

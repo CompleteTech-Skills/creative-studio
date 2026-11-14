@@ -135,9 +135,11 @@ def execute(args):
     else:
         if args.environment:
             from scene3d_language_environment import compile_environment_description
-            plan = compile_environment_description(graph, args.text)
+            plan = compile_environment_description(graph, args.text,
+                expected_project_sha256=bundle['inventory']['project.json']['sha256'])
         else:
-            plan = compile_description(graph, args.text)
+            plan = compile_description(graph, args.text,
+                expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     if args.command in ("plan", "describe"):
         return plan
     if args.command == "generate":
@@ -146,9 +148,11 @@ def execute(args):
                 "Generate requires a reviewed environment geometry plan.", "SCENE3D_LANGUAGE_KIND")
     if isinstance(plan, dict) and plan.get("kind") == "scene3d-environment-language-plan":
         from scene3d_language_environment import apply_environment_plan
-        return apply_environment_plan(args.project, args.destination, args.scene, plan, dry_run=args.dry_run)
+        return apply_environment_plan(args.project, args.destination, args.scene, plan, dry_run=args.dry_run,
+            expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     library = PrefabLibrary.from_files(args.project, bundle)
-    applied = apply_plan(graph, library, plan)
+    applied = apply_plan(graph, library, plan,
+        expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     result = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
                               derived_documents=applied["derived_documents"], dry_run=args.dry_run,
                                   expected_project_sha256=bundle['inventory']['project.json']['sha256'])

@@ -241,3 +241,10 @@ complete immutable snapshot closure as a write. This includes typed batches,
 named operations, ordinary language, environment recipes and snapshot copies.
 A dry run rejects exhausted project budgets and existing or invalid destinations;
 it publishes no output.
+
+Project admission pins use the original verified raw `project.json` SHA-256.
+CLI dispatch, plan/recipe parsing, language compilation, preflight and publication
+forward the same `expected_project_sha256` token; an environment wrapper never
+replaces that token with a later reload. Direct environment APIs bind their own
+first admitted root and apply the same rule to dry runs and writes. Concurrent
+valid source changes are rejected while the concurrent user revision is retained.

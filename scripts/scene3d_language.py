@@ -135,7 +135,7 @@ def _compile_statement(statement, scene):
     _require(False, "Unsupported statement; no words were ignored: " + statement, "SCENE3D_LANGUAGE_UNSUPPORTED")
 
 
-def compile_description(graph, text):
+def compile_description(graph, text, *, expected_project_sha256=None):
     """Compile all statements in order against private canonical scene state.
 
     Examples: ``Move the camera 2 meters north; hide mesh``; ``duplicate mesh as
@@ -173,7 +173,7 @@ def compile_description(graph, text):
     if not diagnostics:
         try:
             from scene3d_language_environment import _preflight_edit
-            verification_scope = _preflight_edit(graph, working)
+            verification_scope = _preflight_edit(graph, working, expected_project_sha256=expected_project_sha256)
         except RigError as exc:
             diagnostics.append({"statement": len(statements) - 1, "text": statements[-1],
                                 "code": exc.report["code"], "message": exc.report["message"]})
@@ -189,7 +189,7 @@ def compile_description(graph, text):
 compile_revision = compile_description
 
 
-def apply_plan(graph, library, plan):
+def apply_plan(graph, library, plan, *, expected_project_sha256=None):
     """Apply only an intact ready plan against its exact source scene."""
     keys = {"schema_version", "kind", "planner", "original_text", "base_revision", "base_sha256",
             "commands", "diagnostics", "substitutions", "status", "sha256", "verification_scope"}
@@ -204,7 +204,7 @@ def apply_plan(graph, library, plan):
              "Language plan has no bounded executable commands.")
     # Recompile the preserved text; a caller cannot authorize different commands
     # by rewriting both the plan and its unkeyed integrity hash.
-    expected = compile_description(graph, plan["original_text"])
+    expected = compile_description(graph, plan["original_text"], expected_project_sha256=expected_project_sha256)
     _require(expected == plan, "Plan is not the deterministic compilation of its original description.",
              "SCENE3D_LANGUAGE_HASH")
     from scene3d_edit import apply_commands
