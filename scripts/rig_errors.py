@@ -131,9 +131,9 @@ def atomic_json(path: str | Path, value: Any) -> None:
 
 def portable_name(name: str) -> str:
     # Same portable spelling policy as the existing decomposition transport.
-    from decomposition_package import _relative
+    from portable_paths import existing_relative
     try:
-        return _relative(name)
+        return existing_relative(name)
     except ValueError as exc:
         raise RigError('RIG_PATH', str(exc), asset=str(name)) from exc
 
@@ -227,6 +227,32 @@ def _directory_anchor(root):
                     'RIG_PATH', 'Directory-capability descendants cannot traverse parents.')
             return cap, cap.path.joinpath(*suffix), suffix
     return None, root, ()
+
+
+
+@contextmanager
+def scoped_directory_descriptor(root: str | Path):
+    """Borrow an owned directory FD only from an explicitly active capability.
+
+    Yield None for ordinary or unregistered roots, so callers retain their
+    existing strict path-opening policy. Every descendant is opened nofollow;
+    this context owns and closes all duplicates, not the original capability.
+    """
+    cap,_,suffix = _directory_anchor(root)
+    if cap is None:
+        yield None
+        return
+    opened = []
+    try:
+        try:
+            opened.append(os.dup(cap.fd))
+            for part in suffix:
+                opened.append(os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=opened[-1]))
+        except OSError as exc:
+            raise RigError('RIG_DIRECTORY_PATH','Capability directory descendant is missing or unsafe.') from exc
+        yield opened[-1]
+    finally:
+        for fd in reversed(opened):os.close(fd)
 
 
 def normalize_root(root: str | Path) -> Path:
@@ -363,7 +389,11 @@ def slug(text: str) -> str:
 @contextmanager
 def job_lock(root: str | Path) -> Iterator[None]:
     """OS locks release on process exit; the lock inode is never replaced."""
-    root = Path(root).resolve()
+    capability,_,suffix = _directory_anchor(root)
+    require(capability is None or bool(suffix), 'RIG_DIRECTORY_LOCK',
+            'A writer needs a descendant root so its sibling lock stays inside directory authority. '
+            'Activate the parent directory capability when writing an existing rig root.')
+    root = normalize_root(root)
     root.parent.mkdir(parents=True, exist_ok=True)
     lock = root.parent / ('.' + root.name + '.rig.lock')
     require(not lock.is_symlink(), 'RIG_SYMLINK', 'Lock path cannot be a symbolic link.')

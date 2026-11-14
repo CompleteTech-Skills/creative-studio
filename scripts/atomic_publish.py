@@ -70,6 +70,107 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
+import secrets
+
+
+def private_stage_fd_supported():
+    """Whether POSIX can pin, list and clean private stages without procfs."""
+    return (os.name == 'posix'
+            and all(hasattr(os, name) for name in ('O_DIRECTORY', 'O_NOFOLLOW'))
+            and all(operation in os.supports_dir_fd
+                    for operation in (os.open, os.mkdir, os.stat, os.unlink, os.rmdir))
+            and os.listdir in os.supports_fd
+            and bool(getattr(shutil.rmtree, 'avoids_symlink_attacks', False)))
+
+
+def _clear_private_directory_fd(descriptor):
+    # Open a fresh directory stream: dup() alone shares its directory offset.
+    stream = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                     dir_fd=descriptor)
+    try:
+        names = os.listdir(stream)
+    finally:
+        os.close(stream)
+    for child in names:
+        try:
+            mode = os.stat(child, dir_fd=descriptor, follow_symlinks=False).st_mode
+            if stat.S_ISDIR(mode):
+                shutil.rmtree(child, dir_fd=descriptor)
+            else:
+                os.unlink(child, dir_fd=descriptor)
+        except FileNotFoundError:
+            pass
+
+
+@contextmanager
+def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_error=True):
+    """Lend a private directory FD on supported POSIX systems.
+
+    This additive adapter has no procfs requirement. All caller operations must
+    use the FD, and directory publishers must publish an inner payload through
+    descriptor-relative exclusive rename. Contents are cleaned relative to the
+    pinned FD; the public outer basename is never removed. As with private_stage,
+    same-UID hostile process isolation is outside this ownership boundary.
+    The descriptor belongs to this context; callers must not close or reuse it.
+    """
+    if not private_stage_fd_supported():
+        raise OSError(errno.ENOTSUP, 'descriptor-only private staging is unavailable')
+    _validate_directory_descriptor(parent_fd)
+    if not isinstance(prefix, str) or not re.fullmatch(r'[A-Za-z0-9._-]{1,64}', prefix):
+        raise ValueError('private-stage prefix must be one bounded portable filename component')
+    if type(cleanup) is not bool or type(cleanup_on_error) is not bool:
+        raise ValueError('private-stage cleanup policies must be booleans')
+    parent_identity = os.fstat(parent_fd)
+    parent = os.dup(parent_fd)
+    descriptor = None
+    identity = None
+    body_error = None
+    try:
+        borrowed = os.fstat(parent)
+        if (borrowed.st_dev, borrowed.st_ino) != (parent_identity.st_dev, parent_identity.st_ino):
+            raise OSError(errno.ESTALE, 'private stage parent descriptor changed during acquisition')
+        _validate_directory_descriptor(parent)
+        for _ in range(64):
+            name = prefix + secrets.token_hex(16)
+            try:
+                os.mkdir(name, mode=0o700, dir_fd=parent)
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise FileExistsError(errno.EEXIST, 'private stage name collision budget exhausted')
+        descriptor = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                             dir_fd=parent)
+        _validate_directory_descriptor(descriptor)
+        identity = os.fstat(descriptor)
+        if identity.st_uid != os.geteuid() or stat.S_IMODE(identity.st_mode) & 0o077:
+            raise OSError(errno.EPERM, 'created private stage must be owned by this user with no group/other permissions')
+        try:
+            yield descriptor
+        except BaseException as exc:
+            body_error = exc
+            raise
+        finally:
+            if cleanup and (body_error is None or cleanup_on_error):
+                try:
+                    current = os.fstat(descriptor)
+                    if (current.st_dev, current.st_ino) != (identity.st_dev, identity.st_ino):
+                        raise OSError(errno.ESTALE, 'private stage descriptor was closed and reused')
+                    _clear_private_directory_fd(descriptor)
+                except BaseException as cleanup_error:
+                    if body_error is None:
+                        raise
+                    if hasattr(body_error, 'add_note'):
+                        body_error.add_note('Pinned staging cleanup also failed: ' + str(cleanup_error))
+    finally:
+        if descriptor is not None:
+            try:
+                current = os.fstat(descriptor)
+                if identity is None or (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
+                    os.close(descriptor)
+            except OSError:
+                pass
+        os.close(parent)
 
 
 def private_stage_supported():
@@ -91,6 +192,21 @@ def _validate_directory_descriptor(descriptor):
 
 
 @contextmanager
+def _registered_directory(path):
+    # The rig authority alone recognizes explicit, currently active internal
+    # capabilities. Ordinary archive users need not import that subsystem.
+    try:
+        from rig_errors import scoped_directory_descriptor
+    except ImportError:
+        scoped_directory_descriptor = None
+    if scoped_directory_descriptor is None:
+        yield None
+    else:
+        with scoped_directory_descriptor(path) as descriptor:
+            yield descriptor
+
+
+@contextmanager
 def pinned_directory(path):
     """Open every existing path component without following symbolic links.
 
@@ -99,6 +215,10 @@ def pinned_directory(path):
     protection against namespace replacement.
     """
     _private_support()
+    with _registered_directory(path) as descriptor:
+        if descriptor is not None:
+            yield descriptor
+            return
     path = Path(path).absolute()
     if any(part == '..' for part in path.parts):
         raise ValueError('pinned directory path must not contain parent traversal')

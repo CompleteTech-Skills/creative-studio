@@ -11,7 +11,7 @@ from contextvars import copy_context
 SCRIPTS = Path(__file__).resolve().parents[1]/'scripts'
 sys.path.insert(0,str(SCRIPTS))
 import rig_errors
-from rig_errors import (RigError,directory_capability,normalize_root,open_payload,safe_path)
+from rig_errors import (RigError,directory_capability,normalize_root,open_payload,safe_path,scoped_directory_descriptor,job_lock)
 
 
 SUPPORTED = (os.name == 'posix' and Path('/proc/self/fd').is_dir()
@@ -97,6 +97,37 @@ class DirectoryCapabilityTests(unittest.TestCase):
             self.assertEqual(self.read(cap.path/'payload')[0],b'original')
             self.assertEqual((self.stage/'payload/data.bin').read_bytes(),b'foreign')
             self.assertEqual(normalize_root(cap.path),cap.path)
+
+    def test_writer_lock_requires_parent_authority_and_preserves_descendant_exclusion(self):
+        with directory_capability(self.fd) as cap:
+            with self.assertRaises(RigError) as caught:
+                with job_lock(cap.path):self.fail('Writer escaped its directory authority')
+            self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_LOCK')
+            self.assertTrue(os.fstat(cap.fd))
+            with job_lock(cap.path/'payload'):
+                with self.assertRaises(RigError) as busy:
+                    with job_lock(cap.path/'payload'):self.fail('Concurrent writer admitted')
+            self.assertEqual(busy.exception.report['code'],'RIG_BUSY')
+            self.assertEqual((cap.path/'payload/data.bin').read_bytes(),b'original')
+
+    def test_scoped_descendant_directory_fd_requires_active_authority(self):
+        raw=Path('/proc/self/fd')/str(self.fd)
+        with scoped_directory_descriptor(raw/'payload') as fd:self.assertIsNone(fd)
+        with scoped_directory_descriptor(self.stage/'payload') as fd:self.assertIsNone(fd)
+        with directory_capability(self.fd) as cap:
+            with scoped_directory_descriptor(cap.path/'payload') as fd:
+                self.assertNotEqual(fd,cap.fd)
+                self.stage.rename(self.root/'kept');self.stage.mkdir()
+                filefd=os.open('data.bin',os.O_RDONLY,dir_fd=fd)
+                with os.fdopen(filefd,'rb') as stream:self.assertEqual(stream.read(),b'original')
+                owned=fd
+            with self.assertRaises(OSError):os.fstat(owned)
+            (cap.path/'link').symlink_to(self.root,target_is_directory=True)
+            with self.assertRaises(RigError):
+                with scoped_directory_descriptor(cap.path/'link'):self.fail('symlink admitted')
+            with self.assertRaises(RigError):
+                with scoped_directory_descriptor(cap.path/'..'):self.fail('parent admitted')
+            self.assertTrue(os.fstat(cap.fd))
 
     def test_nested_capabilities_keep_outer_active(self):
         other=self.root/'other';other.mkdir();(other/'data.bin').write_bytes(b'other')

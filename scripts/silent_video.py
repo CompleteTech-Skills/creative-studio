@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from contextlib import contextmanager
 from fractions import Fraction
 import hashlib
 import json
@@ -17,12 +18,15 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 
 from PIL import Image
-from atomic_publish import _rename_no_replace
-from production_contracts import _structural, safe_path, read_json
+from atomic_publish import (_rename_no_replace, pinned_directory, private_stage,
+                            private_stage_supported)
+from production_contracts import _structural, read_json
+from rig_errors import directory_capability, normalize_root, open_payload, safe_path
 from production_render import fps_fraction, file_hash
 
 MAX_FRAMES = 18000
@@ -69,12 +73,7 @@ REQUEST = _obj({'schema_version': {'const': 1}, 'kind': {'const': 'silent-video-
 
 def schemas():
     """Standalone strict schemas. Semantic/path/hash checks remain mandatory."""
-    result = {'source': SOURCE, 'request': REQUEST, 'profile': _obj({
-        'container': {'enum': ['mp4', 'webm']}, 'codec': {'enum': ['h264', 'vp9']},
-        'encoder': {'enum': ['libx264', 'libvpx-vp9']},
-        'extension': {'enum': ['.mp4', '.webm']}, 'pixel_format': {'const': 'yuv420p'},
-        'alpha': {'const': 'opaque'}, 'color': {'const': 'untagged-sdr'}, 'precision': {'const': 8},
-        'crf': _int(0, 63), 'preset': {'enum': ['veryfast', 'good']}})}
+    result = {'source': SOURCE, 'request': REQUEST, 'profile': {'enum': list(PROFILES.values())}}
     raw = _obj({'command': {'type': 'array', 'minItems': 1, 'maxItems': 100, 'items': {'type': 'string', 'maxLength': 4096}},
                 'exit_status': {'const': 0}, 'stdout': {'type': 'string', 'maxLength': 64*1024**2},
                 'stderr': {'type': 'string', 'maxLength': 64*1024**2}})
@@ -108,7 +107,7 @@ def _digest(value):
 
 
 def _path(root, relative):
-    path = safe_path(root, relative)
+    path = safe_path(root, relative, exists=True)
     # Cross-platform alias and control-character rejection before native I/O.
     for part in relative.split('/'):
         if (part[-1:] in (' ', '.') or any(ord(c) < 32 for c in part) or
@@ -117,29 +116,13 @@ def _path(root, relative):
     return path
 
 
+@contextmanager
 def _open_source(root, relative):
-    """Walk directory descriptors without following replaceable symlinks."""
-    path = _path(root, relative)
-    if os.name == 'posix' and hasattr(os, 'O_NOFOLLOW'):
-        fd = os.open(Path(root).resolve(), os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            parts = relative.split('/')
-            for part in parts[:-1]:
-                next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
-                os.close(fd)
-                fd = next_fd
-            result = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
-        finally:
-            os.close(fd)
-        if not stat.S_ISREG(os.fstat(result).st_mode):
-            os.close(result)
-            raise ValueError('frame source must be a regular file')
-        return os.fdopen(result, 'rb')
-    stream = path.open('rb')
-    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode) or path.is_symlink():
-        stream.close()
-        raise ValueError('frame source must be a regular file')
-    return stream
+    """Use the shared descriptor authority for both frames and staged movies."""
+    root = normalize_root(root)
+    _path(root, relative)
+    with open_payload(root, relative) as (stream, _):
+        yield stream
 
 
 def _read_frame(root, relative):
@@ -155,6 +138,13 @@ def _read_frame(root, relative):
 
 def _image_unchecked(data, expected=None):
     import io
+    # Pillow exposes 16-bit RGB/RGBA PNGs as 8-bit RGB/RGBA. Inspect the
+    # encoded IHDR before decoding so this boundary cannot silently discard
+    # precision (or round nonopaque 16-bit alpha up to opaque).
+    if (len(data) < 33 or data[:8] != b'\x89PNG\r\n\x1a\n' or
+            data[8:16] != b'\x00\x00\x00\rIHDR' or
+            data[24] != 8 or data[25] not in (2, 6)):
+        raise ValueError('only 8-bit RGB/RGBA PNG masters are currently encodable')
     with Image.open(io.BytesIO(data)) as im:
         if im.format != 'PNG' or im.mode not in ('RGB', 'RGBA'):
             raise ValueError('only 8-bit RGB/RGBA PNG masters are currently encodable')
@@ -166,6 +156,8 @@ def _image_unchecked(data, expected=None):
         if expected is not None and im.size != expected:
             raise ValueError('frame dimensions differ from source inventory')
         im.load()
+        if 'transparency' in im.info:
+            raise ValueError('opaque profile rejects PNG transparency; composite explicitly first')
         if im.mode == 'RGBA' and im.getchannel('A').getextrema() != (255, 255):
             raise ValueError('opaque profile rejects nonopaque source alpha; composite explicitly first')
         return im.convert('RGB')
@@ -179,7 +171,10 @@ def _image(data, expected=None):
 
 
 def validate_source(source):
-    _structural(source, SOURCE, 'silent source')
+    try:
+        _structural(source, SOURCE, 'silent source')
+    except (OverflowError, RecursionError) as exc:
+        raise ValueError('source exceeds numeric/nesting limits') from exc
     fps_fraction(source['fps'])
     if source['width']*source['height'] > MAX_PIXELS or source['width'] % 2 or source['height'] % 2:
         raise ValueError('unsupported dimensions')
@@ -263,7 +258,10 @@ def make_request(source, profile='h264-mp4'):
 
 
 def validate_request(request):
-    _structural(request, REQUEST, 'silent request')
+    try:
+        _structural(request, REQUEST, 'silent request')
+    except (OverflowError, RecursionError) as exc:
+        raise ValueError('request exceeds numeric/nesting limits') from exc
     validate_source(request['source'])
     return request
 
@@ -275,11 +273,11 @@ def _binary(name, override=None):
     return str(Path(candidate).resolve())
 
 
-def _run(command, limits, *, cancel=None, output=None):
+def _run(command, limits, *, cancel=None, output=None, pass_fds=()):
     """Bound both process duration and captured evidence, including fast exits."""
     start = time.monotonic()
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr)
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, pass_fds=pass_fds)
         try:
             while True:
                 status = process.poll()
@@ -318,12 +316,14 @@ def capabilities(*, ffmpeg=None, ffprobe=None):
     except (ValueError, OSError) as exc:
         result.update(status='unavailable', reason=str(exc))
         return result
+    publication_supported = secure_publication_supported()
     for name, profile in PROFILES.items():
-        supported = (re.search(r'\b'+re.escape(profile['encoder'])+r'\b', lists['-encoders']) and
+        supported = (publication_supported and re.search(r'\b'+re.escape(profile['encoder'])+r'\b', lists['-encoders']) and
                      re.search(r'\b'+profile['container']+r'\b', lists['-muxers']) and
                      re.search(r'\byuv420p\b', lists['-pix_fmts']))
         result['profiles'][name] = {**profile, 'status': 'supported' if supported else 'unsupported'}
-    result.update(status='available', evidence=evidence, raw_capabilities=lists)
+    result.update(status='available', evidence=evidence, raw_capabilities=lists,
+                  secure_publication_supported=publication_supported)
     return result
 
 
@@ -341,6 +341,8 @@ def _snapshot(request, root, directory):
 
 def _fraction(value, label):
     try:
+        if not isinstance(value, str):
+            raise ValueError()
         result = Fraction(value)
         if result <= 0:
             raise ValueError()
@@ -363,7 +365,9 @@ def _verify_snapshot(path, request, root=None, *, ffmpeg=None, ffprobe=None, can
     try:
         data = json.loads(inspected['stdout'])
         streams = data['streams']
-        if isinstance(streams, list) and diagnostics is not None:
+        if not isinstance(streams, list) or any(not isinstance(x, dict) for x in streams):
+            raise ValueError('malformed stream list')
+        if diagnostics is not None:
             diagnostics.update(video_stream_count=sum(x.get('codec_type') == 'video' for x in streams),
                                audio_stream_count=sum(x.get('codec_type') == 'audio' for x in streams),
                                other_stream_count=sum(x.get('codec_type') not in ('video', 'audio') for x in streams),
@@ -527,7 +531,31 @@ def _destination(path):
     return path
 
 
-def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
+def secure_publication_supported():
+    # The current subprocess path adapter uses Linux procfs and inherited FDs.
+    # The shared primitive also supports macOS dirfds, but no untested fdescfs
+    # subprocess adapter is advertised as working.
+    return private_stage_supported()
+
+
+@contextmanager
+def _pin_directory(path):
+    if not secure_publication_supported():
+        raise ValueError('secure silent encoding currently requires Linux procfs; verification remains portable')
+    with pinned_directory(path) as descriptor:
+        yield descriptor
+
+
+@contextmanager
+def _private_stage(parent_fd):
+    with private_stage(parent_fd, prefix='.silent-export-') as (_, descriptor):
+        # Explicit registration retains this directory across owner namespace
+        # changes. Unregistered procfd strings remain untrusted inputs.
+        with directory_capability(descriptor) as capability:
+            yield capability.path, capability.fd
+
+
+def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
     validate_request(request)
     request = copy.deepcopy(request)
     destination = _destination(destination)
@@ -541,8 +569,7 @@ def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None
         raise ValueError('requested media profile unavailable/unsupported; no fallback')
     if shutil.disk_usage(destination.parent).free < sum(x['bytes'] for x in request['source']['frames']) + request['limits']['max_output_bytes']:
         raise ValueError('insufficient free storage for bounded snapshot and output')
-    with tempfile.TemporaryDirectory(prefix='.silent-export-', dir=destination.parent) as tmp:
-        stage = Path(tmp)
+    with _private_stage(parent_fd) as (stage, source_fd):
         inputs = stage/'frames'; inputs.mkdir()
         _snapshot(request, root, inputs)
         output = stage/('output.partial'+profile['extension'])
@@ -560,18 +587,31 @@ def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None
         command += [str(output)]
         if progress is not None:
             progress({'phase': 'encode', 'total_frames': len(request['source']['frames'])})
-        execution = _run(command, request['limits'], cancel=cancel, output=output)
-        receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
+        execution = _run(command, request['limits'], cancel=cancel, output=output, pass_fds=(source_fd,))
         if cancel is not None and cancel():
-            raise ValueError('silent export cancelled before publication')
+            raise ValueError('silent export cancelled before verification')
+        receipt = verify_export(output, request, root=root, ffmpeg=ffmpeg, ffprobe=ffprobe, cancel=cancel)
+        # Verification rechecks original bytes after its final cancellation
+        # callback. No user callback may mutate staging between that check and
+        # publication.
         # Never replace a file or even an empty directory created by another writer.
-        _destination(destination)
-        _rename_no_replace(output, destination)
+        # Source and destination basenames resolve relative to pinned directory
+        # descriptors, never a path a concurrent writer can replace by a symlink.
+        _rename_no_replace(output.name, destination.name,
+                           source_dir_fd=source_fd, destination_dir_fd=parent_fd)
         receipt['encode'] = execution
         receipt['path'] = destination.name
         if progress is not None:
             progress({'phase': 'complete', 'frame_count': receipt['frame_count']})
         return receipt
+
+
+def encode(request, root, destination, *, ffmpeg=None, ffprobe=None, cancel=None, progress=None):
+    validate_request(request)
+    destination = _destination(destination)
+    with _pin_directory(destination.parent) as parent_fd:
+        return _encode_pinned(request, root, destination, parent_fd, ffmpeg=ffmpeg,
+                              ffprobe=ffprobe, cancel=cancel, progress=progress)
 
 
 def main():

@@ -14,6 +14,8 @@ The explicit API admits bounded ordered **opaque 8-bit RGB/RGBA PNG** sources.
 It supports H.264 MP4 (`libx264`, CRF 18, veryfast, `yuv420p`, `+faststart`) and
 VP9 WebM (`libvpx-vp9`, CRF 30, zero bitrate target). Required binaries are
 separately discovered and probed; unsupported codecs never select a fallback.
+Secure encoding currently requires Linux with procfs and descriptor-relative exclusive rename. Verification and contract admission remain portable, but non-Linux encoding reports unsupported rather than using untested directory-swap protection. The shared publisher also exposes macOS directory-descriptor support; a macOS media-path adapter is not claimed here.
+
 The profiles are untagged SDR; neither HDR nor color-managed transforms are
 claimed. Alpha-bearing, EXR, high-bit-depth, odd-size or oversized images fail
 instead of silently being flattened, tone-mapped, resized or padded.
@@ -100,8 +102,19 @@ decoded frames are compared to source pixels (RGB PSNR at least 18 dB, a
 conservative defect detector, not visual approval).
 
 Only successful independent verification permits exclusive native atomic
-publication. An existing destination, including a racing empty directory or
-symlink, is preserved. Private partials are removed after failures. The returned
+publication. The output directory is opened without following symlinks and pinned
+by descriptor through staging, subprocesses and the final rename. A concurrent
+parent rename retains that original directory identity; a substituted pathname
+cannot redirect publication elsewhere. An existing destination, including a racing empty directory or
+symlink, is preserved. The private staging directory is also pinned before any
+frame or encoded bytes are written; its replaceable basename is never reopened
+for publication or recursive cleanup. Cleanup preserves a foreign replacement.
+The shared [private staging authority](atomic-publication.md) clears only its
+owned contents and retains tiny empty outer wrappers for explicit maintenance;
+it never deletes a possibly replaced outer basename. Cancellation callbacks run
+during encoding and verification, with no callback
+between the final original-byte recheck and exclusive publication. Private
+partials are removed after failures. The returned
 receipt binds the actual artifact, source manifest and request hashes and
 retains commands, raw probe output, timeline and decode evidence. Persist it in
 the enclosing renderer's existing transaction; this low-level API does not
@@ -127,4 +140,10 @@ Real acceptance tests create labeled synthetic PNGs and run installed media
 binaries. They do not claim 3D geometry or production-art approval. See
 `tests/results/silent-video-foundations.json` for executed results, source
 revision, versions, logs and limitations. Run focused acceptance with
-`python -m unittest discover -s tests -p test_silent_video.py -v`.
+`python -m unittest discover -s tests -p test_silent_video.py -v` runs the
+portable contract checks without optional skips. The dedicated Linux media
+gate runs `HATCH_SILENT_MEDIA_TEST=1 python -m unittest discover -s tests/optional
+-p test_silent_video_native.py -v` with real FFmpeg/ffprobe and descriptor
+publication tests. Its optional directory is intentionally not a package, so
+portable required discovery does not misreport unsupported native encoding as
+executed or relax its unexpected-skip policy.
