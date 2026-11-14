@@ -58,6 +58,61 @@ class JobTests(unittest.TestCase):
                 image.load();self.assertEqual(image.size,tuple(req['settings']['resolution']))
         return {'decoded':True,'verifier':dict(id='test-pillow',version='1.0.0',code_sha256='0'*64,platform='test')}
 
+    def _replace_public_stage(self, root):
+        """Attack only the exposed wrapper, never a pinned private payload."""
+        actual=Path(root).resolve()
+        wrapper=actual.parent if actual.name=='payload' else actual
+        saved=wrapper.with_name(wrapper.name+'-verified-original')
+        try:
+            wrapper.rename(saved)
+        except PermissionError:
+            # Windows handle sharing may prevent replacement for the entire
+            # protected lifetime. Success still requires the original pixels.
+            return None
+        wrapper.mkdir()
+        (wrapper/'FOREIGN.txt').write_text('foreign namespace replacement')
+        return wrapper
+
+    def test_cache_publication_keeps_verified_bytes_after_wrapper_replacement(self):
+        job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
+        replacements=[]
+        def verify(request,result,root):
+            report=self.verify(request,result,root)
+            actual=Path(root).resolve()
+            if actual.is_relative_to(self.store.root/'staging'):
+                replacements.append(self._replace_public_stage(root))
+            return report
+        self.store.publish(lease,output,result,verify)
+        cached=self.store.root/'cache'/lease['cache_key']
+        self.assertTrue(replacements)
+        self.verify(self.store.frame_request(lease),result,cached)
+        self.assertFalse((cached/'FOREIGN.txt').exists())
+        for replacement in replacements:
+            if replacement is not None:
+                self.assertEqual((replacement/'FOREIGN.txt').read_text(),'foreign namespace replacement')
+        self.assertEqual(self.store.status(job)['frames'][0]['state'],'complete')
+
+    def test_delivery_publication_keeps_verified_bytes_after_wrapper_replacement(self):
+        job=self.submit()
+        for _ in range(2):
+            lease=self.store.claim(job);output,result=self.output(lease)
+            self.store.publish(lease,output,result,self.verify)
+        replacements=[]
+        def verify(request,result,root):
+            report=self.verify(request,result,root)
+            actual=Path(root).resolve()
+            if not actual.is_relative_to(self.store.root):
+                replacements.append(self._replace_public_stage(root))
+            return report
+        destination=self.root/'verified-delivery'
+        result=self.store.materialize(job,destination,verify)
+        self.assertTrue(replacements)
+        self.verify(self.request,result,destination)
+        self.assertFalse((destination/'FOREIGN.txt').exists())
+        for replacement in replacements:
+            if replacement is not None:
+                self.assertEqual((replacement/'FOREIGN.txt').read_text(),'foreign namespace replacement')
+
     def test_artifact_replaced_with_fifo_does_not_block_copy(self):
         import os
         if not hasattr(os,'mkfifo'):self.skipTest('FIFO race applies to POSIX')
