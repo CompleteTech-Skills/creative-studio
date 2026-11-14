@@ -131,9 +131,9 @@ def atomic_json(path: str | Path, value: Any) -> None:
 
 def portable_name(name: str) -> str:
     # Same portable spelling policy as the existing decomposition transport.
-    from decomposition_package import _relative
+    from portable_paths import existing_relative
     try:
-        return _relative(name)
+        return existing_relative(name)
     except ValueError as exc:
         raise RigError('RIG_PATH', str(exc), asset=str(name)) from exc
 
@@ -389,7 +389,11 @@ def slug(text: str) -> str:
 @contextmanager
 def job_lock(root: str | Path) -> Iterator[None]:
     """OS locks release on process exit; the lock inode is never replaced."""
-    root = Path(root).resolve()
+    capability,_,suffix = _directory_anchor(root)
+    require(capability is None or bool(suffix), 'RIG_DIRECTORY_LOCK',
+            'A writer needs a descendant root so its sibling lock stays inside directory authority. '
+            'Activate the parent directory capability when writing an existing rig root.')
+    root = normalize_root(root)
     root.parent.mkdir(parents=True, exist_ok=True)
     lock = root.parent / ('.' + root.name + '.rig.lock')
     require(not lock.is_symlink(), 'RIG_SYMLINK', 'Lock path cannot be a symbolic link.')

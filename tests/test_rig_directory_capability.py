@@ -11,7 +11,7 @@ from contextvars import copy_context
 SCRIPTS = Path(__file__).resolve().parents[1]/'scripts'
 sys.path.insert(0,str(SCRIPTS))
 import rig_errors
-from rig_errors import (RigError,directory_capability,normalize_root,open_payload,safe_path,scoped_directory_descriptor)
+from rig_errors import (RigError,directory_capability,normalize_root,open_payload,safe_path,scoped_directory_descriptor,job_lock)
 
 
 SUPPORTED = (os.name == 'posix' and Path('/proc/self/fd').is_dir()
@@ -97,6 +97,18 @@ class DirectoryCapabilityTests(unittest.TestCase):
             self.assertEqual(self.read(cap.path/'payload')[0],b'original')
             self.assertEqual((self.stage/'payload/data.bin').read_bytes(),b'foreign')
             self.assertEqual(normalize_root(cap.path),cap.path)
+
+    def test_writer_lock_requires_parent_authority_and_preserves_descendant_exclusion(self):
+        with directory_capability(self.fd) as cap:
+            with self.assertRaises(RigError) as caught:
+                with job_lock(cap.path):self.fail('Writer escaped its directory authority')
+            self.assertEqual(caught.exception.report['code'],'RIG_DIRECTORY_LOCK')
+            self.assertTrue(os.fstat(cap.fd))
+            with job_lock(cap.path/'payload'):
+                with self.assertRaises(RigError) as busy:
+                    with job_lock(cap.path/'payload'):self.fail('Concurrent writer admitted')
+            self.assertEqual(busy.exception.report['code'],'RIG_BUSY')
+            self.assertEqual((cap.path/'payload/data.bin').read_bytes(),b'original')
 
     def test_scoped_descendant_directory_fd_requires_active_authority(self):
         raw=Path('/proc/self/fd')/str(self.fd)

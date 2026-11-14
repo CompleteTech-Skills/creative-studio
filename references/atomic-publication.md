@@ -111,3 +111,29 @@ portable contracts with no platform skips. Linux race fixtures live under
 Linux descriptor CI job; they do not add unapproved skips to the required 2D
 compatibility discovery. The focused workflow also executes portable contracts
 on Linux, Windows and macOS without claiming private staging works off Linux.
+# Descriptor-only POSIX staging
+
+`pinned_directory_fd(existing_path)` pins an ordinary parent directory using the
+canonical no-follow component walk on supported POSIX systems, without requiring
+procfs. Callers then use its borrowed descriptor with `private_stage_fd` and keep
+all I/O descriptor-relative. It supplies no mutable-path alias on macOS. The
+existing Linux `pinned_directory` entry point retains its platform contract.
+
+`private_stage_fd_supported()` reports the separate descriptor-only capability.
+`private_stage_fd(parent_fd, prefix='.publish-', cleanup=True,
+cleanup_on_error=True)` yields a directory descriptor without requiring procfs.
+It creates an unpredictable private mode-0700 directory and pins it before any
+caller writes. Use descriptor-relative file operations and publish an inner
+payload with `rename_no_replace_at`; do not publish the public wrapper basename.
+Cleanup uses a fresh directory stream and descriptor-relative operations, leaves
+the empty outer wrapper, and preserves foreign replacements. The descriptor
+always closes. Unsupported hosts fail with `ENOTSUP` before creating anything.
+The existing Linux `private_stage` path adapter and its support probe retain
+their original contract. This addition does not supply a Windows path-pinning
+adapter or claim protection from hostile processes running as the same user.
+
+`pinned_directory` also accepts paths admitted by the canonical active
+`rig_errors.scoped_directory_descriptor` context. That authority supplies its own
+owned descriptor, including for safe descendants of a registered root. Ordinary
+paths still use the strict no-follow component walk; an unregistered procfs
+alias or expired capability receives no exception to that policy.
