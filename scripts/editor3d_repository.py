@@ -16,7 +16,7 @@ import tempfile
 import time
 import zipfile
 
-from atomic_publish import _rename_no_replace
+from atomic_publish import _rename_no_replace, publish_verified_file, VerifiedFileCleanupError
 from rig_errors import RigError, atomic_json, decode_json, finite_json, job_lock, portable_name, safe_path, timestamp
 from scene3d_contracts import load_project
 
@@ -644,17 +644,32 @@ class EditorRepository:
             _require(not self.recovery(), 'RECOVERY', 'Resolve interrupted transactions before archive export.')
             files = self._all_files()
             receipt = dict(schema_version=FORMAT, kind='editor3d-archive', files=files, head=head)
-            with tempfile.TemporaryDirectory(prefix='.editor-archive-', dir=destination.parent) as temporary:
-                stage = Path(temporary) / 'archive.zip'
-                with zipfile.ZipFile(stage, 'x', zipfile.ZIP_DEFLATED) as archive:
+            # Keep the writer and verifier on the same open temporary file.
+            # No published pathname can redirect either one to replacement bytes.
+            with tempfile.TemporaryFile(mode='w+b') as stream:
+                with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as archive:
                     for name, record in files.items():
                         archive.writestr(name, _regular_bytes(self.root, name, record, self.limits['max_file_bytes']))
                     archive.writestr('archive-receipt.json', _bytes(receipt))
-                self.verify_archive(stage)
-                with stage.open('rb') as stream: os.fsync(stream.fileno())
-                _rename_no_replace(stage, destination)
-                _sync_directory(destination.parent)
-        return dict(archive=str(destination), sha256=hashlib.sha256(destination.read_bytes()).hexdigest(), revision=head['revision'])
+                stream.flush(); os.fsync(stream.fileno())
+                size = os.fstat(stream.fileno()).st_size
+                maximum = self.limits['max_bytes'] + MAX_METADATA_BYTES + self.limits['max_files'] * 4096
+                _require(size <= maximum, 'LIMIT', 'Encoded archive exceeds the export byte budget.')
+                stream.seek(0)
+                digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+                stream.seek(0)
+                _require(self.verify_archive(stream) == receipt, 'HASH', 'Verified archive differs from this export.')
+                try:
+                    publication = publish_verified_file(stream.fileno(), destination,
+                        expected_sha256=digest, expected_size=size, max_bytes=maximum)
+                    cleanup_pending = False
+                except VerifiedFileCleanupError as exc:
+                    publication = exc.receipt
+                    cleanup_pending = True
+        result = dict(archive=str(destination), sha256=publication['sha256'], revision=head['revision'])
+        if cleanup_pending:
+            result['cleanup_pending'] = True
+        return result
 
     @staticmethod
     def verify_archive(path):

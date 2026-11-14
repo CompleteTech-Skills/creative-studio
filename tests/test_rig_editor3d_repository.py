@@ -284,6 +284,50 @@ raise AssertionError('writer was not excluded')
         with self.assertRaises(RigError):EditorRepository.restore_archive(self.root/'archive.zip',destination)
         self.assertTrue(destination.is_dir());self.assertEqual(list(destination.iterdir()),[])
 
+    def test_archive_rejects_bytes_changed_after_verification(self):
+        original = EditorRepository.verify_archive
+        before = self.repo.snapshot()
+        destination = self.root/'changed-after-verification.zip'
+        def change_verified_input(source):
+            receipt = original(source)
+            # Exercise the actual admitted file, including the historical
+            # path-based implementation used as this regression's control.
+            if hasattr(source, 'seek'):
+                source.seek(0); source.write(b'UNVERIFIED ARCHIVE REPLACEMENT'); source.truncate(); source.flush()
+            else:
+                Path(source).write_bytes(b'UNVERIFIED ARCHIVE REPLACEMENT')
+            return receipt
+        with patch.object(EditorRepository, 'verify_archive', side_effect=change_verified_input):
+            with self.assertRaises((ValueError, RigError)):
+                self.repo.archive(destination)
+        self.assertFalse(destination.exists())
+        self.assertEqual(self.repo.snapshot(), before)
+
+    def test_archive_racing_destination_preserves_foreign_bytes(self):
+        import editor3d_repository as module
+        original = module.publish_verified_file
+        destination = self.root/'racing-archive.zip'
+        def race(source_fd, target, **kwargs):
+            Path(target).write_bytes(b'foreign archive destination')
+            return original(source_fd, target, **kwargs)
+        with patch.object(module, 'publish_verified_file', side_effect=race):
+            with self.assertRaises(FileExistsError):
+                self.repo.archive(destination)
+        self.assertEqual(destination.read_bytes(), b'foreign archive destination')
+
+    def test_archive_cleanup_failure_reports_the_committed_verified_archive(self):
+        import editor3d_repository as module
+        original = module.publish_verified_file
+        destination = self.root/'committed-archive.zip'
+        def cleanup_failure(source_fd, target, **kwargs):
+            receipt = original(source_fd, target, **kwargs)
+            raise module.VerifiedFileCleanupError(receipt)
+        with patch.object(module, 'publish_verified_file', side_effect=cleanup_failure):
+            result = self.repo.archive(destination)
+        self.assertTrue(result['cleanup_pending'])
+        self.assertEqual(result['sha256'], hashlib.sha256(destination.read_bytes()).hexdigest())
+        self.assertEqual(EditorRepository.verify_archive(destination)['head']['revision'], result['revision'])
+
     def test_archive_rejects_path_traversal_duplicates_and_link_members(self):
         for name,mode in (('../escape',0),('Foo',0),('link',0o120777<<16)):
             archive_path=self.root/(name.replace('/','_')+'.zip')
