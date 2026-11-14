@@ -148,6 +148,21 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
         require(source_snapshot.model.geometry is geometry,
                 'MODEL3D_SOURCE', 'Source snapshot must own the exported geometry.')
         fixture = source_snapshot.model.report.get('fixture') is True
+        # Only the canonical import adapter establishes this binding; editable
+        # provenance alone is never an authority for fixture classification.
+        binding = getattr(source_snapshot, '_canonical_binding', None)
+        require(binding is not None or not any(key in source_snapshot.provenance
+                for key in ('manifest', 'canonical_ref')),
+                'MODEL3D_SOURCE', 'Canonical claims require an authenticated import binding.')
+        if binding is not None:
+            from asset_library_contracts import canonical_bytes, load_manifest
+            require(isinstance(binding, tuple) and len(binding) == 3
+                    and canonical_bytes(source_snapshot.provenance.get('manifest')) == binding[0]
+                    and canonical_bytes(source_snapshot.provenance.get('canonical_ref')) == binding[1]
+                    and source_snapshot.provenance.get('source_entry') == binding[2],
+                    'MODEL3D_SOURCE', 'Canonical provenance no longer matches its authenticated binding.')
+            canonical = load_manifest(binding[0])
+            fixture = fixture or canonical['provenance']['fixture'] is True
         require(not fixture or format != 'obj', 'MODEL3D_EXPORT_LOSS',
                 'OBJ cannot preserve fixture provenance; use GLB or glTF.')
     payloads = _obj_payloads(geometry, limits) if format == 'obj' else None
@@ -231,7 +246,14 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
                     'MODEL3D_SOURCE', 'Source entry is absent from the verified inventory.')
             from rig_errors import safe_path
             verified = load_character_model(safe_path(stage/'source', entry), limits=limits)
-            require((verified.report.get('fixture') is True) == fixture,
+            native_fixture = verified.report.get('fixture') is True
+            if binding is not None:
+                from model3d_mesh_import import select_canonical_geometry
+                inventory = {item['path']: (item['bytes'], item['sha256']) for item in canonical['files']}
+                copied = {item['original_path']: (item['bytes'], item['sha256']) for item in source_records}
+                require(copied == inventory and entry == binding[2] == select_canonical_geometry(canonical, entry=entry)['path'],
+                        'MODEL3D_SOURCE', 'Copied sources do not match the authenticated canonical inventory.')
+            require((native_fixture or (binding is not None and canonical['provenance']['fixture'] is True)) == fixture,
                     'MODEL3D_SOURCE', 'Source fixture classification does not match verified bytes.')
             envelope = dict(schema_version=1, kind='hatch-model3d-source-snapshot',
                             files=source_records, provenance=source_snapshot.provenance)
