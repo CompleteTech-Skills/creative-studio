@@ -98,12 +98,14 @@ class LoadBudget:
         self.json_bytes += size
         return size
 
-    def json(self, path: Path):
+    def json(self, path: Path, *, expected_hash=None, hash_code='RIG_HASH'):
         size = self.charge_json(path)
         # Bounded read also rejects a file growing between stat and read.
         with open_payload(path.parent, path.name) as (stream, _):
             payload = stream.read(size + 1)
         require(len(payload) == size, 'RIG_SOURCE_CHANGED', 'JSON changed during admission.', asset=path.name)
+        require(expected_hash is None or hashlib.sha256(payload).hexdigest() == expected_hash,
+                hash_code, 'Native JSON bytes differ from their immutable reference.', asset=path.name)
         return decode_json(payload)
 
     def report(self):
