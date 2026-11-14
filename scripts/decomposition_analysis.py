@@ -9,17 +9,17 @@ import argparse
 import copy
 import json
 import hashlib
+import io
 import os
 import stat
-import shutil
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
 
-from asset_contracts import hash_object, sha
-from character_decomposition import (_annotation, load_decomposition,
+from asset_contracts import hash_object, MAX_SOURCE_BYTES
+from character_decomposition import (_annotation, load_decomposition, MAX_JSON_BYTES,
                                      rebuild_from_annotation)
 from decomposition_spec import (ANNOTATION_SCHEMA, HASH, TEXT, NOTE, BOOLEAN,
     array, obj, validate_structure, safe_path)
@@ -135,8 +135,8 @@ def _record_bytes(path, maximum=MAX_RESPONSE_BYTES):
         return data
 
 
-def _record_sha(path):
-    return hashlib.sha256(_record_bytes(path)).hexdigest()
+def _record_sha(path, maximum=MAX_RESPONSE_BYTES):
+    return hashlib.sha256(_record_bytes(path, maximum)).hexdigest()
 
 
 def _record_json(path):
@@ -160,17 +160,59 @@ def schemas():
         for name, value in [('request', REQUEST), ('response', RESPONSE), ('state', STATE)]}
 
 
-def _model():
+def _capture_model():
+    """Capture the exact bounded XML bytes used to identify and load a model."""
     try:
         import cv2
     except ImportError as exc:
         raise ValueError('OpenCV analysis is unavailable; install optional requirements-analysis.txt') from exc
-    files = [Path(cv2.data.haarcascades) / name for name in MODEL_FILES]
-    if any(not p.is_file() or p.is_symlink() for p in files):
-        raise ValueError('OpenCV installed cascades unavailable')
-    return {'provider': 'local-opencv', 'name': 'opencv-haar-face-eye', 'version': cv2.__version__,
-            'files': [{'name': p.name, 'sha256': sha(p)} for p in files],
-            'identity_evidence': 'Installed OpenCV version and exact cascade bytes; not a remote call.'}
+    if (not callable(getattr(cv2, 'FileStorage', None)) or
+            not callable(getattr(cv2, 'CascadeClassifier', None)) or
+            not callable(getattr(cv2.CascadeClassifier, 'read', None)) or
+            not all(type(getattr(cv2, name, None)) is int for name in
+                    ('FILE_STORAGE_READ', 'FILE_STORAGE_MEMORY'))):
+        raise ValueError('OpenCV analysis requires in-memory cascade loading support')
+    from rig_errors import open_payload
+    root = Path(cv2.data.haarcascades).resolve()
+    captured = {}
+    for name in MODEL_FILES:
+        with open_payload(root, name) as (stream, info):
+            if info.st_size > MAX_RESPONSE_BYTES:
+                raise ValueError('OpenCV cascade exceeds the 8 MiB model byte quota')
+            payload = stream.read(MAX_RESPONSE_BYTES + 1)
+            if len(payload) > MAX_RESPONSE_BYTES:
+                raise ValueError('OpenCV cascade exceeds the 8 MiB model byte quota')
+        captured[name] = payload
+    model = {'provider': 'local-opencv', 'name': 'opencv-haar-face-eye', 'version': cv2.__version__,
+             'files': [{'name': name, 'sha256': hashlib.sha256(captured[name]).hexdigest()}
+                       for name in MODEL_FILES],
+             'identity_evidence': 'Installed OpenCV version and exact cascade bytes; not a remote call.'}
+    return model, captured
+
+
+def _model():
+    return _capture_model()[0]
+
+
+def _classifier_from_xml(cv2, payload, name):
+    """Load only captured bytes; never pass a model filename to OpenCV."""
+    if type(payload) is not bytes or not payload or len(payload) > MAX_RESPONSE_BYTES:
+        raise ValueError('OpenCV cascade requires bounded immutable XML bytes')
+    try:
+        storage = cv2.FileStorage(payload.decode('utf-8'),
+                                 cv2.FILE_STORAGE_READ | cv2.FILE_STORAGE_MEMORY)
+        try:
+            if not storage.isOpened():
+                raise ValueError('captured XML storage did not open')
+            classifier = cv2.CascadeClassifier()
+            if not classifier.read(storage.getFirstTopLevelNode()) or classifier.empty():
+                raise ValueError('captured XML is not a supported cascade')
+            return classifier
+        finally:
+            storage.release()
+    except Exception as exc:
+        raise ValueError('OpenCV cannot load captured cascade ' + name +
+                         ' in memory (' + type(exc).__name__ + ')') from None
 
 
 def _local_model(backend):
@@ -252,6 +294,34 @@ def provenance(root, annotation, source_hash):
     return record
 
 
+def _source_bytes(root, reference):
+    """Hash bounded bytes from the canonical admitted regular-file descriptor."""
+    from rig_errors import open_payload
+    # Decomposition callers historically accept ordinary OS root aliases.
+    # Resolve that adapter boundary before using the stricter native reader.
+    physical_root = Path(root).resolve()
+    with open_payload(physical_root, reference['path']) as (stream, _):
+        if os.fstat(stream.fileno()).st_size > MAX_SOURCE_BYTES:
+            raise ValueError('analysis source/reference exceeds byte quota')
+        payload = stream.read(MAX_SOURCE_BYTES + 1)
+        if len(payload) > MAX_SOURCE_BYTES:
+            raise ValueError('analysis source/reference exceeds byte quota')
+    if hashlib.sha256(payload).hexdigest() != reference['sha256']:
+        raise ValueError('analysis source/reference bytes changed')
+    return payload
+
+
+def _source_image(root, request, *, mode='RGB'):
+    """Decode the exact admitted/hash-verified source bytes, without reopening."""
+    from PIL import Image
+    payload = _source_bytes(root, request['source'])
+    with Image.open(io.BytesIO(payload)) as image:
+        expected = (request['source']['width'], request['source']['height'])
+        if image.size != expected or image.width * image.height > request['policy']['max_pixels']:
+            raise ValueError('analysis source dimensions changed or exceed pixel quota')
+        return image.convert(mode)
+
+
 def _source(root, request):
     validate_structure(request, REQUEST, 'analysis request')
     if request['backend'] == 'opencv-haar':
@@ -268,9 +338,7 @@ def _source(root, request):
     if source['width'] * source['height'] > request['policy']['max_pixels']:
         raise ValueError('analysis source exceeds pixel quota')
     for ref in [source, *request['references']]:
-        path = safe_path(root, ref['path'])
-        if not path.is_file() or sha(path) != ref['sha256']:
-            raise ValueError('analysis source/reference bytes changed')
+        _source_bytes(root, ref)
     return manifest
 
 
@@ -287,7 +355,7 @@ def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_secon
         from decomposition_clipseg import DEFAULT_PARAMETERS, DEFAULT_TAXONOMY
         taxonomy = DEFAULT_TAXONOMY if taxonomy is None else taxonomy
         parameters = dict(DEFAULT_PARAMETERS) if parameters is None else parameters
-    request = {'base_manifest_sha256': sha(root / 'decomposition.json'), 'schema_version': 1, 'kind': 'decomposition-analysis-request',
+    request = {'base_manifest_sha256': _record_sha(root / 'decomposition.json', MAX_JSON_BYTES), 'schema_version': 1, 'kind': 'decomposition-analysis-request',
         'source': {key: manifest['source'][key] for key in ('path', 'sha256')},
         'references': [{'role': 'foreground', **manifest['foreground']['mask']}],
         'taxonomy': taxonomy or ['face/region', 'face/eye-region'], 'backend': backend,
@@ -318,21 +386,99 @@ def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_secon
         if _record_json(job / 'request.json') != request:
             raise ValueError('analysis request collision')
         return status(root, identifier)
-    directory = safe_path(root, 'analysis-jobs')
-    directory.mkdir(exist_ok=True)
-    if len(list(directory.iterdir())) >= MAX_JOBS:
-        raise ValueError('analysis job quota exceeded')
-    from atomic_publish import _rename_no_replace
-    stage = Path(tempfile.mkdtemp(prefix='.analysis-', dir=directory))
-    try:
-        atomic_json(stage / 'request.json', request)
-        atomic_json(stage / 'state.json', {'status': 'ready' if backend != 'external' else 'awaiting-external',
-            'attempts': 0, 'request_sha256': identifier, 'applied_revision': None, 'error': None})
-        _rename_no_replace(stage, job)
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
-    return status(root, identifier)
+    state = {'status': 'awaiting-external' if backend == 'external' else 'ready',
+             'attempts': 0, 'request_sha256': identifier, 'applied_revision': None, 'error': None}
+    return _publish_prepared_job(root, identifier, request, state)
+
+
+def _publish_prepared_job(root, identifier, request, state):
+    """Publish small job records through the canonical owned staging authority.
+
+    Empty outer wrappers are intentionally retained by that authority. Keep them
+    outside analysis-jobs so they do not consume the existing job quota, and cap
+    their count separately, including wrappers left by interrupted attempts.
+    """
+    from contextlib import ExitStack
+    from itertools import islice
+    from atomic_publish import pinned_directory_fd, private_stage_fd, rename_no_replace_at, windows_private_stage
+    root = Path(root).resolve()  # Preserve the decomposition OS-root alias adapter.
+    payloads = {name: (json.dumps(value, indent=2, allow_nan=False) + '\n').encode('utf-8')
+                for name, value in (('request.json', request), ('state.json', state))}
+    if any(len(value) > MAX_RESPONSE_BYTES for value in payloads.values()):
+        raise ValueError('analysis job records exceed byte quota')
+    def full(directory, limit):
+        # Read at most the admission limit, even in an already crowded directory.
+        with os.scandir(directory) as entries:
+            return sum(1 for _ in islice(entries, limit)) >= limit
+    if os.name == 'nt':
+        from atomic_windows import pinned_directory
+        with pinned_directory(root) as parent:
+            if _record_sha(parent.path / 'decomposition.json', MAX_JSON_BYTES) != request['base_manifest_sha256']:
+                raise ValueError('decomposition changed before analysis job publication')
+            with ExitStack() as stack:
+                pins = []
+                for name in ('analysis-jobs', '.analysis-staging'):
+                    (parent.path / name).mkdir(exist_ok=True)
+                    pins.append(stack.enter_context(parent.pin_child(name)))
+                jobs, staging = pins
+                if full(jobs.path, MAX_JOBS):
+                    raise ValueError('analysis job quota exceeded')
+                if full(staging.path, MAX_JOBS * 4):
+                    raise ValueError('analysis staging quota exceeded')
+                with windows_private_stage(staging.path, prefix='.analysis-') as stage:
+                    # The managed stage and all ancestors deny namespace changes.
+                    # No descendant directory pins remain when the held payload publishes.
+                    for name, payload in payloads.items():
+                        with (stage.path / name).open('xb') as stream:
+                            stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+                    stage.publish_to(jobs.path / identifier)
+                return status(root, identifier)
+    with pinned_directory_fd(root) as parent, ExitStack() as stack:
+        descriptor = os.open('decomposition.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        with os.fdopen(descriptor, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_JSON_BYTES:
+                raise ValueError('analysis manifest must be a bounded regular file')
+            selected = stream.read(MAX_JSON_BYTES + 1)
+            if len(selected) > MAX_JSON_BYTES or hashlib.sha256(selected).hexdigest() != request['base_manifest_sha256']:
+                raise ValueError('decomposition changed before analysis job publication')
+        children = []
+        for name in ('analysis-jobs', '.analysis-staging'):
+            try: os.mkdir(name, mode=0o700, dir_fd=parent)
+            except FileExistsError: pass
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            stack.callback(os.close, child)
+            children.append(child)
+        jobs, staging = children
+        if full(jobs, MAX_JOBS):
+            raise ValueError('analysis job quota exceeded')
+        if full(staging, MAX_JOBS * 4):
+            raise ValueError('analysis staging quota exceeded')
+        def check_namespace():
+            for current, held in ((root.stat(), os.fstat(parent)),
+                                  (os.stat('analysis-jobs', dir_fd=parent, follow_symlinks=False), os.fstat(jobs)),
+                                  (os.stat('.analysis-staging', dir_fd=parent, follow_symlinks=False), os.fstat(staging))):
+                if (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino):
+                    raise ValueError('analysis job publication directory changed')
+        with private_stage_fd(staging, prefix='.analysis-') as stage:
+            os.mkdir('payload', mode=0o700, dir_fd=stage)
+            payload_fd = os.open('payload', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=stage)
+            try:
+                for name, payload in payloads.items():
+                    descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                         0o600, dir_fd=payload_fd)
+                    with os.fdopen(descriptor, 'wb') as stream:
+                        stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+                os.fsync(payload_fd)
+                check_namespace()
+                rename_no_replace_at(stage, 'payload', jobs, identifier)
+                os.fsync(jobs)
+                check_namespace()
+            finally:
+                os.close(payload_fd)
+        result = status(root, identifier)
+        check_namespace()
+        return result
 
 
 def _recover_retry(root, identifier):
@@ -442,9 +588,8 @@ def _validated_response(root, identifier, response):
             raise ValueError('analysis responses require inline runs or polygons')
     if 'foreground_mask' in annotation:
         raise ValueError('analysis cannot replace foreground; use its independent owner')
-    from PIL import Image
-    with Image.open(safe_path(root, request['source']['path'])) as image:
-        normalized = _annotation(annotation, request['source']['sha256'], image.convert('RGBA'), root)
+    image = _source_image(root, request, mode='RGBA')
+    normalized = _annotation(annotation, request['source']['sha256'], image, root)
     return normalized
 
 
@@ -557,7 +702,7 @@ def apply(root, identifier):
     # job state acknowledgement without creating another revision.
     current_annotation = _record_json(safe_path(root, current['annotation']['path']))
     if current_annotation.get('extensions', {}).get('decomposition_analysis') != evidence:
-        if sha(Path(root) / 'decomposition.json') != info['request']['base_manifest_sha256']:
+        if _record_sha(Path(root) / 'decomposition.json', MAX_JSON_BYTES) != info['request']['base_manifest_sha256']:
             raise ValueError('decomposition changed since analysis request; preserve reviewer edits')
         current = rebuild_from_annotation(root, normalized,
             reason='Automatic source-bound proposals; semantic review remains pending.',
@@ -622,15 +767,14 @@ def _worker(root, identifier):
     job = _job(root, identifier)
     request = _record_json(job / 'request.json')
     _source(root, request)
-    if _model() != request['model']:
+    model, captured = _capture_model()
+    if model != request['model']:
         raise ValueError('local cascade identity changed')
     started = time.monotonic()
     cv2.setNumThreads(1)
-    with Image.open(safe_path(root, request['source']['path'])) as image:
-        rgb = np.asarray(image.convert('RGB'))
+    rgb = np.asarray(_source_image(root, request))
     gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-    face = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / MODEL_FILES[0]))
-    eyes = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / MODEL_FILES[1]))
+    face, eyes = [_classifier_from_xml(cv2, captured[name], name) for name in MODEL_FILES]
     parts = []
     def add(identifier, name, category, box, parent=None):
         x,y,w,h = map(int, box)
@@ -650,7 +794,7 @@ def _worker(root, identifier):
                 add(f'eye-region-{i+1}-{j+1}', f'Eye region {i+1}.{j+1}', 'face/eye-region', (x+ex,y+ey,ew,eh), ident if 'face/region' in request['taxonomy'] else None)
     response = {'schema_version': 1, 'kind': 'decomposition-analysis-response',
         'request_sha256': identifier, 'source_sha256': request['source']['sha256'],
-        'status': 'proposed' if parts else 'unsupported', 'model': _model(),
+        'status': 'proposed' if parts else 'unsupported', 'model': model,
         'annotation': {'schema_version': 1, 'source_sha256': request['source']['sha256'],
             'author': 'Local OpenCV Haar detector', 'note': 'Actual local inference; coarse human face/eye regions only, not general character segmentation.', 'components': parts},
         'evidence': {'execution': 'local', 'call_id': None,

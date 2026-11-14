@@ -73,6 +73,69 @@ class ForegroundContracts(unittest.TestCase):
             with self.subTest(ids=ids), self.assertRaises(ValueError):
                 fg.select(self.root,ids,Path(self.temp.name)/'bad')
 
+    def test_proposal_timeout_cleans_pinned_stage_after_replacement(self):
+        moved = Path(self.temp.name) / 'moved-proposal'
+        foreign = None
+        def interrupt(command, **kwargs):
+            nonlocal foreign
+            payload = Path(command[3])
+            outer = Path(os.readlink(payload.parent))
+            outer.rename(moved)
+            outer.mkdir()
+            foreign = outer / 'foreign'
+            foreign.write_text('untouched')
+            raise fg.subprocess.TimeoutExpired(command, 1)
+        destination = Path(self.temp.name) / 'timed-out'
+        with patch.object(fg, 'capabilities', return_value={'available': True, 'versions': {}}), \
+             patch.object(fg, '_weight', return_value=Path('unused')), \
+             patch.object(fg.subprocess, 'run', side_effect=interrupt):
+            with self.assertRaisesRegex(ValueError, 'runtime limit'):
+                fg.propose(self.root/'source/original.png', destination, weights='unused',
+                           enabled=True, origin='fixture', max_seconds=1)
+        self.assertFalse(destination.exists())
+        self.assertEqual(foreign.read_text(), 'untouched')
+        self.assertEqual(list(moved.iterdir()), [])
+
+    def test_selection_namespace_replacement_preserves_foreign_tree(self):
+        real_create = fg.create_decomposition
+        moved = Path(self.temp.name) / 'moved-wrapper'
+        foreign = None
+        def replace_wrapper(source, run, **kwargs):
+            nonlocal foreign
+            outer = Path(os.readlink(run.parent))
+            outer.rename(moved)
+            outer.mkdir()
+            foreign = outer / 'foreign'
+            foreign.write_text('untouched')
+            return real_create(source, run, **kwargs)
+        destination = Path(self.temp.name) / 'selected-race'
+        with patch.object(fg, 'create_decomposition', side_effect=replace_wrapper):
+            fg.select(self.root, ['candidate-1'], destination)
+        self.assertEqual(foreign.read_text(), 'untouched')
+        self.assertEqual(list(moved.iterdir()), [])
+        self.assertEqual(load_decomposition(destination)['source']['sha256'], sha(self.root/'source/original.png'))
+
+    def test_selection_failure_cleans_owned_tree_only_after_replacement(self):
+        real_create = fg.create_decomposition
+        moved = Path(self.temp.name) / 'moved-failure'
+        foreign = None
+        def replace_then_fail(source, run, **kwargs):
+            nonlocal foreign
+            outer = Path(os.readlink(run.parent))
+            outer.rename(moved)
+            outer.mkdir()
+            foreign = outer / 'foreign'
+            foreign.write_text('untouched')
+            real_create(source, run, **kwargs)
+            raise ValueError('injected failure after real creation')
+        destination = Path(self.temp.name) / 'failed-race'
+        with patch.object(fg, 'create_decomposition', side_effect=replace_then_fail):
+            with self.assertRaisesRegex(ValueError, 'injected failure'):
+                fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+        self.assertEqual(foreign.read_text(), 'untouched')
+        self.assertEqual(list(moved.iterdir()), [])
+
     def test_selection_does_not_overwrite_existing_directory(self):
         destination=Path(self.temp.name)/'exists';destination.mkdir()
         (destination/'retained').write_text('keep')

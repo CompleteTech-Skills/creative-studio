@@ -30,7 +30,16 @@ OpenCV's [cascade tutorial](https://docs.opencv.org/4.13.0/db/d28/tutorial_casca
 describes the same trained face/eye detector and its rectangle output. The
 cascade XML files retain their Intel Open Source Computer Vision license headers (redistribution permitted with notices) in the installed OpenCV
 package. No model or optional dependency is downloaded at runtime. Model
-identity changes require a new request. Local detection has no calibrated
+identity changes require a new request. Each attempt captures both installed XML
+files once through regular-file descriptors, with an 8 MiB limit per file. The
+recorded model hashes are computed from those exact immutable bytes. The worker
+uses [OpenCV memory-mode FileStorage](https://docs.opencv.org/4.x/da/d56/classcv_1_1FileStorage.html)
+and [CascadeClassifier.read](https://docs.opencv.org/4.x/d1/de5/classcv_1_1CascadeClassifier.html)
+to load the same captured bytes; it never passes replaceable model filenames to
+the classifier. A model changed before capture is rejected against the selected
+request. Later filename replacement cannot change the captured classifier or its
+recorded identity. Missing memory-loading APIs are explicitly unavailable;
+malformed XML fails the attempt before any proposals are published. Local detection has no calibrated
 probabilities: its conservative `0.5` annotation confidence is explicitly marked
 unknown in each part's notes and must not be interpreted as measured accuracy.
 
@@ -99,6 +108,21 @@ call as locally verified and does not authenticate model-supplied metadata.
 
 ## Recovery, cancellation and resource limits
 
+New analysis jobs use the shared owned staging/publication authority: descriptor-relative
+records and exclusive publication on Linux/macOS, and pinned directory handles on
+Windows. Replacing a public staging name cannot redirect writes or recursive cleanup.
+Changed run/job directory identities fail without reporting successful publication;
+a concurrently created destination is preserved. Selected manifest bytes are checked
+again through the pinned run before any job directories are created. Unsupported
+secure publication capabilities fail explicitly rather than use an unpinned fallback.
+
+The shared authority deliberately retains empty outer staging wrappers. They live
+under `.analysis-staging/`, separately from the existing 64-job limit. At most 256
+staging entries are admitted per run, including interrupted attempts; exhaustion
+fails with `analysis staging quota exceeded`. Retained wrappers and diagnostic
+orphans are not automatically removed by pathname. This is bounded operational
+storage, not a second job index or a source/review identity change.
+
 The identical request returns the existing job. After a successful call,
 `decompose-analysis-run` reuses the validated immutable response. A crash after
 worker completion ingests that output; a running job without output becomes
@@ -137,7 +161,11 @@ run, three attempts per request, four million source pixels, eight MiB per
 request/response metadata file, 30 seconds per local attempt by default (Python
 API range 1–120), one OpenCV thread and a 64 KiB worker log. Annotation component,
 mask-run and working-set limits remain owned by the existing decomposition
-validator. The whole machine's memory/CPU isolation is not claimed.
+validator. Source and reference files retain the ordinary import's 64 MiB
+byte limit. They are hashed through admitted regular-file descriptors; local
+image decoding uses those same verified source bytes, so a later filename
+replacement cannot change the detector input. The whole machine's memory/CPU
+isolation is not claimed.
 
 Python callers can use `prepare`, `run`, `ingest`, `apply`, `status` and `retry`
 from `decomposition_analysis` while holding `hatch.ownership(root)`, matching the

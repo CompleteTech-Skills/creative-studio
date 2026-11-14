@@ -101,3 +101,11 @@ The current bounded-reader regression and two actual model executions are record
 in `examples/decomposition/foreground/execution-bounded-reader.json`. Historical
 model-quality measurements remain in `execution.json`; neither record grants
 semantic approval or establishes complete issue #225 acceptance.
+
+Foreground proposal and selection publication use pinned private staging and an
+exclusive descriptor-relative rename. On hosts without the required Linux
+procfs/descriptor support, these operations fail closed. The destination parent
+must already exist and contain no symbolic-link path components. Cleanup removes only
+contents of the pinned staging directory; its empty outer wrapper is retained
+for owned maintenance, including after failure. Selection does not approve the
+proposals or turn foreground masks into semantic anatomy.

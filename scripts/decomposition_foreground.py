@@ -12,14 +12,13 @@ import json
 import math
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
-import tempfile
 import time
 from PIL import Image, ImageDraw
 from asset_contracts import MAX_SOURCE_BYTES
-from atomic_publish import _rename_no_replace
+from atomic_publish import pinned_directory, private_stage, _rename_no_replace
+from rig_errors import directory_capability, normalize_root
 from character_decomposition import create_decomposition
 from decomposition_analysis import _record_bytes, _record_json as read_json
 from decomposition_masks import binary, count, intersect, union, mask_to_runs
@@ -123,7 +122,7 @@ def _mask(root, descriptor, size):
 
 
 def load(root):
-    root = Path(root).resolve()
+    root = normalize_root(root)
     receipt = read_json(safe_path(root, 'foreground-proposals.json'))
     validate_structure(receipt, RECEIPT, 'foreground proposal receipt')
     if not .05 <= receipt['parameters']['score_threshold'] <= .99:
@@ -246,45 +245,43 @@ def propose(source, destination, *, weights, enabled=False, origin, fixture=Fals
     destination = Path(destination).expanduser().absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError('proposal destination must be new')
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix='.' + destination.name + '-foreground-', dir=destination.parent))
     try:
-        (stage / 'source').mkdir(); (stage / 'masks').mkdir()
-        source_hash = _safe_sha(source); relative = 'source/original' + source.suffix.lower()
-        (stage / relative).write_bytes(_record_bytes(source, MAX_SOURCE_BYTES))
-        if _safe_sha(source) != source_hash or _safe_sha(stage / relative) != source_hash:
-            raise ValueError('source changed during snapshot')
-        source_record = {'asset': _asset(stage, relative), 'width': width, 'height': height,
-                         'origin': origin, 'fixture': fixture}
-        atomic_json(stage / 'input.json', source_record)
-        started = time.monotonic()
-        with (stage / 'worker.log').open('wb') as log:
-            result = subprocess.run([sys.executable, str(Path(__file__).resolve()), '_worker',
-                str(stage), str(weights), str(score_threshold)], stdout=log, stderr=subprocess.STDOUT,
-                timeout=max_seconds, check=False)
-        if result.returncode:
-            raise ValueError('foreground inference failed; no proposal published')
-        _weight(weights)
-        output = read_json(stage / 'output.json')
-        receipt = {'schema_version': 1, 'kind': 'foreground-proposals', 'source': source_record,
-            'backend': {'name': 'torchvision-maskrcnn-coco-v1', 'weights_sha256': MODEL_SHA256,
-                'execution': 'local', **capability['versions']},
-            'parameters': {'score_threshold': score_threshold, 'mask_threshold': .5, 'threads': 1, 'max_seconds': max_seconds, 'max_pixels': MAX_PIXELS},
-            'elapsed_seconds': time.monotonic()-started, **output,
-            'uncertainty': ['Object classes are model proposals, not semantic review or anatomy.',
-                'Candidate masks may omit thin, disconnected, cropped or unfamiliar foreground.',
-                'Overlaps remain ambiguous; no candidate owns overlapping pixels automatically.',
-                'Internal model resizing does not alter original pixels or source-sized output masks.'],
-            'anatomy_recognized': False, 'review_status': 'pending'}
-        atomic_json(stage / 'foreground-proposals.json', receipt)
-        load(stage)
-        _rename_no_replace(stage, destination)
-        return receipt
+        with pinned_directory(destination.parent) as parent_fd, private_stage(parent_fd, prefix='.foreground-') as (_, stage_fd), directory_capability(stage_fd) as capability:
+            stage = capability.path / 'payload'
+            stage.mkdir()
+            (stage / 'source').mkdir(); (stage / 'masks').mkdir()
+            source_hash = _safe_sha(source); relative = 'source/original' + source.suffix.lower()
+            (stage / relative).write_bytes(_record_bytes(source, MAX_SOURCE_BYTES))
+            if _safe_sha(source) != source_hash or _safe_sha(stage / relative) != source_hash:
+                raise ValueError('source changed during snapshot')
+            source_record = {'asset': _asset(stage, relative), 'width': width, 'height': height,
+                             'origin': origin, 'fixture': fixture}
+            atomic_json(stage / 'input.json', source_record)
+            started = time.monotonic()
+            with (stage / 'worker.log').open('wb') as log:
+                result = subprocess.run([sys.executable, str(Path(__file__).resolve()), '_worker',
+                    str(stage), str(weights), str(score_threshold), str(stage_fd)], stdout=log, stderr=subprocess.STDOUT,
+                    timeout=max_seconds, check=False, pass_fds=(stage_fd,))
+            if result.returncode:
+                raise ValueError('foreground inference failed; no proposal published')
+            _weight(weights)
+            output = read_json(stage / 'output.json')
+            receipt = {'schema_version': 1, 'kind': 'foreground-proposals', 'source': source_record,
+                'backend': {'name': 'torchvision-maskrcnn-coco-v1', 'weights_sha256': MODEL_SHA256,
+                    'execution': 'local', **capability['versions']},
+                'parameters': {'score_threshold': score_threshold, 'mask_threshold': .5, 'threads': 1, 'max_seconds': max_seconds, 'max_pixels': MAX_PIXELS},
+                'elapsed_seconds': time.monotonic()-started, **output,
+                'uncertainty': ['Object classes are model proposals, not semantic review or anatomy.',
+                    'Candidate masks may omit thin, disconnected, cropped or unfamiliar foreground.',
+                    'Overlaps remain ambiguous; no candidate owns overlapping pixels automatically.',
+                    'Internal model resizing does not alter original pixels or source-sized output masks.'],
+                'anatomy_recognized': False, 'review_status': 'pending'}
+            atomic_json(stage / 'foreground-proposals.json', receipt)
+            load(stage)
+            _rename_no_replace('payload', destination.name, source_dir_fd=stage_fd, destination_dir_fd=parent_fd)
+            return receipt
     except subprocess.TimeoutExpired as exc:
         raise ValueError('foreground runtime limit reached; manual selection remains available') from exc
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
 
 
 def select(root, identifiers, destination, *, name=None):
@@ -305,9 +302,8 @@ def select(root, identifiers, destination, *, name=None):
     destination = Path(destination).expanduser().absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError('decomposition destination must be new')
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    stage = Path(tempfile.mkdtemp(prefix='.' + destination.name + '-selection-', dir=destination.parent))
-    try:
+    with pinned_directory(destination.parent) as parent_fd, private_stage(parent_fd, prefix='.selection-') as (_, stage_fd), directory_capability(stage_fd) as capability:
+        stage = capability.path
         annotation = {'schema_version': 1, 'source_sha256': source['asset']['sha256'],
             'author': 'Explicit foreground candidate selection',
             'note': 'Only foreground selected; semantic components remain unassigned.', 'components': [],
@@ -332,17 +328,17 @@ def select(root, identifiers, destination, *, name=None):
         load(kept)
         if _safe_sha(kept / 'foreground-proposals.json') != annotation['extensions']['foreground_analysis']['receipt_sha256']:
             raise ValueError('proposal receipt changed during selection')
-        _rename_no_replace(run, destination)
+        _rename_no_replace('run', destination.name, source_dir_fd=stage_fd, destination_dir_fd=parent_fd)
         return result
-    finally:
-        shutil.rmtree(stage)
 
 
 
 def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == '_worker':
-        _worker(Path(args[1]), Path(args[2]), float(args[3])); return 0
+        with directory_capability(int(args[4])) as capability:
+            _worker(capability.path / 'payload', Path(args[2]), float(args[3]))
+        return 0
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
     doctor = sub.add_parser('doctor'); doctor.add_argument('--weights')
