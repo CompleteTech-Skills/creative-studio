@@ -92,6 +92,6 @@ Before exclusive publication, the independent verifier reopens every retained
 cinematic document, input, native plan and probe against its admitted byte length
 and hash. The cinematic subtree must contain exactly the expected regular files
 and directories. Progress callbacks run before this audit. The worker report is
-parsed and hashed from one bounded capture, and its retained file and the actual
-supervisor log are audited too. A final audit after evidence writes rejects
+parsed and hashed from one bounded capture, and its retained file, actual supervisor log, worker job and declared sanitized
+geometry inputs are audited too. A final audit after evidence writes rejects
 changed provenance instead of publishing a result that declares earlier bytes.

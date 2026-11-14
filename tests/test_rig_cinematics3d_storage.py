@@ -162,7 +162,7 @@ class RetainedCinematicPublication(unittest.TestCase):
             stack_reference=registry.reference(stack['id'],stack['version'])
             supervisor=implementation._supervise
             roles=['documents/dof.json','inputs/optics.json','plan.json','probe.json',
-                   '../worker-report.json','../blender.log','extra.json']
+                   '../worker-report.json','../blender.log','../source/job.json','../source/asset-0.glb','extra.json']
             for index,role in enumerate(roles+[None]):
                 with self.subTest(role=role):
                     current=__import__('copy').deepcopy(original);current['id']='retained-'+str(index)

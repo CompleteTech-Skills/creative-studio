@@ -406,6 +406,18 @@ class BlenderBackend:
                 job_payload=(json.dumps(job,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
                 _check_storage(stage,resources['storage_bytes'],reserve=len(job_payload)+snapshot['total_bytes']+width*height*16*frame_count)
                 atomic_bytes(source/'job.json',job_payload)
+                retained_inputs={'source/job.json':dict(bytes=len(job_payload),sha256=hashlib.sha256(job_payload).hexdigest())}
+                from rig_errors import open_payload
+                for entry in scene['nodes']:
+                    asset=entry.get('asset')
+                    if asset is not None:
+                        with open_payload(source,asset['path']) as (_,info):
+                            reference=dict(bytes=info.st_size,sha256=asset['sha256'])
+                        name='source/'+asset['path']
+                        require(name not in retained_inputs or retained_inputs[name]==reference,
+                                'verification-failed','Conflicting declared worker input.')
+                        retained_inputs[name]=reference
+                del job_payload
                 command=[self.executable,'--background','--factory-startup','--disable-autoexec','--python-exit-code','1','--python',str(WORKER),'--',str(source/'job.json'),str(capability.fd)]
                 log,usage=_supervise(command,cwd=stage,timeout=resources['timeout_seconds'],memory_bytes=resources['memory_bytes'],storage_bytes=resources['storage_bytes'],cancelled=cancelled,pass_fds=(capability.fd,))
                 (stage/'blender.log').write_bytes(log)
@@ -419,7 +431,7 @@ class BlenderBackend:
                     report_payload=stream.read(32*1024**2+1)
                 require(len(report_payload)<=32*1024**2,'invalid-input','Worker report exceeds32MiB.')
                 report=decode_json(report_payload)
-                retained_artifacts={
+                retained_artifacts={**retained_inputs,
                     'worker-report.json':dict(sha256=hashlib.sha256(report_payload).hexdigest(),bytes=len(report_payload)),
                     'blender.log':dict(sha256=hashlib.sha256(log).hexdigest(),bytes=len(log))}
                 del report_payload
