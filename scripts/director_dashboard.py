@@ -285,9 +285,23 @@ def routes(service):
             'director/preview': lambda server, body: service.preview(body)}
 
 
+# Named CLI verbs delegate exact canonical methods; request files remain immutable.
+CLI_METHODS = {
+    'interpret': ('PlanningProvider.generate_structured',),
+    'plan': ('GraphCompiler.compile',),
+    'execute': ('ExecutionService.submit',),
+    'revise': ('RevisionService.plan', 'RevisionService.apply'),
+    'impact': ('RevisionService.impact',),
+    'resume': ('ExecutionService.resume',),
+    'cancel': ('ExecutionService.cancel',),
+    'render': ('RenderAdapter.preflight', 'RenderAdapter.submit', 'RenderAdapter.verify'),
+    'export': ('ExportService.export', 'ExportService.verify'),
+}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('serve', 'status', 'qa', 'review', 'action', 'graph', 'assets', 'storyboard', 'preview', 'capabilities'))
+    parser.add_argument('operation', choices=('serve', 'status', 'qa', 'validate', 'review', 'action', 'graph', 'assets', 'storyboard', 'preview', 'capabilities', *CLI_METHODS))
     parser.add_argument('--repository', type=Path, required=True)
     parser.add_argument('--artifact-root', type=Path, required=True)
     parser.add_argument('--project-reference', type=Path, required=True)
@@ -309,10 +323,15 @@ def main(argv=None):
             except KeyboardInterrupt: pass
             finally: server.server_close()
             return 0
-        if args.operation in ('qa', 'review', 'action'):
+        if args.operation == 'validate':
+            args.operation = 'qa'
+        if args.operation in ('qa', 'review', 'action') or args.operation in CLI_METHODS:
             if args.request is not None:
                 body['request'] = _read_json_file(args.request)
             need(args.operation == 'qa' or 'request' in body, 'INPUT', 'This operation requires an exact request file.')
+            if args.operation in CLI_METHODS:
+                need(body['request'].get('method') in CLI_METHODS[args.operation], 'INPUT',
+                     'The exact request method does not match the selected command.')
             result = getattr(service, 'validate' if args.operation == 'qa' else 'record_review' if args.operation == 'review' else 'action')(body)
         else:
             status = service.status(body)
