@@ -7,17 +7,20 @@ from __future__ import annotations
 
 from copy import deepcopy
 import hashlib
+import io
+import zlib
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import struct
 import tempfile
 import time
 import zipfile
 
 from atomic_publish import _rename_no_replace, publish_verified_file, VerifiedFileCleanupError
-from rig_errors import RigError, atomic_json, decode_json, finite_json, job_lock, portable_name, safe_path, timestamp
+from rig_errors import RigError, atomic_json, decode_json, finite_json, job_lock, portable_name, safe_path, timestamp, open_payload
 from scene3d_contracts import load_project
 
 FORMAT = 1
@@ -27,6 +30,66 @@ DEFAULT_LIMITS = dict(max_revisions=256, max_history=128, max_bytes=1024**3, max
                       max_files=10000, autosave_delay=1.0, autosave_interval=2.0)
 _ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
 
+
+
+def _archive_snapshot(source):
+    maximum = DEFAULT_LIMITS['max_bytes'] + MAX_METADATA_BYTES + (DEFAULT_LIMITS['max_files'] + 1) * 4096
+    def capture(stream):
+        stream.seek(0)
+        data = stream.read(maximum + 1)
+        _require(len(data) <= maximum, 'LIMIT', 'Encoded archive exceeds its byte budget.')
+        return data
+    if hasattr(source, 'read'):
+        return capture(source)
+    path = Path(source).absolute()
+    with open_payload(path.parent, path.name) as (stream, info):
+        _require(info.st_size <= maximum, 'LIMIT', 'Encoded archive exceeds its byte budget.')
+        data = capture(stream)
+        _require(len(data) == info.st_size, 'ARCHIVE', 'Archive changed while reading.')
+        return data
+
+
+def _archive_member(archive, info, snapshot):
+    # ZipExtFile clips output at file_size, hiding extra deflate output. Validate
+    # the actual compressed stream with a bounded decoder before accepting bytes.
+    _require(info.compress_type in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+             and not info.flag_bits & 1, 'ARCHIVE', 'Unsupported archive compression.')
+    offset = info.header_offset
+    _require(offset >= 0 and offset + 30 <= len(snapshot), 'ARCHIVE', 'Truncated local header.')
+    signature, _, flags, method, _, _, crc, compressed_size, size, _, _ = struct.unpack_from(
+        '<4s5H3I2H', snapshot, offset)
+    _require(signature == b'PK\x03\x04' and flags == info.flag_bits and method == info.compress_type
+             and (flags & 8 or (crc == info.CRC and compressed_size == info.compress_size and size == info.file_size)),
+             'ARCHIVE', 'Local and central ZIP headers differ.')
+    with archive.open(info) as member:
+        start = member._fileobj.tell()  # zipfile has validated the local header and overlap.
+        compressed = memoryview(snapshot)[start:start + info.compress_size]
+        _require(len(compressed) == info.compress_size, 'ARCHIVE', 'Truncated archive member.')
+        result = bytearray()
+        if info.compress_type == zipfile.ZIP_STORED:
+            _require(len(compressed) == info.file_size, 'ARCHIVE', 'Stored member size differs.')
+            result.extend(compressed)
+        else:
+            decoder = zlib.decompressobj(-15)
+            cursor = 0
+            pending = b''
+            while cursor < len(compressed) or pending:
+                if not pending:
+                    end = min(cursor + 65536, len(compressed))
+                    pending = compressed[cursor:end]
+                    cursor = end
+                chunk = decoder.decompress(pending, min(65536, info.file_size - len(result) + 1))
+                result.extend(chunk)
+                _require(len(result) <= info.file_size, 'ARCHIVE', 'Member exceeds declared size.')
+                pending = decoder.unconsumed_tail
+                if decoder.eof:
+                    _require(not pending and not decoder.unused_data and cursor == len(compressed),
+                             'ARCHIVE', 'Trailing compressed member data.')
+                    break
+            _require(decoder.eof, 'ARCHIVE', 'Truncated compressed member.')
+        _require(len(result) == info.file_size and zlib.crc32(result) == info.CRC,
+                 'ARCHIVE', 'Archive member length or checksum differs.')
+        return bytes(result)
 
 def _fail(code, message):
     raise RigError('EDITOR3D_' + code, message, stage='editor3d-repository')
@@ -674,7 +737,16 @@ class EditorRepository:
     @staticmethod
     def verify_archive(path):
         try:
-            with zipfile.ZipFile(path) as archive:
+            snapshot = _archive_snapshot(path)
+            # Reuse the native ZIP authority before ZipFile constructs ZipInfo objects.
+            from rig_load_limits import _zip_directory
+            class DirectoryBudget:
+                limits = {'archive_files': DEFAULT_LIMITS['max_files'] + 1}
+                def add(self, amount, asset):
+                    _require(amount <= len(snapshot) * 2 + self.limits['archive_files'] * 1024,
+                             'LIMIT', 'Archive directory exceeds its budget.')
+            _zip_directory(snapshot, DirectoryBudget())
+            with zipfile.ZipFile(io.BytesIO(snapshot)) as archive:
                 entries = archive.infolist()
                 _require(0 < len(entries) <= DEFAULT_LIMITS['max_files'] + 1 and
                          sum(i.file_size for i in entries) <= DEFAULT_LIMITS['max_bytes'], 'LIMIT', 'Archive exceeds resource limits.')
@@ -693,7 +765,7 @@ class EditorRepository:
                     names.add(name); aliases.add(alias)
                 _require('archive-receipt.json' in names and archive.getinfo('archive-receipt.json').file_size <= MAX_METADATA_BYTES,
                          'ARCHIVE', 'Missing or excessive archive receipt.')
-                receipt = decode_json(archive.read('archive-receipt.json'))
+                receipt = decode_json(_archive_member(archive, archive.getinfo('archive-receipt.json'), snapshot))
                 _require(isinstance(receipt,dict) and set(receipt) == {'schema_version','kind','files','head'} and
                          receipt['schema_version'] == FORMAT and receipt['kind'] == 'editor3d-archive' and
                          isinstance(receipt['files'],dict) and names == set(receipt['files']) | {'archive-receipt.json'},
@@ -702,34 +774,31 @@ class EditorRepository:
                     _require(isinstance(record,dict) and set(record) == {'bytes','sha256'} and
                              type(record['bytes']) is int and record['bytes'] == archive.getinfo(name).file_size,
                              'ARCHIVE', 'Malformed archived file record.')
-                    raw = archive.read(name)
+                    raw = _archive_member(archive, archive.getinfo(name), snapshot)
                     _require(hashlib.sha256(raw).hexdigest() == record['sha256'], 'HASH', 'Archive file hash differs.')
                 return receipt
-        except (zipfile.BadZipFile, KeyError, OSError, RuntimeError, NotImplementedError, EOFError) as exc:
+        except (zipfile.BadZipFile, KeyError, OSError, RuntimeError, NotImplementedError, EOFError, zlib.error, ValueError) as exc:
             raise RigError('EDITOR3D_ARCHIVE', str(exc), stage='editor3d-repository') from exc
 
     @classmethod
     def restore_archive(cls, archive_path, destination):
-        receipt = cls.verify_archive(archive_path)
+        snapshot = _archive_snapshot(archive_path)
+        receipt = cls.verify_archive(io.BytesIO(snapshot))
         destination = Path(destination).absolute()
         _require(not destination.exists() and not destination.is_symlink(), 'DESTINATION', 'Archive restoration needs a new destination.')
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination = destination.parent.resolve(strict=True) / destination.name
         with tempfile.TemporaryDirectory(prefix='.editor-restore-', dir=destination.parent) as temporary:
             stage = Path(temporary) / 'repository'; stage.mkdir()
-            with zipfile.ZipFile(archive_path) as archive:
+            with zipfile.ZipFile(io.BytesIO(snapshot)) as archive:
                 for name, record in receipt['files'].items():
                     target = stage / portable_name(name); target.parent.mkdir(parents=True, exist_ok=True)
-                    with archive.open(name) as source, target.open('xb') as output:
-                        digest = hashlib.sha256(); size = 0
-                        while True:
-                            chunk = source.read(1024*1024)
-                            if not chunk: break
-                            size += len(chunk); digest.update(chunk)
-                            _require(size <= record['bytes'], 'LIMIT', 'Archive changed after verification.')
-                            output.write(chunk)
+                    raw = _archive_member(archive, archive.getinfo(name), snapshot)
+                    _require(len(raw) == record['bytes'] and hashlib.sha256(raw).hexdigest() == record['sha256'],
+                             'HASH', 'Archive changed after verification.')
+                    with target.open('xb') as output:
+                        output.write(raw)
                         output.flush(); os.fsync(output.fileno())
-                    _require(size == record['bytes'] and digest.hexdigest() == record['sha256'], 'HASH', 'Archive changed after verification.')
             restored = cls(stage)
             _require(restored._verify_all() == receipt['head'], 'HASH', 'Archive HEAD differs from receipt.')
             _require(not restored.recovery(), 'RECOVERY', 'Archive contains interrupted transactions.')

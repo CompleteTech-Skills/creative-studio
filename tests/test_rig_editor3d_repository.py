@@ -1,6 +1,9 @@
 """Real native scene persistence, failure recovery and archive regressions."""
 from copy import deepcopy
 import hashlib
+import io
+import struct
+import zlib
 import json
 import os
 from pathlib import Path
@@ -337,6 +340,53 @@ raise AssertionError('writer was not excluded')
                 archive.writestr('archive-receipt.json',b'{}')
             with self.subTest(name=name),self.assertRaises(RigError):EditorRepository.verify_archive(archive_path)
         self.assertFalse((self.root/'escape').exists())
+
+    def test_archive_rejects_forged_deflate_lengths_and_truncation(self):
+        receipt = json.dumps({'schema_version': 1, 'kind': 'editor3d-archive', 'files': {}, 'head': {}}).encode()
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('archive-receipt.json', receipt + b' ' * (8 * 1024 * 1024))
+        forged = bytearray(buffer.getvalue())
+        central = forged.index(b'PK\x01\x02')
+        for offset in (14, central + 16): struct.pack_into('<I', forged, offset, zlib.crc32(receipt))
+        for offset in (22, central + 24): struct.pack_into('<I', forged, offset, len(receipt))
+        with self.assertRaises(RigError): EditorRepository.verify_archive(io.BytesIO(forged))
+        path = self.root/'forged.zip'; path.write_bytes(forged)
+        with self.assertRaises(RigError): EditorRepository.restore_archive(path, self.root/'forged-restored')
+        self.assertFalse((self.root/'forged-restored').exists())
+        # Preserve ZIP framing while cutting the actual deflate stream short.
+        broken = bytearray(buffer.getvalue())
+        name_len, extra_len = struct.unpack_from('<HH', broken, 26)
+        compressed_start = 30 + name_len + extra_len
+        compressed_size = struct.unpack_from('<I', broken, 18)[0]
+        broken[compressed_start + compressed_size - 1] ^= 0x80
+        with self.assertRaises(RigError): EditorRepository.verify_archive(io.BytesIO(broken))
+        for data in (buffer.getvalue()[:-1], buffer.getvalue()[:40]):
+            with self.assertRaises(RigError): EditorRepository.verify_archive(io.BytesIO(data))
+
+    def test_archive_source_symlink_is_rejected_and_restore_uses_snapshot(self):
+        path = self.root/'valid.zip'; self.repo.archive(path)
+        link = self.root/'link.zip'
+        try: link.symlink_to(path)
+        except OSError: self.skipTest('symlink creation unavailable')
+        with self.assertRaises(RigError): EditorRepository.verify_archive(link)
+        with self.assertRaises(RigError): EditorRepository.restore_archive(link, self.root/'symlink-restore')
+        original = EditorRepository.verify_archive
+        def replace_path(source):
+            receipt = original(source)
+            path.write_bytes(b'replaced after verification')
+            return receipt
+        with patch.object(EditorRepository, 'verify_archive', side_effect=replace_path):
+            restored = EditorRepository.restore_archive(path, self.root/'snapshot-restore')
+        self.assertEqual(restored.snapshot(), self.repo.snapshot())
+
+    def test_archive_directory_count_is_checked_before_zipfile(self):
+        self.repo.archive(self.root/'valid.zip')
+        data = bytearray((self.root/'valid.zip').read_bytes())
+        end = data.rfind(b'PK\x05\x06')
+        struct.pack_into('<HH', data, end + 8, 1, 1)
+        with patch('editor3d_repository.zipfile.ZipFile', side_effect=AssertionError('directory parsed early')):
+            with self.assertRaises(RigError): EditorRepository.verify_archive(io.BytesIO(data))
 
     def test_revision_budget_rejects_new_edit_preserving_history(self):
         bounded=EditorRepository.create(self.source,self.root/'bounded',limits={'max_revisions':2,'max_history':2})
