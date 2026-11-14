@@ -47,8 +47,6 @@ operation deadlines and ownership, and verify source pins again after an operati
 In particular, retaining one loaded rig while loading a second rig requires separate
 reservation; this API does not make duplicate live objects free.
 
-The `test_rig_load_limits.py` family is part of the existing skinning CI gate. Its
-
 Clip, identity and review JSON admission verifies each captured bounded byte
 snapshot against its immutable reference before parsing. Preflight and live clip
 loads both enforce caller duration, FPS and aggregate key counts. A substituted
@@ -56,6 +54,7 @@ short clip cannot authorize loading a different manifest-bound longer clip.
 JSON, hashing and binary snapshots use the same descriptor-safe reader, including
 when a regular file becomes a FIFO between size admission and opening.
 
+The `test_rig_load_limits.py` family is part of the existing skinning CI gate. Its
 real retained robot exercises signature/hash preservation, aggregate multi-skin and
 clip admission, 48 actual 512×512 PNG textures under a stricter caller cap, compressed
 pixel expansion, malformed NPY/ZIP inputs and rejection before array materialization.
