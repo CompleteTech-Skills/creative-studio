@@ -91,6 +91,10 @@ queue if attempts remain. A stale expected revision rejects the mutation.
 Dead-owner recovery and resume transitions share the final revision-checked
 transaction, so a fresh revision does not reject its own recovery and a stale
 revision cannot partially recover a job.
+Missing decoders/tools, resource shortages, permission failures and verifier
+configuration errors propagate without treating valid completed pixels as
+corrupt. Only cache-evidence rejection qualifies for requeue or quarantine;
+legacy verifier callbacks may reject invalid data with `ValueError`.
 
 Outputs are independently verified before and after copying into private cache
 staging, then published through the repository's exclusive native rename.
