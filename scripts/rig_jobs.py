@@ -69,24 +69,51 @@ def save_rig(rig: RigAsset, *, bump=True, operation='save') -> dict:
     return manifest
 
 
+class CanonicalArtifact:
+    """Explicit registry-bound input; a bare path never implies this authority."""
+    def __init__(self, library, reference, *, entry=None):
+        self.library = library
+        self.reference = deepcopy(reference)
+        self.entry = entry
+
+
 def create_run(model, root, *, identifier=None, scale=1., limits=None, fixture=False,
                origin='import', attribution='User-supplied model; see original source files.', blender=None) -> RigAsset:
-    """Publish a validated run whose geometry and provenance share frozen bytes."""
+    """Publish a validated run whose geometry and provenance share frozen bytes.
+
+    CanonicalArtifact binds an AssetLibrary reference and optional exact inventory
+    entry. Its authenticated classification and source bytes are retained in the
+    rig. Bare paths retain their existing import semantics.
+    """
     from rig_source_snapshot import import_snapshot
-    root = Path(root).absolute();model = Path(model).absolute()
+    bound = isinstance(model, CanonicalArtifact)
+    if bound:
+        require(scale == 1. and blender is None, 'RIG_CANONICAL',
+                'Canonical geometry already has normalized coordinates.')
+        from model3d_mesh_import import import_canonical
+        from asset_library import AssetLibrary
+        require(type(model.library) is AssetLibrary, 'RIG_CANONICAL',
+                'Canonical inputs require the authoritative AssetLibrary reader.')
+        model_name = Path(model.entry or 'model')
+    else:
+        model = Path(model).absolute()
+        model = normalize_root(model.parent)/model.name
+        model_name = model
+    root = Path(root).absolute()
     require(not root.is_symlink(), 'RIG_RUN_PATH', 'Run directories cannot be symbolic links.')
     root = normalize_root(root)
-    model = normalize_root(model.parent)/model.name
     limits = {**DEFAULT_LIMITS, **(limits or {})};validate_contract(limits, 'Limits')
     require(limits['influences'] in (4, 8), 'RIG_INFLUENCES', 'Choose four or eight influences.')
     with job_lock(root):
         require(not root.exists() and not root.is_symlink(), 'RIG_RUN_EXISTS',
                 'Import into a new destination; existing directories are preserved.', preserved=str(root))
-        with import_snapshot(model, scale=scale, limits=limits, blender=blender) as snapshot:
+        with (import_canonical(model.library, model.reference, entry=model.entry, limits=limits) if bound else
+              import_snapshot(model, scale=scale, limits=limits, blender=blender)) as snapshot:
             imported = snapshot.model
-            fixture = bool(fixture or imported.report.get('fixture'))
+            fixture = bool(fixture or imported.report.get('fixture') or (bound and snapshot.provenance['manifest']['provenance']['fixture']))
+            imported.report['fixture'] = fixture
             if fixture:origin = 'procedural-fixture'
-            identifier = slug(identifier or model.stem)
+            identifier = slug(identifier or model_name.stem)
             records = {record['path']: record for record in snapshot.source_records}
             entry = snapshot.provenance['source_entry']
             require(entry in records, 'RIG_SOURCE_INVENTORY', 'Import did not retain the original model.')

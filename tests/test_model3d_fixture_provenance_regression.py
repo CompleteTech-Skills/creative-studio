@@ -97,12 +97,20 @@ class FixtureProvenanceRegression(unittest.TestCase):
             root = Path(tmp).resolve()
             report = demonstrate(root / 'demo')
             self.assertTrue(report['fixture'])
-            self.assertEqual(len(report['records']), 12)
+            self.assertEqual(len(report['records']), 18)
             for record in report['records']:
                 path = root / 'demo' / (record['primitive'] + '-' + record['format']) / ('model.' + record['format'])
-                self.assertTrue(load_character_model(path).report['fixture'])
+                if record['format'] != 'obj':
+                    self.assertTrue(load_character_model(path).report['fixture'])
+                else:
+                    from asset_library import AssetLibrary
+                    from rig_jobs import CanonicalArtifact
+                    library = AssetLibrary(root / 'demo/registry')
+                    rig = create_run(CanonicalArtifact(library, record['canonical_ref'], entry='model.obj'), root / ('check-' + record['primitive']))
+                    self.assertTrue(rig.manifest['source']['fixture'])
+                    self.assertEqual((rig.root / rig.manifest['source']['path']).read_bytes(), path.read_bytes())
             self.assertTrue(create_run(root / 'demo/box-glb/model.glb', root / 'rig').manifest['source']['fixture'])
-            self.assertFalse(list((root / 'demo').rglob('*.obj')))
+            self.assertEqual(len(list((root / 'demo').glob('*-obj/model.obj'))), 6)
 
     def test_canonical_fixture_library_export_and_native_rig(self):
         with tempfile.TemporaryDirectory() as tmp:

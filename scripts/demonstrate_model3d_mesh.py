@@ -1,6 +1,6 @@
 """Execute the Model3D mesh foundation using labeled synthetic geometry.
 
-Writes genuine GLB/glTF meshes and a hash-bound acceptance report. This is
+Writes genuine GLB/glTF/registry-bound OBJ meshes and a hash-bound acceptance report. This is
 numerical/import evidence, never a visual or production-art approval.
 """
 from __future__ import annotations
@@ -20,6 +20,9 @@ from model3d_primitives import primitive
 from model3d_topology import topology_report
 from rig_errors import RigError, require
 from rig_import import load_character_model
+from rig_jobs import create_run, CanonicalArtifact
+from asset_library import AssetLibrary, file_record
+from asset_library_contracts import load_manifest, seal
 
 
 def demonstrate(destination):
@@ -31,16 +34,38 @@ def demonstrate(destination):
     stage = Path(tempfile.mkdtemp(prefix='.model3d-demo-', dir=parent))
     try:
         records = []
+        library = AssetLibrary(stage / 'registry', create=True)
+        template = load_manifest((Path(__file__).resolve().parents[1] / 'examples/asset-library-foundation/manifest.json').read_bytes())
         for kind in ('box', 'plane', 'sphere', 'cylinder', 'cone', 'torus'):
             original = primitive(kind, name=kind)
             transform = conversion_matrix(source_basis='right-handed-z-up', unit_scale=.01,
                                           pivot=[.25, -.5, 1], translation=[1, 2, 3])
             editable = transform_editable(original, transform)
             geometry = editable.geometry()
-            for fmt in ('glb', 'gltf'):
+            for fmt in ('glb', 'gltf', 'obj'):
                 root = stage / (kind + '-' + fmt)
-                manifest = export_mesh(geometry, root, format=fmt, editable=editable, fixture=True)
-                loaded = load_character_model(root / ('model.' + fmt)).geometry
+                manifest = export_mesh(geometry, root, format=fmt, editable=editable, fixture=fmt != 'obj')
+                reference = None
+                if fmt == 'obj':
+                    from copy import deepcopy
+                    canonical = deepcopy(template)
+                    canonical['identity'].update(id=kind, slug=kind, name=kind)
+                    paths = [root / 'model.obj', root / 'materials.mtl',
+                             Path(__file__).resolve().parents[1] / 'examples/asset-library-foundation/source/license.txt']
+                    files = [file_record(paths[0], 'model.obj', 'geometry'),
+                             file_record(paths[1], 'materials.mtl', 'source'),
+                             file_record(paths[2], 'license.txt', 'license', False)]
+                    canonical['files'] = files
+                    canonical['provenance']['sources'] = [files[0]]
+                    canonical['provenance']['license_evidence'] = [files[2]]
+                    canonical['publication']['inventory'] = [f['path'] for f in files]
+                    reference = library.register(seal(canonical), {f['path']: p for f, p in zip(files, paths)})
+                    rig = create_run(CanonicalArtifact(library, reference, entry='model.obj'), stage / (kind + '-rig'))
+                    require(rig.manifest['source']['fixture'] and rig.manifest['source']['sha256'] == files[0]['sha256'],
+                            'MODEL3D_DEMO', 'Registry fixture identity or source digest lost.')
+                    loaded = rig.geometry
+                else:
+                    loaded = load_character_model(root / ('model.' + fmt)).geometry
                 require(loaded.triangle_count == geometry.triangle_count, 'MODEL3D_DEMO',
                         'Decoded triangle count differs.')
                 require(np.allclose(loaded.meshes[0].positions[loaded.meshes[0].triangles],
@@ -48,7 +73,7 @@ def demonstrate(destination):
                                     rtol=1e-6, atol=1e-7), 'MODEL3D_DEMO', 'Decoded coordinates differ.')
                 require(loaded.meshes[0].name == kind, 'MODEL3D_DEMO', 'Semantic name changed.')
                 records.append(dict(primitive=kind, format=fmt, manifest=manifest,
-                                    topology=topology_report(geometry.meshes[0])))
+                                    topology=topology_report(geometry.meshes[0]), canonical_ref=reference))
         source = stage / 'box-glb' / 'model.glb'
         original_bytes = source.read_bytes()
         with import_mesh(source) as captured:
@@ -67,7 +92,7 @@ def demonstrate(destination):
                       authority='native rig Mesh/Geometry/import/export with explicit Model3D adapters',
                       records=records, imported_source=imported, files=files,
                       limitations=['No provider generation, reconstruction or artistic approval.',
-                                   'OBJ omitted because it cannot retain fixture identity.',
+                                   'OBJ fixture identity requires its canonical registry reference.',
                                    'No Blender, rendering or hosted CI execution inferred.'])
         (stage / 'acceptance.json').write_text(json.dumps(report, indent=2, allow_nan=False)+'\n', encoding='utf-8')
         _rename_no_replace(stage, destination)
