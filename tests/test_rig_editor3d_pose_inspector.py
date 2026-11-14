@@ -244,6 +244,8 @@ class PoseInspectorTests(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST')=='1','Enable actual Chromium pose acceptance explicitly.')
     def test_actual_browser_authors_and_displays_exact_native_pose_geometry(self):
+        import json
+        from urllib.parse import urlsplit
         import threading
         from editor3d_viewer import EditorServer
         from browser_runtime import launch_chromium
@@ -254,6 +256,9 @@ class PoseInspectorTests(unittest.TestCase):
             browser=launch_chromium(runtime)
             try:
                 page=browser.new_page(viewport={'width':1400,'height':1100})
+                page_errors=[];failed_requests=[]
+                page.on('pageerror',lambda error:page_errors.append(str(error)))
+                page.on('requestfailed',lambda request:failed_requests.append(dict(path=urlsplit(request.url).path,error=request.failure)))
                 page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
                 page.evaluate("window.hatchEditor.select('actor')")
                 section=page.get_by_role('region',name='Native pose inspector')
@@ -321,7 +326,12 @@ class PoseInspectorTests(unittest.TestCase):
                 page.wait_for_function('(ids) => ids.every(id=>window.hatchEditor.objects.get(id).visible)',arg=posed)
                 if timeline.get_by_role('button',name='Pause',exact=True).count():
                     timeline.get_by_role('button',name='Pause',exact=True).click()
-                page.reload();page.wait_for_function('() => window.editorReady === true')
+                page.reload()
+                try:page.wait_for_function('() => window.editorReady === true')
+                except Exception:
+                    print('POSE_REOPEN_DIAGNOSTIC',json.dumps(dict(page_errors=page_errors,failed_requests=failed_requests,
+                        state=page.evaluate('()=>({ready:window.editorReady,status:document.querySelector("#status")?.textContent,errors:window.hatchEditor?.errors})'))),flush=True)
+                    raise
                 for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
                 page.locator('#show-all').click()
                 for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
