@@ -57,6 +57,53 @@ class FixtureProvenanceRegression(unittest.TestCase):
             self.assertEqual(original.read_bytes(), before)
             self.assertEqual(normalized.read_bytes(), normalized_bytes)
 
+    def test_entry_binding_and_mutation_during_export(self):
+        import rig_import
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            export_geometry(primitive('plane').geometry(), root / 'plain.glb')
+            export_geometry(primitive('box').geometry(), root / 'marked.gltf', provenance={'fixture': True})
+            doc = json.loads((root / 'marked.gltf').read_text())
+            doc['buffers'].append({'byteLength': (root / 'plain.glb').stat().st_size, 'uri': 'plain.glb'})
+            (root / 'marked.gltf').write_text(json.dumps(doc))
+            originals = {p.name: p.read_bytes() for p in root.iterdir() if p.is_file()}
+            with import_mesh(root / 'marked.gltf') as captured:
+                captured.model.report['fixture'] = False
+                captured.provenance['source_entry'] = 'plain.glb'
+                with self.assertRaises(RigError):
+                    export_mesh(captured.model.geometry, root / 'spoof', source_snapshot=captured)
+                captured.model.report['fixture'] = True
+                captured.provenance['source_entry'] = 'marked.gltf'
+                real_load = rig_import.load_character_model
+                def mutate(*args, **kwargs):
+                    result = real_load(*args, **kwargs)
+                    captured.provenance['source_entry'] = 'plain.glb'
+                    captured.model.report['fixture'] = False
+                    return result
+                with patch.object(rig_import, 'load_character_model', side_effect=mutate):
+                    with self.assertRaises(RigError):
+                        export_mesh(captured.model.geometry, root / 'race', source_snapshot=captured)
+                captured.provenance['source_entry'] = 'marked.gltf'
+                captured.model.report['fixture'] = True
+                export_mesh(captured.model.geometry, root / 'good', source_snapshot=captured)
+                for name, data in originals.items():
+                    self.assertEqual((root / 'good/source' / name).read_bytes(), data)
+                self.assertTrue(load_character_model(root / 'good/model.glb').report['fixture'])
+                self.assertTrue(create_run(root / 'good/model.glb', root / 'rig').manifest['source']['fixture'])
+
+    def test_demo_outputs_reimport_as_fixtures(self):
+        from demonstrate_model3d_mesh import demonstrate
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            report = demonstrate(root / 'demo')
+            self.assertTrue(report['fixture'])
+            self.assertEqual(len(report['records']), 12)
+            for record in report['records']:
+                path = root / 'demo' / (record['primitive'] + '-' + record['format']) / ('model.' + record['format'])
+                self.assertTrue(load_character_model(path).report['fixture'])
+            self.assertTrue(create_run(root / 'demo/box-glb/model.glb', root / 'rig').manifest['source']['fixture'])
+            self.assertFalse(list((root / 'demo').rglob('*.obj')))
+
     def test_canonical_fixture_library_export_and_native_rig(self):
         with tempfile.TemporaryDirectory() as tmp:
             # Admit the owned temporary root before passing it to the library.

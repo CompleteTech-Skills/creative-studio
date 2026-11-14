@@ -37,9 +37,9 @@ def demonstrate(destination):
                                           pivot=[.25, -.5, 1], translation=[1, 2, 3])
             editable = transform_editable(original, transform)
             geometry = editable.geometry()
-            for fmt in ('glb', 'gltf', 'obj'):
+            for fmt in ('glb', 'gltf'):
                 root = stage / (kind + '-' + fmt)
-                manifest = export_mesh(geometry, root, format=fmt, editable=editable)
+                manifest = export_mesh(geometry, root, format=fmt, editable=editable, fixture=True)
                 loaded = load_character_model(root / ('model.' + fmt)).geometry
                 require(loaded.triangle_count == geometry.triangle_count, 'MODEL3D_DEMO',
                         'Decoded triangle count differs.')
@@ -67,6 +67,7 @@ def demonstrate(destination):
                       authority='native rig Mesh/Geometry/import/export with explicit Model3D adapters',
                       records=records, imported_source=imported, files=files,
                       limitations=['No provider generation, reconstruction or artistic approval.',
+                                   'OBJ omitted because it cannot retain fixture identity.',
                                    'No Blender, rendering or hosted CI execution inferred.'])
         (stage / 'acceptance.json').write_text(json.dumps(report, indent=2, allow_nan=False)+'\n', encoding='utf-8')
         _rename_no_replace(stage, destination)

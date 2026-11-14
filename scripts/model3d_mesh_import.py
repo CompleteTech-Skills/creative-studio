@@ -32,7 +32,7 @@ def _temporary():
     return tempfile.TemporaryDirectory(prefix='model3d-import-')
 
 
-@dataclass
+@dataclass(frozen=True)
 class MeshImport:
     model: Any
     source_records: list[dict]
@@ -40,6 +40,7 @@ class MeshImport:
     root: Path
     _temporary: Any = field(repr=False)
     _canonical_binding: Any = field(default=None, repr=False)
+    _source_binding: Any = field(default=None, repr=False)
 
     def close(self):
         self._temporary.cleanup()
@@ -147,6 +148,7 @@ def import_canonical(library, ref, *, entry=None, limits=None):
         return MeshImport(model, records, dict(authority='AssetLibrary.resolve/read_file',
                           canonical_ref=copy.deepcopy(ref), manifest=copy.deepcopy(manifest),
                           source_entry=entry, normalization='retained canonical bytes; no additional conversion'),
-                          root, temporary, (canonical_bytes(manifest), canonical_bytes(ref), entry))
+                          root, temporary, (canonical_bytes(manifest), canonical_bytes(ref), entry),
+                          (entry, tuple((r['path'], r['bytes'], r['sha256']) for r in records)))
     except BaseException:
         temporary.cleanup(); raise

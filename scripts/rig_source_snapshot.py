@@ -28,13 +28,14 @@ def import_limits(values):
     return result
 
 
-@dataclass
+@dataclass(frozen=True)
 class SourceSnapshot:
     model: Any
     source_records: list[dict]
     provenance: dict
     root: Path
     _temporary: Any = field(repr=False)
+    _source_binding: Any = field(default=None, repr=False)
 
     def close(self):
         self._temporary.cleanup()
@@ -133,7 +134,8 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
         return SourceSnapshot(model, list(records.values()),
                               dict(authority='rig_import.load_character_model', source_entry=entry.name,
                                    scale_conversion=scale, source_consistency='private exact-byte snapshot'),
-                              root, temporary)
+                              root, temporary, (entry.name, tuple((r['path'], r['bytes'], r['sha256'])
+                                                               for r in records.values())))
     except RigError:
         temporary.cleanup()
         raise
