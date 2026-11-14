@@ -44,7 +44,7 @@ def _new_destination(destination):
 def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                      scene_version=None, project_version=None, derived_documents=None,
                      extra_payloads=None, document_replacements=None, project_selection=None,
-                     max_bytes=1024**3):
+                     max_bytes=1024**3, expected_project_sha256=None):
     """Copy and revalidate actual source bytes, then exclusively publish a closure.
 
     New scene versions coexist with original scene/shot versions. The return value
@@ -52,8 +52,13 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     Additional derived documents must already reference complete input payloads.
     """
     require(type(max_bytes) is int and 0 < max_bytes <= 1024**3, 'Invalid snapshot byte budget.')
+    require(expected_project_sha256 is None or type(expected_project_sha256) is str and
+            len(expected_project_sha256) == 64 and all(c in '0123456789abcdef' for c in expected_project_sha256),
+            'Expected source project SHA256 must be an exact lowercase digest.')
     destination = _new_destination(destination)
     bundle = load_project(source_root)
+    require(expected_project_sha256 is None or bundle['inventory']['project.json']['sha256'] == expected_project_sha256,
+            'Source project differs from the expected exact revision.', 'SCENE3D_SOURCE_CHANGED')
     replacements = {} if document_replacements is None else document_replacements
     require(isinstance(replacements, dict) and len(replacements) <= 4096,
             'Document replacements must be a bounded path/document mapping.')
