@@ -120,10 +120,11 @@ class ExecutionService:
 
     def _validate_graph(self, graph):
         from jsonschema import Draft202012Validator
-        from director_contracts import schemas, artifact_references
+        from director_contracts import schemas, artifact_references, validate_execution_metadata
         _dump(graph)
         definitions = schemas()['director.schema.json']['$defs']
-        error = next(Draft202012Validator({'$defs': definitions, '$ref': '#/$defs/output-execution-graph'}).iter_errors(graph), None)
+        alias = 'output-execution-graph-v2' if graph.get('schema_version') == 2 else 'output-execution-graph'
+        error = next(Draft202012Validator({'$defs': definitions, '$ref': '#/$defs/' + alias}).iter_errors(graph), None)
         _need(error is None, str(error.message)[:2048] if error else '')
         ids = [node['id'] for node in graph['nodes']]
         _need(len(ids) == len(set(ids)), 'Graph repeats a node identity.')
@@ -133,6 +134,10 @@ class ExecutionService:
         from director_schema import METHODS
         from director_graph import RESOURCE_CLASSES
         for node in graph['nodes']:
+            if graph.get('schema_version') == 2:
+                # A compiled declaration never supplies native execution proof.
+                # Current owner state is derived separately from exact bindings.
+                validate_execution_metadata(node['execution_metadata'], planned=True)
             _need(node['native_owner'] == node['operation'].split('.')[0], 'Graph names a different native owner.')
             _need(node['output_schema'] == METHODS[node['operation']][1], 'Graph output schema differs from its native method.')
             _need(node['resource_class'] in RESOURCE_CLASSES, 'Unknown native resource class.')
@@ -296,9 +301,10 @@ class ExecutionService:
     def _proof(self, value):
         """Use the existing ledger's immutable evidence storage, outside SQL."""
         import tempfile
-        with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', dir=self.ledger.root.parent) as temporary:
-            temporary.write(_dump(value)); temporary.flush()
-            return [self.ledger.retain_evidence(temporary.name)]
+        with tempfile.TemporaryDirectory(prefix='.director-proof-', dir=self.ledger.root.parent) as temporary:
+            source = Path(temporary) / 'proof.json'
+            source.write_text(_dump(value), encoding='utf-8')
+            return [self.ledger.retain_evidence(source)]
 
     def _known_outcome(self, identifier, node_id, observed):
         """Persist owner-verified observations; never turn uncertainty into success."""
