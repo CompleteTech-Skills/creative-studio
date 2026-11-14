@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import hashlib
+import inspect
 from pathlib import Path
 
 import numpy as np
@@ -58,6 +59,34 @@ DRESSING = (
     ('discarded-strip-a', [-2.55, .02, -1.15], [.055, .04, .52], .35),
     ('discarded-strip-b', [-2.30, .02, -1.45], [.055, .04, .38], -.6),
 )
+
+
+def build_narrative(source_root, destination, *, stage):
+    """Author privately and delegate exclusive final publication to Scene3D.
+
+    The caller supplies an empty application-owned build directory and retains
+    it for diagnosis. This wrapper neither removes it nor publishes through an
+    alternative path when the required canonical capture API is unavailable.
+    """
+    from scene3d_snapshot import snapshot_project
+    require('expected_project_sha256' in inspect.signature(snapshot_project).parameters,
+            'DIRECTOR_NARRATIVE_DEPENDENCY',
+            'Canonical Scene3D snapshot source-hash pinning is required.')
+    built = populate_narrative(source_root, stage)
+    snapshot = snapshot_project(stage, destination,
+        expected_project_sha256=built['project_sha256'], max_bytes=MAX_BYTES)
+    verified = load_project(destination)
+    require(verified['inventory']['project.json']['sha256'] == snapshot['project_sha256'],
+            'DIRECTOR_NARRATIVE_PUBLICATION', 'Published project differs from canonical snapshot receipt.')
+    # Scene and shot identities are retained by snapshot promotion. The project
+    # gets a new immutable version; downstream proof must bind its final bytes.
+    require(verified['project']['shots'] ==
+            [shot['shot'] for shot in built['production_shots']] + built['proof_shots'],
+            'DIRECTOR_NARRATIVE_PUBLICATION', 'Snapshot changed the authored shot selection.')
+    return dict(built, project_sha256=snapshot['project_sha256'],
+                authored_project_sha256=built['project_sha256'],
+                destination=str(Path(destination).absolute()), snapshot=snapshot,
+                state='published-and-closure-verified; physical acceptance pending')
 
 
 def camera_id(shot):
@@ -124,6 +153,16 @@ def populate_narrative(source_root, stage, *, motions=None):
     source_root, stage = Path(source_root), Path(stage)
     require(stage.is_dir() and not stage.is_symlink() and not any(stage.iterdir()),
             'DIRECTOR_NARRATIVE_STAGE', 'Use an empty application-owned build directory.')
+    if motions is not None:
+        expected = {name for name, _, _ in SHOTS} | {'full-narrative'}
+        require(isinstance(motions, dict) and set(motions) == set(ACTORS),
+                'DIRECTOR_NARRATIVE_CLIPS', 'Supply motion for exactly the two persistent actors.')
+        for actor in ACTORS:
+            motion = motions[actor]
+            require(isinstance(motion, dict) and isinstance(motion.get('clips'), dict)
+                    and set(motion['clips']) == expected
+                    and all(isinstance(clip, dict) for clip in motion['clips'].values()),
+                    'DIRECTOR_NARRATIVE_CLIPS', 'All five native shot clips and full motion are required.')
     bundle = load_project(source_root)
     require({r['id'] for r in bundle['project']['characters']} == set(ACTORS),
             'DIRECTOR_NARRATIVE_IDENTITY', 'Source must contain exactly Aster and Moss.')
@@ -295,7 +334,9 @@ def populate_narrative(source_root, stage, *, motions=None):
         documents[reference['path']] = shot
         shots.append(reference)
         if not name.startswith('proof-'):
-            production.append(dict(id=name, start_frame=start, end_frame=end, scene=scene_ref, shot=reference))
+            production.append(dict(id=name, start_frame=start, end_frame=end, scene=scene_ref, shot=reference,
+                source_start=dict(numerator=0, denominator=1),
+                playback_rate=dict(numerator=1, denominator=1)))
     project = deepcopy(bundle['project'])
     project.update(id='director-laboratory-narrative-project', version='1.0.0',
         name='Thirty-second native two-robot narrative', assets=assets,

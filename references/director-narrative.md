@@ -30,6 +30,10 @@ checks unchanged geometry, skeleton and material identities, versions the new
 character assets and native motion, and loads the completed closure through the
 canonical Scene3D loader. Final publication belongs to the canonical Scene3D
 snapshot service and must bind the expected completed source project hash.
+`build_narrative(source_root, destination, stage=owned_empty_directory)` delegates
+to that service and refuses to author when its source-hash pinning API is absent.
+The caller retains the private build tree for diagnosis; the wrapper does not
+remove or repurpose a path after publication.
 
 The resulting project registers five production shots and four separate proof
 shots. Consumers must select the explicit `production_shots` references returned
