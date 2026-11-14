@@ -76,6 +76,8 @@ class ExecutionService:
     """
 
     def __init__(self, store, *, drivers, ledger, clock=time.time):
+        _need(getattr(store, 'supports_resource_reservations', False) is True,
+              'DAG execution requires a new native JobStore version two; historical render stores remain unchanged.')
         self.store, self.drivers, self.ledger, self.clock = store, dict(drivers), ledger, clock
         with store._transaction() as db:
             db.execute('''CREATE TABLE IF NOT EXISTS director_runs(
@@ -94,12 +96,25 @@ class ExecutionService:
                 seq INTEGER PRIMARY KEY AUTOINCREMENT, run TEXT NOT NULL,
                 at REAL NOT NULL, event TEXT NOT NULL, detail TEXT NOT NULL)''')
 
-    def _event(self, db, identifier, kind, detail):
+    def _event(self, db, identifier, kind, detail, *, mutate=True):
         count = db.execute('SELECT COUNT(*) FROM director_run_events WHERE run=?', (identifier,)).fetchone()[0]
         _need(count < 32768, 'Director event history requires archival before further work.')
+        detail_text = _dump(detail)
+        self._metadata_capacity(db, len(detail_text.encode()) + len(kind.encode()))
         db.execute('INSERT INTO director_run_events(run,at,event,detail) VALUES(?,?,?,?)',
-                   (identifier, self.clock(), kind, _dump(detail)))
-        db.execute('UPDATE director_runs SET revision=revision+1 WHERE id=?', (identifier,))
+                   (identifier, self.clock(), kind, detail_text))
+        if mutate:
+            db.execute('UPDATE director_runs SET revision=revision+1 WHERE id=?', (identifier,))
+
+    def _metadata_capacity(self, db, additional):
+        used = 0
+        for table, fields in (('director_runs', ('graph', 'bindings', 'capabilities', 'policy', 'context_binding')),
+                              ('director_nodes', ('receipt', 'error')),
+                              ('director_run_events', ('event', 'detail'))):
+            expression = '+'.join('COALESCE(length(CAST(' + field + ' AS BLOB)),0)' for field in fields)
+            used += db.execute('SELECT COALESCE(SUM(' + expression + '),0) FROM ' + table).fetchone()[0]
+        limit = min(64 * 1024**2, self.store.capacity['storage_bytes'] // 4)
+        _need(used + additional <= limit, 'Director metadata storage requires archival before further work.')
 
     def _read(self, db, identifier):
         row = db.execute('SELECT * FROM director_runs WHERE id=?', (identifier,)).fetchone()
@@ -166,6 +181,18 @@ class ExecutionService:
         row = state['state']['reservations'].get(binding['reservation_id'])
         _need(row is not None and row['state'] == 'reserved', 'Exact active budget reservation is required.')
         _need(row['operation_id'] == binding['operation_id'], 'Budget operation identity differs from the node binding.')
+        event = next((item for item in state['state']['events'] if item['action'] == 'reserve'
+                      and item['receipt']['reservation_id'] == binding['reservation_id']), None)
+        _need(event is not None and binding['retry']['max_attempts'] <= event['payload']['retry_allowance'] + 1,
+              'Node retries exceed the exact reserved attempt allowance.')
+        metadata = node.get('execution_metadata')
+        if metadata:
+            from director_budget import METRICS, _number
+            for metric in METRICS:
+                value = metadata['estimated_usage'][metric]['value']
+                if value is not None:
+                    _need(_number(value, metric) <= _number(event['payload']['estimate'][metric], metric),
+                          'Declared node usage exceeds its exact per-attempt reservation: ' + metric)
         return state, row
 
     def submit_graph(self, identifier, graph, bindings, input_root, *, capabilities, policy=None, context_binding=None):
@@ -199,6 +226,8 @@ class ExecutionService:
                   'Existing graph identity cannot be repurposed.')
             return self.status_graph(identifier)
         snapshot = _snapshot(_dump(capabilities).encode(), root, datetime.fromtimestamp(self.clock(), timezone.utc))
+        from director_contracts import parse_rfc3339
+        expires = parse_rfc3339(snapshot['expires_at']).timestamp()
         prepared = dict(graph=deepcopy(graph), bindings=deepcopy(bindings), input_root=str(root),
                         capabilities=snapshot, policy=policy, ledger_root=str(self.ledger.root), context_binding=context_binding)
         native_identities, reservations = set(), set()
@@ -228,7 +257,6 @@ class ExecutionService:
             _need(driver is not None, 'No authoritative native driver for operation: ' + node['operation'])
             driver.validate(binding['native'], node, root)
             self._admission(prepared, node, binding)
-        expires = datetime.fromisoformat(snapshot['expires_at'].replace('Z', '+00:00').replace('z', '+00:00')).timestamp()
         with self.store._transaction() as db:
             old = db.execute('SELECT * FROM director_runs WHERE id=?', (identifier,)).fetchone()
             if old is not None:
@@ -236,6 +264,12 @@ class ExecutionService:
                       and old['input_root'] == str(root) and old['capabilities'] == _dump(snapshot)
                       and old['policy'] == _dump(policy), 'Existing graph identity cannot be repurposed.')
             else:
+                size = sum(len(_dump(prepared[name]).encode()) for name in ('graph', 'bindings', 'capabilities', 'policy', 'context_binding'))
+                retained = db.execute('SELECT COALESCE(SUM(length(CAST(graph AS BLOB))+length(CAST(bindings AS BLOB))+length(CAST(capabilities AS BLOB))+length(CAST(policy AS BLOB))+length(CAST(context_binding AS BLOB))),0),COUNT(*) FROM director_runs').fetchone()
+                metadata_limit = min(64 * 1024**2, self.store.capacity['storage_bytes'] // 4)
+                _need(retained[1] < 2048 and retained[0] + size <= metadata_limit,
+                      'Director metadata storage requires archival before another submission.')
+                self._metadata_capacity(db, size)
                 db.execute('INSERT INTO director_runs(id,revision,graph,graph_hash,bindings,input_root,capabilities,policy,expires,definition_hash,ledger_root,context_binding) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
                            (identifier, 0, _dump(graph), object_hash(graph), _dump(bindings), str(root), _dump(snapshot), _dump(policy), expires,
                             object_hash(prepared), str(self.ledger.root), _dump(context_binding)))
@@ -251,7 +285,12 @@ class ExecutionService:
         with self.store._transaction() as db:
             run = self._read(db, identifier)
             nodes = {row['node']: dict(row) for row in db.execute('SELECT * FROM director_nodes WHERE run=?', (identifier,))}
-            events = [dict(row) for row in db.execute('SELECT * FROM director_run_events WHERE run=? ORDER BY seq', (identifier,))]
+            events = [dict(row) for row in db.execute('SELECT * FROM (SELECT * FROM director_run_events WHERE run=? ORDER BY seq DESC LIMIT 1000) ORDER BY seq', (identifier,))]
+            for event in events:
+                if event['event'] == 'operation-receipt':
+                    detail = json.loads(event['detail'])
+                    detail.pop('result', None)
+                    event['detail'] = _dump(detail)
         observed = {}
         for node in run['graph']['nodes']:
             native = self.drivers[node['operation']].inspect(run['bindings'][node['id']]['native'])
@@ -264,6 +303,124 @@ class ExecutionService:
                  'cancelled' if run['cancel'] else 'failed' if 'failed' in states else 'queued')
         return dict(id=identifier, revision=self._revision(run), version=run['revision'], graph_sha256=run['graph_hash'],
                     state=phase, nodes=observed, events=events, cancel_requested=bool(run['cancel']))
+
+    def history(self, identifier, *, after_sequence=0, limit=1000):
+        _need(type(after_sequence) is int and after_sequence >= 0 and type(limit) is int and 1 <= limit <= 1000,
+              'Invalid bounded history cursor.')
+        with self.store._transaction() as db:
+            self._read(db, identifier)
+            return [dict(row) for row in db.execute('SELECT * FROM director_run_events WHERE run=? AND seq>? ORDER BY seq LIMIT ?',
+                                                   (identifier, after_sequence, limit))]
+
+    def _operation(self, identifier, action, expected_revision, operation_key, input_digest, parameters=None):
+        """Idempotent administrative transitions use this run's existing history.
+
+        These intents serialize cancel/resume mutations, not worker execution.
+        Native JobStore/acquisition tokens remain the only execution claims.
+        """
+        import re
+        import threading
+        import uuid
+        from render3d_jobs import _alive
+        if operation_key is None:
+            _need(input_digest is None, 'An input digest needs its operation key.')
+            input_digest = object_hash(dict(action=action, run=identifier, expected_revision=expected_revision, parameters=parameters))
+            # Legacy low-level callers retain strict CAS semantics. Explicit
+            # canonical idempotency keys opt into receipt replay.
+            operation_key = 'raw-' + uuid.uuid4().hex
+        _need(isinstance(operation_key, str) and re.fullmatch('[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', operation_key)
+              and isinstance(input_digest, str) and re.fullmatch('[0-9a-f]{64}', input_digest), 'Invalid administrative operation identity.')
+        cached = self.replay_operation(identifier, action, operation_key, input_digest)
+        if cached is not None:
+            return dict(key=operation_key, digest=input_digest, action=action, result=cached)
+        with self.store._transaction() as db:
+            run = self._read(db, identifier)
+            entries = [json.loads(row[0]) for row in db.execute(
+                'SELECT detail FROM director_run_events WHERE run=? AND event IN ("operation-requested","operation-receipt","operation-error") ORDER BY seq', (identifier,))]
+            same = [entry for entry in entries if entry['operation_key'] == operation_key]
+            if same:
+                _need(all(entry['action'] == action and entry['input_digest'] == input_digest for entry in same),
+                      'Idempotency key was used for a different administrative request.')
+                _need(all(entry.get('parameters') == parameters for entry in same if 'parameters' in entry),
+                      'Idempotency key was used for different administrative parameters.')
+                failure = next((entry for entry in reversed(same) if 'error' in entry), None)
+                _need(failure is None, failure['error'] if failure else '')
+                receipt = next((entry for entry in reversed(same) if 'result' in entry), None)
+                _need(receipt is None, 'Operation completed concurrently; replay its recorded result.')
+                intent = next(entry for entry in reversed(same) if 'parameters' in entry)
+                _need(not _alive(intent['pid']),
+                      'The original administrative request is still owned by a live controller.')
+                self._event(db, identifier, 'operation-requested', dict(operation_key=operation_key,
+                    input_digest=input_digest, action=action, parameters=parameters,
+                    pid=os.getpid(), thread=threading.get_ident(), recovery=True))
+                return dict(key=operation_key, digest=input_digest, action=action,
+                            result=None)
+            completed = {entry['operation_key'] for entry in entries if 'result' in entry or 'error' in entry}
+            _need(not any(entry['operation_key'] not in completed for entry in entries),
+                  'Another administrative request needs reconciliation before a new mutation.')
+            _need(self._revision(run) == expected_revision, 'Execution revision is stale.')
+            self._event(db, identifier, 'operation-requested', dict(operation_key=operation_key,
+                input_digest=input_digest, action=action, parameters=parameters,
+                pid=os.getpid(), thread=threading.get_ident()))
+        return dict(key=operation_key, digest=input_digest, action=action, result=None)
+
+    def replay_operation(self, identifier, action, operation_key, input_digest):
+        """Read an existing mutation receipt before checking its old CAS token."""
+        with self.store._transaction() as db:
+            run = self._read(db, identifier)
+            same = []
+            for row in db.execute('SELECT detail FROM director_run_events WHERE run=? AND event IN ("operation-requested","operation-receipt","operation-error") ORDER BY seq', (identifier,)):
+                entry = json.loads(row[0])
+                if entry['operation_key'] == operation_key:
+                    same.append(entry)
+            _need(all(entry['action'] == action and entry['input_digest'] == input_digest for entry in same),
+                  'Idempotency key was used for a different administrative request.')
+            failure = next((entry for entry in reversed(same) if 'error' in entry), None)
+            _need(failure is None, failure['error'] if failure else '')
+            receipt = next((entry for entry in reversed(same) if 'result' in entry), None)
+        if receipt is None:
+            return None
+        result = deepcopy(receipt['result'])
+        _need(object_hash(result) == receipt['result_sha256'], 'Recorded operation receipt changed.')
+        # Stored Director JSON cannot authenticate a completed native job.
+        # Reopen the original native authority before replaying completion.
+        by_id = {node['id']: node for node in run['graph']['nodes']}
+        _need(set(result['nodes']) == set(by_id), 'Recorded operation omits an original native node.')
+        _need(result['state'] != 'complete' or all(value['native']['state'] == 'complete' for value in result['nodes'].values()),
+              'Recorded completion has unfinished native nodes.')
+        for node_id, value in result['nodes'].items():
+            _need(node_id in by_id, 'Recorded operation names an unknown native node.')
+            if value['native']['state'] == 'complete':
+                actual = self.drivers[by_id[node_id]['operation']].inspect(run['bindings'][node_id]['native'])
+                _need(actual['state'] == 'complete' and actual['receipt'] == value['native']['receipt']
+                      and actual['artifacts'] == value['native']['artifacts']
+                      and actual['artifact_root'] == value['native']['artifact_root'],
+                      'Recorded completion differs from the original verified native owner.')
+        return result
+
+    def _operation_error(self, identifier, operation, error):
+        with self.store._transaction() as db:
+            self._event(db, identifier, 'operation-error', dict(operation_key=operation['key'],
+                input_digest=operation['digest'], action=operation['action'],
+                error=(str(error) or type(error).__name__)[:2048]))
+
+    def _operation_result(self, identifier, operation):
+        result = self.status_graph(identifier)
+        existing = False
+        with self.store._transaction() as db:
+            # Concurrent identical callers preserve the first immutable receipt.
+            for row in db.execute('SELECT detail FROM director_run_events WHERE run=? AND event="operation-receipt" ORDER BY seq', (identifier,)):
+                receipt = json.loads(row[0])
+                if receipt['operation_key'] == operation['key']:
+                    existing = True
+                    break
+            if not existing:
+                self._event(db, identifier, 'operation-receipt', dict(operation_key=operation['key'],
+                    input_digest=operation['digest'], action=operation['action'], result=result,
+                    result_sha256=object_hash(result)), mutate=False)
+        if existing:
+            return self.replay_operation(identifier, operation['action'], operation['key'], operation['digest'])
+        return result
 
     def _ready(self, db, identifier, node_id):
         run = self._read(db, identifier)
@@ -321,6 +478,7 @@ class ExecutionService:
                 phase = 'uncertain' if row['phase'] == 'uncertain' else 'admitted'
             receipt = _dump(observed)
             if row['phase'] != phase or row['receipt'] != receipt:
+                self._metadata_capacity(db, len(receipt.encode()) - len((row['receipt'] or '').encode()))
                 db.execute('UPDATE director_nodes SET phase=?,receipt=? WHERE run=? AND node=?',
                            (phase, receipt, identifier, node_id))
                 self._event(db, identifier, 'native-observed', dict(node=node_id, state=observed['state'], receipt_sha256=object_hash(observed)))
@@ -422,6 +580,8 @@ class ExecutionService:
                 result = driver.dispatch(binding['native'], admit=admit)
             except Exception as exc:
                 with self.store._transaction() as db:
+                    previous = db.execute('SELECT error FROM director_nodes WHERE run=? AND node=?', (identifier, node_id)).fetchone()[0]
+                    self._metadata_capacity(db, len(str(exc)[:2048].encode()) - len((previous or '').encode()))
                     db.execute('UPDATE director_nodes SET error=? WHERE run=? AND node=?', (str(exc)[:2048], identifier, node_id))
                     self._event(db, identifier, 'native-dispatch-error', dict(node=node_id, error=str(exc)[:2048]))
                 # Reconcile the real native state after exceptions; an error
@@ -446,6 +606,8 @@ class ExecutionService:
         self.store.recover()
         self.reconcile_graph(identifier)
         def terminal(db, record):
+            if not record['resources']['provider_workers']:
+                return True
             for row in db.execute('SELECT phase,resource_lease FROM director_nodes WHERE run=?', (identifier,)):
                 if row['phase'] not in ('complete', 'failed', 'cancelled') or not row['resource_lease']:
                     continue
@@ -453,19 +615,41 @@ class ExecutionService:
                 if lease.get('operation_id') == record.get('operation_id'):
                     return True
             return False
-        self.store.recover_resources(admit=terminal)
+        recovered = self.store.recover_resources(admit=terminal)
+        if recovered:
+            with self.store._transaction() as db:
+                for row in db.execute('SELECT node,resource_lease FROM director_nodes WHERE run=?', (identifier,)).fetchall():
+                    if row['resource_lease'] and json.loads(row['resource_lease'])['operation_id'] in recovered:
+                        db.execute('UPDATE director_nodes SET resource_lease=NULL WHERE run=? AND node=?', (identifier, row['node']))
+                        self._event(db, identifier, 'native-resources-recovered', dict(node=row['node']))
         return self.status_graph(identifier)
 
-    def cancel_graph(self, identifier, *, expected_revision):
+    def cancel_graph(self, identifier, *, expected_revision, operation_key=None, input_digest=None):
+        operation = self._operation(identifier, 'cancel', expected_revision, operation_key, input_digest)
+        if operation['result'] is not None:
+            return operation['result']
+        try:
+            return self._cancel_operation(identifier, operation)
+        except BaseException as exc:
+            self._operation_error(identifier, operation, exc)
+            raise
+
+    def _cancel_operation(self, identifier, operation):
         with self.store._transaction() as db:
             run = self._read(db, identifier)
-            _need(self._revision(run) == expected_revision, 'Execution revision is stale.')
+            leases = [(row['node'], json.loads(row['resource_lease'])) for row in db.execute(
+                'SELECT node,resource_lease FROM director_nodes WHERE run=? AND resource_lease IS NOT NULL', (identifier,))]
             if not run['cancel']:
                 db.execute('UPDATE director_runs SET cancel=1 WHERE id=?', (identifier,))
                 self._event(db, identifier, 'cancel-requested', {})
         # Persist cancellation intent first; each native owner then applies its
         # own bounded cancellation. Outputs and uncertain claims are retained.
         failures = []
+        for node_id, lease in leases:
+            try:
+                self.store.cancel_resources(lease['operation_id'])
+            except Exception as exc:
+                failures.append(dict(node=node_id, error=str(exc)[:2048]))
         for node in run['graph']['nodes']:
             try:
                 self.drivers[node['operation']].cancel(run['bindings'][node['id']]['native'])
@@ -474,15 +658,49 @@ class ExecutionService:
         if failures:
             with self.store._transaction() as db:
                 self._event(db, identifier, 'cancellation-incomplete', dict(failures=failures))
-        return self.reconcile_graph(identifier)
+        self.reconcile_graph(identifier)
+        return self._operation_result(identifier, operation)
 
-    def resume_graph(self, identifier, *, expected_revision, retry_after=None):
+    def resume_graph(self, identifier, *, expected_revision, retry_after=None, operation_key=None, input_digest=None):
+        operation = self._operation(identifier, 'resume', expected_revision, operation_key, input_digest, dict(retry_after=retry_after))
+        if operation['result'] is not None:
+            return operation['result']
+        try:
+            return self._resume_operation(identifier, operation, retry_after=retry_after)
+        except BaseException as exc:
+            self._operation_error(identifier, operation, exc)
+            raise
+
+    def _resume_operation(self, identifier, operation, *, retry_after=None):
         status = self.reconcile_graph(identifier)
-        _need(status['revision'] == expected_revision, 'Execution revision is stale; reconcile and read current state.')
         with self.store._transaction() as db:
             run = self._read(db, identifier)
         for node in run['graph']['nodes']:
             current = status['nodes'][node['id']]
+            with self.store._transaction() as db:
+                plans = [json.loads(row[0]) for row in db.execute('SELECT detail FROM director_run_events WHERE run=? AND event="resume-prepared" ORDER BY seq', (identifier,))]
+                plan = next((value for value in plans if value['operation_key'] == operation['key'] and value['node'] == node['id']), None)
+                resumed = any(value.get('operation_key') == operation['key'] and value.get('node') == node['id'] for value in
+                    (json.loads(row[0]) for row in db.execute('SELECT detail FROM director_run_events WHERE run=? AND event="resumed"', (identifier,))))
+            if plan is not None and not resumed and current['native']['state'] in ('queued', 'complete'):
+                # The original native resume committed before a controller
+                # exited. Finalize its original schedule without another
+                # native resume, attempt, or backoff reset.
+                with self.store._transaction() as db:
+                    db.execute('UPDATE director_nodes SET phase=?,dispatch=NULL,error=NULL,not_before=? WHERE run=? AND node=?',
+                               (current['native']['state'], plan['not_before'], identifier, node['id']))
+                    db.execute('UPDATE director_runs SET cancel=0 WHERE id=?', (identifier,))
+                    self._event(db, identifier, 'resumed', dict(node=node['id'], not_before=plan['not_before'],
+                        operation_key=operation['key'], recovered_native_resume=True))
+                continue
+            if current['native']['state'] == 'queued' and run['cancel']:
+                # Some native owners keep unstarted work queued when only the
+                # Director graph was cancelled. Removing that graph intent
+                # grants no native claim and does not alter an uncertain fence.
+                with self.store._transaction() as db:
+                    db.execute('UPDATE director_runs SET cancel=0 WHERE id=?', (identifier,))
+                    self._event(db, identifier, 'graph-cancellation-cleared', dict(node=node['id']))
+                continue
             if current['native']['state'] not in ('failed', 'cancelled'):
                 continue
             binding = run['bindings'][node['id']]
@@ -493,13 +711,16 @@ class ExecutionService:
                 for item in reservation.get('dispatches', [])), 'Reconcile exact known native outcome and actual attempt usage before retry.')
             delay = retry_delay(max(1, current['attempt']), base_seconds=binding['retry']['base_seconds'],
                                 maximum_seconds=binding['retry']['maximum_seconds'], retry_after=retry_after, now=self.clock())
+            with self.store._transaction() as db:
+                if plan is None:
+                    plan = dict(operation_key=operation['key'], node=node['id'], not_before=self.clock() + delay)
+                    self._event(db, identifier, 'resume-prepared', plan)
+                    db.execute('UPDATE director_nodes SET phase="resuming",not_before=? WHERE run=? AND node=?', (plan['not_before'], identifier, node['id']))
             self.drivers[node['operation']].resume(binding['native'])
             with self.store._transaction() as db:
-                _need(self._revision(self._read(db, identifier)) == expected_revision, 'Execution changed during resume.')
                 db.execute('UPDATE director_nodes SET phase="queued",dispatch=NULL,error=NULL,not_before=? WHERE run=? AND node=?',
-                           (self.clock() + delay, identifier, node['id']))
+                           (plan['not_before'], identifier, node['id']))
                 db.execute('UPDATE director_runs SET cancel=0 WHERE id=?', (identifier,))
-                self._event(db, identifier, 'resumed', dict(node=node['id'], not_before=self.clock() + delay))
-                expected_revision = self._revision(self._read(db, identifier))
-        return self.status_graph(identifier)
+                self._event(db, identifier, 'resumed', dict(node=node['id'], not_before=plan['not_before'], operation_key=operation['key']))
+        return self._operation_result(identifier, operation)
 
