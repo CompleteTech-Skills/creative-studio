@@ -593,8 +593,12 @@ def _stop(process):
 @contextmanager
 def _slot():
     # One private global slot across processes. Native OS locks release on crash.
-    parent = Path(tempfile.gettempdir()).resolve()
-    name = 'hatch-physics-workers-' + str(os.getuid() if hasattr(os, 'getuid') else os.getpid())
+    require(os.name == 'posix' and hasattr(os,'getuid'), 'PHYSICS_PLATFORM_UNSUPPORTED',
+            'Cross-process physics ownership currently requires the supported POSIX platform.')
+    # TMPDIR is a per-job resource choice, so it cannot locate a process-global
+    # lock. The OS temporary namespace and UID remain stable across those jobs.
+    parent = Path('/tmp').resolve()
+    name = 'hatch-physics-workers-' + str(os.getuid())
     root = parent / name
     try:
         root.mkdir(mode=0o700)

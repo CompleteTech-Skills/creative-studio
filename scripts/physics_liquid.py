@@ -138,13 +138,15 @@ def _verify_cache_at(directory_fd, *, expected_world_sha256=None):
 def simulate(world, source_payloads, destination, *, settings, executable=None, project_manifest='project.json', cancel_token=None):
     from atomic_publish import private_stage_fd,rename_no_replace_at
     world,settings=admit(world,settings)
+    core.require(os.name=='posix' and Path('/proc/self/fd').is_dir(),
+        'PHYSICS_PLATFORM_UNSUPPORTED','Native liquid execution needs the verified Linux inherited-directory path adapter.')
     destination=core._new_destination(destination)
     core.require(type(source_payloads) is dict,'PHYSICS_INPUTS','Liquid sources must be an exact byte mapping.')
     source_payloads=dict(source_payloads)
     core.require(all(type(v) is bytes for v in source_payloads.values()) and sum(len(v) for v in source_payloads.values())<=core.MAX_INPUT_BYTES,
         'PHYSICS_INPUTS','Liquid sources exceed input bound.')
     core._paths(source_payloads)
-    with core._Reader(destination.parent) as parent, private_stage_fd(parent.fd,prefix='.'+destination.name+'.liquid-') as stage_fd:
+    with core._Reader(destination.parent) as parent, private_stage_fd(parent.fd,prefix='.'+destination.name+'.liquid-',cleanup_on_error=False) as stage_fd:
         os.mkdir('payload',mode=0o700,dir_fd=stage_fd)
         payload_fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=stage_fd)
         try:

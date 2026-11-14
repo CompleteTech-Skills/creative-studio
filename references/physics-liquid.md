@@ -7,6 +7,10 @@ and compares all output frames with the original evaluated geometry and an
 independent gzip BOBJ mesh decoder. `verify CACHE_DIRECTORY` checks the full
 artifact inventory, source identities and those retained comparisons without
 running Blender. Hashes establish integrity, not authenticated provenance.
+Native execution currently requires the verified Linux inherited-directory path
+adapter for Blender's own cache paths. Hosts without that adapter fail before
+staging or native execution. The descriptor-based cache reader and publication
+transport do not establish a macOS or Windows native-liquid execution claim.
 Worlds must select the installed adapter version and either `not-guaranteed`
 or `verified-cache-replay` reproducibility. Recomputing the simulation does not
 establish pinned numerical reproducibility or a declared approximation bound.

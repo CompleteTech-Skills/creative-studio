@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 
@@ -53,3 +54,24 @@ class DirectoryRunnerTests(unittest.TestCase):
             self.run_worker("open('must-not-exist','w').write('invalid')", label='../outside')
         self.assertEqual(raised.exception.report['code'], 'PHYSICS_PATH')
         self.assertFalse(list(self.root.iterdir()))
+
+    def test_global_slot_is_shared_by_processes_with_different_tmpdir(self):
+        alternate=self.parent/'alternate-tmp';alternate.mkdir()
+        marker=self.parent/'child-owned'
+        code=('import sys;from pathlib import Path;sys.path.insert(0,sys.argv[1]);'
+            'import physics_backends as core\n'
+            'try:\n'
+            ' with core._slot():Path(sys.argv[2]).write_bytes(b"actual owner")\n'
+            'except core.BackendError as exc:\n'
+            ' print(exc.report["code"]);sys.exit(4 if exc.report["code"]=="PHYSICS_BUSY" else 5)\n')
+        command=[sys.executable,'-I','-c',code,str(Path(core.__file__).parent),str(marker)]
+        env={**os.environ,'TMPDIR':str(alternate),'TEMP':str(alternate),'TMP':str(alternate)}
+        self.assertNotEqual(Path(tempfile.gettempdir()).resolve(),alternate.resolve())
+        with core._slot():
+            blocked=subprocess.run(command,env=env,capture_output=True,timeout=30)
+            self.assertEqual(blocked.returncode,4,(blocked.stdout,blocked.stderr))
+            self.assertIn(b'PHYSICS_BUSY',blocked.stdout)
+            self.assertFalse(marker.exists())
+        owned=subprocess.run(command,env=env,capture_output=True,timeout=30)
+        self.assertEqual(owned.returncode,0,(owned.stdout,owned.stderr))
+        self.assertEqual(marker.read_bytes(),b'actual owner')

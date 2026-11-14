@@ -60,13 +60,16 @@ def main():
         owned=os.fstat(int(descriptor));cwd=os.stat('.')
         if not stat.S_ISDIR(owned.st_mode) or (owned.st_dev,owned.st_ino)!=(cwd.st_dev,cwd.st_ino):
             raise ValueError('Pinned worker directory differs from its cwd.')
-        root=Path('.')
-        arg=Path(sys.argv[sys.argv.index('--')+1])
+        root=Path('/proc/self/fd')/descriptor
+        relative=Path(sys.argv[sys.argv.index('--')+1])
+        if relative!=Path('liquid-job.json'):raise ValueError('Unexpected pinned liquid job path.')
+        arg=root/relative
     if arg!=root/'liquid-job.json':raise ValueError('Unexpected liquid job path.')
     job=json.loads(arg.read_bytes())
     fields={'protocol','mode','expected_blend_sha256','world','settings','meshes','worker_sha256','world_sha256','settings_sha256'}
     if set(job)!=fields or job['protocol']!=1:raise ValueError('Invalid liquid worker protocol.')
-    if hashlib.sha256(Path(__file__).read_bytes()).hexdigest()!=job['worker_sha256']:raise ValueError('Worker source changed.')
+    worker_source=root/'worker.py' if descriptor is not None else Path(__file__)
+    if hashlib.sha256(worker_source.read_bytes()).hexdigest()!=job['worker_sha256']:raise ValueError('Worker source changed.')
     for key in ['world','settings']:
         if hashlib.sha256(canonical(job[key])).hexdigest()!=job[key+'_sha256']:raise ValueError('Liquid request bytes changed.')
     world,settings=job['world'],job['settings'];d=world['components'][0];frames=world['frame_range']['end']
