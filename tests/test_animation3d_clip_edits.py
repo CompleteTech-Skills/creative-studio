@@ -278,6 +278,59 @@ class ClipEditingTests(unittest.TestCase):
             both,_=split_clip(source,9,registry=registry,quaternion_tolerance_rad=1e-4,max_bake_keys=count*2+2)
             self.assertLessEqual(both['provenance']['parameters']['squad_bake_0_keys'],count*2+2)
 
+    def test_authored_playback_defaults_loop_ping_pong_and_overrides_drive_geometry(self):
+        from animation3d_clips import playback_time
+        with tempfile.TemporaryDirectory() as directory:
+            from animation3d_evaluator import RigClipEvaluator
+            rig=fixture(directory,animated=False);value=clip();value['tracks'][0]['target']['bone_id']='b0'
+            evaluator=RigClipEvaluator(rig.root,'actor')
+            cases=[('once',2,6,12),('hold',1,30,24),('loop',1,30,6),
+                   ('ping_pong',1,24,24),('ping_pong',1,30,18),('ping_pong',1,48,0)]
+            for mode,speed,output_frame,expected in cases:
+                value.update(loop_mode=mode,default_speed=speed)
+                source=playback_time(value,dict(frame=output_frame),value['fps'])
+                self.assertEqual(frame_position(source),expected)
+                evaluated=evaluator.evaluate([value],source)
+                np.testing.assert_allclose(evaluated['geometry'][rig.geometry.meshes[0].id]['positions'],rig.geometry.meshes[0].positions+[expected,0,0],atol=1e-10)
+            value.update(loop_mode='loop',default_speed=2)
+            self.assertEqual(frame_position(playback_time(value,dict(frame=6),value['fps'],speed=1,loop_mode='once')),6)
+            backward=playback_time(value,dict(frame=3),value['fps'],reverse=True)
+            self.assertEqual(frame_position(backward),18)
+            result=evaluator.evaluate([value],backward)
+            np.testing.assert_allclose(result['geometry'][rig.geometry.meshes[0].id]['positions'],rig.geometry.meshes[0].positions+[18,0,0],atol=1e-10)
+
+    def test_playback_terminal_and_owner_required_completion_are_explicit(self):
+        from animation3d_clips import playback_time
+        value=clip();before=object_hash(value)
+        for completion in ('reset','exit','transition'):
+            value['completion_mode']=completion
+            self.assertEqual(frame_position(playback_time(value,dict(frame=24),value['fps'])),24)
+            with self.assertRaises(RigError) as rejected:playback_time(value,dict(frame=25),value['fps'])
+            self.assertEqual(rejected.exception.report['code'],'ANIMATION_OWNER')
+            value['loop_mode']='hold'
+            with self.assertRaises(RigError):playback_time(value,dict(frame=25),value['fps'])
+            value['loop_mode']='once'
+        value['completion_mode']='hold';self.assertEqual(object_hash(value),before)
+        self.assertEqual(frame_position(playback_time(value,dict(frame=25),value['fps'])),24)
+        for options in ({'speed':0},{'speed':True},{'speed':float('inf')},{'loop_mode':'unknown'},
+                        {'loop_mode':False},{'reverse':1},{'source_in':18,'source_out':6}):
+            with self.subTest(options=options),self.assertRaises(RigError):playback_time(value,dict(frame=1),value['fps'],**options)
+
+    def test_playback_rational_range_turns_repeat_in_arbitrary_query_order(self):
+        from animation3d_clips import playback_time
+        value=clip();value['loop_mode']='ping_pong'
+        seen={}
+        for frame in (0,15,5,30,45,15,0):
+            source=playback_time(value,dict(frame=frame),dict(numerator=30,denominator=1),source_in=6,source_out=18)
+            if frame in seen:self.assertEqual(source,seen[frame])
+            seen[frame]=source
+        self.assertEqual(frame_position(seen[15]),18)
+        self.assertEqual(frame_position(seen[30]),6)
+        self.assertEqual(frame_position(seen[45]),18)
+        value['fps']=dict(numerator=24000,denominator=1001)
+        source=playback_time(value,dict(frame=30),dict(numerator=30000,denominator=1001),source_in=6,source_out=18)
+        self.assertEqual(frame_position(source),6)
+
     def test_whole_float_duration_clock_edits_and_invalid_numeric_values(self):
         from animation3d_clips import retime_clip,reverse_clip,source_time,paste_keys
         value=clip();value['duration_frames']=24.0
