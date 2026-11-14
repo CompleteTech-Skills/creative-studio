@@ -41,22 +41,45 @@ class CanonicalObjTests(unittest.TestCase):
                     with self.assertRaises((RigError, TypeError)):
                         create_run(CanonicalArtifact(reopened, bad, entry='model.obj'), root/'bad')
                     decode.assert_not_called()
-            with patch.object(reopened, 'resolve', return_value={**manifest, 'version': '2.0.0'}), \
+            capture = reopened.capture_for_validation
+            def altered_manifest(reference, *, budget):
+                captured, payloads = capture(reference, budget=budget)
+                return {**captured, 'version': '2.0.0'}, payloads
+            def altered_payload(reference, *, budget):
+                captured, payloads = capture(reference, budget=budget)
+                return captured, {**payloads, 'materials.mtl': b'tampered'}
+            def missing_payload(reference, *, budget):
+                captured, payloads = capture(reference, budget=budget)
+                del payloads['materials.mtl']
+                return captured, payloads
+            for name, replacement in [('manifest-tampered', altered_manifest),
+                                      ('tampered', altered_payload),
+                                      ('missing', missing_payload)]:
+                with self.subTest(case=name), patch.object(reopened, 'capture_for_validation', side_effect=replacement), \
+                     patch('model3d_mesh_import._load') as decode:
+                    with self.assertRaises(RigError):
+                        create_run(CanonicalArtifact(reopened, ref, entry='model.obj'), root/name)
+                    decode.assert_not_called()
+                self.assertFalse((root/name).exists())
+            with patch.object(reopened, 'capture_for_validation', side_effect=RigError('MISSING', 'Missing source')), \
                  patch('model3d_mesh_import._load') as decode:
-                with self.assertRaises(RigError):
-                    create_run(CanonicalArtifact(reopened, ref, entry='model.obj'), root/'manifest-tampered')
+                with self.assertRaises(RigError) as error:
+                    create_run(CanonicalArtifact(reopened, ref, entry='model.obj'), root/'capture-error')
+                self.assertEqual(error.exception.report['code'], 'MISSING')
                 decode.assert_not_called()
-            with patch.object(reopened, 'read_file', side_effect=lambda r, name: b'tampered' if name == 'materials.mtl' else library.read_file(r, name)), \
-                 patch('model3d_mesh_import._load') as decode:
-                with self.assertRaises(RigError):
-                    create_run(CanonicalArtifact(reopened, ref, entry='model.obj'), root/'tampered')
-                decode.assert_not_called()
-            self.assertFalse((root/'tampered').exists())
-            with patch.object(reopened, 'read_file', side_effect=lambda r, name: (_ for _ in ()).throw(RigError('MISSING', 'Missing source')) if name == 'materials.mtl' else library.read_file(r, name)), \
-                 patch('model3d_mesh_import._load') as decode:
-                with self.assertRaises(RigError):
-                    create_run(CanonicalArtifact(reopened, ref, entry='model.obj'), root/'missing')
-                decode.assert_not_called()
-            self.assertFalse((root/'missing').exists())
+            self.assertFalse((root/'capture-error').exists())
+            # Exercise actual canonical storage corruption, not just a faulty
+            # capture provider. The indexed copy remains intact.
+            blob = reopened.storage.root/'blobs'/records[1]['sha256']
+            original = blob.read_bytes()
+            blob.write_bytes(b'x' * len(original))
+            try:
+                with patch('model3d_mesh_import._load') as decode:
+                    with self.assertRaises(RigError):
+                        create_run(CanonicalArtifact(reopened, ref, entry='model.obj'), root/'corrupt-blob')
+                    decode.assert_not_called()
+                self.assertFalse((root/'corrupt-blob').exists())
+            finally:
+                blob.write_bytes(original)
             bare = create_run(obj, root/'bare')
             self.assertFalse(bare.manifest['source']['fixture'])
