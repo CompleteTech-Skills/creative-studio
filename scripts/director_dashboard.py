@@ -115,6 +115,7 @@ class DashboardService:
     def status(self, body):
         need(isinstance(body, dict) and set(body) == {'native_revision', 'native_sha256'}, 'INPUT', 'Invalid status envelope.')
         native = self._native(body)
+        self.qa._read(self.qa.project_reference)
         project = self.qa.project
         documents = {}
         for field in ('brief', 'story', 'shot_plan', 'asset_registry', 'execution_graph', 'budget_ledger'):
@@ -135,7 +136,11 @@ class DashboardService:
                      profile=self.profile_reference, review_dependencies=self.profile['review_dependencies'],
                      inventory=project['inventory'], revisions=self.repository.history(),
                      native_nodes=[dict(id=node['id'], name=node['name'], type=node['type']) for node in native['scene']['nodes']],
-                     reviews=reviews, validation=self.journal.validation_history(),
+                     reviews=reviews,
+                     review_state=('reviewed' if reviews['current_pass'] else 'awaiting_review'
+                         if any(row['status'] in ('unreviewed', 'stale') for row in reviews['dimensions'].values())
+                         else 'changes_requested' if reviews['dimensions'] else 'unconfigured'),
+                     validation=self.journal.validation_history(),
                      production=self._production(reviews),
                      operations=self._operations(), production_art_acceptance=False)
         need(len(json.dumps(value, allow_nan=False).encode()) <= MAX_STATUS_BYTES,
