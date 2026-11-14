@@ -1,0 +1,1 @@
+{"enabled":true,"id":"exposure","inputs":[],"kind":"cinematics3d-effect","metadata":{"description":"Explicit defaults; execution is not implied.","fixture":true},"operation":{"parameters":{"stops":0},"type":"exposure"},"order":0,"policy":{"allow_approximation":false,"on_unavailable":"reject"},"registry_version":"1.0.0","schema_version":1,"scope":"scene","version":"1.0.0"}

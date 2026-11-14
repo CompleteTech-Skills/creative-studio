@@ -8,7 +8,7 @@ import uuid
 
 from rig_contracts import COORDINATES, DEFAULT_LIMITS, validate_contract
 from rig_errors import (VERSION, RigError, atomic_bytes, atomic_json, job_lock,
-                        object_hash, read_json, require, safe_path, sha256, slug, timestamp)
+                        object_hash, read_json, require, safe_path, sha256, slug, timestamp, normalize_root)
 from rig_models import RigAsset, load_rig, rig_signature, save_geometry, save_weights
 
 
@@ -71,6 +71,8 @@ def create_run(model, root, *, identifier=None, scale=1., limits=None, fixture=F
     from rig_import import load_character_model
     root = Path(root).absolute();model = Path(model).absolute()
     require(not root.is_symlink(), 'RIG_RUN_PATH', 'Run directories cannot be symbolic links.')
+    root = normalize_root(root)
+    model = normalize_root(model.parent)/model.name
     limits = {**DEFAULT_LIMITS, **(limits or {})};validate_contract(limits, 'Limits')
     require(limits['influences'] in (4, 8), 'RIG_INFLUENCES', 'Choose four or eight influences.')
     with job_lock(root):
@@ -84,7 +86,7 @@ def create_run(model, root, *, identifier=None, scale=1., limits=None, fixture=F
         for source in sorted(set(imported.source_files)):
             source = Path(source)
             require(not source.is_symlink(), 'RIG_SOURCE_PATH', 'Original dependencies cannot be symlinks.')
-            try:relative = source.resolve().relative_to(model.parent.resolve()).as_posix()
+            try:relative = (normalize_root(source.parent)/source.name).relative_to(normalize_root(model.parent)).as_posix()
             except ValueError as exc:raise RigError('RIG_SOURCE_PATH', 'A dependency lies outside the model directory.') from exc
             name = 'source/'+relative;target = safe_path(root, name)
             target.parent.mkdir(parents=True, exist_ok=True);shutil.copyfile(source, target)
