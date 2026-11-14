@@ -96,6 +96,11 @@ jobs:
           python -B scripts/physics_backends.py demo --backend pybullet --python "$HATCH_PYBULLET_PYTHON" physics-evidence/pybullet-demo > physics-evidence/pybullet-demo.json
           python -B scripts/physics_backends.py verify physics-evidence/blender-demo/cache
           python -B scripts/physics_backends.py verify physics-evidence/pybullet-demo/cache
+      - name: Verify owned publication against genuine native artifacts
+        env:
+          HATCH_PHYSICS_PUBLICATION_SOURCE: physics-evidence/blender-demo/cache
+        run: |
+          python -B -m unittest discover -s tests -p test_rig_physics_publication.py -v 2>&1 | tee physics-evidence/publication-tests.log
       - name: Retain actual physics evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

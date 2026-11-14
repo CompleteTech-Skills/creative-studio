@@ -1198,39 +1198,59 @@ class BlenderBackend:
                         'PHYSICS_BAKE_FAILED', 'Native mass/material settings differ from the admitted request.', category='backend-crash')
 
     def bake(self, result, destination):
-        owner = self._owner(result)
-        require(self._results.get(result.token) == result, 'PHYSICS_OWNERSHIP', 'Only this attempt\'s unmodified actual simulation result may be published.')
         destination = _new_destination(destination)
-        stage = Path(tempfile.mkdtemp(prefix='.' + destination.name + '.physics-', dir=destination.parent))
-        try:
-            with _Reader(result.root) as reader:
-                for file in result.files:
-                    payload = reader.read(file['path'])
-                    require(digest(payload) == file['sha256'] and len(payload) == file['bytes'], 'PHYSICS_CACHE_CORRUPT', 'Simulation artifacts changed before publication.', category='cache-corruption')
-                    _write(stage/file['path'], payload)
-            world = owner['world']
-            cache = dict(schema_version=1, kind='hatch-3d-physics-cache', id='cache-' + result.token,
-                world_sha256=result.world_sha256, physics_input_sha256=result.world_sha256, backend=result.backend,
-                frame_range=world['frame_range'], fps=world['fps'], fixed_step=world['solver']['fixed_step'],
-                substeps=world['solver']['substeps'], sample_count=world['frame_range']['end'], files=list(result.files),
-                upstream_hashes=sorted({item['sha256'] for item in owner['inventory'].values()}),
-                seed=world['solver']['seed'], reproducibility='verified-cache-replay', numerical_tolerance=1e-5,
-                usage=result.usage, fixture=result.fixture, review_status='unreviewed')
-            validator, error_type = _contracts()
+        with _Reader(destination.parent) as parent:
+            report = self._bake_at(result, destination.name, parent.fd)
+        return {**report, 'destination': str(destination)}
+
+    def _bake_at(self, result, destination_name, parent_fd):
+        """Publish an owned completed result beneath a caller-pinned parent."""
+        from atomic_publish import private_stage_fd, rename_no_replace_at
+        owner = self._owner(result)
+        require(self._results.get(result.token) == result, 'PHYSICS_OWNERSHIP',
+                'Only this attempt\'s unmodified actual simulation result may be published.')
+        require(type(destination_name) is str and path_name(destination_name) == destination_name and '/' not in destination_name,
+                'PHYSICS_PATH', 'Publication requires a single portable destination name.')
+        # The outer wrapper is pinned before the first copied byte. Publication
+        # moves only its inner payload through the canonical FD authority.
+        with private_stage_fd(parent_fd, prefix='.physics-') as stage_fd:
+            os.mkdir('payload', mode=0o700, dir_fd=stage_fd)
+            payload_fd = os.open('payload', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=stage_fd)
             try:
-                validator(cache, 'PhysicsCache')
-            except error_type as exc:
-                raise BackendError('PHYSICS_SCHEMA', str(exc), category='invalid-input') from exc
-            _write(stage/'cache.json', canonical(cache))
-            verify_cache(stage, expected_world_sha256=result.world_sha256)
-            # Reuse the reviewed common exclusive publication primitive (#198).
-            _publish(stage, destination)
-            return dict(status='baked-and-verified', destination=str(destination), cache_sha256=digest((destination/'cache.json').read_bytes()),
-                        world_sha256=result.world_sha256, sample_count=cache['sample_count'], fixture=result.fixture,
-                        review_status='unreviewed')
-        finally:
-            if stage.exists():
-                shutil.rmtree(stage)
+                with _Reader(result.root) as reader:
+                    for file in result.files:
+                        payload = reader.read(file['path'])
+                        require(digest(payload) == file['sha256'] and len(payload) == file['bytes'],
+                                'PHYSICS_CACHE_CORRUPT', 'Simulation artifacts changed before publication.', category='cache-corruption')
+                        _write_relative(payload_fd, file['path'], payload)
+                world = owner['world']
+                cache = dict(schema_version=1, kind='hatch-3d-physics-cache', id='cache-' + result.token,
+                    world_sha256=result.world_sha256, physics_input_sha256=result.world_sha256, backend=result.backend,
+                    frame_range=world['frame_range'], fps=world['fps'], fixed_step=world['solver']['fixed_step'],
+                    substeps=world['solver']['substeps'], sample_count=world['frame_range']['end'], files=list(result.files),
+                    upstream_hashes=sorted({item['sha256'] for item in owner['inventory'].values()}),
+                    seed=world['solver']['seed'], reproducibility='verified-cache-replay', numerical_tolerance=1e-5,
+                    usage=result.usage, fixture=result.fixture, review_status='unreviewed')
+                validator, error_type = _contracts()
+                try:
+                    validator(cache, 'PhysicsCache')
+                except error_type as exc:
+                    raise BackendError('PHYSICS_SCHEMA', str(exc), category='invalid-input') from exc
+                cache_bytes = canonical(cache)
+                _write_relative(payload_fd, 'cache.json', cache_bytes)
+                _verify_cache_at(payload_fd, expected_world_sha256=result.world_sha256)
+                try:
+                    rename_no_replace_at(stage_fd, 'payload', parent_fd, destination_name)
+                except FileExistsError as exc:
+                    raise BackendError('PHYSICS_DESTINATION_EXISTS', 'A destination created during staging was preserved.',
+                        category='invalid-input') from exc
+                except OSError as exc:
+                    raise BackendError('PHYSICS_PUBLICATION_UNAVAILABLE', 'Exclusive output publication failed safely: '+str(exc)) from exc
+                return dict(status='baked-and-verified', cache_sha256=digest(cache_bytes),
+                    world_sha256=result.world_sha256, sample_count=cache['sample_count'], fixture=result.fixture,
+                    review_status='unreviewed')
+            finally:
+                os.close(payload_fd)
 
     def inspect(self, cache, frame):
         return inspect_cache(cache, frame)
@@ -1673,18 +1693,18 @@ def _validate_samples(value, world, world_hash, fixture):
                     'PHYSICS_NUMERICAL_INSTABILITY', 'Sample quaternion/position exceeds numerical limits.', category='numerical-instability')
 
 
-def _read_cache(root, *, expected_world_sha256=None):
+def _read_cache(root, *, expected_world_sha256=None, directory_fd=None):
     try:
-        return _read_cache_impl(root,expected_world_sha256=expected_world_sha256)
+        return _read_cache_impl(root,expected_world_sha256=expected_world_sha256,directory_fd=directory_fd)
     except BackendError:
         raise
     except (RigError,OSError,ValueError,TypeError,KeyError,AttributeError,OverflowError,RecursionError) as exc:
         raise BackendError('PHYSICS_CACHE_CORRUPT','Malformed or inconsistent cache input: '+str(exc),category='cache-corruption') from exc
 
 
-def _read_cache_impl(root, *, expected_world_sha256=None):
+def _read_cache_impl(root, *, expected_world_sha256=None, directory_fd=None):
     validator, error_type = _contracts()
-    with _Reader(root) as reader:
+    with (_Reader(root) if directory_fd is None else _Reader.from_descriptor(directory_fd)) as reader:
         manifest_payload=reader.read('cache.json', MAX_DOCUMENT_BYTES)
         manifest = parse(manifest_payload)
         try:
@@ -1819,8 +1839,7 @@ def _read_cache_impl(root, *, expected_world_sha256=None):
         return manifest, world, states, receipt
 
 
-def verify_cache(root, *, expected_world_sha256=None):
-    manifest, world, states, receipt = _read_cache(root, expected_world_sha256=expected_world_sha256)
+def _cache_verification_report(manifest, world, states, receipt):
     return dict(status='hash-and-contract-verified', world_sha256=manifest['world_sha256'],
                 cache_files=len(manifest['files']), output_bytes=manifest['usage']['output_bytes'],
                 sample_count=len(states['samples']), backend=manifest['backend'],
@@ -1829,6 +1848,15 @@ def verify_cache(root, *, expected_world_sha256=None):
                 evidence_authentication='unsigned retained execution receipts, not a cryptographic identity attestation',
                 native_continuation='unsupported; clean restart only',
                 numerical_recompute_guarantee='not-established')
+
+
+
+def _verify_cache_at(directory_fd, *, expected_world_sha256=None):
+    return _cache_verification_report(*_read_cache(None, expected_world_sha256=expected_world_sha256, directory_fd=directory_fd))
+
+
+def verify_cache(root, *, expected_world_sha256=None):
+    return _cache_verification_report(*_read_cache(root, expected_world_sha256=expected_world_sha256))
 
 
 def inspect_time(root, timestamp):
