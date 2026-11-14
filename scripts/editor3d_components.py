@@ -11,6 +11,7 @@ import json
 import numpy as np
 from pathlib import Path
 
+from rig_contracts import DEFAULT_LIMITS
 from rig_errors import decode_json, require, safe_path, RigError
 
 
@@ -52,7 +53,12 @@ def project_components(root, snapshot, *, max_vertices, max_resource_bytes, max_
                 _, hierarchy = evidence('/hierarchy.json')
                 _, report = evidence('/import-report.json')
                 require(decoded_vertices < max_decoded_vertices, 'EDITOR3D_VIEW_LIMIT', 'Imported decoded-vertex budget exceeded.')
-                rig = load_rig(manifest_path.parent)
+                try:
+                    rig = load_rig(manifest_path.parent, limits={'vertices': min(DEFAULT_LIMITS['vertices'], max_decoded_vertices - decoded_vertices)})
+                except RigError as error:
+                    if error.report['code'] == 'RIG_LIMIT_VERTICES':
+                        raise RigError('EDITOR3D_VIEW_LIMIT', 'Imported decoded-vertex budget exceeded.') from error
+                    raise
                 require(rig.manifest == manifest, 'EDITOR3D_VIEW_COMPONENT', 'Native manifest interpretation differs.')
                 require(decoded_vertices + rig.geometry.vertex_count <= max_decoded_vertices,
                         'EDITOR3D_VIEW_LIMIT', 'Imported decoded-vertex budget exceeded.')

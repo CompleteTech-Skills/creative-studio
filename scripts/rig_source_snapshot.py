@@ -69,7 +69,7 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
     root_identity = (source_info.st_dev, source_info.st_ino)
     temporary = tempfile.TemporaryDirectory(prefix='rig-source-')
     root = Path(temporary.name).resolve()
-    records, aliases = {}, {}
+    records, aliases, directories = {}, {}, {}
     total = 0
     read_bytes = 0
 
@@ -83,6 +83,13 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
         alias = unicodedata.normalize('NFC', name).casefold()
         require(alias not in aliases or aliases[alias] == name,
                 'RIG_PATH', 'Source closure contains colliding portable paths.', asset=name)
+        require(alias not in directories, 'RIG_PATH', 'Source file aliases a resource directory.', asset=name)
+        parts = name.split('/')
+        prefixes = ['/'.join(parts[:depth]) for depth in range(1, len(parts))]
+        for directory in prefixes:
+            folded = unicodedata.normalize('NFC', directory).casefold()
+            require(folded not in aliases and (folded not in directories or directories[folded] == directory),
+                    'RIG_PATH', 'Source directory aliases another portable path.', asset=name)
         target = root/name
         if name not in records:
             require(len(records) < limits['archive_files'], 'RIG_LIMIT_FILES', 'Source closure exceeds its file budget.')
@@ -100,6 +107,8 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
                 require(count == info.st_size, 'RIG_SOURCE_CHANGED', 'Source size changed during capture.', asset=name)
             total += count
             aliases[alias] = name
+            for directory in prefixes:
+                directories[unicodedata.normalize('NFC', directory).casefold()] = directory
             records[name] = dict(path=name, bytes=count, sha256=digest.hexdigest())
         require(records[name]['bytes'] <= maximum, 'RIG_LIMIT_SOURCE', 'Repeated source exceeds this parser read budget.', asset=name)
         read_bytes += records[name]['bytes']

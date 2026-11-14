@@ -96,8 +96,24 @@ class EditorImportedComponentTests(unittest.TestCase):
         repository=EditorRepository.create(case.root/'portable',case.root/'repo',scene_path=saved['active_scene']['path'])
         # Projected vertices total nine; decoded vertices total fifteen:
         # original triangle three + two distinct six-vertex native assets.
-        with patch('editor3d_viewer.MAX_PREVIEW_DECODED_VERTICES',14):
+        import rig_models
+        original_load = rig_models.load_rig
+        admissions, geometry_limits = [], []
+        original_geometry = rig_models.load_geometry
+        def observe_geometry(root, descriptor, limits, *args, **kwargs):
+            geometry_limits.append(limits['vertices'])
+            return original_geometry(root, descriptor, limits, *args, **kwargs)
+        def bounded_load(root, *args, **kwargs):
+            if kwargs.get('limits'):
+                admissions.append(kwargs['limits']['vertices'])
+            return original_load(root, *args, **kwargs)
+        with patch('editor3d_viewer.MAX_PREVIEW_DECODED_VERTICES',14), \
+             patch('rig_models.load_rig', side_effect=bounded_load), \
+             patch('rig_models.load_geometry', side_effect=observe_geometry):
             value=preview_snapshot(repository,repository.snapshot())
+        self.assertEqual(admissions, [11, 5])
+        self.assertNotIn(5, geometry_limits)
+        self.assertIn(11, geometry_limits)
         projections=[value['viewport_nodes'][identifier] for identifier in retained]
         self.assertEqual(sum(item['format']=='geometry' for item in projections),1)
         rejected=next(item for item in projections if item['format']=='unavailable')
