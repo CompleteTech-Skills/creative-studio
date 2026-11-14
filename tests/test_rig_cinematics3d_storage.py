@@ -70,4 +70,122 @@ class ProbeDescriptorProtocol(unittest.TestCase):
         with self.assertRaises(OSError):os.fstat(descriptors[0])
 
 
+class RetainedFileIntegrity(unittest.TestCase):
+    def fixture(self,root):
+        values={'documents/effect.json':b'{"source":true}','plan.json':b'{"plan":true}','probe.json':b'{"probe":true}'}
+        for name,payload in values.items():
+            path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(payload)
+        refs={name:dict(bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest()) for name,payload in values.items()}
+        return values,refs
+
+    def test_complete_inventory_matches_actual_file_bytes(self):
+        from render3d_verify import verify_retained_files
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);_,refs=self.fixture(root)
+            self.assertEqual(verify_retained_files(root,refs,max_total_bytes=1024,strict=True),refs)
+            (root/'empty.log').write_bytes(b'')
+            refs['empty.log']=dict(bytes=0,sha256=hashlib.sha256(b'').hexdigest())
+            self.assertEqual(verify_retained_files(root,refs,max_total_bytes=1024,strict=True),refs)
+
+    def test_every_declared_configuration_role_rejects_replacement(self):
+        from render3d_verify import verify_retained_files
+        for name in ('documents/effect.json','plan.json','probe.json'):
+            with self.subTest(name=name),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary);_,refs=self.fixture(root);(root/name).write_bytes(b'{}')
+                with self.assertRaises(Render3DError):verify_retained_files(root,refs,max_total_bytes=1024,strict=True)
+
+    def test_unknown_file_empty_directory_and_missing_input_reject(self):
+        from render3d_verify import verify_retained_files
+        for mutation in ('extra-file','extra-dir','missing'):
+            with self.subTest(mutation=mutation),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary);_,refs=self.fixture(root)
+                if mutation=='extra-file':(root/'unowned.json').write_bytes(b'{}')
+                elif mutation=='extra-dir':(root/'unowned').mkdir()
+                else:(root/'plan.json').unlink()
+                with self.assertRaises(Render3DError):verify_retained_files(root,refs,max_total_bytes=1024,strict=True)
+
+    def test_malformed_sizes_paths_and_aliases_fail_before_file_reads(self):
+        from render3d_verify import verify_retained_files
+        for bad in (True,-1,1.5,10**400):
+            with self.subTest(size=type(bad).__name__),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary);_,refs=self.fixture(root);refs['plan.json']['bytes']=bad
+                with self.assertRaises(Render3DError):verify_retained_files(root,refs,max_total_bytes=1024)
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);_,refs=self.fixture(root)
+            for name in ('../plan.json','/plan.json','PLAN.JSON'):
+                changed=dict(refs);changed[name]=refs['plan.json']
+                with self.assertRaises(Render3DError):verify_retained_files(root,changed,max_total_bytes=1024)
+
+    @unittest.skipUnless(__import__('os').name=='posix','Actual symlink and FIFO admission is POSIX-specific')
+    def test_symlink_ancestors_and_fifo_are_rejected_without_opening_payloads(self):
+        import os
+        from render3d_verify import verify_retained_files
+        for replacement in ('leaf-link','parent-link','fifo'):
+            with self.subTest(replacement=replacement),tempfile.TemporaryDirectory() as temporary:
+                root=Path(temporary)/'owned';root.mkdir();_,refs=self.fixture(root)
+                outside=root.parent/'outside';outside.mkdir();(outside/'effect.json').write_bytes(b'{"source":true}')
+                if replacement=='parent-link':
+                    (root/'documents/effect.json').unlink();(root/'documents').rmdir();(root/'documents').symlink_to(outside,target_is_directory=True)
+                else:
+                    target=root/'documents/effect.json';target.unlink()
+                    if replacement=='leaf-link':target.symlink_to(outside/'effect.json')
+                    else:os.mkfifo(target)
+                with self.assertRaises(Render3DError):verify_retained_files(root,refs,max_total_bytes=1024)
+
+
+@unittest.skipUnless(__import__('os').environ.get('HATCH_RENDER3D_REAL_TESTS')=='1',
+                     'Actual Blender gate requires HATCH_RENDER3D_REAL_TESTS=1')
+class RetainedCinematicPublication(unittest.TestCase):
+    def test_actual_worker_rejects_mutated_retained_payloads_after_progress(self):
+        import json,zipfile
+        import render3d_blender as implementation
+        archive=ROOT/'examples/cinematics3d/backend-current/engineering-evidence.zip'
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);snapshot=root/'snapshot';snapshot.mkdir()
+            with zipfile.ZipFile(archive) as bundle:
+                for name in bundle.namelist():
+                    if name.startswith('native/snapshot/'):
+                        relative=name[len('native/snapshot/'):]
+                        from rig_errors import safe_path
+                        target=safe_path(snapshot,relative);target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(bundle.read(name))
+                original=json.loads(bundle.read('native/baseline-request.json'))
+                documents=[(name[len('native/baseline/cinematics/documents/'):],bundle.read(name)) for name in bundle.namelist()
+                           if name.startswith('native/baseline/cinematics/documents/')]
+                external={name[len('native/baseline/cinematics/inputs/'):]:bundle.read(name) for name in bundle.namelist()
+                          if name.startswith('native/baseline/cinematics/inputs/')}
+            registry=Registry(documents,external=external);backend=BlenderBackend();probe=backend.cinematics_probe()
+            stack=json.loads(dict(documents)['native-stack.json'])
+            stack_reference=registry.reference(stack['id'],stack['version'])
+            supervisor=implementation._supervise
+            roles=['documents/dof.json','inputs/optics.json','plan.json','probe.json',
+                   '../worker-report.json','../blender.log','extra.json']
+            for index,role in enumerate(roles+[None]):
+                with self.subTest(role=role):
+                    current=__import__('copy').deepcopy(original);current['id']='retained-'+str(index)
+                    current['settings'].update(resolution=[32,32],samples=1)
+                    current['destination']['path']=current['id']
+                    compiled=compile_plan(registry,stack_reference,current,probe,input_bytes=external)
+                    observed={}
+                    def observe(command,**options):
+                        observed['stage']=Path(options['cwd'])
+                        return supervisor(command,**options)
+                    def progress(frame):
+                        if role is not None:
+                            target=observed['stage']/'cinematics'/role
+                            target.write_bytes(b'{}')
+                    target=root/current['id']
+                    with patch.object(implementation,'_supervise',side_effect=observe):
+                        if role is None:
+                            result=backend.render_frames(compiled['request'],snapshot,target,cinematics=compiled,progress=progress)
+                            self.assertEqual(result['verification']['status'],'passed')
+                            verification=json.loads((target/'verification.json').read_bytes())
+                            self.assertIn('plan.json',verification['retained_cinematics'])
+                            self.assertIn('probe.json',verification['retained_cinematics'])
+                        else:
+                            with self.assertRaises(Render3DError) as caught:
+                                backend.render_frames(compiled['request'],snapshot,target,cinematics=compiled,progress=progress)
+                            self.assertEqual(caught.exception.report['category'],'corrupt-output')
+                            self.assertFalse(target.exists(),'Mutated retained provenance must never be published')
+
+
 if __name__=='__main__':unittest.main()

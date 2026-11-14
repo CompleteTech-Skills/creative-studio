@@ -257,6 +257,72 @@ def decode_image(path, **options):
     return report,pixels
 
 
+def verify_retained_files(root, references, *, max_total_bytes, strict=False):
+    """Verify declared non-image artifacts through the canonical payload reader.
+
+    References are trusted expected identities, never replacements inferred from
+    the mutable output tree. strict=True requires the entire subtree inventory,
+    including directory names, to match those references. Empty regular files
+    are allowed; special files and symlink ancestors remain forbidden.
+    """
+    from rig_errors import portable_name
+    import os
+    require(isinstance(references,dict) and len(references)<=4096,
+            'corrupt-output','Invalid retained artifact inventory.')
+    require(type(max_total_bytes) in (int,float) and 0<=max_total_bytes<=2**40
+            and max_total_bytes%1==0,'storage-exhaustion','Invalid retained artifact byte budget.')
+    expected_total=0;aliases=set();directories=set()
+    try:
+        for name,reference in references.items():
+            portable_name(name)
+            require(name.casefold() not in aliases,'corrupt-output','Aliased retained artifact path.')
+            aliases.add(name.casefold())
+            require(isinstance(reference,dict) and set(reference)=={'bytes','sha256'},
+                    'corrupt-output','Invalid retained artifact reference.')
+            size=reference['bytes'];digest=reference['sha256']
+            require(type(size) in (int,float) and 0<=size<=max_total_bytes and size%1==0,
+                    'storage-exhaustion','Invalid retained artifact size.',path=name)
+            require(isinstance(digest,str) and len(digest)==64 and all(c in '0123456789abcdef' for c in digest),
+                    'corrupt-output','Invalid retained artifact digest.',path=name)
+            expected_total+=size
+            require(expected_total<=max_total_bytes,'storage-exhaustion','Retained artifacts exceed their byte budget.')
+            directories.update(parent.as_posix() for parent in Path(name).parents if parent.as_posix()!='.')
+        root=normalize_root(root)
+        if strict:
+            pending=[root];actual=set();actual_directories=set()
+            while pending:
+                directory=pending.pop()
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        relative=Path(entry.path).relative_to(root).as_posix()
+                        require(not entry.is_symlink(),'corrupt-output','Retained artifact inventory contains a symlink.',path=relative)
+                        if entry.is_dir(follow_symlinks=False):
+                            require(relative in directories,'corrupt-output','Unexpected retained artifact directory.',path=relative)
+                            actual_directories.add(relative);pending.append(Path(entry.path))
+                        else:
+                            require(entry.is_file(follow_symlinks=False) and relative in references,
+                                    'corrupt-output','Unexpected or nonregular retained artifact.',path=relative)
+                            actual.add(relative)
+            require(actual==set(references) and actual_directories==directories,
+                    'corrupt-output','Retained artifact inventory differs from declared files.')
+        verified={}
+        for name,reference in references.items():
+            digest=hashlib.sha256();size=0;limit=int(reference['bytes'])
+            with open_payload(root,name) as (stream,_):
+                while chunk:=stream.read(min(1024*1024,limit-size+1)):
+                    size+=len(chunk)
+                    require(size<=limit,'corrupt-output','Retained artifact exceeds its declared size.',path=name)
+                    digest.update(chunk)
+            actual=dict(bytes=size,sha256=digest.hexdigest())
+            require(actual==reference,'corrupt-output','Retained artifact differs from its declared bytes.',path=name)
+            verified[name]=actual
+        return verified
+    except Render3DError:
+        raise
+    except (RigError,OSError,ValueError,TypeError) as exc:
+        raise Render3DError('corrupt-output','Cannot verify retained artifacts: '+str(exc)) from exc
+
+
 class RenderArtifactVerifier:
     def __init__(self,snapshot_root,expected_backend,*,max_total_bytes=None):
         # Preserve the lexical root until canonical payload admission; ordinary

@@ -87,3 +87,11 @@ fixture deliveries and test logs with a verified per-file inventory. The receipt
 identifies the tested source commit separately from this evidence-only commit.
 
 The [historical validation receipt](../examples/cinematics3d/backend/receipt.json) and its original archive remain unchanged. The current receipt binds all Python script hashes, exact native execution and the complete tested tree to the integrated implementation. Source-equivalent ancestry merges are recorded explicitly. Per-frame Scene3D and camera animation remain a shared-owner followup and are not silently approximated.
+
+Before exclusive publication, the independent verifier reopens every retained
+cinematic document, input, native plan and probe against its admitted byte length
+and hash. The cinematic subtree must contain exactly the expected regular files
+and directories. Progress callbacks run before this audit. The worker report is
+parsed and hashed from one bounded capture, and its retained file and the actual
+supervisor log are audited too. A final audit after evidence writes rejects
+changed provenance instead of publishing a result that declares earlier bytes.

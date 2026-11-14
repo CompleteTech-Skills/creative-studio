@@ -414,7 +414,16 @@ class BlenderBackend:
                 if cinematic_plan is not None:
                     require(all(sha256(Path(__file__).with_name(name))==digest for name,digest in cinematic_code.items()),
                             'stale-asset','Cinematic adapter changed during rendering.')
-                report=read_json(stage/'worker-report.json')
+                from rig_errors import open_payload,decode_json
+                with open_payload(stage,'worker-report.json') as (stream,_):
+                    report_payload=stream.read(32*1024**2+1)
+                require(len(report_payload)<=32*1024**2,'invalid-input','Worker report exceeds32MiB.')
+                report=decode_json(report_payload)
+                retained_artifacts={
+                    'worker-report.json':dict(sha256=hashlib.sha256(report_payload).hexdigest(),bytes=len(report_payload)),
+                    'blender.log':dict(sha256=hashlib.sha256(log).hexdigest(),bytes=len(log))}
+                retained_cinematics={name:dict(sha256=hashlib.sha256(payload).hexdigest(),bytes=len(payload))
+                    for name,payload in cinematic_payloads.items()}
                 require(report['version']==backend['application_version'],'verification-failed','Worker version changed after admission.')
                 require(report['rendered']==[f['index'] for f in scene['frames']],'incomplete-output','Worker did not report every requested frame.')
                 images=[]
@@ -432,6 +441,8 @@ class BlenderBackend:
                     manifest['cinematics']=dict(plan=cinematic_plan,code=cinematic_code,
                         files={name:dict(sha256=hashlib.sha256(payload).hexdigest(),bytes=len(payload))
                                for name,payload in cinematic_files.items()})
+                manifest['retained_artifacts']=deepcopy(retained_artifacts)
+                if cinematic_plan is not None:manifest['cinematics']['retained_files']=deepcopy(retained_cinematics)
                 atomic_json(stage/'manifest.json',manifest)
                 artifact=lambda name:dict(path=name,sha256=sha256(stage/name),bytes=(stage/name).stat().st_size)
                 indices=[frame['index'] for frame in scene['frames']]
@@ -439,9 +450,15 @@ class BlenderBackend:
                     backend=backend,status='complete',requested_frames=indices,successful=indices,failed=[],skipped=[],reused=[],images=images,diagnostics=[],
                     usage=dict(**usage,output_bytes=sum(p.stat().st_size for p in stage.rglob('*') if p.is_file()),measurement='measured' if usage['peak_memory_bytes'] is not None else 'estimated'),
                     logs=[artifact('blender.log')],manifest=artifact('manifest.json'),verification=dict(status='not-run',verifier=None,evidence=None))
-                from render3d_verify import verify_result
+                from render3d_verify import verify_result,verify_retained_files
                 _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes'])
                 verification=verify_result(request,result,stage,snapshot_root=frozen,expected_backend=backend,max_total_bytes=source_budget)
+                retained_artifacts['manifest.json']={key:result['manifest'][key] for key in ('bytes','sha256')}
+                verification['retained_artifacts']=verify_retained_files(stage,retained_artifacts,
+                    max_total_bytes=resources['storage_bytes'])
+                if cinematic_plan is not None:
+                    verification['retained_cinematics']=verify_retained_files(stage/'cinematics',retained_cinematics,
+                        max_total_bytes=resources['storage_bytes'],strict=True)
                 atomic_json(stage/'verification.json',verification)
                 result['verification']=dict(status='passed',verifier=verification['verifier'],evidence=artifact('verification.json'))
                 # Include verification evidence and the self-describing result JSON
@@ -456,6 +473,14 @@ class BlenderBackend:
                 require(total_bytes<=resources['storage_bytes'],
                         'storage-exhaustion','Verified delivery exceeds storage budget.')
                 validate(result,'RenderResult');atomic_bytes(stage/'result.json',payload)
+                # Recheck after the final evidence writes and all callbacks. No
+                # mutable pathname-derived value may redefine expected identity.
+                retained_artifacts['verification.json']={key:result['verification']['evidence'][key] for key in ('bytes','sha256')}
+                retained_artifacts['result.json']=dict(bytes=len(payload),sha256=hashlib.sha256(payload).hexdigest())
+                verify_retained_files(stage,retained_artifacts,max_total_bytes=resources['storage_bytes'])
+                if cinematic_plan is not None:
+                    verify_retained_files(stage/'cinematics',retained_cinematics,
+                        max_total_bytes=resources['storage_bytes'],strict=True)
                 _rename_no_replace('payload',target.name,source_dir_fd=private_fd,destination_dir_fd=parent_fd)
                 return result
             except Exception as exc:
