@@ -173,6 +173,23 @@ class CoreRevisionTests(unittest.TestCase):
         with self.assertRaises(RigError): service.apply(patch, transaction_id='removed-policy')
         self.assertEqual(repo.snapshot(), state)
 
+    def test_many_original_constraints_are_counted_once_and_revalidated(self):
+        constraints = ['identity:protected-'+str(index) for index in range(129)]
+        repository = project(self.root/'many-locks', constraints=constraints)
+        service = RevisionService(repository)
+        state = repository.snapshot()
+        patch = service.plan('Set camera camera near to 0.2', expected_revision=0,
+                             expected_sha256=state['sha256'])['patch']
+        self.assertEqual(patch['locked_constraints'], sorted(constraints))
+        result = service.apply(patch, transaction_id='many-original-locks')
+        self.assertEqual(result['after']['revision'], 1)
+        too_many = ['identity:extra-'+str(index) for index in range(128)]
+        with self.assertRaises(RigError) as error:
+            service.plan('Set camera camera near to 0.3', expected_revision=1,
+                         expected_sha256=repository.snapshot()['sha256'], locked_constraints=too_many)
+        self.assertEqual(error.exception.report['code'], 'DIRECTOR_REVISION_POLICY')
+        self.assertEqual(repository.snapshot()['revision'], 1)
+
     def test_locked_native_node_cannot_be_revised(self):
         other = self.root/'native-lock'; other.mkdir()
         repo = project(other, camera_locked=True); state = repo.snapshot()
@@ -243,11 +260,11 @@ class CanonicalRevisionMethodTests(unittest.TestCase):
     """Method envelopes use actual files; the fixture publisher is not shipped."""
     setUp = CoreRevisionTests.setUp
 
-    def publish(self, payload, *, kind, semantic_version='1.0.0', dependencies=(), fixture=True):
+    def publish(self, payload, *, kind, artifact_id=None, schema_version=1, semantic_version='1.0.0', dependencies=(), fixture=True):
         directory = self.root/'fixture-artifacts'; directory.mkdir(exist_ok=True)
         digest = hashlib.sha256(payload).hexdigest(); path = directory/(digest+'.json')
         path.write_bytes(payload)
-        return dict(artifact_id='fixture-'+digest[:24], kind=kind, schema_version=1,
+        return dict(artifact_id=artifact_id or 'fixture-'+digest[:24], kind=kind, schema_version=schema_version,
                     semantic_version=semantic_version, path=path.relative_to(self.root).as_posix(),
                     sha256=digest, byte_size=len(payload), media_type='application/json',
                     provenance_ref=None, fixture=fixture, dependencies=list(dependencies))

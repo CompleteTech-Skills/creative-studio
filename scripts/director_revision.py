@@ -67,7 +67,7 @@ def _constraints(snapshot, additional):
         _need(len(source.encode('utf-8')) <= 4096, 'POLICY', 'Native locked-constraint metadata exceeds its bound.')
         source = decode_json(source, max_bytes=4096)
     _need(isinstance(source, list) and isinstance(additional, (list, tuple)) and
-          len(source) + len(additional) <= 256, 'POLICY', 'Locked constraints must be bounded lists.')
+          len(source) <= 256 and len(additional) <= 256, 'POLICY', 'Locked constraints must be bounded lists.')
     result = []
     for value in [*source, *additional]:
         _need(isinstance(value, str) and 0 < len(value) <= 1024, 'POLICY', 'Invalid locked constraint.')
@@ -76,7 +76,9 @@ def _constraints(snapshot, additional):
         _need(value == 'world' or re.fullmatch(r'(?:identity|camera|material|duration|ending):(?:\*|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})', value),
               'POLICY', 'Unsupported locked constraint; resolve it through the planning owner before editing.')
         result.append(value)
-    return sorted(set(result))
+    result = sorted(set(result))
+    _need(len(result) <= 256, 'POLICY', 'Combined unique locked constraints exceed the policy bound.')
+    return result
 
 
 def _instruction(instruction):
@@ -477,8 +479,7 @@ class RevisionService:
             return decode_json(raw, max_bytes=maximum)
 
         def context(snapshot, source):
-            project_id = snapshot['project'].get('metadata', {}).get('director_project_id', snapshot['project']['id'])
-            _need(request['context']['project_id'] == project_id and
+            _need(request['context']['project_id'] == snapshot['project']['id'] and
                   request['context']['project_revision_sha256'] == source['sha256'],
                   'CONTEXT', 'Operation context must identify this exact native project revision.')
 
@@ -500,13 +501,17 @@ class RevisionService:
             dependencies = [data['current_project'], data['budget'], data['capabilities']]
             if self.brief_reference is not None:
                 dependencies.append(deepcopy(self.brief_reference))
-            reference = publish_artifact(payload, kind='director-revision-patch', semantic_version='1.0.0',
+            artifact_id = 'revision-'+patch['sha256']
+            reference = publish_artifact(payload, artifact_id=artifact_id, kind='director-revision-patch',
+                                         schema_version=1, semantic_version='1.0.0',
                                          dependencies=deepcopy(dependencies), fixture=source['fixture'])
             from jsonschema import Draft202012Validator
             schema = contracts.schemas()['director.schema.json']
             error = next(Draft202012Validator({'$defs': schema['$defs'], '$ref': '#/$defs/artifact-ref'}).iter_errors(reference), None)
             _need(error is None, 'PUBLICATION', 'The canonical publisher returned an invalid ArtifactRef.')
-            _need(reference['kind'] == 'director-revision-patch' and reference['dependencies'] == dependencies and
+            _need(reference['artifact_id'] == artifact_id and reference['kind'] == 'director-revision-patch' and
+                  reference['schema_version'] == 1 and reference['semantic_version'] == '1.0.0' and
+                  reference['fixture'] == source['fixture'] and reference['dependencies'] == dependencies and
                   contracts._read_artifact(artifact_root, reference) == payload,
                   'PUBLICATION', 'The canonical publisher did not preserve exact patch bytes and dependencies.')
             value = dict(patch=reference, changed_ids=planned['impact']['changed_ids'], assumptions=[], diagnostics=[])

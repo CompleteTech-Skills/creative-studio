@@ -104,8 +104,9 @@ the existing immutable repository closure; a bare manifest is never copied
 without its native resources.
 
 Only patch publication needs an application-supplied canonical asset publisher.
-Its signature is `publish_artifact(payload, kind=..., semantic_version=...,
-dependencies=..., fixture=...) -> ArtifactRef`. The returned reference is
+Its signature is `publish_artifact(payload, artifact_id=..., kind=...,
+schema_version=..., semantic_version=..., dependencies=..., fixture=...) -> ArtifactRef`.
+The returned reference is
 validated and its actual bytes read back. It must use the existing immutable
 asset authority; this module ships no alternative generic publisher. Without
 that integration, canonical planning fails before publication or project edits.
@@ -115,6 +116,11 @@ production publication implementation.
 The expected apply revision in the canonical envelope is the native project
 manifest byte hash. Patches separately pin the editor repository revision number
 and complete inventory hash. Those two identity domains are never interchanged.
+The context project ID is the native project ID; `director_project_id` metadata
+only binds an original logical brief and does not rewrite incoming operation
+contexts. A dashboard must label this as a native-scene driver. Updating the
+higher-level DirectorProject document is a separate existing-owner integration,
+not an implicit effect of this native adapter.
 
 ## Validation and remaining integration
 
