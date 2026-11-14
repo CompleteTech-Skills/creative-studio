@@ -1,0 +1,9 @@
+# Actual Director MVP durability evidence
+
+Executed source: `390e7c10a70cdd390247f223ec46e4e8842f4607`. The native test passed in 2717.503 seconds, completed 2026-11-13 14:12:53 UTC. Two native jobs rendered 60 frames each at 640×360. A real Blender worker was cancelled and its process exit checked; the same native job resumed preserving frame 0. Corrupt cached frame 0 and missing frame 1 caused only those two frames to rerender, preserving 58 verified frames. The native graph and both jobs completed. All 120 delivered PNGs were independently decoded and hashed. This durability test did not produce an encoded movie.
+
+Original complete artifacts remain under `/home/complete/.cache/hatch-coordination-20261112/director31-recovery/mvp-native-proof-r3/`, including the native SQLite database, both frame deliveries, snapshot, logs and actual worker receipts. This checked-in subset contains the complete receipt, all 120 output hashes, additional full PNG decode/hash verification, actual typed camera revision/reopen/identity/rollback proof and three unchanged sample PNGs. `evidence-inventory.json` hashes this exact subset. Original issue #30 batch artifacts remain unchanged.
+
+The sample frames show both retained robot meshes in the laboratory, visible physical shadows, arm-pose movement between frames 0 and 59 and a distinct camera angle at frame 60. This is an engineering inspection of three samples, not artistic approval. Source review records remain unreviewed. Native sampling noise is retained.
+
+These are historical executable results at the exact source above. Later main/owner integration and publication-security corrections must disclose changed runtime files and receive their own current-head regression checks and new independent complete-candidate review. This receipt does not approve a later head, confer hostile same-user staging security, establish general scheduling or close any parent mission.

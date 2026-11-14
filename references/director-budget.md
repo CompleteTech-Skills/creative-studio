@@ -82,3 +82,39 @@ long-running production orchestration remain with their separate owners.
 Validation covers real two-process reservation contention, forced process exit
 before publication, stale writes, exact retry accounting, uncertain outcomes,
 duplicate settlements, changed evidence and strict Director request adaptation.
+
+## Atomic native dispatch fence (ledger version 2)
+
+`begin_dispatch(reservation_id, native_owner=..., operation_sha256=...,
+expected_revision=..., idempotency_key=..., evidence=...)` commits an admission
+fence under the existing ledger ownership lock and expected snapshot hash before
+asking an authoritative native job/acquisition owner to claim work. The first
+return has `replayed:false`; an idempotent replay has `replayed:true` and **does
+not grant another external call**. The fence is budget accounting, not a worker
+lease or another generation claim. The original JobStore or acquisition token
+continues to own execution.
+
+The first dispatch writes explicit ledger state version 2. Existing version 1
+snapshots and ordinary reservation/settlement receipt values remain unchanged.
+History is append-only across both versions. Old readers reject the new version
+rather than misinterpreting an admitted dispatch as an unstarted reservation.
+
+`record_dispatch_outcome` records exact retained native owner evidence for
+`claimed`, `uncertain`, `complete` or `failed`. An interrupted pending handoff
+must reconcile the original native identity; neither a restart nor an expired
+controller heartbeat authorizes a second paid call. Native uncertainty retains
+both the original claim and the budget fence.
+
+Active, uncertain or unaccounted native attempts prevent release and another
+attempt. Once the native outcome is known, `settle(..., dispatch_id=...)` records
+that attempt's actual usage with retained evidence. Unknown metrics do not
+become zero. Every terminal attempt must have actual accounting before final
+settlement; retries cannot exceed the allowance already reserved. A failed
+attempt uses `outcome='retry'` to preserve its charged expenditure and remaining
+capacity. A completed native operation cannot be retried as failed work.
+
+Dispatch outcome evidence records native facts; it does not grant artistic
+approval. The Director scheduler must still validate capabilities, input hashes,
+ready dependencies, native resource admission and provider policy before asking
+for a native handoff. The ledger never invokes a provider or creates a render
+request as a stand-in for a non-render operation.
