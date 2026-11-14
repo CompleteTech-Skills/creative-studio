@@ -1,4 +1,6 @@
 """Actual normalized GLB provenance across native import, rig and export."""
+import json
+from copy import deepcopy
 from pathlib import Path
 import sys
 import tempfile
@@ -81,6 +83,62 @@ class FixtureProvenanceRegression(unittest.TestCase):
                 with self.assertRaises(RigError):
                     export_mesh(captured.model.geometry, root / 'tampered', source_snapshot=captured)
                 self.assertFalse((root / 'tampered').exists())
+
+    def test_registered_canonical_builder_rejects_conflicting_claim(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            from test_model3d_mesh_import import MeshImportTests
+            case = MeshImportTests(); case.root = root
+            library, manifest, ref = case.canonical()
+            for item in manifest['files']:
+                path = root / item['path']; path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(library.read_file(ref, item['path']))
+            original = (root / manifest['files'][0]['path']).read_bytes()
+            (root / 'canonical.json').write_text(json.dumps(dict(canonical_ref=ref, manifest=manifest)))
+            geometry = record(root, manifest['files'][0]['path'], 'model/obj')
+            evidence = record(root, 'canonical.json', 'application/json')
+            claim = provenance(); claim.update(fixture=False, origin='imported')
+            src = source(geometry); src.update(provenance=claim, evidence_class='observed')
+            with patch.object(Path, 'home', return_value=root), self.assertRaisesRegex(RigError, 'fixture'):
+                build_asset(root, geometry, asset_id='probe', version='1.0.0', category='prop',
+                            sources=[src], provenance=claim, canonical_evidence=evidence)
+            with patch.object(Path, 'home', return_value=root), self.assertRaisesRegex(RigError, 'fixture'):
+                build_asset(root, geometry, asset_id='probe', version='1.0.0', category='prop',
+                            sources=[src], provenance=provenance(), canonical_evidence=evidence)
+            self.assertEqual((root / geometry['path']).read_bytes(), original)
+
+    def test_registered_marked_glb_normalization_retains_fixture(self):
+        from asset_library_contracts import seal
+        from asset_library_dependencies import DependencyGraph, normalize_static_units, locator
+        from test_model3d_mesh_import import MeshImportTests
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); case = MeshImportTests(); case.root = root
+            library, manifest, ref, _, name = case.normalized_canonical()
+            def rename(value):
+                if isinstance(value, dict): return {k: rename(v) for k, v in value.items()}
+                if isinstance(value, list): return [rename(v) for v in value]
+                return 'runtime/marked.glb' if value == name else value
+            revised = rename(deepcopy(manifest)); revised['version'] = '2.0.0'
+            revised['provenance'].update(fixture=False, method='import')
+            files = {}
+            for item in revised['files']:
+                path = root / 'input' / item['path']; path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(library.read_file(ref, name if item['path'] == 'runtime/marked.glb' else item['path']))
+                files[item['path']] = path
+            before = files['runtime/marked.glb'].read_bytes()
+            ref = library.register(seal(revised), files)
+            result = normalize_static_units(DependencyGraph({'local': library}), locator('local', ref),
+                                            'runtime/marked.glb', version='3.0.0')
+            derived = result['asset']['reference']
+            self.assertTrue(library.resolve(derived)['provenance']['fixture'])
+            self.assertEqual(library.read_file(derived, 'runtime/marked.glb'), before)
+            output = root / 'reopened.glb'
+            output.write_bytes(library.read_file(derived, result['native_path']))
+            self.assertTrue(load_character_model(output).report['fixture'])
+            with import_canonical(library, derived) as captured:
+                self.assertTrue(captured.model.report['fixture'])
+            rig = create_run(output, root / 'converted-rig')
+            self.assertTrue(rig.manifest['source']['fixture'])
 
     def test_claimed_canonical_manifest_cannot_taint_plain_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:

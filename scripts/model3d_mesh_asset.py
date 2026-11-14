@@ -84,6 +84,10 @@ def _canonical_binding(payload, geometry_record):
             'MODEL3D_ENTRY','Canonical active entry format and supplied geometry media type disagree.')
     require(runtime['sha256']==geometry_record['sha256'] and runtime['bytes']==geometry_record['bytes'],
             'MODEL3D_REFERENCE','Selected canonical active entry does not bind these exact geometry bytes.')
+    provenance = manifest.get('provenance', {})
+    require(isinstance(provenance, dict) and ('fixture' not in provenance or type(provenance['fixture']) is bool),
+            'MODEL3D_REFERENCE', 'Canonical fixture classification must be a boolean.')
+    return provenance.get('fixture', False)
 
 
 def build_asset(root, geometry, *, asset_id, version, category, sources, provenance,
@@ -141,7 +145,12 @@ def build_asset(root, geometry, *, asset_id, version, category, sources, provena
         if canonical_evidence is not None:
             require(canonical_evidence['media_type']=='application/json', 'MODEL3D_REFERENCE', 'Canonical evidence must be JSON.')
             path = snapshot.capture(canonical_evidence)
-            _canonical_binding(decode_json(path.read_bytes()),geometry)
+            canonical_fixture = _canonical_binding(decode_json(path.read_bytes()),geometry)
+            require(not canonical_fixture or provenance['fixture'], 'MODEL3D_PROVENANCE',
+                    'Canonical fixture provenance must be preserved.')
+            require(not canonical_fixture or all(source['provenance']['fixture'] for source in sources
+                    if source['file']['sha256'] == geometry['sha256'] and source['file']['bytes'] == geometry['bytes']),
+                    'MODEL3D_PROVENANCE', 'Canonical fixture geometry sources must remain fixtures.')
         native_limits = dict(DEFAULT_LIMITS,source_bytes=selected_limits['file_bytes'],
                              dependency_bytes=selected_limits['total_bytes'],vertices=selected_limits['vertices'],
                              triangles=selected_limits['triangles'],memory_bytes=selected_limits['memory_bytes'],influences=8)

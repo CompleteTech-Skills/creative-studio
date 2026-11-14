@@ -487,7 +487,8 @@ def normalize_static_units(graph,value,path,*,version):
         if output in sources or evidence in sources:
             fail('CONVERSION','Reserved normalized output/evidence already exists; preserve it in a separate version plan.')
         target=root/output;target.parent.mkdir(parents=True,exist_ok=True)
-        export_geometry(model.geometry,target,provenance=dict(fixture=manifest['provenance']['fixture'],
+        fixture = manifest['provenance']['fixture'] or model.report.get('fixture') is True
+        export_geometry(model.geometry,target,provenance=dict(fixture=fixture,
                                                             operation='explicit-unit-normalization',source_sha256=value['reference']['sha256']))
         reopened=load_character_model(target)
         if reopened.geometry.vertex_count!=model.geometry.vertex_count or reopened.geometry.triangle_count!=model.geometry.triangle_count:
@@ -527,6 +528,7 @@ def normalize_static_units(graph,value,path,*,version):
         updated['files'].extend([record,evidence_record])
         updated['compatibility']['unit_scale']=1;updated['compatibility']['formats']=['glb']
         updated['publication']['inventory'].extend([output,evidence])
+        provenance['fixture']=fixture
         provenance['method']='derived';provenance['parents'].append(value['reference'])
         provenance['conversions']=provenance.get('conversions',[])+[dict(tool='asset-dependency-static-units',version='1.0.0',timestamp=timestamp(),
             operation='Explicit canonical static unit normalization; selected geometry reopened and verified; original units retained in conversion evidence.',
