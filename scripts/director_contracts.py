@@ -113,6 +113,24 @@ def _range(value):
     _require(value['end_frame']>value['start_frame'],'TIME','Frame range must be nonempty and half-open.')
 
 
+def parse_rfc3339(value, *, code='TIMESTAMP'):
+    """Return an aware datetime; reject malformed timestamps without extras.
+
+    Lowercase t/z is valid. Offsets preserve their declared value. Callers may
+    wrap the typed RigError or select their existing Director diagnostic code.
+    """
+    # datetime.fromisoformat normalizes overflowing offset minutes; constrain
+    # lexical ranges first, without optional JSON Schema format dependencies.
+    _require(isinstance(value,str) and 1 <= len(value) <= 64 and
+             re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]'
+             r'(?:\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])',value) is not None,
+             code,'Timestamp must be RFC3339 with an explicit, valid timezone.')
+    try:
+        return datetime.fromisoformat(value.upper().replace('Z','+00:00'))
+    except ValueError:
+        _require(False,code,'Timestamp must have a valid RFC3339 calendar date.')
+
+
 def _semantics(value):
     for x in _walk(value):
         if not isinstance(x,dict):continue
@@ -135,11 +153,7 @@ def _semantics(value):
                 _require(amount is None or float(amount).is_integer(),'USAGE','Count measurements must be integers.')
         if 'policy' in x and 'project_revision_sha256' in x:
             policy=x['policy']
-            try:
-                deadline=datetime.fromisoformat(x['deadline'].upper().replace('Z','+00:00'))
-            except ValueError:
-                _require(False,'CONTEXT','Deadline must be an RFC3339 timestamp.')
-            _require(deadline.tzinfo is not None,'CONTEXT','Deadline must include a timezone.')
+            parse_rfc3339(x['deadline'],code='CONTEXT')
             if policy['network']=='allow-configured' or policy['paid']!='deny':
                 _require(policy['policy_ref'] is not None,'AUTHORIZATION','Network/paid operations require an explicit policy reference.')
             if policy['paid']!='deny':
@@ -188,14 +202,7 @@ def _semantics(value):
             _require(not (x['name']=='visual_qa' and x['status']=='passed' and x['authority']=='automated'),
                      'REVIEW','Automated validation cannot grant visual approval.')
             if x.get('schema_version') == 2:
-                _require(re.fullmatch(r'[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}'
-                         r'(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})',x['timestamp']) is not None,
-                         'MILESTONE','Milestone timestamp must be RFC3339 with an explicit timezone.')
-                try:
-                    timestamp=datetime.fromisoformat(x['timestamp'].upper().replace('Z','+00:00'))
-                except ValueError:
-                    _require(False,'MILESTONE','Milestone timestamp must be RFC3339.')
-                _require(timestamp.tzinfo is not None,'MILESTONE','Milestone timestamp requires a timezone.')
+                parse_rfc3339(x['timestamp'],code='MILESTONE')
                 _require(x['evidence'] == x['evidence_refs'], 'MILESTONE',
                          'Legacy evidence alias must equal the explicit evidence references.')
                 _require(x['status'] != 'failed' or bool(x['failure_reason']), 'MILESTONE',
@@ -266,12 +273,12 @@ def _semantics(value):
         _require(status=='succeeded' or value['diagnostics'],'RESULT','Non-success results require typed diagnostics.')
         if value['method'] in ('ExecutionService.submit','RenderAdapter.submit') and value['value'] is not None:
             _require(value['value']['state'] in ('queued','running'),'JOB','Submission cannot report completed execution.')
+        if value['method']=='GraphCompiler.compile' and value['value'] is not None and value['value'].get('schema_version')==2:
+            for node in value['value']['nodes']:
+                validate_execution_metadata(node['execution_metadata'],planned=True)
         if status=='succeeded':
             output=value['value'];method=value['method']
-            if method=='GraphCompiler.compile' and output.get('schema_version')==2:
-                for node in output['nodes']:
-                    validate_execution_metadata(node['execution_metadata'],planned=True)
-            elif method=='AssetBuildAdapter.build':
+            if method=='AssetBuildAdapter.build':
                 _require(output['meshes'] and output['vertices']>0 and output['triangles']>0,
                          'EVIDENCE','A successful asset build needs actual mesh references and nonzero geometry counts.')
             elif method=='RigMotionAdapter.prepare':

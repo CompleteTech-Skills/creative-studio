@@ -209,6 +209,8 @@ class DirectorContractTests(unittest.TestCase):
             dc.migrate_project_v2(original, {},semantic_version="2.0.0")
         for changes in ({'timestamp':'not-a-timestamp'}, {'timestamp':'2026-11-13T12:00:00'},
                         {'timestamp':'2026-11-13 12:00:00Z'}, {'timestamp':'2026-02-30T12:00:00Z'},
+                        {'timestamp':'2026-11-13T12:00:00+00:60'}, {'timestamp':'2026-11-13T12:00:00-01:99'},
+                        {'timestamp':'2026-11-13T12:00:00+24:00'},
                         {'status':'failed'},
                         {'status':'passed','remaining_work':[]}, {'remaining_work':[]}):
             changed = deepcopy(migrated)
@@ -291,9 +293,25 @@ class DirectorContractTests(unittest.TestCase):
         request['context']['deadline'] = '2030-01-01t00:00:00z'
         dc.validate_document(request)
         dc.validate_method_request('CapabilityRegistry.probe', request)
-        request['context']['deadline'] = '2030-01-01t25:00:00z'
-        with self.assertRaises(dc.RigError):
-            dc.validate_document(request)
+        for deadline in ('2030-01-01t25:00:00z','2030-01-01T00:00:00+00:60',
+                         '2030-01-01T00:00:00-01:99','2030-01-01 00:00:00Z'):
+            request['context']['deadline'] = deadline
+            with self.subTest(deadline=deadline),self.assertRaises(dc.RigError):
+                dc.validate_document(request)
+
+    def test_canonical_rfc3339_parser_rejects_normalized_iso_overflow(self):
+        from datetime import timedelta
+        for timestamp,offset in [('2030-01-01t00:00:00z',0),
+                                 ('2030-01-01T00:00:00+23:59',1439),
+                                 ('2030-01-01T00:00:00-23:59',-1439),
+                                 ('2028-02-29T12:30:15.125+05:30',330)]:
+            parsed=dc.parse_rfc3339(timestamp)
+            self.assertEqual(parsed.utcoffset(),timedelta(minutes=offset))
+        for timestamp in (None,123,'x'*65,'2030-02-29T00:00:00Z','2030-01-01T00:00:00+0060',
+                          '2030-01-01T00:00:00+00:60','2030-01-01T00:00:00-01:99',
+                          '2030-01-01T00:60:00Z','2030-01-01T00:00:60Z','2030-01-01T00:00:00+24:00'):
+            with self.subTest(timestamp=timestamp),self.assertRaises(dc.RigError):
+                dc.parse_rfc3339(timestamp)
 
     def test_context_rejects_implicit_network_and_paid_authority(self):
         original = self.sample('director-request')

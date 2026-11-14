@@ -26,6 +26,15 @@ Existing v1 definitions, fixtures and byte-bound historical receipts retain
 their prior meaning. V1 has a reduced milestone envelope and does not establish
 the parent mission's complete reporting gate. Unknown versions still fail.
 
+`parse_rfc3339(value)` is the shared timestamp authority for deadlines and v2
+milestone reports. It returns an aware datetime, permits lowercase `t`/`z`, and
+validates calendar, clock and numeric timezone ranges without optional JSON
+Schema format packages. Malformed ISO variants and overflowing offset minutes
+are rejected with a typed `DIRECTOR_TIMESTAMP` error. Callers may select their
+existing Director diagnostic suffix with `code=` or wrap the error at their
+own boundary. Graph compiler result admission applies the planned-only metadata
+rule to both succeeded and partial results.
+
 This implements the data and interface boundary of [issue #24](https://github.com/CompleteTech-Skills/creative-studio/issues/24).
 The parent Director phases and production mission remain open. Validation never
 invokes a model, generates assets, mutates a native project, renders, spends a
