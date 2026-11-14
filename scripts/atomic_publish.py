@@ -461,8 +461,10 @@ def publish_verified_file(source_fd, destination, *, expected_sha256, expected_s
         raise ValueError('verified publication destination cannot traverse parents')
     receipt = {'sha256': expected_sha256, 'byte_size': expected_size}
     published = False
+    windows_payload = None
     try:
         source = os.dup(source_fd)
+        source_error = None
         try:
             info = os.fstat(source)
             if not stat.S_ISREG(info.st_mode) or info.st_size != expected_size:
@@ -470,6 +472,7 @@ def publish_verified_file(source_fd, destination, *, expected_sha256, expected_s
             if os.name == 'nt':
                 from atomic_windows import private_file
                 with private_file(destination.parent) as payload:
+                    windows_payload = payload
                     _copy_verified_file(source, payload.fd, expected_sha256, expected_size)
                     payload.publish_to(destination)
                     published = True
@@ -488,10 +491,19 @@ def publish_verified_file(source_fd, destination, *, expected_sha256, expected_s
                             published = True
                         finally:
                             os.close(payload)
+        except BaseException as exc:
+            source_error = exc
+            raise
         finally:
-            os.close(source)
+            try:
+                os.close(source)
+            except BaseException as close_error:
+                if source_error is None:
+                    raise
+                if hasattr(source_error, 'add_note'):
+                    source_error.add_note('Verified source close also failed: ' + str(close_error))
     except BaseException as exc:
-        if published:
+        if published or windows_payload is not None and windows_payload.published:
             raise VerifiedFileCleanupError(receipt) from exc
         raise
     return receipt

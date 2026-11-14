@@ -1,15 +1,18 @@
 """Actual bounded-file publication; native desktop gates must execute it."""
+import contextlib
 import errno
 import hashlib
 import os
 from pathlib import Path
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import atomic_publish as atomic
+import atomic_windows as windows
 
 
 class VerifiedFilePublication(unittest.TestCase):
@@ -202,6 +205,76 @@ class VerifiedFilePublication(unittest.TestCase):
         with self.assertRaises(OSError): self.publish()
         self.assertTrue(self.output.is_symlink())
         self.assertEqual(self.source.read_bytes(), self.data)
+
+    def test_windows_rename_commit_survives_nested_cleanup_errors(self):
+        if os.name == 'nt':
+            self.skipTest('portable adapter simulation uses POSIX rename semantics')
+        staged = self.root / 'staged'
+        error = OSError(errno.EIO, 'destination pin close failed')
+        fake_os = types.SimpleNamespace(**vars(os))
+        fake_os.name = 'nt'
+
+        @contextlib.contextmanager
+        def pin(parent):
+            yield types.SimpleNamespace(path=parent)
+            raise error
+
+        @contextlib.contextmanager
+        def private(parent):
+            fd = os.open(staged, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+            try:
+                yield windows._PrivateFile(fd)
+            except BaseException as exc:
+                try:
+                    raise
+                finally:
+                    windows._finish_cleanups(exc, [lambda: os.close(fd),
+                                                  lambda: (_ for _ in ()).throw(OSError('outer close failed'))])
+            else:
+                os.close(fd)
+
+        with mock.patch.object(atomic, 'os', fake_os), \
+             mock.patch.object(windows, 'private_file', private), \
+             mock.patch.object(windows, '_path', Path), \
+             mock.patch.object(windows, 'pinned_directory', pin), \
+             mock.patch.object(windows, '_rename_handle', side_effect=lambda fd, dst: os.rename(staged, dst)), \
+             mock.patch.dict(sys.modules, {'msvcrt': types.SimpleNamespace(get_osfhandle=lambda fd: fd)}):
+            with self.assertRaises(atomic.VerifiedFileCleanupError) as caught:
+                self.publish()
+        self.assertIs(caught.exception.__cause__, error)
+        self.assertTrue(any('outer close failed' in note for note in error.__notes__))
+        self.assertEqual(caught.exception.receipt, {'sha256': self.digest, 'byte_size': len(self.data)})
+        self.assertEqual(self.output.read_bytes(), self.data)
+
+    def test_windows_failed_rename_is_not_reported_as_committed(self):
+        if os.name == 'nt':
+            self.skipTest('portable adapter simulation')
+        staged = self.root / 'staged'
+        error = OSError(errno.EIO, 'rename failed')
+        fake_os = types.SimpleNamespace(**vars(os)); fake_os.name = 'nt'
+
+        @contextlib.contextmanager
+        def private(parent):
+            fd = os.open(staged, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+            try:
+                yield windows._PrivateFile(fd)
+            finally:
+                os.close(fd)
+
+        @contextlib.contextmanager
+        def pin(parent):
+            yield types.SimpleNamespace(path=parent)
+
+        with mock.patch.object(atomic, 'os', fake_os), \
+             mock.patch.object(windows, 'private_file', private), \
+             mock.patch.object(windows, '_path', Path), \
+             mock.patch.object(windows, 'pinned_directory', pin), \
+             mock.patch.object(windows, '_rename_handle', side_effect=error), \
+             mock.patch.dict(sys.modules, {'msvcrt': types.SimpleNamespace(get_osfhandle=lambda fd: fd)}):
+            with self.assertRaises(OSError) as caught:
+                self.publish()
+        self.assertIs(caught.exception, error)
+        self.assertFalse(self.output.exists())
 
     def test_posix_cleanup_failure_reports_committed_verified_receipt(self):
         if os.name == 'nt': return  # Native HANDLE cleanup is exercised separately.

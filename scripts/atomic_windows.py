@@ -116,6 +116,21 @@ def _close(handle):
         raise _error('directory handle')
 
 
+def _finish_cleanups(primary, operations):
+    """Run each owned cleanup, keeping the first error as the primary one."""
+    first = primary
+    for operation in operations:
+        try:
+            operation()
+        except BaseException as error:
+            if first is None:
+                first = error
+            elif hasattr(first, 'add_note'):
+                first.add_note('Windows cleanup also failed: ' + str(error))
+    if primary is None and first is not None:
+        raise first
+
+
 def _attributes(handle):
     result = _Attributes()
     if not _api().GetFileInformationByHandleEx(handle, 9, ctypes.byref(result),
@@ -276,6 +291,7 @@ def pinned_directory(path):
     result = None
     owner = None
     counted = False
+    body_error = None
     try:
         parent = None
         suffix = None
@@ -314,15 +330,18 @@ def pinned_directory(path):
             counted = True
         registration = _PINS.set((*_PINS.get(), result))
         yield result
+    except BaseException as exc:
+        body_error = exc
+        raise
     finally:
         if registration is not None:
             _PINS.reset(registration)
         if result is not None:
             result._active = False
-        for handle in reversed(handles):
-            _close(handle)
         if counted:
             owner._children -= 1
+        _finish_cleanups(body_error, [lambda handle=handle: _close(handle)
+                                      for handle in reversed(handles)])
 
 
 def _rename_handle(handle, destination):
@@ -361,14 +380,18 @@ def _clear_owned(path, *, depth=0, count=None):
             if count[0] > 100000:
                 raise ValueError('private stage cleanup exceeds entry budget')
             handle = _open(entry.path, delete=True, traverse=False)
+            body_error = None
             try:
                 attributes = _attributes(handle)
                 if attributes & _DIRECTORY and not attributes & _REPARSE:
                     _clear_owned(Path(entry.path), depth=depth + 1, count=count)
                 # Delete the exact held object, including a reparse point itself.
                 _delete_handle(handle)
+            except BaseException as exc:
+                body_error = exc
+                raise
             finally:
-                _close(handle)
+                _finish_cleanups(body_error, [lambda: _close(handle)])
 
 
 class PrivateStage(_DirectoryPin):
@@ -389,7 +412,7 @@ class PrivateStage(_DirectoryPin):
         _component(destination.name)
         with pinned_directory(destination.parent) as parent:
             _rename_handle(self._handle, parent.path / destination.name)
-        self.published = True
+            self.published = True
 
 
 @contextmanager
@@ -420,6 +443,7 @@ def private_stage(parent, *, prefix='.publish-', cleanup=True, cleanup_on_error=
         payload_handle = None
         stage = None
         body_error = None
+        outer_error = None
         try:
             attributes = _attributes(wrapper_handle)
             if not attributes & _DIRECTORY or attributes & _REPARSE:
@@ -450,10 +474,15 @@ def private_stage(parent, *, prefix='.publish-', cleanup=True, cleanup_on_error=
                             raise
                         if hasattr(body_error, 'add_note'):
                             body_error.add_note('Windows private cleanup also failed: ' + str(cleanup_error))
+        except BaseException as exc:
+            outer_error = exc
+            raise
         finally:
+            operations = []
             if payload_handle is not None:
-                _close(payload_handle)
-            _close(wrapper_handle)
+                operations.append(lambda: _close(payload_handle))
+            operations.append(lambda: _close(wrapper_handle))
+            _finish_cleanups(outer_error, operations)
 
 
 class _PrivateFile:
@@ -470,7 +499,7 @@ class _PrivateFile:
         _component(destination.name)
         with pinned_directory(destination.parent) as parent:
             _rename_handle(msvcrt.get_osfhandle(self.fd), parent.path / destination.name)
-        self.published = True
+            self.published = True
 
 
 @contextmanager
@@ -495,12 +524,16 @@ def private_file(parent):
             if attributes & (_DIRECTORY | _REPARSE):
                 raise ValueError('private publication payload must be an ordinary file')
             descriptor = msvcrt.open_osfhandle(handle, os.O_RDWR | os.O_BINARY)
-        except BaseException:
-            _close(handle)
+        except BaseException as exc:
+            _finish_cleanups(exc, [lambda: _close(handle)])
             raise
         payload = _PrivateFile(descriptor)
+        body_error = None
         try:
             yield payload
+        except BaseException as exc:
+            body_error = exc
+            raise
         finally:
             payload.active = False
-            os.close(descriptor)
+            _finish_cleanups(body_error, [lambda: os.close(descriptor)])
