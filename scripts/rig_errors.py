@@ -313,7 +313,7 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
     directory descriptor; Windows checks the opened handle's canonical path.
     """
     capability,anchored,root_parts = _directory_anchor(root)
-    root = anchored if capability is not None else Path(root).resolve()
+    root = anchored if capability is not None else Path(root).absolute()
     target = safe_path(root, name, exists=True)
     def check_root(info):
         require(root_identity is None or (info.st_dev,info.st_ino) == root_identity,

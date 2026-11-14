@@ -60,8 +60,11 @@ class DocumentPublisher:
     ancestor, including when a caller reopens or relocates it. Native and logical document validation remain with
     their existing owners. Fixture is a boolean and schema_version an integer.
     """
-    def __init__(self, library, *, artifact_root=None):
+    def __init__(self, library, *, artifact_root=None, native_dependency_resolver=None):
         self.library = library
+        if native_dependency_resolver is not None and not callable(native_dependency_resolver):
+            _fail('REQUEST', 'Native dependency resolver must be an explicit trusted callable.')
+        self.native_dependency_resolver = native_dependency_resolver
         self.artifact_root = Path(artifact_root).absolute() if artifact_root is not None else library.root
         try:
             relative = library.root.relative_to(self.artifact_root).as_posix()
@@ -86,7 +89,7 @@ class DocumentPublisher:
         candidates = [r for r in self.library.list_references()
                       if r['id'] == _identity(reference['artifact_id']) and r['version'] == reference['semantic_version']]
         if len(candidates) != 1:
-            _fail('DEPENDENCY', 'Dependency is not a registered canonical document version.')
+            return self._native_dependency(reference)[0]
         manifest = self.library.resolve(candidates[0])
         if manifest['identity']['kind'] != 'document' or self._ref(manifest) != reference:
             _fail('DEPENDENCY', 'Dependency does not match its exact canonical ArtifactRef.')
@@ -94,17 +97,29 @@ class DocumentPublisher:
             _fail('DEPENDENCY', 'Dependency source bytes differ from its exact reference.')
         return candidates[0]
 
-    def read_ref(self, reference):
-        """Read canonical source bytes; this never interprets a caller's path."""
-        reference = deepcopy(_validate_ref(reference))
-        candidates = [r for r in self.library.list_references()
-                      if r['id'] == _identity(reference['artifact_id']) and r['version'] == reference['semantic_version']]
-        if len(candidates) != 1:
-            _fail('MISSING', 'Exact document version is absent.')
-        manifest = self.library.resolve(candidates[0])
-        if self._ref(manifest) != reference:
-            _fail('HASH', 'ArtifactRef differs from its canonical publication.')
-        payload = self.library.read_file(candidates[0], 'document.payload')
+    def _native_dependency(self, reference):
+        """The native owner binds full ArtifactRef metadata to an existing AssetRef.
+
+        This explicit capability never admits a free filesystem-only dependency.
+        The returned canonical version/closure and an inventoried exact payload
+        are independently verified here; schema/identity ownership stays native.
+        """
+        if self.native_dependency_resolver is None:
+            _fail('DEPENDENCY', 'Dependency needs an explicit native owner resolver or a registered document version.')
+        from asset_library_contracts import validate
+        target = deepcopy(self.native_dependency_resolver(deepcopy(reference)))
+        validate(target, 'AssetRef')
+        manifest = self.library.resolve(target)
+        matches = [record for record in manifest['files']
+                   if record['sha256'] == reference['sha256'] and record['bytes'] == reference['byte_size']
+                   and record['mime_type'] == reference['media_type']]
+        if not matches:
+            _fail('DEPENDENCY', 'Native dependency is not an exact inventoried canonical payload.')
+        payload = self.library.read_file(target, matches[0]['path'])
+        self._verify_path(reference, payload)
+        return target, payload
+
+    def _verify_path(self, reference, payload):
         try:
             from asset_library import read_source_bytes
             info = self.artifact_root.lstat()
@@ -114,6 +129,20 @@ class DocumentPublisher:
                 _fail('HASH', 'Actual canonical source path differs from registry bytes.')
         except OSError as exc:
             raise RigError('LIBRARY_DOCUMENT_PATH', 'Canonical source path is absent or unsafe.') from exc
+
+    def read_ref(self, reference):
+        """Read canonical source bytes; this never interprets a caller's path."""
+        self.library.storage.validate_ready()
+        reference = deepcopy(_validate_ref(reference))
+        candidates = [r for r in self.library.list_references()
+                      if r['id'] == _identity(reference['artifact_id']) and r['version'] == reference['semantic_version']]
+        if len(candidates) != 1:
+            return self._native_dependency(reference)[1]
+        manifest = self.library.resolve(candidates[0])
+        if self._ref(manifest) != reference:
+            _fail('HASH', 'ArtifactRef differs from its canonical publication.')
+        payload = self.library.read_file(candidates[0], 'document.payload')
+        self._verify_path(reference, payload)
         if len(payload) != reference['byte_size'] or hashlib.sha256(payload).hexdigest() != reference['sha256']:
             _fail('HASH', 'Canonical source payload differs from ArtifactRef.')
         return payload
@@ -121,6 +150,7 @@ class DocumentPublisher:
     def publish_document(self, payload, artifact_id, kind, schema_version,
                          semantic_version, dependencies, fixture):
         from asset_library import detect_format
+        self.library.storage.validate_ready()
         if type(payload) is not bytes or not 0 < len(payload) <= MAX_FILE_BYTES:
             _fail('LIMIT', 'Document payload must be nonempty bytes, at most 64 MiB; payload is never truncated.')
         if type(dependencies) is not list or len(dependencies) > 128:

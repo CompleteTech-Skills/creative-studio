@@ -75,6 +75,34 @@ class DocumentPublicationTests(unittest.TestCase):
             self.publish(b'{"bad":3}', artifact_id='bad', dependencies=[parent, parent])
         self.assertEqual(len(self.library.list_references()), 2)
 
+    def test_explicit_native_owner_bridge_requires_actual_canonical_payload(self):
+        from test_asset_library import AssetLibraryTests
+        owner = AssetLibraryTests('test_actual_geometry_registration_restart_relocation_and_exact_bytes')
+        owner.setUp()
+        self.addCleanup(owner.doCleanups)
+        target = self.library.register(owner.manifest, owner.sources)
+        file = owner.manifest['files'][0]
+        native = dict(artifact_id='triangle', kind='prop', schema_version=1, semantic_version='1.0.0',
+            path='library/records/blobs/' + file['sha256'], sha256=file['sha256'], byte_size=file['bytes'],
+            media_type=file['mime_type'], provenance_ref=None, fixture=True, dependencies=[])
+        with self.assertRaises(RigError):
+            self.publish(dependencies=[native])
+        def resolve(ref):
+            if ref != native:
+                raise RigError('NATIVE_EXACT_REF', 'Native identity differs from registered source.')
+            return target
+        publisher = DocumentPublisher(self.library, artifact_root=self.root, native_dependency_resolver=resolve)
+        ref = publisher.publish_document(b'{"native":"triangle"}', 'project', 'director-project', 1, '1.0.0', [native], True)
+        self.assertEqual(publisher.read_ref(native), owner.mesh.read_bytes())
+        manifest = self.library.resolve(next(r for r in self.library.list_references() if r['id'] != 'triangle'))
+        self.assertEqual(manifest['dependencies'][0]['target'], target)
+        self.assertEqual(ref['dependencies'], [native])
+        with self.assertRaises(RigError):
+            publisher.publish_document(b'{}', 'bad', 'director-project', 1, '1.0.0', [{**native, 'kind':'other'}], True)
+        bad = DocumentPublisher(self.library, artifact_root=self.root, native_dependency_resolver=lambda ref: target)
+        with self.assertRaises(RigError):
+            bad.publish_document(b'{}', 'bad', 'director-project', 1, '1.0.0', [{**native, 'sha256':'0'*64}], True)
+
     def test_actual_concurrent_idempotency_and_conflicting_payloads(self):
         with ThreadPoolExecutor(max_workers=2) as pool:
             refs = list(pool.map(lambda _: self.publish(), range(2)))
