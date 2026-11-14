@@ -138,3 +138,19 @@ once the canonical timeline dependency is integrated. A missing dependency,
 trusted publisher integration, unexecuted regeneration or planning-provider
 backend remains explicit; this module does not establish full issue or parent
 production acceptance by itself.
+
+## Native dependency provenance
+
+The native timeline adapter is consumed unchanged from the editor owner's frozen
+`0c886aff` source. The existing Scene snapshot publisher includes its canonical
+Linux publication repair (`9d64f821` ancestry) and portable atomic authority
+(`9d3c87b2` ancestry). Timeline document replacement, combined scene/shot promotion
+and optional exact source-project pin are integrated from their original owner
+commits. These dependencies require new combined validation and review; their
+presence does not approve the editor UI or complete logical project activation.
+
+Revision transactions bind the exact patch digest at the existing repository
+idempotency boundary, including material and timeline adapter requests. Reusing a
+transaction key for another instruction or parent is a conflict even when the
+compiled native edit is identical. Independent policy sources are individually
+bounded; their normalized unique union has a maximum of 256 locks.

@@ -60,16 +60,17 @@ def _shots(snapshot):
             and snapshot['documents'][ref['path']]['scene']['version'] == scene['version']]
 
 
-def _constraints(snapshot, additional):
+def _constraints(snapshot, additional, *other_sources):
     source = snapshot['project'].get('metadata', {}).get('director_locked_constraints', [])
     if isinstance(source, str):
         from rig_errors import decode_json
         _need(len(source.encode('utf-8')) <= 4096, 'POLICY', 'Native locked-constraint metadata exceeds its bound.')
         source = decode_json(source, max_bytes=4096)
-    _need(isinstance(source, list) and isinstance(additional, (list, tuple)) and
-          len(source) <= 256 and len(additional) <= 256, 'POLICY', 'Locked constraints must be bounded lists.')
+    groups = (source, additional, *other_sources)
+    _need(len(groups) <= 4 and all(isinstance(group, (list, tuple)) and len(group) <= 256
+                                 for group in groups), 'POLICY', 'Locked constraints must be bounded lists.')
     result = []
-    for value in [*source, *additional]:
+    for value in [value for group in groups for value in group]:
         _need(isinstance(value, str) and 0 < len(value) <= 1024, 'POLICY', 'Invalid locked constraint.')
         if value.casefold().rstrip('.') == 'keep both robot designs exactly the same':
             value = 'identity:*'
@@ -210,6 +211,26 @@ def _prepare(snapshot, change):
     _need(False, 'UNSUPPORTED', 'No native revision adapter is registered for this change; original geometry and identity are preserved.')
 
 
+class _PatchBoundRepository:
+    """Bind adapter idempotency to the exact Director patch in the existing store.
+
+    Native adapters retain their request schema and builder. The repository's
+    native request identity accepts this trusted provenance envelope; all reads,
+    writes, locking and activation still belong to the original repository.
+    """
+    def __init__(self, repository, patch_sha256):
+        self._repository = repository
+        self._patch_sha256 = patch_sha256
+
+    def __getattr__(self, name):
+        return getattr(self._repository, name)
+
+    def transact_native(self, expected_revision, transaction_id, request, builder, **options):
+        return self._repository.transact_native(expected_revision, transaction_id,
+            dict(director_patch_sha256=self._patch_sha256, native_request=deepcopy(request)),
+            builder, **options)
+
+
 class RevisionService:
     """Trusted in-process revision compiler over one existing EditorRepository.
 
@@ -233,6 +254,7 @@ class RevisionService:
 
     def _original_locks(self, snapshot):
         locks = list(self.locked_constraints)
+        brief_locks = []
         if self.brief_reference is not None:
             import director_contracts as contracts
             from rig_errors import decode_json
@@ -248,8 +270,8 @@ class RevisionService:
                   (self.brief_reference['artifact_id'], self.brief_reference['semantic_version'],
                    self.brief_reference['schema_version'], self.brief_reference['kind']),
                   'POLICY', 'Original brief identity or native project mapping differs.')
-            locks.extend(brief['requirements']['locked'])
-        return _constraints(snapshot, locks)
+            brief_locks = brief['requirements']['locked']
+        return _constraints(snapshot, locks, brief_locks)
 
     def plan(self, instruction, *, expected_revision, expected_sha256, change=None, locked_constraints=()):
         snapshot = self.repository.snapshot()
@@ -260,7 +282,7 @@ class RevisionService:
         _need(isinstance(locked_constraints, (list, tuple)) and len(locked_constraints) <= 256,
               'POLICY', 'Locked constraints must be a bounded list.')
         prepared = _prepare(snapshot, deepcopy(change) if change is not None else _instruction(instruction))
-        locks = _constraints(snapshot, [*self._original_locks(snapshot), *locked_constraints])
+        locks = _constraints(snapshot, self._original_locks(snapshot), locked_constraints)
         patch = dict(schema_version=1, kind='director-revision-patch', instruction=instruction,
                      parent=dict(revision=snapshot['revision'], sha256=snapshot['sha256'],
                                  project_sha256=snapshot['inventory']['project.json']['sha256'],
@@ -382,7 +404,7 @@ class RevisionService:
                     transform={**deepcopy(node['transform']), **deepcopy(change['transform'])}, space='local')
             after = self.repository.apply(parent['revision'], dict(schema_version=1,
                 commands=[dict(operation=operation, parameters=parameters)]), transaction_id,
-                expected_sha256=parent['sha256'], label='Director '+op+' revision')
+                expected_sha256=parent['sha256'], label='Director '+op+' revision '+patch['sha256'])
         elif op == 'material':
             from editor3d_inspectors import apply_material_edit, assign_authored_material, material_slot_projection
             node, _, slots = material_slot_projection(snapshot, change['target'])
@@ -390,7 +412,7 @@ class RevisionService:
             request = dict(node_id=change['target'], slot=change['slot'], surface=deepcopy(change['surface']),
                 expected_revision=parent['revision'], expected_sha256=parent['sha256'], transaction_id=transaction_id)
             adapter = apply_material_edit if selected.get('override') is not None else assign_authored_material
-            after = adapter(self.repository, request)
+            after = adapter(_PatchBoundRepository(self.repository, patch['sha256']), request)
         else:
             try:
                 from editor3d_timeline import apply_timeline
@@ -400,7 +422,7 @@ class RevisionService:
                             duration_frames=change['duration_frames']) if op == 'duration' else
                        dict(operation='key-upsert', document=change['document'], target=change['light'],
                             property='light_intensity', frame=change['frame'], value=change['intensity'], interpolation='step'))
-            after = apply_timeline(self.repository, dict(expected_revision=parent['revision'],
+            after = apply_timeline(_PatchBoundRepository(self.repository, patch['sha256']), dict(expected_revision=parent['revision'],
                 expected_sha256=parent['sha256'], transaction_id=transaction_id, commands=[command]))
         reopened = self.repository.snapshot(after['revision'])
         _need(reopened['sha256'] == after['sha256'], 'VERIFY', 'Committed native revision failed reopening.')

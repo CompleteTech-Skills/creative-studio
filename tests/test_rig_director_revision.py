@@ -100,6 +100,38 @@ class CoreRevisionTests(unittest.TestCase):
         self.assertEqual(first, again)
         self.assertEqual(len(self.repository.history()), 2)
 
+    def test_transaction_identity_binds_exact_patch_not_only_native_commands(self):
+        first = self.plan()['patch']
+        second = self.plan(instruction='Change camera camera near to 0.2')['patch']
+        self.service.apply(first, transaction_id='exact-patch')
+        after = self.repository.snapshot()
+        with self.assertRaises(RigError):
+            self.service.apply(second, transaction_id='exact-patch')
+        self.assertEqual(self.repository.snapshot(), after)
+        world = self.plan(change=dict(operation='world', target='world', properties={'exposure': 1}))['patch']
+        self.service.apply(world, transaction_id='unrelated-world')
+        current = self.repository.snapshot()
+        later = self.plan()['patch']
+        with self.assertRaises(RigError):
+            self.service.apply(later, transaction_id='exact-patch')
+        self.assertEqual(self.repository.snapshot(), current)
+
+    def test_material_adapter_transaction_identity_retains_exact_patch(self):
+        change = dict(operation='material', target='mesh', slot='surface', surface={'roughness': .7})
+        # Select the canonical actual primitive slot, never a guessed slot ID.
+        from editor3d_inspectors import material_slot_projection
+        _, _, slots = material_slot_projection(self.repository.snapshot(), 'mesh')
+        change['slot'] = slots[0]['slot']
+        first = self.plan(change=change, instruction='Set selected roughness to .7')['patch']
+        second = self.plan(change=change, instruction='Change selected roughness to .7')['patch']
+        self.service.apply(first, transaction_id='material-exact-patch')
+        state = self.repository.snapshot()
+        with self.assertRaises(RigError):
+            self.service.apply(second, transaction_id='material-exact-patch')
+        self.assertEqual(self.repository.snapshot(), state)
+        replay = self.service.apply(first, transaction_id='material-exact-patch')
+        self.assertEqual(replay['after']['sha256'], state['sha256'])
+
     def test_camera_angle_and_position_use_native_transform_authority(self):
         rotation = [0, 0.7071067811865476, 0, 0.7071067811865476]
         plan = self.plan(dict(operation='camera-pose', target='camera',
@@ -149,7 +181,7 @@ class CoreRevisionTests(unittest.TestCase):
     def test_authoritative_identity_lock_needs_exact_trusted_authorizer(self):
         other = self.root/'locked'; other.mkdir()
         repository = project(other, constraints=['identity:mesh'])
-        service = RevisionService(repository)
+        service = RevisionService(repository, locked_constraints=constraints)
         state = repository.snapshot()
         patch = service.plan('Make the mesh blue', expected_revision=0, expected_sha256=state['sha256'],
             change=dict(operation='material', target='mesh', slot='surface', surface={'base_color': [0, 0, 1, 1]}))['patch']
@@ -179,7 +211,7 @@ class CoreRevisionTests(unittest.TestCase):
         service = RevisionService(repository)
         state = repository.snapshot()
         patch = service.plan('Set camera camera near to 0.2', expected_revision=0,
-                             expected_sha256=state['sha256'])['patch']
+                             expected_sha256=state['sha256'], locked_constraints=constraints)['patch']
         self.assertEqual(patch['locked_constraints'], sorted(constraints))
         result = service.apply(patch, transaction_id='many-original-locks')
         self.assertEqual(result['after']['revision'], 1)
