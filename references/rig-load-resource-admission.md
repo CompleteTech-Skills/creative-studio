@@ -1,7 +1,7 @@
 # Native rig loading with caller resource limits
 
 `rig_models.load_rig(root, verify_source=True, *, limits=None,
-expected_manifest_sha256=None)` accepts a partial
+expected_manifest_sha256=None, max_total_morph_targets=None)` accepts a partial
 runtime limits dictionary. For example:
 
 ```python
@@ -22,6 +22,15 @@ against that pin before parsing or loading native arrays. Whitespace differences
 also fail with `RIG_HASH`; object equivalence does not establish byte identity.
 Omitting the pin preserves the existing load behavior. A caller must pass its pin
 on every native reload where a bound reference remains authoritative.
+
+`max_total_morph_targets` optionally caps the sum of distinct morph target names
+within each geometry mesh. The same name on two meshes counts twice; POSITION
+and NORMAL arrays within one target count once. Admission checks the actual
+geometry headers before any array materialization, and repeats on live loading.
+The cap accepts nonnegative integers (including normalized whole floats); zero
+admits a genuinely zero-morph rig. Omitting it preserves existing behavior.
+The native `limits['morphs']` remains a separate per-mesh cap. Consumers retaining
+several unique rigs must pass their remaining aggregate allowance on each load.
 
 Before the first NumPy array allocation, admission inspects the complete native
 geometry/skin bundles and all retained JSON inputs. It measures actual NPY

@@ -1,5 +1,6 @@
 """Real native-rig admission, aggregate budgets and immutable-source regressions."""
 from copy import deepcopy
+from contextlib import nullcontext
 import io
 import json
 import os
@@ -417,6 +418,66 @@ for method in ('json', 'hash', 'bundle'):
             with self.assertRaises(RigError) as caught:
                 load_rig(self.root, expected_manifest_sha256=pin)
             self.assertEqual(caught.exception.report['code'], 'RIG_HASH')
+
+    def write_two_mesh_morph_fixture(self):
+        rig = load_rig(self.root)
+        self.assertGreaterEqual(len(rig.geometry.meshes), 2)
+        for mesh in rig.geometry.meshes:
+            mesh.morphs = {}
+            mesh.morph_defaults = {}
+        for mesh in rig.geometry.meshes[:2]:
+            # Same target name on two mesh instances counts twice; POSITION and
+            # NORMAL inside one target remain one morph, not two.
+            mesh.morphs['shared'] = {'POSITION': np.zeros_like(mesh.positions),
+                                     'NORMAL': np.zeros_like(mesh.positions)}
+        rig.manifest['geometry'] = save_geometry(self.root, rig.geometry, rig.manifest['limits'])
+        (self.root / 'rig.json').write_text(json.dumps(rig.manifest))
+
+    def test_total_morph_cap_rejects_cross_mesh_excess_before_first_array(self):
+        self.write_two_mesh_morph_fixture()
+        before = self.hashes()
+        for bypass_preflight in (False, True):
+            with self.subTest(bypass_preflight=bypass_preflight):
+                with patch('rig_models._materialize_array', side_effect=AssertionError('array before morph admission')) as arrays:
+                    with patch('rig_models._preflight_load', return_value=None) if bypass_preflight else nullcontext():
+                        with self.assertRaises(RigError) as caught:
+                            load_rig(self.root, limits={'morphs': 1}, max_total_morph_targets=1)
+                        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MORPHS')
+                        self.assertEqual(caught.exception.report['observed'], 2)
+                        arrays.assert_not_called()
+        self.assertEqual(before, self.hashes())
+
+    def test_total_morph_cap_preserves_per_mesh_profile_and_source_pin(self):
+        self.write_two_mesh_morph_fixture()
+        before = self.hashes()
+        pin = sha256(self.root / 'rig.json')
+        for total in (None, 2, 2.0, 10**400):
+            with self.subTest(total=repr(total)[:30]):
+                rig = load_rig(self.root, limits={'morphs': 1}, max_total_morph_targets=total,
+                               expected_manifest_sha256=pin)
+                self.assertEqual(sum(len(mesh.morphs) for mesh in rig.geometry.meshes), 2)
+                self.assertEqual(rig.manifest['limits']['morphs'], DEFAULT_LIMITS['morphs'])
+        self.assertEqual(before, self.hashes())
+
+    def test_zero_total_morph_cap_admits_actual_zero_morph_geometry(self):
+        rig = load_rig(self.root)
+        for mesh in rig.geometry.meshes:
+            mesh.morphs = {}
+            mesh.morph_defaults = {}
+        rig.manifest['geometry'] = save_geometry(self.root, rig.geometry, rig.manifest['limits'])
+        (self.root / 'rig.json').write_text(json.dumps(rig.manifest))
+        before = self.hashes()
+        loaded = load_rig(self.root, max_total_morph_targets=0, limits={'morphs': 1})
+        self.assertEqual(sum(len(mesh.morphs) for mesh in loaded.geometry.meshes), 0)
+        self.assertEqual(before, self.hashes())
+
+    def test_invalid_total_morph_caps_fail_before_manifest_decode(self):
+        for value in (True, False, -1, 1.5, float('nan'), float('inf'), '1', {}, []):
+            with self.subTest(value=repr(value)):
+                with patch('rig_load_limits.decode_json', side_effect=AssertionError('invalid cap decoded source')):
+                    with self.assertRaises(RigError) as caught:
+                        load_rig(self.root, max_total_morph_targets=value)
+                    self.assertEqual(caught.exception.report['code'], 'RIG_LIMITS')
 
     def test_runtime_bundle_snapshot_hash_is_checked_before_arrays(self):
         path = Path(self.temp.name) / 'valid.npz'
