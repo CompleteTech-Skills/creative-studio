@@ -8,6 +8,7 @@ from pathlib import Path
 import struct
 import warnings
 import zlib
+import uuid
 import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS
@@ -111,7 +112,7 @@ def _verify_png_raster(data: bytes, size: tuple[int, int]) -> None:
     require(inflater.eof and decoded == expected, 'RIG_TEXTURE_DECODE', 'PNG raster or zlib footer is incomplete.')
 
 
-def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0) -> tuple[str, int]:
+def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0, *, budget=None, reservation_key=None) -> tuple[str, int]:
     """Verify containers and decode pixels before accepting immutable source bytes.
 
     ``verify`` alone does not decode JPEG entropy data. Keep the existing
@@ -131,6 +132,8 @@ def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0) -> tuple[s
                 pixels = image.width * image.height
                 require(0 < pixels <= 16_777_216 and (total_pixels + pixels) * 16 <= limits['memory_bytes'] // 2,
                         'RIG_LIMIT_TEXTURE', 'Decoded textures exceed the pixel/memory budget.')
+                if budget is not None:
+                    budget.image(key=reservation_key, encoded_bytes=len(data), pixels=pixels)
                 mime = 'image/png' if image.format == 'PNG' else 'image/jpeg'
                 if image.format == 'PNG':
                     _verify_png_raster(data, image.size)
@@ -155,7 +158,7 @@ def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0) -> tuple[s
         raise RigError('RIG_TEXTURE_DECODE', 'Texture pixels or container cannot be decoded: ' + str(exc)) from exc
 
 
-def _images(document: GltfDocument) -> list[TextureImage]:
+def _images(document: GltfDocument, *, budget=None, reservation_prefix=None) -> list[TextureImage]:
     images = []
     total_pixels = 0
     for i, item in enumerate(document.json.get('images', [])):
@@ -164,7 +167,8 @@ def _images(document: GltfDocument) -> list[TextureImage]:
         else:
             buffer, offset, length, _ = document.view(item['bufferView'])
             data = buffer[offset:offset+length]
-        mime, pixels = _decode_texture(data, document.limits, total_pixels)
+        mime, pixels = _decode_texture(data, document.limits, total_pixels, budget=budget,
+                                       reservation_key=f'{reservation_prefix}:image:{i}' if budget else None)
         total_pixels += pixels
         require(item.get('mimeType', mime) == mime, 'RIG_TEXTURE_FORMAT', 'Texture MIME does not match its actual bytes.')
         images.append(TextureImage(item.get('name', f'image-{i}'), mime, data))
@@ -291,7 +295,9 @@ def _gltf_model(path, *, scale=1., limits=None, source_reader=None, budget=None)
     require(np.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'Import scale must be finite and positive.')
     parents, world, order = scene_graph(document, import_scale=scale)
     skeleton, ids, normalized = _import_skeleton(document, parents, world, order, scale)
-    geometry = Geometry([], deepcopy(document.json.get('materials', [])), _images(document),
+    image_prefix = uuid.uuid4().hex if budget is not None else None
+    geometry = Geometry([], deepcopy(document.json.get('materials', [])),
+                        _images(document, budget=budget, reservation_prefix=image_prefix),
                         deepcopy(document.json.get('textures', [])), deepcopy(document.json.get('samplers', [])),
                         [x for x in document.json.get('extensionsUsed', []) if x in document.json.get('extensionsRequired', []) or x.startswith('KHR_materials') or x == 'KHR_texture_transform'])
     default_material = len(geometry.materials)
@@ -420,6 +426,6 @@ def load_character_model(path: str | Path, *, scale=1., limits=None, blender=Non
     if budget is None:
         return _gltf_model(path, scale=scale, limits=limits, source_reader=source_reader)
     child = budget.fork(limits or budget.limits)
-    model = _gltf_model(path, scale=scale, limits=limits, source_reader=source_reader, budget=child)
+    model = _gltf_model(path, scale=scale, limits=child.limits, source_reader=source_reader, budget=child)
     budget.commit(child)
     return model

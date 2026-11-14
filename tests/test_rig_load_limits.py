@@ -216,6 +216,51 @@ class SharedLoadBudgetTests(unittest.TestCase):
                 else:
                     self.assertEqual(ratios[0]['numerator'].bit_length(), 1024)
 
+    def test_gltf_image_shares_budget_and_rolls_back_failed_decode(self):
+        import base64
+        from rig_gltf import GltfBuilder
+        from rig_import import load_character_model
+        image = io.BytesIO()
+        Image.new('RGBA', (64, 64), 'red').save(image, format='PNG')
+        encoded = image.getvalue()
+        builder = GltfBuilder()
+        position = builder.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'VEC3', target=34962, bounds=True)
+        builder.json.update(nodes=[{'mesh': 0}], meshes=[{'primitives': [{'attributes': {'POSITION': position}}]}],
+                            scenes=[{'nodes': [0]}], images=[{'uri': 'data:image/png;base64,' + base64.b64encode(encoded).decode()}])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'image.glb'
+            builder.write(path)
+            probe = LoadBudget(DEFAULT_LIMITS)
+            loaded = load_character_model(path, budget=probe)
+            self.assertEqual(len(loaded.geometry.images), 1)
+            self.assertEqual(probe.texture_rgba_bytes, 64 * 64 * 4)
+            boundary = probe.memory
+            limited = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': boundary - 1})
+            before = deepcopy(limited._state())
+            with self.assertRaises(RigError) as caught:
+                load_character_model(path, budget=limited)
+            self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+            self.assertEqual(limited._state(), before)
+            exact = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': boundary})
+            load_character_model(path, budget=exact)
+            self.assertEqual(exact.texture_rgba_bytes, 64 * 64 * 4)
+            before = deepcopy(exact._state())
+            with self.assertRaises(RigError):
+                load_character_model(path, budget=exact)
+            self.assertEqual(exact._state(), before)
+            # A valid header followed by corrupt raster data fails after image
+            # admission; the caller can still reuse its ledger.
+            corrupt = bytearray(encoded)
+            corrupt[-1] ^= 1
+            builder.json['images'][0]['uri'] = 'data:image/png;base64,' + base64.b64encode(corrupt).decode()
+            builder.write(path)
+            malformed = LoadBudget(DEFAULT_LIMITS)
+            before = deepcopy(malformed._state())
+            with self.assertRaises(RigError) as caught:
+                load_character_model(path, budget=malformed)
+            self.assertEqual(caught.exception.report['code'], 'RIG_TEXTURE_DECODE')
+            self.assertEqual(malformed._state(), before)
+
     def test_real_fanout_preflight_plus_report_rejected_before_expansion(self):
         from rig_gltf import GltfBuilder, read_gltf, preflight_gltf
         builder = GltfBuilder()
