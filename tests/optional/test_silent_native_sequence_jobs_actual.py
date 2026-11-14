@@ -15,6 +15,16 @@ class ActualNativeSequenceJobs(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if os.environ.get('HATCH_NATIVE_SEQUENCE_JOBS_TEST')!='1':raise RuntimeError('Explicit retained-native job gate requires HATCH_NATIVE_SEQUENCE_JOBS_TEST=1')
+        # Make the historical author's scratch source unreadable to this test
+        # process. Passing locally must not rely on an overlay or old cache;
+        # hosted CI has no such directory at all.
+        unavailable='/home/complete/.cache/hatch-coordination-20261112/render-backend-recovery/native-smoke'
+        def deny_original_scratch(event,args):
+            if event in ('open','os.listdir','os.scandir') and args and isinstance(args[0],(str,bytes)):
+                path=os.fsdecode(args[0])
+                if path==unavailable or path.startswith(unavailable+'/'):
+                    raise PermissionError('historical external native fixture is unavailable')
+        sys.addaudithook(deny_original_scratch)
         cls.fixture=Path(os.environ.get('HATCH_NATIVE_SEQUENCE_FIXTURE',
             str(Path(__file__).resolve().parents[1]/'fixtures/silent-native-sequence')))
         relocation=json.loads((cls.fixture/'relocation.json').read_text())
