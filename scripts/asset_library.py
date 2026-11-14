@@ -687,6 +687,13 @@ class AssetLibrary:
             db.execute('INSERT OR REPLACE INTO blobs VALUES(?,?)', (digest, payload))
         return dict(sha256=digest, bytes=expected_bytes, repaired=True)
 
+    def publish_document(self, payload, artifact_id, kind, schema_version,
+                         semantic_version, dependencies, fixture):
+        """Thin document adapter; artifact paths are relative to this library root."""
+        from asset_library_documents import DocumentPublisher
+        return DocumentPublisher(self).publish_document(payload, artifact_id, kind,
+            schema_version, semantic_version, dependencies, fixture)
+
     def scene_reference(self, reference: AssetRef, path: str) -> SceneAssetReference:
         manifest = self.resolve(reference)
         self.read_file(reference, path)

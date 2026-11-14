@@ -40,7 +40,7 @@ class AssetIdentity(TypedDict):
     name: str
     kind: Literal['character', 'rig', 'animation', 'prop', 'material', 'texture',
                   'environment', 'light', 'camera', 'prefab', 'reference',
-                  'legacy-pet', 'legacy-cast', 'legacy-clip']
+                  'legacy-pet', 'legacy-cast', 'legacy-clip', 'document']
     subtype: str
     created_at: str
     attribution: str

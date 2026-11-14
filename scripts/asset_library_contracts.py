@@ -21,7 +21,7 @@ MAX_MANIFEST_BYTES = 1024 * 1024
 ID_PATTERN = r'^[a-z][a-z0-9_-]{0,63}$(?![\s\S])'
 VERSION_PATTERN = r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$(?![\s\S])'
 KINDS = ('character', 'rig', 'animation', 'prop', 'material', 'texture', 'environment',
-         'light', 'camera', 'prefab', 'reference', 'legacy-pet', 'legacy-cast', 'legacy-clip')
+         'light', 'camera', 'prefab', 'reference', 'legacy-pet', 'legacy-cast', 'legacy-clip', 'document')
 
 
 def obj(fields, required=None):
