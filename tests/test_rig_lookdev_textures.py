@@ -276,6 +276,16 @@ class TextureTests(unittest.TestCase):
         report=t.validate_uvs([uv],[[0,1,2]]*20,max_pairs=3)['sets'][0]
         self.assertFalse(report['overlap_complete']);self.assertEqual(report['overlap_pairs_tested'],3)
 
+    def test_degenerate_uv_faces_do_not_overlap_positive_area_in_either_order(self):
+        valid = [[0,0],[1,0],[0,1]]
+        for degenerate in ([[.25,.25]]*3, [[.2,.2],[.3,.3],[.4,.4]]):
+            for faces, index in (([[0,1,2],[3,4,5]], 0), ([[3,4,5],[0,1,2]], 1)):
+                with self.subTest(degenerate=degenerate, faces=faces):
+                    report = t.validate_uvs([degenerate+valid], faces)['sets'][0]
+                    self.assertEqual(report['degenerate_triangles'], [index])
+                    self.assertEqual(report['overlap_pairs'], [])
+                    self.assertTrue(report['overlap_complete'])
+
     def test_projection_and_udim_actual_pixels(self):
         np.testing.assert_allclose(t.project_uvs([[1,2,3]],mode='planar'),[[1,2]])
         with self.assertRaises(RigError):t.project_uvs([[0,0,0]],mode='spherical')
