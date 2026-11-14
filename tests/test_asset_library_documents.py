@@ -315,14 +315,18 @@ class DocumentPublicationTests(unittest.TestCase):
     def test_no_optional_3d_imports(self):
         code = """
 import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
 from asset_library import AssetLibrary
 from asset_library_documents import DocumentPublisher
 import tempfile
 import threading
-from pathlib import Path
 with tempfile.TemporaryDirectory() as temp:
     lib=AssetLibrary(Path(temp)/'library',create=True)
     DocumentPublisher(lib).publish_document(b'{}','project','director-project',1,'1.0.0',[],True)
 assert not {'numpy','scipy','PIL','trimesh','bpy'} & sys.modules.keys()
 """
-        subprocess.run([sys.executable, '-c', code], check=True)
+        scripts = Path(__file__).resolve().parents[1] / 'scripts'
+        result = subprocess.run([sys.executable, '-c', code, str(scripts)],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
