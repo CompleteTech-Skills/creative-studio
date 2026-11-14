@@ -1,4 +1,4 @@
-name: Measured optional hdr advice
+name: Calibrated optional HDR transforms
 permissions:
   contents: read
 on:
