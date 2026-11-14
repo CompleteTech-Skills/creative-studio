@@ -129,6 +129,7 @@ class NativeReviewJournal:
     MAX_RECORDS = 4096
     MAX_ARTIFACT_BYTES = 1024**3
     MAX_INSPECTED_PIXELS = 128 * 1024**2
+    PROJECT_PHASES = frozenset(('planned', 'native_prepared', 'logical_prepared', 'complete', 'failed'))
 
     def __init__(self, root, project_reference, *, artifact_root=None):
         from rig_errors import RigError
@@ -236,14 +237,23 @@ class NativeReviewJournal:
         except OSError as exc:
             from rig_errors import RigError
             raise RigError('NATIVE_REVIEW_PATH', 'Review journal is missing or unsafe.') from exc
-        self._need(isinstance(value, dict) and set(value) ==
-                   {'schema_version', 'kind', 'project_id', 'fixture', 'reviews', 'validations', 'history'} and
+        base_keys = {'schema_version', 'kind', 'project_id', 'fixture', 'reviews', 'validations', 'history'}
+        extension_keys = {'native_project_schema_version', 'project_events'}
+        self._need(isinstance(value, dict) and base_keys <= set(value) and
+                   (set(value) == base_keys or set(value) == base_keys | extension_keys) and
                    value['schema_version'] == WORKFLOW_VERSION and value['kind'] == self.KIND and
                    value['project_id'] == self.project_id and value['fixture'] is self.fixture,
                    'IDENTITY', 'Existing workflow belongs to another project or review authority; preserve it.')
         self._need(all(isinstance(value[k], list) for k in ('reviews', 'validations', 'history')) and
                    len(value['reviews']) + len(value['validations']) <= self.MAX_RECORDS,
                    'LIMIT', 'Review history exceeds its record bound.')
+        if 'project_events' in value:
+            self._need(type(value['native_project_schema_version']) in (int, float) and
+                       value['native_project_schema_version'] == 1 and isinstance(value['project_events'], list),
+                       'VERSION', 'Unsupported native project event extension.')
+        project_events = value.get('project_events', [])
+        self._need(len(value['reviews']) + len(value['validations']) + len(project_events) <= self.MAX_RECORDS,
+                   'LIMIT', 'Combined workflow history exceeds its record bound.')
         _validate_review_chain(value['reviews'])
         prior = None
         for entry in value['validations']:
@@ -252,8 +262,20 @@ class NativeReviewJournal:
                        hash_object({k: v for k, v in entry.items() if k != 'sha256'}),
                        'HISTORY', 'Structural validation history changed; preserve the original evidence.')
             prior = entry['sha256']
+        prior = None
+        for entry in project_events:
+            self._need(isinstance(entry, dict) and entry.get('previous_sha256') == prior and
+                       isinstance(entry.get('event'), dict) and entry.get('sha256') ==
+                       hash_object({k: v for k, v in entry.items() if k != 'sha256'}),
+                       'HISTORY', 'Native project event history changed.')
+            self._project_event_value(entry['event'])
+            self._reference(entry.get('project_reference'))
+            self._not_mutable_journal(entry['project_reference'])
+            self._need(entry.get('expected_selected_sha256') == entry['project_reference']['sha256'],
+                       'HISTORY', 'Project event lost its exact selected input binding.')
+            prior = entry['sha256']
         identities = []
-        for entry in [*value['reviews'], *value['validations']]:
+        for entry in [*value['reviews'], *value['validations'], *project_events]:
             self._name(entry.get('transaction_id'))
             self._need(isinstance(entry.get('request_sha256'), str) and
                        re.fullmatch('[0-9a-f]{64}', entry['request_sha256']), 'HISTORY', 'Missing idempotency binding.')
@@ -262,6 +284,7 @@ class NativeReviewJournal:
         self._need(len(value['history']) == len(identities), 'HISTORY', 'Review event history is incomplete.')
         records = {e['transaction_id']: (e, 'native-review-recorded') for e in value['reviews']}
         records.update({e['transaction_id']: (e, 'native-validation-recorded') for e in value['validations']})
+        records.update({e['transaction_id']: (e, 'native-project-event-recorded') for e in project_events})
         observed = set()
         for event in value['history']:
             self._need(isinstance(event, dict) and set(event) == {'event', 'time', 'receipt_sha256', 'transaction_id'} and
@@ -380,7 +403,7 @@ class NativeReviewJournal:
         return value
 
     def _previous(self, state, transaction_id, request_hash):
-        for entry in [*state['reviews'], *state['validations']]:
+        for entry in [*state['reviews'], *state['validations'], *state.get('project_events', [])]:
             if entry['transaction_id'] == transaction_id:
                 self._need(entry['request_sha256'] == request_hash, 'IDEMPOTENCY', 'Transaction identity was used for different review content.')
                 return copy.deepcopy(entry)
@@ -392,7 +415,7 @@ class NativeReviewJournal:
                   'Admission must be a trusted in-process callback, never JSON data.')
 
     def _write(self, state, *, admit=None):
-        self._need(len(state['reviews']) + len(state['validations']) <= self.MAX_RECORDS,
+        self._need(len(state['reviews']) + len(state['validations']) + len(state.get('project_events', [])) <= self.MAX_RECORDS,
                    'LIMIT', 'Review history has reached its bounded record capacity.')
         self._bounded(state)
         self._check_context()
@@ -558,6 +581,107 @@ class NativeReviewJournal:
         state = self._load()
         return dict(records=copy.deepcopy(state['validations']), history_count=len(state['validations']),
                     current_execution_verified=False, production_art_acceptance=False)
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _diagnostic_validator():
+        from director_schema import definitions
+        from jsonschema import Draft202012Validator
+        return Draft202012Validator({'$defs': definitions(), '$ref': '#/$defs/diagnostic'})
+
+    def _project_event_value(self, event):
+        self._bounded(event)
+        self._need(isinstance(event, dict) and set(event) ==
+                   {'schema_version', 'phase', 'project_id', 'fixture', 'planned_refs', 'verified_refs', 'details', 'diagnostics'} and
+                   type(event['schema_version']) in (int, float) and event['schema_version'] == 1 and
+                   isinstance(event['phase'], str) and event['phase'] in self.PROJECT_PHASES and event['project_id'] == self.project_id and
+                   event['fixture'] is self.fixture, 'PROJECT_EVENT', 'Native project event must preserve its explicit phase and context.')
+        for key in ('planned_refs', 'verified_refs'):
+            self._need(isinstance(event[key], list) and len(event[key]) <= 256, 'PROJECT_EVENT',
+                       'Project event references must be bounded lists of existing immutable documents.')
+            for reference in event[key]:
+                self._reference(reference)
+        if event['phase'] in ('native_prepared', 'logical_prepared', 'complete'):
+            self._need(bool(event['verified_refs']), 'PROJECT_EVENT', 'Prepared events require actual verified candidate documents.')
+        allowed = {'native_project_id', 'native_before_revision', 'native_before_snapshot_sha256',
+                   'native_candidate_snapshot_sha256', 'patch_sha256', 'input_digest'}
+        details = event['details']
+        self._need(isinstance(details, dict) and set(details) <= allowed, 'PROJECT_EVENT',
+                   'Project event details cannot introduce another path, store or current pointer.')
+        for name, value in details.items():
+            if name == 'native_project_id':
+                self._name(value)
+            elif name == 'native_before_revision':
+                self._need(type(value) in (int, float) and 0 <= value <= 2_000_000_000 and value == int(value),
+                           'PROJECT_EVENT', 'Native revision must be a bounded integer.')
+            elif name == 'native_candidate_snapshot_sha256' and value is None:
+                self._need(event['phase'] in ('planned', 'failed'), 'PROJECT_EVENT',
+                           'A prepared candidate must identify its actual native snapshot.')
+            else:
+                self._need(isinstance(value, str) and re.fullmatch('[0-9a-f]{64}', value),
+                           'PROJECT_EVENT', 'Native project details require exact owner-provided digests.')
+        self._need(isinstance(event['diagnostics'], list) and len(event['diagnostics']) <= 128,
+                   'PROJECT_EVENT', 'Project event diagnostics must be a bounded canonical list.')
+        for diagnostic in event['diagnostics']:
+            self._need(next(self._diagnostic_validator().iter_errors(diagnostic), None) is None,
+                       'PROJECT_EVENT', 'Use the canonical Director diagnostic contract.')
+        list(self._references(event))
+        return event
+
+    def selected_project(self):
+        """Legacy constructor fallback only; event history never selects a HEAD.
+
+        The authoritative native HEAD selector is a separate owner integration.
+        Until installed, an event cannot activate another logical project.
+        """
+        self._load()
+        return copy.deepcopy(self.project_reference)
+
+    def append_project_event(self, event, transaction_id, *, expected_selected_sha256,
+                             select_reference=None, admit=None):
+        self._name(transaction_id)
+        self._admission(admit)
+        self._need(isinstance(expected_selected_sha256, str) and
+                   re.fullmatch('[0-9a-f]{64}', expected_selected_sha256), 'PROJECT_EVENT',
+                   'Bind the exact currently selected logical project digest.')
+        event = self._project_event_value(copy.deepcopy(event))
+        self._need(select_reference is None and event['phase'] != 'complete', 'PROJECT_SELECTOR',
+                   'Complete selection requires the authoritative native HEAD selector; audit events never activate it.')
+        request_hash = hash_object(dict(kind='project-event', event=event,
+            expected_selected_sha256=expected_selected_sha256, select_reference=select_reference))
+        with hatch.ownership(self.root):
+            state = self._load()
+            previous = self._previous(state, transaction_id, request_hash)
+            if previous is not None:
+                return previous
+            current = self.selected_project()
+            self._need(current['sha256'] == expected_selected_sha256, 'STALE',
+                       'Reload the current native-selected logical project before recording its event.')
+            self._verify_references(event)
+            if 'project_events' not in state:
+                state['native_project_schema_version'] = 1
+                state['project_events'] = []
+            record = dict(event=copy.deepcopy(event), recorded_at=time.time(), transaction_id=transaction_id,
+                          request_sha256=request_hash, project_reference=current,
+                          expected_selected_sha256=expected_selected_sha256, select_reference=None,
+                          production_art_acceptance=False,
+                          previous_sha256=state['project_events'][-1]['sha256'] if state['project_events'] else None)
+            record['sha256'] = hash_object(record)
+            state['project_events'].append(record)
+            _event(state, 'native-project-event-recorded', receipt_sha256=record['sha256'], transaction_id=transaction_id)
+            def final_admission():
+                self._need(self.selected_project() == current, 'STALE', 'Native-selected logical project changed during event validation.')
+                if admit is not None:
+                    admit()
+            self._write(state, admit=final_admission)
+            return copy.deepcopy(record)
+
+    def project_history(self):
+        """Historical audit events, never an alternate active project pointer."""
+        state = self._load()
+        records = copy.deepcopy(state.get('project_events', []))
+        return dict(records=records, history_count=len(records), current_execution_verified=False,
+                    production_art_acceptance=False)
 
     def history(self):
         return copy.deepcopy(self._load())
