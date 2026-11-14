@@ -76,7 +76,9 @@ def _inspect_geometry(path, *, limits=None):
         # Bound accessors and graph depth before the native model loader allocates
         # decoded meshes or recursively composes the transform hierarchy.
         document, independent = _check_gltf(path, limits)
-    model = load_character_model(path, limits=limits)
+    from rig_load_limits import LoadBudget
+    budget = LoadBudget(limits)
+    model = load_character_model(path, limits=limits, budget=budget)
     geometry = model.geometry
     validate_geometry(geometry, limits)
     if any(np.max(np.abs(mesh.positions)) > 1e9 for mesh in geometry.meshes):
@@ -155,6 +157,10 @@ def _inspect_geometry(path, *, limits=None):
         fail('ANIMATION', 'Skins have no validated native skeleton.')
     rig = RigAsset({'id': 'imported', 'skeleton': model.skeleton, 'limits': limits,
                     'controllers': {'ik': [], 'constraints': []}}, geometry, model.weights, model.clips)
+    budget.animation_report(key='inspection report',
+                            keys=sum(len(track['times']) for clip in model.clips.values()
+                                     for track in clip['tracks']),
+                            tracks=sum(len(clip['tracks']) for clip in model.clips.values()))
     for name, clip in sorted(model.clips.items()):
         measured = validate_animation(rig, clip)
         clips.append({'id': name, 'duration_seconds': clip['duration'],

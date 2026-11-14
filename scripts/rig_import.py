@@ -278,7 +278,7 @@ def _animations(document, ids, node_meshes, geometry, parents, scale):
     return clips
 
 
-def _gltf_model(path, *, scale=1., limits=None, source_reader=None) -> ImportedModel:
+def _gltf_model(path, *, scale=1., limits=None, source_reader=None, budget=None) -> ImportedModel:
     document = read_gltf(path, limits, source_reader=source_reader)
     # Capture external image bytes too, so admission measures the exact closure
     # consumed by this document without reopening mutable source paths.
@@ -287,7 +287,7 @@ def _gltf_model(path, *, scale=1., limits=None, source_reader=None) -> ImportedM
             require(isinstance(image['uri'], str), 'RIG_GLTF_URI', 'A glTF URI must be text.')
             if not image['uri'].startswith('data:'):
                 document.uri(image['uri'])
-    preflight_gltf(document, encoded_bytes=sum(document.encoded_sources.values()))
+    preflight_gltf(document, encoded_bytes=sum(document.encoded_sources.values()), budget=budget)
     require(np.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'Import scale must be finite and positive.')
     parents, world, order = scene_graph(document, import_scale=scale)
     skeleton, ids, normalized = _import_skeleton(document, parents, world, order, scale)
@@ -405,7 +405,7 @@ def _gltf_model(path, *, scale=1., limits=None, source_reader=None) -> ImportedM
     return ImportedModel(geometry, document.dependencies, skeleton, weights, clips, report)
 
 
-def load_character_model(path: str | Path, *, scale=1., limits=None, blender=None, source_reader=None) -> ImportedModel:
+def load_character_model(path: str | Path, *, scale=1., limits=None, blender=None, source_reader=None, budget=None) -> ImportedModel:
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'RIG_SOURCE', 'Choose a regular model file.')
     suffix = path.suffix.lower()
@@ -417,4 +417,9 @@ def load_character_model(path: str | Path, *, scale=1., limits=None, blender=Non
         from rig_blender import import_blend
         return import_blend(path, scale=scale, limits=limits, executable=blender)
     require(suffix in ('.gltf', '.glb'), 'RIG_FORMAT', 'Supported model inputs are GLB, glTF, OBJ and Blender.')
-    return _gltf_model(path, scale=scale, limits=limits, source_reader=source_reader)
+    if budget is None:
+        return _gltf_model(path, scale=scale, limits=limits, source_reader=source_reader)
+    child = budget.fork(limits or budget.limits)
+    model = _gltf_model(path, scale=scale, limits=limits, source_reader=source_reader, budget=child)
+    budget.commit(child)
+    return model

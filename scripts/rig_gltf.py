@@ -271,7 +271,7 @@ def scene_graph(document: GltfDocument, *, import_scale=1.) -> tuple[dict, dict,
     return parents, world, order
 
 
-def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -> dict:
+def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None, budget=None) -> dict:
     """Admit aggregate raw glTF work before accessor/mesh materialization.
 
     Reuses the canonical native load-budget policy and selected scene authority.
@@ -283,11 +283,14 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -
     """
     from rig_load_limits import LoadBudget, effective_limits, _JSON_FACTOR
     caps = effective_limits(document.limits, limits)
-    budget = LoadBudget(caps)
+    parent_budget = budget
+    budget = budget.fork(caps) if budget is not None else LoadBudget(caps)
     size = _count(encoded_bytes, 'encoded source closure', caps['dependency_bytes'])
     require(size > 0, 'RIG_GLTF_COUNT', 'Measured encoded source closure must be nonempty.')
-    budget.input_bytes = size
-    budget.json_bytes = size  # Conservative encoded-closure upper bound.
+    require(budget.input_bytes + size <= caps['dependency_bytes'], 'RIG_LIMIT_DEPENDENCIES',
+            'Aggregate encoded sources exceed the byte budget.')
+    budget.input_bytes += size
+    budget.json_bytes += size  # Conservative encoded-closure upper bound.
     budget.add(size * _JSON_FACTOR, 'captured glTF JSON/buffer metadata estimate')
     try:
         body = document.json
@@ -401,12 +404,15 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -
                     require(counts[output] * widths[output] == keys * width * (3 if interpolation == 'CUBICSPLINE' else 1),
                             'RIG_ANIMATION_VALUES', 'Animation output count does not match its target/time base.')
                     budget.animation(keys=keys, width=width, destinations=1, cubic=interpolation == 'CUBICSPLINE')
-        return dict(budget.report(), method='native-gltf-load-conservative-v1',
+        report = dict(budget.report(), method='native-gltf-load-conservative-v1',
                     scope='geometry and expanded animation loading; image decoding requires separate admission',
                     images_admitted=False,
                     encoded_bytes=size, vertices=vertices, triangles=triangles,
                     mesh_instances=instances, active_nodes=len(order), accessors=len(accessors),
                     limits=caps)
+        if parent_budget is not None:
+            parent_budget.commit(budget)
+        return report
     except RigError:
         raise
     except MemoryError as exc:

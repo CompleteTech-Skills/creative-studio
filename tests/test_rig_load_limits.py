@@ -10,6 +10,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import tracemalloc
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -27,12 +28,395 @@ from rig_load_limits import LoadBudget, effective_limits, image_dimensions
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class SharedLoadBudgetTests(unittest.TestCase):
+    def test_lifecycle_capture_parse_discovery_and_retained_copies(self):
+        parent = LoadBudget(DEFAULT_LIMITS)
+        discovery = parent.fork(DEFAULT_LIMITS)
+        discovery.captured_input(key='snapshot:entry', size=100, source=True)
+        discovery.parsed_json(key='discovery:manifest', size=100)
+        self.assertEqual(parent.input_bytes, 0)
+        live = parent.fork(DEFAULT_LIMITS)
+        self.assertTrue(live.captured_input(key='snapshot:entry', size=100, source=True))
+        self.assertFalse(live.captured_input(key='snapshot:entry', size=100, source=True))
+        self.assertTrue(live.parsed_json(key='load:manifest', size=100))
+        self.assertFalse(live.parsed_json(key='load:manifest', size=100))
+        parent.commit(live)
+        before = deepcopy(parent._state())
+        with self.assertRaises(RigError):
+            parent.captured_input(key='snapshot:entry', size=101, source=True)
+        self.assertEqual(parent._state(), before)
+        parent.captured_input(key='second-copy:entry', size=100, source=True)
+        self.assertEqual(parent.input_bytes, 200)
+        self.assertEqual(parent.json_bytes, 100)
+
+    def test_keyed_cubic_animation_boundary_and_rollback(self):
+        probe = LoadBudget(DEFAULT_LIMITS)
+        probe.animation(key='load:channel', keys=10, width=4, destinations=3, cubic=True)
+        cap = probe.memory
+        budget = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': cap, 'keyframes': 30})
+        budget.animation(key='load:channel', keys=10, width=4, destinations=3, cubic=True)
+        budget.animation(key='load:channel', keys=10, width=4, destinations=3, cubic=True)
+        self.assertEqual((budget.memory, budget.animation_keyframes, budget.animation_tracks), (cap, 30, 3))
+        before = deepcopy(budget._state())
+        with self.assertRaises(RigError):
+            budget.animation(key='load:channel', keys=10, width=4, destinations=3, cubic=False)
+        with self.assertRaises(RigError):
+            budget.animation(key='next:channel', keys=1, width=1, destinations=1)
+        self.assertEqual(budget._state(), before)
+        limited = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': cap - 1})
+        with patch('builtins.list', side_effect=AssertionError('expanded')) as expansion:
+            with self.assertRaises(RigError):
+                limited.animation(key='load:channel', keys=10, width=4, destinations=3, cubic=True)
+                list(range(10))
+            expansion.assert_not_called()
+
+    def test_commit_requires_fresh_owned_child_and_preserves_parent_on_failure(self):
+        parent = LoadBudget(dict(DEFAULT_LIMITS, memory_bytes=3_000_000))
+        stale = parent.fork(DEFAULT_LIMITS)
+        parent.reserve('parent', 1000, 'parent asset')
+        before = deepcopy(parent._state())
+        with self.assertRaises(RigError):
+            parent.commit(stale)
+        self.assertEqual(parent._state(), before)
+        unrelated = LoadBudget(DEFAULT_LIMITS).fork(DEFAULT_LIMITS)
+        unrelated.reserve('large', 4_000_000, 'asset')
+        with self.assertRaises(RigError):
+            parent.commit(unrelated)
+        self.assertEqual(parent._state(), before)
+
+        first = parent.fork(DEFAULT_LIMITS)
+        sibling = parent.fork(DEFAULT_LIMITS)
+        parent.commit(first)
+        for child in (first, sibling):
+            with self.assertRaises(RigError):
+                parent.commit(child)
+        self.assertEqual(parent._state(), before)
+
+    def test_commit_detaches_child_reservations_and_files(self):
+        parent = LoadBudget(DEFAULT_LIMITS)
+        child = parent.fork(DEFAULT_LIMITS)
+        child.reserve('before', 123, 'asset')
+        parent.commit(child)
+        memory = parent.memory
+        child.reserve('after', 1000, 'asset')
+        child._record_file_size(Path('child-only'), 17)
+        self.assertEqual(parent.memory, memory)
+        self.assertNotIn(Path('child-only'), parent.files)
+        self.assertTrue(parent.reserve('after', 1000, 'asset'))
+        self.assertGreater(parent.memory, memory)
+
+    def test_fork_checks_existing_aggregate_input_and_commit_checks_caps(self):
+        parent = LoadBudget(DEFAULT_LIMITS)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'input'
+            path.write_bytes(b'x' * 1000)
+            parent.file(path)
+            before = deepcopy(parent._state())
+            with self.assertRaises(RigError) as caught:
+                parent.fork({'dependency_bytes': 999})
+            self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_BINARY')
+            self.assertEqual(parent._state(), before)
+            child = parent.fork({'dependency_bytes': 1000})
+            child.input_bytes += 1
+            with self.assertRaises(RigError) as caught:
+                parent.commit(child)
+            self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_BINARY')
+            self.assertEqual(parent._state(), before)
+        child = parent.fork({'memory_bytes': 3_000_000})
+        child.memory = 3_000_001
+        with self.assertRaises(RigError) as caught:
+            parent.commit(child)
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+        self.assertEqual(parent._state(), before)
+
+    def test_nested_commit_preserves_outer_transaction(self):
+        parent = LoadBudget(DEFAULT_LIMITS)
+        child = parent.fork(DEFAULT_LIMITS)
+        grandchild = child.fork(DEFAULT_LIMITS)
+        grandchild.reserve('nested', 100, 'asset')
+        child.commit(grandchild)
+        parent.commit(child)
+        self.assertFalse(parent.reserve('nested', 100, 'asset'))
+
+    def test_reservation_identity_and_atomic_conflicts(self):
+        budget = LoadBudget(DEFAULT_LIMITS)
+        budget.image(key='image', encoded_bytes=16, pixels=1)
+        before = budget.report().copy()
+        budget.image(key='image', encoded_bytes=16, pixels=1)
+        self.assertEqual(before, budget.report())
+        with self.assertRaises(RigError):
+            budget.image(key='image', encoded_bytes=0, pixels=2)
+        self.assertEqual(before, budget.report())
+        budget.animation_report(key='report', keys=1, tracks=0)
+        before = budget.report().copy()
+        with self.assertRaises(RigError):
+            budget.animation_report(key='report', keys=0, tracks=1)
+        with self.assertRaises(RigError):
+            budget.reserve('report', 1024, 'animation exact-time report expansion')
+        self.assertEqual(before, budget.report())
+        budget.reserve('generic', 1, 'asset')
+        before = budget.report().copy()
+        with self.assertRaises(RigError):
+            budget.reserve('generic', True, 'asset')
+        self.assertEqual(before, budget.report())
+
+    def test_zero_reservations_are_bounded_and_charged_before_insertion(self):
+        from rig_load_limits import _RESERVATION_OVERHEAD, _RESERVATION_STRING_MAX
+        cap = 2 * 1024**2 + _RESERVATION_OVERHEAD
+        budget = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': cap})
+        key = '\U0010ffff' * _RESERVATION_STRING_MAX
+        self.assertTrue(budget.reserve(key, 0, ''))
+        self.assertFalse(budget.reserve(key, 0, ''))
+        before = budget.report().copy()
+        with self.assertRaises(RigError):
+            budget.reserve('another', 0, '')
+        with self.assertRaises(RigError):
+            budget.reserve(key + 'x', 0, '')
+        with self.assertRaises(RigError):
+            budget.reserve('asset', 0, 'x' * (_RESERVATION_STRING_MAX + 1))
+        self.assertEqual(before, budget.report())
+        self.assertEqual(len(budget._reservations), 1)
+        with patch('rig_load_limits._RESERVATION_COUNT_MAX', 1):
+            other = LoadBudget(DEFAULT_LIMITS)
+            other.reserve('one', 0, '')
+            before = other.report().copy()
+            with self.assertRaises(RigError):
+                other.reserve('two', 0, '')
+            self.assertEqual(before, other.report())
+
+    def test_float64_extreme_ratio_expansion_fits_report_estimate(self):
+        from asset_library_validation import _ratio
+        from rig_load_limits import _REPORT_KEY_BYTES
+        # The smallest subnormal produces a denominator of 2**1074; the
+        # largest finite float produces a 1024-bit numerator.
+        values = [float.fromhex('0x0.0000000000001p-1022'),
+                  float.fromhex('0x1.fffffffffffffp+1023')]
+        for value in values:
+            with self.subTest(value=value):
+                tracemalloc.start()
+                try:
+                    ratios = [_ratio(value) for _ in range(10000)]
+                    retained, peak = tracemalloc.get_traced_memory()
+                finally:
+                    tracemalloc.stop()
+                self.assertLess(peak, len(ratios) * _REPORT_KEY_BYTES)
+                self.assertLessEqual(retained, peak)
+                if value < 1:
+                    self.assertEqual(ratios[0]['denominator'], 2**1074)
+                else:
+                    self.assertEqual(ratios[0]['numerator'].bit_length(), 1024)
+
+    def test_real_fanout_preflight_plus_report_rejected_before_expansion(self):
+        from rig_gltf import GltfBuilder, read_gltf, preflight_gltf
+        builder = GltfBuilder()
+        position = builder.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'VEC3', target=34962, bounds=True)
+        delta = builder.accessor([[0, 0, .1]] * 3, 'VEC3', target=34962, bounds=True)
+        times = builder.accessor(np.linspace(0, 1, 1000), 'SCALAR', bounds=True)
+        values = builder.accessor([0] * 1000, 'SCALAR')
+        builder.json.update(nodes=[{'mesh': 0}], meshes=[{'primitives': [
+            {'attributes': {'POSITION': position}, 'targets': [{'POSITION': delta}]}
+            for _ in range(200)]}], scenes=[{'nodes': [0]}], animations=[{
+                'samplers': [{'input': times, 'output': values}],
+                'channels': [{'sampler': 0, 'target': {'node': 0, 'path': 'weights'}}]}])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'fanout.glb'
+            builder.write(path)
+            admission = preflight_gltf(read_gltf(path), encoded_bytes=path.stat().st_size)
+        self.assertEqual(admission['animation_keyframes'], 200_000)
+        self.assertEqual(admission['animation_tracks'], 200)
+        # Until preflight accepts the caller's budget, transfer its estimate once.
+        budget = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': admission['estimated_memory_bytes']})
+        budget.add(admission['estimated_memory_bytes'] - budget.memory, 'preflight transfer')
+        with patch('asset_library_validation._ratio') as expand:
+            with self.assertRaises(RigError):
+                budget.animation_report(key='inspection:clips', keys=200_000, tracks=200)
+                expand(0.)
+            expand.assert_not_called()
+
+    def test_report_rejects_before_real_exact_time_expansion(self):
+        from asset_library_validation import _ratio
+        budget = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': 29_387_328})
+        budget.animation(keys=1000, width=1, destinations=200)
+        budget.animation(keys=2, width=3, destinations=1)
+        expanded = []
+        with self.assertRaises(RigError) as caught:
+            budget.animation_report(key='inspection:clips', keys=200_002, tracks=201)
+            expanded.extend(_ratio(float(i)) for i in range(200_002))
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+        self.assertEqual(expanded, [])
+        self.assertEqual(budget.report_bytes, 0)
+
+    def test_cubic_and_large_report_exact_boundary_and_repeat(self):
+        limits = {**DEFAULT_LIMITS, 'memory_bytes': 2 * 1024**3}
+        probe = LoadBudget(limits)
+        probe.animation(keys=1000, width=4, destinations=20, cubic=True)
+        probe.animation_report(key='report', keys=20_000, tracks=20)
+        cap = probe.memory
+        budget = LoadBudget({**limits, 'memory_bytes': cap})
+        budget.animation(keys=1000, width=4, destinations=20, cubic=True)
+        budget.animation_report(key='report', keys=20_000, tracks=20)
+        budget.animation_report(key='report', keys=20_000, tracks=20)
+        self.assertEqual(budget.memory, cap)
+        with self.assertRaises(RigError):
+            budget.animation_report(key='report', keys=19_999, tracks=20)
+        self.assertEqual(budget.memory, cap)
+
+    def test_image_and_report_share_retained_capacity(self):
+        probe = LoadBudget(DEFAULT_LIMITS)
+        probe.animation(keys=10, width=3, destinations=1)
+        probe.image(key='image:0', encoded_bytes=100, pixels=1000)
+        probe.animation_report(key='report', keys=10, tracks=1)
+        budget = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': probe.memory - 1})
+        budget.animation(keys=10, width=3, destinations=1)
+        budget.image(key='image:0', encoded_bytes=100, pixels=1000)
+        budget.image(key='image:0', encoded_bytes=100, pixels=1000)
+        with self.assertRaises(RigError):
+            budget.animation_report(key='report', keys=10, tracks=1)
+        self.assertEqual(budget.texture_rgba_bytes, 4000)
+
+
 class NativeLoadLimitTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / 'robot'
         shutil.copytree(ROOT / 'examples/rig-3d/robotic', self.root)
+
+    def test_native_animation_shared_counts_and_exact_boundary(self):
+        baseline = load_rig(self.root)
+        keys = sum(len(t['times']) for clip in baseline.clips.values() for t in clip['tracks'])
+        tracks = sum(len(clip['tracks']) for clip in baseline.clips.values())
+        self.assertEqual((keys, tracks), (127, 6))
+        budget = LoadBudget({**DEFAULT_LIMITS, 'keyframes': keys * 2})
+        first = load_rig(self.root, budget=budget)
+        self.assertEqual((budget.animation_keyframes, budget.animation_tracks), (keys, tracks))
+        self.assertEqual(first.resource_usage, budget.report())
+        second = load_rig(self.root, budget=budget)
+        self.assertEqual((budget.animation_keyframes, budget.animation_tracks), (keys * 2, tracks * 2))
+        self.assertEqual(second.resource_usage, budget.report())
+        before = deepcopy(budget.__dict__)
+        with patch('rig_models._materialize_array', side_effect=AssertionError('materialized')) as arrays:
+            with self.assertRaises(RigError) as caught:
+                load_rig(self.root, budget=budget)
+            self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_KEYFRAMES')
+            arrays.assert_not_called()
+        self.assertEqual(budget.__dict__, before)
+        with self.assertRaises(RigError):
+            budget.fork({'keyframes': keys * 2 - 1})
+
+    def test_prior_animation_reservation_and_phase_parity(self):
+        for skip_preflight in (False, True):
+            with self.subTest(skip_preflight=skip_preflight):
+                budget = LoadBudget({**DEFAULT_LIMITS, 'keyframes': 127})
+                budget.animation(keys=1, width=1, destinations=1)
+                before = deepcopy(budget.__dict__)
+                context = patch('rig_models._preflight_load', return_value=None) if skip_preflight else nullcontext()
+                with context:
+                    with self.assertRaises(RigError) as caught:
+                        load_rig(self.root, budget=budget)
+                self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_KEYFRAMES')
+                self.assertEqual(budget.__dict__, before)
+
+                exact = LoadBudget({**DEFAULT_LIMITS, 'keyframes': 128})
+                exact.animation(keys=1, width=1, destinations=1)
+                with (patch('rig_models._preflight_load', return_value=None) if skip_preflight else nullcontext()):
+                    load_rig(self.root, budget=exact)
+                self.assertEqual((exact.animation_keyframes, exact.animation_tracks), (128, 7))
+
+    def test_native_counts_roll_back_after_live_clip_admission(self):
+        budget = LoadBudget(DEFAULT_LIMITS)
+        budget.animation(keys=2, width=1, destinations=1)
+        before = deepcopy(budget.__dict__)
+        original = LoadBudget.native_animation
+        def fail_after_admission(ledger, **kwargs):
+            original(ledger, **kwargs)
+            raise RuntimeError('after clip admission')
+        with patch('rig_models._preflight_load', return_value=None), patch.object(
+                LoadBudget, 'native_animation', fail_after_admission):
+            with self.assertRaisesRegex(RuntimeError, 'after clip admission'):
+                load_rig(self.root, budget=budget)
+        self.assertEqual(budget.__dict__, before)
+
+    def test_shared_native_budget_transaction_and_boundary(self):
+        second = Path(self.temp.name) / 'second'
+        shutil.copytree(self.root, second)
+        probe = LoadBudget(DEFAULT_LIMITS)
+        probe.reserve('caller:prior', 1234, 'prior allocation')
+        initial = probe.memory
+        load_rig(self.root, budget=probe)
+        first = probe.memory
+        load_rig(second, budget=probe)
+        boundary = probe.memory
+        self.assertEqual(boundary - first, first - initial)
+
+        budget = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': boundary})
+        budget.reserve('caller:prior', 1234, 'prior allocation')
+        load_rig(self.root, budget=budget)
+        load_rig(second, budget=budget)
+        self.assertEqual(budget.memory, boundary)
+        self.assertFalse(budget.reserve('caller:prior', 1234, 'prior allocation'))
+
+        limited = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': boundary - 1})
+        limited.reserve('caller:prior', 1234, 'prior allocation')
+        load_rig(self.root, budget=limited)
+        before = deepcopy(limited.__dict__)
+        with patch('rig_models._materialize_array', side_effect=AssertionError('materialized')) as materialize:
+            with self.assertRaises(RigError):
+                load_rig(second, budget=limited)
+            materialize.assert_not_called()
+        self.assertEqual(limited.__dict__, before)
+
+    def test_shared_budget_with_captured_manifest_pin_and_substitution(self):
+        path = self.root / 'rig.json'
+        payload = path.read_bytes()
+        pin = sha256(path)
+        probe = LoadBudget(DEFAULT_LIMITS)
+        probe.reserve('prior', 1234, 'prior')
+        control = load_rig(self.root, budget=probe, manifest_bytes=payload,
+                           expected_manifest_sha256=pin, max_total_morph_targets=10000)
+        boundary = probe.memory
+        normal = LoadBudget(DEFAULT_LIMITS)
+        normal.reserve('prior', 1234, 'prior')
+        load_rig(self.root, budget=normal, expected_manifest_sha256=pin)
+        self.assertEqual(normal.report(), probe.report())
+        path.write_bytes(b'{}')
+        budget = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': boundary})
+        budget.reserve('prior', 1234, 'prior')
+        loaded = load_rig(self.root, budget=budget, manifest_bytes=payload,
+                          expected_manifest_sha256=pin, max_total_morph_targets=10000)
+        self.assertEqual(loaded.manifest, control.manifest)
+        self.assertEqual(budget.memory, boundary)
+        for supplied, expected, code in ((payload, '0' * 64, 'RIG_HASH'),
+                                          (bytearray(payload), pin, 'RIG_JSON')):
+            before = deepcopy(budget.__dict__)
+            with self.assertRaises(RigError) as caught:
+                load_rig(self.root, budget=budget, manifest_bytes=supplied,
+                         expected_manifest_sha256=expected)
+            self.assertEqual(caught.exception.report['code'], code)
+            self.assertEqual(budget.__dict__, before)
+        limited = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': boundary - 1})
+        limited.reserve('prior', 1234, 'prior')
+        before = deepcopy(limited.__dict__)
+        with patch('rig_models._materialize_array', side_effect=AssertionError('materialized')) as arrays:
+            with self.assertRaises(RigError) as caught:
+                load_rig(self.root, budget=limited, manifest_bytes=payload, expected_manifest_sha256=pin)
+            self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+            arrays.assert_not_called()
+        self.assertEqual(limited.__dict__, before)
+
+    def test_shared_budget_failed_live_load_and_invalid_limits_are_atomic(self):
+        budget = LoadBudget(DEFAULT_LIMITS)
+        budget.reserve('prior', 4, 'prior')
+        before = deepcopy(budget.__dict__)
+        with patch('rig_models._materialize_array', side_effect=RuntimeError('failure')):
+            with self.assertRaises(RigError):
+                load_rig(self.root, budget=budget)
+        self.assertEqual(budget.__dict__, before)
+        budget.limits = {**DEFAULT_LIMITS, 'memory_bytes': True}
+        before = deepcopy(budget.__dict__)
+        with self.assertRaises(RigError):
+            load_rig(self.root, budget=budget)
+        self.assertEqual(budget.__dict__, before)
 
     def hashes(self):
         return {str(path.relative_to(self.root)): sha256(path) for path in self.root.rglob('*') if path.is_file()}
