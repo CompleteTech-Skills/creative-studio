@@ -1,6 +1,7 @@
 # Native rig loading with caller resource limits
 
-`rig_models.load_rig(root, verify_source=True, *, limits=None)` accepts a partial
+`rig_models.load_rig(root, verify_source=True, *, limits=None,
+expected_manifest_sha256=None)` accepts a partial
 runtime limits dictionary. For example:
 
 ```python
@@ -14,6 +15,13 @@ caller value. Values must be finite, positive, bounded integers; integral floats
 are accepted on a runtime copy. Unknown keys and booleans are rejected. The returned
 `rig.manifest`, source bytes, content hashes and `rig_signature` are unchanged.
 Increasing a caller limit never increases the manifest limit.
+
+Callers holding an immutable rig reference can pass `expected_manifest_sha256`.
+The shared bounded JSON reader verifies the exact captured `rig.json` bytes
+against that pin before parsing or loading native arrays. Whitespace differences
+also fail with `RIG_HASH`; object equivalence does not establish byte identity.
+Omitting the pin preserves the existing load behavior. A caller must pass its pin
+on every native reload where a bound reference remains authoritative.
 
 Before the first NumPy array allocation, admission inspects the complete native
 geometry/skin bundles and all retained JSON inputs. It measures actual NPY

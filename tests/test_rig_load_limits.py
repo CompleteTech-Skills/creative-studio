@@ -376,6 +376,48 @@ for method in ('json', 'hash', 'bundle'):
                                 text=True, timeout=5)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_matching_raw_manifest_pin_preserves_sources_and_caller_limits(self):
+        before = self.hashes()
+        pin = sha256(self.root / 'rig.json')
+        rig = load_rig(self.root, expected_manifest_sha256=pin,
+                       limits={'memory_bytes': 35 * 1024**2})
+        self.assertEqual(rig.geometry.vertex_count, 706)
+        self.assertEqual(before, self.hashes())
+        with self.assertRaises(RigError) as caught:
+            load_rig(self.root, expected_manifest_sha256=pin, limits={'duration': 1})
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_ANIMATION')
+
+    def test_raw_manifest_pin_rejects_whitespace_change_before_json_decode(self):
+        path = self.root / 'rig.json'
+        original = path.read_bytes()
+        pin = sha256(path)
+        path.write_bytes(b' ' + original)
+        # Semantically identical JSON remains a different immutable byte record.
+        self.assertEqual(json.loads(path.read_bytes()), json.loads(original))
+        with patch('rig_load_limits.decode_json', side_effect=AssertionError('unpinned JSON decoded')) as decoder:
+            with patch('rig_models._materialize_array', side_effect=AssertionError('unpinned array loaded')) as arrays:
+                with self.assertRaises(RigError) as caught:
+                    load_rig(self.root, expected_manifest_sha256=pin)
+                self.assertEqual(caught.exception.report['code'], 'RIG_HASH')
+                decoder.assert_not_called()
+                arrays.assert_not_called()
+        self.assertEqual(path.read_bytes(), b' ' + original)
+
+    def test_manifest_pin_rejects_valid_alternate_geometry_manifest(self):
+        path = self.root / 'rig.json'
+        pin = sha256(path)
+        rig = load_rig(self.root, expected_manifest_sha256=pin)
+        original_x = rig.geometry.meshes[0].positions[:, 0].copy()
+        rig.geometry.meshes[0].positions[:, 0] *= 2
+        rig.manifest['geometry'] = save_geometry(self.root, rig.geometry, rig.manifest['limits'])
+        path.write_text(json.dumps(rig.manifest))
+        alternate = load_rig(self.root)
+        np.testing.assert_allclose(alternate.geometry.meshes[0].positions[:, 0], original_x * 2)
+        with patch('rig_load_limits.decode_json', side_effect=AssertionError('alternate manifest decoded')):
+            with self.assertRaises(RigError) as caught:
+                load_rig(self.root, expected_manifest_sha256=pin)
+            self.assertEqual(caught.exception.report['code'], 'RIG_HASH')
+
     def test_runtime_bundle_snapshot_hash_is_checked_before_arrays(self):
         path = Path(self.temp.name) / 'valid.npz'
         path.write_bytes(_binary_bundle({}, {'safe': np.zeros(3)}))

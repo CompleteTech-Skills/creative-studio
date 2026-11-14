@@ -473,17 +473,20 @@ def _preflight_load(root, manifest, limits, verify_source):
     return budget.report()
 
 
-def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | None = None) -> RigAsset:
+def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | None = None,
+             expected_manifest_sha256: str | None = None) -> RigAsset:
     """Load using restrictive caller caps without modifying source/review identity.
 
     Aggregate admission precedes every NumPy allocation. Limits cover native input
     loading, not an OS memory sandbox or subsequent evaluation/render operations.
+    An optional manifest pin checks the exact captured JSON bytes before decoding.
     """
     from rig_load_limits import LoadBudget, effective_limits
     root = normalize_root(root)
     preliminary = effective_limits(DEFAULT_LIMITS, limits)
     manifest_budget = LoadBudget(preliminary)
-    manifest = validate_contract(manifest_budget.json(safe_path(root, 'rig.json', exists=True)), 'Rig')
+    manifest = validate_contract(manifest_budget.json(safe_path(root, 'rig.json', exists=True),
+                                 expected_hash=expected_manifest_sha256), 'Rig')
     limits = effective_limits(manifest['limits'], limits)
     _preflight_load(root, manifest, limits, verify_source)
     budget = LoadBudget(limits)
