@@ -152,3 +152,23 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
                     self.assertNotEqual(focused['tag'],'BODY')
                     self.assertEqual(self.repository.snapshot()['revision'],revision)
                 finally:page.unroute('**/api/commands',delayed_ack)
+
+    def test_bare_page_pending_command_reports_retry_without_losing_or_duplicating_edit(self):
+        page=self.page;requests=[]
+        page.locator('[data-id="mesh"]').focus();page.keyboard.press('Enter')
+        def hold_command(route):
+            requests.append(route.request)
+            body=page.locator('body');body.evaluate("node => node.setAttribute('tabindex','-1')");body.focus()
+            self.assertTrue(page.evaluate('() => document.activeElement === document.body'))
+            page.keyboard.press('ArrowRight')
+            self.assertIn('retry this edit',page.locator('#status').inner_text())
+            self.assertTrue(page.get_by_label('translation X',exact=True).is_disabled())
+            route.continue_()
+        page.route('**/api/commands',hold_command)
+        try:
+            field=page.get_by_label('translation X',exact=True);field.fill('3');field.press('Tab')
+            page.wait_for_function('() => window.hatchEditor.snapshot.revision === 1 && document.querySelector("#status").textContent.includes("Saved revision")')
+            self.assertEqual(len(requests),1)
+            snapshot=self.repository.snapshot();self.assertEqual(snapshot['revision'],1)
+            self.assertEqual(next(node for node in snapshot['scene']['nodes'] if node['id']=='mesh')['transform']['translation'],[3,0,0])
+        finally:page.unroute('**/api/commands',hold_command)

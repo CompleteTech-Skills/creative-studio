@@ -20,7 +20,8 @@ HTML. Focus outlines remain visible against selected object rows.
 
 Scene shortcuts leave native text inputs, selects, rich-text editing, Alt
 combinations and unrelated Ctrl/Cmd browser commands alone. Object movement arrows
-apply only while the viewport has focus. Outliner arrows navigate without writing
+apply when the viewport or bare page has focus. Outliner and ordinary control
+arrows retain their own navigation behavior. Outliner arrows navigate without writing
 a transform. Ctrl/Cmd+Shift+Z recognizes the actual uppercase keyboard event.
 Commands save automatically after backend acknowledgement; this increment does
 not introduce a fake manual Save shortcut or any unsupported editing capability.
