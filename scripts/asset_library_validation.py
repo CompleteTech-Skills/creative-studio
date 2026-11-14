@@ -372,23 +372,15 @@ def validate_asset(library, reference, *, limits=None, requirements=None):
     supported = {'mesh', 'skin', 'animation', 'morph', 'material', 'texture', 'scene', 'prefab'}
     if set(wanted) - supported:
         fail('REQUIREMENTS', 'Unknown technical capability.')
-    manifest = library.resolve(reference)
+    from rig_load_limits import LoadBudget
+    budget = LoadBudget(limits)
+    manifest, payloads = library.capture_for_validation(reference, budget=budget)
     if len(manifest['files']) > MAX_CLOSURE:
         fail('LIMIT', 'Version file closure exceeds validation budget.')
     expected_total = sum(record['bytes'] for record in manifest['files'])
+    total = sum(len(payloads[record['path']]) for record in manifest['files'])
     if expected_total > min(limits['dependency_bytes'], limits['memory_bytes'] // 4):
         fail('LIMIT', 'Registered closure exceeds the bounded validation snapshot working set.')
-    from rig_load_limits import LoadBudget
-    budget = LoadBudget(limits)
-    payloads = {}
-    total = 0
-    for record in manifest['files']:
-        budget.captured_input(key=uuid.uuid4().hex, size=record['bytes'])
-        payload = library.read_file(reference, record['path'])
-        total += len(payload)
-        if total > limits['dependency_bytes']:
-            fail('LIMIT', 'Version bytes exceed the validation budget.')
-        payloads[record['path']] = payload
     results = {}
     with tempfile.TemporaryDirectory(prefix='hatch-asset-validation-') as directory:
         root = Path(directory)

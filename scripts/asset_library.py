@@ -391,6 +391,87 @@ class AssetLibrary:
                 pending.extend(manifest['metadata']['style_refs'])
             return first
 
+    def capture_for_validation(self, reference, *, budget):
+        """Capture and authenticate a closure under one transactional load ledger.
+
+        SQLite lengths are checked before fetching blobs; canonical records and
+        blobs are independently checked against the exact captured bytes.
+        """
+        import uuid
+        child = budget.fork(budget.limits)
+        def key():
+            return uuid.uuid4().hex
+        validate(reference, 'AssetRef')
+        with self._connect() as db:
+            self._begin_writer(db)
+            visited, pending, captured = set(), [reference], {}
+            first = None
+            while pending:
+                current = pending.pop()
+                identity = (current['id'], current['version'], current['sha256'])
+                if identity in visited:
+                    continue
+                visited.add(identity)
+                if len(visited) > MAX_VERSIONS:
+                    _fail('LIMIT', 'Dependency closure exceeds limit.')
+                row = db.execute('SELECT sha256,length(manifest) FROM versions WHERE id=? AND version=?',
+                                 identity[:2]).fetchone()
+                if not row:
+                    _fail('MISSING', 'The exact asset version is absent.')
+                size = row[1]
+                if type(size) is not int or not 0 < size <= MAX_MANIFEST_BYTES:
+                    _fail('LIMIT', 'Manifest exceeds its byte limit.')
+                child.captured_input(key=key(), size=size)
+                child.parsed_json(key=key(), size=size)
+                encoded = db.execute('SELECT manifest FROM versions WHERE id=? AND version=?', identity[:2]).fetchone()[0]
+                if type(encoded) is not bytes or len(encoded) != size:
+                    _fail('CORRUPT', 'Manifest changed during capture.')
+                manifest = load_manifest(encoded)
+                if row[0] != identity[2] or manifest['manifest_sha256'] != identity[2]:
+                    _fail('HASH', 'Exact version hash does not match the stored manifest.')
+                if (manifest['identity']['id'], manifest['version']) != identity[:2]:
+                    _fail('IDENTITY', 'Stored identity/version is inconsistent.')
+                if self.storage:
+                    # Reserve serialization and canonical record verification before either allocation.
+                    child.add((size + 128) * 16, 'canonical registry record verification')
+                    if canonical_bytes(manifest) != encoded:
+                        _fail('DURABILITY', 'Indexed manifest bytes are not canonical.')
+                    record = canonical_bytes(dict(schema_version=1, kind='version', value=manifest))
+                    path = self.storage.root / 'commits' / (hashlib.sha256(record).hexdigest() + '.json')
+                    try:
+                        canonical = self.storage._read(path, len(record))
+                    except (OSError, RigError) as exc:
+                        raise RigError('LIBRARY_DURABILITY', 'Canonical version record is absent or invalid.') from exc
+                    if canonical != record:
+                        _fail('DURABILITY', 'Canonical version record differs from captured manifest.')
+                if first is None:
+                    first = manifest
+                for f in manifest['files']:
+                    digest, length = f['sha256'], int(f['bytes'])
+                    if digest in captured:
+                        if len(captured[digest]) != length:
+                            _fail('CORRUPT', 'Conflicting inventoried content sizes.', f['path'])
+                        continue
+                    size_row = db.execute('SELECT length(payload) FROM blobs WHERE sha256=?', (digest,)).fetchone()
+                    if not size_row or size_row[0] != length:
+                        _fail('CORRUPT', 'Required inventoried content is absent or corrupt.', f['path'])
+                    child.captured_input(key=key(), size=length)
+                    payload = db.execute('SELECT payload FROM blobs WHERE sha256=?', (digest,)).fetchone()[0]
+                    if len(payload) != length or hashlib.sha256(payload).hexdigest() != digest:
+                        _fail('CORRUPT', 'Required inventoried content is absent or corrupt.', f['path'])
+                    if self.storage:
+                        child.add(length, 'canonical blob verification copy')
+                        canonical = self.storage._read(self.storage.root / 'blobs' / digest, length)
+                        if canonical != payload:
+                            _fail('CORRUPT', 'Canonical immutable payload differs from its verified index.', f['path'])
+                    captured[digest] = payload
+                pending.extend(x['target'] for x in manifest['dependencies'])
+                pending.extend(manifest['provenance']['parents'])
+                pending.extend(manifest['metadata']['style_refs'])
+            payloads = {f['path']: captured[f['sha256']] for f in first['files']}
+        budget.commit(child)
+        return first, payloads
+
     def inspect(self, reference, *, verify_payloads=True):
         """Read this exact version without traversing its dependency graph."""
         if type(verify_payloads) is not bool:

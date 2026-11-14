@@ -74,6 +74,53 @@ class AssetTechnicalTests(unittest.TestCase):
         files['prefab.json'] = (path, 'runtime')
         return rig, self.register(files, 'prefab')
 
+    def test_registry_capture_budget_rollback_and_retry(self):
+        from rig_load_limits import LoadBudget
+        from rig_contracts import DEFAULT_LIMITS
+        ref = self.register({'runtime/asset.glb': (self.geometry(), 'runtime')})
+        limits = dict(DEFAULT_LIMITS)
+        budget = LoadBudget(limits)
+        before = budget.report()
+        tight = dict(limits, memory_bytes=budget.memory + 1)
+        constrained = budget.fork(tight)
+        with self.assertRaises(RigError):
+            self.library.capture_for_validation(ref, budget=constrained)
+        self.assertEqual(budget.report(), before)
+        self.assertEqual(constrained.report(), before)
+        manifest, payloads = self.library.capture_for_validation(ref, budget=budget)
+        self.assertEqual(manifest['manifest_sha256'], ref['sha256'])
+        self.assertEqual(hashlib.sha256(payloads['runtime/asset.glb']).hexdigest(), manifest['files'][0]['sha256'])
+        self.assertGreater(budget.memory, before['estimated_memory_bytes'])
+        used = budget.memory
+        budget.limits = dict(limits, memory_bytes=used + 1)
+        with self.assertRaises(RigError):
+            self.library.capture_for_validation(ref, budget=budget)
+        self.assertEqual(budget.memory, used)
+
+    def test_registry_capture_rejects_tampered_index_and_canonical_record(self):
+        from rig_load_limits import LoadBudget
+        from rig_contracts import DEFAULT_LIMITS
+        ref = self.register({'runtime/asset.glb': (self.geometry(), 'runtime')})
+        budget = LoadBudget(dict(DEFAULT_LIMITS))
+        before = budget.report()
+        with self.library._connect() as db:
+            original = db.execute('SELECT manifest FROM versions').fetchone()[0]
+            db.execute('UPDATE versions SET manifest=?', (b'{"invalid":true}',))
+        with self.assertRaises(RigError):
+            self.library.capture_for_validation(ref, budget=budget)
+        self.assertEqual(budget.report(), before)
+        with self.library._connect() as db:
+            db.execute('UPDATE versions SET manifest=?', (original,))
+        commits = list((self.library.storage.root / 'commits').iterdir())
+        self.assertEqual(len(commits), 1)
+        saved = commits[0].read_bytes()
+        commits[0].write_bytes(saved[:-1] + b' ')
+        with self.assertRaises(RigError):
+            self.library.capture_for_validation(ref, budget=budget)
+        self.assertEqual(budget.report(), before)
+        commits[0].write_bytes(saved)
+        self.library.capture_for_validation(ref, budget=budget)
+
     def test_registered_native_rig_validates_unused_controllers_without_mutation(self):
         from rig_ik import validate_controllers
         rig, ref = self.registered_native_rig()
