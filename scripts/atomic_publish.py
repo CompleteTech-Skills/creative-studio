@@ -100,14 +100,31 @@ def private_stage_fd_supported():
             and bool(getattr(shutil.rmtree, 'avoids_symlink_attacks', False)))
 
 
+@contextmanager
+def _owned_fd(descriptor, label):
+    """Close once, keeping an exception from this scope primary."""
+    error = None
+    try:
+        yield descriptor
+    except BaseException as exc:
+        error = exc
+        raise
+    finally:
+        try:
+            os.close(descriptor)
+        except BaseException as close_error:
+            if error is None:
+                raise
+            if hasattr(error, 'add_note'):
+                error.add_note(label + ' close also failed: ' + str(close_error))
+
+
 def _clear_private_directory_fd(descriptor):
     # Open a fresh directory stream: dup() alone shares its directory offset.
     stream = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                      dir_fd=descriptor)
-    try:
+    with _owned_fd(stream, 'Pinned staging directory stream'):
         names = os.listdir(stream)
-    finally:
-        os.close(stream)
     for child in names:
         try:
             mode = os.stat(child, dir_fd=descriptor, follow_symlinks=False).st_mode
@@ -261,14 +278,26 @@ def _pinned_directory_common(path):
     if any(part == '..' for part in path.parts):
         raise ValueError('pinned directory path must not contain parent traversal')
     descriptor = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    error = None
     try:
         for part in path.parts[1:]:
             child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = child
+            previous, descriptor = descriptor, child
+            # Transfer ownership before closing: even if close reports failure,
+            # the new descriptor is closed and the old one is never retried.
+            os.close(previous)
         yield descriptor
+    except BaseException as exc:
+        error = exc
+        raise
     finally:
-        os.close(descriptor)
+        try:
+            os.close(descriptor)
+        except BaseException as close_error:
+            if error is None:
+                raise
+            if hasattr(error, 'add_note'):
+                error.add_note('Pinned directory close also failed: ' + str(close_error))
 
 
 @contextmanager
@@ -481,7 +510,7 @@ def publish_verified_file(source_fd, destination, *, expected_sha256, expected_s
                     with private_stage_fd(parent, prefix='.file-') as stage:
                         payload = os.open('payload', os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                                           0o600, dir_fd=stage)
-                        try:
+                        with _owned_fd(payload, 'Verified payload'):
                             _copy_verified_file(source, payload, expected_sha256, expected_size)
                             held = os.fstat(payload)
                             named = os.stat('payload', dir_fd=stage, follow_symlinks=False)
@@ -489,8 +518,6 @@ def publish_verified_file(source_fd, destination, *, expected_sha256, expected_s
                                 raise OSError(errno.ESTALE, 'verified publication payload name changed')
                             rename_no_replace_at(stage, 'payload', parent, destination.name)
                             published = True
-                        finally:
-                            os.close(payload)
         except BaseException as exc:
             source_error = exc
             raise
