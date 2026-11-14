@@ -1459,7 +1459,7 @@ const shortcuts = [
   ["G / R / S", "Choose move, rotate or scale tool"],
   ["F", "Frame the selected objects"],
   ["Escape", "Cancel a transform drag and clear selection"],
-  ["Viewport arrows", "Move selected editable objects by 0.1 meter; Shift moves by 1 meter"],
+  ["Viewport/page arrows", "Move selected editable objects by 0.1 meter; Shift moves by 1 meter"],
   ["Outliner Up / Down / Home / End", "Focus previous, next, first or last object"],
   ["Outliner Left / Right", "Focus parent or first child"],
   ["Outliner Enter / Space", "Select the focused object; native visibility and locks still apply"],
@@ -1526,7 +1526,7 @@ window.addEventListener("keydown", (e) => {
     ];
     gizmo.setMode($("tool").value);
   } else if (
-    e.target.closest("#viewport") && !previewActive && transformSelectionAllowed() &&
+    (e.target === document.body || e.target.closest("#viewport")) && !previewActive && transformSelectionAllowed() &&
     ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
   ) {
     e.preventDefault();
