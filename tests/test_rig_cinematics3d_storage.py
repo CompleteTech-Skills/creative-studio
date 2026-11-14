@@ -131,6 +131,10 @@ class RetainedFileIntegrity(unittest.TestCase):
                     if replacement=='leaf-link':target.symlink_to(outside/'effect.json')
                     else:os.mkfifo(target)
                 with self.assertRaises(Render3DError):verify_retained_files(root,refs,max_total_bytes=1024)
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)/'owned';root.mkdir();_,refs=self.fixture(root)
+            alias=root.parent/'alias';alias.symlink_to(root,target_is_directory=True)
+            with self.assertRaises(Render3DError):verify_retained_files(alias,refs,max_total_bytes=1024,strict=True)
 
 
 @unittest.skipUnless(__import__('os').environ.get('HATCH_RENDER3D_REAL_TESTS')=='1',

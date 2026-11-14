@@ -422,6 +422,7 @@ class BlenderBackend:
                 retained_artifacts={
                     'worker-report.json':dict(sha256=hashlib.sha256(report_payload).hexdigest(),bytes=len(report_payload)),
                     'blender.log':dict(sha256=hashlib.sha256(log).hexdigest(),bytes=len(log))}
+                del report_payload
                 retained_cinematics={name:dict(sha256=hashlib.sha256(payload).hexdigest(),bytes=len(payload))
                     for name,payload in cinematic_payloads.items()}
                 require(report['version']==backend['application_version'],'verification-failed','Worker version changed after admission.')

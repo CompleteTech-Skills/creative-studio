@@ -267,7 +267,7 @@ def verify_retained_files(root, references, *, max_total_bytes, strict=False):
     """
     from rig_errors import portable_name
     import os
-    require(isinstance(references,dict) and len(references)<=4096,
+    require(isinstance(references,dict) and 0<len(references)<=4096,
             'corrupt-output','Invalid retained artifact inventory.')
     require(type(max_total_bytes) in (int,float) and 0<=max_total_bytes<=2**40
             and max_total_bytes%1==0,'storage-exhaustion','Invalid retained artifact byte budget.')
@@ -287,7 +287,18 @@ def verify_retained_files(root, references, *, max_total_bytes, strict=False):
             expected_total+=size
             require(expected_total<=max_total_bytes,'storage-exhaustion','Retained artifacts exceed their byte budget.')
             directories.update(parent.as_posix() for parent in Path(name).parents if parent.as_posix()!='.')
-        root=normalize_root(root)
+        root=Path(root)
+        verified={}
+        for name,reference in references.items():
+            digest=hashlib.sha256();size=0;limit=int(reference['bytes'])
+            with open_payload(root,name) as (stream,_):
+                while chunk:=stream.read(min(1024*1024,limit-size+1)):
+                    size+=len(chunk)
+                    require(size<=limit,'corrupt-output','Retained artifact exceeds its declared size.',path=name)
+                    digest.update(chunk)
+            actual=dict(bytes=size,sha256=digest.hexdigest())
+            require(actual==reference,'corrupt-output','Retained artifact differs from its declared bytes.',path=name)
+            verified[name]=actual
         if strict:
             pending=[root];actual=set();actual_directories=set()
             while pending:
@@ -305,17 +316,6 @@ def verify_retained_files(root, references, *, max_total_bytes, strict=False):
                             actual.add(relative)
             require(actual==set(references) and actual_directories==directories,
                     'corrupt-output','Retained artifact inventory differs from declared files.')
-        verified={}
-        for name,reference in references.items():
-            digest=hashlib.sha256();size=0;limit=int(reference['bytes'])
-            with open_payload(root,name) as (stream,_):
-                while chunk:=stream.read(min(1024*1024,limit-size+1)):
-                    size+=len(chunk)
-                    require(size<=limit,'corrupt-output','Retained artifact exceeds its declared size.',path=name)
-                    digest.update(chunk)
-            actual=dict(bytes=size,sha256=digest.hexdigest())
-            require(actual==reference,'corrupt-output','Retained artifact differs from its declared bytes.',path=name)
-            verified[name]=actual
         return verified
     except Render3DError:
         raise
