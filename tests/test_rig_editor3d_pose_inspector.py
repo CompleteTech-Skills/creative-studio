@@ -326,12 +326,15 @@ class PoseInspectorTests(unittest.TestCase):
                 page.wait_for_function('(ids) => ids.every(id=>window.hatchEditor.objects.get(id).visible)',arg=posed)
                 if timeline.get_by_role('button',name='Pause',exact=True).count():
                     timeline.get_by_role('button',name='Pause',exact=True).click()
-                page.reload()
+                page.evaluate('window.__oldPoseRuntime = true')
+                page.goto('about:blank');page.goto(server.url)
                 try:page.wait_for_function('() => window.editorReady === true')
                 except Exception:
                     print('POSE_REOPEN_DIAGNOSTIC',json.dumps(dict(page_errors=page_errors,failed_requests=failed_requests,
                         state=page.evaluate('()=>({ready:window.editorReady,status:document.querySelector("#status")?.textContent,errors:window.hatchEditor?.errors})'))),flush=True)
                     raise
+                self.assertFalse(page.evaluate('() => window.__oldPoseRuntime === true'))
+                self.assertEqual(page.evaluate('() => window.hatchEditor.snapshot.sha256'),saved['sha256'])
                 for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
                 page.locator('#show-all').click()
                 for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))

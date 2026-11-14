@@ -22,12 +22,16 @@ def _nodes(snapshot):
 
 
 def _scope(nodes,target):
-    selected={target};changed=True
-    while changed:
-        changed=False
-        for node in nodes.values():
-            if node['parent'] in selected and node['id'] not in selected:
-                selected.add(node['id']);changed=True
+    children={identifier:[] for identifier in nodes}
+    for node in nodes.values():
+        if node['parent'] is not None:
+            if node['parent'] not in children:_fail('Native pose hierarchy has a missing parent.')
+            children[node['parent']].append(node['id'])
+    selected=set();pending=[target]
+    while pending:
+        identifier=pending.pop()
+        if identifier in selected:continue
+        selected.add(identifier);pending.extend(children[identifier])
     return selected
 
 
@@ -41,9 +45,9 @@ def _native_clip_conflict(snapshot,nodes,owner,rig_reference):
     affected={identifier for identifier in _scope(nodes,owner)
         if nodes[identifier].get('asset') and
         snapshot['documents'][nodes[identifier]['asset']['path']].get('skeleton')==rig_reference}
-    count=0
+    count=work=0
     def inspect(values,stack=()):
-        nonlocal count
+        nonlocal count,work
         for binding in values:
             count+=1
             if count>8192 or len(stack)>=128:_fail('Native pose clip-admission budget exceeded.')
@@ -51,6 +55,8 @@ def _native_clip_conflict(snapshot,nodes,owner,rig_reference):
             if reference['kind']=='hatch-3d-animation':
                 target=binding['target']
                 if target not in nodes:_fail('Native clip target is absent from the active scene.')
+                work+=len(nodes)+len(affected)
+                if work>1000000:_fail('Native pose clip-admission work budget exceeded.')
                 for identifier in affected & _scope(nodes,target):
                     asset=snapshot['documents'][nodes[identifier]['asset']['path']]
                     if reference in asset['animations']:
