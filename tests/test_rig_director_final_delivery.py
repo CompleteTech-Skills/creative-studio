@@ -5,9 +5,12 @@ These fixtures test admission. They do not claim a 720-frame production render.
 from copy import deepcopy
 import hashlib
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 
 from director_final_delivery import (validate_final_requests, assemble_final_frames,
                                     validate_production_selection,
@@ -41,7 +44,9 @@ class FinalPlanTests(unittest.TestCase):
             ready_for_final_render=True, frames=720, fps=dict(numerator=24, denominator=1),
             resolution=[1280, 720], production_shots=[dict(id=value['shot']['id'],
                 start=value['frame_range']['start'], end=value['frame_range']['end'],
-                scene=deepcopy(value['scene']), shot=deepcopy(value['shot'])) for value in requests],
+                scene=deepcopy(value['scene']), shot=deepcopy(value['shot']),
+                source_start=deepcopy(value['source_start']),
+                playback_rate=deepcopy(value['playback_rate'])) for value in requests],
             fixture=True)
 
     def test_exact_five_shot_720_frame_intent_is_not_execution_approval(self):
@@ -115,6 +120,21 @@ class FinalPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError, 'ordered production shots'):
             validate_production_selection(requests, report)
 
+    def test_accepted_source_clock_cannot_be_retimed_or_omitted(self):
+        requests = final_requests()
+        requests[2]['playback_rate'] = dict(numerator=1, denominator=2)
+        report = self.narrative_report(requests)
+        self.assertEqual(validate_production_selection(requests, report)['frame_count'], 720)
+        for field in ('source_start', 'playback_rate'):
+            changed = deepcopy(requests)
+            changed[2][field] = dict(numerator=1, denominator=3)
+            with self.subTest(field=field), self.assertRaises(RigError):
+                validate_production_selection(changed, report)
+            incomplete = deepcopy(report)
+            del incomplete['production_shots'][2][field]
+            with self.subTest(missing=field), self.assertRaises(RigError):
+                validate_production_selection(requests, incomplete)
+
     def test_partial_or_stale_narrative_selection_and_changed_framing_are_rejected(self):
         requests = final_requests()
         for mutate in (lambda value: value.update(ready_for_final_render=False),
@@ -133,6 +153,46 @@ class FinalPlanTests(unittest.TestCase):
 
 
 class FinalEvidenceTests(unittest.TestCase):
+    def test_first_profile_receipt_is_checkpointed_before_second_export_failure(self):
+        import json
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ('jobs', 'snapshot', 'masters'):
+                (root/name).mkdir()
+            destinations = {'h264-mp4': root/'movie.mp4', 'vp9-webm': root/'movie.webm'}
+            binding = {'directory': 'masters', 'snapshot_directory': 'snapshot'}
+            captured = []
+            def checkpoint(profile, receipt, request):
+                raw = json.dumps(receipt).encode()
+                name = 'receipt-'+profile+'.json'
+                (root/name).write_bytes(raw)
+                reference = dict(path=name, sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw))
+                captured.append((profile, reference))
+                return reference
+            def encode(request, *args, **kwargs):
+                if request['profile'] == 'vp9-webm':
+                    self.assertEqual(captured[0][0], 'h264-mp4')
+                    self.assertEqual(_read_json(root, captured[0][1]['path'],
+                        expected=captured[0][1])[0], {'receipt': 'first-profile'})
+                    raise ValueError('second-profile failure')
+                return {'receipt': 'first-profile'}
+            verification = dict(frame_count=720, fps=dict(numerator=24, denominator=1),
+                video_stream_count=1, audio_stream_count=0, other_stream_count=0,
+                duration=dict(numerator=30, denominator=1),
+                timebase_tolerance=dict(numerator=1, denominator=1000))
+            with patch('director_final_delivery.assemble_final_frames', return_value={'source': {}}), \
+                 patch('director_final_delivery._live_native_guard'), \
+                 patch('director_final_delivery._recheck_delivery_sources'), \
+                 patch('silent_video.make_request', side_effect=lambda source, profile: {'profile': profile, 'limits': {}}), \
+                 patch('silent_video.validate_request'), \
+                 patch('silent_video.encode', side_effect=encode), \
+                 patch('silent_video.validate_receipt', return_value=verification):
+                with self.assertRaisesRegex(ValueError, 'second-profile failure'):
+                    encode_final_media(SimpleNamespace(root=root/'jobs'), root, [binding],
+                        destinations, checkpoint=checkpoint)
+            self.assertEqual(len(captured), 1)
+
     def test_invalid_media_configuration_fails_before_reading_720_frames(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -148,6 +208,32 @@ class FinalEvidenceTests(unittest.TestCase):
                 for destinations in invalid:
                     with self.subTest(destinations=destinations), self.assertRaises(RigError):
                         encode_final_media(None, root, [], destinations)
+
+    def test_checked_parent_replacement_cannot_redirect_receipt_read(self):
+        import rig_errors
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)/'root'; root.mkdir()
+            parent = root/'safe'; parent.mkdir()
+            outside = Path(temporary)/'outside'; outside.mkdir()
+            (parent/'receipt.json').write_bytes(b'{"original":true}')
+            external = outside/'receipt.json'
+            external.write_bytes(b'{"external":true}')
+            original = rig_errors.safe_path
+            replaced = False
+            def swap_after_check(*args, **kwargs):
+                nonlocal replaced
+                result = original(*args, **kwargs)
+                if not replaced:
+                    replaced = True
+                    parent.rename(root/'detached')
+                    parent.symlink_to(outside, target_is_directory=True)
+                return result
+            with patch('rig_errors.safe_path', side_effect=swap_after_check), \
+                 patch('director_final_delivery.safe_path', side_effect=swap_after_check):
+                with self.assertRaises(RigError):
+                    _read_json(root, 'safe/receipt.json')
+            self.assertTrue(replaced)
+            self.assertEqual(external.read_bytes(), b'{"external":true}')
 
     def test_media_metadata_validation_preserves_publisher_path_spelling(self):
         paths = {'h264-mp4': Path.cwd()/'media'/'movie.mp4',

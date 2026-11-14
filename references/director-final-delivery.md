@@ -17,7 +17,7 @@ proof-camera shots; they are excluded from the production frame count.
 
 Call `preflight_final_render(snapshot_root, requests, narrative=...)` before
 submitting the requests through `ExecutionService`. This delegates narrative
-verification, compares exact production shot identities and ranges, preserves
+verification, compares exact production shot identities and ranges, requires the exact approved source_start and playback_rate for every shot, preserves
 the accepted framing aspect, and verifies each native shot's endpoint frame
 specifications. Capability, budget, resource and worker admission remain with
 the scheduler and native job owner. No render is started by preflight.
@@ -65,7 +65,13 @@ pinned `path`, `sha256` and `bytes`, read from `receipt_root` (or `root`). Every
 retained receipt and actual movie is reverified before reuse. Neither a filename
 nor a mutable producer-side verified flag authorizes reuse. The scheduler owns
 persistence, cancellation, checkpoints and publication of the returned result.
-The adapter creates no extra controller, encoder, claims or approval authority.
+The required trusted `checkpoint(profile, receipt, request)` callback persists
+an immutable receipt before the next profile can begin and returns its exact
+file reference. The adapter reads those bytes back from `receipt_root` and
+requires exact receipt equality. Thus a later WebM failure leaves the controller
+with the pinned MP4 receipt needed for safe reuse. The returned result includes
+these `receipt_references`. The adapter creates no extra controller, encoder,
+claims or approval authority.
 
 The exported result carries `visual_review: not-performed`. Native narrative
 readiness, decoded image integrity, video verification, actual visual review,

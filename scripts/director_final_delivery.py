@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 import re
 import unicodedata
 
-from rig_errors import RigError, decode_json, object_hash, require, safe_path, portable_name
+from rig_errors import RigError, decode_json, object_hash, require, safe_path, portable_name, open_payload
 
 FRAME_COUNT = 720
 FRAME_RATE = Fraction(24)
@@ -104,6 +104,8 @@ def validate_production_selection(requests, report):
         for request, shot in zip(requests, selected):
             _need(isinstance(shot, dict) and shot['start'] == request['frame_range']['start'] and
                   shot['end'] == request['frame_range']['end'] and
+                  shot['source_start'] == request['source_start'] and
+                  shot['playback_rate'] == request['playback_rate'] and
                   {key: shot['scene'][key] for key in ('id', 'version')} == request['scene'] and
                   {key: shot['shot'][key] for key in ('id', 'version')} == request['shot'],
                   'A render request differs from the explicit accepted production shot or timing.')
@@ -152,7 +154,6 @@ def preflight_final_render(snapshot_root, requests, *, narrative):
 
 def _read_json(root, relative, *, expected=None):
     """Read one bounded no-follow native JSON file and preserve its exact hash."""
-    from render3d_contracts import open_regular
     maximum = 32*1024**2
     if expected is not None:
         _need(isinstance(expected, dict) and set(expected) == {'path', 'sha256', 'bytes'} and
@@ -161,8 +162,8 @@ def _read_json(root, relative, *, expected=None):
               _HASH.fullmatch(expected['sha256']) is not None,
               'An exact bounded native evidence reference is required.')
         maximum = expected['bytes']
-    path = safe_path(root, relative, exists=True)
-    with open_regular(path, maximum) as stream:
+    with open_payload(root, relative) as (stream, information):
+        _need(information.st_size <= maximum, 'Native delivery document exceeds its byte bound.')
         raw = stream.read(maximum+1)
     _need(len(raw) <= maximum, 'Native delivery document exceeds its byte bound.')
     reference = dict(path=relative, sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw))
@@ -445,7 +446,7 @@ def _media_paths(destinations):
 
 def encode_final_media(store, root, bindings, destinations, *, narrative=None, retained_receipts=None,
                        receipt_root=None,
-                       ffmpeg=None, ffprobe=None, timeout_seconds=3600, cancel=None):
+                       ffmpeg=None, ffprobe=None, timeout_seconds=3600, cancel=None, checkpoint=None):
     """Encode and independently decode MP4 and WebM; preserve verified masters.
 
     Existing output requires a trusted externally pinned receipt file reference
@@ -456,6 +457,7 @@ def encode_final_media(store, root, bindings, destinations, *, narrative=None, r
     """
     from silent_video import make_request, encode, validate_request, validate_receipt
     paths = _media_paths(destinations)
+    _need(callable(checkpoint), 'A trusted controller receipt checkpoint is required before encoding.')
     _need(type(timeout_seconds) is int and 1 <= timeout_seconds <= 3600,
           'Use a bounded encoding timeout between one and 3600 seconds.')
     _need(retained_receipts is None or isinstance(retained_receipts, dict)
@@ -468,7 +470,7 @@ def encode_final_media(store, root, bindings, destinations, *, narrative=None, r
     _need(all(not path.resolve().is_relative_to(directory)
               for path in paths.values() for directory in protected),
           'Media publication must not write inside native jobs, snapshots or master directories.')
-    receipts, requests, reused = {}, {}, []
+    receipts, requests, receipt_references, reused = {}, {}, {}, []
     def guarded_cancel():
         cancelled = bool(cancel is not None and cancel())
         _live_native_guard(store, bindings)
@@ -500,8 +502,18 @@ def encode_final_media(store, root, bindings, destinations, *, narrative=None, r
               Fraction(**verification['timebase_tolerance']), 'Published media duration differs from 30 seconds.')
         _need(not guarded_cancel(), 'Final native state changed or delivery was canceled.')
         _recheck_delivery_sources(store, root, bindings, admission, narrative)
+        # The controller persists the exact receipt before another format can
+        # fail. Read back its pinned bytes; a boolean acknowledgment cannot
+        # establish a recoverable checkpoint. This creates no extra store.
+        reference = checkpoint(profile, deepcopy(receipt), deepcopy(request))
+        _need(isinstance(reference, dict) and isinstance(reference.get('path'), str),
+              'The controller checkpoint must return an immutable receipt file reference.')
+        retained, _ = _read_json(root if receipt_root is None else receipt_root,
+                                 reference['path'], expected=reference)
+        _need(retained == receipt, 'The checkpoint differs from the verified media receipt.')
         receipts[profile], requests[profile] = receipt, request
+        receipt_references[profile] = reference
     return dict(schema_version=1, kind='director-final-media', render_admission=admission,
-                requests=requests, receipts=receipts, reused_profiles=reused,
+                requests=requests, receipts=receipts, receipt_references=receipt_references, reused_profiles=reused,
                 frame_count=FRAME_COUNT, audio_stream_count=0,
                 visual_review='not-performed', semantic_scene_approval=False)
