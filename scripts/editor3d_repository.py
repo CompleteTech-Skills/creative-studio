@@ -339,6 +339,9 @@ class EditorRepository:
             _rename_no_replace(stage, safe_path(self.root, f'revisions/{revision:08d}'))
             _sync_directory(safe_path(self.root, 'revisions'))
             pending['status'] = 'published'; _write_metadata(journal, pending)
+            installed_record = self._record(revision)
+            _require(installed_record == record, 'HASH', 'Installed revision differs from its verified transaction.')
+            self._bundle(installed_record)
             _write_metadata(safe_path(self.root, 'HEAD.json'), next_head)
             journal.unlink()
         except Exception:

@@ -57,6 +57,54 @@ class EditorRepositoryTests(unittest.TestCase):
             self.assertEqual(caught.exception.report['code'],'EDITOR3D_STALE')
         self.assertEqual(self.repo.snapshot()['revision'],1)
 
+    def test_invalid_installed_native_data_does_not_advance_head(self):
+        import editor3d_repository as module
+        before = self.repo.snapshot()
+        head_bytes = (self.repo.root/'HEAD.json').read_bytes()
+        real_write = module._write_metadata
+        observed = []
+        def write(path, value):
+            result = real_write(path, value)
+            if path.parent.name == 'journal' and value.get('status') == 'published':
+                observed.append(value['revision'])
+                native = self.repo.root/f"revisions/{value['revision']:08d}/native/triangle.obj"
+                native.write_bytes(b'not the verified native resource')
+            return result
+        with patch.object(module, '_write_metadata', side_effect=write):
+            with self.assertRaises(RigError) as caught:
+                self.repo.apply(0, self.move(8), 'invalid-installed-native')
+        self.assertEqual(observed, [1])
+        self.assertEqual(caught.exception.report['code'], 'EDITOR3D_HASH')
+        self.assertEqual((self.repo.root/'HEAD.json').read_bytes(), head_bytes)
+        self.assertEqual(EditorRepository(self.repo.root).snapshot(), before)
+        journals = list((self.repo.root/'journal').glob('*.json'))
+        self.assertEqual(len(journals), 1)
+        self.assertEqual(json.loads(journals[0].read_bytes())['status'], 'published')
+
+    def test_installed_record_must_match_the_verified_transaction(self):
+        import editor3d_repository as module
+        before = self.repo.snapshot()
+        head_bytes = (self.repo.root/'HEAD.json').read_bytes()
+        real_write = module._write_metadata
+        observed = []
+        def write(path, value):
+            result = real_write(path, value)
+            if path.parent.name == 'journal' and value.get('status') == 'published':
+                observed.append(value['revision'])
+                record_path = self.repo.root/f"revisions/{value['revision']:08d}/record.json"
+                record = json.loads(record_path.read_bytes())
+                record['transaction_id'] = 'different-valid-transaction'
+                real_write(record_path, record)
+            return result
+        with patch.object(module, '_write_metadata', side_effect=write):
+            with self.assertRaises(RigError) as caught:
+                self.repo.apply(0, self.move(8), 'installed-record-binding')
+        self.assertEqual(observed, [1])
+        self.assertEqual(caught.exception.report['code'], 'EDITOR3D_HASH')
+        self.assertEqual((self.repo.root/'HEAD.json').read_bytes(), head_bytes)
+        self.assertEqual(EditorRepository(self.repo.root).snapshot(), before)
+        self.assertEqual(len(list((self.repo.root/'journal').glob('*.json'))), 1)
+
     def test_idempotent_delivery_does_not_duplicate_undo_history(self):
         first=self.repo.apply(0,self.move(),'same');self.repo.apply(1,self.move(4),'second')
         self.assertEqual(self.repo.apply(0,self.move(),'same'),first)
