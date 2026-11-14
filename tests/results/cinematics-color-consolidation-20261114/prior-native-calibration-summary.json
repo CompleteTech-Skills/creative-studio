@@ -1,0 +1,53 @@
+{
+  "kind": "cinematics-native-color-calibration",
+  "schema_version": 1,
+  "origin": "procedural-engineering-geometry",
+  "native_render_executed": true,
+  "native_source_alpha_or_baked_state_proven": true,
+  "alpha_mode": "premultiplied",
+  "exr_view_applied": false,
+  "exr_exposure_applied": false,
+  "native_linear_max": 16.0,
+  "linear_chart_error": 2.9802322387695312e-08,
+  "measured_cast_shadow_pixels": 130,
+  "half_chart_error": 5.370378494262695e-05,
+  "unbaked_exposure_error": 2.9802322387695312e-08,
+  "fractional_coverage_pixels": 147,
+  "premult_error": 0.0,
+  "straight_hypothesis_error": 0.9375,
+  "png_processor_errors": {
+    "3": 1.507237623599167e-08,
+    "4": 2.2033754820682816e-08,
+    "5": 2.4431219491916067e-08
+  },
+  "config_closure_sha256": "0e8d297bb1c1f730e46559c9fc530a911c919e0af04b4a61ed59bbe7f7b9f86b",
+  "source_primaries": {
+    "r": [
+      0.6400000018497359,
+      0.32999999734100455
+    ],
+    "g": [
+      0.2999999993749085,
+      0.599999998749817
+    ],
+    "b": [
+      0.1500000009290648,
+      0.060000001610378974
+    ],
+    "w": [
+      0.31272699588703984,
+      0.3290230050739138
+    ]
+  },
+  "visual_approval": "not-performed",
+  "full_246_acceptance": false,
+  "blender_version": "4.5.3 LTS",
+  "numpy_version": "2.3.5",
+  "ocio_version": "2.5.2",
+  "source_head": "c390d684",
+  "quality_base": "891eb9c6",
+  "artifact_directory": "/home/complete/.cache/hatch-coordination-20261112/color-evidence/native-calibration-c390-r2",
+  "report_sha256": "b86bdc1bf66625b78db03fe534a70d9ba593f528c0cb6c4c5d3fccf3569693d7",
+  "artifact_inventory_sha256": "a137b51feaf4bbc440571f9a1bfd24348a6f7e82c85d125e733d37af5d1f1122",
+  "relationship": "Different frozen quality/backend source. This is not execution or approval of the consolidated color candidate. Original artifacts remain retained separately."
+}

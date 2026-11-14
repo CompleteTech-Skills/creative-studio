@@ -1,0 +1,3 @@
+-r requirements-color.txt
+jsonschema==4.25.1
+Pillow==13.0.0
