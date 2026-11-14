@@ -1,0 +1,56 @@
+[
+  {
+    "case": "copy",
+    "code": 0,
+    "error": "",
+    "pixels": [
+      [
+        18,
+        36,
+        80
+      ],
+      [
+        18,
+        36,
+        80
+      ]
+    ],
+    "equal": true
+  },
+  {
+    "case": "converted",
+    "code": 0,
+    "error": "",
+    "pixels": [
+      [
+        18,
+        36,
+        80
+      ],
+      [
+        237,
+        0,
+        255
+      ]
+    ],
+    "equal": false
+  },
+  {
+    "case": "cpu0",
+    "code": 0,
+    "error": "",
+    "pixels": [
+      [
+        18,
+        36,
+        80
+      ],
+      [
+        17,
+        35,
+        79
+      ]
+    ],
+    "equal": false
+  }
+]

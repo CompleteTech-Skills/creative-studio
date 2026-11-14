@@ -13,6 +13,13 @@ import atomic_publish as atomic
 
 
 class DescriptorStageTests(unittest.TestCase):
+    def test_supported_desktop_posix_requires_actual_stage_execution(self):
+        if sys.platform.startswith('linux') or sys.platform == 'darwin':
+            self.assertTrue(atomic.private_stage_fd_supported(),
+                            'Linux/macOS gates must execute actual FD stages, not unsupported branches')
+        elif os.name == 'nt':
+            self.assertFalse(atomic.private_stage_fd_supported())
+
     def unsupported(self):
         if atomic.private_stage_fd_supported():
             return False

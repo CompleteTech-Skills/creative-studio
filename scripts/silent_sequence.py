@@ -9,11 +9,13 @@ import copy
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import stat
 import shutil
 import re
+import time
 import unicodedata
 
 from atomic_publish import (_rename_no_replace, pinned_directory, private_stage,
@@ -235,8 +237,9 @@ def build_source(root,paths,*,fps,output,identity,source_start=0):
     return source
 
 
-def native_source(request,result,render_root,*,snapshot_root,expected_backend):
+def native_source(request,result,render_root,*,snapshot_root,expected_backend,deadline=None):
     """Validate complete native source using canonical snapshot/result owners."""
+    deadline=_deadline(deadline);_check_deadline(deadline)
     if not isinstance(request,dict) or not isinstance(request.get('settings'),dict):
         raise ValueError('native render settings required')
     settings=request['settings'];output=settings.get('output');resolution=settings.get('resolution')
@@ -269,7 +272,9 @@ def native_source(request,result,render_root,*,snapshot_root,expected_backend):
         from render3d_verify import verify_result
     except ImportError as exc:
         raise ValueError('canonical Render3D verifier is unavailable') from exc
+    _check_deadline(deadline)
     proof=verify_result(request,result,render_root,snapshot_root=snapshot_root,expected_backend=expected_backend)
+    _check_deadline(deadline)
     return source,{'request':copy.deepcopy(request),'result':copy.deepcopy(result),
                    'expected_backend':copy.deepcopy(expected_backend),'verification':proof}
 
@@ -332,12 +337,13 @@ def _inventory(root,source,*,staging=False):
         raise ValueError('missing or unexpected sequence frames')
 
 
-def verify_sequence(root,*,expected_receipt_sha256=None):
+def verify_sequence(root,*,expected_receipt_sha256=None,deadline=None):
     """Decode every exported image and verify portable inventory/identity.
 
     Owner evidence is retained as attributed source evidence; this offline
     verifier does not assert access to an absent original native snapshot.
     """
+    deadline=_deadline(deadline);_check_deadline(deadline)
     root=Path(root)
     with pinned_directory(root) as descriptor, _capability(descriptor) as authority:
         pinned=authority.path
@@ -373,22 +379,48 @@ def verify_sequence(root,*,expected_receipt_sha256=None):
         if not isinstance(report['decoded'],list) or len(report['decoded'])!=len(source['frames']):
             raise ValueError('sequence decoded metadata inventory mismatch')
         for f,prior in zip(source['frames'],report['decoded']):
+            _check_deadline(deadline)
             current=_verify_frame(pinned,f,source)
+            _check_deadline(deadline)
             # Decoder version may change independently of preserved pixel data.
             if any(current.get(k)!=v for k,v in prior.items() if k not in ('decoder','decoder_version')):
                 raise ValueError('sequence decoded metadata changed')
             if set(prior)!=set(current):raise ValueError('sequence decoded metadata fields differ')
+        _check_deadline(deadline)
         return report
 
 
-def _publish_cache(stage,source,report,parent_fd,destination):
+def _deadline(value):
+    if value is None:return None
+    if type(value) not in (int,float):raise ValueError('sequence deadline must be a finite monotonic timestamp')
+    try:value=float(value)
+    except (ValueError,OverflowError) as exc:
+        raise ValueError('sequence deadline must be a finite monotonic timestamp') from exc
+    if not math.isfinite(value):raise ValueError('sequence deadline must be a finite monotonic timestamp')
+    return value
+
+
+def _check_deadline(deadline):
+    if deadline is not None and time.monotonic()>=deadline:
+        raise ValueError('sequence deadline exceeded')
+
+
+def _check_cancel(cancel,deadline):
+    _check_deadline(deadline)
+    if cancel is not None and cancel():
+        raise ValueError('sequence export cancelled; verified staging retained')
+    _check_deadline(deadline)
+
+
+def _publish_cache(stage,source,report,parent_fd,destination,*,cancel=None,deadline=None):
     """Publish an inner payload from an independently pinned private parent.
 
-    The public persistent cache basename is never a rename source. No caller
-    callbacks run while this private publication payload is created/verified.
+    The public persistent cache basename is never a rename source. Cancellation
+    callbacks run only before the final independent verification of every byte.
     Both outer cache and destination ancestors may therefore be renamed without
     substituting unverified data for the payload relative to this private fd.
     """
+    _check_deadline(deadline)
     parent=Path('/proc/self/fd')/str(parent_fd)
     required=sum(f['bytes'] for f in source['frames'])+2*MAX_JSON_BYTES
     if shutil.disk_usage(parent).free<required:
@@ -404,23 +436,33 @@ def _publish_cache(stage,source,report,parent_fd,destination):
                 _write(payload,'plan.json',_read(stage,'plan.json',MAX_JSON_BYTES))
                 _write(payload,'sequence.json',_read(stage,'sequence.json',MAX_JSON_BYTES))
                 for frame in source['frames']:
+                    _check_cancel(cancel,deadline)
                     data=_read(stage,frame['path'],MAX_FRAME_BYTES)
+                    _check_deadline(deadline)
                     if len(data)!=frame['bytes'] or _hash(data)!=frame['sha256']:
                         raise ValueError('verified cache changed before private publication')
                     _write(payload,frame['path'],data)
+                    _check_deadline(deadline)
+                _check_cancel(cancel,deadline)
+                # No user callbacks beyond this fence. They could otherwise
+                # mutate earlier verified frames or metadata before commit.
+                for frame in source['frames']:
+                    _check_deadline(deadline)
                     _verify_frame(payload,frame,source)
+                    _check_deadline(deadline)
                 _inventory(payload,source)
                 if (_read_json(payload,'sequence.json')!=report or
                         _read_json(payload,'plan.json')!={'source':source,'provenance':report['provenance']}):
                     raise ValueError('sequence publication metadata changed')
                 os.fsync(payload_fd)
+                _check_deadline(deadline)
                 _rename_no_replace('payload',destination.name,source_dir_fd=wrapper_fd,destination_dir_fd=parent_fd)
                 os.fsync(parent_fd)
         finally:os.close(payload_fd)
 
 
 def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=None,
-                    destination_dir_fd=None,_native_token=None):
+                    destination_dir_fd=None,progress=None,deadline=None,_native_token=None):
     """Export exact bytes; interrupted staging is reusable on explicit retry.
 
     Destination is immutable and exclusive. Staging is a sibling directory
@@ -428,9 +470,14 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
     Damaged or foreign staging is rejected, never overwritten. Nested trusted
     transactions may supply destination_dir_fd and one portable destination
     basename; the canonical media context duplicates the FD for this operation.
+    An optional progress observer receives one event after each cached or copied
+    frame has been verified, under the cache lock and before final verification.
     """
     if not publication_supported():raise ValueError('secure sequence publication is unavailable on this platform')
     _capability_factory()  # Fail before touching an output/staging directory.
+    deadline=_deadline(deadline);_check_deadline(deadline)
+    if progress is not None and not callable(progress):
+        raise ValueError('sequence progress observer must be callable')
     source=_check_source(copy.deepcopy(source));_json_bytes(provenance)
     if source['origin']=='blender3d' and _native_token is not _NATIVE_TOKEN:
         raise ValueError('native sources require export_native_sequence and canonical closure verification')
@@ -487,14 +534,25 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
                     os.fsync(stage_fd)
                     _inventory(stage,source,staging=True)
                     for f in source['frames']:
-                        if cancel is not None and cancel():raise ValueError('sequence export cancelled; verified staging retained')
-                        if (stage/f['path']).exists():_verify_frame(stage,f,source);continue
-                        data=_read(root,f['source_path'],MAX_FRAME_BYTES)
-                        if len(data)!=f['bytes'] or _hash(data)!=f['sha256']:
-                            raise ValueError('source frame changed after sequence admission')
-                        _write(stage,f['path'],data)
+                        _check_cancel(cancel,deadline)
+                        reused=(stage/f['path']).exists()
+                        if not reused:
+                            data=_read(root,f['source_path'],MAX_FRAME_BYTES)
+                            _check_deadline(deadline)
+                            if len(data)!=f['bytes'] or _hash(data)!=f['sha256']:
+                                raise ValueError('source frame changed after sequence admission')
+                            _write(stage,f['path'],data)
+                            _check_deadline(deadline)
                         _verify_frame(stage,f,source)
-                    decoded=[_verify_frame(stage,f,source) for f in source['frames']]
+                        _check_deadline(deadline)
+                        if progress is not None:
+                            progress({'stage':'preparing','action':'reused' if reused else 'copied',
+                                      'frame':f['index']+1,'total_frames':len(source['frames'])})
+                    decoded=[]
+                    for f in source['frames']:
+                        _check_deadline(deadline)
+                        decoded.append(_verify_frame(stage,f,source))
+                        _check_deadline(deadline)
                     report={'schema_version':1,'kind':'silent-image-sequence','source':source,
                         'source_sha256':media._digest(source),'request_sha256':media._digest(make_request(source,plan['provenance'])),
                         'provenance':plan['provenance'],
@@ -505,18 +563,19 @@ def export_sequence(source,root,destination,*,provenance,stage_name=None,cancel=
                     else:_write(stage,'sequence.json',_json_bytes(report))
                     # Independent final verification uses a pinned directory, too.
                     _inventory(stage,source)
-                    if cancel is not None and cancel():raise ValueError('sequence export cancelled before publication')
-                    _publish_cache(stage,source,report,parent_fd,destination)
+                    _check_cancel(cancel,deadline)
+                    _publish_cache(stage,source,report,parent_fd,destination,cancel=cancel,deadline=deadline)
                     return report
                 finally:os.close(lock_fd)
         finally:os.close(stage_fd)
 
 
-def export_native_sequence(request,result,render_root,destination,*,snapshot_root,expected_backend,**options):
+def export_native_sequence(request,result,render_root,destination,*,snapshot_root,expected_backend,deadline=None,**options):
     if not publication_supported():raise ValueError('secure sequence publication is unavailable on this platform')
     _capability_factory()
-    source,proof=native_source(request,result,render_root,snapshot_root=snapshot_root,expected_backend=expected_backend)
-    return export_sequence(source,render_root,destination,provenance=proof,_native_token=_NATIVE_TOKEN,**options)
+    deadline=_deadline(deadline);_check_deadline(deadline)
+    source,proof=native_source(request,result,render_root,snapshot_root=snapshot_root,expected_backend=expected_backend,deadline=deadline)
+    return export_sequence(source,render_root,destination,provenance=proof,_native_token=_NATIVE_TOKEN,deadline=deadline,**options)
 
 
 def main(argv=None):

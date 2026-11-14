@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "kind": "silent-profiles-execution-evidence",
+  "executed_head": "69a28c73b1223b0cf10c707fefd53757206b6ae4",
+  "created_utc": "2026-11-14T03:30:13.755769+00:00",
+  "fixture": "labeled procedural RGB PNG engineering inputs; no production-artwork/native3D/visual-approval claim",
+  "source_sha256": {
+    "scripts/silent_video.py": "334b3a01e7851ee2bb2fc1d58c5c9061460b3c8d18d0a0717faef0b9ab5aa1a2",
+    "scripts/silent_profiles.py": "73cef513e2d360a2fff9dd264bc0107a7b14fd548dc1da030e1addd04c3f4131",
+    "scripts/silent_transform.py": "94860778ec4be727114be6e98c4fa5583023c08133068d047bf6d0babcbc7e52",
+    "scripts/silent_timeline.py": "bf6e9dbee79c7c78e01c0dda05544502355641a553a584cf80a9db2c88f38f24",
+    "scripts/silent_render3d.py": "b7729cedf38a666e40f2ab4938a3d84fccf7bd54ff1e72e3c972a93c74d6f513",
+    "scripts/rig_errors.py": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+    "scripts/portable_paths.py": "c50f1675449f3a037bc774342601bf1e0787b1cf4d936b5c2a85c339966e6b29"
+  },
+  "validation": {
+    "current_media_gate": {
+      "tests": 64,
+      "skipped": 0,
+      "seconds": 51.307,
+      "log": "current-media.log",
+      "note": "Includes inherited contract cases plus actual encodes, decode/pixel and zero-audio checks, immutable payload and callback mutation negatives."
+    },
+    "focused_filesystem_and_contracts": {
+      "tests": 42,
+      "skipped": 0,
+      "seconds": 0.5,
+      "log": "focused.log",
+      "note": "Overlaps the media suite; counts are not additive unique tests."
+    },
+    "resolutions": {
+      "path": "resolution-69a28c73b122",
+      "outputs": 3,
+      "frames_per_output": 4,
+      "dimensions": [
+        [
+          1280,
+          720
+        ],
+        [
+          1920,
+          1080
+        ],
+        [
+          3840,
+          2160
+        ]
+      ],
+      "audio_streams_each": 0
+    },
+    "older_ffmpeg": {
+      "version": "6.1.1",
+      "source_url": "https://ffmpeg.org/releases/ffmpeg-6.1.1.tar.xz",
+      "source_sha256": "8684f4b00f94b85461884c3719382f1261f0d9eb3d59640a1f4ac0873616f968",
+      "library": "host libvpx1.17.0; not an Ubuntu binary recreation",
+      "negative": "First-pass -frames:v6 creates4032-byte stats; pass2 exits234, missing EOS stats packet.",
+      "corrected": "Natural finite-snapshot EOF creates2016-byte stats; both raw passes exit0. Complete canonical parent-swap/two-pass probe/decode/source-pixel regression passes1test1.015s.",
+      "test_only_adapter": "Minimal FFmpeg6 built with GCC16 exhibited independently isolated SIMD RGB/YUV corruption. A test-only -cpuflags0 wrapper selected generic conversion; product flags/verification thresholds were unchanged. Raw SIMD failure and diagnostic are preserved, not reported as quality acceptance.",
+      "target_log": "ffmpeg6-target-generic.log"
+    }
+  },
+  "remaining": [
+    "Fresh independent whole-final-candidate review after dependency integration",
+    "Required current-head hosted CI and ordinary merge/post-merge checks",
+    "Parent full3D film, HDR/alpha and integrated authoritative CLI acceptance remain separate open work"
+  ],
+  "evidence_sha256": {
+    "current-media.log": "59194751d4ebc2608a7faf75d8763631d45f0f5d20383bbd48e44f956e84d444",
+    "ffmpeg6-before-after.json": "87902edcff4c11be123df47914c559a1107dac9f0bd09b2f64670568183582cc",
+    "ffmpeg6-simd-diagnostic.json": "287981b881ccc7196b114c113834206b60584258a8ba58ed240368ff80199de9",
+    "ffmpeg6-target-generic.log": "90e211fc3b8bcc86bd1a59565809d5e8d9f9a98495dfaae52c384b9008db256a",
+    "focused.log": "bdcbd320f1cb7eaedf2b32f24e426522e96a4ee70dbbf0e3884c18d42c01bed6",
+    "resolution-69a28c73b122/1080p/frames/000000.png": "0c23adae7d62593a7f26f984694c92bc57a46b87fd52da64d5e6fd345f7a809a",
+    "resolution-69a28c73b122/1080p/frames/000001.png": "5cccbe29872e55e44ba9fe0186eb4ff86d35289fb64c49e6552762f819d8e447",
+    "resolution-69a28c73b122/1080p/frames/000002.png": "0303cf1bf5430023087cd31ad92528748a2b8a40f769ba5028b0bb97b93d3bda",
+    "resolution-69a28c73b122/1080p/frames/000003.png": "c7baa627857dab06b33879c043a16e1621fc512429bf23775a8057ea79829c4a",
+    "resolution-69a28c73b122/1080p/transform.json": "2b72415817fe44fba72eecbf2768dd4a68e6cf244536dddf3d67f97259f74e7d",
+    "resolution-69a28c73b122/1080p-receipt.json": "db1d61ccdbaae72bc1eb61df8d14b42663d1afd6471bfcc1ba4713c734e81f70",
+    "resolution-69a28c73b122/1080p.mp4": "d18cda7fe0646a8bd65c79d0164197c47126bcd5c7d639e5bbb301afc2ee4e59",
+    "resolution-69a28c73b122/4k/frames/000000.png": "f80c81206185d13da9d4daa1b3529e2f9a1de20a5ccb833d38f6c931fa5bb7a1",
+    "resolution-69a28c73b122/4k/frames/000001.png": "65726f1cb97260201362fe9543a35ac58c5525fe493d6080d769940caed529fe",
+    "resolution-69a28c73b122/4k/frames/000002.png": "b9c95013e3747fc9022fdc7f7577fe5e60fe27d43c6d2656c96cb65fb13ca803",
+    "resolution-69a28c73b122/4k/frames/000003.png": "98f011642d428a469078e1b2f37005a81394b69fe490e18ef8e577ac7ac7cd8d",
+    "resolution-69a28c73b122/4k/transform.json": "0a0052771b6a0d2ebdf0d55bdf692a29728e414c03906c5ef2c509b29ed6a591",
+    "resolution-69a28c73b122/4k-receipt.json": "58c14b3ba106cd5638a94c7970e30321406748a439de9978421ca7028995eaec",
+    "resolution-69a28c73b122/4k.mp4": "1b5b19631b34ec0b38834ae87e6d44db801e966582521fb732b80ff6199a7fe5",
+    "resolution-69a28c73b122/720p/frames/000000.png": "843abb803e941dfceecfd90f953647c0153bc6541c488402effa3a5f0f786fdb",
+    "resolution-69a28c73b122/720p/frames/000001.png": "3ba0fcdfc8cb291a862dbad534f198811ee38ab9ff86c50c3cbf8d7239440663",
+    "resolution-69a28c73b122/720p/frames/000002.png": "0cf4413212211e691b87dfa38acbfa356194eb412342de091766839247a4f2d6",
+    "resolution-69a28c73b122/720p/frames/000003.png": "14a9ebaf0563709444855053475cc1bcf657f01e5f54d759d606608d6b72112c",
+    "resolution-69a28c73b122/720p/transform.json": "58a8339b436f1b4e756a066e8b27e88f573963eac3a4b9daaa08fe600cf7bfc0",
+    "resolution-69a28c73b122/720p-receipt.json": "5f645f062f6c1541c2cb522f39e7f03b0f2fbe65e1392bb5fb1d5385e7688ca5",
+    "resolution-69a28c73b122/720p.mp4": "eae11c565b9e24b37f1c4143a0e60d4a0bd59cd3caa7bd266361170216d20d53",
+    "resolution-69a28c73b122/acceptance.json": "a68df659f209e1d9f0177ff5e9d6be43a1237fb6743f2dcb35b309eb19aedb9e",
+    "resolution-69a28c73b122/original/000000.png": "be3685c27a36af5d122ba65bc89216fe1f32a34f4971aa44d1caa732f68d7dfb",
+    "resolution-69a28c73b122/original/000001.png": "511bfedb862fe41218038b63f8efd619feb8c6c87389bbc5eac3033eb6d6c20c",
+    "resolution-69a28c73b122/original/000002.png": "21a58c964e1832bb707e8b9a26b2a109f316623e9af6d4edb43d65bd39f36eea",
+    "resolution-69a28c73b122/original/000003.png": "1ddc9d7be63f14d1ed0baab4419793d6726b24a911ce39d4727c0c725991bd9f"
+  }
+}

@@ -310,3 +310,10 @@ destination_dir_fd=None)`, which yields a portable basename and an owned
 pinned/duplicated directory descriptor for the context lifetime. Explicit FD
 callers supply only a basename; ordinary path callers retain strict symlink
 rejection. This does not admit raw procfs aliases or close caller-owned FDs.
+
+`silent_transform.transform(..., destination_dir_fd=fd)` reuses that same
+explicit destination authority. Its staged frames remain under an active shared
+directory capability while snapshots are read and the payload is published.
+A replaced outer staging basename cannot redirect source reads or cleanup.
+Portable transform admission/raster tests remain in ordinary discovery; actual
+Linux descriptor transactions run explicitly in the native media workflow.
