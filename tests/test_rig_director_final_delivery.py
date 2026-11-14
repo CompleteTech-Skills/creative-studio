@@ -10,7 +10,7 @@ import unittest
 
 from director_final_delivery import (validate_final_requests, assemble_final_frames,
                                     validate_production_selection,
-                                    _validate_binding, _binding_state, _read_json)
+                                    _validate_binding, _binding_state, _read_json, _directory)
 from render3d_contracts import Render3DError
 from rig_errors import RigError, object_hash
 from test_render3d_contracts import request, backend, file
@@ -131,6 +131,16 @@ class FinalPlanTests(unittest.TestCase):
 
 
 class FinalEvidenceTests(unittest.TestCase):
+    def test_native_directory_binding_uses_directory_type_not_regular_file_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root/'snapshot').mkdir()
+            self.assertEqual(_directory(root, 'snapshot'), root/'snapshot')
+            (root/'not-directory').write_bytes(b'fixture')
+            for name in ('not-directory', 'missing-directory'):
+                with self.subTest(name=name), self.assertRaises(RigError):
+                    _directory(root, name)
+
     def binding(self):
         return dict(job='a'*64, job_revision=1, request_sha256='b'*64,
                     backend_sha256='c'*64, directory='shots/entry', snapshot_directory='snapshot')

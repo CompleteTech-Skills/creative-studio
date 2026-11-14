@@ -171,6 +171,14 @@ def _read_json(root, relative, *, expected=None):
     return decode_json(raw, max_bytes=32*1024**2), reference
 
 
+def _directory(root, relative):
+    # safe_path(exists=True) deliberately admits regular files only. Directory
+    # bindings use its same no-follow traversal and a separate type check.
+    path = safe_path(root, relative)
+    _need(path.is_dir() and not path.is_symlink(), 'Native evidence directory is missing or unsafe.')
+    return path
+
+
 def _validate_binding(binding):
     _need(isinstance(binding, dict) and set(binding) == _BINDING_FIELDS,
           'Use an exact native job/revision/request/backend/materialization binding.')
@@ -293,8 +301,8 @@ def verify_native_materialization(store, root, binding, *, required_scope=None):
     _need(required_scope in (None, 'scene3d', 'native-rig-preview'), 'Unknown native snapshot scope.')
     state = _binding_state(store, binding)
     request, backend = state['request'], state['backend']
-    directory = safe_path(root, binding['directory'], exists=True)
-    snapshot_root = safe_path(root, binding['snapshot_directory'], exists=True)
+    directory = _directory(root, binding['directory'])
+    snapshot_root = _directory(root, binding['snapshot_directory'])
     snapshot, _ = _read_json(snapshot_root, 'snapshot.json',
         expected={**request['snapshot'], 'path': 'snapshot.json'})
     validate(snapshot, 'RenderSnapshot')
@@ -339,7 +347,7 @@ def assemble_final_frames(store, root, bindings, *, narrative=None):
     root = Path(root)
     states = [_binding_state(store, binding) for binding in bindings]
     plan = validate_final_requests([state['request'] for state in states])
-    first_snapshot = safe_path(root, bindings[0]['snapshot_directory'], exists=True)
+    first_snapshot = _directory(root, bindings[0]['snapshot_directory'])
     narrative_report = verify_final_narrative(first_snapshot, narrative)
     validate_production_selection([state['request'] for state in states], narrative_report)
     _need(len({binding['job'] for binding in bindings}) == len(bindings),
@@ -398,11 +406,11 @@ def _recheck_delivery_sources(store, root, bindings, admission, narrative):
     from render3d_contracts import make_frame_spec
     for binding, expected in zip(bindings, admission['native_jobs']):
         state = _binding_state(store, binding)
-        directory = safe_path(root, binding['directory'], exists=True)
+        directory = _directory(root, binding['directory'])
         _read_json(directory, 'result.json', expected=expected['result_reference'])
-        snapshot = safe_path(root, binding['snapshot_directory'], exists=True)
+        snapshot = _directory(root, binding['snapshot_directory'])
         make_frame_spec(state['request'], state['request']['frame_range']['start'], snapshot/'snapshot.json')
-    snapshot = safe_path(root, bindings[0]['snapshot_directory'], exists=True)
+    snapshot = _directory(root, bindings[0]['snapshot_directory'])
     report = verify_final_narrative(snapshot, narrative)
     validate_production_selection([store.status(binding['job'], event_limit=0)['request']
                                    for binding in bindings], report)
@@ -430,7 +438,7 @@ def encode_final_media(store, root, bindings, destinations, *, narrative=None, r
     admission = assemble_final_frames(store, root, bindings, narrative=narrative)
     paths = {profile: Path(path).absolute() for profile, path in destinations.items()}
     _need(len(set(paths.values())) == len(PROFILES), 'Final media destinations must differ.')
-    protected = [safe_path(root, binding[field], exists=True).resolve()
+    protected = [_directory(root, binding[field]).resolve()
                  for binding in bindings for field in ('directory', 'snapshot_directory')]
     protected.append(store.root.resolve())
     _need(all(not path.resolve().is_relative_to(directory)
