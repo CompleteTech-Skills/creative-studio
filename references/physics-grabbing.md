@@ -25,7 +25,9 @@ numbers, ambiguous times and excessive speed fail before native execution.
 `compile_release` returns a new PhysicsWorld plus source payload snapshot. The
 original world, source Scene3D, rig and geometry bytes are preserved. The
 SceneGraph owner applies the new pose with its lock and revision checks;
-project/scene hashes are rebound. The supplied original collider profile is
+the canonical Scene3D snapshot owner promotes a new scene/project version and
+new incoming shot versions. Original scene and shot bytes remain retained,
+and the returned PhysicsWorld selects the new exact scene. The supplied original collider profile is
 retained, and the released body becomes awake and dynamically physics-owned.
 Other transform writers, parents, active joints, and pre-existing force/event
 programs fail closed in this bounded profile. Use the ordinary PyBulletBackend
