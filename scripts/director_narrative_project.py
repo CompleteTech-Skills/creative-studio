@@ -9,6 +9,7 @@ from copy import deepcopy
 import hashlib
 import inspect
 from pathlib import Path
+import sys
 
 import numpy as np
 
@@ -61,7 +62,7 @@ DRESSING = (
 )
 
 
-def build_narrative(source_root, destination, *, stage):
+def build_narrative(source_root, destination, *, stage, motions=None):
     """Author privately and delegate exclusive final publication to Scene3D.
 
     The caller supplies an empty application-owned build directory and retains
@@ -69,10 +70,16 @@ def build_narrative(source_root, destination, *, stage):
     alternative path when the required canonical capture API is unavailable.
     """
     from scene3d_snapshot import snapshot_project
+    from atomic_publish import private_stage_supported
+    require(sys.platform == 'linux' and private_stage_supported(),
+            'DIRECTOR_NARRATIVE_DEPENDENCY',
+            'Narrative publication requires the verified Linux pinned-stage profile.')
     require('expected_project_sha256' in inspect.signature(snapshot_project).parameters,
             'DIRECTOR_NARRATIVE_DEPENDENCY',
             'Canonical Scene3D snapshot source-hash pinning is required.')
-    built = populate_narrative(source_root, stage)
+    # Explicit native clip input permits reuse of retained actual authoring
+    # output. Its native contracts and final physical acceptance still apply.
+    built = populate_narrative(source_root, stage, motions=motions)
     snapshot = snapshot_project(stage, destination,
         expected_project_sha256=built['project_sha256'], max_bytes=MAX_BYTES)
     verified = load_project(destination)

@@ -34,6 +34,10 @@ snapshot service and must bind the expected completed source project hash.
 to that service and refuses to author when its source-hash pinning API is absent.
 The caller retains the private build tree for diagnosis; the wrapper does not
 remove or repurpose a path after publication.
+This new producer currently admits the verified Linux pinned-stage profile;
+existing portable media and rig paths keep their own platform contracts. An
+explicit `motions` input may reuse retained actual native authoring output. It
+still passes native clip validation and the complete physical acceptance gates.
 
 The resulting project registers five production shots and four separate proof
 shots. Consumers must select the explicit `production_shots` references returned
