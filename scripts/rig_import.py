@@ -13,7 +13,7 @@ import numpy as np
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, require, sha256, slug, timestamp
 from rig_geometry import analyze_geometry, vertex_normals
-from rig_gltf import GltfDocument, _index, node_matrix, read_gltf, scene_graph
+from rig_gltf import GltfDocument, _index, node_matrix, preflight_gltf, read_gltf, scene_graph
 from rig_math import decompose, transform_points
 from rig_models import Geometry, Mesh, SkinWeights, TextureImage, validate_geometry
 from rig_skeleton import validate_skeleton
@@ -277,6 +277,14 @@ def _animations(document, ids, node_meshes, geometry, parents, scale):
 
 def _gltf_model(path, *, scale=1., limits=None, source_reader=None) -> ImportedModel:
     document = read_gltf(path, limits, source_reader=source_reader)
+    # Capture external image bytes too, so admission measures the exact closure
+    # consumed by this document without reopening mutable source paths.
+    for image in document.json.get('images', []):
+        if 'uri' in image:
+            require(isinstance(image['uri'], str), 'RIG_GLTF_URI', 'A glTF URI must be text.')
+            if not image['uri'].startswith('data:'):
+                document.uri(image['uri'])
+    preflight_gltf(document, encoded_bytes=sum(document.encoded_sources.values()))
     require(np.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'Import scale must be finite and positive.')
     parents, world, order = scene_graph(document, import_scale=scale)
     skeleton, ids, normalized = _import_skeleton(document, parents, world, order, scale)
