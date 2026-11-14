@@ -118,7 +118,12 @@ class _PosixDirectory:
             os.mkdir(name, 0o700, dir_fd=self.fd)
         fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=self.fd)
         try:
+            before = os.fstat(fd)
             yield _PosixDirectory(fd)
+            current = os.stat(name, dir_fd=self.fd, follow_symlinks=False)
+            if (not stat.S_ISDIR(current.st_mode)
+                    or (current.st_dev, current.st_ino) != (before.st_dev, before.st_ino)):
+                raise ValueError('directory descendant changed during use')
         finally:
             os.close(fd)
 

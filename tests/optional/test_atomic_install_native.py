@@ -89,6 +89,29 @@ class DescriptorInstallTests(unittest.TestCase):
         self.assertFalse((self.target / 'installed').exists())
         self.assertEqual((self.source / 'data').read_bytes(), b'foreign')
 
+    def test_inventory_is_captured_before_filesystem_work(self):
+        inventory = self.inventory(data=b'original')
+        original = installer._stage
+        @contextmanager
+        def mutate_after_admission(parent):
+            inventory[0]['sha256'] = '0' * 64
+            inventory[0]['bytes'] = 999
+            inventory.append(dict(path='foreign', sha256='0' * 64, bytes=1))
+            with original(parent) as stage:
+                yield stage
+        with mock.patch.object(installer, '_stage', mutate_after_admission): self.install(inventory)
+        self.assertEqual((self.target / 'installed/data').read_bytes(), b'original')
+        self.assertFalse((self.target / 'installed/foreign').exists())
+
+    def test_directory_child_namespace_swap_is_detected(self):
+        (self.source / 'child').mkdir()
+        node = installer._PosixDirectory(self.source_fd)
+        with self.assertRaises(ValueError):
+            with node.child('child'):
+                (self.source / 'child').rename(self.source / 'kept')
+                (self.source / 'child').mkdir()
+        self.assertTrue((self.source / 'kept').is_dir())
+
     def test_destination_inside_source_rejected_before_staging(self):
         inventory = self.inventory(data=b'original')
         (self.source / 'child').mkdir()
