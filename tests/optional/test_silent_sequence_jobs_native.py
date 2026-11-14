@@ -108,7 +108,7 @@ class ActualSequenceJobs(unittest.TestCase):
         self.assertEqual(len(adapter.sequence.verify_sequence(self.root/'job-out')['decoded']),3)
 
     def test_bootstrap_partial_plan_recovers_without_adapter_preinspection(self):
-        created=self.create();plan=created['plan']
+        self.create();plan=adapter.status(self.root/'job')['plan']
         stage=self.root/('.sequence-job-'+plan['id'][:32]);stage.mkdir(mode=0o700)
         (stage/'lock').touch(mode=0o600)
         (stage/'.plan.json.partial').write_bytes(adapter.sequence._json_bytes(
