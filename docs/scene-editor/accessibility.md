@@ -56,3 +56,33 @@ HATCH_EDITOR_BROWSER_TEST=1 PYTHONPATH=scripts:tests python -m unittest -v test_
 Without that explicit flag, the native browser cases report their opt-in skip;
 collection is not execution evidence. Local orchestration must also use the shared
 browser validation lane and an owned home temporary directory.
+
+
+## Explicit browser-engine validation
+
+The keyboard acceptance suite accepts `HATCH_EDITOR_BROWSER_ENGINE=chromium`,
+`firefox` or `webkit`. The existing Chromium launcher remains unchanged; the
+Firefox and WebKit paths launch those actual Playwright engines and never fall
+back to Chromium. An unknown engine or a missing explicitly requested browser is
+an error. Browser launch and WebGL initialization failures remain failures.
+The suite prints the requested engine, actual driver engine, browser version and
+actual page user agent for each executed case.
+
+The dedicated `editor3d-cross-browser.yml` workflow installs Playwright's exact
+pinned Firefox/WebKit builds and their libraries on Ubuntu 24.04. It executes the
+same five native keyboard/persistence/focus cases, requires every collected case
+to execute with zero skips, and retains the current source SHA, engine logs and a
+result receipt. It does not duplicate Blender jobs or certify unrelated editor
+extensions. A successful workflow establishes these bounded flows only; manual
+screen-reader checks and full #106/#17 acceptance remain separate.
+
+For local execution, install the requested engine first and keep the existing
+shared browser lane. Example (Firefox):
+
+```
+python -m playwright install firefox
+HATCH_EDITOR_BROWSER_TEST=1 HATCH_EDITOR_BROWSER_ENGINE=firefox PYTHONPATH=scripts:tests python -m unittest -v test_rig_editor3d_accessibility
+```
+
+An unsupported host or absent system library must be reported with its actual
+launch/test failure. Browser installation alone is not execution evidence.

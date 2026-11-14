@@ -1,5 +1,6 @@
 """Real keyboard and conventional control acceptance; no canvas substitutes."""
 import os
+import json
 from pathlib import Path
 import tempfile
 import threading
@@ -20,11 +21,13 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.addCleanup(self.stop)
         from playwright.sync_api import sync_playwright
-        from browser_runtime import launch_chromium
+        from browser_runtime import launch_browser
         self.runtime=sync_playwright().start();self.addCleanup(self.runtime.stop)
-        self.browser=launch_chromium(self.runtime);self.addCleanup(self.browser.close)
+        self.engine=os.environ.get('HATCH_EDITOR_BROWSER_ENGINE','chromium')
+        self.browser=launch_browser(self.runtime,engine=self.engine);self.addCleanup(self.browser.close)
         self.page=self.browser.new_page(viewport={'width':1400,'height':900})
         self.page.goto(self.server.url);self.page.wait_for_function('() => window.editorReady === true')
+        print(json.dumps(dict(test=self.id(),requested_engine=self.engine,actual_engine=self.browser.browser_type.name,version=self.browser.version,user_agent=self.page.evaluate('navigator.userAgent'))),flush=True)
 
     def stop(self):
         self.server.shutdown();self.server.server_close();self.thread.join(timeout=5)
