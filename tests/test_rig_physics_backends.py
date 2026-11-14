@@ -496,17 +496,18 @@ class BlenderPhysicsLifecycleTests(unittest.TestCase):
         modified=replace(self.result,usage={**self.result.usage,'solver_steps':0})
         error_code(self,'PHYSICS_OWNERSHIP',lambda:self.backend.bake(modified,self.path/'forged'))
         import atomic_publish
-        original=atomic_publish._rename_no_replace
+        original=atomic_publish.rename_no_replace_at
         target=self.path/'racing'
         unrelated=self.path/'.unrelated-stage';unrelated.mkdir();(unrelated/'sentinel').write_bytes(b'preserve')
-        def racing(stage,destination):
-            Path(destination).mkdir()
-            return original(stage,destination)
-        with patch.object(atomic_publish,'_rename_no_replace',racing):
+        def racing(source_fd,source_name,destination_fd,destination_name):
+            os.mkdir(destination_name,dir_fd=destination_fd)
+            return original(source_fd,source_name,destination_fd,destination_name)
+        with patch.object(atomic_publish,'rename_no_replace_at',racing):
             error_code(self,'PHYSICS_DESTINATION_EXISTS',lambda:self.backend.bake(self.result,target))
         self.assertTrue(target.is_dir());self.assertEqual(list(target.iterdir()),[])
         self.assertEqual((unrelated/'sentinel').read_bytes(),b'preserve')
-        self.assertFalse(any(self.path.glob('.racing.physics-*')))
+        for wrapper in self.path.glob('.physics-*'):
+            self.assertEqual(list(wrapper.iterdir()),[])
         link=self.path/'link';absent=self.path/'absent';link.symlink_to(absent,target_is_directory=True)
         error_code(self,'PHYSICS_DESTINATION_EXISTS',lambda:self.backend.bake(self.result,link))
         self.assertTrue(link.is_symlink());self.assertFalse(absent.exists())
