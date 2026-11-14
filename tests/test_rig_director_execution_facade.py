@@ -111,6 +111,9 @@ class ExecutionFacadeTests(unittest.TestCase):
             else: request['input']['expected_revision'] = '0' * 64
             result = self.facade.cancel(request, self.root)
             self.assertEqual(result['status'], 'failed')
+            if mutation == 'revision':
+                self.assertEqual(result['diagnostics'][0]['expected'], '0' * 64)
+                self.assertEqual(result['diagnostics'][0]['observed'], submitted['revision'])
             self.assertFalse(any(self.native.store.status(job)['cancel'] for job in self.native.jobs.values()))
         cancelled = self.facade.cancel(original, self.root)
         self.assertEqual(cancelled['status'], 'succeeded', cancelled['diagnostics'])

@@ -493,8 +493,10 @@ class ExecutionServiceFacade:
             else:
                 self._job_context(request)
                 snapshot = self.core.status_graph(data['job_id'])
-                _need(snapshot['revision'] == data['expected_revision'], 'STALE',
-                      'Execution revision changed; read its native status before retrying the mutation.')
+                if snapshot['revision'] != data['expected_revision']:
+                    raise RigError('DIRECTOR_EXECUTION_STALE',
+                        'Execution revision changed; read its native status before retrying the mutation.',
+                        stage='execution-facade', expected=data['expected_revision'], observed=snapshot['revision'])
                 if operation == 'resume':
                     graph = self._graph(dc._read_artifact(root, data['dependency_snapshot']))
                     _need(object_hash(graph) == snapshot['graph_sha256'], 'DEPENDENCY', 'Resume dependency graph identity changed.')
@@ -527,12 +529,16 @@ class ExecutionServiceFacade:
                 artifacts=deepcopy(value['artifacts']), diagnostics=deepcopy(value['diagnostics']),
                 usage=_usage(), provenance_receipts=deepcopy(value['native_workers']))
         except (RigError, ValueError, OSError) as exc:
-            code = getattr(exc, 'report', {}).get('code', 'DIRECTOR_EXECUTION_FAILED')
+            report = getattr(exc, 'report', {})
+            code = report.get('code', 'DIRECTOR_EXECUTION_FAILED')
             status = 'blocked_budget' if 'BUDGET' in code else 'blocked_capability' if any(
                 part in code for part in ('CAPABILITY', 'RECORDER', 'PLATFORM', 'UNAVAILABLE')) else 'failed'
             result = dict(schema_version=1, kind='director-result', method=method, status=status,
                 operation_id=request['context']['request_id'], input_digest=object_hash(request), value=None,
-                artifacts=[], diagnostics=[_diagnostic(code, str(exc))], usage=_usage(), provenance_receipts=[])
+                artifacts=[], diagnostics=[_diagnostic(code, str(exc),
+                    expected=str(report['expected'])[:4096] if report.get('expected') is not None else None,
+                    observed=str(report['observed'])[:4096] if report.get('observed') is not None else None)],
+                usage=_usage(), provenance_receipts=[])
         dc.validate_method_result(method, result, request)
         return result
 
