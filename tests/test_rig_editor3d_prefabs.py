@@ -27,11 +27,15 @@ class EditorPrefabProjectionTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
-    def fixture(self, *, noncanonical=False, instances=2, nested_animated=False, upright=False):
+    def fixture(self, *, noncanonical=False, instances=2, nested_animated=False, upright=False, prefab_collections=False):
         source = self.root/'source'; bundle = build_example(source)
-        if noncanonical:
+        if noncanonical or prefab_collections:
             reference = bundle['project']['prefabs'][0]
-            payload = (json.dumps(bundle['documents'][reference['path']], indent=2) + '\n\n').encode()
+            document = deepcopy(bundle['documents'][reference['path']])
+            if prefab_collections:
+                document['collections'] = [dict(id='cast-members',name='Cast members',visible=True)]
+                document['nodes'][1]['collections'] = ['cast-members']
+            payload = (json.dumps(document, indent=2) + '\n\n').encode() if noncanonical else canonical_bytes(document)
             (source/reference['path']).write_bytes(payload)
             project = deepcopy(bundle['project'])
             for entry in project['prefabs'] + project['dependency_lock']:
@@ -227,7 +231,7 @@ class EditorPrefabProjectionTests(unittest.TestCase):
         self.assertTrue(all(identifier in state['nodes'] for identifier in projection['readonly_nodes']))
 
     def test_javascript_maps_every_derived_selection_to_its_authored_anchor(self):
-        _, snapshot, captured = self.fixture()
+        _, snapshot, captured = self.fixture(prefab_collections=True)
         snapshot['viewport_prefabs'] = prepare_prefab_projection(captured, snapshot)['projection']
         code = r"""
 import assert from 'node:assert/strict';
@@ -244,6 +248,24 @@ for(const [id,anchor] of Object.entries(snapshot.viewport_prefabs.edit_targets))
 }
 assert.equal(api.prefabEditTarget(snapshot,'instance-0'),'instance-0');
 assert.equal(api.prefabReadonly(snapshot,'instance-0'),false);
+const compiled=api.createPrefabProjection(snapshot);
+for(const operation of ['delete','reparent','duplicate','reorder','transform','rename','configure-node','node-flags','memberships','tags','prefab-reset','prefab-override','prefab-upgrade','prefab-detach'])
+  assert.throws(()=>compiled.assertWritableCommand({operation,parameters:{identifier:snapshot.viewport_prefabs.readonly_nodes[0]}}));
+for(const parameters of [{identifier:'mesh',parent:snapshot.viewport_prefabs.readonly_nodes[0]},
+ {identifier:'mesh',new_id:snapshot.viewport_prefabs.readonly_nodes[0]}])
+ assert.throws(()=>compiled.assertWritableCommand({operation:'duplicate',parameters}));
+assert.throws(()=>compiled.assertWritableCommand({operation:'create',parameters:{node:{id:snapshot.viewport_prefabs.readonly_nodes[0]}}}));
+assert.throws(()=>compiled.assertWritableCommand({operation:'configure-node',parameters:{identifier:'mesh',properties:{constraints:[{target:snapshot.viewport_prefabs.readonly_nodes[0]}]}}}));
+assert.equal(snapshot.viewport_prefabs.scene.collections.length,2);
+for(const collection of snapshot.viewport_prefabs.scene.collections) {
+ assert.equal(compiled.readonlyMembership(collection.id),true);
+ assert.throws(()=>compiled.assertWritableCommand({operation:'collection',parameters:{identifier:collection.id}}));
+ assert.throws(()=>compiled.assertWritableCommand({operation:'memberships',parameters:{identifier:'instance-0',collections:[collection.id]}}));
+}
+compiled.assertWritableCommand({operation:'transform',parameters:{identifier:'instance-0',transform:{}}});
+// Resource IDs and display labels are different namespaces, not node targets.
+compiled.assertWritableCommand({operation:'prefab-create',parameters:{root_id:'mesh',identifier:snapshot.viewport_prefabs.readonly_nodes[0]}});
+compiled.assertWritableCommand({operation:'rename',parameters:{identifier:'mesh',name:snapshot.viewport_prefabs.readonly_nodes[0]}});
 assert.throws(()=>api.prefabEditTarget(snapshot,'unbound-node'));
 const id=snapshot.viewport_prefabs.readonly_nodes[0];
 for(const mutate of [s=>s.viewport_prefabs.sha256='0'.repeat(64),

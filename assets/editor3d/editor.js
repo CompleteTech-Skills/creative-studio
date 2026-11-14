@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "/vendor/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "/vendor/examples/jsm/loaders/GLTFLoader.js";
 import { TransformControls } from "./TransformControls.js";
+import { createPrefabProjection } from "./prefabs.js";
 const $ = (id) => document.getElementById(id);
 const tokenKey = "hatch-editor-bearer-v1";
 let token = location.hash.slice(1);
@@ -46,6 +47,7 @@ const savedViewTransition = Symbol("saved-view-transition");
 let pendingCommit = null, lastCommitResult = true, guardedAction = false, actionAuthority = null, lifecycleGeneration = 0;
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
 let activeNativeCameraId = null;
+let prefabProjection = null, runtimeDoc = null;
 const commitInterceptors = new Set(), installSubscribers = new Map(), unavailableNodes = new Map(), previewEditAuthorizers = new Set(), timelineProviders = new Set();
 let lastEvaluation = null;
 function clearInstallSubscriptions() {
@@ -212,9 +214,10 @@ async function upload(file) {
   if (!response.ok) throw Error(result.error?.message || "Upload rejected.");
   return result;
 }
-function nodeLocked(id) { return evaluatedStates.get(id)?.locked !== false; }
-function nodeSelectable(id) { return evaluatedStates.get(id)?.selectable === true; }
+function nodeLocked(id) { return Boolean(prefabProjection?.readonly(id)) || evaluatedStates.get(id)?.locked !== false; }
+function nodeSelectable(id) { return !prefabProjection?.readonly(id) && evaluatedStates.get(id)?.selectable === true; }
 function transformReason(id) {
+  if (prefabProjection?.readonly(id)) return "Derived prefab content is read-only; edit its authored instance anchor.";
   if (nodeLocked(id)) return "Object is locked by native scene state.";
   if (!nodeSelectable(id)) return "Object is not selectable in native scene state.";
   return Object.hasOwn(nativeTransformReadonly, id) ? nativeTransformReadonly[id] : null;
@@ -391,7 +394,7 @@ function clearPreview(authority = null) {
   if (guardedAction && authority !== actionAuthority) throw Error("Another editor action is in progress.");
   lastEvaluation = null;
   applyNativeState(savedNativeState.nodes);
-  for (const node of doc.nodes) applyNativeProperties(objects.get(node.id), node);
+  for (const node of (runtimeDoc || doc).nodes) applyNativeProperties(objects.get(node.id), node);
   renderer.toneMappingExposure = 2 ** doc.world.exposure;
   previewActive = false;
   refreshSelection();
@@ -524,6 +527,7 @@ async function performCommit(commands) {
   try {
     const batch = nativeCommands(commands);
     for (const command of batch) {
+      prefabProjection?.assertWritableCommand(command);
       if (command.operation === "transform" && transformReason(command.parameters.identifier))
         throw Error(transformReason(command.parameters.identifier));
     }
@@ -623,6 +627,9 @@ async function runSavedAction(callback) {
 }
 async function returnToSavedViewport() { return runSavedAction(() => undefined); }
 function select(id, add = false, toggle = false) {
+  if (id !== null && id !== undefined && prefabProjection) {
+    try { id = prefabProjection.editTarget(id); } catch (error) { diagnostic(error); return; }
+  }
   selectedBone = null;
   if (!add && !toggle) selection.clear();
   if (toggle && selection.has(id)) selection.delete(id);
@@ -807,6 +814,7 @@ async function install(snapshot, assertCurrent = null) {
   const epoch = ++loadEpoch,
     assets = snapshot.viewport_assets || {};
   doc = snapshot.scene;
+  runtimeDoc = doc; prefabProjection = null;
   revision = snapshot.revision;
   sha256 = snapshot.sha256;
   savedNativeState = snapshot.viewport_state;
@@ -824,6 +832,16 @@ async function install(snapshot, assertCurrent = null) {
   }
   if (!doc?.nodes)
     throw Error("The repository supplied no native Scene3D scene.");
+  try {
+    prefabProjection = createPrefabProjection(snapshot);
+    runtimeDoc = prefabProjection.scene;
+  } catch (error) {
+    disposeContent(); evaluatedStates.clear(); selection.clear(); selectedBone = null;
+    $("outliner").replaceChildren(); $("collections").replaceChildren();
+    diagnostic(error); $("status").textContent = "Saved revision " + revision + "; prefab projection unavailable.";
+    return false;
+  }
+  const authoredNodes = new Map(doc.nodes.map(node => [node.id, node]));
   disposeContent();
   unavailableNodes.clear();
   $("revision").textContent =
@@ -832,8 +850,8 @@ async function install(snapshot, assertCurrent = null) {
     ...(doc.world?.background || [0.05, 0.08, 0.12]),
   );
   renderer.toneMappingExposure = 2 ** (doc.world?.exposure || 0);
-  for (const node of doc.nodes) {
-    nodes.set(node.id, node);
+  for (const node of runtimeDoc.nodes) {
+    nodes.set(node.id, authoredNodes.get(node.id) || node);
     const object = new THREE.Group();
     object.name = node.name;
     object[editorNode] = node.id;
@@ -935,7 +953,7 @@ async function install(snapshot, assertCurrent = null) {
       helpers.push(helper);
     }
   }
-  for (const node of doc.nodes) {
+  for (const node of runtimeDoc.nodes) {
     const object = objects.get(node.id);
     if (node.parent) objects.get(node.parent).add(object);
     function visit(child) {
@@ -973,7 +991,7 @@ async function install(snapshot, assertCurrent = null) {
   applyOverlays();
   refreshSelection();
   $("stats").textContent =
-    doc.nodes.length +
+    runtimeDoc.nodes.length +
     " nodes · " +
     [...nativeMaterials.keys()].reduce(
       (n, m) =>
@@ -1734,13 +1752,15 @@ function initialize() {
           if (!identifier && object[editorNode]) identifier = object[editorNode];
           object = object.parent;
         }
-        return identifier !== null && nodeSelectable(identifier);
+        return identifier !== null && nodeSelectable(prefabProjection ? prefabProjection.editTarget(identifier) : identifier);
       });
       if (hit) {
         let object = hit.object;
         while (object && !object[editorNode]) object = object.parent;
-        if (object && nodeSelectable(object[editorNode]))
-          select(object[editorNode], e.shiftKey, e.ctrlKey || e.metaKey);
+        if (object) {
+          const identifier = prefabProjection ? prefabProjection.editTarget(object[editorNode]) : object[editorNode];
+          if (nodeSelectable(identifier)) select(identifier, e.shiftKey, e.ctrlKey || e.metaKey);
+        }
       } else if (!e.shiftKey) select(null);
     });
     renderer.domElement.addEventListener("webglcontextlost", (e) => {

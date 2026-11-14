@@ -42,6 +42,43 @@ function context(snapshot) {
 
 export function createPrefabProjection(snapshot) {
   const {scene, authored, targets} = context(snapshot);
+  const authoredCollections = new Set(snapshot.scene.collections.map(value => value.id));
+  const authoredLayers = new Set(snapshot.scene.layers.map(value => value.id));
+  const collections = new Set(scene.collections.filter(value => !authoredCollections.has(value.id)).map(value => value.id));
+  const layers = new Set(scene.layers.filter(value => !authoredLayers.has(value.id)).map(value => value.id));
+  function readonlyMembership(identifier, layer = false) { return (layer ? layers : collections).has(identifier); }
+  function assertWritableCommand(command) {
+    const parameters = command.parameters || {};
+    const nodeFields = {
+      delete: ["identifier"], reparent: ["identifier", "parent"], duplicate: ["identifier", "new_id", "parent"],
+      reorder: ["identifier"], transform: ["identifier"], rename: ["identifier"], "configure-node": ["identifier"],
+      "node-flags": ["identifier"], memberships: ["identifier"], tags: ["identifier"],
+      "prefab-create": ["root_id"], "prefab-instance": ["identifier", "parent"],
+      "prefab-override": ["identifier"], "prefab-reset": ["identifier"],
+      "prefab-upgrade": ["identifier"], "prefab-detach": ["identifier"],
+    };
+    function nodeReference(identifier) {
+      if (targets.has(identifier)) throw Error("Derived prefab content is read-only; select its authored instance anchor.");
+    }
+    function membershipReferences(value) {
+      for (const [field, layer] of [["collections", false], ["layers", true]])
+        for (const identifier of value[field] || [])
+          if (readonlyMembership(identifier, layer)) throw Error("Derived prefab membership is read-only.");
+    }
+    for (const field of Object.hasOwn(nodeFields, command.operation) ? nodeFields[command.operation] : []) nodeReference(parameters[field]);
+    if (command.operation === "collection" && readonlyMembership(parameters.identifier, parameters.layer === true))
+      throw Error("Derived prefab membership is read-only.");
+    if (command.operation === "memberships") membershipReferences(parameters);
+    const value = command.operation === "create" ? parameters.node :
+      command.operation === "configure-node" ? parameters.properties : null;
+    if (value) {
+      if (command.operation === "create") { nodeReference(value.id); nodeReference(value.parent); }
+      for (const constraint of value.constraints || []) nodeReference(constraint.target);
+      for (const binding of value.animation_bindings || []) nodeReference(binding.target);
+      if (value.attachment) { nodeReference(value.attachment.owner); nodeReference(value.attachment.socket); }
+      membershipReferences(value);
+    }
+  }
   function editTarget(identifier) {
     const target = targets.has(identifier) ? targets.get(identifier) : identifier;
     if (!authored.has(target)) throw Error("Unknown authored prefab edit target.");
@@ -50,6 +87,8 @@ export function createPrefabProjection(snapshot) {
   return Object.freeze({
     scene,
     readonly: identifier => targets.has(identifier),
+    readonlyMembership,
+    assertWritableCommand,
     editTarget,
     authoredNode: identifier => authored.get(editTarget(identifier)),
   });
