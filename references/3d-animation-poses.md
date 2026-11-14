@@ -67,9 +67,15 @@ bones. Named expression presets remain the rig's own records.
 
 ## Editable file snapshots
 
-`save_pose` validates first and reuses the native atomic pose writer. Its destination
-is an editable snapshot in a caller-owned working directory, not an immutable
-publication API. `load_pose` uses the shared bounded, nonblocking descriptor reader
+`save_pose` validates first, takes the existing native rig writer lock and reuses
+the native atomic pose writer. It requires an independently admitted live source
+root; an evaluator's expired private snapshot cannot authorize saving. Under the
+lock, it reads only the bounded live manifest (not geometry), verifies its native
+identity/version, and protects `rig.json`, `identity.json`, the writer lock and all
+path/hash references from both the live and admitted manifests. Resolved source
+paths, symlink aliases and portable case collisions cannot become destinations.
+A valid caller-owned editable pose snapshot can still be atomically replaced.
+This working-file save is not an immutable publication API. `load_pose` uses the shared bounded, nonblocking descriptor reader
 and strict JSON decoder. Before decoding, the canonical native JSON object factor
 is charged against memory remaining after the retained rig/geometry estimate;
 symlink payloads and replaced/changed files reject.
@@ -83,5 +89,7 @@ not visual approval.
 explicit symmetric nonhumanoid skeleton. It checks neutral restoration, independent
 body/facial deformation, mirrored bone and morph edits, local locks, native
 transition geometry, named snapshot roundtrips, constraint rejection, unrepresentable
-numeric inputs and symlink failures. No renderer, external application, production
+numeric inputs, source/identity/geometry/skin/animation overwrite attempts, stale
+inventory additions, unchanged source hashes, editable snapshot replacement and
+symlink failures. No renderer, external application, production
 artwork or visual approval is claimed by these numerical fixture tests.

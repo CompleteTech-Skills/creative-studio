@@ -1,6 +1,7 @@
 """Native pose operations must move real skinned geometry and retain sources."""
 from copy import deepcopy
 import json
+import hashlib
 from pathlib import Path
 import tempfile
 import unittest
@@ -148,6 +149,65 @@ class PoseManagementTests(unittest.TestCase):
         np.testing.assert_allclose(poses[1]['bones']['b0']['translation'], [1,0,0], atol=1e-12)
         poses[1]['bones']['b0']['translation'][0] = 99
         self.assertEqual(target['bones']['b0']['translation'], [2,0,0])
+
+    def test_snapshot_save_cannot_replace_native_inputs_or_symlink_aliases(self):
+        rig = fixture(self.root/'animated', animated=True)
+        initial = neutral_pose(rig.skeleton)
+        paths = [rig.root/'rig.json', rig.root/'identity.json',
+                 rig.root/rig.manifest['geometry']['data']['path'],
+                 rig.root/rig.manifest['source']['path'],
+                 rig.root/rig.manifest['skins'][0]['data']['path'],
+                 rig.root/rig.manifest['animations'][0]['path'],
+                 rig.root.parent/('.' + rig.root.name + '.rig.lock')]
+        before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in rig.root.rglob('*') if p.is_file()}
+        for path in paths:
+            with self.subTest(path=path.name), self.assertRaises(RigError) as rejected:
+                save_pose(rig, path, initial)
+            self.assertEqual(rejected.exception.report['code'], 'ANIMATION_POSE_SOURCE')
+        with self.assertRaises(RigError): save_pose(rig, rig.root/'RIG.JSON', initial)
+        try:
+            alias = self.root/'rig-alias.json'; alias.symlink_to(rig.root/'rig.json')
+            directory_alias = self.root/'rig-directory-alias'; directory_alias.symlink_to(rig.root, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            alias = directory_alias = None
+        if alias is not None:
+            for path in (alias, directory_alias/'identity.json'):
+                with self.assertRaises(RigError) as rejected: save_pose(rig, path, initial)
+                self.assertEqual(rejected.exception.report['code'], 'ANIMATION_POSE_SOURCE')
+        for path, digest in before.items():
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
+
+    def test_live_manifest_inventory_is_protected_and_editable_snapshots_can_be_replaced(self):
+        retained = self.rig.root/'retained-validation.json'
+        retained.write_bytes(b'{"immutable":true}\n')
+        manifest_path = self.rig.root/'rig.json'
+        current = json.loads(manifest_path.read_bytes())
+        current['validation'].append(dict(path=retained.name, sha256=hashlib.sha256(retained.read_bytes()).hexdigest()))
+        manifest_path.write_text(json.dumps(current))
+        self.assertEqual(self.rig.manifest['validation'], [])  # Old admitted context.
+        before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in self.rig.root.rglob('*') if p.is_file()}
+        with self.assertRaises(RigError) as rejected: save_pose(self.rig, retained, self.pose)
+        self.assertEqual(rejected.exception.report['code'], 'ANIMATION_POSE_SOURCE')
+        editable = self.rig.root/'poses'/'working.json'
+        save_pose(self.rig, editable, self.pose)
+        original = editable.read_bytes()
+        moved = edit_pose(self.rig, self.pose, bones={'b0':{'translation':[1,0,0]}})
+        save_pose(self.rig, editable, moved)
+        self.assertNotEqual(editable.read_bytes(), original)
+        self.assertEqual(load_pose(self.rig, editable), moved)
+        for path, digest in before.items():
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
+
+    def test_snapshot_save_requires_live_source_binding_and_respects_native_writer_lock(self):
+        from rig_errors import job_lock
+        detached = deepcopy(self.rig); detached.root = self.root/'expired-private-snapshot'
+        destination = self.root/'out.json'
+        with self.assertRaises(RigError): save_pose(detached, destination, self.pose)
+        self.assertFalse(destination.exists())
+        with job_lock(self.rig.root):
+            with self.assertRaises(RigError) as busy: save_pose(self.rig, destination, self.pose)
+        self.assertEqual(busy.exception.report['code'], 'RIG_BUSY')
+        self.assertFalse(destination.exists())
 
     def test_snapshot_json_object_capacity_precedes_decoder_allocation(self):
         from unittest.mock import patch

@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from rig_contracts import validate_contract
-from rig_errors import MAX_JSON_BYTES, RigError, decode_json, open_payload, require
+from rig_errors import MAX_JSON_BYTES, RigError, decode_json, open_payload, require, safe_path, job_lock
 from rig_skeleton import (neutral_pose, evaluate_fk, inspect_skeleton,
                           mirror_pose as native_mirror, validate_skeleton)
 from rig_skinning import evaluate_deformation
@@ -203,11 +203,50 @@ def apply_expressions(rig, pose, expressions, *, reset=True, locked_bones=()):
 
 
 def save_pose(rig, path, pose):
-    """Atomically save an editable snapshot in a caller-owned working directory."""
-    native_save(path, validate_pose(rig, pose))
+    """Save an editable snapshot while preserving the native source inventory.
+
+    A detached evaluator's expired temporary root is not a source binding.
+    Callers saving snapshots must provide an independently admitted live rig.
+    """
+    value = validate_pose(rig, pose)
+    require(rig.root is not None, 'ANIMATION_POSE_PATH', 'Snapshot saving needs a live native source root.')
+    try:
+        root = Path(rig.root).resolve(strict=True)
+        destination = Path(path).absolute()
+    except (OSError, RuntimeError, ValueError, TypeError) as exc:
+        raise RigError('ANIMATION_POSE_PATH', 'Snapshot saving needs a live source root and resolvable destination.') from exc
+    require(root.is_dir(), 'ANIMATION_POSE_PATH', 'Native source root is unavailable.')
+    # Reuse the native writer lock: an updated live manifest may protect more
+    # paths than an older detached in-memory context. Geometry is not reloaded.
+    with job_lock(root):
+        try:
+            resolved = destination.resolve(strict=False)
+            canonical_destination = destination.parent.resolve(strict=False) / destination.name
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise RigError('ANIMATION_POSE_PATH', 'Pose destination cannot be resolved safely.') from exc
+        current = _read_json_for_rig(rig, root/'rig.json')
+        validate_contract(current, 'Rig')
+        require((current['id'], current['version']) == (rig.manifest['id'], rig.manifest['version']),
+                'ANIMATION_IDENTITY', 'Live source root does not match the admitted rig identity.')
+        from animation3d_contracts import _walk
+        names = {'rig.json', 'identity.json'}
+        for manifest in (rig.manifest, current):
+            names.update(node['path'] for node in _walk(manifest)
+                         if {'path', 'sha256'} <= node.keys() and isinstance(node['path'], str))
+        protected = {safe_path(root, name).resolve(strict=False) for name in names}
+        protected.add(root.parent / ('.' + root.name + '.rig.lock'))
+        require(resolved not in protected, 'ANIMATION_POSE_SOURCE', 'Editable pose snapshots cannot replace native source or inventory files.')
+        try:
+            relative = resolved.relative_to(root).as_posix().casefold()
+        except ValueError:
+            relative = None
+        require(relative is None or relative not in {name.casefold() for name in names},
+                'ANIMATION_POSE_SOURCE', 'Pose destination collides with a portable native source name.')
+        require(not destination.is_symlink(), 'RIG_SYMLINK', 'Pose snapshot destinations cannot be symbolic links.')
+        native_save(canonical_destination, value)
 
 
-def load_pose(rig, path):
+def _read_json_for_rig(rig, path):
     from rig_load_limits import _JSON_FACTOR
     path = Path(path).absolute()
     retained = max((rig.resource_usage or {}).get('estimated_memory_bytes', 0), rig.geometry.vertex_count*256 + len(rig.skeleton['bones'])*2048)
@@ -215,7 +254,11 @@ def load_pose(rig, path):
     require(remaining > 0, 'ANIMATION_LIMIT', 'No pose JSON memory remains in the native reservation.')
     byte_limit = min(MAX_JSON_BYTES, int(remaining // _JSON_FACTOR))
     with open_payload(path.parent.resolve(strict=True), path.name) as (stream, metadata):
-        require(metadata.st_size <= byte_limit, 'ANIMATION_LIMIT', 'Pose JSON object estimate exceeds the remaining native memory budget.')
+        require(metadata.st_size <= byte_limit, 'ANIMATION_LIMIT', 'JSON object estimate exceeds the remaining native memory budget.')
         payload = stream.read(byte_limit+1)
-        require(len(payload) == metadata.st_size, 'ANIMATION_HASH', 'Pose snapshot changed while reading.')
-    return validate_pose(rig, decode_json(payload))
+        require(len(payload) == metadata.st_size, 'ANIMATION_HASH', 'Snapshot changed while reading.')
+    return decode_json(payload)
+
+
+def load_pose(rig, path):
+    return validate_pose(rig, _read_json_for_rig(rig, path))
