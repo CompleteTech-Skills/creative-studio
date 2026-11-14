@@ -276,6 +276,7 @@ def _semantics(value):
         if value['method']=='GraphCompiler.compile' and value['value'] is not None and value['value'].get('schema_version')==2:
             for node in value['value']['nodes']:
                 validate_execution_metadata(node['execution_metadata'],planned=True)
+            validate_graph_idempotency_keys(value['value'])
         if status=='succeeded':
             output=value['value'];method=value['method']
             if method=='AssetBuildAdapter.build':
@@ -288,6 +289,13 @@ def _semantics(value):
             elif method in ('ExportService.export','ExportService.verify'):
                 _require(output['verified'] and output['outputs'] and output['verification'],
                          'EVIDENCE','Successful export needs actual outputs and independent verification references.')
+
+
+def validate_graph_idempotency_keys(graph):
+    """Require a distinct operation identity for each node in a v2 graph."""
+    keys = [node['execution_metadata']['idempotency_key'] for node in graph['nodes']]
+    _require(len(keys) == len(set(keys)), 'DUPLICATE',
+             'Every planned operation needs its own idempotency key.')
 
 
 def _acyclic(graph,label):

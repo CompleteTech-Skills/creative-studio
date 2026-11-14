@@ -156,6 +156,32 @@ class DirectorGraphTests(unittest.TestCase):
             with self.subTest(status=status),self.assertRaises(RigError):
                 dc.validate_method_result('GraphCompiler.compile',result,self.request)
 
+    def test_v2_graph_operation_keys_are_unique_at_admission(self):
+        self.plan=dg.migrate_plan_v2(self.plan,
+            {node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']})
+        self.refresh()
+        if not self.require_secure_reads():return
+        result=self.compile()
+        graph=result['value']
+        dc.validate_method_result('GraphCompiler.compile',result,self.request)
+        dg.impact(graph,graph)
+        partial=deepcopy(result)
+        partial.update(status='partial',diagnostics=[dict(code='PARTIAL_FIXTURE',severity='warning',
+            stage='graph',entity_id=None,field_path='value',expected=None,observed=None,
+            retryable=False,recommended_action='Inspect partial planning diagnostics.',evidence=[])])
+        dc.validate_method_result('GraphCompiler.compile',partial,self.request)
+        for valid in (result,partial):
+            malformed=deepcopy(valid)
+            nodes=malformed['value']['nodes']
+            nodes[1]['execution_metadata']['idempotency_key']=nodes[0]['execution_metadata']['idempotency_key']
+            for validate in (lambda:dc.validate_document(malformed),
+                             lambda:dc.validate_method_result('GraphCompiler.compile',malformed,self.request),
+                             lambda:dg.impact(graph,malformed['value']),
+                             lambda:dg.impact(malformed['value'],graph)):
+                with self.subTest(status=valid['status'],validate=validate),self.assertRaises(RigError) as failure:
+                    validate()
+                self.assertEqual(failure.exception.report['code'],'DIRECTOR_DUPLICATE')
+
     def test_execution_metadata_requires_native_ownership_and_output_validation(self):
         metadata=self.planned_metadata('a')
         metadata['execution_status']='running'

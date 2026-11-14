@@ -448,6 +448,8 @@ def impact(previous, current, *, uncertain=()):
         for node in graph['nodes']:
             if 'execution_metadata' in node:
                 dc.validate_execution_metadata(node['execution_metadata'])
+        if graph.get('schema_version') == 2:
+            dc.validate_graph_idempotency_keys(graph)
     before = {item['id']: item for item in previous['nodes']}
     after = {item['id']: item for item in current['nodes']}
     changed = {key for key in set(before) | set(after) if before.get(key) != after.get(key)}
