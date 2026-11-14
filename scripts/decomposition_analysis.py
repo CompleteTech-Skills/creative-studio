@@ -12,7 +12,6 @@ import hashlib
 import io
 import os
 import stat
-import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -364,21 +363,99 @@ def prepare(root, backend, *, enabled=False, taxonomy=None, prompt='', max_secon
         if _record_json(job / 'request.json') != request:
             raise ValueError('analysis request collision')
         return status(root, identifier)
-    directory = safe_path(root, 'analysis-jobs')
-    directory.mkdir(exist_ok=True)
-    if len(list(directory.iterdir())) >= MAX_JOBS:
-        raise ValueError('analysis job quota exceeded')
-    from atomic_publish import _rename_no_replace
-    stage = Path(tempfile.mkdtemp(prefix='.analysis-', dir=directory))
-    try:
-        atomic_json(stage / 'request.json', request)
-        atomic_json(stage / 'state.json', {'status': 'ready' if backend == 'opencv-haar' else 'awaiting-external',
-            'attempts': 0, 'request_sha256': identifier, 'applied_revision': None, 'error': None})
-        _rename_no_replace(stage, job)
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
-    return status(root, identifier)
+    state = {'status': 'ready' if backend == 'opencv-haar' else 'awaiting-external',
+             'attempts': 0, 'request_sha256': identifier, 'applied_revision': None, 'error': None}
+    return _publish_prepared_job(root, identifier, request, state)
+
+
+def _publish_prepared_job(root, identifier, request, state):
+    """Publish small job records through the canonical owned staging authority.
+
+    Empty outer wrappers are intentionally retained by that authority. Keep them
+    outside analysis-jobs so they do not consume the existing job quota, and cap
+    their count separately, including wrappers left by interrupted attempts.
+    """
+    from contextlib import ExitStack
+    from itertools import islice
+    from atomic_publish import pinned_directory_fd, private_stage_fd, rename_no_replace_at, windows_private_stage
+    root = Path(root).resolve()  # Preserve the decomposition OS-root alias adapter.
+    payloads = {name: (json.dumps(value, indent=2, allow_nan=False) + '\n').encode('utf-8')
+                for name, value in (('request.json', request), ('state.json', state))}
+    if any(len(value) > MAX_RESPONSE_BYTES for value in payloads.values()):
+        raise ValueError('analysis job records exceed byte quota')
+    def full(directory, limit):
+        # Read at most the admission limit, even in an already crowded directory.
+        with os.scandir(directory) as entries:
+            return sum(1 for _ in islice(entries, limit)) >= limit
+    if os.name == 'nt':
+        from atomic_windows import pinned_directory
+        with pinned_directory(root) as parent:
+            if _record_sha(parent.path / 'decomposition.json', MAX_JSON_BYTES) != request['base_manifest_sha256']:
+                raise ValueError('decomposition changed before analysis job publication')
+            with ExitStack() as stack:
+                pins = []
+                for name in ('analysis-jobs', '.analysis-staging'):
+                    (parent.path / name).mkdir(exist_ok=True)
+                    pins.append(stack.enter_context(parent.pin_child(name)))
+                jobs, staging = pins
+                if full(jobs.path, MAX_JOBS):
+                    raise ValueError('analysis job quota exceeded')
+                if full(staging.path, MAX_JOBS * 4):
+                    raise ValueError('analysis staging quota exceeded')
+                with windows_private_stage(staging.path, prefix='.analysis-') as stage:
+                    # The managed stage and all ancestors deny namespace changes.
+                    # No descendant directory pins remain when the held payload publishes.
+                    for name, payload in payloads.items():
+                        with (stage.path / name).open('xb') as stream:
+                            stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+                    stage.publish_to(jobs.path / identifier)
+                return status(root, identifier)
+    with pinned_directory_fd(root) as parent, ExitStack() as stack:
+        descriptor = os.open('decomposition.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        with os.fdopen(descriptor, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_JSON_BYTES:
+                raise ValueError('analysis manifest must be a bounded regular file')
+            selected = stream.read(MAX_JSON_BYTES + 1)
+            if len(selected) > MAX_JSON_BYTES or hashlib.sha256(selected).hexdigest() != request['base_manifest_sha256']:
+                raise ValueError('decomposition changed before analysis job publication')
+        children = []
+        for name in ('analysis-jobs', '.analysis-staging'):
+            try: os.mkdir(name, mode=0o700, dir_fd=parent)
+            except FileExistsError: pass
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+            stack.callback(os.close, child)
+            children.append(child)
+        jobs, staging = children
+        if full(jobs, MAX_JOBS):
+            raise ValueError('analysis job quota exceeded')
+        if full(staging, MAX_JOBS * 4):
+            raise ValueError('analysis staging quota exceeded')
+        def check_namespace():
+            for current, held in ((root.stat(), os.fstat(parent)),
+                                  (os.stat('analysis-jobs', dir_fd=parent, follow_symlinks=False), os.fstat(jobs)),
+                                  (os.stat('.analysis-staging', dir_fd=parent, follow_symlinks=False), os.fstat(staging))):
+                if (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino):
+                    raise ValueError('analysis job publication directory changed')
+        with private_stage_fd(staging, prefix='.analysis-') as stage:
+            os.mkdir('payload', mode=0o700, dir_fd=stage)
+            payload_fd = os.open('payload', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=stage)
+            try:
+                for name, payload in payloads.items():
+                    descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                         0o600, dir_fd=payload_fd)
+                    with os.fdopen(descriptor, 'wb') as stream:
+                        stream.write(payload); stream.flush(); os.fsync(stream.fileno())
+                os.fsync(payload_fd)
+                check_namespace()
+                rename_no_replace_at(stage, 'payload', jobs, identifier)
+                os.fsync(jobs)
+                check_namespace()
+            finally:
+                os.close(payload_fd)
+        result = status(root, identifier)
+        check_namespace()
+        return result
 
 
 def _recover_retry(root, identifier):
