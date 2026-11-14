@@ -132,3 +132,7 @@ skins/animation rather than dropping them. Explicit basis/unit/pivot transforms
 produce copies and never convert 2D coordinates implicitly. Use native owners
 for source hierarchies, skinning, animation and camera semantics. This bounded
 foundation does not implement reconstruction, model providers or artistic review.
+
+## Cinematic authoring contracts
+
+For cinematic effect configurations, read [cinematic contracts](references/cinematics3d-contracts.md). Use `cinematics3d_contracts.py` for strict validation and `cinematics3d_example.py` for native-source and relocation checks. Reuse native scene/camera/material/animation/render owners. Registry entries describe parameters, not available renderer features; admission never proves execution. Final cinematic media require independently verified zero audio streams, while legacy audio-capable workflows remain unchanged.

@@ -61,6 +61,7 @@ def build():
     from director_planner import schemas as director_planner_schemas
     from lookdev_contracts import schemas as lookdev_schemas
     from scene3d_contracts import schemas as scene3d_schemas
+    from cinematics3d_contracts import schemas as cinematics3d_schemas
     from editor3d_contracts import schemas as editor3d_schemas
     from render3d_contracts import schemas as render3d_schemas
     from asset_dependency_schemas import schemas as asset_dependency_schemas
@@ -76,6 +77,7 @@ def build():
             **{ROOT / 'profiles' / name: value for name, value in director_planner_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in lookdev_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in scene3d_schemas().items()},
+            **{ROOT / 'profiles' / name: value for name, value in cinematics3d_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in editor3d_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in render3d_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in asset_dependency_schemas().items()},

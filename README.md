@@ -70,6 +70,12 @@ Run `python scripts/model3d.py mesh capabilities` for supported boundaries or
 for eighteen real format roundtrips. Original import bytes remain in exported
 source inventories; fixture checks do not grant production-art approval.
 
+The additive [cinematic authoring contracts](references/cinematics3d-contracts.md) define versioned effect stacks, immutable references and explicit capability admission. These are authoring contracts; effect execution and final silent cinematic delivery remain separate acceptance work.
+
+## Explicit silent video exports
+
+The [silent-video API](references/silent-video.md) encodes exact opaque PNG inventories to independently verified video-only H.264 MP4 or VP9 WebM. It rejects every audio stream, checks actual decoded frames and timestamps, and publishes exclusively after verification. Existing H.264/AAC production review movies retain their audio behavior. This media layer does not claim completed 3D rendering or HDR/EXR delivery.
+
 ## Real 3D rigs and animation
 
 The optional 3D engine imports real GLB/glTF, OBJ or packed Blender models, preserves original assets, constructs editable skeletons, generates normalized skin weights, and evaluates FK, spatial IK, contacts, expressions and animation channels. It includes humanoid, quadruped, six-legged winged, robotic and extensible custom templates; manual corrections, semantic retargeting, local review, animated GLB export and independently reopened Blender files.
@@ -156,6 +162,10 @@ python scripts/validate_atlas.py assets/pet/spritesheet.webp
 ```
 
 That check does not recreate generation provenance or prove current app integration. New runs use the review and packaging gates described in [the workflow](references/workflow.md).
+
+## Optional image analysis
+
+[Resumable decomposition analysis](references/decomposition-analysis.md) can run a local OpenCV human face/eye detector or validate externally supplied proposals. It preserves original pixels and pending review. The local detector produces coarse photographic regions, not complete semantic character segmentation; the existing offline manual route remains available.
 
 ## Character state library
 
