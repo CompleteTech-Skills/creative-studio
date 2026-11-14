@@ -1,0 +1,96 @@
+test_scene3d_contracts (unittest.loader._FailedTest.test_scene3d_contracts) ... ERROR
+test_rig_scene3d_math (unittest.loader._FailedTest.test_rig_scene3d_math) ... ERROR
+test_camera_rate_and_zoom_bounds_fail_closed (test_production_contracts.ProductionContractTests.test_camera_rate_and_zoom_bounds_fail_closed) ... ok
+test_clip_root_origin_and_displacement_endpoint_are_enforced (test_production_contracts.ProductionContractTests.test_clip_root_origin_and_displacement_endpoint_are_enforced) ... ok
+test_conflicting_expected_hashes_fail_even_when_the_asset_is_missing (test_production_contracts.ProductionContractTests.test_conflicting_expected_hashes_fail_even_when_the_asset_is_missing) ... ok
+test_cross_scene_prop_ownership_continuity_is_not_inferred_from_appearance (test_production_contracts.ProductionContractTests.test_cross_scene_prop_ownership_continuity_is_not_inferred_from_appearance) ... ok
+test_cross_scene_scale_and_position_continuity_are_validated (test_production_contracts.ProductionContractTests.test_cross_scene_scale_and_position_continuity_are_validated) ... ok
+test_fixture_provenance_and_review_cannot_become_production_acceptance (test_production_contracts.ProductionContractTests.test_fixture_provenance_and_review_cannot_become_production_acceptance) ... ok
+test_handoff_requires_both_actual_clip_markers_at_the_same_frame (test_production_contracts.ProductionContractTests.test_handoff_requires_both_actual_clip_markers_at_the_same_frame) ... ok
+test_hash_mismatch_is_fail_closed_and_diagnostic_mode_reports_actual_bytes (test_production_contracts.ProductionContractTests.test_hash_mismatch_is_fail_closed_and_diagnostic_mode_reports_actual_bytes) ... ok
+test_hierarchy_rejects_cycles_and_missing_grandparents_with_actionable_errors (test_production_contracts.ProductionContractTests.test_hierarchy_rejects_cycles_and_missing_grandparents_with_actionable_errors) ... ok
+test_image_header_viewport_and_alpha_are_verified_before_rendering (test_production_contracts.ProductionContractTests.test_image_header_viewport_and_alpha_are_verified_before_rendering) ... ok
+test_independent_channels_cannot_silently_overwrite_the_same_property (test_production_contracts.ProductionContractTests.test_independent_channels_cannot_silently_overwrite_the_same_property) ... ok
+test_integer_half_open_placement_contact_and_event_intervals_are_checked (test_production_contracts.ProductionContractTests.test_integer_half_open_placement_contact_and_event_intervals_are_checked) ... ok
+test_json_duplicate_keys_nonfinite_and_excessive_nesting_are_rejected (test_production_contracts.ProductionContractTests.test_json_duplicate_keys_nonfinite_and_excessive_nesting_are_rejected) ... ok
+test_missing_leaf_assets_are_inventory_records_only_in_explicit_diagnostic_mode (test_production_contracts.ProductionContractTests.test_missing_leaf_assets_are_inventory_records_only_in_explicit_diagnostic_mode) ... ok
+test_missing_viewpoint_never_falls_back_to_mirroring_front_art (test_production_contracts.ProductionContractTests.test_missing_viewpoint_never_falls_back_to_mirroring_front_art) ... ok
+test_owner_and_attachment_and_shared_event_must_agree (test_production_contracts.ProductionContractTests.test_owner_and_attachment_and_shared_event_must_agree) ... ok
+test_pivots_masks_and_replacement_drawings_preserve_local_viewports (test_production_contracts.ProductionContractTests.test_pivots_masks_and_replacement_drawings_preserve_local_viewports) ... ok
+test_portable_paths_reject_traversal_absolute_drive_backslash_and_symlink (test_production_contracts.ProductionContractTests.test_portable_paths_reject_traversal_absolute_drive_backslash_and_symlink) ... ok
+test_prop_ownership_continuity_distinguishes_repeated_character_instances (test_production_contracts.ProductionContractTests.test_prop_ownership_continuity_distinguishes_repeated_character_instances) ... ok
+test_prop_ownership_continuity_keeps_handoff_on_last_displayed_frame (test_production_contracts.ProductionContractTests.test_prop_ownership_continuity_keeps_handoff_on_last_displayed_frame) ... ok
+test_prop_ownership_continuity_preserves_free_props_and_rejects_owned_free_changes (test_production_contracts.ProductionContractTests.test_prop_ownership_continuity_preserves_free_props_and_rejects_owned_free_changes) ... ok
+test_prop_ownership_continuity_preserves_singleton_shot_local_aliases (test_production_contracts.ProductionContractTests.test_prop_ownership_continuity_preserves_singleton_shot_local_aliases) ... ok
+test_prop_ownership_only_links_detect_repeated_actors_in_either_endpoint (test_production_contracts.ProductionContractTests.test_prop_ownership_only_links_detect_repeated_actors_in_either_endpoint) ... ok
+test_provenance_requires_explicit_derivation_and_acquisition_metadata (test_production_contracts.ProductionContractTests.test_provenance_requires_explicit_derivation_and_acquisition_metadata) ... ok
+test_resource_bounds_apply_before_expensive_rendering (test_production_contracts.ProductionContractTests.test_resource_bounds_apply_before_expensive_rendering) ... ok
+test_root_facing_tracks_cannot_bypass_identity_or_authored_view (test_production_contracts.ProductionContractTests.test_root_facing_tracks_cannot_bypass_identity_or_authored_view) ... ok
+test_schema_documents_match_the_runtime_contract_and_validate_the_fixture (test_production_contracts.ProductionContractTests.test_schema_documents_match_the_runtime_contract_and_validate_the_fixture) ... ok
+test_tracks_require_frame_zero_strict_order_and_discrete_step_values (test_production_contracts.ProductionContractTests.test_tracks_require_frame_zero_strict_order_and_discrete_step_values) ... ok
+test_two_scenes_reuse_exact_character_versions_and_asset_inventory (test_production_contracts.ProductionContractTests.test_two_scenes_reuse_exact_character_versions_and_asset_inventory) ... ok
+test_unknown_fields_unsupported_versions_and_boolean_frames_fail_closed (test_production_contracts.ProductionContractTests.test_unknown_fields_unsupported_versions_and_boolean_frames_fail_closed) ... ok
+test_versioned_assets_reject_duplicate_identity_but_allow_a_new_version (test_production_contracts.ProductionContractTests.test_versioned_assets_reject_duplicate_identity_but_allow_a_new_version) ... ok
+test_authored_sit_reach_hold_release_and_reaction_pose_chains_compose (test_production_performance.ProductionPerformanceTests.test_authored_sit_reach_hold_release_and_reaction_pose_chains_compose) ... ok
+test_body_face_gaze_and_mouth_channels_remain_independent (test_production_performance.ProductionPerformanceTests.test_body_face_gaze_and_mouth_channels_remain_independent) ... ok
+test_contacts_are_half_open_and_markers_are_exact_frame_events (test_production_performance.ProductionPerformanceTests.test_contacts_are_half_open_and_markers_are_exact_frame_events) ... ok
+test_dialogue_preserves_editable_cues_and_explicit_mouth_overrides (test_production_performance.ProductionPerformanceTests.test_dialogue_preserves_editable_cues_and_explicit_mouth_overrides) ... ok
+test_early_once_placement_requires_an_authorized_interruption (test_production_performance.ProductionPerformanceTests.test_early_once_placement_requires_an_authorized_interruption) ... ok
+test_evaluation_returns_copies_without_mutating_authored_keys (test_production_performance.ProductionPerformanceTests.test_evaluation_returns_copies_without_mutating_authored_keys) ... ok
+test_full_frame_override_has_exact_boundaries_and_preserves_root_motion (test_production_performance.ProductionPerformanceTests.test_full_frame_override_has_exact_boundaries_and_preserves_root_motion) ... ok
+test_hold_is_static_and_emits_only_entry_events (test_production_performance.ProductionPerformanceTests.test_hold_is_static_and_emits_only_entry_events) ... ok
+test_idle_walk_stop_accumulates_world_displacement_without_scale_pulsing (test_production_performance.ProductionPerformanceTests.test_idle_walk_stop_accumulates_world_displacement_without_scale_pulsing) ... ok
+test_interruptions_obey_markers_cancel_pose_and_transition_bounds (test_production_performance.ProductionPerformanceTests.test_interruptions_obey_markers_cancel_pose_and_transition_bounds) ... ok
+test_linear_and_step_tracks_use_exact_integer_frames (test_production_performance.ProductionPerformanceTests.test_linear_and_step_tracks_use_exact_integer_frames) ... ok
+test_loop_displacement_accumulates_at_integer_cycle_boundaries (test_production_performance.ProductionPerformanceTests.test_loop_displacement_accumulates_at_integer_cycle_boundaries) ... ok
+test_loop_midcycle_cuts_require_authored_exit_or_cancellation_policy (test_production_performance.ProductionPerformanceTests.test_loop_midcycle_cuts_require_authored_exit_or_cancellation_policy) ... ok
+test_numeric_transition_checks_rates_and_rejects_unblended_drawing_changes (test_production_performance.ProductionPerformanceTests.test_numeric_transition_checks_rates_and_rejects_unblended_drawing_changes) ... ok
+test_once_completion_preserves_root_and_declares_hold_return_or_exit (test_production_performance.ProductionPerformanceTests.test_once_completion_preserves_root_and_declares_hold_return_or_exit) ... ok
+test_planned_coverage_is_independent_and_binds_intervals_character_versions_and_sources (test_production_performance.ProductionPerformanceTests.test_planned_coverage_is_independent_and_binds_intervals_character_versions_and_sources) ... ok
+test_pose_mismatch_requires_an_explicit_bounded_transition (test_production_performance.ProductionPerformanceTests.test_pose_mismatch_requires_an_explicit_bounded_transition) ... ok
+test_prop_ownership_changes_on_the_exact_shared_frame_without_mutating_metadata (test_production_performance.ProductionPerformanceTests.test_prop_ownership_changes_on_the_exact_shared_frame_without_mutating_metadata) ... ok
+test_restriction_requires_temporal_overlap_of_independent_dimensions (test_production_performance.ProductionPerformanceTests.test_restriction_requires_temporal_overlap_of_independent_dimensions) ... ok
+test_shot_mouth_override_preserves_clip_body_and_cast_scale (test_production_performance.ProductionPerformanceTests.test_shot_mouth_override_preserves_clip_body_and_cast_scale) ... ok
+test_step_numeric_track_checks_the_actual_jump_not_key_spacing (test_production_performance.ProductionPerformanceTests.test_step_numeric_track_checks_the_actual_jump_not_key_spacing) ... ok
+test_transition_validates_the_moving_target_at_every_blended_frame (test_production_performance.ProductionPerformanceTests.test_transition_validates_the_moving_target_at_every_blended_frame) ... ok
+test_each_authored_sequence_changes_actual_composited_rgba_pixels (test_production_performance.ProductionRegressionDemoTests.test_each_authored_sequence_changes_actual_composited_rgba_pixels) ... ok
+test_full_frame_override_replaces_only_character_layers_on_exact_boundaries (test_production_performance.ProductionRegressionDemoTests.test_full_frame_override_replaces_only_character_layers_on_exact_boundaries) ... ok
+test_grasp_render_fails_when_the_hand_does_not_reach_the_owned_prop (test_production_performance.ProductionRegressionDemoTests.test_grasp_render_fails_when_the_hand_does_not_reach_the_owned_prop) ... ok
+test_offline_pcm_matches_cue_start_end_samples_and_exact_total_duration (test_production_performance.ProductionRegressionDemoTests.test_offline_pcm_matches_cue_start_end_samples_and_exact_total_duration) ... ok
+test_planted_foot_check_catches_a_real_stance_compensation_error (test_production_performance.ProductionRegressionDemoTests.test_planted_foot_check_catches_a_real_stance_compensation_error) ... ok
+test_regression_factory_is_reproducible_and_measures_real_authored_intervals (test_production_performance.ProductionRegressionDemoTests.test_regression_factory_is_reproducible_and_measures_real_authored_intervals) ... ok
+
+======================================================================
+ERROR: test_scene3d_contracts (unittest.loader._FailedTest.test_scene3d_contracts)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_scene3d_contracts
+Traceback (most recent call last):
+  File "/home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+  File "/home/complete/.cache/hatch-coordination-20261112/worktrees/continuity116/tests/test_scene3d_contracts.py", line 22, in <module>
+    from rig_errors import RigError, decode_json
+ModuleNotFoundError: No module named 'rig_errors'
+
+
+======================================================================
+ERROR: test_rig_scene3d_math (unittest.loader._FailedTest.test_rig_scene3d_math)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_rig_scene3d_math
+Traceback (most recent call last):
+  File "/home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 396, in _find_test_path
+    module = self._get_module_from_name(name)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/complete/.local/share/mise/installs/python/3.12.15/lib/python3.12/unittest/loader.py", line 339, in _get_module_from_name
+    __import__(name)
+  File "/home/complete/.cache/hatch-coordination-20261112/worktrees/continuity116/tests/test_rig_scene3d_math.py", line 8, in <module>
+    from rig_errors import RigError
+ModuleNotFoundError: No module named 'rig_errors'
+
+
+----------------------------------------------------------------------
+Ran 61 tests in 4.267s
+
+FAILED (errors=2)

@@ -1,0 +1,17 @@
+{
+  "expiry": "2026-10-24T05:42:09Z",
+  "calls": [
+    {
+      "id": "check-0",
+      "started": "2026-10-24T05:42:07Z"
+    },
+    {
+      "id": "second",
+      "started": "2026-10-24T05:42:10Z"
+    }
+  ],
+  "outcomes": [
+    "supported_fallback",
+    "supported_fallback"
+  ]
+}
