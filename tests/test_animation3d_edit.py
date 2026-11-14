@@ -77,6 +77,44 @@ class EditCommandsTests(unittest.TestCase):
         self.assertEqual(third['clip']['tracks'][0]['default_value'],[1,0,0])
         self.assertFalse(third['native_validated'])
 
+    def test_aggregate_clipboard_is_bounded_before_copy_allocation(self):
+        from unittest.mock import patch
+        import animation3d_edit
+        value=clip();identifier=value['tracks'][0]['id']
+        value['duration_frames']=5000
+        value['tracks'][0]['keys']=[dict(time=dict(frame=i),value=[0,0,0],interpolation='linear') for i in range(4096)]
+        commands=request(value,*[dict(op='copy-keys',track_id=identifier,start=dict(frame=0),end=dict(frame=4095))]*128)
+        before=object_hash(value)
+        with patch('animation3d_edit.copy_keys',wraps=animation3d_edit.copy_keys) as copies:
+            with self.assertRaises(RigError) as rejected:apply_clip_commands(value,commands)
+        self.assertEqual(copies.call_count,1,'Only the first quota-sized copy may be cloned.')
+        self.assertEqual(rejected.exception.report['code'],'ANIMATION_LIMIT')
+        self.assertEqual(object_hash(value),before)
+        for key in value['tracks'][0]['keys']:key['metadata']={'note':'bounded text'}
+        commands=request(value,dict(op='copy-keys',track_id=identifier,start=dict(frame=0),end=dict(frame=4095)))
+        with patch('animation3d_edit.copy_keys',side_effect=AssertionError('combined output nodes exceeded before clone')):
+            with self.assertRaises(RigError):apply_clip_commands(value,commands)
+        # Independently enforce aggregate key count even with tiny key records.
+        short=clip();command=dict(op='copy-keys',track_id=short['tracks'][0]['id'],start=dict(frame=0),end=dict(frame=24))
+        with patch.object(animation3d_edit,'MAX_COPIED_KEYS',3):
+            with self.assertRaises(RigError):apply_clip_commands(short,request(short,command,command))
+
+    def test_metadata_events_and_named_regions_delegate_canonical_contracts(self):
+        from animation3d_clips import region_range
+        value=clip()
+        commands=request(value,dict(op='edit-clip',version='1.0.1',tags=['gesture'],loop_mode='loop',
+            add_event=dict(id='beat',name='Beat',frame=3,type='marker',payload={})),
+            dict(op='set-region',identifier='gesture',name='Gesture',start_frame=6,end_frame=12))
+        result=apply_clip_commands(value,commands)
+        self.assertEqual(result['clip']['version'],'1.0.1')
+        self.assertEqual(region_range(result['clip'],'gesture'),dict(source_in=6,source_out=12))
+        bad=deepcopy(result['clip']);bad['events']=[e for e in bad['events'] if e['id']!='gesture:end']
+        from animation3d_contracts import validate_contract
+        with self.assertRaises(RigError) as rejected:validate_contract(bad)
+        self.assertEqual(rejected.exception.report['code'],'ANIMATION_REGION')
+        removed=apply_clip_commands(result['clip'],request(result['clip'],dict(op='remove-region',identifier='gesture')))
+        self.assertEqual([e['id'] for e in removed['clip']['events']],['beat'])
+
     def test_native_context_rejects_disabled_fabricated_targets(self):
         with tempfile.TemporaryDirectory() as directory:
             rig=fixture(directory,animated=False)

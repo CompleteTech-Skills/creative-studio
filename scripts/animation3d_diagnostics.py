@@ -102,7 +102,7 @@ def diagnose_track(track, registry, *, fps, duration_frames, loop=False,
         validate_contract(dict(schema_version=1, kind=KINDS['track'], value=pinned))
         entry = deepcopy(registry._validated_track_entry(pinned, duration_frames))
     except RigError as exc:
-        extrapolation = any(pinned.get(k, 'hold') != 'hold' for k in ('extrapolation_before', 'extrapolation_after'))
+        extrapolation = exc.report['code']=='ANIMATION_EXTRAPOLATION' or any(pinned.get(k, 'hold') not in ('hold','linear','cycle') for k in ('extrapolation_before', 'extrapolation_after'))
         emit('invalid-extrapolation' if extrapolation else 'invalid-track', Fraction(0), error=deepcopy(exc.report))
         return dict(source_valid=False, findings=findings, samples=[], coverage='not sampled: invalid source')
     # The binding above is validated by the supplied authoritative registry.

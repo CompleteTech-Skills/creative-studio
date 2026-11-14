@@ -114,7 +114,7 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertNotIn('visibility-flicker',codes(self.diagnose(value,intentional_cuts=[dict(frame=1)])))
 
     def test_invalid_extrapolation_and_all_malformed_policy_boundaries(self):
-        value = track(); value['extrapolation_after']='cycle'
+        value = track(); value['extrapolation_after']='unrecognized'
         result=self.diagnose(value)
         self.assertFalse(result['source_valid'])
         self.assertEqual(codes(result),{'invalid-extrapolation'})

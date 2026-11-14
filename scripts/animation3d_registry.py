@@ -114,14 +114,26 @@ def sample_track(track, time, registry):
     if not track['enabled'] or not keys:
         return deepcopy(track['default_value'])
     positions=[frame_position(key['time']) for key in keys]
-    if position<=positions[0]: return deepcopy(keys[0]['value'])
-    if position>=positions[-1]: return deepcopy(keys[-1]['value'])
-    right=next(i for i,p in enumerate(positions) if p>position); left=right-1
-    a,b=keys[left],keys[right]
-    mode=a.get('interpolation','step' if track['value_type']=='boolean' else 'quaternion-slerp' if track['value_type']=='quaternion' else 'linear')
-    if mode=='step': return deepcopy(a['value'])
-    from animation3d_curves import evaluate_segment
-    value=evaluate_segment(track,left,position)
+    value=None
+    if position<positions[0] or position>positions[-1]:
+        before=position<positions[0]
+        extrapolation=track['extrapolation_before' if before else 'extrapolation_after']
+        if extrapolation=='hold' or len(keys)==1:
+            return deepcopy(keys[0 if before else -1]['value'])
+        if extrapolation=='cycle':
+            position=positions[0]+(position-positions[0])%(positions[-1]-positions[0])
+        else:
+            from animation3d_curves import extrapolate_linear
+            value=extrapolate_linear(track,position,before=before)
+    if value is None:
+        if position<=positions[0]: return deepcopy(keys[0]['value'])
+        if position>=positions[-1]: return deepcopy(keys[-1]['value'])
+        right=next(i for i,p in enumerate(positions) if p>position); left=right-1
+        a,b=keys[left],keys[right]
+        mode=a.get('interpolation','step' if track['value_type']=='boolean' else 'quaternion-slerp' if track['value_type']=='quaternion' else 'linear')
+        if mode=='step': return deepcopy(a['value'])
+        from animation3d_curves import evaluate_segment
+        value=evaluate_segment(track,left,position)
     require(np.isfinite(value).all(),'ANIMATION_NUMERICAL','Interpolation produced nonfinite output.',stage='animation3d')
     if '_native_domain' in entry:
         from jsonschema import Draft202012Validator

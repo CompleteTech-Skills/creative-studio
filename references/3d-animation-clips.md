@@ -97,7 +97,14 @@ uses the same typed registry and validates the final native property domain:
 Boolean channels remain stepped. Quaternion channels use only step, SLERP or
 SQUAD. Unused controls, mismatched dimensions and nonmonotonic Bezier times
 reject. Sampled Hermite/Bezier/TCB overshoot must obey native scale/morph and
-registered scalar bounds. Hold extrapolation remains the admitted mode.
+registered scalar bounds. Hold extrapolation preserves the endpoint. Cycle extrapolation repeats the exact
+key interval, retaining an exact terminal key before wrapping later times. Linear
+extrapolation continues the actual endpoint derivative: Hermite tangents, Bezier
+time/value handles, ease slopes and TCB/Catmull slopes retain value/frame units.
+Quaternion SLERP/SQUAD continue the canonical short-hemisphere logarithmic angular
+derivative. Boolean linear extrapolation and Bezier endpoints with infinite time
+derivatives reject explicitly. Linear extension is bounded to one million source
+segment intervals and every result is checked against the native property domain.
 
 ## Acceptance boundary and remaining parent work
 
@@ -112,8 +119,12 @@ execution. Contacts are retained metadata and are explicitly reported unsolved.
 Parent #13's complete timeline/curve UI and track groups belong to the editor
 integration; nested clips, animation layers, state transitions, procedural motion,
 IK/contact execution and root-motion extraction belong to subsequent animation
-packages. Scene/camera/light/material targets keep their owner adapters. Rich
-clip splitting/joining, range-local frame insertion/removal, symmetry-aware pose
-editing and full continuity diagnostics are not implemented here. This document
-does not close #68 or #13 until those applicable acceptance requirements and the
-owner integrations have complete reproducible evidence and independent review.
+packages. Scene/camera/light/material targets keep their owner adapters. Clip splitting/joining, range-local frame insertion/removal and named regions reuse
+the canonical sampler through `animation3d_clips`; SQUAD cuts require explicit
+caller-approved sampled tolerances and work limits. Symmetry-aware pose editing
+uses explicit joint/morph mappings through `animation3d_poses`. Bounded sampled
+continuity diagnostics report their coverage and limitations through
+`animation3d_diagnostics`. These APIs do not claim continuous mathematical bounds
+or artistic approval. See the respective clip-editing, poses and diagnostics
+references. This document does not close #68 or #13 without reproducible owner
+integration evidence and independent review of the final candidate.

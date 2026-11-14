@@ -13,7 +13,9 @@ def main(argv=None):
     parser.add_argument('--root',type=Path,required=True)
     parser.add_argument('--actor',required=True)
     parser.add_argument('--clip',type=Path,action='append',required=True)
-    parser.add_argument('--frame',type=int,required=True)
+    parser.add_argument('--frame',type=int,default=0)
+    parser.add_argument('--clip-frame',type=int,action='append',help='One explicit source frame per --clip; overrides the shared frame')
+    parser.add_argument('--clip-subframe-ticks',type=int,action='append',help='One source subframe per --clip-frame')
     parser.add_argument('--subframe-ticks',type=int,default=0)
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args(argv)
@@ -23,8 +25,14 @@ def main(argv=None):
                 'ANIMATION_PATH','Evaluated output must not replace source clips or native rig files.')
         require(len(args.clip)<=64,'ANIMATION_LIMIT','At most 64 independent clips may be composed.')
         evaluator=RigClipEvaluator(args.root,args.actor)
-        result=evaluator.evaluate([load_clip(path) for path in args.clip],
-                                  dict(frame=args.frame,subframe_ticks=args.subframe_ticks))
+        require(args.clip_frame is None or len(args.clip_frame)==len(args.clip),
+                'ANIMATION_TIME','Provide exactly one source --clip-frame per clip.')
+        require(args.clip_subframe_ticks is None or args.clip_frame is not None and len(args.clip_subframe_ticks)==len(args.clip),
+                'ANIMATION_TIME','Source subframes require one value per explicit source frame.')
+        sources=[(load_clip(path),dict(frame=args.frame if args.clip_frame is None else args.clip_frame[index],
+                                     subframe_ticks=args.subframe_ticks if args.clip_subframe_ticks is None else args.clip_subframe_ticks[index]))
+                 for index,path in enumerate(args.clip)]
+        result=evaluator.evaluate_sources(sources)
         atomic_json(args.output,result)
         print(json.dumps(dict(output=str(args.output),dependency_signature=result['dependency_signature'],
                               meshes=len(result['geometry']),scope=result['scope']),sort_keys=True))

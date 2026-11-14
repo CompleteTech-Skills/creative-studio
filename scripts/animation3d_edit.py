@@ -12,11 +12,12 @@ from pathlib import Path
 from animation3d_contracts import _definitions, validate_contract, KINDS
 from animation3d_time import frame_position
 from animation3d_clips import (edit_key, edit_clip, copy_keys, paste_keys, move_keys,
-                               retime_clip, reverse_clip, splice_frames)
+                               retime_clip, reverse_clip, splice_frames, set_region, remove_region)
 from rig_contracts import obj, arr, ref
 from rig_errors import RigError, require, finite_json, object_hash, open_payload, decode_json
 
 MAX_COMMANDS = 128
+MAX_COPIED_KEYS = 4096
 MAX_DOCUMENT_NODES = 100000
 MAX_TEXT_CHARACTERS = 2*1024*1024
 MAX_JSON_BYTES = 2*1024*1024
@@ -44,8 +45,14 @@ def _request_schema():
         command('move-keys', dict(track_id=identifier, start=ref('time'), end=ref('time'), scale=scale, offset=rational), ['scale','offset']),
         command('edit-clip', dict(name={'type':'string','minLength':1,'maxLength':4096},
             duration={'type':'integer','minimum':1,'maximum':10_000_000},
-            fps=obj(dict(numerator=positive, denominator=positive)),
-            add_track=ref('track'), remove_track=identifier), ['name','duration','fps','add_track','remove_track']),
+            fps=obj(dict(numerator=positive, denominator=positive)), add_track=ref('track'), remove_track=identifier,
+            identifier=identifier, version=defs['clip']['properties']['version'],
+            **{name:deepcopy(defs['clip']['properties'][name]) for name in ('tags','categories','loop_mode','completion_mode','default_speed')},
+            add_event=ref('event'), remove_event=identifier),
+            ['name','duration','fps','add_track','remove_track','identifier','version','tags','categories','loop_mode','completion_mode','default_speed','add_event','remove_event']),
+        command('set-region',dict(identifier=identifier,name={'type':'string','minLength':1,'maxLength':4090},
+            start_frame={'type':'integer','minimum':0,'maximum':10_000_000},end_frame=positive)),
+        command('remove-region',dict(identifier=identifier)),
         command('retime-clip', dict(scale=scale, offset=rational), ['scale','offset']),
         command('reverse-clip'),
         command('splice-frames', dict(start={'type':'integer','minimum':0,'maximum':10_000_000}, count=number)),
@@ -118,6 +125,7 @@ def apply_clip_commands(clip, request, *, rig_root=None, actor_id=None):
     require((rig_root is None)==(actor_id is None), 'ANIMATION_EDIT_CONTEXT', 'Native context requires both rig root and actor ID.')
     value = deepcopy(clip)
     copied = []
+    copied_count = 0
     for index, command in enumerate(request['commands']):
         op = command['op']
         if op=='insert-key':
@@ -139,9 +147,20 @@ def apply_clip_commands(clip, request, *, rig_root=None, actor_id=None):
             value['tracks'][target] = deepcopy(command['track'])
             validate_contract(value)
         elif op=='copy-keys':
-            keys = copy_keys(value, command['track_id'], command['start'], command['end'])
-            require(len(keys)<=4096, 'ANIMATION_LIMIT', 'Copied key selection exceeds clipboard policy.')
-            copied.append(dict(command_index=index, track_id=command['track_id'], keys=keys))
+            low,high=frame_position(command['start']),frame_position(command['end'])
+            require(low<=high, 'ANIMATION_INTERVAL', 'Copy range is reversed.')
+            track=next((t for t in value['tracks'] if t['id']==command['track_id']), None)
+            require(track is not None, 'ANIMATION_REFERENCE', 'Track does not exist.')
+            selection=[]
+            for key in track['keys']:
+                if low<=frame_position(key['time'])<=high:
+                    require(copied_count+len(selection)<MAX_COPIED_KEYS, 'ANIMATION_LIMIT', 'Aggregate clipboard key capacity exceeded.')
+                    selection.append(key)
+            proposal=dict(command_index=index,track_id=command['track_id'],keys=selection)
+            _bounded_document([value, copied+[proposal]])
+            keys=copy_keys(value,command['track_id'],command['start'],command['end'])
+            copied.append(dict(command_index=index,track_id=command['track_id'],keys=keys))
+            copied_count+=len(keys)
         elif op=='paste-keys':
             value = paste_keys(value, command['track_id'], command['keys'], _fraction(command.get('offset'), 0))
         elif op=='move-keys':
@@ -152,20 +171,26 @@ def apply_clip_commands(clip, request, *, rig_root=None, actor_id=None):
             if 'duration' in fields: fields['duration']=int(fields['duration'])
             if 'fps' in fields: fields['fps']={k:int(v) for k,v in fields['fps'].items()}
             value = edit_clip(value, **fields)
+        elif op=='set-region':
+            value=set_region(value,command['identifier'],command['name'],int(command['start_frame']),int(command['end_frame']))
+        elif op=='remove-region':
+            value=remove_region(value,command['identifier'])
         elif op=='retime-clip':
             value = retime_clip(value, _fraction(command.get('scale'), 1), _fraction(command.get('offset'), 0))
         elif op=='reverse-clip':
             value = reverse_clip(value)
         elif op=='splice-frames':
             value = splice_frames(value, int(command['start']), int(command['count']))
-        _bounded_document(value)
+        _bounded_document([value,copied])
     if rig_root is not None:
         _validate_native(value, rig_root, actor_id)
     after = object_hash(value)
-    return dict(clip=value, before_document_hash=before, after_document_hash=after,
+    result=dict(clip=value, before_document_hash=before, after_document_hash=after,
                 changed=before!=after, applied_count=len(request['commands']),
                 copied_keys=copied, native_validated=rig_root is not None,
                 publication_scope='validated detached document; caller owns exact file references and revision transaction')
+    _bounded_document(result)
+    return result
 
 
 def read_edit_document(path):

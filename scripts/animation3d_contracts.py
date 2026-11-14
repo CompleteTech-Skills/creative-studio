@@ -285,8 +285,8 @@ def validate_track(track, duration_frames=None):
             tangent=key[name]; value=key['value']
             require(type(tangent) in (int,float) if type(value) in (int,float) else isinstance(tangent,list) and len(tangent)==len(value) and all(type(x) in (int,float) for x in tangent),
                     'ANIMATION_TANGENT','Tangent dimensions must match value; units are value/frame.',stage='animation3d')
-    require(track['extrapolation_before']=='hold' and track['extrapolation_after']=='hold',
-        'ANIMATION_EXTRAPOLATION','This foundation executes only hold extrapolation.',stage='animation3d')
+    require(track['value_type']!='boolean' or 'linear' not in (track['extrapolation_before'],track['extrapolation_after']),
+        'ANIMATION_EXTRAPOLATION','Boolean channels support hold or cycle extrapolation.',stage='animation3d')
     return track
 
 
@@ -467,6 +467,8 @@ def _semantic(value):
         if 'rotation_offset' in node: _check_value(node['rotation_offset'],'node','rotation')
     kind=value['kind']
     if kind==KINDS['clip']:
+        from animation3d_clips import validate_named_regions
+        validate_named_regions(value)
         _unique(value['tracks']); _unique(value['events']); _unique(value['contacts'])
         channels=[target_key(t['target']) for t in value['tracks']]
         require(len(set(channels))==len(channels),'ANIMATION_DUPLICATE','Duplicate clip target channel.',stage='animation3d')

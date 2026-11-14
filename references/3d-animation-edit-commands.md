@@ -23,7 +23,9 @@ publication owner. The caller verifies its original raw reference and project
 revision, chooses a new immutable published version when needed, and commits
 new bytes and references atomically. The command adapter writes no files.
 
-The closed request admits at most 128 commands. Supported operations are:
+The closed request admits at most 128 commands. Clipboard keys share an aggregate
+4,096-key allowance, and the complete clip plus all clipboard output shares the
+node/text policy. Admission precedes each clipboard clone. Supported operations are:
 
 - `insert-key`: `track_id`, complete canonical `key`.
 - `remove-key`: `track_id`, exact `time`.
@@ -35,7 +37,10 @@ The closed request admits at most 128 commands. Supported operations are:
 - `move-keys`: `track_id`, inclusive `start`/`end`, optional positive rational
   `scale` and rational `offset`.
 - `edit-clip`: optional `name`, integer `duration`, rational `fps`, `add_track`
-  and/or `remove_track`.
+  and/or `remove_track`; existing identity/version, tags/categories, loop/completion
+  policy, speed and canonical event additions/removals are also supported.
+- `set-region`: `identifier`, `name`, integer `start_frame`/`end_frame`.
+- `remove-region`: existing `identifier`.
 - `retime-clip`: optional positive rational `scale` and rational `offset`.
 - `reverse-clip`: no additional fields.
 - `splice-frames`: integer `start` and nonzero integer `count`.

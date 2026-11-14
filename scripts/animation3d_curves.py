@@ -83,3 +83,55 @@ def evaluate_segment(track, index, position):
     else:
         raise AssertionError('Unvalidated interpolation mode: '+mode)
     return result.tolist() if isinstance(a['value'],list) else bool(np.asarray(result).item()) if track['value_type']=='boolean' else float(np.asarray(result).item())
+
+
+def extrapolate_linear(track, position, *, before):
+    """Continue the endpoint derivative in native value/frame units.
+
+    Quaternion derivatives use the short-hemisphere logarithm and canonical
+    exponential, including the analytic endpoint derivative of SQUAD.
+    """
+    from rig_errors import require
+    keys=track['keys']; positions=[frame_position(k['time']) for k in keys]
+    index=0 if before else len(keys)-2
+    a,b=keys[index:index+2]; duration=float(positions[index+1]-positions[index])
+    anchor=a if before else b
+    delta=float(position-(positions[index] if before else positions[index+1]))
+    require(abs(delta/duration)<=1_000_000,'ANIMATION_LIMIT','Linear extrapolation exceeds one million segment intervals.')
+    mode=a.get('interpolation','step' if track['value_type']=='boolean' else 'quaternion-slerp' if track['value_type']=='quaternion' else 'linear')
+    av,bv=np.asarray(a['value'],dtype=float),np.asarray(b['value'],dtype=float)
+    if mode=='step':
+        from copy import deepcopy
+        return deepcopy(anchor['value'])
+    if track['value_type']=='quaternion':
+        q0,q1=quaternion(av),quaternion(bv)
+        velocity=quaternion_log(qmul(qinverse(q0),q1))
+        if mode=='quaternion-squad':
+            endpoint=q0 if before else q1
+            control=_control(keys,index if before else index+1)
+            velocity=velocity+(2 if before else -2)*quaternion_log(qmul(qinverse(endpoint),control))
+        value=quaternion(qmul(q0 if before else q1,quaternion_exp(velocity*(delta/duration))))
+        return value.tolist()
+    if mode=='hermite':
+        velocity=np.asarray(a['out_tangent'] if before else b['in_tangent'],dtype=float)
+    elif mode=='ease':
+        velocity=(bv-av)/duration*(1-a.get('ease_out',1) if before else 1-b.get('ease_in',1))
+    elif mode in ('catmull-rom','tcb'):
+        use=keys if mode=='tcb' else [{k:v for k,v in key.items() if k not in ('tension','continuity','bias')} for key in keys]
+        velocity=_slope(use,positions,index if before else index+1,before)
+    elif mode=='bezier':
+        outgoing,incoming=a['out_handle'],b['in_handle']
+        ow=outgoing.get('weight',1) if outgoing.get('weighted',False) else 1
+        iw=incoming.get('weight',1) if incoming.get('weighted',False) else 1
+        controls=[(0.,av),(outgoing['time_delta_frames']*ow,av+np.asarray(outgoing['value_delta'])*ow),
+                  (duration+incoming['time_delta_frames']*iw,bv+np.asarray(incoming['value_delta'])*iw),(duration,bv)]
+        if not before:controls=list(reversed(controls))
+        x0,v0=controls[0]
+        for x1,v1 in controls[1:]:
+            if x1!=x0:
+                velocity=(v1-v0)/(x1-x0);break
+            require(np.array_equal(v1,v0),'ANIMATION_EXTRAPOLATION','Bezier endpoint has no finite time derivative.')
+    else:
+        velocity=(bv-av)/duration
+    result=np.asarray(anchor['value'],dtype=float)+velocity*delta
+    return result.tolist() if isinstance(anchor['value'],list) else float(np.asarray(result).item())
