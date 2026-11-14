@@ -79,6 +79,12 @@ def windows_private_stage(parent, **policies):
     return private_stage(parent, **policies)
 
 
+def windows_writer_lock(root, *, name='.execution-retention.lock'):
+    """Cooperative storage critical section under canonical Windows pinning."""
+    from atomic_windows import writer_lock
+    return writer_lock(root, name=name)
+
+
 # New staging capabilities intentionally have a narrower platform contract than
 # the legacy path-based exclusive rename above. Never silently fall back to an
 # unpinned temporary pathname on an unsupported host.
@@ -269,6 +275,55 @@ def pinned_directory_fd(path):
         raise OSError(errno.ENOTSUP, 'descriptor-only parent pinning is unavailable')
     with _pinned_directory_common(path) as descriptor:
         yield descriptor
+
+
+@contextmanager
+def writer_lock_fd(parent_fd, *, name='.execution-retention.lock'):
+    """Nonblocking cooperative storage lock relative to one pinned POSIX root.
+
+    All cooperating writers must use the same reserved name and never unlink or
+    replace its inode. The root must be owned by this user and not writable by
+    group/other users; the lock must remain an owned mode-0600 single-link regular
+    file. This serializes quota admission through final install, not job claims.
+    The borrowed caller FD is never closed, and the lock entry is never removed.
+    """
+    if os.name != 'posix' or not hasattr(os, 'O_NOFOLLOW'):
+        raise OSError(errno.ENOTSUP, 'descriptor-relative writer locks require POSIX')
+    if (not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9._-]{1,128}', name)
+            or name in ('.', '..')):
+        raise ValueError('writer lock needs one bounded portable filename')
+    _validate_directory_descriptor(parent_fd)
+    before = os.fstat(parent_fd)
+    parent = os.dup(parent_fd)
+    lock = None
+    acquired = False
+    try:
+        current = os.fstat(parent)
+        if ((current.st_dev, current.st_ino) != (before.st_dev, before.st_ino)
+                or current.st_uid != os.geteuid() or stat.S_IMODE(current.st_mode) & 0o022):
+            raise ValueError('writer root must remain pinned, owned and private from other writers')
+        flags = os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | getattr(os, 'O_NONBLOCK', 0)
+        lock = os.open(name, flags, 0o600, dir_fd=parent)
+        def validate():
+            held = os.fstat(lock)
+            named = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if (not stat.S_ISREG(held.st_mode) or held.st_uid != os.geteuid()
+                    or stat.S_IMODE(held.st_mode) != 0o600 or held.st_nlink != 1
+                    or (held.st_dev, held.st_ino) != (named.st_dev, named.st_ino)):
+                raise ValueError('writer lock must be the same owned private single-link regular inode')
+        validate()
+        import fcntl
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        acquired = True
+        validate()
+        yield
+        validate()
+    finally:
+        if lock is not None:
+            if acquired:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+            os.close(lock)
+        os.close(parent)
 
 
 def _clear_private_directory(descriptor):

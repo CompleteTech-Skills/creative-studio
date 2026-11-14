@@ -5,7 +5,7 @@ entire context, reject reparse points, and rename the held payload by handle.
 No pathname stat-then-rename is used as proof of source identity. This does not
 isolate callers from hostile processes running as the same Windows user.
 """
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 import ctypes
 import errno
@@ -14,6 +14,8 @@ import os
 from pathlib import Path, PureWindowsPath
 import re
 import secrets
+import hashlib
+import stat
 
 
 _READ_ATTRIBUTES = 0x80
@@ -52,6 +54,17 @@ class _AllowedAce(ctypes.Structure):
                 ('size', ctypes.c_uint16), ('mask', _DWORD)]
 
 
+class _FileTime(ctypes.Structure):
+    _fields_ = [('low', _DWORD), ('high', _DWORD)]
+
+
+class _Information(ctypes.Structure):
+    _fields_ = [('attributes', _DWORD), ('created', _FileTime),
+                ('accessed', _FileTime), ('modified', _FileTime),
+                ('volume', _DWORD), ('size_high', _DWORD), ('size_low', _DWORD),
+                ('links', _DWORD), ('index_high', _DWORD), ('index_low', _DWORD)]
+
+
 def supported():
     return os.name == 'nt' and callable(getattr(ctypes, 'WinDLL', None))
 
@@ -78,6 +91,8 @@ def _api():
     api.LocalFree.restype = ctypes.c_void_p
     api.GetCurrentProcess.argtypes = []
     api.GetCurrentProcess.restype = _HANDLE
+    api.GetFileInformationByHandle.argtypes = [_HANDLE, ctypes.POINTER(_Information)]
+    api.GetFileInformationByHandle.restype = ctypes.c_int
     security = ctypes.WinDLL('advapi32', use_last_error=True)
     security.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
         ctypes.c_wchar_p, _DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p]
@@ -124,16 +139,29 @@ def _attributes(handle):
     return result.attributes
 
 
-def _open(path, *, delete=False, traverse=True, inspect_security=False):
+def _open(path, *, delete=False, traverse=True, inspect_security=False, read=False, deny_write=False):
     # FILE_SHARE_READ|FILE_SHARE_WRITE deliberately omits FILE_SHARE_DELETE.
     # OPEN_REPARSE_POINT inspects the link itself rather than following it.
     access = (_READ_ATTRIBUTES | (_TRAVERSE if traverse else 0)
-              | (_DELETE if delete else 0) | (0x20000 if inspect_security else 0))
+              | (_DELETE if delete else 0) | (0x20000 if inspect_security else 0)
+              | (0x80000000 if read else 0))
     handle = _api().CreateFileW(str(path), access,
-                               3, None, 3, 0x02000000 | 0x00200000, None)
+                               1 if deny_write else 3, None, 3, 0x02000000 | 0x00200000, None)
     if handle == _INVALID:
         raise _error(path)
     return handle
+
+
+def _information(handle):
+    information = _Information()
+    if not _api().GetFileInformationByHandle(handle, ctypes.byref(information)):
+        raise _error('held file identity')
+    return information
+
+
+def _identity(handle):
+    information = _information(handle)
+    return information.volume, information.index_high, information.index_low
 
 
 def _sid_string(sid):
@@ -168,7 +196,7 @@ def _current_user_sid():
         _close(token)
 
 
-def _validate_private_wrapper(handle):
+def _validate_private_wrapper(handle, *, inheritance_flags=3):
     """Validate ownership and exact protected ACL through the held object."""
     api = _api(); owner = ctypes.c_void_p(); dacl = ctypes.c_void_p()
     descriptor = ctypes.c_void_p()
@@ -191,7 +219,7 @@ def _validate_private_wrapper(handle):
             if not api._security.GetAce(dacl, index, ctypes.byref(pointer)):
                 raise _error('private stage access rule')
             rule = _AllowedAce.from_address(pointer.value)
-            if rule.kind != 0 or rule.flags != 3 or rule.size < 16 or rule.mask != 0x1f01ff:
+            if rule.kind != 0 or rule.flags != inheritance_flags or rule.size < 16 or rule.mask != 0x1f01ff:
                 raise ValueError('private stage access rule changed before acquisition')
             trustees.add(_sid_string(pointer.value + ctypes.sizeof(_AllowedAce)))
         if trustees != {user, 'S-1-5-18'}:
@@ -200,23 +228,30 @@ def _validate_private_wrapper(handle):
         api.LocalFree(descriptor)
 
 
-def _mkdir_private(path):
+@contextmanager
+def _private_attributes(*, inherit=True):
     # Protected DACL: only this process user and LocalSystem, inherited by
     # files and subdirectories. A Python mkdir(mode=0700) alone is not private
     # on Windows, where the numeric mode does not establish this ACL.
     descriptor = ctypes.c_void_p()
     api = _api()
     user = _current_user_sid()
+    flags = 'OICI' if inherit else ''
     if not api._security.ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            f'O:{user}D:P(A;OICI;FA;;;{user})(A;OICI;FA;;;SY)', 1,
+            f'O:{user}D:P(A;{flags};FA;;;{user})(A;{flags};FA;;;SY)', 1,
             ctypes.byref(descriptor), None):
-        raise _error(path)
+        raise _error('private security descriptor')
     try:
         attributes = _SecurityAttributes(ctypes.sizeof(_SecurityAttributes), descriptor, 0)
-        if not api.CreateDirectoryW(str(path), ctypes.byref(attributes)):
-            raise _error(path)
+        yield attributes
     finally:
         api.LocalFree(descriptor)
+
+
+def _mkdir_private(path):
+    with _private_attributes() as attributes:
+        if not _api().CreateDirectoryW(str(path), ctypes.byref(attributes)):
+            raise _error(path)
 
 
 def _component(name):
@@ -250,6 +285,7 @@ class _DirectoryPin:
         self._handle = handle
         self._active = True
         self._stage = stage
+        self._identity = _identity(handle)
 
     @contextmanager
     def pin_child(self, name, *, create=False):
@@ -264,6 +300,88 @@ class _DirectoryPin:
             child.mkdir(mode=0o700)
         with pinned_directory(child) as pin:
             yield pin
+
+    @contextmanager
+    def entries(self):
+        """Incrementally enumerate names/types; never follow a reparse point."""
+        require_directory_pin(self)
+        with os.scandir(self.path) as entries:
+            def bounded_iterator():
+                for entry in entries:
+                    require_directory_pin(self)
+                    information = entry.stat(follow_symlinks=False)
+                    if getattr(information, 'st_file_attributes', 0) & _REPARSE:
+                        kind = 'unsafe'
+                    elif stat.S_ISDIR(information.st_mode):
+                        kind = 'directory'
+                    elif stat.S_ISREG(information.st_mode):
+                        kind = 'file'
+                    else:
+                        kind = 'unsafe'
+                    yield entry.name, kind
+            yield bounded_iterator()
+
+    @contextmanager
+    def pin_file(self, name):
+        """Lend a no-follow, read-only binary stream and its initial stat."""
+        with _file_stream(self, name) as value:
+            yield value
+
+
+def require_directory_pin(value):
+    """Accept only a live registered canonical directory capability."""
+    if (not isinstance(value, _DirectoryPin) or not value._active
+            or value._stage is not None and value._stage.published
+            or not any(pin is value for pin in _PINS.get())):
+        raise ValueError('an active registered Windows directory pin is required')
+    if _identity(value._handle) != value._identity:
+        raise ValueError('Windows directory pin identity changed')
+    attributes = _attributes(value._handle)
+    if not attributes & _DIRECTORY or attributes & _REPARSE:
+        raise ValueError('Windows directory pin is not a physical directory')
+    return value
+
+
+@contextmanager
+def _file_stream(parent, name, *, delete=False):
+    require_directory_pin(parent)
+    _component(name)
+    handle = _open(parent.path / name, delete=delete, traverse=False, read=True, deny_write=True)
+    descriptor = None
+    stream = None
+    counted = False
+    try:
+        attributes = _attributes(handle)
+        if attributes & (_DIRECTORY | _REPARSE):
+            raise ValueError('file reader requires a physical regular file')
+        import msvcrt
+        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+        handle = None  # Ownership transferred to the CRT descriptor.
+        stream = os.fdopen(descriptor, 'rb', buffering=0)
+        descriptor = None
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError('file reader requires a regular disk file')
+        if parent._stage is not None:
+            parent._stage._children += 1
+            counted = True
+        yield stream, before
+        after = os.fstat(stream.fileno())
+        fields = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_nlink')
+        if any(getattr(before, field) != getattr(after, field) for field in fields):
+            raise ValueError('held file changed while reading')
+        require_directory_pin(parent)
+    finally:
+        try:
+            if stream is not None:
+                stream.close()
+            elif descriptor is not None:
+                os.close(descriptor)
+            elif handle is not None:
+                _close(handle)
+        finally:
+            if counted:
+                parent._stage._children -= 1
 
 
 @contextmanager
@@ -390,6 +508,104 @@ class PrivateStage(_DirectoryPin):
         with pinned_directory(destination.parent) as parent:
             _rename_handle(self._handle, parent.path / destination.name)
         self.published = True
+
+    def publish_file(self, name, destination, *, sha256, bytes, max_bytes):
+        """Hash and exclusively install the exact held regular FILE handle."""
+        require_directory_pin(self)
+        if (not isinstance(sha256, str) or not re.fullmatch(r'[0-9a-f]{64}', sha256)
+                or type(bytes) is not int or bytes < 0 or type(max_bytes) is not int
+                or max_bytes < 0 or bytes > max_bytes):
+            raise ValueError('file publication requires bounded exact bytes and SHA-256')
+        destination = _path(destination)
+        _component(destination.name)
+        with _file_stream(self, name, delete=True) as (stream, before):
+            import msvcrt
+            information = _information(msvcrt.get_osfhandle(stream.fileno()))
+            if before.st_size != bytes or information.links != 1:
+                raise ValueError('file publication size or link ownership differs')
+            digest = hashlib.sha256()
+            remaining = bytes
+            while remaining:
+                block = stream.read(min(128 * 1024, remaining))
+                if not block:
+                    raise ValueError('file publication ended before expected bytes')
+                remaining -= len(block)
+                digest.update(block)
+            if stream.read(1) or digest.hexdigest() != sha256:
+                raise ValueError('file publication hash or byte count differs')
+            with pinned_directory(destination.parent) as parent:
+                import msvcrt
+                _rename_handle(msvcrt.get_osfhandle(stream.fileno()), parent.path / destination.name)
+
+
+@contextmanager
+def writer_lock(root, *, name='.execution-retention.lock'):
+    """Nonblocking cooperative storage lock; pin namespace and never replace it."""
+    _api()
+    _component(name)
+    if len(name) > 128:
+        raise ValueError('writer lock filename exceeds 128 characters')
+    if isinstance(root, _DirectoryPin):
+        manager = nullcontext(require_directory_pin(root))
+    else:
+        manager = pinned_directory(root)
+    with manager as parent:
+        handle = None; descriptor = None; stream = None; acquired = False
+        counted = False
+        try:
+            with _private_attributes(inherit=False) as attributes:
+                handle = _api().CreateFileW(str(parent.path / name),
+                    0x80000000 | 0x40000000 | _READ_ATTRIBUTES | 0x20000,
+                    3, ctypes.byref(attributes), 4, 0x00200000 | 0x02000000, None)
+            if handle == _INVALID:
+                handle = None
+                raise _error(name)
+            if _attributes(handle) & (_DIRECTORY | _REPARSE):
+                raise ValueError('writer lock must be a physical regular file')
+            _validate_private_wrapper(handle, inheritance_flags=0)
+            if _information(handle).links != 1:
+                raise ValueError('writer lock must have exactly one directory link')
+            import msvcrt
+            descriptor = msvcrt.open_osfhandle(handle, os.O_RDWR | os.O_BINARY)
+            handle = None
+            stream = os.fdopen(descriptor, 'r+b', buffering=0)
+            descriptor = None
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ValueError('writer lock must be a regular disk file')
+            stream.seek(0)
+            try:
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError as exc:
+                raise BlockingIOError(errno.EWOULDBLOCK, 'another storage writer holds this lock') from exc
+            acquired = True
+            existing = stream.read(2)
+            if existing not in (b'', b'0'):
+                raise ValueError('reserved writer lock has unrelated existing contents')
+            if not existing:
+                stream.write(b'0'); os.fsync(stream.fileno())
+            if parent._stage is not None:
+                parent._stage._children += 1
+                counted = True
+            require_directory_pin(parent)
+            yield parent
+            require_directory_pin(parent)
+            if os.fstat(stream.fileno()).st_size != 1:
+                raise ValueError('reserved writer lock changed during the critical section')
+        finally:
+            try:
+                if stream is not None:
+                    try:
+                        if acquired:
+                            stream.seek(0); msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                    finally:
+                        stream.close()
+                elif descriptor is not None:
+                    os.close(descriptor)
+                elif handle is not None:
+                    _close(handle)
+            finally:
+                if counted:
+                    parent._stage._children -= 1
 
 
 @contextmanager
