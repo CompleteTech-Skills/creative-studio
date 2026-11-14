@@ -21,4 +21,3 @@ def existing_relative(name):
            for part in path.parts):
         raise ValueError('unsafe or nonportable decomposition package path: ' + name)
     return name
-
