@@ -393,7 +393,7 @@ class EditorNativeStateTests(unittest.TestCase):
                     page.evaluate('window.cameraReopenSentinel = true')
                     page.goto('about:blank');page.goto(server.url)
                     page.wait_for_function('() => window.editorReady === true')
-                    self.assertTrue(page.evaluate('typeof window.cameraReopenSentinel === \"undefined\"'))
+                    self.assertTrue(page.evaluate("() => typeof window.cameraReopenSentinel === 'undefined'"))
                     self.assertEqual(page.evaluate('window.hatchEditor.snapshot.revision'),3)
                     page.select_option('#view','camera');assert_camera(10)
                     page.locator('[data-id="preview-camera"]').click();page.click('#delete')
