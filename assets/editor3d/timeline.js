@@ -66,7 +66,7 @@ export function mountTimeline({container,api,getSnapshot,getSelection,preview,cl
     const result=await api('timeline/evaluate',{revision:s.revision,sha256:s.sha256,shot:shotPath,frame:at,sample_geometry:true});
     if(disposed||serial!==request)return;if(result.scene.path!==getSnapshot().scene_path)throw Error('Preview scene changed; reload before scrubbing.');preview(result);refreshPreviewEditState?.();message(`Saved revision ${result.revision}, frame ${result.frame.numerator}/${result.frame.denominator}`);
   }
-  function stop(){playing=false;cancelAnimationFrame(raf);play.textContent='Play';refreshPreviewEditState?.();}
+  function stop(){playing=false;++request;cancelAnimationFrame(raf);play.textContent='Play';refreshPreviewEditState?.();}
   async function tick(now){if(!playing||disposed)return;const doc=snapshot.documents[shotPath],fps=doc.fps.numerator/doc.fps.denominator;
     const current=firstFrame+Math.floor((now-clock)*fps/1000);
     if(current>=doc.duration_frames){stop();return;}frame.value=String(current);
