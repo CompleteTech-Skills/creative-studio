@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "kind": "director30-post-execution-source-disclosure",
+  "recorded_utc": "2026-11-13T23:34:37.543864+00:00",
+  "source_commit": "5bf7b469283a19df71fe6aa6a216a1575e6ce2f6",
+  "integrated_main": "b51207eb1ad58bde0d81548e27e480c557a59887",
+  "historical_receipt": {
+    "path": "receipt.json",
+    "sha256": "e6b6d6aa43593d730785389f79c34304c363fbb014d1cbc46f880225006fcf75",
+    "meaning": "Preserved original receipt; integrated/current fields describe its earlier recording, not this source revision."
+  },
+  "actual_executed_commit": "6cc52fef434c4d80a24c36d9887ca6136a42997c",
+  "actual_executed_tree": "7689f2b0a67a8a3b6aab50fd0951fa630aa11e02",
+  "actual_executed_runtime_sha256": {
+    "scripts/director_delivery.py": "8d7244cfb8a0b5a79b563cfbf5980ac2710cd25ebab6f9f55d8dd2c9a4855264",
+    "scripts/director_scene.py": "6dc62b6899d6ebbb2a580d426542c3c526884d65d8c2e698ecf7950aaec7c080",
+    "scripts/director_scene_binding.py": "40216aedae830a9e5b7e6a3f499d0dccd7b13092ec80aa3556df7471c24b448e",
+    "scripts/director_scene_worker.py": "9719c337084bef71fd2ebd5ee0ce8711bb886fab91c02df393e0d7b9416ab3c6",
+    "scripts/render3d_blender.py": "7a02244c8866b6742c5de86221e5e43c6190ab00f003658deb87928415178c16",
+    "scripts/render3d_blender_worker.py": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+    "scripts/render3d_contracts.py": "7a318877c9b58581e6729479d23792f7388d40fb962d279c5294a3d24c3909ff",
+    "scripts/render3d_snapshot.py": "2ed5aaa18675a98920d62bfc7b3ffea117e2d96962605a8f8301deb5909d9edc",
+    "scripts/render3d_verify.py": "60d2b870206734319637c30a6be176404c92042a3093da5bc80ef2a0f9fba357",
+    "scripts/render3d_acceptance.py": "dcb91aa6c3b76580362d05627268dc43836b9948bca7683639b80a2872bf5dde",
+    "scripts/scene3d_evaluate.py": "d2f6952404ee1865e38713b5bdc2759e143da81c1f0521f3bda84bc1aedde83e",
+    "scripts/silent_video.py": "45fb756f6686f2caa0376b402666e5f40c8ca3edff5b7be0a207e4b75a802560"
+  },
+  "source_runtime_sha256": {
+    "scripts/director_delivery.py": "d0c87d74b637e1b8cb2ec943202ee4bc70bbec0e26164052b007e647bded2ea8",
+    "scripts/director_scene.py": "6dc62b6899d6ebbb2a580d426542c3c526884d65d8c2e698ecf7950aaec7c080",
+    "scripts/director_scene_binding.py": "40216aedae830a9e5b7e6a3f499d0dccd7b13092ec80aa3556df7471c24b448e",
+    "scripts/director_scene_worker.py": "9719c337084bef71fd2ebd5ee0ce8711bb886fab91c02df393e0d7b9416ab3c6",
+    "scripts/render3d_blender.py": "3fbfdad0fcc32d23bd7eeb24309f65d28b854871d1ffa0470a20fe42cc07eb39",
+    "scripts/render3d_blender_worker.py": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+    "scripts/render3d_contracts.py": "7a318877c9b58581e6729479d23792f7388d40fb962d279c5294a3d24c3909ff",
+    "scripts/render3d_snapshot.py": "2ed5aaa18675a98920d62bfc7b3ffea117e2d96962605a8f8301deb5909d9edc",
+    "scripts/render3d_verify.py": "60d2b870206734319637c30a6be176404c92042a3093da5bc80ef2a0f9fba357",
+    "scripts/render3d_acceptance.py": "dcb91aa6c3b76580362d05627268dc43836b9948bca7683639b80a2872bf5dde",
+    "scripts/scene3d_evaluate.py": "d2f6952404ee1865e38713b5bdc2759e143da81c1f0521f3bda84bc1aedde83e",
+    "scripts/silent_video.py": "45fb756f6686f2caa0376b402666e5f40c8ca3edff5b7be0a207e4b75a802560"
+  },
+  "changed_since_actual_execution": [
+    "scripts/director_delivery.py",
+    "scripts/render3d_blender.py"
+  ],
+  "source_correction_scopes": {
+    "scripts/director_delivery.py": "External trusted checkpoint backend and exact frame inventory guards apply to all reused completed shots.",
+    "scripts/render3d_blender.py": "Authoritative Scene lifecycle admission rejects unprojected imported components and unsupported material/light/native-pose state; inherited camera/shadow masks and later-frame material bindings fail closed. Static fallback delegates canonical graph. Looping native bindings now reject before worker execution until the native cyclic-time adapter is supported."
+  },
+  "post_execution_ownership_sources": {
+    "scripts/camera3d_blender.py": "873736532add062456d2ca63c34dcc17b234339ce35b56692e98d9234f976191",
+    "scripts/camera3d_contracts.py": "8ffa961cea4cdf1fccad130ee78fd465ff961c3ad64c05993ebd9a2eb8ac5f81",
+    "scripts/camera3d_math.py": "25236a4c362e9952ff961c7e91ea350fd494bf9b45cacc61ceea33d570cc017a",
+    "scripts/director_assets.py": "414f056ea7471308afb533102cf3721d5e290e693a69cf6ba124f9920dd560c2",
+    "scripts/director_budget.py": "4d2a7a46e472ede95a09a24a91cafe30c2ae9c0fb3777a99bec73ec435490911",
+    "scripts/director_capabilities.py": "14d6c9e70996429d39ab6f9dc3c41817e7d248a6e87c5c29b18053884918a09f",
+    "scripts/director_contracts.py": "b4fbbe64020da18c440488f0723e8ddbb0a7141d10408b841b986a505ac65bb3",
+    "scripts/director_delivery.py": "d0c87d74b637e1b8cb2ec943202ee4bc70bbec0e26164052b007e647bded2ea8",
+    "scripts/director_graph.py": "7a7deededbb19562e299e165346d4dcd6f462d61d142de25ca3b0fbcad720b69",
+    "scripts/director_planner.py": "32b0d5a8e8504dced770e809b931b00a5b4937e54242344a6124fc2eea39ec6d",
+    "scripts/director_scene.py": "6dc62b6899d6ebbb2a580d426542c3c526884d65d8c2e698ecf7950aaec7c080",
+    "scripts/director_scene_binding.py": "40216aedae830a9e5b7e6a3f499d0dccd7b13092ec80aa3556df7471c24b448e",
+    "scripts/director_scene_worker.py": "9719c337084bef71fd2ebd5ee0ce8711bb886fab91c02df393e0d7b9416ab3c6",
+    "scripts/director_schema.py": "50327b48d18916309282cdcc49ad181a998c6a069be44f9d198d1f33808ea5c8",
+    "scripts/render3d_acceptance.py": "dcb91aa6c3b76580362d05627268dc43836b9948bca7683639b80a2872bf5dde",
+    "scripts/render3d_blender.py": "3fbfdad0fcc32d23bd7eeb24309f65d28b854871d1ffa0470a20fe42cc07eb39",
+    "scripts/render3d_blender_worker.py": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+    "scripts/render3d_contracts.py": "7a318877c9b58581e6729479d23792f7388d40fb962d279c5294a3d24c3909ff",
+    "scripts/render3d_snapshot.py": "2ed5aaa18675a98920d62bfc7b3ffea117e2d96962605a8f8301deb5909d9edc",
+    "scripts/render3d_verify.py": "60d2b870206734319637c30a6be176404c92042a3093da5bc80ef2a0f9fba357",
+    "scripts/scene3d_contracts.py": "ba1524ade84375f3d8e1e62d694ba426c831556ae252292e3007d0af4dafe5cf",
+    "scripts/scene3d_edit.py": "e3af7d7073103dc59b4c06a24464b94cb7e1a9de93fd3bbfa37959b04526c648",
+    "scripts/scene3d_evaluate.py": "d2f6952404ee1865e38713b5bdc2759e143da81c1f0521f3bda84bc1aedde83e",
+    "scripts/scene3d_example.py": "ac71fd5cf7d9f7e4ea34f11140740643dd365f33e008b26a474b7b504382910d",
+    "scripts/scene3d_graph.py": "8853314b2386f9020d0a11ebe2be07f3c3d913a5a14300b3bb34a5906a85bf6e",
+    "scripts/scene3d_import.py": "a7192c20c66a5a639887252fa840b78c50c40232a39c7cac26171cf8c8671f7c",
+    "scripts/scene3d_lifecycle.py": "b573662fd542e10803fa55735a30b4d117d88fdecd4245b1af93c40298dd141a",
+    "scripts/scene3d_math.py": "4014cd32fb5efdafe07f15656e9139eb9ce47169284f5cf60386229d0587df54",
+    "scripts/scene3d_prefabs.py": "517cd0863985e543316777a164e2e6d546ab6ee2a9ea04012570216be58373a6",
+    "scripts/scene3d_snapshot.py": "34b656437c9141e287b45cdb3e711f0bf0436f357f760de2babbfea50e58e4b4"
+  },
+  "new_native_execution_claim": false,
+  "completed_movie_rerendered": false,
+  "retained_actual_artifacts": {
+    "delivery_sha256": "4b3a8d3d565c8d106af67e7d95c49c2da89e7296392d30047ce1adb6f089700b",
+    "movie_sha256": "0c253b85ae6b05f7fe6abf7515d6ad795b79592964766a785428dc61f88db60a",
+    "snapshot_identity_sha256": "996c83c5169bb21e3c247b0afb417722b94c963adf33e71040c554d2f4c40242"
+  },
+  "targeted_validation": {
+    "log": "post-execution-guard-tests.log",
+    "sha256": "0ea8ea2deada77ec59755770a092dd5c58a4e6cd69be189dec4267258036936b",
+    "command": "env -u PYTHONPATH python -m unittest test_rig_director_scene_binding.SceneBindingTests.test_looping_native_binding_fails_before_worker_preparation test_rig_scene3d_lifecycle.SceneLifecycleTests.test_repository_edit_restore_and_new_process_reopen -v (explicit parent scripts/tests module paths)",
+    "cases": 2,
+    "passed": 2,
+    "skipped": 0,
+    "seconds": 23.423,
+    "scope": "Real saved native binding typed loop rejection and a genuine child-process reopen without PYTHONPATH. No renderer or original artifact rerun."
+  },
+  "limits": [
+    "A new independent whole-candidate review and all actual-current-head CI remain required.",
+    "Original first60 process usage remains unavailable/null.",
+    "Engineering fixture visual status remains unreviewed for artistic acceptance.",
+    "Canonical Scene/backend/jobs publication repairs and final integrations are separately owned; hostile same-user staging integrity is not established here.",
+    "No provider execution or parent mission completion claim."
+  ]
+}
