@@ -301,6 +301,50 @@ class LocalEmbeddingAdmissionTests(unittest.TestCase):
             (root/'model.bin').write_bytes(b'not a safe tensor')
             with self.assertRaises(RigError):model_snapshot(root)
 
+    def test_model_scan_bounds_files_and_directory_entries(self):
+        from asset_search_embeddings import model_snapshot
+        from unittest.mock import patch
+        import asset_search_embeddings as embedding
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name)
+            for i in range(140): (root / f'{i:03}.json').write_bytes(b'{}')
+            real_read=embedding.read_source_bytes
+            with patch.object(embedding, 'read_source_bytes', wraps=real_read) as read:
+                with self.assertRaises(RigError) as error: model_snapshot(root)
+                self.assertEqual(error.exception.report['code'], 'LIBRARY_SEARCH_LIMIT')
+                self.assertEqual(read.call_count, 128)
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name)
+            for i in range(513): (root / f'{i:03}').mkdir()
+            real_scandir=embedding.os.scandir
+            seen=[]
+            class CountingScan:
+                def __init__(self, path): self.iterator=real_scandir(path)
+                def __enter__(self): return self
+                def __exit__(self, *args): self.iterator.close()
+                def __iter__(self):
+                    for entry in self.iterator:
+                        seen.append(entry.name)
+                        yield entry
+            with patch.object(embedding.os, 'scandir', CountingScan):
+                with self.assertRaises(RigError) as error: model_snapshot(root)
+            self.assertEqual(error.exception.report['code'], 'LIBRARY_SEARCH_LIMIT')
+            self.assertEqual(len(seen), 513)
+
+    def test_model_snapshot_valid_nested_closure_and_symlink(self):
+        from asset_search_embeddings import model_snapshot
+        with tempfile.TemporaryDirectory() as name:
+            root=Path(name)
+            (root/'modules.json').write_text('[{"type":"sentence_transformers.models.Pooling","path":"nested"}]')
+            (root/'config.json').write_text('{"model_type":"bert"}')
+            (root/'nested').mkdir()
+            (root/'nested'/'weights.safetensors').write_bytes(b'weights')
+            digest, payloads=model_snapshot(root)
+            self.assertEqual(len(digest), 64)
+            self.assertEqual(payloads['nested/weights.safetensors'], b'weights')
+            (root/'nested'/'link').symlink_to(root/'config.json')
+            with self.assertRaises(RigError): model_snapshot(root)
+
     def test_genuine_local_provider_is_explicitly_unavailable_without_runtime(self):
         from asset_search_embeddings import LocalSentenceTransformer
         from unittest.mock import patch

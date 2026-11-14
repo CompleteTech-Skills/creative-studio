@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import importlib.metadata
+import os
 from pathlib import Path
 import re
 import stat
@@ -27,19 +28,29 @@ def model_snapshot(directory):
     """Read a bounded no-follow model closure and compute its exact tree hash."""
     root=Path(directory).absolute()
     if not root.is_dir() or root.is_symlink():fail('MODEL','Model must be an explicit local directory.')
-    payloads={};total=0
-    for path in sorted(root.rglob('*')):
-        info=path.lstat()
-        if stat.S_ISLNK(info.st_mode) or getattr(info,'st_file_attributes',0)&0x400:
-            fail('MODEL','Model closure cannot contain symbolic links/reparse points.')
-        if path.is_dir():continue
-        relative=path.relative_to(root).as_posix();portable_path(relative)
-        if not stat.S_ISREG(info.st_mode) or path.suffix not in {'.json','.txt','.safetensors','.model'}:
-            fail('MODEL','Only local config, tokenizer and safetensors files are supported.')
-        if len(payloads)>=128:fail('LIMIT','Model closure exceeds 128 files.')
-        payloads[relative]=read_source_bytes(path)
-        total+=len(payloads[relative])
-        if total>256*1024*1024:fail('LIMIT','Model closure exceeds 256 MiB.')
+    payloads={};total=0;entries_seen=0
+    pending=[(root, 0)]
+    while pending:
+        directory,depth=pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                entries_seen+=1
+                if entries_seen>512:fail('LIMIT','Model closure exceeds 512 directory entries.')
+                path=Path(entry.path)
+                info=entry.stat(follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode) or getattr(info,'st_file_attributes',0)&0x400:
+                    fail('MODEL','Model closure cannot contain symbolic links/reparse points.')
+                relative=path.relative_to(root).as_posix();portable_path(relative)
+                if stat.S_ISDIR(info.st_mode):
+                    if depth>=128:fail('LIMIT','Model closure exceeds 128 directory levels.')
+                    pending.append((path,depth+1))
+                    continue
+                if not stat.S_ISREG(info.st_mode) or path.suffix not in {'.json','.txt','.safetensors','.model'}:
+                    fail('MODEL','Only local config, tokenizer and safetensors files are supported.')
+                if len(payloads)>=128:fail('LIMIT','Model closure exceeds 128 files.')
+                payloads[relative]=read_source_bytes(path)
+                total+=len(payloads[relative])
+                if total>256*1024*1024:fail('LIMIT','Model closure exceeds 256 MiB.')
     if not {'modules.json','config.json'}<=set(payloads) or not any(p.endswith('.safetensors') for p in payloads):
         fail('MODEL','Model requires modules.json, config.json and safetensors weights.')
     modules=decode_json(payloads['modules.json'])
