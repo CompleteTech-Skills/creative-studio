@@ -1,0 +1,382 @@
+{
+  "request": {
+    "schema_version": 1,
+    "kind": "silent-video-request",
+    "source": {
+      "schema_version": 1,
+      "kind": "silent-frame-source",
+      "origin": "transformed",
+      "format": "png",
+      "precision": 8,
+      "alpha": "opaque",
+      "color": "untagged-sdr",
+      "width": 1280,
+      "height": 720,
+      "fps": {
+        "numerator": 24,
+        "denominator": 1
+      },
+      "frames": [
+        {
+          "index": 0,
+          "path": "frames/000000.png",
+          "sha256": "843abb803e941dfceecfd90f953647c0153bc6541c488402effa3a5f0f786fdb",
+          "bytes": 10814
+        },
+        {
+          "index": 1,
+          "path": "frames/000001.png",
+          "sha256": "3ba0fcdfc8cb291a862dbad534f198811ee38ab9ff86c50c3cbf8d7239440663",
+          "bytes": 14903
+        },
+        {
+          "index": 2,
+          "path": "frames/000002.png",
+          "sha256": "0cf4413212211e691b87dfa38acbfa356194eb412342de091766839247a4f2d6",
+          "bytes": 14614
+        },
+        {
+          "index": 3,
+          "path": "frames/000003.png",
+          "sha256": "14a9ebaf0563709444855053475cc1bcf657f01e5f54d759d606608d6b72112c",
+          "bytes": 14185
+        }
+      ]
+    },
+    "profile": "h264-mp4",
+    "audio": {
+      "policy": "forbidden"
+    },
+    "limits": {
+      "timeout_seconds": 300,
+      "max_output_bytes": 536870912,
+      "max_log_bytes": 4194304
+    },
+    "encoding": {
+      "speed": "veryfast",
+      "threads": 1,
+      "gop": 48,
+      "rate_control": {
+        "mode": "quality",
+        "value": 24
+      }
+    }
+  },
+  "named_profile": {
+    "schema_version": 1,
+    "kind": "silent-quality-profile",
+    "codec": "h264",
+    "encoder": "libx264",
+    "name": "preview",
+    "fps": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "encoding": {
+      "speed": "veryfast",
+      "threads": 1,
+      "gop": 48,
+      "rate_control": {
+        "mode": "quality",
+        "value": 24
+      }
+    },
+    "sha256": "61be3b6cd778704b7604bead76508347f54adc45befbef0a3b294f27517140db"
+  },
+  "storage_estimate": {
+    "schema_version": 1,
+    "kind": "silent-storage-estimate",
+    "codec": "h264",
+    "rate_control": "quality",
+    "duration": {
+      "numerator": 1,
+      "denominator": 6
+    },
+    "nominal_video_bytes": null,
+    "output_byte_range": {
+      "minimum": 0,
+      "maximum": 536870912
+    },
+    "nominal_target_exceeds_budget": false,
+    "uncertainty": "Source-dependent codec size and container overhead; range is the enforced output cap, not a confidence interval.",
+    "measured_sample": null
+  },
+  "receipt": {
+    "schema_version": 1,
+    "kind": "silent-video-verification",
+    "verified": true,
+    "artifact_sha256": "eae11c565b9e24b37f1c4143a0e60d4a0bd59cd3caa7bd266361170216d20d53",
+    "artifact_bytes": 4484,
+    "source_manifest_sha256": "74588122f5c7fbce1131e4b779232926616abe334a24769ceb1c10495469b4df",
+    "request_sha256": "5f8c3cb92fbd39dd17cb949f7240161af9e49103cb2851a5fb6538d26be0de8c",
+    "video_stream_count": 1,
+    "audio_stream_count": 0,
+    "other_stream_count": 0,
+    "frame_count": 4,
+    "fps": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "reported_fps": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "rate_quantization": {
+      "kind": "exact",
+      "default_duration_ns": 0,
+      "nominal_period_error": {
+        "numerator": 0,
+        "denominator": 1
+      }
+    },
+    "duration": {
+      "numerator": 166667,
+      "denominator": 1000000
+    },
+    "timebase_tolerance": {
+      "numerator": 1,
+      "denominator": 6144
+    },
+    "profile": "h264-mp4",
+    "source_pixel_comparison": [
+      {
+        "index": 0,
+        "rgb_psnr_db": 46.46713597564001,
+        "minimum_psnr_db": 18.0
+      },
+      {
+        "index": 2,
+        "rgb_psnr_db": 44.42310785431391,
+        "minimum_psnr_db": 18.0
+      },
+      {
+        "index": 3,
+        "rgb_psnr_db": 44.423192803453304,
+        "minimum_psnr_db": 18.0
+      }
+    ],
+    "probe": {
+      "command": [
+        "/usr/bin/ffprobe",
+        "-v",
+        "error",
+        "-count_frames",
+        "-show_streams",
+        "-show_format",
+        "-of",
+        "json",
+        "/home/complete/.cache/hatch-coordination-20261112/silent-delivery-tmp/silent-verify-h8uzgvx8/artifact.mp4"
+      ],
+      "exit_status": 0,
+      "stdout": "{\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"h264\",\n            \"codec_long_name\": \"H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10\",\n            \"profile\": \"High\",\n            \"codec_type\": \"video\",\n            \"codec_tag_string\": \"avc1\",\n            \"codec_tag\": \"0x31637661\",\n            \"mime_codec_string\": \"avc1.64001f\",\n            \"width\": 1280,\n            \"height\": 720,\n            \"coded_width\": 1280,\n            \"coded_height\": 720,\n            \"has_b_frames\": 2,\n            \"sample_aspect_ratio\": \"1:1\",\n            \"display_aspect_ratio\": \"16:9\",\n            \"pix_fmt\": \"yuv420p\",\n            \"level\": 31,\n            \"chroma_location\": \"left\",\n            \"field_order\": \"progressive\",\n            \"refs\": 4,\n            \"is_avc\": \"true\",\n            \"nal_length_size\": \"4\",\n            \"id\": \"0x1\",\n            \"r_frame_rate\": \"24/1\",\n            \"avg_frame_rate\": \"24/1\",\n            \"time_base\": \"1/12288\",\n            \"start_pts\": 0,\n            \"start_time\": \"0.000000\",\n            \"duration_ts\": 2048,\n            \"duration\": \"0.166667\",\n            \"bit_rate\": \"172176\",\n            \"bits_per_raw_sample\": \"8\",\n            \"nb_frames\": \"4\",\n            \"nb_read_frames\": \"4\",\n            \"extradata_size\": 45,\n            \"disposition\": {\n                \"default\": 1,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"language\": \"und\",\n                \"handler_name\": \"VideoHandler\",\n                \"encoder\": \"Lavc63.1.102 libx264\"\n            }\n        }\n    ],\n    \"format\": {\n        \"filename\": \"/home/complete/.cache/hatch-coordination-20261112/silent-delivery-tmp/silent-verify-h8uzgvx8/artifact.mp4\",\n        \"nb_streams\": 1,\n        \"nb_programs\": 0,\n        \"nb_stream_groups\": 0,\n        \"format_name\": \"mov,mp4,m4a,3gp,3g2,mj2\",\n        \"format_long_name\": \"QuickTime / MOV\",\n        \"start_time\": \"0.000000\",\n        \"duration\": \"0.166667\",\n        \"size\": \"4484\",\n        \"bit_rate\": \"215231\",\n        \"probe_score\": 100,\n        \"tags\": {\n            \"major_brand\": \"isom\",\n            \"minor_version\": \"512\",\n            \"compatible_brands\": \"isomiso2avc1mp41\",\n            \"encoder\": \"Lavf63.1.102\"\n        }\n    }\n}\n",
+      "stderr": ""
+    },
+    "timeline": {
+      "command": [
+        "/usr/bin/ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_frames",
+        "-show_entries",
+        "frame=best_effort_timestamp,pkt_duration",
+        "-of",
+        "json",
+        "/home/complete/.cache/hatch-coordination-20261112/silent-delivery-tmp/silent-verify-h8uzgvx8/artifact.mp4"
+      ],
+      "exit_status": 0,
+      "stdout": "{\n    \"frames\": [\n        {\n            \"best_effort_timestamp\": 0,\n            \"side_data_list\": [\n                {\n                    \"side_data_type\": \"H.26[45] User Data Unregistered SEI message\"\n                }\n            ]\n        },\n        {\n            \"best_effort_timestamp\": 512\n        },\n        {\n            \"best_effort_timestamp\": 1024\n        },\n        {\n            \"best_effort_timestamp\": 1536\n        }\n    ]\n}\n",
+      "stderr": ""
+    },
+    "decode": {
+      "command": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-xerror",
+        "-err_detect",
+        "explode",
+        "-i",
+        "/home/complete/.cache/hatch-coordination-20261112/silent-delivery-tmp/silent-verify-h8uzgvx8/artifact.mp4",
+        "-map",
+        "0:v:0",
+        "-an",
+        "-sn",
+        "-dn",
+        "-f",
+        "null",
+        "-"
+      ],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "visual_review": "not-performed",
+    "encode": {
+      "command": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-y",
+        "-framerate",
+        "24",
+        "-start_number",
+        "0",
+        "-i",
+        "/proc/self/fd/7/frames/%06d.png",
+        "-map",
+        "0:v:0",
+        "-an",
+        "-sn",
+        "-dn",
+        "-map_metadata",
+        "-1",
+        "-map_chapters",
+        "-1",
+        "-frames:v",
+        "4",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-vf",
+        "setsar=1",
+        "-threads",
+        "1",
+        "-g",
+        "48",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "24",
+        "-movflags",
+        "+faststart",
+        "/proc/self/fd/7/output.partial.mp4"
+      ],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "path": "720p.mp4"
+  },
+  "independent_recheck": {
+    "schema_version": 1,
+    "kind": "silent-video-verification",
+    "verified": true,
+    "artifact_sha256": "eae11c565b9e24b37f1c4143a0e60d4a0bd59cd3caa7bd266361170216d20d53",
+    "artifact_bytes": 4484,
+    "source_manifest_sha256": "74588122f5c7fbce1131e4b779232926616abe334a24769ceb1c10495469b4df",
+    "request_sha256": "5f8c3cb92fbd39dd17cb949f7240161af9e49103cb2851a5fb6538d26be0de8c",
+    "video_stream_count": 1,
+    "audio_stream_count": 0,
+    "other_stream_count": 0,
+    "frame_count": 4,
+    "fps": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "reported_fps": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "rate_quantization": {
+      "kind": "exact",
+      "default_duration_ns": 0,
+      "nominal_period_error": {
+        "numerator": 0,
+        "denominator": 1
+      }
+    },
+    "duration": {
+      "numerator": 166667,
+      "denominator": 1000000
+    },
+    "timebase_tolerance": {
+      "numerator": 1,
+      "denominator": 6144
+    },
+    "profile": "h264-mp4",
+    "source_pixel_comparison": [
+      {
+        "index": 0,
+        "rgb_psnr_db": 46.46713597564001,
+        "minimum_psnr_db": 18.0
+      },
+      {
+        "index": 2,
+        "rgb_psnr_db": 44.42310785431391,
+        "minimum_psnr_db": 18.0
+      },
+      {
+        "index": 3,
+        "rgb_psnr_db": 44.423192803453304,
+        "minimum_psnr_db": 18.0
+      }
+    ],
+    "probe": {
+      "command": [
+        "/usr/bin/ffprobe",
+        "-v",
+        "error",
+        "-count_frames",
+        "-show_streams",
+        "-show_format",
+        "-of",
+        "json",
+        "/home/complete/.cache/hatch-coordination-20261112/silent-delivery-tmp/silent-verify-dz0n1f62/artifact.mp4"
+      ],
+      "exit_status": 0,
+      "stdout": "{\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"h264\",\n            \"codec_long_name\": \"H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10\",\n            \"profile\": \"High\",\n            \"codec_type\": \"video\",\n            \"codec_tag_string\": \"avc1\",\n            \"codec_tag\": \"0x31637661\",\n            \"mime_codec_string\": \"avc1.64001f\",\n            \"width\": 1280,\n            \"height\": 720,\n            \"coded_width\": 1280,\n            \"coded_height\": 720,\n            \"has_b_frames\": 2,\n            \"sample_aspect_ratio\": \"1:1\",\n            \"display_aspect_ratio\": \"16:9\",\n            \"pix_fmt\": \"yuv420p\",\n            \"level\": 31,\n            \"chroma_location\": \"left\",\n            \"field_order\": \"progressive\",\n            \"refs\": 4,\n            \"is_avc\": \"true\",\n            \"nal_length_size\": \"4\",\n            \"id\": \"0x1\",\n            \"r_frame_rate\": \"24/1\",\n            \"avg_frame_rate\": \"24/1\",\n            \"time_base\": \"1/12288\",\n            \"start_pts\": 0,\n            \"start_time\": \"0.000000\",\n            \"duration_ts\": 2048,\n            \"duration\": \"0.166667\",\n            \"bit_rate\": \"172176\",\n            \"bits_per_raw_sample\": \"8\",\n            \"nb_frames\": \"4\",\n            \"nb_read_frames\": \"4\",\n            \"extradata_size\": 45,\n            \"disposition\": {\n                \"default\": 1,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"language\": \"und\",\n                \"handler_name\": \"VideoHandler\",\n                \"encoder\": \"Lavc63.1.102 libx264\"\n            }\n        }\n    ],\n    \"format\": {\n        \"filename\": \"/home/complete/.cache/hatch-coordination-20261112/silent-delivery-tmp/silent-verify-dz0n1f62/artifact.mp4\",\n        \"nb_streams\": 1,\n        \"nb_programs\": 0,\n        \"nb_stream_groups\": 0,\n        \"format_name\": \"mov,mp4,m4a,3gp,3g2,mj2\",\n        \"format_long_name\": \"QuickTime / MOV\",\n        \"start_time\": \"0.000000\",\n        \"duration\": \"0.166667\",\n        \"size\": \"4484\",\n        \"bit_rate\": \"215231\",\n        \"probe_score\": 100,\n        \"tags\": {\n            \"major_brand\": \"isom\",\n            \"minor_version\": \"512\",\n            \"compatible_brands\": \"isomiso2avc1mp41\",\n            \"encoder\": \"Lavf63.1.102\"\n        }\n    }\n}\n",
+      "stderr": ""
+    },
+    "timeline": {
+      "command": [
+        "/usr/bin/ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_frames",
+        "-show_entries",
+        "frame=best_effort_timestamp,pkt_duration",
+        "-of",
+        "json",
+        "/home/complete/.cache/hatch-coordination-20261112/silent-delivery-tmp/silent-verify-dz0n1f62/artifact.mp4"
+      ],
+      "exit_status": 0,
+      "stdout": "{\n    \"frames\": [\n        {\n            \"best_effort_timestamp\": 0,\n            \"side_data_list\": [\n                {\n                    \"side_data_type\": \"H.26[45] User Data Unregistered SEI message\"\n                }\n            ]\n        },\n        {\n            \"best_effort_timestamp\": 512\n        },\n        {\n            \"best_effort_timestamp\": 1024\n        },\n        {\n            \"best_effort_timestamp\": 1536\n        }\n    ]\n}\n",
+      "stderr": ""
+    },
+    "decode": {
+      "command": [
+        "/usr/bin/ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-xerror",
+        "-err_detect",
+        "explode",
+        "-i",
+        "/home/complete/.cache/hatch-coordination-20261112/silent-delivery-tmp/silent-verify-dz0n1f62/artifact.mp4",
+        "-map",
+        "0:v:0",
+        "-an",
+        "-sn",
+        "-dn",
+        "-f",
+        "null",
+        "-"
+      ],
+      "exit_status": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "visual_review": "not-performed"
+  }
+}
