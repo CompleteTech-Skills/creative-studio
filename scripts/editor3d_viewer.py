@@ -96,7 +96,7 @@ def preview_snapshot(repository, snapshot):
                     # dependencies require conversion by the authoritative importer.
                     require(len(imported.source_files) == 1, 'EDITOR3D_VIEW_DEPENDENCY',
                             'Embed external GLB resources before browser preview.')
-                    assets[identifier] = dict(format='glb', data=base64.b64encode(path.read_bytes()).decode('ascii'))
+                    assets[identifier] = dict(format='glb', source_materials=imported.geometry.materials, data=base64.b64encode(path.read_bytes()).decode('ascii'))
                 else:
                     geometry = imported.geometry
                     images = []
@@ -124,6 +124,9 @@ def preview_snapshot(repository, snapshot):
                 sha256=snapshot['sha256'], error=error.report)
     result['viewport_nodes'] = components
     result['viewport_assets'] = assets
+    if (ROOT / 'scripts/editor3d_inspectors.py').is_file():
+        from editor3d_inspectors import projected_editor_materials
+        result['viewport_materials'] = projected_editor_materials(repository, snapshot)
     result['preview'] = dict(backend='three-0.180.0', offline_render=False,
                              source_sha256=snapshot['sha256'])
     encoded = json.dumps(result, allow_nan=False, separators=(',', ':')).encode()
@@ -136,7 +139,12 @@ class EditorServer(HTTPServer):
     def __init__(self, repository, *, port=0, token=None, workers=4, routes=None):
         require(isinstance(workers, int) and 1 <= workers <= 8, 'EDITOR3D_VIEW_WORKERS', 'Use 1–8 workers.')
         self.repository = repository
-        self.routes = dict(routes or {})
+        self.routes = {}
+        # Built-in optional inspector extension selects fixed trusted handlers.
+        if (ROOT / "scripts/editor3d_inspectors.py").is_file():
+            from editor3d_inspectors import inspector_routes
+            self.routes.update(inspector_routes())
+        self.routes.update(routes or {})
         self.upload_directory = tempfile.TemporaryDirectory(prefix="hatch-editor-uploads-")
         self.uploads = {}
         self.upload_lock = threading.Lock()
@@ -279,6 +287,8 @@ class EditorHandler(BaseHTTPRequestHandler):
                 for filename, symbol, container in (('asset-browser.js','mountAssetBrowser','asset-browser'),
                         ('inspectors.js','mountInspectors','native-inspectors'),
                         ('timeline.js','mountTimeline','timeline'),('render-panel.js','mountRenderPanel','render-panel')):
+                    if filename == 'inspectors.js' and not {'inspectors/describe', 'inspectors/material'} <= set(self.server.routes):
+                        continue
                     if (ROOT / 'assets/editor3d' / filename).is_file():
                         extensions.append(f"const {{{symbol}}} = await import('/editor/{filename}'); window.hatchEditor.registerExtension({symbol}, document.getElementById('{container}'));")
                 if extensions:

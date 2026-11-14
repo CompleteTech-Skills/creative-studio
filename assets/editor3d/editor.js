@@ -39,6 +39,7 @@ const collapsed = new Set();
 const extensions = [];
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
 let activeNativeCameraId = null;
+const replacedMaterials = new Set();
 const editorNode = Symbol("native-scene-node");
 const errors = [],
   nativeMaterials = new Map(),
@@ -396,6 +397,11 @@ function disposeContent() {
           if (value?.isTexture) textures.add(value);
       }
   });
+  for (const material of replacedMaterials) {
+    materials.add(material);
+    for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+  }
+  replacedMaterials.clear();
   content.clear();
   geometries.forEach((x) => x.dispose());
   materials.forEach((x) => x.dispose());
@@ -422,6 +428,28 @@ function materialFromNative(value, images) {
   }
   return m;
 }
+function applyProjectedMaterials(root, projection) {
+  const meshes=[];root.traverse(object=>{if(object.isMesh)meshes.push(object);});
+  for(const entry of projection) {
+    if(!entry.supported) {diagnostic(entry.message || "Native material requires an unavailable preview adapter.");continue;}
+    const targets=entry.encoding==="obj" ? (meshes.length===1?meshes:[]) : meshes.filter(object=>{
+      const primitive=object.userData.nativePrimitive;
+      return primitive?.mesh===entry.normalized_mesh && primitive?.primitive===entry.normalized_primitive;
+    });
+    if(targets.length!==1) throw Error("Exact native material primitive mapping does not match preview geometry.");
+    const surface=entry.effective.surface;
+    const material=new THREE.MeshPhysicalMaterial({
+      color:new THREE.Color(...surface.base_color.slice(0,3)),opacity:surface.base_color[3]*surface.opacity,
+      metalness:surface.metallic,roughness:surface.roughness,ior:surface.ior,
+      transparent:surface.alpha_mode==="BLEND",alphaTest:surface.alpha_mode==="MASK"?surface.alpha_cutoff:0,
+      side:surface.double_sided?THREE.DoubleSide:THREE.FrontSide,
+    });
+    const target=targets[0];
+    for(const old of Array.isArray(target.material)?target.material:[target.material]) if(old)replacedMaterials.add(old);
+    target.material=material;
+    target.userData.nativeMaterialReference=entry.override;
+  }
+}
 async function assetObject(asset) {
   if (asset.format === "glb") {
     const bytes = Uint8Array.from(atob(asset.data), (c) => c.charCodeAt(0));
@@ -432,6 +460,11 @@ async function assetObject(asset) {
       return url;
     });
     const gltf = await new GLTFLoader(manager).parseAsync(bytes.buffer, "");
+    gltf.scene.traverse(object => {
+      const association=gltf.parser.associations.get(object);
+      if(object.isMesh && association?.meshes !== undefined)
+        object.userData.nativePrimitive={mesh:association.meshes,primitive:association.primitives ?? 0};
+    });
     if (gltf.animations.length) {
       const mixer = new THREE.AnimationMixer(gltf.scene);
       mixers.push({ mixer, clips: gltf.animations, root: gltf.scene });
@@ -530,6 +563,7 @@ async function install(snapshot) {
             });
             return;
           }
+          applyProjectedMaterials(actual, snapshot.viewport_materials?.[node.id] || []);
           object.add(actual);
         } catch (error) {
           diagnostic("Asset " + node.asset.id + ": " + error.message);
