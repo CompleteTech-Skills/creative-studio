@@ -32,6 +32,25 @@ class GradingTests(unittest.TestCase):
     def pixels(self):
         return np.array([[.1, .2, .4, 0.], [.18, .18, .18, .5], [2., 3., 4., 1.]], np.float32)
 
+    def test_canonical_measured_primaries_flow_into_grading_without_rounding(self):
+        root = Path(__file__).resolve().parents[2]/'tests/fixtures/cinematics-color/profile'
+        inventory = grade.color.capture_config(root)
+        probe = grade.color.probe_scene_linear(root, inventory)
+        context = deepcopy(self.source_context)
+        context.update(config_closure_sha256=inventory['closure_sha256'],
+                       working_space=probe['working_space'], primaries=probe['primaries'])
+        source = self.pixels()
+        color_plan = grade.color.make_plan(root, inventory, context, target='scene-linear', display='', view='')
+        native, _ = grade.color.transform_pixels(root, color_plan, source)
+        plan = grade.make_grade(working_space=probe['working_space'], source_id='measured-native', operations=[])
+        actual, receipt = grade.apply_grade(root, plan, native, source_context=context)
+        np.testing.assert_array_equal(actual, source)
+        self.assertEqual(receipt['source_context_sha256'], grade.object_hash(context))
+        # Compatibility permits numerical measurement error, never an unknown gamut.
+        incompatible = deepcopy(context); incompatible['primaries']['r'][0] += .001
+        with self.assertRaises(ValueError):
+            grade.apply_grade(root, plan, native, source_context=incompatible)
+
     def test_module_import_does_not_load_optional_pixel_libraries(self):
         script = Path(__file__).resolve().parents[2]/'scripts'
         code = ('import sys;sys.path.insert(0,'+repr(str(script))+');'

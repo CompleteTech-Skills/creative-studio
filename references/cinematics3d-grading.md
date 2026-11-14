@@ -39,3 +39,5 @@ python -m unittest discover -s tests/optional -p test_cinematics3d_grading.py -v
 ```
 
 The tests execute real OCIO 1D/3D CUBE processors and compare output against independent numeric references. They use engineering pixel arrays, not rendered acceptance scenes or visual approval.
+
+Measured Rec.709/D65 source chromaticities are admitted unchanged within 5e-5 per xy coordinate, matching canonical color calibration tolerance. This accommodates actual OCIO basis measurements without replacing provenance values with rounded constants. Materially different or unknown gamuts remain rejected.

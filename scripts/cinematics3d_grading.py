@@ -12,6 +12,8 @@ import cinematics3d_color as color
 from rig_errors import object_hash
 
 MAX_OPERATIONS = 32
+# Match canonical color calibration admission for measured Rec.709/D65 xy.
+REC709_PRIMARIES_TOLERANCE = 5e-5
 LUT_PARSE_EXPANSION = 64
 LUT_PARSE_RESERVE = 64 * 1024
 KINDS = {'exposure', 'lift-gamma-gain', 'contrast', 'saturation', 'vibrance',
@@ -228,7 +230,8 @@ def apply_grade(root, grade, rgba, *, source_context, mask=None, max_work_bytes=
           'expected native contiguous float32/64 straight RGBA')
     source_context = color.validate_source(source_context)
     _need(source_context['working_space'] == grade['working_space']
-          and source_context['primaries'] == color.REC709_D65
+          and max(abs(source_context['primaries'][key][axis]-color.REC709_D65[key][axis])
+                  for key in color.REC709_D65 for axis in (0,1)) < REC709_PRIMARIES_TOLERANCE
           and source_context['alpha_mode'] == 'straight',
           'grades require an explicitly declared straight scene-linear Rec.709 source')
     count = math.prod(rgba.shape[:-1])
