@@ -1,6 +1,6 @@
 """Execute the Model3D mesh foundation using labeled synthetic geometry.
 
-Writes genuine GLB/glTF/OBJ meshes and a hash-bound acceptance report. This is
+Writes genuine GLB/glTF meshes and a hash-bound acceptance report. This is
 numerical/import evidence, never a visual or production-art approval.
 """
 from __future__ import annotations
