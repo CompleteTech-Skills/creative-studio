@@ -15,6 +15,47 @@ from rig_gltf import export_geometry
 from rig_models import Geometry, Mesh
 
 class MeshImportTests(unittest.TestCase):
+    def test_instance_budgets_precede_real_geometry_on_snapshot_and_canonical_paths(self):
+        from asset_library import AssetLibrary
+        from asset_library_contracts import seal
+        from rig_gltf import GltfBuilder
+        import rig_import
+
+        builder = GltfBuilder()
+        position = builder.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'VEC3')
+        builder.json.update(meshes=[{'primitives': [{'attributes': {'POSITION': position}}]}],
+                            nodes=[{'mesh': 0} for _ in range(40)],
+                            scenes=[{'nodes': list(range(40))}])
+        source = self.root/'instances.glb'; builder.write(source)
+        existing, manifest, _, _, name = self.normalized_canonical()
+        data = source.read_bytes()
+        for item in manifest['files']:
+            if item['path'] == name:
+                item.update(bytes=len(data), sha256=hashlib.sha256(data).hexdigest())
+        manifest = seal(manifest)
+        template = Path(__file__).resolve().parents[1]/'examples/asset-library-foundation'
+        sources = {item['path']: (source if item['path'] == name else template/item['path'])
+                   for item in manifest['files']}
+        library = AssetLibrary(self.root/'instance-library', create=True)
+        ref = library.register(manifest, sources)
+        for expected_calls, operation in ((2, lambda limits: import_mesh(source, limits=limits)),
+                                          (1, lambda limits: import_canonical(library, ref, limits=limits))):
+            for limits, code in [({'vertices': 3}, 'RIG_LIMIT_VERTICES'),
+                                 ({'triangles': 1}, 'RIG_LIMIT_TRIANGLES'),
+                                 ({'memory_bytes': 2100000}, 'RIG_LIMIT_MEMORY')]:
+                with self.subTest(limits=limits), patch.object(rig_import, 'transform_points',
+                        side_effect=AssertionError('geometry materialized before admission')) as transform:
+                    with self.assertRaises(RigError) as caught: operation(limits)
+                    self.assertEqual(caught.exception.report['code'], code)
+                    transform.assert_not_called()
+            with patch.object(rig_import, 'preflight_gltf', wraps=rig_import.preflight_gltf) as admission:
+                with operation({'vertices': 120, 'triangles': 40}) as result:
+                    self.assertEqual(result.model.geometry.vertex_count, 120)
+                    self.assertIn(hashlib.sha256(data).hexdigest(), {record['sha256'] for record in result.source_records})
+                self.assertEqual(admission.call_count, expected_calls)
+                if expected_calls == 2:
+                    self.assertEqual([call.kwargs['encoded_bytes'] for call in admission.call_args_list], [len(data)] * 2)
+
     def test_replaced_source_root_is_rejected_before_reading_redirected_bytes(self):
         from contextlib import contextmanager
         import rig_errors

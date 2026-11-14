@@ -48,6 +48,8 @@ class GltfDocument:
     warnings: list[str] = field(default_factory=list)
     source_reader: object = None
     source_sha256: str | None = None
+    encoded_sources: dict = field(default_factory=dict)
+    external_payloads: dict = field(default_factory=dict)
 
     def uri(self, uri: str, maximum: int | None = None) -> bytes:
         maximum = maximum or self.limits['source_bytes']
@@ -62,15 +64,24 @@ class GltfDocument:
         require(not parts.scheme and not parts.netloc and not parts.query and not parts.fragment,
                 'RIG_GLTF_URI', 'Only local relative glTF dependencies are supported.')
         target = safe_path(self.path.parent, unquote(parts.path, errors='strict'), exists=True)
+        if target in self.external_payloads:
+            payload = self.external_payloads[target]
+            require(len(payload) <= maximum, 'RIG_LIMIT_SOURCE', 'glTF dependency exceeds its byte budget.')
+            return payload
         if self.source_reader is not None:
             payload = self.source_reader(target, maximum)
             if target not in self.dependencies:self.dependencies.append(target)
+            self.encoded_sources[target] = len(payload)
+            self.external_payloads[target] = payload
             return payload
         require(target.stat().st_size <= maximum, 'RIG_LIMIT_SOURCE', 'glTF dependency exceeds its byte budget.')
         if target not in self.dependencies:self.dependencies.append(target)
         require(sum(p.stat().st_size for p in self.dependencies) <= self.limits['dependency_bytes'],
                 'RIG_LIMIT_DEPENDENCIES', 'Expanded source dependency inventory exceeds its byte budget.')
-        return target.read_bytes()
+        payload = target.read_bytes()
+        self.encoded_sources[target] = len(payload)
+        self.external_payloads[target] = payload
+        return payload
 
     def view(self, index: int) -> tuple[bytes, int, int, dict]:
         views = self.json.get('bufferViews', [])
@@ -160,7 +171,7 @@ def read_gltf(path: str | Path, limits=None, *, source_reader=None) -> GltfDocum
     missing = set(document.get('extensionsRequired', []))-MATERIAL_EXTENSIONS
     require(not missing, 'RIG_GLTF_EXTENSION', 'Decode required unsupported extensions before import.', observed=sorted(missing))
     result = GltfDocument(path, document, [], limits, [path], source_reader=source_reader,
-                          source_sha256=hashlib.sha256(raw).hexdigest())
+                          source_sha256=hashlib.sha256(raw).hexdigest(), encoded_sources={path: len(raw)})
     buffers = document.get('buffers', [])
     require(len(buffers) <= 1024, 'RIG_GLTF_BUFFER', 'Too many buffers.')
     total = sum(_count(b.get('byteLength'), 'buffer byte length', limits['dependency_bytes']) for b in buffers)

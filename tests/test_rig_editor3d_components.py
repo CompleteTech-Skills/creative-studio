@@ -53,6 +53,44 @@ class EditorImportedComponentTests(unittest.TestCase):
                 actual = transform_points(np.asarray(world), mesh['positions'])
                 np.testing.assert_allclose(actual, expected_meshes[mesh['id']], atol=1e-6)
 
+    def test_native_material_ownership_and_omissions_survive_projection(self):
+        # The existing source has no primitive material; the native importer owns
+        # its synthetic default, which the projection must preserve unchanged.
+        value = preview_snapshot(self.repository, self.repository.snapshot())
+        for identifier in self.expected:
+            projection = value['viewport_nodes'][identifier]
+            self.assertEqual(projection['materials'], [{'name': 'Default material'}])
+            self.assertEqual(projection['meshes'][0]['material'], 0)
+
+        # Import a separate real glTF with an authored material whose PBR
+        # properties are partially omitted, then project the saved component.
+        case = scene_service_tests.RealSceneImportTests(); case.setUp()
+        self.addCleanup(case.doCleanups)
+        source = case.source('gltf')
+        document = json.loads(source.read_text())
+        authored = {'name': 'Authored', 'pbrMetallicRoughness': {'metallicFactor': 0}}
+        document['materials'] = [authored]
+        document['meshes'][0]['primitives'][0]['material'] = 0
+        source.write_text(json.dumps(document))
+        imported = case.do_import(source)
+        graph = SceneGraph.from_bundle(build_example(case.root/'project'), 'example-scene.json')
+        add_import(graph, imported, 'model')
+        manifest = case.library.resolve(imported.library_reference)
+        payloads = {record['path']: case.library.read_file(imported.library_reference, record['path'])
+                    for record in manifest['files'] if record['path'] != imported.asset_reference['path']}
+        saved = snapshot_project(case.root/'project', case.root/'portable', graph,
+            scene_path='example-scene.json', derived_documents={imported.asset_reference['path']: imported.asset},
+            extra_payloads=payloads)
+        repository = EditorRepository.create(case.root/'portable', case.root/'repo', scene_path=saved['active_scene']['path'])
+        value = preview_snapshot(repository, repository.snapshot())
+        components = [node for node in value['scene']['nodes'] if 'source_component' in node.get('metadata', {})]
+        self.assertTrue(components)
+        for node in components:
+            projection = value['viewport_nodes'][node['id']]
+            self.assertEqual(projection['format'], 'geometry')
+            self.assertEqual(projection['materials'], [authored])
+            self.assertEqual(projection['meshes'][0]['material'], 0)
+
     def test_shared_resource_payload_is_bounded_before_component_publication(self):
         from unittest.mock import patch
         value = preview_snapshot(self.repository, self.repository.snapshot())

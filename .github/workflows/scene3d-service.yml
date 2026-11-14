@@ -29,6 +29,8 @@ jobs:
           node-version: '22.16.0'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: npm ci --ignore-scripts --prefix tools/rig
+      - name: Editor projected and glTF PBR defaults
+        run: node tests/editor3d_pbr_defaults.mjs
       - run: python -m playwright install --with-deps chromium
       - name: Install checksum-verified Blender 4.5.3
         run: |

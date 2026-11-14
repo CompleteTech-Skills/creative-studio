@@ -1014,7 +1014,7 @@ class Model3DContracts(unittest.TestCase):
             leaf_record = write_document(self.root, 'memory-leaf.json', leaf)
             leaf_reference = dict(id=leaf['id'], version=leaf['version'], manifest=leaf_record)
             middle['dependencies'] = [leaf_reference]
-            middle['limits']['memory_bytes'] = 65536
+            middle['limits']['memory_bytes'] = 2300000
             middle_record = write_document(self.root, 'memory-middle.json', middle)
             return leaf_reference, dict(id=middle['id'], version=middle['version'], manifest=middle_record)
         # Small real geometry fits both budgets; retain one asset observation,
@@ -1026,9 +1026,9 @@ class Model3DContracts(unittest.TestCase):
             report = validate_document(doc, self.root)
             self.assertEqual(len(report['geometry']), 3)
             observation = next(item for item in report['geometry'] if item['asset_id'] == leaf['id'])
-            self.assertEqual(observation['inspection_memory_budget_bytes'], 65536)
-        # Enlarge the source to800 actual vertices/400 triangles; 64KiB cannot
-        # admit its native importer allocation, regardless of cache visit order.
+            self.assertEqual(observation['inspection_memory_budget_bytes'], 2300000)
+        # Enlarge the source to 800 vertices and 400 triangles; the tighter budget
+        # cannot admit it, regardless of cache visit order.
         geometry = test_geometry()
         mesh = geometry.meshes[0]
         vertices, faces = mesh.positions, mesh.triangles
