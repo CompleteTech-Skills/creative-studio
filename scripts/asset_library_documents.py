@@ -131,8 +131,15 @@ class DocumentPublisher:
         for target in self.library.list_references():
             manifest = self.library.resolve(target)
             if manifest['identity']['kind'] == 'document':
+                payload = next(file for file in manifest['files'] if file['path'] == 'document.payload')
+                candidate_path = self.prefix + 'records/blobs/' + payload['sha256']
+                # Unrelated publications need no metadata/native capability
+                # admission to read this exact immutable source. In particular,
+                # an unrelated malformed raw document must not poison it.
+                if candidate_path != reference['path']:
+                    continue
                 other = self._ref(manifest)
-                if other['path'] == reference['path'] and other != reference:
+                if other != reference:
                     _fail('CONFLICT', 'One canonical source path cannot have conflicting ArtifactRefs.')
 
     @staticmethod

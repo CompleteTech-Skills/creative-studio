@@ -103,6 +103,8 @@ class DocumentPublicationTests(unittest.TestCase):
         bad = DocumentPublisher(self.library, artifact_root=self.root, native_dependency_resolver=lambda ref: target)
         with self.assertRaises(RigError):
             bad.publish_document(b'{}', 'bad', 'director-project', 1, '1.0.0', [{**native, 'sha256':'0'*64}], True)
+        unrelated = self.publish(b'{"unrelated":true}', artifact_id='unrelated')
+        self.assertEqual(self.publisher.read_ref(unrelated), b'{"unrelated":true}')
 
     def test_actual_concurrent_idempotency_and_conflicting_payloads(self):
         with ThreadPoolExecutor(max_workers=2) as pool:
@@ -203,6 +205,8 @@ class DocumentPublicationTests(unittest.TestCase):
         with self.assertRaises(RigError) as caught:
             self.publisher.read_ref({**ref, 'artifact_id':'malformed'})
         self.assertEqual(caught.exception.report['code'], 'LIBRARY_DOCUMENT_METADATA')
+        self.assertEqual(self.publisher.read_ref(ref), b'{"kind":"director-project","id":"project"}')
+        self.assertEqual(self.publish(), ref)
 
     def test_stale_history_does_not_register_or_activate(self):
         register = self.library.register
