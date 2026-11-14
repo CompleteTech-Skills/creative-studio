@@ -341,6 +341,16 @@ class CanonicalRevisionMethodTests(unittest.TestCase):
         self.assertEqual(result['value']['changed_ids'], ['camera', 'encode', 'render-main'])
         self.assertNotIn('render-other', result['value']['changed_ids'])
         self.assertEqual(self.repository.snapshot(), state)
+        cyclic = deepcopy(graph)
+        cyclic['edges'].append(dict(source='encode', target='render-main', artifact=first))
+        request['input']['graph'] = self.publish(json.dumps(cyclic).encode(), kind='execution-graph-fixture')
+        with self.assertRaises(RigError): self.service.execute(request, artifact_root=self.root)
+        dependency = self.publish(b'{}', kind='engineering-dependency')
+        missing = deepcopy(graph); missing['nodes'][0]['inputs'].append(dependency)
+        request['input']['graph'] = self.publish(json.dumps(missing).encode(), kind='execution-graph-fixture')
+        (self.root/dependency['path']).unlink()
+        with self.assertRaises(RigError): self.service.execute(request, artifact_root=self.root)
+        self.assertEqual(self.repository.snapshot(), state)
 
     def test_original_hash_pinned_brief_constraints_cannot_be_omitted_or_rebound(self):
         root = Path(__file__).resolve().parents[1]

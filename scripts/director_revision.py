@@ -528,11 +528,15 @@ class RevisionService:
                 if graph.get('kind') == 'director-result':
                     contracts.validate_method_result('GraphCompiler.compile', graph)
                     graph = graph['value']
-                from director_graph import impact as graph_impact
+                from director_graph import impact as graph_impact, _verify_refs
                 from jsonschema import Draft202012Validator
                 schema = contracts.schemas()['director.schema.json']
                 error = next(Draft202012Validator({'$defs': schema['$defs'], '$ref': '#/$defs/output-execution-graph'}).iter_errors(graph), None)
                 _need(error is None, 'SCHEMA', 'Use a canonical validated execution graph.')
+                # The common semantic authority walks nested graph values;
+                # this transient wrapper is never a produced document/receipt.
+                contracts._semantics({'kind': None, 'graph': graph})
+                _verify_refs(artifact_root, list(contracts.artifact_references(graph)))
                 shot_hashes = {snapshot['inventory'][path]['sha256'] for path in impact['stale_documents']}
                 all_shot_hashes = {snapshot['inventory'][path]['sha256'] for path, shot in _shots(snapshot)}
                 scene_hash = snapshot['inventory'][snapshot['scene_path']]['sha256']
