@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "kind": "render3d-snapshot",
+  "adapter": {
+    "id": "scene3d-project",
+    "version": "1.0.0"
+  },
+  "source": {
+    "id": "project",
+    "version": "1.0.0"
+  },
+  "coordinate_system": {
+    "handedness": "right",
+    "right": "+X",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "angles": "radian",
+    "quaternion": "XYZW",
+    "matrices": "column-vectors",
+    "time": "second"
+  },
+  "entrypoint": "project.json",
+  "files": [
+    {
+      "path": "example-animation.json",
+      "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+      "bytes": 503
+    },
+    {
+      "path": "example-prefab.json",
+      "sha256": "e452d881f4a170d480bc294871c8dfa2178642d22796d55cb03340cb5af1111b",
+      "bytes": 1532
+    },
+    {
+      "path": "example-render.json",
+      "sha256": "59aeda2f2ae64e5f1992515a6bc32cd36f375f78c02f13189fdba3c67b8d3283",
+      "bytes": 663
+    },
+    {
+      "path": "example-scene.json",
+      "sha256": "df11cf88234842c81cb0eb82c89678c88a163a7489da6d27e482031e09a46570",
+      "bytes": 2556
+    },
+    {
+      "path": "example-shot.json",
+      "sha256": "d10873c61f63117a6dfd4ba58b43a118ef28962b597e2347d1bb0683e26fdbab",
+      "bytes": 819
+    },
+    {
+      "path": "project.json",
+      "sha256": "21356214aafd3a75a039bb836454803578980cc44f47b6fd9eafeb69befb662a",
+      "bytes": 2829
+    },
+    {
+      "path": "triangle.json",
+      "sha256": "57d4221ae10d9a583ddff40804a73e19ceb01c3ac242f8e4a095a94a266fd897",
+      "bytes": 1162
+    },
+    {
+      "path": "triangle.obj",
+      "sha256": "f35f79225a9f04bd331d1095628cb1167409357db03405a45be22c8e0478848a",
+      "bytes": 85
+    }
+  ],
+  "total_bytes": 10149,
+  "fixture": true,
+  "scope": "scene3d",
+  "snapshot_sha256": "b57330700ec5e272c2da19f40e4f42ca471a8d82d4255a0994c8b7058f044d0e"
+}

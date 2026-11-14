@@ -1,0 +1,199 @@
+{
+  "kind": "render91-source-workflow-evidence",
+  "recorded_utc": "2026-11-13T13:05:32.017511+00:00",
+  "source_revision": "c809829debf565f2030feebad3b6066b50dc43c4",
+  "fixture": true,
+  "native_geometry": {
+    "vertices": 4,
+    "triangles": 2
+  },
+  "native_capture_relocated_verify_equal": true,
+  "scene_capture_verify_equal": true,
+  "commands": [
+    {
+      "argv": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "/home/complete/.cache/hatch-coordination-20261112/worktrees/render91-audit/scripts/render3d.py",
+        "snapshot-rig",
+        "--source",
+        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/original-source/render91-fixture",
+        "--destination",
+        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/native-snapshot"
+      ],
+      "returncode": 0,
+      "stdout": "native-capture.stdout.json",
+      "stderr": "native-capture.stderr.txt"
+    },
+    {
+      "argv": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "/home/complete/.cache/hatch-coordination-20261112/worktrees/render91-audit/scripts/render3d.py",
+        "verify-snapshot",
+        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/relocated-native-snapshot"
+      ],
+      "returncode": 0,
+      "stdout": "native-relocated-verify.stdout.json",
+      "stderr": "native-relocated-verify.stderr.txt"
+    },
+    {
+      "argv": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "/home/complete/.cache/hatch-coordination-20261112/worktrees/render91-audit/scripts/render3d.py",
+        "snapshot-scene",
+        "--source",
+        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/scene-source",
+        "--destination",
+        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/scene-snapshot"
+      ],
+      "returncode": 0,
+      "stdout": "scene-capture.stdout.json",
+      "stderr": "scene-capture.stderr.txt"
+    },
+    {
+      "argv": [
+        "/home/complete/.cache/hatch-fleet/rig-py312/bin/python",
+        "/home/complete/.cache/hatch-coordination-20261112/worktrees/render91-audit/scripts/render3d.py",
+        "verify-snapshot",
+        "/home/complete/.cache/hatch-coordination-20261112/render91-source-workflow/scene-snapshot",
+        "--adapter",
+        "scene3d"
+      ],
+      "returncode": 0,
+      "stdout": "scene-verify.stdout.json",
+      "stderr": "scene-verify.stderr.txt"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "native-capture.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "native-capture.stdout.json",
+      "bytes": 1973,
+      "sha256": "930cd3686f9bfce82731a94c26882515351b75ccacf2ed7244fdfdf9d4f80068"
+    },
+    {
+      "path": "native-relocated-verify.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "native-relocated-verify.stdout.json",
+      "bytes": 1973,
+      "sha256": "930cd3686f9bfce82731a94c26882515351b75ccacf2ed7244fdfdf9d4f80068"
+    },
+    {
+      "path": "native-source-snapshot/animations/bend-20802b5cd0729607761906c0e16682afc8877f0f88687c860f5182ae41e2f390.json",
+      "bytes": 1035,
+      "sha256": "e7e040d5440b48f2e48a6719e776dc5a6adb1b1e73eb96031649d9fd57765f4e"
+    },
+    {
+      "path": "native-source-snapshot/animations/neutral-ae1629a932398c53d8d74e4c892c4d9cf877a0d94ba23c003fd1ea11ebc448bb.json",
+      "bytes": 915,
+      "sha256": "ff74cd6704e29e26cc530b7a4d7787054448e923df11dc8574289a7da2da846a"
+    },
+    {
+      "path": "native-source-snapshot/geometry/f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a.npz",
+      "bytes": 1110,
+      "sha256": "f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a"
+    },
+    {
+      "path": "native-source-snapshot/identity.json",
+      "bytes": 553,
+      "sha256": "5f68d79d97facf6b4d98bb55ca1f4142e19e7837bd123c380a1b66f354239be9"
+    },
+    {
+      "path": "native-source-snapshot/rig/weights/aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66.npz",
+      "bytes": 978,
+      "sha256": "aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66"
+    },
+    {
+      "path": "native-source-snapshot/rig.json",
+      "bytes": 6599,
+      "sha256": "b872f5a5e934f07a7d7772683e15dc2c3e54b5f41472ed7265e7f8043684707e"
+    },
+    {
+      "path": "native-source-snapshot/snapshot.json",
+      "bytes": 1973,
+      "sha256": "930cd3686f9bfce82731a94c26882515351b75ccacf2ed7244fdfdf9d4f80068"
+    },
+    {
+      "path": "native-source-snapshot/source/render91-fixture.glb",
+      "bytes": 1340,
+      "sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e"
+    },
+    {
+      "path": "scene-capture.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "scene-capture.stdout.json",
+      "bytes": 1841,
+      "sha256": "bfc267b8f4f6858bcbf1852885382de88e48175f59c77b5a20157514ef4d10d0"
+    },
+    {
+      "path": "scene-source-snapshot/example-animation.json",
+      "bytes": 503,
+      "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2"
+    },
+    {
+      "path": "scene-source-snapshot/example-prefab.json",
+      "bytes": 1532,
+      "sha256": "e452d881f4a170d480bc294871c8dfa2178642d22796d55cb03340cb5af1111b"
+    },
+    {
+      "path": "scene-source-snapshot/example-render.json",
+      "bytes": 663,
+      "sha256": "59aeda2f2ae64e5f1992515a6bc32cd36f375f78c02f13189fdba3c67b8d3283"
+    },
+    {
+      "path": "scene-source-snapshot/example-scene.json",
+      "bytes": 2556,
+      "sha256": "df11cf88234842c81cb0eb82c89678c88a163a7489da6d27e482031e09a46570"
+    },
+    {
+      "path": "scene-source-snapshot/example-shot.json",
+      "bytes": 819,
+      "sha256": "d10873c61f63117a6dfd4ba58b43a118ef28962b597e2347d1bb0683e26fdbab"
+    },
+    {
+      "path": "scene-source-snapshot/project.json",
+      "bytes": 2829,
+      "sha256": "21356214aafd3a75a039bb836454803578980cc44f47b6fd9eafeb69befb662a"
+    },
+    {
+      "path": "scene-source-snapshot/snapshot.json",
+      "bytes": 1841,
+      "sha256": "bfc267b8f4f6858bcbf1852885382de88e48175f59c77b5a20157514ef4d10d0"
+    },
+    {
+      "path": "scene-source-snapshot/triangle.json",
+      "bytes": 1162,
+      "sha256": "57d4221ae10d9a583ddff40804a73e19ceb01c3ac242f8e4a095a94a266fd897"
+    },
+    {
+      "path": "scene-source-snapshot/triangle.obj",
+      "bytes": 85,
+      "sha256": "f35f79225a9f04bd331d1095628cb1167409357db03405a45be22c8e0478848a"
+    },
+    {
+      "path": "scene-verify.stderr.txt",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "scene-verify.stdout.json",
+      "bytes": 1841,
+      "sha256": "bfc267b8f4f6858bcbf1852885382de88e48175f59c77b5a20157514ef4d10d0"
+    }
+  ],
+  "limitations": [
+    "Synthetic engineering sources only; no production artwork or approval.",
+    "Native source bytes decoded/reopened; Scene3D document closure owner-validated.",
+    "No Blender rendering, PNG/EXR verification, GPU execution, video or visual acceptance is claimed.",
+    "Original generated sources retained in owned coordination scratch; no existing user source modified."
+  ]
+}
