@@ -729,6 +729,40 @@ def source_time(clip, output_time, output_fps, *, source_in=0, source_out=None,
     return stamp(source_out-elapsed if reverse else source_in+elapsed)
 
 
+def playback_time(clip,output_time,output_fps,*,source_in=0,source_out=None,
+                  speed=None,reverse=False,loop_mode=None):
+    """Map authored playback policy through the existing exact source clock.
+
+    This pure query never runs a state transition or fires events. The exact
+    terminal boundary remains available; later reset/exit/transition semantics
+    require their state owner. Looping and ping-pong never imply completion.
+    """
+    value=_validate_clip(clip)
+    require(type(reverse) is bool,'ANIMATION_PLAYBACK','Reverse must be a boolean playback control.')
+    mode=value['loop_mode'] if loop_mode is None else loop_mode
+    require(isinstance(mode,str) and mode in ('once','hold','loop','ping_pong'),
+            'ANIMATION_PLAYBACK','Unknown playback loop mode.')
+    chosen_speed=_fraction(value['default_speed'] if speed is None else speed,'Playback speed')
+    start=_fraction(source_in,'Source start')
+    end=_fraction(value['duration_frames'] if source_out is None else source_out,'Source end')
+    require(0<=start<end<=value['duration_frames'] and chosen_speed>0,
+            'ANIMATION_INTERVAL','Invalid source range or playback speed.')
+    elapsed=frame_position(output_time)/rate(output_fps)*rate(value['fps'])*chosen_speed
+    length=end-start
+    if mode in ('once','hold'):
+        require(elapsed<=length or value['completion_mode']=='hold',
+                'ANIMATION_OWNER','Post-terminal reset, exit or transition requires the state owner.')
+        looping=False;direction=reverse
+    elif mode=='loop':
+        looping=True;direction=reverse
+    else:
+        # Each source-length interval alternates direction. At an exact turn,
+        # the new interval starts on its corresponding terminal source key.
+        looping=True;direction=reverse ^ bool((elapsed//length)%2)
+    return source_time(value,output_time,output_fps,source_in=start,source_out=end,
+                       speed=chosen_speed,reverse=direction,loop=looping)
+
+
 def events_between(clip, previous, current):
     """Forward interval (previous,current]; reverse [current,previous).
 

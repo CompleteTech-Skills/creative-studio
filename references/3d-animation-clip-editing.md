@@ -37,6 +37,24 @@ restored = history.undo()
 revised = history.redo()
 ```
 
+## Authored playback clocks
+
+`source_time` retains its existing explicit `speed=1`, `reverse=False`, `loop=False`
+source-mapping API. `playback_time` is the shared pure wrapper for consumers that
+need authored `default_speed` and `loop_mode` inheritance. Explicit speed/mode
+arguments override those fields. Supported modes are once, hold, loop and
+ping_pong; ping-pong alternates direction on exact source-length boundaries by
+reusing `source_time`. Rational rate conversion and source ranges remain exact.
+There is no mutable player cursor, event callback or second frame evaluator.
+
+The exact terminal source boundary can be queried. Beyond it, nonlooped clips
+with completion_mode=hold retain that boundary (or the source start for reverse
+playback). Reset/exit/transition completion requires the state owner and rejects
+with ANIMATION_OWNER; it is never silently applied or ignored. Loop/ping-pong
+playback has no terminal completion. Caller reverse/mode/speed controls are
+validated before clock calculations. Native geometry tests exercise inherited
+speed, looping, ping-pong turnarounds, reverse and explicit overrides.
+
 ## Split, join and frame ranges
 
 `split_clip(clip, frame)` returns left/right clips with an exact integer seam.
