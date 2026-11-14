@@ -137,4 +137,42 @@ class TimelineBrowserTests(unittest.TestCase):
                     finally:browser.close()
             finally:server.shutdown();server.server_close();thread.join(timeout=5)
 
+    def test_playback_survives_same_revision_refresh_and_pause_discards_pending_preview(self):
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);build_example(root/'source')
+            repo=EditorRepository.create(root/'source',root/'saved');before=repo.snapshot()
+            apply_timeline(repo,dict(expected_revision=before['revision'],expected_sha256=before['sha256'],transaction_id='playback',commands=[
+                dict(operation='key-upsert',document='example-shot.json',target='mesh',property='translation',frame=0,value=[2,0,0]),
+                dict(operation='key-upsert',document='example-shot.json',target='mesh',property='translation',frame=24,value=[26,0,0])]))
+            server=EditorServer(repo,routes=routes());thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser=launch_chromium(runtime)
+                    try:
+                        page=browser.new_page(viewport={'width':1600,'height':1100});errors=[]
+                        page.on('pageerror',lambda error:errors.append(str(error)))
+                        page.goto(server.url);page.wait_for_function('() => window.editorReady===true')
+                        page.locator('[data-id="mesh"]').click()
+                        page.get_by_role('button',name='Play',exact=True).click()
+                        page.wait_for_function("() => Number(document.querySelector('[aria-label=\"Exact frame\"]').value)>=2 && hatchEditor.objects.get('mesh').position.x>2")
+                        self.assertEqual(page.get_by_role('button',name='Pause',exact=True).count(),1)
+                        pending=[]
+                        page.route('**/api/timeline/evaluate',lambda route:pending.append(route))
+                        for _ in range(100):
+                            if pending:break
+                            page.wait_for_timeout(20)
+                        self.assertEqual(len(pending),1)
+                        page.get_by_role('button',name='Pause',exact=True).click()
+                        paused=page.evaluate("() => hatchEditor.objects.get('mesh').position.x")
+                        pending.pop().continue_();page.unroute('**/api/timeline/evaluate')
+                        page.wait_for_timeout(150)
+                        self.assertEqual(page.evaluate("() => hatchEditor.objects.get('mesh').position.x"),paused)
+                        self.assertEqual(page.get_by_role('button',name='Play',exact=True).count(),1)
+                        self.assertEqual(repo.snapshot()['revision'],before['revision']+1)
+                        self.assertEqual(errors,[])
+                    finally:browser.close()
+            finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
 if __name__=='__main__':unittest.main()

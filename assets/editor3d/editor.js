@@ -367,8 +367,8 @@ function preview(scene) {
   playing = false;
   gizmo.detach();
   applyNativeState(scene.nodes);
-  const evaluated = Array.isArray(scene.nodes) ? scene.nodes : Object.values(scene.nodes);
-  for (const node of evaluated) applyNativeProperties(objects.get(node.id), node);
+  const evaluated = Array.isArray(scene.nodes) ? scene.nodes.map(node => [node.id, node]) : Object.entries(scene.nodes);
+  for (const [id, node] of evaluated) applyNativeProperties(objects.get(id), node);
   if (scene.world) renderer.toneMappingExposure = 2 ** scene.world.exposure;
   previewActive = true;
   refreshSelection();
@@ -533,12 +533,12 @@ async function performCommit(commands) {
           handled.body?.expected_sha256 !== envelope.expected_sha256 ||
           handled.body?.transaction_id !== envelope.transaction_id)
         throw Error("Extension command must retain the exact transaction identity.");
-      const acknowledged = await api(handled.route, handled.body);
-      result = await api("snapshot");
+      const acknowledged = await api(handled.route, handled.body, actionAuthority);
+      result = await api("snapshot", undefined, actionAuthority);
       if (acknowledged.revision !== result.revision || acknowledged.sha256 !== result.sha256)
         throw Error("The acknowledged extension revision changed before reload.");
     } else result = await api("commands", {...envelope, snapshot: undefined, timeline_context: undefined, preview_context: undefined,
-      commands: {schema_version: 1, commands: envelope.commands}});
+      commands: {schema_version: 1, commands: envelope.commands}}, actionAuthority);
     const displayed = await install(result);
     if (displayed === false) { lastCommitResult = false; return false; }
     clearDiagnostic();
