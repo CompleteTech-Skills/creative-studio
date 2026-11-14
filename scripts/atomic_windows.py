@@ -41,6 +41,17 @@ class _SecurityAttributes(ctypes.Structure):
                 ('inherit_handle', ctypes.c_int)]
 
 
+class _Acl(ctypes.Structure):
+    _fields_ = [('revision', ctypes.c_ubyte), ('reserved', ctypes.c_ubyte),
+                ('size', ctypes.c_uint16), ('count', ctypes.c_uint16),
+                ('reserved2', ctypes.c_uint16)]
+
+
+class _AllowedAce(ctypes.Structure):
+    _fields_ = [('kind', ctypes.c_ubyte), ('flags', ctypes.c_ubyte),
+                ('size', ctypes.c_uint16), ('mask', _DWORD)]
+
+
 def supported():
     return os.name == 'nt' and callable(getattr(ctypes, 'WinDLL', None))
 
@@ -65,10 +76,30 @@ def _api():
     api.CreateDirectoryW.restype = ctypes.c_int
     api.LocalFree.argtypes = [ctypes.c_void_p]
     api.LocalFree.restype = ctypes.c_void_p
+    api.GetCurrentProcess.argtypes = []
+    api.GetCurrentProcess.restype = _HANDLE
     security = ctypes.WinDLL('advapi32', use_last_error=True)
     security.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
         ctypes.c_wchar_p, _DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p]
     security.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = ctypes.c_int
+    security.OpenProcessToken.argtypes = [_HANDLE, _DWORD, ctypes.POINTER(_HANDLE)]
+    security.OpenProcessToken.restype = ctypes.c_int
+    security.GetTokenInformation.argtypes = [_HANDLE, ctypes.c_int, ctypes.c_void_p,
+                                             _DWORD, ctypes.POINTER(_DWORD)]
+    security.GetTokenInformation.restype = ctypes.c_int
+    security.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    security.ConvertSidToStringSidW.restype = ctypes.c_int
+    security.GetSecurityInfo.argtypes = [_HANDLE, ctypes.c_int, _DWORD,
+                                        ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p,
+                                        ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p,
+                                        ctypes.POINTER(ctypes.c_void_p)]
+    security.GetSecurityInfo.restype = _DWORD
+    security.GetSecurityDescriptorControl.argtypes = [ctypes.c_void_p,
+                                                      ctypes.POINTER(ctypes.c_uint16),
+                                                      ctypes.POINTER(_DWORD)]
+    security.GetSecurityDescriptorControl.restype = ctypes.c_int
+    security.GetAce.argtypes = [ctypes.c_void_p, _DWORD, ctypes.POINTER(ctypes.c_void_p)]
+    security.GetAce.restype = ctypes.c_int
     api._security = security
     return api
 
@@ -93,24 +124,91 @@ def _attributes(handle):
     return result.attributes
 
 
-def _open(path, *, delete=False, traverse=True):
+def _open(path, *, delete=False, traverse=True, inspect_security=False):
     # FILE_SHARE_READ|FILE_SHARE_WRITE deliberately omits FILE_SHARE_DELETE.
     # OPEN_REPARSE_POINT inspects the link itself rather than following it.
-    handle = _api().CreateFileW(str(path), _READ_ATTRIBUTES | (_TRAVERSE if traverse else 0) | (_DELETE if delete else 0),
+    access = (_READ_ATTRIBUTES | (_TRAVERSE if traverse else 0)
+              | (_DELETE if delete else 0) | (0x20000 if inspect_security else 0))
+    handle = _api().CreateFileW(str(path), access,
                                3, None, 3, 0x02000000 | 0x00200000, None)
     if handle == _INVALID:
         raise _error(path)
     return handle
 
 
+def _sid_string(sid):
+    if not sid:
+        raise ValueError('private stage security descriptor has no owner or trustee')
+    result = ctypes.c_void_p()
+    api = _api()
+    if not api._security.ConvertSidToStringSidW(sid, ctypes.byref(result)):
+        raise _error('security identifier')
+    try:
+        return ctypes.wstring_at(result)
+    finally:
+        api.LocalFree(result)
+
+
+@lru_cache(maxsize=1)
+def _current_user_sid():
+    api = _api(); token = _HANDLE()
+    if not api._security.OpenProcessToken(api.GetCurrentProcess(), 8, ctypes.byref(token)):
+        raise _error('process token')
+    try:
+        required = _DWORD()
+        api._security.GetTokenInformation(token, 1, None, 0, ctypes.byref(required))
+        if not ctypes.sizeof(ctypes.c_void_p) <= required.value <= 65536:
+            raise ValueError('process token user exceeds bounded security metadata')
+        buffer = ctypes.create_string_buffer(required.value)
+        if not api._security.GetTokenInformation(token, 1, buffer, len(buffer), ctypes.byref(required)):
+            raise _error('process token user')
+        # TOKEN_USER begins with SID_AND_ATTRIBUTES, whose first member is PSID.
+        return _sid_string(ctypes.c_void_p.from_buffer(buffer).value)
+    finally:
+        _close(token)
+
+
+def _validate_private_wrapper(handle):
+    """Validate ownership and exact protected ACL through the held object."""
+    api = _api(); owner = ctypes.c_void_p(); dacl = ctypes.c_void_p()
+    descriptor = ctypes.c_void_p()
+    error = api._security.GetSecurityInfo(handle, 1, 5, ctypes.byref(owner), None,
+                                          ctypes.byref(dacl), None, ctypes.byref(descriptor))
+    if error:
+        raise ctypes.WinError(error)
+    try:
+        user = _current_user_sid()
+        if _sid_string(owner) != user or not dacl:
+            raise ValueError('private stage owner or DACL changed before acquisition')
+        control = ctypes.c_uint16(); revision = _DWORD()
+        if not api._security.GetSecurityDescriptorControl(descriptor, ctypes.byref(control), ctypes.byref(revision)):
+            raise _error('private stage DACL control')
+        if not control.value & 0x1000 or _Acl.from_address(dacl.value).count != 2:
+            raise ValueError('private stage DACL must remain protected and owner/System only')
+        trustees = set()
+        for index in range(2):
+            pointer = ctypes.c_void_p()
+            if not api._security.GetAce(dacl, index, ctypes.byref(pointer)):
+                raise _error('private stage access rule')
+            rule = _AllowedAce.from_address(pointer.value)
+            if rule.kind != 0 or rule.flags != 3 or rule.size < 16 or rule.mask != 0x1f01ff:
+                raise ValueError('private stage access rule changed before acquisition')
+            trustees.add(_sid_string(pointer.value + ctypes.sizeof(_AllowedAce)))
+        if trustees != {user, 'S-1-5-18'}:
+            raise ValueError('private stage grants access outside its owner and LocalSystem')
+    finally:
+        api.LocalFree(descriptor)
+
+
 def _mkdir_private(path):
-    # Protected DACL: only this object's owner and LocalSystem, inherited by
+    # Protected DACL: only this process user and LocalSystem, inherited by
     # files and subdirectories. A Python mkdir(mode=0700) alone is not private
     # on Windows, where the numeric mode does not establish this ACL.
     descriptor = ctypes.c_void_p()
     api = _api()
+    user = _current_user_sid()
     if not api._security.ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            'D:P(A;OICI;FA;;;OW)(A;OICI;FA;;;SY)', 1,
+            f'O:{user}D:P(A;OICI;FA;;;{user})(A;OICI;FA;;;SY)', 1,
             ctypes.byref(descriptor), None):
         raise _error(path)
     try:
@@ -318,7 +416,7 @@ def private_stage(parent, *, prefix='.publish-', cleanup=True, cleanup_on_error=
                 continue
         else:
             raise FileExistsError(errno.EEXIST, 'private stage name collision budget exhausted')
-        wrapper_handle = _open(wrapper)
+        wrapper_handle = _open(wrapper, inspect_security=True)
         payload_handle = None
         stage = None
         body_error = None
@@ -326,6 +424,7 @@ def private_stage(parent, *, prefix='.publish-', cleanup=True, cleanup_on_error=
             attributes = _attributes(wrapper_handle)
             if not attributes & _DIRECTORY or attributes & _REPARSE:
                 raise ValueError('private wrapper changed before acquisition')
+            _validate_private_wrapper(wrapper_handle)
             payload = wrapper / 'payload'
             payload.mkdir(mode=0o700)
             payload_handle = _open(payload, delete=True)

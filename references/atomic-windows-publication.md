@@ -19,7 +19,12 @@ is rejected. Expired child contexts cannot create more children.
 Every physical ancestor is held with delete sharing denied before caller I/O.
 Reparse ancestors, traversal, device namespaces, drive-relative paths, alternate
 streams and UNC paths fail closed. New wrapper ACLs are protected and inherited
-by children, allowing the owner and LocalSystem. The payload handle retains
+by children, allowing the explicit creating process user and LocalSystem.
+After opening the wrapper, its owner SID and exact protected access rules are
+validated through that held handle before creating a payload or yielding to
+writers. An ordinary directory substituted between creation and acquisition
+is rejected if its ownership or permissions differ; its contents are preserved.
+The payload handle retains
 DELETE access while denying delete sharing to other opens. Publication uses
 `SetFileInformationByHandle(FileRenameInfo)` with `ReplaceIfExists=False` and an
 absolute destination whose directory ancestors remain pinned. The Win32
@@ -47,3 +52,7 @@ The native contract follows Microsoft's documentation for
 [FILE_ATTRIBUTE_TAG_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_attribute_tag_info),
 [security descriptor conversion](https://learn.microsoft.com/en-us/windows/win32/api/sddl/nf-sddl-convertstringsecuritydescriptortosecuritydescriptorw)
 and [SID strings](https://learn.microsoft.com/en-us/windows/win32/secauthz/sid-strings).
+Handle-bound ownership and ACL validation use
+[GetSecurityInfo](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-getsecurityinfo),
+[GetTokenInformation](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-gettokeninformation)
+and [GetAce](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-getace).

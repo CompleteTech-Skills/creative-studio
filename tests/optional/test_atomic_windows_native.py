@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 import atomic_windows as windows
@@ -76,6 +77,8 @@ class ActualWindowsPublicationTests(unittest.TestCase):
             environment = dict(os.environ, HATCH_STAGE_TEST_PATH=str(stage.path.parent))
             command = ("$acl=Get-Acl -LiteralPath $env:HATCH_STAGE_TEST_PATH; "
                        "[pscustomobject]@{protected=$acl.AreAccessRulesProtected; "
+                       "owner=$acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value; "
+                       "user=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; "
                        "identities=@($acl.GetAccessRules($true,$true,"
                        "[System.Security.Principal.SecurityIdentifier]) | "
                        "ForEach-Object {$_.IdentityReference.Value})} | ConvertTo-Json -Compress")
@@ -84,7 +87,28 @@ class ActualWindowsPublicationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             report = json.loads(result.stdout)
             self.assertTrue(report['protected'])
-            self.assertEqual(set(report['identities']), {'S-1-3-4', 'S-1-5-18'})
+            self.assertEqual(report['owner'], report['user'])
+            self.assertEqual(set(report['identities']), {report['user'], 'S-1-5-18'})
+
+    def test_acquisition_replacement_with_foreign_acl_is_rejected_before_payload_io(self):
+        original_mkdir = windows._mkdir_private
+        replacements = []
+        def substitute_before_open(path):
+            original_mkdir(path)
+            path.rename(self.root / 'original-owned-wrapper')
+            path.mkdir()
+            (path / 'foreign').write_bytes(b'unrelated original')
+            changed = subprocess.run(['icacls', str(path), '/grant', '*S-1-1-0:(OI)(CI)F'],
+                                     capture_output=True, text=True, timeout=30)
+            self.assertEqual(changed.returncode, 0, changed.stdout + changed.stderr)
+            replacements.append(path)
+        with mock.patch.object(windows, '_mkdir_private', side_effect=substitute_before_open):
+            with self.assertRaises(ValueError):
+                with windows.private_stage(self.root): self.fail('foreign ACL stage yielded')
+        self.assertEqual(len(replacements), 1)
+        self.assertEqual((replacements[0] / 'foreign').read_bytes(), b'unrelated original')
+        self.assertFalse((replacements[0] / 'payload').exists())
+        self.assertEqual(list((self.root / 'original-owned-wrapper').iterdir()), [])
 
     def test_payload_namespace_substitution_is_denied_before_publication(self):
         with windows.private_stage(self.root) as stage:
