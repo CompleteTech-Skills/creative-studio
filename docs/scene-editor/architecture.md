@@ -86,13 +86,70 @@ scene3d reference deliberately names a nonexistent native file.
 `native_resources_verified: false`. `verify_native_reference` recognizes the
 merged Scene3D owner but rejects
 this fixture's nonexistent native file. The separate unavailable-owner check
-uses the unmerged Animation3D adapter. This is not a scene, model generation,
+uses the Animation3D owner whose Editor adapter is unavailable in this revision. This is not a scene, model generation,
 interactive browser demonstration, or accepted production asset.
 
 The separate [native closure verifier](native-closure.md) validates complete
 source-project dependencies and native binding identities on a bounded temporary
 snapshot. It keeps decoded-geometry evidence distinct from file/contract
 verification and does not grant rendering or visual approval.
+
+## Native roles and capability boundaries
+
+A valid manifest cannot serve every consuming role. The generated JSON Schema
+and TypeScript preserve the paired owner/kind alternatives; runtime admission
+uses the same definitions. The following roles bind current native documents:
+
+| Consuming field | Permitted owner and native kind |
+| --- | --- |
+| `scene.native`, `node.native` | `scene3d` / `scene3d-scene` |
+| `animation.native` | `rig` / `AnimationClip`; `scene3d` / `scene3d-animation`; `production2d` / `clip`; `camera3d` / `camera3d-animation` |
+| `project.shots` | `scene3d` / `scene3d-shot`; `camera3d` / `camera3d-shot`; `production2d` / `shot` |
+| `project.color_management` | `lookdev` / `look3d`, whose native `color_management` settings remain authoritative |
+| `project.render_presets` | `scene3d` / `scene3d-render`; `lookdev` / `render-quality3d` |
+| `project.characters` | `rig` / `Rig`; `model3d` / `model3d-asset`; `scene3d` / `scene3d-asset`; `production2d` / `cast` |
+| `project.source_projects` | `scene3d` / `scene3d-project`; `production2d` / `project` |
+
+The `asset.asset_type` discriminator also narrows its `native` reference:
+`model3d` uses Model3D assets or Scene3D imported assets; `rig` uses a native
+`Rig`; `material` uses LookDev material/instance/variant/graph resources;
+`texture` uses LookDev `texture3d`; `camera` uses Camera3D `camera3d-camera`;
+and `animation` uses the animation role above. The existing 2D manifest adapter
+binds `image2d` and `reference2d` to the authoritative production `cast` manifest,
+which retains its actual character/prop image references. It does not reinterpret
+a project, shot, raster byte stream or model manifest as a single image. This
+binding verifies the cast manifest only, not its transitive pixels. Legacy 2D
+production documents and their loaders remain unchanged. The generated asset
+type is a discriminated intersection/union with the same closed base fields;
+`dependencies` and `previous` retain generic exact native references.
+
+Generic dependency references remain inventories, not permission to reinterpret
+those resources as a clip, shot, color configuration or rendering preset. An
+unavailable reference may retain its exact intended role without claiming the
+file exists. The retained animation binding names a deliberately unavailable
+`scene3d-animation`, rather than relabeling a scene manifest as a clip.
+
+The v1 admission adapter capability is `editor3d_contracts.VERSION` (`1.0.0`),
+with versioned native identity and exact file hash/bytes checked by
+`editor3d_adapters.verify_native_reference`. Its supported adapters are:
+
+| Owner | Authoritative admission module | Capability boundary |
+| --- | --- | --- |
+| `rig` | `rig_contracts.validate_contract` | Existing standalone identity-bearing rig kinds; receipt-only kinds fail explicitly |
+| `model3d` | `model3d_contracts.validate_contract` | Actual Model3D manifest validation, not transitive geometry execution |
+| `scene3d` | `scene3d_contracts.validate_document` | Native Scene3D manifest semantics, not full project loading or rendering |
+| `camera3d` | `camera3d_contracts.validate` | Native camera/optics/shot kinds and their own version |
+| `lookdev` | `lookdev_contracts.validate_resource` | Native material/light/look/quality kinds and their own version |
+| `production2d` | `production_contracts.validate_structure` | Existing project/scene/shot/cast/clip records; no legacy format migration |
+| `animation3d` | No integrated adapter in this base | Explicitly unavailable; no invented clip kind or fallback validator |
+
+Service operation names describe admission vocabulary, not available HTTP
+handlers. A capability response must identify its adapter version, native
+contract versions, supported operation names and unavailable optional tools;
+installation or a parseable manifest does not establish execution. Native
+render jobs and backend capabilities remain the Render3D owner's documents
+(`render3d_contracts.py`); they must be inspected through that owner before any
+render route advertises support. They are not accepted as generic model assets.
 
 ## Runtime admission and invariants
 
@@ -172,13 +229,84 @@ required only for project create/save, scene create/command, asset import/relink
 render create/retry and recovery recover. Arguments remain untrusted until their
 native owner validates their bytes and semantics.
 
-Responses distinguish accepted work, actual completion, cancellation, rejection
+Responses distinguish accepted work with an explicit job identity, actual completion, cancellation, rejection
 and unavailability. Failed/unavailable results require a diagnostic with an
 object path and recovery guidance. The runtime preflight returns only
 `admitted, executed: false`; no success handler, job scheduler, cancellation,
 streaming, retry, or export verification is implemented here. Future long-running
 operations must return a job identity promptly and support bounded polling; SSE
 or WebSockets must not bypass identical authorization/origin/revision controls.
+
+### Project locks and session ownership (service contract)
+
+An editor session is the existing `editor3d-session.id` bound to project ID,
+base revision and exact project digest. Authentication binds that session to the
+local server instance; bearer tokens, operating-system lock handles and lease
+secrets remain process state and never enter portable project/session files.
+Opening a project establishes a session, not permission to overwrite another
+session's work or a long-lived exclusive writer lock.
+
+Every mutation acquires the native repository's exclusive writer lock for that
+project's canonical repository identity. Lock acquisition is bounded and a busy
+lock returns a retryable diagnostic without executing. Under the lock, the
+service rereads the authoritative current revision/digest and applies the
+request's comparison-and-swap preconditions before changing any file. A project
+path replacement or mismatched project identity invalidates the acquisition;
+checking a lock file by basename alone cannot grant ownership. Another session
+or process cannot steal or remove a live lock. The owner releases its lock in
+`finally` after the transaction commits or rolls back. Process termination must
+release the operating-system lock; stale on-disk metadata is diagnostic evidence,
+not a lock to delete without proving it has no live owner.
+
+Session close invalidates further requests for that session, releases only its
+own idle resources and asks its owned jobs to stop. It does not remove another
+session's files, undo another writer's committed revision or publish unfinished
+work. A revision conflict returns current identity/revision information and
+requires reload, comparison and explicit reapplication. Retries with the same
+idempotency key and identical input return the same recorded outcome; reuse with
+different input is rejected. Session ownership and idempotency must be rechecked
+under the same native transaction fence, not only at HTTP preflight. These are
+requirements for the implementing service; this foundation has no lock manager,
+session authentication registry or mutation executor.
+
+### Asynchronous jobs, cancellation and partial outputs (service contract)
+
+`response.job_id` is an optional bounded opaque identifier for synchronous v1
+responses and is mandatory when `status` is `accepted`: that state means an
+asynchronous job was durably registered, not completed. The owning service maps
+the ID to the authenticated session, project snapshot and native job record.
+It must return that identity promptly and resolve status/progress/cancel/retry
+against that exact job, subject to the same token/origin and ownership rules.
+The identifier is not a path, approval, output reference or permission to access
+another session's job. Synchronous completion requires no fabricated job ID.
+
+The native job owner governs execution states. An admitted job moves from
+queued to running, then exactly one terminal state: completed, failed or
+cancelled. A cancellation request is idempotent and may mark a queued/running job
+as cancellation-requested while bounded native shutdown runs. It is acknowledged
+as `cancelled` only after the worker has stopped and unpublished artifacts have
+been cleaned up or retained in an owned diagnostic location. A cancellation
+request alone never reports that computation stopped. Failure to stop within
+the native deadline reports a diagnostic and retains truthful running/failure
+state rather than claiming cancellation.
+
+Completion and cancellation race under the native job's single publication
+fence. If verified completion commits first, cancellation returns the existing
+completed outcome and immutable outputs. If cancellation wins first, the worker
+cannot publish a completed result later. Failed, cancelled, unavailable,
+rejected and merely accepted responses publish no output references; partial
+files and intermediate logs are diagnostic evidence, not completed deliverables.
+Native output verification, destination ownership and exclusive atomic
+publication precede the completion record. Cleanup is ownership-aware and never
+deletes a concurrently replaced foreign file or directory. Retry creates or
+resumes work according to the native owner's policy, preserving prior attempt
+records and immutable successful outputs. Recovery must reconcile durable job
+and publication state before reporting either terminal outcome.
+
+These contracts specify the required service behavior without claiming an
+implemented scheduler, cancellation controller or recovery manager. The response
+validator enforces async identity and disallows output references in noncomplete
+states; tests do not promote those checks into proof of worker shutdown.
 
 ## Validation and evidence
 
@@ -206,9 +334,9 @@ results for this patch.
 | #99 requirement | Implementation | Remaining boundary |
 | --- | --- | --- |
 | Audit current frontend/backend/assets/review/history and baseline | This audit, inherited owners, independent baseline logs | No claim of complete existing full-suite rerun unless the receipt says so |
-| Shared project/scene/node/asset/animation/command/revision types and equivalence | Single schema authority, generated TS, strict admission, hash closure | Native manifest and source-project closure are checked by the native closure verifier; persistent editing and broad runtime state remain later work |
+| Shared project/scene/node/asset/animation/command/revision types and equivalence | Single schema authority, generated TS, strict consuming roles, async response identity, hash closure | Native manifest and transitive source-project closure are checked by the native closure verifier; broader parent §5 editor state remains tracked by runtime work |
 | Persistent/session/derived separation, stable IDs, coordinate/time adapters | Closed roots, context checks, existing math and exact fractions | Scene evaluation, world-preserving reparenting, UI persistence remain separate |
-| Local API safety/revision/integration specification | Request/response types, preflight, operation matrix, native validators | No HTTP server, filesystem mutation, render job or editor control is represented as delivered |
+| Local API safety/revision/integration specification | Request/response types, preflight, operation matrix, native validators, session/lock and cancellation/publication contracts | No HTTP server, filesystem mutation, render job or editor control is represented as delivered |
 
 A future integration must preserve the existing 2D, style/state, decomposition,
 source/review and portable-package tests. No browser support, real Blender scene
