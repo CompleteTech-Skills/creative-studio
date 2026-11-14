@@ -30,7 +30,16 @@ OpenCV's [cascade tutorial](https://docs.opencv.org/4.13.0/db/d28/tutorial_casca
 describes the same trained face/eye detector and its rectangle output. The
 cascade XML files retain their Intel Open Source Computer Vision license headers (redistribution permitted with notices) in the installed OpenCV
 package. No model or optional dependency is downloaded at runtime. Model
-identity changes require a new request. Local detection has no calibrated
+identity changes require a new request. Each attempt captures both installed XML
+files once through regular-file descriptors, with an 8 MiB limit per file. The
+recorded model hashes are computed from those exact immutable bytes. The worker
+uses [OpenCV memory-mode FileStorage](https://docs.opencv.org/4.x/da/d56/classcv_1_1FileStorage.html)
+and [CascadeClassifier.read](https://docs.opencv.org/4.x/d1/de5/classcv_1_1CascadeClassifier.html)
+to load the same captured bytes; it never passes replaceable model filenames to
+the classifier. A model changed before capture is rejected against the selected
+request. Later filename replacement cannot change the captured classifier or its
+recorded identity. Missing memory-loading APIs are explicitly unavailable;
+malformed XML fails the attempt before any proposals are published. Local detection has no calibrated
 probabilities: its conservative `0.5` annotation confidence is explicitly marked
 unknown in each part's notes and must not be interpreted as measured accuracy.
 
