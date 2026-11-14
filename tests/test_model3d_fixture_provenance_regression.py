@@ -57,7 +57,8 @@ class FixtureProvenanceRegression(unittest.TestCase):
 
     def test_canonical_fixture_library_export_and_native_rig(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            # Admit the owned temporary root before passing it to the library.
+            root = Path(tmp).resolve(strict=True)
             from test_model3d_mesh_import import MeshImportTests
             case = MeshImportTests(); case.root = root
             library, manifest, ref = case.canonical()
@@ -83,7 +84,7 @@ class FixtureProvenanceRegression(unittest.TestCase):
 
     def test_claimed_canonical_manifest_cannot_taint_plain_snapshot(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            root = Path(tmp).resolve(strict=True)
             from test_model3d_mesh_import import MeshImportTests
             case = MeshImportTests(); case.root = root
             _, manifest, ref = case.canonical()
