@@ -109,6 +109,58 @@ class ImportTests(unittest.TestCase):
         (self.root/'geometry.bin').write_bytes(binary[:document['buffers'][0]['byteLength']])
         source=self.root/'external.gltf';source.write_text(json.dumps(document));return source
 
+    def _huge_node_transforms(self,sign=1):
+        huge=sign*json.loads('1'+'0'*400)
+        matrix=[1,0,0,0,0,1,0,0,0,0,1,0,huge,0,0,1]
+        return dict(translation=[huge,0,0],scale=[huge,1,1],
+                    rotation=[0,0,0,huge],matrix=matrix)
+
+    def _transform_source(self,field,value):
+        source=self.external();document=json.loads(source.read_bytes())
+        node=document['nodes'][0]
+        for key in ('translation','scale','rotation','matrix'):node.pop(key,None)
+        node[field]=value;source.write_text(json.dumps(document))
+        return source
+
+    def _assert_no_transform_publication(self,originals):
+        for path,data in originals.items():self.assertEqual(path.read_bytes(),data)
+        with sqlite3.connect(self.library.database) as db:
+            for table in ('versions','blobs'):
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM '+table).fetchone()[0],0)
+
+    def test_huge_node_transforms_fail_structurally_without_publication(self):
+        for sign in (1,-1):
+            for field,value in self._huge_node_transforms(sign).items():
+                with self.subTest(field=field,sign=sign):
+                    source=self._transform_source(field,value)
+                    originals={path:path.read_bytes() for path in
+                               (source,self.source,self.root/'geometry.bin',self.license)}
+                    with self.assertRaises(RigError) as caught:
+                        self.pipeline.import_asset(source,**self.request(blender_roundtrip=False))
+                    self.assertEqual(caught.exception.report['code'],'LIBRARY_IMPORT_FORMAT')
+                    self.assertEqual(caught.exception.report['stage'],'asset-import')
+                    self._assert_no_transform_publication(originals)
+
+    def test_actual_cli_huge_node_transforms_return_structured_failure(self):
+        import subprocess
+        import sys
+        request=self.request(blender_roundtrip=False);request['license_file']=str(self.license)
+        request_path=self.root/'request.json';request_path.write_text(json.dumps(request))
+        for field,value in self._huge_node_transforms().items():
+            with self.subTest(field=field):
+                source=self._transform_source(field,value)
+                originals={path:path.read_bytes() for path in
+                           (source,self.source,self.root/'geometry.bin',self.license,request_path)}
+                result=subprocess.run([sys.executable,str(ROOT/'scripts/asset_library_import.py'),
+                    'import','--library',str(self.library.root),'--source',str(source),
+                    '--request',str(request_path)],capture_output=True,text=True,timeout=30)
+                self.assertEqual(result.returncode,2,result.stderr)
+                report=json.loads(result.stdout)
+                self.assertEqual(report['status'],'failed')
+                self.assertEqual(report['diagnostic']['code'],'LIBRARY_IMPORT_FORMAT')
+                self.assertNotIn('Traceback',result.stderr)
+                self._assert_no_transform_publication(originals)
+
     def test_external_closure_and_exact_restore(self):
         source=self.external();original={p.name:p.read_bytes() for p in (source,self.root/'geometry.bin')}
         result=self.pipeline.import_asset(source,**self.request(blender_roundtrip=False))
