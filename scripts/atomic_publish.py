@@ -62,6 +62,23 @@ def rename_no_replace_at(source_fd, source_name, destination_fd, destination_nam
                               source_dir_fd=source_fd, destination_dir_fd=destination_fd)
 
 
+def windows_private_stage_supported():
+    """Whether the separate native Windows handle-pinning adapter exists."""
+    from atomic_windows import supported
+    return supported()
+
+
+def windows_private_stage(parent, **policies):
+    """Context yielding ``stage.path`` and exact ``stage.publish_to(path)``.
+
+    Windows writers and verifiers use the ordinary path only while the context
+    is active, finish all I/O, then publish the held payload through its method.
+    This additive platform adapter does not alter the POSIX staging defaults.
+    """
+    from atomic_windows import private_stage
+    return private_stage(parent, **policies)
+
+
 # New staging capabilities intentionally have a narrower platform contract than
 # the legacy path-based exclusive rename above. Never silently fall back to an
 # unpinned temporary pathname on an unsupported host.
@@ -207,14 +224,13 @@ def _registered_directory(path):
 
 
 @contextmanager
-def pinned_directory(path):
+def _pinned_directory_common(path):
     """Open every existing path component without following symbolic links.
 
     The borrowed descriptor is valid only inside this context. Do not call
     resolve()/realpath() on a subsequent procfd capability: that discards its
     protection against namespace replacement.
     """
-    _private_support()
     with _registered_directory(path) as descriptor:
         if descriptor is not None:
             yield descriptor
@@ -231,6 +247,28 @@ def pinned_directory(path):
         yield descriptor
     finally:
         os.close(descriptor)
+
+
+@contextmanager
+def pinned_directory(path):
+    """Existing Linux path-adapter parent pinning contract."""
+    _private_support()
+    with _pinned_directory_common(path) as descriptor:
+        yield descriptor
+
+
+@contextmanager
+def pinned_directory_fd(path):
+    """Lend a parent directory FD on POSIX without requiring procfs paths.
+
+    The single canonical no-follow component walk is shared with the existing
+    Linux adapter. Callers retain descriptor-relative I/O on macOS; this does not
+    expose an ordinary mutable path as a substitute for an FD capability.
+    """
+    if not private_stage_fd_supported():
+        raise OSError(errno.ENOTSUP, 'descriptor-only parent pinning is unavailable')
+    with _pinned_directory_common(path) as descriptor:
+        yield descriptor
 
 
 def _clear_private_directory(descriptor):

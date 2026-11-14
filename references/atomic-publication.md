@@ -113,6 +113,12 @@ compatibility discovery. The focused workflow also executes portable contracts
 on Linux, Windows and macOS without claiming private staging works off Linux.
 # Descriptor-only POSIX staging
 
+`pinned_directory_fd(existing_path)` pins an ordinary parent directory using the
+canonical no-follow component walk on supported POSIX systems, without requiring
+procfs. Callers then use its borrowed descriptor with `private_stage_fd` and keep
+all I/O descriptor-relative. It supplies no mutable-path alias on macOS. The
+existing Linux `pinned_directory` entry point retains its platform contract.
+
 `private_stage_fd_supported()` reports the separate descriptor-only capability.
 `private_stage_fd(parent_fd, prefix='.publish-', cleanup=True,
 cleanup_on_error=True)` yields a directory descriptor without requiring procfs.
