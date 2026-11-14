@@ -22,9 +22,9 @@ float spelling is interpreted as an exact decimal rational at this edit boundary
 Unrepresentable tick positions, nonfinite values, booleans and collisions reject.
 Hermite derivative units and Bezier handle time offsets scale with retiming.
 
-`ClipHistory(document, max_edits=256)` commits only valid complete edits. Undo/redo
+`ClipHistory(document, max_edits=256, max_bytes=64*1024*1024)` commits only valid complete edits. The retained current/undo/redo documents share one conservative JSON-object estimate, checked before cloning the next owned state. Undo/redo
 return detached values; failed operations preserve both the current state and
-history. Reaching its explicit 1–4096 edit capacity fails rather than silently
+history. Reaching its explicit 1–4096 edit capacity or aggregate estimate fails rather than silently
 evicting history. This is an in-process working history; EditorRepository owns
 persistent transactions and history publication.
 
