@@ -606,7 +606,8 @@ def _load_verified_native(imported, native_root):
         return load_rig(admitted)
 
 
-def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=0.):
+def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=0., loop=False):
+
     """Evaluate actual native deformation then each scene component's edit delta."""
     from rig_animation import evaluate_animation
     from rig_skinning import evaluate_deformation
@@ -617,7 +618,7 @@ def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=
     if clip is not None:
         clip = imported.report['native_clip_map'].get(clip, clip)
         require(clip in rig.clips, 'Unknown imported native clip.')
-        evaluated = evaluate_deformation(rig, evaluate_animation(rig, clip, time)['pose'])
+        evaluated = evaluate_deformation(rig, evaluate_animation(rig, clip, time, loop=loop)['pose'])
     elif rig.manifest.get('skeleton') and rig.weights:
         evaluated = evaluate_deformation(rig)
     else:

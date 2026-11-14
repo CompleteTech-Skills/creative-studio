@@ -6,6 +6,7 @@ edited versions receive new identities before any project is published.
 """
 from __future__ import annotations
 
+from contextlib import ExitStack
 from copy import deepcopy
 import hashlib
 import os
@@ -14,8 +15,8 @@ import tempfile
 import zipfile
 
 from asset_library import read_source_bytes
-from atomic_publish import _rename_no_replace
-from rig_errors import timestamp, decode_json
+from atomic_publish import _rename_no_replace, pinned_directory, private_stage, private_stage_supported
+from rig_errors import RigError, timestamp, decode_json, directory_capability, open_payload
 from scene3d_contracts import (all_refs, canonical_bytes, load_project,
                                portable_path, validate_document)
 from scene3d_graph import require
@@ -42,7 +43,8 @@ def _new_destination(destination):
 
 def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                      scene_version=None, project_version=None, derived_documents=None,
-                     extra_payloads=None, max_bytes=1024**3):
+                     extra_payloads=None, shot_documents=None, max_bytes=1024**3,
+                     expected_project_sha256=None):
     """Copy and revalidate actual source bytes, then exclusively publish a closure.
 
     New scene versions coexist with original scene/shot versions. The return value
@@ -50,8 +52,16 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     Additional derived documents must already reference complete input payloads.
     """
     require(type(max_bytes) is int and 0 < max_bytes <= 1024**3, 'Invalid snapshot byte budget.')
+    require(shot_documents is None or isinstance(shot_documents, list) and len(shot_documents) <= 1024,
+            'Additional shot documents must be a bounded list.')
+    require(not shot_documents or graph is not None, 'New shots require an explicit edited scene.')
+    require(expected_project_sha256 is None or type(expected_project_sha256) is str and
+            len(expected_project_sha256) == 64 and all(c in '0123456789abcdef' for c in expected_project_sha256),
+            'Expected source project SHA256 must be an exact lowercase digest.')
     destination = _new_destination(destination)
     bundle = load_project(source_root)
+    require(expected_project_sha256 is None or bundle['inventory']['project.json']['sha256'] == expected_project_sha256,
+            'Source project differs from the expected exact revision.', 'SCENE3D_SOURCE_CHANGED')
     source_root = Path(source_root).resolve(strict=True)
     files, total = {}, 0
     for path, record in bundle['inventory'].items():
@@ -89,7 +99,6 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                         files[path] = payload
                         require(sum(map(len, files.values())) <= max_bytes, 'Legacy closure exceeds snapshot byte budget.')
         except (ValueError, OSError, zipfile.BadZipFile) as exc:
-            from rig_errors import RigError
             if isinstance(exc, RigError):
                 raise
             raise RigError('SCENE3D_LEGACY_SOURCE', 'Native legacy archival validation failed: '+str(exc),
@@ -115,7 +124,7 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         r = _file_reference(document, payload, path)
         additions.append(r)
         field = {'scene3d-asset': 'assets', 'scene3d-prefab': 'prefabs',
-                 'scene3d-animation': 'animations'}.get(document['kind'])
+                 'scene3d-animation': 'animations', 'scene3d-shot': 'shots'}.get(document['kind'])
         if field is not None:
             project[field].append(deepcopy(r))
         if document['kind'] == 'scene3d-asset' and document['asset_type'] == 'character':
@@ -169,14 +178,21 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         project['scenes'].append(active_scene)
         # Existing shots remain valid against the retained old scene; new exact
         # shot versions bind the edited scene without overwriting their originals.
-        for reference in list(project['shots']):
+        for reference in bundle['project']['shots']:
             old_shot = bundle['documents'][reference['path']]
             if old_shot['scene']['path'] != scene_path:
                 continue
             shot = deepcopy(old_shot)
             shot['version'] = version_patch(shot['version'])
             shot['scene'] = deepcopy(active_scene)
-            project['shots'].append(add_document(shot))
+            add_document(shot)
+        for shot in shot_documents or []:
+            shot = validate_document(deepcopy(shot), 'shot')
+            require(shot['scene'] == _file_reference(original, files[scene_path], scene_path),
+                    'New shot must select the exact edited source scene.')
+            require(shot['id'] in replacement['shots'], 'New shot must be associated with the edited scene.')
+            shot['scene'] = deepcopy(active_scene)
+            add_document(shot)
     original_project = files['project.json']
     history = 'history/project-'+hashlib.sha256(original_project).hexdigest()+'.json'
     files[history] = original_project
@@ -203,11 +219,29 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     total = sum(map(len, files.values()))
     require(total <= min(max_bytes, project['budgets']['max_bytes']) and len(files) <= project['budgets']['max_files'],
             'Snapshot exceeds project file/byte budgets.', 'SCENE3D_SNAPSHOT_LIMIT')
-    # All writes are inside an attempt-owned private directory. The destination
-    # leaf is never reserved or replaced and is rechecked by kernel publication.
-    with tempfile.TemporaryDirectory(prefix='.scene3d-snapshot-', dir=destination.parent) as private:
-        stage = Path(private)/'project'
-        stage.mkdir(mode=0o700)
+    # Linux pins both staging and publication directories before any writes.
+    # The portable adapter retains exclusive publication, but cannot yet promise
+    # descriptor-owned staging on platforms unsupported by the shared authority.
+    with ExitStack() as stack:
+        pinned = private_stage_supported()
+        if pinned:
+            parent_fd = stack.enter_context(pinned_directory(destination.parent))
+            private, private_fd = stack.enter_context(private_stage(
+                parent_fd, prefix='.scene3d-snapshot-', cleanup_on_error=False))
+            outer = stack.enter_context(directory_capability(private_fd))
+            (outer.path/'project').mkdir(mode=0o700)
+            stage_fd = os.open('project', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=private_fd)
+            stack.callback(os.close, stage_fd)
+            project_cap = stack.enter_context(directory_capability(stage_fd))
+            stage = project_cap.path
+            identity = project_cap.identity
+        else:
+            private = stack.enter_context(tempfile.TemporaryDirectory(
+                prefix='.scene3d-snapshot-', dir=destination.parent))
+            stage = Path(private)/'project'
+            stage.mkdir(mode=0o700)
+            info = stage.stat()
+            identity = (info.st_dev, info.st_ino)
         for path, payload in sorted(files.items()):
             target = stage / portable_path(path)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -221,10 +255,55 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             try:
                 load_legacy_project(stage/legacy_prefix)
             except ValueError as exc:
-                from rig_errors import RigError
                 raise RigError('SCENE3D_LEGACY_SOURCE', 'Restored native legacy closure is invalid: '+str(exc)) from exc
         require(set(verified['inventory']) <= set(files), 'Verification opened an uninventoried payload.')
-        _rename_no_replace(stage, destination)
+        # Validation callbacks have finished. Independently bind every published
+        # byte to the attempted snapshot before the final kernel publication.
+        expected_dirs = {parent.as_posix() for path in files for parent in Path(path).parents if str(parent) != '.'}
+        observed_files = set()
+        for folder, directories, names in os.walk(stage, followlinks=False):
+            relative = Path(folder).relative_to(stage)
+            for name in directories:
+                child = Path(folder)/name
+                require(not child.is_symlink() and (relative/name).as_posix() in expected_dirs,
+                        'Snapshot directory inventory changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+            for name in names:
+                path = (relative/name).as_posix()
+                require(path in files and path not in observed_files,
+                        'Snapshot file inventory changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+                observed_files.add(path)
+        require(observed_files == set(files), 'Snapshot files disappeared after validation.', 'SCENE3D_SOURCE_CHANGED')
+        for path, payload in sorted(files.items()):
+            with open_payload(stage, path) as (stream, info):
+                require(info.st_size == len(payload), 'Snapshot bytes changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+                digest = hashlib.sha256()
+                remaining = len(payload) + 1
+                observed = 0
+                while remaining:
+                    chunk = stream.read(min(1024*1024, remaining))
+                    if not chunk:break
+                    remaining -= len(chunk)
+                    observed += len(chunk)
+                    digest.update(chunk)
+                require(observed == len(payload) and digest.digest() == hashlib.sha256(payload).digest(),
+                        'Snapshot bytes changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+        current = (os.stat('project', dir_fd=private_fd, follow_symlinks=False) if pinned else stage.stat())
+        require((current.st_dev, current.st_ino) == identity,
+                'Snapshot publication entry changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+        if pinned:
+            # A held destination descriptor protects writes, but the returned
+            # pathname must still identify that selected directory as well.
+            try:
+                parent_now = destination.parent.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise RigError('SCENE3D_DESTINATION', 'Snapshot destination parent disappeared during validation.') from exc
+            parent_held = os.fstat(parent_fd)
+            require((parent_now.st_dev, parent_now.st_ino) == (parent_held.st_dev, parent_held.st_ino),
+                    'Snapshot destination parent changed during validation.', 'SCENE3D_DESTINATION')
+            _rename_no_replace('project', destination.name, source_dir_fd=private_fd,
+                               destination_dir_fd=parent_fd)
+        else:
+            _rename_no_replace(stage, destination)
     return dict(destination=str(destination), project_sha256=hashlib.sha256(files['project.json']).hexdigest(),
                 project_version=project['version'], active_scene=active_scene,
                 inventory={path: dict(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest())
