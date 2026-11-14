@@ -96,6 +96,10 @@ jobs:
           node-version: '22.16.0'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: npm ci --ignore-scripts --prefix tools/rig
+      - run: python -m pip install pytest==8.3.5
+      - run: python -m pytest -q tests/test_rig_asset_library_morph_animation.py
+        env:
+          PYTHONPATH: scripts:tests
       - run: python scripts/test_rig_gate.py interoperability 2>&1 | tee rig-interchange.log
         env:
           HATCH_RIG_INTEROP_TEST: '1'

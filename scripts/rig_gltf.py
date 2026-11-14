@@ -166,11 +166,11 @@ def read_gltf(path: str | Path, limits=None, *, source_reader=None, budget=None)
         from rig_errors import open_payload
         with open_payload(path.parent, path.name) as (_, info):
             size = info.st_size
+        require(size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'Encoded model exceeds the source byte limit.')
         budget.captured_input(key=prefix + ':entry', size=size, source=True)
         budget.parsed_json(key=prefix + ':json', size=size)
         # GLB chunk slices and buffer slices may coexist with the original.
         budget.add(size * 2, 'glTF source slicing workspace')
-        require(size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'Encoded model exceeds the source byte limit.')
     if source_reader is None:
         require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'Encoded model exceeds the source byte limit.')
         if budget is None:

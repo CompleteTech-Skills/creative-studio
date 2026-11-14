@@ -261,6 +261,14 @@ class TextureIntegrityTests(unittest.TestCase):
         data = image_bytes(size=(4, 4))
         self.assert_rejected(self.obj(data, images=2), 'RIG_LIMIT_TEXTURE', limits={**DEFAULT_LIMITS, 'memory_bytes': 800})
 
+    def test_obj_budget_rejects_before_read_and_checks_aggregate_textures(self):
+        path = self.obj(aggregate_budget_image('PNG'), images=2)
+        with self.assertRaises(RigError) as caught:
+            load_character_model(path, limits={**DEFAULT_LIMITS, 'memory_bytes': 800},
+                                 source_reader=lambda *_: self.fail('read before admission'))
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+        self.assert_rejected(path, 'RIG_LIMIT_TEXTURE', limits={**DEFAULT_LIMITS, 'memory_bytes': 14 * 1024**2})
+
     def test_obj_parent_alias_preserves_exact_canonical_source_inventory(self):
         path = self.obj(image_bytes())
         actual_files = (path, path.parent / 'texture.mtl', path.parent / '0.png')
@@ -280,6 +288,18 @@ class TextureIntegrityTests(unittest.TestCase):
         self.assertEqual(set(imported.source_files), set(expected))
         self.assertEqual({p: hashlib.sha256(p.read_bytes()).hexdigest() for p in imported.source_files}, expected)
         self.assertEqual({p.resolve(): hashlib.sha256(p.read_bytes()).hexdigest() for p in actual_files}, expected)
+
+    @unittest.skipIf(os.name == 'nt', 'Creating a symlink may require Windows privileges')
+    def test_obj_parent_alias_does_not_admit_linked_payload(self):
+        path = self.obj(image_bytes())
+        texture = path.parent / '0.png'
+        target = self.root / 'outside.png'
+        texture.rename(target)
+        texture.symlink_to(target)
+        alias = self.root / 'parent-alias'
+        alias.symlink_to(path.parent, target_is_directory=True)
+        with self.assertRaises(RigError):
+            load_character_model(alias / path.name)
 
     def test_encoded_and_decoded_limits_precede_pixel_allocation(self):
         data = image_bytes()

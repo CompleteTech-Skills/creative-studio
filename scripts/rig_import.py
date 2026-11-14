@@ -438,9 +438,12 @@ def load_character_model(path: str | Path, *, scale=1., limits=None, blender=Non
     if suffix == '.obj':
         from rig_obj import import_obj
         from rig_load_limits import LoadBudget, effective_limits
-        from rig_errors import open_payload
+        from rig_errors import open_payload, normalize_root
+        if source_reader is None:
+            path = normalize_root(path.parent) / path.name
         if budget is None:
-            budget = LoadBudget(effective_limits(DEFAULT_LIMITS, limits))
+            ceiling = {**DEFAULT_LIMITS, 'influences': 8} if isinstance(limits, dict) and limits.get('influences') == 8 else DEFAULT_LIMITS
+            budget = LoadBudget(effective_limits(ceiling, limits))
         child = budget.fork(limits or budget.limits)
         prefix = uuid.uuid4().hex
         reads = 0
@@ -470,7 +473,8 @@ def load_character_model(path: str | Path, *, scale=1., limits=None, blender=Non
     require(suffix in ('.gltf', '.glb'), 'RIG_FORMAT', 'Supported model inputs are GLB, glTF, OBJ and Blender.')
     if budget is None:
         from rig_load_limits import LoadBudget, effective_limits
-        budget = LoadBudget(effective_limits(DEFAULT_LIMITS, limits))
+        ceiling = {**DEFAULT_LIMITS, 'influences': 8} if isinstance(limits, dict) and limits.get('influences') == 8 else DEFAULT_LIMITS
+        budget = LoadBudget(effective_limits(ceiling, limits))
     child = budget.fork(limits or budget.limits)
     model = _gltf_model(path, scale=scale, limits=child.limits, source_reader=source_reader, budget=child)
     budget.commit(child)

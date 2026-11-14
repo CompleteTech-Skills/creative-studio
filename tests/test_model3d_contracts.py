@@ -347,6 +347,10 @@ class Model3DContracts(unittest.TestCase):
         builder.json['scenes'] = [dict(nodes=list(range(8)) + list(nodes.values()))]
         path = self.root / 'eight.glb'
         builder.write(path)
+        from rig_errors import RigError
+        with self.assertRaises(RigError) as rejected:
+            load_character_model(path)
+        self.assertEqual(rejected.exception.report['code'], 'RIG_INFLUENCE_PROFILE')
         model = load_character_model(path, limits={**__import__('rig_contracts').DEFAULT_LIMITS, 'influences':8})
         doc = deepcopy(self.asset)
         record = payload(self.root, path.name, 'model/gltf-binary')

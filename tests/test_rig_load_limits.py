@@ -29,6 +29,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SharedLoadBudgetTests(unittest.TestCase):
+    def test_eight_influence_budget_fork_preserves_explicit_cap_and_never_loosens(self):
+        parent = LoadBudget({**DEFAULT_LIMITS, 'influences': 8})
+        child = parent.fork({'influences': 8})
+        self.assertEqual(child.limits['influences'], 8)
+        parent.commit(child)
+        self.assertEqual(parent.fork({'influences': 4}).limits['influences'], 4)
+        limited = LoadBudget(DEFAULT_LIMITS)
+        self.assertEqual(limited.fork({'influences': 8}).limits['influences'], 4)
+
     def test_file_admission_failure_does_not_poison_retry(self):
         budget = LoadBudget({**DEFAULT_LIMITS, 'dependency_bytes': 10})
         budget._record_file_size(Path('first'), 7)

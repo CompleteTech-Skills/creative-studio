@@ -104,7 +104,7 @@ class LoadBudget:
         File identity is local to one native load: loading the same path again
         retains another set of objects and must be charged again.
         """
-        validated = effective_limits(DEFAULT_LIMITS, self.limits)
+        validated = effective_limits({**DEFAULT_LIMITS, 'influences': 8}, self.limits)
         effective = effective_limits(validated, limits)
         snapshot = copy.deepcopy(self._state())
         child = object.__new__(LoadBudget)
