@@ -41,15 +41,21 @@ jobs:
           git rev-parse HEAD | tee scene3d-evidence/head.txt
           python scripts/generate_schemas.py --check 2>&1 | tee scene3d-evidence/schemas.log
           python scripts/generate_rig_templates.py --check 2>&1 | tee scene3d-evidence/templates.log
-          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service -v 2>&1 | tee scene3d-evidence/service.log
+          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service test_rig_scene3d_materials test_rig_scene3d_capture test_rig_scene3d_lifecycle -v 2>&1 | tee scene3d-evidence/service.log
+          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_evaluate -v 2>&1 | tee scene3d-evidence/evaluation.log
+          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_pose -v 2>&1 | tee scene3d-evidence/poses.log
         env:
           HATCH_SCENE3D_EVIDENCE: ${{ github.workspace }}/scene3d-evidence/native
           HATCH_RIG_BLENDER_TEST: '1'
           HATCH_RIG_BROWSER_TEST: '1'
           HATCH_RIG_INTEROP_TEST: '1'
           HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
+      - name: Actual native pose inspector and geometry preview
+        run: PYTHONPATH=scripts:tests python -m unittest test_rig_editor3d_pose_inspector -v 2>&1 | tee scene3d-evidence/editor-poses.log
+        env:
+          HATCH_EDITOR_BROWSER_TEST: '1'
       - name: Editor native component and persistence browser acceptance
-        run: PYTHONPATH=scripts:tests python -m unittest test_rig_editor3d_viewer test_rig_editor3d_components test_rig_editor3d_state -v 2>&1 | tee scene3d-evidence/editor-browser.log
+        run: PYTHONPATH=scripts:tests python -m unittest test_rig_editor3d_viewer test_rig_editor3d_components test_rig_editor3d_state test_rig_editor3d_timeline_browser test_rig_editor3d_http_queue -v 2>&1 | tee scene3d-evidence/editor-browser.log
         env:
           HATCH_EDITOR_BROWSER_TEST: '1'
           OPENBLAS_NUM_THREADS: '1'

@@ -14,17 +14,19 @@ from pathlib import Path
 from rig_errors import decode_json, require, safe_path, RigError
 
 
-def project_components(root, snapshot, *, max_vertices, max_resource_bytes, max_decoded_vertices):
+def project_components(root, snapshot, *, max_vertices, max_resource_bytes, max_decoded_vertices=2000000, defer_poses=False):
     from scene3d_graph import SceneGraph
-    from scene3d_import import ImportedScene, evaluate_imported_vertices
-    from rig_models import load_rig
+    from scene3d_import import project_imported_vertices
+    from scene3d_import_capture import resolve_captured_import
+    from rig_skinning import evaluate_deformation
     from rig_math import transform_points
     nodes = [node for node in snapshot['scene']['nodes'] if 'source_component' in node.get('metadata', {})]
     projections, cache, used, resource_bytes = {}, {}, 0, 0
     decoded_vertices, sampled_vertices = 0, 0
     if not nodes:
         return projections, used
-    graph = SceneGraph.from_bundle(snapshot, snapshot['scene_path'])
+    graph = SceneGraph.from_bundle(snapshot, snapshot['scene_path'],source_root=root)
+    all_nodes={node['id']:node for node in snapshot['scene']['nodes']}
     for node in nodes:
         key = None
         try:
@@ -36,46 +38,36 @@ def project_components(root, snapshot, *, max_vertices, max_resource_bytes, max_
             component = node['metadata']['source_component']
             require(component in asset['components'] and asset['components'][component],
                     'EDITOR3D_VIEW_COMPONENT', 'Imported node has no exact native component mapping.')
-            require(not node.get('pose_bindings') and not node.get('pose_binding'),
+            cursor=node['id'];requires_timeline=False
+            while cursor is not None:
+                binding=all_nodes[cursor].get('pose_binding')
+                requires_timeline |= bool(binding and binding['rig']==asset['skeleton'])
+                cursor=all_nodes[cursor]['parent']
+            require(defer_poses or not requires_timeline,
                     'EDITOR3D_VIEW_COMPONENT', 'Pose-bound components require the canonical timeline geometry adapter.')
             if key not in cache:
-                def evidence(suffix):
-                    matches = [entry for entry in asset['dependencies'] if entry['path'].endswith(suffix)]
-                    require(len(matches) == 1, 'EDITOR3D_VIEW_COMPONENT', 'Missing unique native '+suffix+' evidence.')
-                    entry = matches[0]
-                    path = safe_path(root, entry['path'], exists=True)
-                    payload = path.read_bytes()
-                    require(hashlib.sha256(payload).hexdigest() == entry['sha256'],
-                            'EDITOR3D_VIEW_COMPONENT', 'Imported native evidence changed.')
-                    return path, decode_json(payload.decode('utf-8', errors='strict'))
-                manifest_path, manifest = evidence('/native/rig.json')
-                _, hierarchy = evidence('/hierarchy.json')
-                _, report = evidence('/import-report.json')
                 require(decoded_vertices < max_decoded_vertices, 'EDITOR3D_VIEW_LIMIT', 'Imported decoded-vertex budget exceeded.')
-                rig = load_rig(manifest_path.parent)
-                require(rig.manifest == manifest, 'EDITOR3D_VIEW_COMPONENT', 'Native manifest interpretation differs.')
-                require(decoded_vertices + rig.geometry.vertex_count <= max_decoded_vertices,
-                        'EDITOR3D_VIEW_LIMIT', 'Imported decoded-vertex budget exceeded.')
-                decoded_vertices += rig.geometry.vertex_count
-                by_id = rig.geometry.by_id()
-                planned = 0
-                for member in nodes:
-                    if member.get('asset') == reference:
-                        binding = member['metadata']['source_component']
+                with resolve_captured_import(snapshot,reference,root) as admitted:
+                    rig=admitted['rig']
+                    require(decoded_vertices + rig.geometry.vertex_count <= max_decoded_vertices,
+                            'EDITOR3D_VIEW_LIMIT', 'Imported decoded-vertex budget exceeded.')
+                    decoded_vertices += rig.geometry.vertex_count
+                    by_id=rig.geometry.by_id()
+                    members=[member for member in nodes if member.get('asset')==reference]
+                    planned=0
+                    for member in members:
+                        binding=member['metadata']['source_component']
                         require(binding in asset['components'], 'EDITOR3D_VIEW_COMPONENT', 'Imported node has no exact native component mapping.')
                         planned += sum(len(by_id[mesh].positions) for mesh in asset['components'][binding])
-                require(sampled_vertices + planned <= max_vertices, 'EDITOR3D_VIEW_LIMIT', 'Imported instances exceed the sampled vertex budget.')
-                imported = ImportedScene({}, reference, asset, [], hierarchy['nodes'], report)
-                # The native importer evaluates imported components, not an
-                # independent whole-asset instance sharing the same version.
-                members = [member for member in nodes if member.get('asset') == reference]
-                class ComponentView:
-                    def document(self):
-                        return {'nodes': members}
-                    def evaluate_base(self, identifier=None):
-                        return graph.evaluate_base(identifier)
-                sampled = evaluate_imported_vertices(ComponentView(), imported, manifest_path.parent)['nodes']
-                sampled_vertices += planned
+                    require(sampled_vertices + planned <= max_vertices,
+                            'EDITOR3D_VIEW_LIMIT', 'Imported instances exceed the sampled vertex budget.')
+                    deformed=(evaluate_deformation(rig) if rig.manifest['skeleton'] and rig.weights else
+                              {mesh.id:dict(positions=mesh.positions) for mesh in rig.geometry.meshes})
+                    class ComponentView:
+                        def document(self):return {'nodes':members}
+                        def evaluate_base(self,identifier=None):return graph.evaluate_base(identifier)
+                    sampled=project_imported_vertices(ComponentView(),admitted['imported'],rig,deformed)['nodes']
+                    sampled_vertices += planned
                 images = []
                 for texture in rig.geometry.textures:
                     image = rig.geometry.images[texture['source']]
@@ -105,7 +97,8 @@ def project_components(root, snapshot, *, max_vertices, max_resource_bytes, max_
                     triangles=mesh.triangles.tolist(), material=mesh.material, normals=None,
                     uv=mesh.attributes['TEXCOORD_0'].tolist() if 'TEXCOORD_0' in mesh.attributes else None))
             projections[node['id']] = dict(format='geometry', meshes=meshes, materials=geometry.materials,
-                images=images, asset_reference=dict(reference), source_component=component, mode='authored-bind-pose')
+                images=images, asset_reference=dict(reference), source_component=component, mode='requires-timeline-preview' if requires_timeline else 'authored-bind-pose',
+                requires_timeline_preview=requires_timeline)
             used += count
             resource_bytes += encoded_resources
         except (RigError, ValueError, OSError, KeyError, TypeError, UnicodeError) as error:

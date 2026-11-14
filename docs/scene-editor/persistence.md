@@ -139,6 +139,61 @@ validated native versions retain their different geometry and budget counts;
 `test_two_native_asset_versions_render_distinct_meshes` checks their actual
 browser geometry. The preview remains a derived view of the saved snapshot.
 
+
+### Local extension support
+
+The launch fragment is removed immediately. Its bearer is retained in same-origin
+`sessionStorage` so a normal tab refresh can authenticate; another browser context
+without the launch fragment has no bearer. Storage is scoped to the local service
+origin and tab session, and is never part of portable project state.
+
+Trusted extensions can register a precommit interceptor. It receives native typed
+commands and an immutable copy of the expected revision, inventory hash and
+transaction ID. One interceptor may select an authenticated fixed route; multiple
+claims or changed transaction identities are rejected before saving. The native
+adapter owns the resulting atomic operation. A fresh acknowledged snapshot then
+replaces the viewport; no separate base-scene save precedes an autokey transaction.
+
+`subscribeInstalled` supplies an independent snapshot copy, epoch and `isCurrent`
+guard after installation. Async subscribers return cleanup callbacks; cleanup
+runs at replacement, WebGL loss, unsubscription or page disposal. An obsolete async
+completion is cleaned immediately. Extensions can obtain the existing Three
+renderer, world and camera to build source-bound projection adapters.
+
+`capturePreview` requires the current saved revision/hash, exact registered shot,
+active scene, native camera, integer frame, rational source time and bounded pixel
+size. It asks the authenticated native timeline evaluator for that exact state and
+renders a PNG through the native camera at the requested dimensions. Only sRGB
+with the standard linear-exposure display transform is supported. Native clips
+without a matching geometry adapter and changed material bindings are rejected;
+local imported-clip poses, active drags and alternate debug shading must be exited
+before capture. The gizmo stays detached while the exact native evaluation loads;
+no image is labelled as an equivalent production render. The viewer restores its
+prior size, projection state, overlays and evaluated pose after capture.
+
+Fixed authenticated routes may return `BinaryResponse` with verified artifact
+bytes, one of the supported PNG/EXR/MP4/WebM media types and a safe basename.
+`downloadArtifact` never accepts filesystem paths. Native render service admission
+and artifact-byte verification remain with the render owner.
+
+
+Preview transform editing requires one explicit extension policy registered by
+`registerPreviewEditAuthorizer`. The policy receives the exact saved snapshot,
+evaluation and selection; `refreshPreviewEditState` updates only numeric transform
+and gizmo access when autokey/frame/shot state changes. Other persistent property
+controls stay disabled during preview. Core admission rejects constrained or
+attached targets, stale evaluations and commands outside the selected transform
+roots. A preview transform must also be claimed by one atomic native command
+interceptor; it cannot silently fall back to an authored base-scene edit.
+
+
+Effective inherited locks, nonzero transform pivots and selected camera transform
+overrides also disable preview autokey until their native inverse-edit mapping is
+supported. `registerTimelineProvider` supplies the one authoritative selected shot
+and rational frame to other extensions. `getTimelineContext` returns a copied,
+validated current context, returns null when absent, and rejects multiple/stale
+providers or a frame outside the active saved shot.
+
 ### Imported component projection
 
 Canonical imported scene nodes share one normalized asset containing all imported

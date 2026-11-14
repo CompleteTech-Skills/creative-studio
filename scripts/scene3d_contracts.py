@@ -89,10 +89,13 @@ def definitions():
     file = obj(dict(path=PATH, sha256=SHA))
     reference = obj(dict(id={'type': 'string', 'pattern': r'^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}' + END}, version=VERSION, path=file['properties']['path'], sha256=SHA,
                          kind=enum(*(k for k in MANIFEST_KINDS if k != 'scene3d-project'), 'hatch-3d-rig', 'hatch-3d-animation', 'project',
-                                   'mesh', 'material', 'texture', 'catalog', 'evidence', 'collision')))
+                                   'mesh', 'material', 'texture', 'catalog', 'evidence', 'collision', 'light3d')))
     def typed_ref(*kinds):
         return {'allOf': [ref('reference'), {'properties': {'kind': {'enum': list(kinds)}}}]}
     material_ref = typed_ref('material')
+    light_binding = obj(dict(schema_version={'const': 1}, light=typed_ref('light3d'),
+        intensity_scale={'type':'number','minimum':0,'maximum':1e6},
+        color_multiplier=arr({'type':'number','minimum':0,'maximum':1},3,3)))
     clip_ref = typed_ref('scene3d-animation', 'hatch-3d-animation')
     meta = mapping({'type': ['string', 'number', 'boolean', 'null'], 'maxLength': 4096}, 64)
     transform = obj(dict(translation=vec, rotation=quat, scale=arr(POS, 3, 3), pivot=vec),
@@ -112,7 +115,7 @@ def definitions():
     key = obj(dict(frame=integer(0, 1_000_000),
                    value={'anyOf': [NUM, BOOL, vec, quat, TEXT]}))
     track = obj(dict(target=ID, property=enum('translation', 'rotation', 'scale', 'visible',
-                  'material', 'light_intensity', 'world_exposure'),
+                  'material', 'light_intensity', 'light_intensity_scale', 'light_color_multiplier', 'world_exposure'),
                   interpolation=enum('step', 'linear', 'slerp'), keys=arr(key, 1, 10000)))
     binding = obj(dict(target=ID, clip=clip_ref, start_frame=integer(0, 1_000_000),
                        end_frame=integer(1, 1_000_000), speed=POS, loop=BOOL))
@@ -153,11 +156,18 @@ def definitions():
                          (['light'], 'light'), (['billboard_2d'], 'billboard')]:
         node.setdefault('allOf', []).append({
             'if': {'properties': {'type': {'enum': types}}}, 'then': {'required': [field]}})
+    node['properties']['light_binding'] = light_binding
+    node['properties']['pose_binding'] = obj(dict(schema_version={'const':1},
+        rig=typed_ref('hatch-3d-rig'), pose=obj(dict(id=reference['properties']['id'],
+        rig_version=VERSION,file=ref('file')))))
     budget = obj(dict(max_nodes=integer(1, MAX_NODES), max_files=integer(1, MAX_FILES),
                        max_bytes=integer(1, MAX_TOTAL_BYTES), max_frames=integer(1, 1_000_000)))
     world = obj(dict(coordinate_system={'const': COORDINATES},
                      background=vec, exposure=NUM, environment=nullable(typed_ref('texture', 'scene3d-asset')),
                      metadata=meta))
+    world['properties']['light_binding'] = obj(dict(schema_version={'const':1},
+        light=typed_ref('light3d'), intensity_scale={'type':'number','minimum':0,'maximum':1e6},
+        exposure_stops={'type':'number','minimum':-32,'maximum':32}))
     collection = obj(dict(id=ID, name=TEXT, visible=BOOL, editor_visible=BOOL,
                           render_visible=BOOL, locked=BOOL), ['id', 'name', 'visible'])
     scene = base('scene', dict(name=TEXT, description=TEXT, revision=integer(),
@@ -191,6 +201,15 @@ def definitions():
         dependencies=arr(ref('reference')), resources=obj(dict(vertices=integer(0, 1000000),
         triangles=integer(0, 2000000), bytes=integer(1, MAX_TOTAL_BYTES))),
         validation=arr(ref('file')), review=ref('review')))
+    # Optional canonical mapping preserves compatibility with authored assets that
+    # predate native primitive projection. Original and normalized indexes differ.
+    material_primitive = obj(dict(mesh=ID, encoding=enum('normalized-glb', 'obj'),
+        source_mesh=nullable(integer(0, 1000000)), source_primitive=integer(0, 1000000),
+        source_material_index=nullable(integer(0, 65535)),
+        normalized_mesh=nullable(integer(0, 1000000)), normalized_primitive=nullable({'type': 'integer', 'const': 0})))
+    asset['properties']['material_bindings'] = arr(obj(dict(
+        slot=ID, material_index=nullable(integer(0, 65535)),
+        primitives=arr(material_primitive, minimum=1, maximum=10000))), minimum=1, maximum=65536)
     animation = base('animation', dict(duration_frames=integer(1, 1_000_000), fps=ref('rate'),
         tracks=arr(ref('track'), maximum=4096), bindings=arr(ref('binding'), maximum=256),
         dependencies=arr(ref('reference')), provenance=ref('provenance')))
@@ -203,6 +222,12 @@ def definitions():
             end_frame=integer(1, 1_000_000), constraint=constraint)), maximum=256),
         render=ref('render_settings'), continuity=arr(ref('file'), maximum=256),
         dependencies=arr(ref('reference')), metadata=meta))
+    shot['properties']['path_bindings'] = arr(obj(dict(schema_version={'const':1}, id=ID,
+        target=ID, points=arr(vec,2,10000), start_frame=integer(0,1_000_000),
+        end_frame=integer(1,1_000_000), start_fraction={'type':'number','minimum':0,'maximum':1},
+        end_fraction={'type':'number','minimum':0,'maximum':1}, space={'const':'world'},
+        orientation={'const':'preserve'})),maximum=256)
+    shot['properties']['light_overrides'] = arr(obj(dict(target=ID,binding=light_binding)),maximum=256)
     render = base('render', dict(shot=typed_ref('scene3d-shot'),
         start_frame=integer(0, 1_000_000), end_frame=integer(1, 1_000_000),
         settings=ref('render_settings'), output_directory=file['properties']['path'],
@@ -348,6 +373,7 @@ def _node_semantics(node):
     own_type = node['type']
     require('camera' not in node or own_type == 'camera', 'Camera configuration on a non-camera node.')
     require('light' not in node or own_type == 'light', 'Light configuration on a non-light node.')
+    require('light_binding' not in node or own_type == 'light', 'Canonical light binding on a non-light node.')
     require('prefab' not in node or own_type == 'prefab_instance', 'Prefab on a non-prefab node.')
     require('billboard' not in node or (own_type == 'billboard_2d' and node['billboard'] is True),
             '2D billboard must be explicitly marked.')
@@ -457,7 +483,7 @@ def _timing(value):
                 'Interpolation is inconsistent with track property.')
         for key in track['keys']:
             v = key['value']
-            if prop in ('translation', 'scale', 'rotation'):
+            if prop in ('translation', 'scale', 'rotation', 'light_color_multiplier'):
                 n = 4 if prop == 'rotation' else 3
                 require(isinstance(v, list) and len(v) == n and
                         all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in v),
@@ -466,6 +492,8 @@ def _timing(value):
                     require(abs(sum(x*x for x in v) - 1) <= 1e-6, 'Track quaternion must be normalized.')
                 if prop == 'scale':
                     require(all(1e-8 < x <= 1e6 for x in v), 'Track scale must be positive and bounded.')
+                if prop == 'light_color_multiplier':
+                    require(all(0 <= x <= 1 for x in v), 'Light multipliers must be linear RGB [0,1].')
             elif prop == 'visible':
                 require(type(v) is bool, 'Visibility requires boolean keys.')
             elif prop == 'material':
@@ -475,6 +503,7 @@ def _timing(value):
             else:
                 require(type(v) in (int, float), 'Numeric property requires scalar keys.')
                 require(prop != 'light_intensity' or v >= 0, 'Light intensity cannot be negative.')
+                require(prop != 'light_intensity_scale' or 0 <= v <= 1e6, 'Light intensity scale is out of bounds.')
     _unique(value['tracks'], 'target/property track', lambda t: (t['target'], t['property']))
     for binding in value['bindings']:
         _binding_interval(binding, duration)
@@ -605,12 +634,43 @@ def validate_document(value, kind=None):
         if kind == 'shot' and 'camera' in value['camera_overrides']:
             _camera_semantics(value['camera_overrides']['camera'])
         _unique(value.get('temporal_constraints', []), 'temporal constraint ID', lambda c: c['id'])
+        paths = value.get('path_bindings', [])
+        _unique(value.get('light_overrides', []), 'shot light override target', lambda b:b['target'])
+        _unique(paths, 'path binding ID', lambda b: b['id'])
+        _unique(paths, 'path binding target', lambda b: b['target'])
+        require(sum(len(b['points']) for b in paths) <= 250000, 'Path point budget exceeded.')
+        for path in paths:
+            require(type(path['start_frame']) is int and type(path['end_frame']) is int and
+                    path['start_frame'] < path['end_frame'] <= value['duration_frames'],
+                    'Invalid exact path binding interval.')
+            from scene3d_path import path_lengths
+            path_lengths(path['points'])
         for c in value.get('temporal_constraints', []):
             require(type(c['start_frame']) is int and type(c['end_frame']) is int,
                     'Exact temporal boundaries require JSON integers.')
             require(c['start_frame'] < c['end_frame'] <= value['duration_frames'], 'Invalid temporal constraint interval.')
             require(c['target'] != c['constraint']['target'], 'Self-referential temporal constraint.')
     elif kind == 'asset':
+        bindings = value.get('material_bindings', [])
+        _unique(bindings, 'native material slot', lambda x: x['slot'])
+        _unique(bindings, 'native material index', lambda x: x['material_index'])
+        primitives = [p for b in bindings for p in b['primitives']]
+        _unique(primitives, 'native material mesh', lambda x: x['mesh'])
+        _unique([p for p in primitives if p['encoding'] == 'normalized-glb'],
+                'normalized material primitive', lambda x: x['normalized_mesh'])
+        for binding in bindings:
+            for p in binding['primitives']:
+                require((p['encoding'] == 'normalized-glb' and p['source_mesh'] is not None and
+                         p['normalized_mesh'] is not None and p['normalized_primitive'] == 0 and
+                         binding['material_index'] is not None) or
+                        (p['encoding'] == 'obj' and p['source_mesh'] is None and
+                         p['normalized_mesh'] is None and p['normalized_primitive'] is None and
+                         p['source_material_index'] is None and binding['material_index'] is None),
+                        'Material projection indexes disagree with its geometry encoding.')
+        require(all(b['primitives'] for b in bindings), 'Material slots need actual primitive bindings.')
+        component_meshes = {m for meshes in value['components'].values() for m in meshes}
+        require(not bindings or {p['mesh'] for p in primitives} == (component_meshes or {value['id']}),
+                'Material bindings must cover exactly the native component meshes.')
         _unique(value['sockets'], 'asset socket', lambda x: x['id'])
         require(value['review']['status'] == 'unreviewed' or bool(value['review']['receipts']),
                 'A review status needs retained evidence receipts.')
@@ -808,6 +868,8 @@ def load_project(root, name='project.json'):
             targets += [o['target'] for o in d['material_overrides']]
             targets += [c['target'] for c in d['temporal_constraints']]
             targets += [c['constraint']['target'] for c in d['temporal_constraints']]
+            targets += [b['target'] for b in d.get('path_bindings', [])]
+            targets += [b['target'] for b in d.get('light_overrides', [])]
             require(all(t in nodes for t in targets), 'Shot references a missing node.')
             for track in d['tracks']:
                 _track_context(track, nodes, allow_world=True)
@@ -840,8 +902,10 @@ def _track_context(track, nodes, *, allow_world=False):
         require(allow_world, 'World tracks must be authored directly on a shot, not a node binding.')
         return
     require(track['target'] in nodes, 'Animation clip references a missing node in the consuming graph.')
-    if track['property'] == 'light_intensity':
+    if track['property'] in ('light_intensity', 'light_intensity_scale', 'light_color_multiplier'):
         require(nodes[track['target']]['type'] == 'light', 'Light track must target a light node.')
+        require(track['property'] == 'light_intensity' or 'light_binding' in nodes[track['target']],
+                'Canonical light animation requires an explicit light binding.')
 
 
 def _binding_context(binding, scene, documents, context, depth=0):

@@ -7,6 +7,8 @@ bounded preview. WebGL output is not represented as an offline render.
 from __future__ import annotations
 import base64
 from collections import OrderedDict
+from dataclasses import dataclass
+import re
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import hmac
@@ -29,6 +31,23 @@ MAX_PREVIEW_VERTICES = 500_000
 MAX_PREVIEW_DECODED_VERTICES = 500_000
 MAX_COMPONENT_RESOURCE_BYTES = 64 * 1024 * 1024
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@dataclass(frozen=True)
+class BinaryResponse:
+    """Trusted fixed-route artifact bytes; never a caller-selected file path."""
+    payload: bytes
+    content_type: str
+    filename: str
+
+    def validate(self):
+        require(isinstance(self.payload, bytes) and len(self.payload) <= 512 * 1024 * 1024,
+                'EDITOR3D_VIEW_ARTIFACT', 'Artifact exceeds its binary response budget.')
+        require(self.content_type in ('image/png', 'image/x-exr', 'video/mp4', 'video/webm'),
+                'EDITOR3D_VIEW_ARTIFACT', 'Unsupported artifact media type.')
+        require(isinstance(self.filename, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}', self.filename),
+                'EDITOR3D_VIEW_ARTIFACT', 'Artifact download name must be a safe basename.')
+        return self
 
 
 def asset_identity(reference):
@@ -96,7 +115,7 @@ def preview_snapshot(repository, snapshot):
                     # dependencies require conversion by the authoritative importer.
                     require(len(imported.source_files) == 1, 'EDITOR3D_VIEW_DEPENDENCY',
                             'Embed external GLB resources before browser preview.')
-                    assets[identifier] = dict(format='glb', data=base64.b64encode(path.read_bytes()).decode('ascii'))
+                    assets[identifier] = dict(format='glb', source_materials=imported.geometry.materials, data=base64.b64encode(path.read_bytes()).decode('ascii'))
                 else:
                     geometry = imported.geometry
                     images = []
@@ -115,7 +134,7 @@ def preview_snapshot(repository, snapshot):
                 assets[identifier] = dict(format='unavailable', message=str(error))
         from editor3d_components import project_components
         components, component_vertices = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices,
-            max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES, max_decoded_vertices=MAX_PREVIEW_DECODED_VERTICES-decoded_vertices)
+            max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES, max_decoded_vertices=MAX_PREVIEW_DECODED_VERTICES-decoded_vertices,defer_poses=True)
         from editor3d_state import project_editor_state
         try:
             result['viewport_state'] = project_editor_state(snapshot, root)
@@ -124,6 +143,9 @@ def preview_snapshot(repository, snapshot):
                 sha256=snapshot['sha256'], error=error.report)
     result['viewport_nodes'] = components
     result['viewport_assets'] = assets
+    if (ROOT / 'scripts/editor3d_inspectors.py').is_file():
+        from editor3d_inspectors import projected_editor_materials
+        result['viewport_materials'] = projected_editor_materials(repository, snapshot)
     result['preview'] = dict(backend='three-0.180.0', offline_render=False,
                              source_sha256=snapshot['sha256'])
     encoded = json.dumps(result, allow_nan=False, separators=(',', ':')).encode()
@@ -136,14 +158,31 @@ class EditorServer(HTTPServer):
     def __init__(self, repository, *, port=0, token=None, workers=4, routes=None):
         require(isinstance(workers, int) and 1 <= workers <= 8, 'EDITOR3D_VIEW_WORKERS', 'Use 1–8 workers.')
         self.repository = repository
-        self.routes = dict(routes or {})
+        self.routes = {'render/capabilities': lambda server,body: dict(
+            available=False,rendering='unavailable',executed=False,
+            diagnostic='Rendering is unavailable for this session. Open a session with a configured native renderer.')}
+        # Installed extensions select fixed trusted handlers; explicit handlers
+        # remain an in-process override chosen by the local application owner.
+        if (ROOT / "scripts/editor3d_inspectors.py").is_file():
+            from editor3d_inspectors import inspector_routes
+            self.routes.update(inspector_routes())
+        if Path(__file__).with_name('editor3d_timeline.py').is_file():
+            from editor3d_timeline import routes as timeline_routes
+            self.routes.update(timeline_routes())
+        if Path(__file__).with_name('editor3d_pose_inspector.py').is_file():
+            from editor3d_pose_inspector import pose_routes
+            self.routes.update(pose_routes())
+        self.routes.update(routes or {})
         self.upload_directory = tempfile.TemporaryDirectory(prefix="hatch-editor-uploads-")
         self.uploads = {}
         self.upload_lock = threading.Lock()
         self.token = token or secrets.token_urlsafe(32)
         require(isinstance(self.token, str) and len(self.token) >= 24,
                 'EDITOR3D_VIEW_TOKEN', 'Use a bearer token of at least 24 characters.')
-        self.slots = threading.BoundedSemaphore(workers)
+        # Keep execution bounded while a browser's module burst can wait for
+        # requests from its previous document to finish. At most one request
+        # per execution worker may queue; excess requests receive HTTP 503.
+        self.slots = threading.BoundedSemaphore(workers * 2)
         self.executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix='editor-http')
         self.cache = OrderedDict()
         self.cache_lock = threading.Lock()
@@ -151,14 +190,30 @@ class EditorServer(HTTPServer):
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):
-            request.close()
+            try:
+                # Admission has not parsed a Host, body or bearer token. Return
+                # no content and spend at most 250 ms reporting overload.
+                request.settimeout(.25)
+                request.sendall(b'HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\nRetry-After: 1\r\nCache-Control: no-store\r\n\r\n')
+            except OSError:
+                pass
+            finally:
+                request.close()
             return
         try:
-            self.executor.submit(self._handle, request, client_address)
+            future = self.executor.submit(self._handle, request, client_address)
+            future.add_done_callback(lambda completed: self._cancel_queued(request) if completed.cancelled() else None)
         except BaseException:
             self.slots.release()
             request.close()
             raise
+
+    def _cancel_queued(self, request):
+        """An executor-cancelled request never enters _handle's finalizer."""
+        try:
+            self.shutdown_request(request)
+        finally:
+            self.slots.release()
 
     def _handle(self, request, client_address):
         try:
@@ -212,11 +267,13 @@ class EditorHandler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
-    def respond(self, status, payload, media='application/json'):
+    def respond(self, status, payload, media='application/json', filename=None):
         if not isinstance(payload, bytes):
             payload = json.dumps(payload, allow_nan=False).encode()
         self.send_response(status)
         self.send_header('Content-Type', media)
+        if filename is not None:
+            self.send_header('Content-Disposition', 'attachment; filename="' + filename + '"')
         self.send_header('Content-Length', str(len(payload)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
@@ -279,12 +336,16 @@ class EditorHandler(BaseHTTPRequestHandler):
                 for filename, symbol, container in (('asset-browser.js','mountAssetBrowser','asset-browser'),
                         ('inspectors.js','mountInspectors','native-inspectors'),
                         ('timeline.js','mountTimeline','timeline'),('render-panel.js','mountRenderPanel','render-panel')):
+                    if filename == 'inspectors.js' and not {'inspectors/describe', 'inspectors/material'} <= set(self.server.routes):
+                        continue
                     if (ROOT / 'assets/editor3d' / filename).is_file():
                         extensions.append(f"const {{{symbol}}} = await import('/editor/{filename}'); window.hatchEditor.registerExtension({symbol}, document.getElementById('{container}'));")
                 if extensions:
                     boot = "<script type='module'>await import('/editor/editor.js');" + ''.join(extensions) + "</script>"
                     payload = payload.replace(b'</body>', boot.encode() + b'</body>')
             self.respond(200, payload, mimetypes.guess_type(path.name)[0] or 'application/octet-stream')
+        except (BrokenPipeError, ConnectionResetError):
+            return  # The document was closed; _handle still owns all cleanup.
         except (RigError, ValueError, OSError, TypeError) as exc:
             report = exc.report if isinstance(exc, RigError) else dict(code='EDITOR3D_VIEW_INPUT', message=str(exc))
             status = 401 if report['code'] == 'EDITOR3D_VIEW_AUTH' else 409 if any(word in report['code'] for word in ('STALE', 'CONFLICT')) else 400
@@ -329,7 +390,11 @@ class EditorHandler(BaseHTTPRequestHandler):
         if self.command == 'POST' and route == 'uploads':
             return self.upload()
         if self.command == 'POST' and route in self.server.routes:
-            return self.respond(200, self.server.routes[route](self.server, self.body()))
+            result = self.server.routes[route](self.server, self.body())
+            if isinstance(result, BinaryResponse):
+                result.validate()
+                return self.respond(200, result.payload, result.content_type, result.filename)
+            return self.respond(200, result)
         if self.command == 'GET' and route == 'snapshot':
             return self.respond(200, self.server.snapshot())
         require(self.command == 'POST' and route in ('commands', 'undo', 'redo'),
