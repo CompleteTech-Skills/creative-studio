@@ -75,9 +75,11 @@ def _loaded(root, source, dependencies, requested):
     if (native and Path(source['path']).name != 'rig.json') or (not native and suffix not in ('.glb', '.gltf')):
         fail('ADAPTER_REQUIRED', 'supported inputs are native rig.json and GLB/glTF; Blender scripts are never executed')
     from rig_errors import job_lock
+    from rig_load_limits import _JSON_FACTOR
     reservation = job_lock((root/source['path']).parent) if native else nullcontext()
     with reservation:
-        verification_budget=min(limits['dependency_bytes'],limits['memory_bytes']//16)
+        divisor=16 if native else _JSON_FACTOR
+        verification_budget=min(limits['dependency_bytes'],limits['memory_bytes']//divisor)
         verify_references(root, refs,maximum_bytes=verification_budget)
         with tempfile.TemporaryDirectory(prefix='continuity-inspect-') as scratch:
             snapshot = Path(scratch)
@@ -86,7 +88,7 @@ def _loaded(root, source, dependencies, requested):
                 # Admission precedes allocations; count encoded bytes conservatively
                 # against memory for JSON decode, snapshot and native parser copies.
                 budget = min(limits['source_bytes'], limits['dependency_bytes']-total,
-                             limits['memory_bytes']//16-total)
+                             limits['memory_bytes']//divisor-total)
                 if budget <= 0:
                     fail('LIMIT', 'source closure exceeds byte/memory admission')
                 payload = _read_regular_bytes(root/ref['path'], limit=budget, expected_sha256=ref['sha256'])
@@ -105,10 +107,13 @@ def _loaded(root, source, dependencies, requested):
                     _validate_rig(rig,limits)
                     model, hierarchy = rig, _rig_hierarchy(rig)
                 else:
-                    from rig_gltf import read_gltf, scene_graph, node_matrix
+                    from rig_gltf import read_gltf, scene_graph, node_matrix, preflight_gltf
                     from rig_import import load_character_model
                     document = read_gltf(path, limits)
-                    _gltf_admission(document, limits, total)
+                    if (len(document.json.get('nodes',[]))>512 or len(document.json.get('materials',[]))>256
+                            or len(document.json.get('images',[]))>64):
+                        fail('LIMIT','bounded inspector report inventory exceeded')
+                    admission = preflight_gltf(document, encoded_bytes=total, limits=limits)
                     parents, world, order = scene_graph(document)
                     hierarchy = [dict(node_id=i, name=document.json['nodes'][i].get('name'),
                                       parent=parents.get(i), local_matrix=node_matrix(document.json['nodes'][i]).tolist(),
@@ -116,6 +121,7 @@ def _loaded(root, source, dependencies, requested):
                                       skin=document.json['nodes'][i].get('skin')) for i in order]
                     model = load_character_model(path, limits=limits)
                     model.report['source_features'] = _source_features(document)
+                    model.report['source_preflight'] = admission
                 yield model, hierarchy, refs, limits, total
             except MemoryError:
                 fail('LIMIT','native allocation failed inside admitted inspection')
@@ -124,46 +130,6 @@ def _loaded(root, source, dependencies, requested):
             finally:
                 # Revalidate every exact original byte even after native failure.
                 verify_references(root, refs,maximum_bytes=verification_budget)
-
-
-def _gltf_admission(document, limits, encoded):
-    """Read canonical parser metadata; bound aggregate allocations before import."""
-    from rig_gltf import WIDTHS
-    body = document.json
-    nodes = body.get('nodes', [])
-    if len(nodes) > 512 or len(body.get('materials', [])) > 256 or len(body.get('images', [])) > 64:
-        fail('LIMIT', 'bounded inspector node/material/image inventory exceeded')
-    accessors = body.get('accessors', [])
-    working = encoded*16
-    for accessor in accessors:
-        count, width = accessor.get('count'), WIDTHS.get(accessor.get('type'))
-        if type(count) is not int or count < 1 or width is None:
-            fail('NATIVE_DOCUMENT', 'invalid native accessor count/type')
-        working += count*width*32
-        if working > limits['memory_bytes']:
-            fail('LIMIT', 'aggregate decoded accessor allocation exceeds memory admission')
-    vertices = triangles = 0
-    for node in nodes:
-        if 'mesh' not in node:
-            continue
-        index = node['mesh']
-        meshes = body.get('meshes', [])
-        if type(index) is not int or not 0 <= index < len(meshes):
-            fail('NATIVE_DOCUMENT', 'invalid mesh index')
-        for primitive in meshes[index].get('primitives', []):
-            position = primitive['attributes']['POSITION']
-            if type(position) is not int or not 0 <= position < len(accessors):
-                fail('NATIVE_DOCUMENT', 'invalid position accessor')
-            count = accessors[position]['count']
-            vertices += count
-            index = primitive.get('indices')
-            if index is not None and (type(index) is not int or not 0 <= index < len(accessors)):
-                fail('NATIVE_DOCUMENT', 'invalid triangle accessor')
-            triangles += (accessors[index]['count'] if index is not None else count)//3
-            if len(primitive.get('targets', [])) > limits['morphs']:
-                fail('LIMIT', 'morph inventory exceeds native cap')
-    if vertices > limits['vertices'] or triangles > limits['triangles'] or working+vertices*512+triangles*256 > limits['memory_bytes']:
-        fail('LIMIT', 'aggregate instantiated geometry exceeds vertex/triangle/memory admission')
 
 
 def _rig_hierarchy(rig):
@@ -212,6 +178,7 @@ def _validate_rig(rig,limits):
     from rig_constraints import constraint_order
     from rig_ik import validate_chain
     from rig_attachments import socket_world
+    from rig_animation import validate_animation
     validate_skeleton(rig.skeleton,limits)
     for name,skin in rig.weights.items():
         mesh=rig.geometry.by_id().get(name)
@@ -226,6 +193,11 @@ def _validate_rig(rig,limits):
         fail('RIG','duplicate socket identity')
     for socket in sockets:
         socket_world(rig,neutral_pose(rig.skeleton),socket['id'])
+    keys=0
+    for clip in rig.clips.values():
+        keys+=validate_animation(rig,clip)['keyframes']
+        if keys>limits['keyframes']:
+            fail('LIMIT','aggregate native clip keys exceed caller cap')
 
 
 def _array(array):
@@ -325,9 +297,12 @@ def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=No
                        maximum_weight_sum_error=float(abs(value.weights.sum(axis=1)-1).max()))
                 for key,value in model.weights.items()}
         skeleton = model.manifest.get('skeleton') if hasattr(model, 'manifest') else model.skeleton
+        from rig_gltf import MATERIAL_EXTENSIONS
         features=model.report['source_features'] if hasattr(model,'report') else dict(
             extensions_used=list(geometry.extensions_used),extensions_required=None,
-            unsupported_extensions=[],animation_channels=None)
+            unsupported_extensions=sorted(set(geometry.extensions_used)-MATERIAL_EXTENSIONS),
+            animation_channels=[dict(clip=name,target=track['target'],path=track['path'])
+                                for name,clip in model.clips.items() for track in clip['tracks']])
         controllers = deepcopy(model.manifest['controllers']) if hasattr(model,'manifest') else None
         sockets = deepcopy(model.manifest['attachments']) if hasattr(model,'manifest') else []
         measurements = _measure(geometry, {} if landmarks is None else landmarks,
@@ -350,6 +325,7 @@ def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=No
             texture_color_spaces=_color_spaces(geometry.materials),
             extensions=list(geometry.extensions_used), skeleton=deepcopy(skeleton), skins=skin,
             source_features=features,status='partial' if features['unsupported_extensions'] else 'inspected-supported-data',
+            native_load_admission=model.report['source_preflight'] if hasattr(model,'report') else model.resource_usage,
             controllers=controllers, sockets=sockets, measurements=measurements,
             facial_controls=deepcopy(model.manifest['facial']) if hasattr(model,'manifest') else None,
             native_approval_status=model.manifest['review']['status'] if hasattr(model,'manifest') else 'unreviewed',

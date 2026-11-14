@@ -130,7 +130,11 @@ hashes are rechecked even when parsing fails. Caller limits only narrow native
 caps. Current inspector caps are 256 files, 8 MiB/file, 32 MiB total encoded data,
 100,000 vertices/triangles, 256 bones, 32 morph targets and 256 MiB conservative
 data admission. Aggregate instantiated glTF accessor/geometry accounting runs
-before native import; canonical native loader limits remain authoritative.
+through the shared `rig_gltf.preflight_gltf` authority before native import. It
+reuses native `LoadBudget`, restrictive effective limits and the canonical JSON
+expansion factor. The caller supplies its measured captured-closure byte count;
+the helper never reopens source paths or alters descriptor APIs. Conservative
+memory accounting can narrow the encoded-byte caps further.
 
 Capability reservations additionally check native whole-process lifetime peak,
 reserve 32 MiB inspection workspace, narrow native loading limits to remaining

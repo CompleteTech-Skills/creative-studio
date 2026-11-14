@@ -230,8 +230,10 @@ class ContinuityInspectionTests(unittest.TestCase):
     def test_aggregate_instanced_geometry_budget_precedes_native_import(self):
         path,b=gltf(self.root)
         b.json['nodes']=[dict(mesh=0),dict(mesh=0)];b.json['scenes']=[dict(nodes=[0,1])];b.write(path)
-        with self.assertRaisesRegex(ValueError,'INSPECTION_LIMIT'):
+        from rig_errors import RigError
+        with self.assertRaises(RigError) as caught:
             inspect_asset(self.root,pointer(self.root,path),limits=dict(vertices=4))
+        self.assertEqual(caught.exception.report['code'],'RIG_LIMIT_VERTICES')
 
     def test_optional_unhandled_extensions_remain_explicitly_partial(self):
         path,b=gltf(self.root)
