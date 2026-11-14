@@ -210,7 +210,8 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -
     ``encoded_bytes`` is the caller's measured, exact source-closure size; this
     helper never reopens paths or bypasses captured/descriptor reader APIs.
     Counts include every active mesh INSTANCE, not just unique accessors. The
-    estimate covers native loading, not process RSS, rendering or OS isolation.
+    estimate covers geometry loading only: decoded image capacity must be
+    admitted separately before image decoding. No process RSS or OS isolation.
     """
     from rig_load_limits import LoadBudget, effective_limits, _JSON_FACTOR
     caps = effective_limits(document.limits, limits)
@@ -297,6 +298,8 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -
                 budget.add(amount, 'instantiated native mesh/skin/morph arrays')
                 budget.array_bytes += amount
         return dict(budget.report(), method='native-gltf-load-conservative-v1',
+                    scope='geometry metadata/accessors/instances only; image decoding requires separate admission',
+                    images_admitted=False,
                     encoded_bytes=size, vertices=vertices, triangles=triangles,
                     mesh_instances=instances, active_nodes=len(order), accessors=len(accessors),
                     limits=caps)
