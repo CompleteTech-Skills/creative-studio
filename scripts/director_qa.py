@@ -15,7 +15,7 @@ import time
 
 from director_contracts import (_read_artifact, artifact_references, validate_document,
                                 validate_method_request, validate_method_result, parse_rfc3339, _integer)
-from director_schema import MILESTONES, definitions
+from director_schema import MILESTONES, definitions, ID
 from rig_errors import RigError, decode_json, finite_json, object_hash
 
 MAX_BYTES = 1024**3
@@ -52,7 +52,7 @@ def reference(value):
 def schemas():
     """Authoritative structural profile; runtime additionally checks references/scopes."""
     from rig_contracts import obj, arr, ref
-    identifier = {'type': 'string', 'pattern': r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'}
+    identifier = deepcopy(ID)
     integer = lambda maximum: {'type': 'integer', 'minimum': 1, 'maximum': maximum}
     nullable_scope = {'anyOf': [{'type':'string', 'minLength':1, 'maxLength':128}, {'type':'null'}]}
     interval = obj({key: {'type':'integer', 'minimum':0, 'maximum':2_000_000_000} for key in ('start','end')})

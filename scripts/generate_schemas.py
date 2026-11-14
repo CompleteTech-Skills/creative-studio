@@ -56,6 +56,7 @@ def build():
     from rig_contracts import schemas as rig_schemas
     from model3d_contracts import schemas as model3d_schemas
     from director_contracts import schemas as director_schemas
+    from director_qa import schemas as director_qa_schemas
     from director_graph import schemas as director_graph_schemas
     from director_planner import schemas as director_planner_schemas
     from lookdev_contracts import schemas as lookdev_schemas
@@ -70,6 +71,7 @@ def build():
             **{ROOT / 'profiles' / name: value for name, value in rig_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in model3d_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in director_schemas().items()},
+            **{ROOT / 'profiles' / name: value for name, value in director_qa_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in director_graph_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in director_planner_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in lookdev_schemas().items()},
