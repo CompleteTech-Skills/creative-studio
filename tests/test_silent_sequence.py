@@ -42,5 +42,28 @@ class SequenceContracts(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'unavailable'):
                 sequence.export_native_sequence({}, {}, '.', 'unused',snapshot_root='.',expected_backend={})
 
+    def test_invalid_progress_observer_fails_before_staging(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            with mock.patch.object(sequence,'publication_supported',return_value=True), \
+                    mock.patch.object(sequence,'_capability_factory'):
+                with self.assertRaisesRegex(ValueError,'progress observer must be callable'):
+                    sequence.export_sequence({},'.',root/'output',provenance={},progress=False)
+            self.assertEqual(list(root.iterdir()),[])
+
+    def test_invalid_deadlines_are_typed_and_rejected_before_io(self):
+        for deadline in (True,'tomorrow',float('nan'),float('inf'),10**400):
+            with self.subTest(deadline=type(deadline).__name__), \
+                    mock.patch.object(sequence,'publication_supported',return_value=True), \
+                    mock.patch.object(sequence,'_capability_factory'), \
+                    mock.patch.object(sequence,'pinned_directory') as pin:
+                with self.assertRaisesRegex(ValueError,'finite monotonic timestamp'):
+                    sequence.export_sequence({},'.','unused',provenance={},deadline=deadline)
+                with self.assertRaisesRegex(ValueError,'finite monotonic timestamp'):
+                    sequence.verify_sequence('.',deadline=deadline)
+                with self.assertRaisesRegex(ValueError,'finite monotonic timestamp'):
+                    sequence.native_source({}, {}, '.',snapshot_root='.',expected_backend={},deadline=deadline)
+                pin.assert_not_called()
+
 
 if __name__=='__main__':unittest.main()
