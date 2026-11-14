@@ -144,7 +144,8 @@ def transform_pixels(root, plan, rgba, *, max_work_bytes=color.MAX_WORK_BYTES):
                 'HDR work byte budget exceeded')
     expected = make_plan(root, source_plan.get('config'), source_plan.get('source'),
                          target=plan.get('target'), reference_white_nits=plan.get('reference_white_nits'))
-    color._need(plan == expected, 'stale/forged HDR plan')
+    # Equal Python values can still encode different typed, hash-bound records.
+    color._need(plan == expected and object_hash(plan) == object_hash(expected), 'stale/forged HDR plan')
     linear, source_receipt = color.transform_pixels(root, source_plan, rgba, max_work_bytes=max_work_bytes)
     output = linear.copy()
     flat = output.reshape(-1, 4)

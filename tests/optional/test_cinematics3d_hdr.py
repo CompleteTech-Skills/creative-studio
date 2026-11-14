@@ -72,6 +72,19 @@ class HDRTests(unittest.TestCase):
         actual, _ = hdr.transform_pixels(self.root, self.plan(), premultiplied)
         np.testing.assert_allclose(actual, expected, atol=2e-5)
 
+    def test_exact_hdr_plan_hash_rejects_equal_boolean_numeric_substitutions(self):
+        plan = self.plan()
+        pixels = np.ones((1, 4), np.float32)
+        for key, value in [('schema_version', True), ('schema_version', 1.0), ('encoded_video_verified', 0)]:
+            forged = deepcopy(plan); forged[key] = value
+            self.assertNotEqual(hdr.object_hash({k: v for k, v in forged.items() if k != 'plan_sha256'}), plan['plan_sha256'])
+            for rehash in (False, True):
+                candidate = deepcopy(forged)
+                if rehash:
+                    candidate['plan_sha256'] = hdr.object_hash({k: v for k, v in candidate.items() if k != 'plan_sha256'})
+                with self.subTest(key=key, value_type=type(value).__name__, rehash=rehash), self.assertRaises(ValueError):
+                    hdr.transform_pixels(self.root, candidate, pixels)
+
     def test_untrusted_inputs_stale_profile_and_forged_plan_fail_closed(self):
         for white in (True, None, -1, 0, 10**400, float('nan'), float('inf')):
             with self.subTest(white=str(white)[:20]), self.assertRaises(ValueError):

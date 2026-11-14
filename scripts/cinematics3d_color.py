@@ -537,7 +537,8 @@ def transform_pixels(root, plan, rgba, *, max_work_bytes=MAX_WORK_BYTES):
           'source values exceed float32 processor precision')
     expected = make_plan(root, inventory, plan['source'], target=plan['target'], display=plan['display'],
                          view=plan['view'], look=plan['look'], exposure_stops=plan['exposure_stops'], output_alpha=plan['output_alpha'])
-    _need(plan == expected, 'stale/forged color plan')
+    # Python equality equates True with 1 and 1.0; provenance binds exact JSON types.
+    _need(plan == expected and object_hash(plan) == object_hash(expected), 'stale/forged color plan')
     output = np.array(rgba, dtype=np.float32, copy=True, order='C')
     flat = output.reshape(-1, 4)
     before = _hash(memoryview(rgba).cast('B'))

@@ -106,6 +106,19 @@ class ColorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             color.verify_config_bytes(self.root, self.inventory)
 
+    def test_hash_bound_plan_rejects_boolean_and_numeric_metadata_substitutions(self):
+        plan = self.plan()
+        pixels = np.ones((1, 4), dtype=np.float32)
+        for version in (True, 1.0):
+            forged = deepcopy(plan); forged['schema_version'] = version
+            self.assertNotEqual(color.object_hash({k: v for k, v in forged.items() if k != 'plan_sha256'}), plan['plan_sha256'])
+            for rehash in (False, True):
+                candidate = deepcopy(forged)
+                if rehash:
+                    candidate['plan_sha256'] = color.object_hash({k: v for k, v in candidate.items() if k != 'plan_sha256'})
+                with self.subTest(version_type=type(version).__name__, rehash=rehash), self.assertRaises(ValueError):
+                    color.transform_pixels(self.root, candidate, pixels)
+
     def test_pixel_preflight_rejects_invalid_arrays_and_work_before_processor(self):
         plan = self.plan()
         for pixels in (np.ones((1, 3), dtype=np.float32), np.ones((1, 4), dtype=np.uint8),
