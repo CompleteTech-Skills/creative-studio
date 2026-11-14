@@ -119,7 +119,7 @@ MANIFEST_SCHEMA = obj({'schema_version': {'type': 'integer', 'const': 1}, 'kind'
         'confidence': CONFIDENCE, 'review_required': BOOLEAN, 'warnings': array(TEXT, 256)}),
     'components': array(COMPONENT, MAX_COMPONENTS + 1, 1), 'annotation': ASSET, 'identity': ASSET,
     'analysis': obj({'mode': {'enum': ['manual-pending', 'annotation-assisted', 'model-assisted']},
-        'semantic_model_called': {'const': False}, 'candidates': array(obj({'id': SLUG, 'bbox': BOX,
+        'semantic_model_called': BOOLEAN, 'candidates': array(obj({'id': SLUG, 'bbox': BOX,
             'pixels': {'type': 'integer', 'minimum': 0}, 'semantic_character': {'const': False},
             'confidence': CONFIDENCE}), 128), 'multiple_characters_suspected': BOOLEAN,
         'selection': {'anyOf': [BOX, NULL]}, 'selection_resolved': BOOLEAN, 'warnings': array(TEXT, 256)}),
@@ -136,7 +136,8 @@ MANIFEST_SCHEMA = obj({'schema_version': {'type': 'integer', 'const': 1}, 'kind'
 
 
 def schemas():
-    return {'decomposition.schema.json': {'$schema': 'https://json-schema.org/draft/2020-12/schema',
+    from decomposition_analysis import schemas as analysis_schemas
+    return {**analysis_schemas(), 'decomposition.schema.json': {'$schema': 'https://json-schema.org/draft/2020-12/schema',
         'title': 'Hatch Pet character decomposition v1',
         'description': 'Runtime also checks paths, hashes, exact pixels, hierarchy, review signatures and bounded allocations.',
         **copy.deepcopy(MANIFEST_SCHEMA)},
