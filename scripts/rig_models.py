@@ -292,11 +292,11 @@ def _materialize_array(payload, shape, dtype, offset, fortran):
     return np.frombuffer(payload, dtype=dtype, offset=offset).reshape(shape, order='F' if fortran else 'C').copy()
 
 
-def _read_bundle(path: Path, limits: dict, budget=None, kind=None, expected_hash=None) -> tuple[dict, dict]:
+def _read_bundle(path: Path, limits: dict, budget=None, kind=None, expected_hash=None, descriptor=None) -> tuple[dict, dict]:
     from rig_load_limits import LoadBudget, scan_bundle, read_bundle_member
     budget = budget if budget is not None else LoadBudget(limits)
     metadata, headers, snapshot = scan_bundle(path, limits, budget, expected_hash)
-    _check_load_headers(metadata, headers, limits, kind)
+    _check_load_headers(metadata, headers, limits, kind, descriptor)
     arrays = {}
     try:
         with zipfile.ZipFile(io.BytesIO(snapshot)) as archive:
@@ -352,13 +352,19 @@ def save_geometry(root: Path, geometry: Geometry, limits=None) -> dict:
 def load_geometry(root: Path, descriptor: dict, limits=None, *, budget=None) -> Geometry:
     limits = limits or DEFAULT_LIMITS
     path = safe_path(root, descriptor['data']['path'], exists=True)
-    meta, arrays = _read_bundle(path, limits, budget, 'geometry', descriptor['data']['sha256'])
+    meta, arrays = _read_bundle(path, limits, budget, 'geometry', descriptor['data']['sha256'], descriptor)
     require(meta.get('schema_version') == 1, 'RIG_BINARY_VERSION', 'Unsupported geometry data version.')
     meshes = [Mesh(m['id'], arrays[m['positions']], arrays[m['triangles']], m['material'],
                    {k: arrays[v] for k, v in m['attributes'].items()},
                    {k: {s: arrays[v] for s, v in fields.items()} for k, fields in m['morphs'].items()},
                    m['name'], m['region'], m['source_node'], m.get('morph_defaults', {})) for m in meta['meshes']]
-    images = [TextureImage(i['name'], i['mime_type'], arrays[i['data']].tobytes()) for i in meta['images']]
+    # Distinct image metadata can legally share one native byte vector. Retain
+    # one immutable byte copy per data key, not an unbudgeted copy per reference.
+    encoded_images = {}
+    for image in meta['images']:
+        if image['data'] not in encoded_images:
+            encoded_images[image['data']] = arrays[image['data']].tobytes()
+    images = [TextureImage(i['name'], i['mime_type'], encoded_images[i['data']]) for i in meta['images']]
     value = Geometry(meshes, meta['materials'], images, meta['textures'], meta['samplers'], meta['extensions_used'])
     validate_geometry(value, limits)
     require(value.vertex_count == descriptor['vertices'] and value.triangle_count == descriptor['triangles']
@@ -377,7 +383,7 @@ def save_weights(root: Path, weights: SkinWeights, version='1.0.0') -> dict:
 
 def load_weights(root: Path, descriptor: dict, limits=None, *, budget=None) -> SkinWeights:
     path = safe_path(root, descriptor['data']['path'], exists=True)
-    meta, arrays = _read_bundle(path, limits or DEFAULT_LIMITS, budget, 'skin', descriptor['data']['sha256'])
+    meta, arrays = _read_bundle(path, limits or DEFAULT_LIMITS, budget, 'skin', descriptor['data']['sha256'], descriptor)
     require(meta == dict(schema_version=1, mesh=descriptor['mesh'], joints=descriptor['joints']),
             'RIG_SKIN', 'Skin metadata differs from the rig.')
     require(set(arrays) == {'indices', 'weights', 'inverse_bind', 'locked'}, 'RIG_SKIN', 'Skin arrays are incomplete.')
@@ -391,7 +397,7 @@ def rig_signature(manifest: dict) -> str:
     return object_hash({k: v for k, v in manifest.items() if k not in ('review', 'validation')})
 
 
-def _check_load_headers(metadata, headers, limits, kind):
+def _check_load_headers(metadata, headers, limits, kind, descriptor):
     """Enforce structural counts from actual headers, before array allocation."""
     try:
         if kind == 'geometry':
@@ -414,15 +420,19 @@ def _check_load_headers(metadata, headers, limits, kind):
             require(len(metadata['joints']) <= limits['bones'], 'RIG_LIMIT_BONES', 'Native skin joint count exceeds the load budget.')
             for name in ('weights', 'indices'):
                 shape = headers[name][0]
-                require(len(shape) == 2 and shape[1] <= limits['influences'],
-                        'RIG_LIMIT_INFLUENCES', 'Native influence count exceeds the load budget.')
+                require(len(shape) == 2 and shape[0] <= limits['vertices'] and shape[1] <= limits['influences'],
+                        'RIG_LIMIT_INFLUENCES', 'Native skin array exceeds the load budget.')
+            locked_shape, locked_dtype = headers['locked'][:2]
+            require(len(locked_shape) == 1 and locked_dtype.kind in 'iu' and locked_shape[0] <= limits['vertices']
+                    and (descriptor is None or locked_shape[0] == len(descriptor['locked_vertices'])),
+                    'RIG_SKIN', 'Native locked-vertex header differs from its bounded descriptor.')
     except (KeyError, TypeError, IndexError) as exc:
         from rig_errors import RigError
         raise RigError('RIG_BINARY', 'Invalid native metadata/header inventory.') from exc
 
 
 def _preflight_load(root, manifest, limits, verify_source):
-    from rig_load_limits import LoadBudget, scan_bundle
+    from rig_load_limits import LoadBudget, scan_bundle, read_bundle_member
     budget = LoadBudget(limits)
     budget.charge_json(safe_path(root, 'rig.json', exists=True))
     budget.json(safe_path(root, 'identity.json', exists=True))
@@ -437,7 +447,7 @@ def _preflight_load(root, manifest, limits, verify_source):
     for descriptor, kind in [(manifest['geometry'], 'geometry')] + [(d, 'skin') for d in manifest['skins']]:
         path = safe_path(root, descriptor['data']['path'], exists=True)
         meta, headers, _ = scan_bundle(path, limits, budget, descriptor['data']['sha256'])
-        _check_load_headers(meta, headers, limits, kind)
+        _check_load_headers(meta, headers, limits, kind, descriptor)
     keyframes = 0
     for descriptor in manifest['animations']:
         clip = validate_contract(budget.json(safe_path(root, descriptor['path'], exists=True)), 'AnimationClip')

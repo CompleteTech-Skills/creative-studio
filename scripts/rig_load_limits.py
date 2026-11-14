@@ -10,7 +10,7 @@ import hashlib
 import math
 from pathlib import Path
 import struct
-import warnings
+import binascii
 import zipfile
 
 import numpy as np
@@ -113,6 +113,7 @@ class LoadBudget:
                     scope='loading only; not process RSS, evaluation or rendering')
 
 
+
 def _zip_directory(payload: bytes, budget: LoadBudget):
     """Bound the ZIP directory before zipfile allocates its complete entry list."""
     size = len(payload)
@@ -126,6 +127,8 @@ def _zip_directory(payload: bytes, budget: LoadBudget):
             and directory_offset + directory_size == size - len(tail) + offset,
             'RIG_BINARY', 'Unsupported or malformed native ZIP directory.')
     require(count <= budget.limits['archive_files'], 'RIG_LIMIT_BINARY', 'Too many binary members.')
+    # Canonical directory equality above rejects offset reconciliation for
+    # prepended/concatenated ZIPs; our scan and zipfile must inspect the same bytes.
     # Do not trust EOCD's entry count: zipfile itself walks the entire central
     # directory, including entries beyond a forged count, before exposing infos.
     cursor = directory_offset
@@ -142,6 +145,49 @@ def _zip_directory(payload: bytes, budget: LoadBudget):
         require(actual_count <= budget.limits['archive_files'], 'RIG_LIMIT_BINARY', 'Too many binary members.')
     require(actual_count == count, 'RIG_BINARY', 'ZIP entry count differs from its directory.')
     budget.add(actual_count * 1024 + directory_size * 2, 'ZIP directory')
+
+
+def image_dimensions(payload: bytes) -> tuple[int, int]:
+    """Probe only bounded PNG/JPEG framing, never invoke an image decoder.
+
+    PNG IHDR: W3C PNG section 11.2.2. JPEG frame header: ITU-T T.81 B.2.2.
+    This is resource admission, not full image/raster integrity validation.
+    """
+    if payload.startswith(b'\x89PNG\r\n\x1a\n'):
+        require(len(payload) >= 33 and payload[8:16] == b'\x00\x00\x00\x0dIHDR',
+                'RIG_TEXTURE_FORMAT', 'Expected a complete first PNG IHDR chunk.')
+        require((binascii.crc32(payload[12:29]) & 0xffffffff) == struct.unpack_from('>L', payload, 29)[0],
+                'RIG_TEXTURE_FORMAT', 'PNG IHDR checksum differs.')
+        width, height, depth, color, compression, filtering, interlace = struct.unpack_from('>LL5B', payload, 16)
+        depths = {0: (1, 2, 4, 8, 16), 2: (8, 16), 3: (1, 2, 4, 8), 4: (8, 16), 6: (8, 16)}
+        require(0 < width <= 0x7fffffff and 0 < height <= 0x7fffffff and depth in depths.get(color, ())
+                and compression == filtering == 0 and interlace in (0, 1),
+                'RIG_TEXTURE_FORMAT', 'Unsupported or invalid PNG IHDR.')
+        return width, height
+    require(payload.startswith(b'\xff\xd8'), 'RIG_TEXTURE_FORMAT', 'Expected PNG/JPEG native image bytes.')
+    cursor = 2
+    frame_markers = {0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf}
+    while cursor < len(payload):
+        require(payload[cursor] == 0xff, 'RIG_TEXTURE_FORMAT', 'Invalid JPEG header marker.')
+        while cursor < len(payload) and payload[cursor] == 0xff:
+            cursor += 1
+        require(cursor < len(payload), 'RIG_TEXTURE_FORMAT', 'Incomplete JPEG marker.')
+        marker = payload[cursor]
+        cursor += 1
+        require(marker not in (0, 0xd8, 0xd9, 0xda), 'RIG_TEXTURE_FORMAT', 'JPEG has no bounded frame header.')
+        if marker == 0x01:  # TEM is the only standalone pre-frame marker.
+            continue
+        require(cursor + 2 <= len(payload), 'RIG_TEXTURE_FORMAT', 'Incomplete JPEG segment length.')
+        length = struct.unpack_from('>H', payload, cursor)[0]
+        require(length >= 2 and cursor + length <= len(payload), 'RIG_TEXTURE_FORMAT', 'Invalid JPEG segment range.')
+        if marker in frame_markers:
+            require(length >= 8, 'RIG_TEXTURE_FORMAT', 'Incomplete JPEG frame header.')
+            precision, height, width, components = struct.unpack_from('>BHHB', payload, cursor + 2)
+            require(precision in (8, 12, 16) and width > 0 and height > 0 and components in (1, 3, 4)
+                    and length == 8 + 3 * components, 'RIG_TEXTURE_FORMAT', 'Unsupported JPEG frame dimensions.')
+            return width, height
+        cursor += length
+    raise RigError('RIG_TEXTURE_FORMAT', 'Missing JPEG frame dimensions.')
 
 
 def read_bundle_member(archive, info):
@@ -181,6 +227,7 @@ class _HeaderReader:
         return self.stream.tell()
 
 
+
 def scan_bundle(path: Path, limits: dict, budget: LoadBudget, expected_hash=None):
     """Inspect all headers and image dimensions without allocating NumPy arrays."""
     size = budget.file(path)
@@ -202,6 +249,9 @@ def scan_bundle(path: Path, limits: dict, budget: LoadBudget, expected_hash=None
             # Covers live arrays, decompression buffers, geometry copies and validation temporaries.
             budget.add(expanded * 4, path.name + ': expanded binary working set')
             for info in infos:
+                require(info.compress_type in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+                        and not info.flag_bits & 1, 'RIG_BINARY',
+                        'Native bundles require unencrypted stored/deflate members.')
                 require(info.orig_filename == info.filename and '/' not in info.filename
                         and '\\' not in info.filename and (info.filename == 'metadata.json'
                         or info.filename.endswith('.npy')) and (info.external_attr >> 16) & 0o170000 != 0o120000,
@@ -246,21 +296,8 @@ def scan_bundle(path: Path, limits: dict, budget: LoadBudget, expected_hash=None
                     stream.read(offset)
                     payload = stream.read(shape[0] + 1)
                 require(len(payload) == shape[0], 'RIG_BINARY', 'Native image byte count changed.')
-                try:
-                    from PIL import Image
-                    with warnings.catch_warnings():
-                        warnings.simplefilter('error', Image.DecompressionBombWarning)
-                        with Image.open(io.BytesIO(payload)) as decoded:
-                            width, height = decoded.size
-                            require(decoded.format in ('PNG', 'JPEG') and width > 0 and height > 0,
-                                    'RIG_TEXTURE_FORMAT', 'Expected native PNG/JPEG image data.')
-                            pixels = width * height * 4
-                except RigError:
-                    raise
-                except ImportError as exc:
-                    raise RigError('RIG_DEPENDENCY', 'Pillow is required for native texture admission.') from exc
-                except (OSError, ValueError, Image.DecompressionBombWarning, Image.DecompressionBombError) as exc:
-                    raise RigError('RIG_TEXTURE_FORMAT', 'Invalid or excessive native image header.', asset=name) from exc
+                width, height = image_dimensions(payload)
+                pixels = width * height * 4
                 budget.texture_rgba_bytes += pixels
                 budget.add(pixels * 4, name + ': decoded texture working set')
             return metadata, headers, snapshot
