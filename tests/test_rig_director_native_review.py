@@ -479,6 +479,68 @@ class NativeReviewJournalTests(unittest.TestCase):
                     self.journal.append_validation(failed, 'unsafe')
         self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
 
+    def test_trusted_admission_runs_under_owner_lock_immediately_before_save(self):
+        admitted = []
+        def admit():
+            with self.assertRaisesRegex(ValueError, 'owned by another controller'):
+                with hatch.ownership(self.root):
+                    self.fail('Admission ran outside the canonical owner lock')
+            self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
+            admitted.append('review')
+        self.journal.record(self.receipt(), 'admitted-review', current_dependencies=self.current, admit=admit)
+        self.assertEqual(admitted, ['review'])
+        self.assertTrue((self.root/workflow.WORKFLOW_FILE).exists())
+
+    def test_admission_rejection_preserves_existing_journal_bytes_and_history(self):
+        self.journal.append_validation(self.report(), 'initial')
+        before = (self.root/workflow.WORKFLOW_FILE).read_bytes()
+        def expired():
+            raise RigError('DIRECTOR_QA_DEADLINE', 'Operation expired after native work, before journal save.')
+        for operation in ('review', 'validation'):
+            with self.subTest(operation=operation), self.assertRaises(RigError) as error:
+                if operation == 'review':
+                    self.journal.record(self.receipt(), 'expired-review', current_dependencies=self.current, admit=expired)
+                else:
+                    self.journal.append_validation(self.report(), 'expired-validation', admit=expired)
+            self.assertEqual(error.exception.report['code'], 'DIRECTOR_QA_DEADLINE')
+            self.assertEqual((self.root/workflow.WORKFLOW_FILE).read_bytes(), before)
+        self.assertEqual(self.journal.validation_history()['history_count'], 1)
+        self.assertEqual(self.journal.history()['reviews'], [])
+
+    def test_exact_retry_returns_existing_history_without_repeating_admission(self):
+        seen = []
+        def admit():
+            seen.append('new-operation')
+        def must_not_run():
+            self.fail('Exact immutable retry must not invoke admission again')
+        first = self.journal.record(self.receipt(), 'review-once', current_dependencies=self.current, admit=admit)
+        self.assertEqual(self.journal.record(self.receipt(), 'review-once',
+            current_dependencies=self.current, admit=must_not_run), first)
+        report = self.journal.append_validation(self.report(), 'validation-once', admit=admit)
+        self.assertEqual(self.journal.append_validation(self.report(), 'validation-once', admit=must_not_run), report)
+        self.assertEqual(seen, ['new-operation', 'new-operation'])
+
+    def test_untrusted_admission_and_invalid_inputs_never_call_trusted_hook(self):
+        for operation in ('review', 'validation'):
+            with self.subTest(operation=operation), self.assertRaises(RigError):
+                if operation == 'review':
+                    self.journal.record(self.receipt(), 'not-a-callback', current_dependencies=self.current, admit={})
+                else:
+                    self.journal.append_validation(self.report(), 'not-a-callback', admit='execute-user-code')
+        called = []
+        def admit():
+            called.append(True)
+        receipt = self.receipt()
+        receipt['dimensions'] = {}
+        with self.assertRaises(RigError):
+            self.journal.record(receipt, 'invalid-review', current_dependencies=self.current, admit=admit)
+        report = self.report()
+        report['inputs'] = []
+        with self.assertRaises(RigError):
+            self.journal.append_validation(report, 'invalid-report', admit=admit)
+        self.assertEqual(called, [])
+        self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
+
 
 if __name__ == '__main__':
     unittest.main()
