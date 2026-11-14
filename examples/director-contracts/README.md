@@ -14,5 +14,8 @@ python scripts/director_contracts.py --bundle examples/director-contracts/contra
 
 The example uses 30 seconds at 24 FPS, frames 0–719 and terminal boundary 720.
 This time contract is real arithmetic; it is not evidence of a rendered film.
+`project-v2-fixture.json` is an additional unverified example of complete
+version 2 milestone reports. It is separate from the immutable historical v1
+bundle; none of its timestamps or report fields claims production execution.
 See [the contract guide](../../references/director-contracts.md) for interfaces,
 limits and the distinction between structural, exact-byte and native acceptance.
