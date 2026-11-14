@@ -278,7 +278,7 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -
     ``encoded_bytes`` is the caller's measured, exact source-closure size; this
     helper never reopens paths or bypasses captured/descriptor reader APIs.
     Counts include every active mesh INSTANCE, not just unique accessors. The
-    estimate covers geometry loading only: decoded image capacity must be
+    estimate includes expanded animation tracks. Decoded image capacity must be
     admitted separately before image decoding. No process RSS or OS isolation.
     """
     from rig_load_limits import LoadBudget, effective_limits, _JSON_FACTOR
@@ -319,6 +319,7 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -
             widths.append(width)
         parents, world, order = scene_graph(document)
         vertices = triangles = instances = 0
+        morph_widths = {}
         for node_id in order:
             node = nodes[node_id]
             if 'mesh' not in node:
@@ -326,6 +327,7 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -
             mesh = meshes[_index(node['mesh'], len(meshes), 'mesh')]
             require(isinstance(mesh, dict) and isinstance(mesh.get('primitives'), list),
                     'RIG_GLTF_PREFLIGHT', 'Mesh primitives must be an array.')
+            morph_widths[node_id] = []
             for primitive in mesh['primitives']:
                 require(isinstance(primitive, dict), 'RIG_GLTF_PREFLIGHT', 'Primitive must be an object.')
                 require(primitive.get('mode', 4) == 4, 'RIG_PRIMITIVE_MODE',
@@ -353,6 +355,7 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -
                 targets = primitive.get('targets', [])
                 require(isinstance(targets, list) and len(targets) <= caps['morphs'],
                         'RIG_LIMIT_MORPHS', 'Primitive morph target inventory exceeds the native cap.')
+                morph_widths[node_id].append(len(targets))
                 sites = list(attributes.values())
                 if index is not None:
                     sites.append(index)
@@ -365,8 +368,41 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None) -
                     amount += counts[site] * widths[site] * 8 * 3
                 budget.add(amount, 'instantiated native mesh/skin/morph arrays')
                 budget.array_bytes += amount
+        animations = body.get('animations', [])
+        require(isinstance(animations, list), 'RIG_GLTF_PREFLIGHT', 'Animations must be an array.')
+        require(len(animations) <= caps['clips'], 'RIG_LIMIT_CLIPS', 'Imported animation clip budget exceeded.')
+        active = set(order)
+        for animation in animations:
+            require(isinstance(animation, dict) and isinstance(animation.get('channels', []), list)
+                    and isinstance(animation.get('samplers', []), list),
+                    'RIG_GLTF_PREFLIGHT', 'Animation channels and samplers must be arrays.')
+            seen = set()
+            for channel in animation.get('channels', []):
+                sampler = animation['samplers'][_index(channel['sampler'], len(animation['samplers']), 'animation sampler')]
+                target = channel['target']
+                node = _index(target['node'], len(nodes), 'animation node')
+                path = target['path']
+                require((node, path) not in seen, 'RIG_ANIMATION_DUPLICATE', 'Animation repeats a target channel.')
+                seen.add((node, path))
+                require(path in ('translation', 'rotation', 'scale', 'weights'), 'RIG_ANIMATION_PATH', 'Unsupported animation target.')
+                require(node in active, 'RIG_ANIMATION_REFERENCE', 'Animation references an inactive node.')
+                interpolation = sampler.get('interpolation', 'LINEAR')
+                require(interpolation in ('STEP', 'LINEAR', 'CUBICSPLINE'), 'RIG_INTERPOLATION', 'Unsupported interpolation.')
+                source = _index(sampler['input'], len(accessors), 'animation input')
+                output = _index(sampler['output'], len(accessors), 'animation output')
+                require(accessors[source].get('type') == 'SCALAR' and
+                        accessors[source].get('componentType') == 5126,
+                        'RIG_GLTF_ACCESSOR', 'Animation input accessor must use scalar floating-point values.')
+                keys = counts[source]
+                destination_widths = morph_widths.get(node, []) if path == 'weights' else [4 if path == 'rotation' else 3]
+                require(bool(destination_widths) and all(width > 0 for width in destination_widths),
+                        'RIG_ANIMATION_REFERENCE', 'Animation references unavailable geometry or morphs.')
+                for width in destination_widths:
+                    require(counts[output] * widths[output] == keys * width * (3 if interpolation == 'CUBICSPLINE' else 1),
+                            'RIG_ANIMATION_VALUES', 'Animation output count does not match its target/time base.')
+                    budget.animation(keys=keys, width=width, destinations=1, cubic=interpolation == 'CUBICSPLINE')
         return dict(budget.report(), method='native-gltf-load-conservative-v1',
-                    scope='geometry metadata/accessors/instances only; image decoding requires separate admission',
+                    scope='geometry and expanded animation loading; image decoding requires separate admission',
                     images_admitted=False,
                     encoded_bytes=size, vertices=vertices, triangles=triangles,
                     mesh_instances=instances, active_nodes=len(order), accessors=len(accessors),

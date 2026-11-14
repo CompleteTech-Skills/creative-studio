@@ -54,6 +54,8 @@ class LoadBudget:
         self.json_bytes = 0
         self.array_bytes = 0
         self.texture_rgba_bytes = 0
+        self.animation_keyframes = 0
+        self.animation_tracks = 0
         self.add(_IO_RESERVE, 'streaming/header scratch reserve')
 
     def add(self, amount: int, asset: str) -> None:
@@ -61,6 +63,28 @@ class LoadBudget:
         require(self.memory <= self.limits['memory_bytes'], 'RIG_LIMIT_MEMORY',
                 'Aggregate native load estimate exceeds the caller/manifest budget.',
                 asset=asset, expected=self.limits['memory_bytes'], observed=self.memory)
+
+    def animation(self, *, keys: int, width: int, destinations: int, cubic: bool = False) -> None:
+        """Admit one channel's expanded tracks before decoding or list creation.
+
+        Counts and widths describe each destination, including shared samplers;
+        repeated calls share the same cumulative memory and keyframe ceilings.
+        """
+        require(all(type(v) is int and v > 0 for v in (keys, width, destinations))
+                and type(cubic) is bool, 'RIG_ANIMATION_VALUES',
+                'Animation admission requires positive integer dimensions.')
+        expanded = keys * destinations
+        total = self.animation_keyframes + expanded
+        require(total <= self.limits['keyframes'], 'RIG_LIMIT_KEYFRAMES',
+                'Aggregate animation keys exceed the load budget.',
+                expected=self.limits['keyframes'], observed=total)
+        # Python floats, list slots and nested lists, plus track/dict overhead.
+        # Cubic retains three independently materialized value/tangent lists.
+        groups = 3 if cubic else 1
+        amount = destinations * (1024 + keys * (32 + groups * (64 + 32 * width)))
+        self.add(amount, 'expanded animation tracks, times, values and tangents')
+        self.animation_keyframes = total
+        self.animation_tracks += destinations
 
     def file(self, path: Path, *, source=False) -> int:
         with open_payload(path.parent, path.name) as (_, info):
@@ -119,6 +143,7 @@ class LoadBudget:
         return dict(method='native-load-conservative-v1', estimated_memory_bytes=self.memory,
                     input_bytes=self.input_bytes, array_bytes=self.array_bytes,
                     texture_rgba_bytes=self.texture_rgba_bytes, json_bytes=self.json_bytes,
+                    animation_keyframes=self.animation_keyframes, animation_tracks=self.animation_tracks,
                     scope='loading only; not process RSS, evaluation or rendering')
 
 
