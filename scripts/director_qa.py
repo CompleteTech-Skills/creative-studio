@@ -68,7 +68,8 @@ def schemas():
                            'propertyNames':identifier, 'additionalProperties':arr(ref('artifact-ref'),1,128)},
                        limits=obj(dict(max_checks=integer(256),max_total_bytes=integer(MAX_BYTES),max_seconds=integer(300)))))
     profile.update({'$schema':'https://json-schema.org/draft/2020-12/schema',
-                    '$defs':definitions(), 'title':'Director exact-artifact QA profile v1',
+                    '$defs':{'artifact-ref':deepcopy(definitions()['artifact-ref'])},
+                    'title':'Director exact-artifact QA profile v1',
                     'description':'Structural profile only; runtime checks IDs, frame ordering, milestone operation coverage, exact bytes and resource admission.'})
     return {'director-qa-profile.schema.json':profile}
 
