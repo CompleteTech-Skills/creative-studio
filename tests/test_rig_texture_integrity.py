@@ -38,6 +38,14 @@ def image_bytes(mode='RGB', fmt='PNG', size=(16, 16), *, progressive=False):
     return stream.getvalue()
 
 
+def aggregate_budget_image(fmt):
+    # Keep the encoded closure small enough for preflight's 2 MiB scratch
+    # reserve and metadata estimate, while each decoded image costs 8 MiB.
+    stream = io.BytesIO()
+    Image.new('RGB', (512, 512), (37, 91, 143)).save(stream, format=fmt)
+    return stream.getvalue()
+
+
 def png_chunk(kind, data):
     return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
 
@@ -168,9 +176,9 @@ class TextureIntegrityTests(unittest.TestCase):
 
     def test_strict_jpeg_aggregate_allowance_is_checked_before_native_pixels(self):
         import simplejpeg
-        data = image_bytes(fmt='JPEG', size=(4, 4));path = self.model(data, mime='image/jpeg', images=2)
+        data = aggregate_budget_image('JPEG');path = self.model(data, mime='image/jpeg', images=2)
         with patch.object(simplejpeg, 'decode_jpeg', wraps=simplejpeg.decode_jpeg) as decode:
-            self.assert_rejected(path, 'RIG_LIMIT_TEXTURE', limits={**DEFAULT_LIMITS, 'memory_bytes': 800})
+            self.assert_rejected(path, 'RIG_LIMIT_TEXTURE', limits={**DEFAULT_LIMITS, 'memory_bytes': 12 * 1024**2})
             self.assertEqual(decode.call_count, 1)
 
     def test_png_valid_crc_but_invalid_pixels_and_broken_crc_are_structured(self):
@@ -284,15 +292,15 @@ class TextureIntegrityTests(unittest.TestCase):
             self.assert_rejected(self.model(data), 'RIG_LIMIT_TEXTURE')
 
     def test_aggregate_gltf_budget_precedes_second_image_load(self):
-        data = image_bytes(size=(4, 4));path = self.model(data, images=2)
+        data = aggregate_budget_image('PNG');path = self.model(data, images=2)
         calls = []
         original = PngImagePlugin.PngImageFile.load
         def load(image, *args, **kwargs):
             calls.append(image.size)
             return original(image, *args, **kwargs)
         with patch.object(PngImagePlugin.PngImageFile, 'load', load):
-            self.assert_rejected(path, 'RIG_LIMIT_TEXTURE', limits={**DEFAULT_LIMITS, 'memory_bytes': 800})
-        self.assertEqual(calls, [(4, 4)])
+            self.assert_rejected(path, 'RIG_LIMIT_TEXTURE', limits={**DEFAULT_LIMITS, 'memory_bytes': 12 * 1024**2})
+        self.assertEqual(calls, [(512, 512)])
 
     def test_decoded_memory_exact_boundary_is_inclusive(self):
         data = image_bytes(size=(4, 3))
