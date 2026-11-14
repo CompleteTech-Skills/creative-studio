@@ -208,6 +208,25 @@ class CliAdmissionTests(unittest.TestCase):
                 self.assertFalse((self.root / 'invalid-pin').exists())
         self.assertEqual(load_project(self.source)['inventory'], before)
 
+    def test_environment_public_api_rejects_invalid_modes_before_source_io(self):
+        import numpy as np
+        import scene3d_contracts
+        import scene3d_language_environment as language
+        from rig_errors import RigError
+        text = 'Create a workshop named shop with two rooms, width 5 meters, depth 5 meters, height 3 meters, seed 42'
+        valid = language.compile_environment_description(self.graph, text)
+        before = load_project(self.source)['inventory']
+        for value in (None, 0, 1, [], [1], {}, '', 'false', np.bool_(False), np.array([False])):
+            target = self.root / 'invalid-mode'
+            with self.subTest(value=repr(value)), \
+                 patch.object(scene3d_contracts, 'load_project', wraps=load_project) as reader:
+                with self.assertRaises(RigError) as error:
+                    language.apply_environment_plan(self.source, target, 'example-scene.json', valid, dry_run=value)
+                self.assertIn('boolean', error.exception.report['message'])
+                reader.assert_not_called()
+            self.assertFalse(target.exists())
+        self.assertEqual(load_project(self.source)['inventory'], before)
+
     def test_valid_dry_runs_preserve_sources_and_publish_nothing(self):
         before = load_project(self.source)['inventory']
         for index, arguments in enumerate(self.all_routes()):

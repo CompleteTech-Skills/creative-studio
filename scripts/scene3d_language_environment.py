@@ -170,6 +170,7 @@ def apply_environment_plan(source, destination, scene_path, plan, *, dry_run=Fal
     from scene3d_contracts import load_project
     from scene3d_graph import SceneGraph
     from scene3d_environment import apply_recipes
+    require(type(dry_run) is bool, 'Dry-run mode must be boolean.')
     require(isinstance(plan, dict) and isinstance(plan.get('original_text'), str), 'Invalid environment plan.')
     bundle = load_project(source)
     require(expected_project_sha256 is None or type(expected_project_sha256) is str and bundle['inventory']['project.json']['sha256'] == expected_project_sha256,
