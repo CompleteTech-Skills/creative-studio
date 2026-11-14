@@ -6,8 +6,11 @@ Expired heartbeats never authorize taking work from a live owner process.
 from __future__ import annotations
 from contextlib import contextmanager
 from copy import deepcopy
+from fractions import Fraction
+import errno
 import json
 import hashlib
+import math
 import os
 from pathlib import Path
 import shutil
@@ -19,15 +22,61 @@ import time
 import uuid
 
 from atomic_publish import _rename_no_replace
-from rig_errors import atomic_json, object_hash, safe_path, sha256
-from render3d_contracts import Render3DError, require, validate, make_frame_spec, frame_times, rational
+from rig_errors import RigError, atomic_bytes, atomic_json, decode_json, object_hash, safe_path, sha256
+from render3d_contracts import Render3DError, require, validate, make_frame_spec, frame_times, rational, open_regular
 
 VERSION = 1
+STORE_VERSION = 2
 TERMINAL = ('complete', 'cancelled', 'failed')
+RETRYABLE = ('timeout','worker-crash','device-initialization')
+RESOURCE_NAMES = ('cpu_workers','gpu_workers','provider_workers','memory_bytes','storage_bytes')
+_PROCESS_PID = os.getpid()
+_PROCESS_NONCE = uuid.uuid4().hex
+
+
+def _process_identity():
+    """Keep reconnects idempotent without granting a reused PID an old lease."""
+    global _PROCESS_PID, _PROCESS_NONCE
+    if os.getpid() != _PROCESS_PID:
+        _PROCESS_PID, _PROCESS_NONCE = os.getpid(), uuid.uuid4().hex
+    return _PROCESS_PID, _PROCESS_NONCE
 
 
 def _dump(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False)
+
+
+def _metadata(path):
+    """Decode bounded metadata from the same admitted regular descriptor."""
+    limit=32*1024**2
+    try:
+        with open_regular(path,limit) as stream:
+            return decode_json(stream.read(limit+1),max_bytes=limit)
+    except (OSError,RigError) as exc:
+        raise Render3DError('invalid-input',str(exc),path=path) from exc
+
+
+def _cache_rejected(error):
+    """Separate invalid cache evidence from unavailable verification capability."""
+    cause=error
+    for _ in range(16):
+        if isinstance(cause,PermissionError):return False
+        if isinstance(cause,OSError) and cause.errno not in (None,errno.ENOENT,errno.ENOTDIR,errno.ELOOP):
+            return False
+        cause=getattr(cause,'__cause__',None)
+        if cause is None:break
+    if isinstance(error,Render3DError):
+        return error.report['category'] in {
+            'missing-asset','stale-asset','corrupt-output','incomplete-output',
+            'stale-cache','verification-failed','invalid-input'}
+    if isinstance(error,RigError):
+        return error.report['code'] in {
+            'RIG_MISSING_ASSET','RIG_SYMLINK','RIG_PATH','RIG_SCHEMA',
+            'RIG_NONFINITE','RIG_LIMIT_JSON','RIG_JSON_DEPTH','RIG_JSON','RIG_JSON_DUPLICATE'}
+    # Legacy verifier callbacks explicitly reject data with ValueError; preserve
+    # that contract. Missing dictionary keys instead indicate a verifier bug.
+    return isinstance(error,(ValueError,FileNotFoundError,NotADirectoryError)) or (
+        isinstance(error,OSError) and error.errno is None)
 
 
 def _alive(pid):
@@ -36,7 +85,7 @@ def _alive(pid):
         return True
     except ProcessLookupError:
         return False
-    except (PermissionError, OSError):
+    except (PermissionError, OSError, OverflowError):
         # Uncertain ownership must not authorize stealing an active process.
         return True
 
@@ -67,21 +116,24 @@ class JobStore:
     network filesystem leases and cross-host takeover are deliberately rejected.
     """
     def __init__(self, root, *, workers=1, memory_bytes=4*1024**3,
-                 storage_bytes=16*1024**3, gpu_workers=0, clock=time.time):
+                 storage_bytes=16*1024**3, gpu_workers=0, provider_workers=1, clock=time.time):
         for key, value in dict(workers=workers, memory_bytes=memory_bytes,
                                storage_bytes=storage_bytes, gpu_workers=gpu_workers).items():
             require(type(value) is int and value >= (0 if key == 'gpu_workers' else 1),
                     'invalid-input', 'Invalid scheduler capacity: ' + key)
+        require(type(provider_workers) is int and 0 <= provider_workers <= 2**31-1,
+                'invalid-input','Invalid provider worker capacity.')
         self.root = Path(root).absolute()
         require(not self.root.is_symlink(), 'ownership', 'Job store cannot be a symlink.')
         self.capacity = dict(workers=workers, memory_bytes=memory_bytes,
                              storage_bytes=storage_bytes, gpu_workers=gpu_workers)
         self.clock = clock
+        self.provider_workers = provider_workers
         if not self.root.exists():
             self.root.parent.mkdir(parents=True, exist_ok=True)
             stage = Path(tempfile.mkdtemp(prefix='.render3d-store-', dir=self.root.parent))
             try:
-                atomic_json(stage/'store.json', dict(version=VERSION, host=socket.gethostname(), capacity=self.capacity))
+                atomic_json(stage/'store.json', dict(version=STORE_VERSION, host=socket.gethostname(), capacity=self.capacity))
                 (stage/'cache').mkdir(); (stage/'staging').mkdir()
                 db = sqlite3.connect(stage/'jobs.sqlite3')
                 db.executescript('''
@@ -101,14 +153,42 @@ class JobStore:
                 pass
             finally:
                 if stage.exists(): shutil.rmtree(stage)
-        marker = json.loads(safe_path(self.root,'store.json',exists=True).read_text())
-        require(marker == dict(version=VERSION, host=socket.gethostname(), capacity=self.capacity),
+        marker = _metadata(safe_path(self.root,'store.json',exists=True))
+        require(type(marker) is dict and type(marker.get('version')) is int
+                and marker in [dict(version=v, host=socket.gethostname(), capacity=self.capacity)
+                               for v in (VERSION,STORE_VERSION)]
+                and all(type(marker['capacity'][name]) is int for name in self.capacity),
                 'ownership', 'Store host, version or capacities differ; open with its original configuration.')
+        self._store_version = marker['version']
+        self._store_marker = deepcopy(marker)
         safe_path(self.root,'jobs.sqlite3',exists=True)
         self.root=self.root.resolve()
+        with self._transaction() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS storage_reservations('
+                       'stage TEXT PRIMARY KEY, bytes INTEGER NOT NULL, pid INTEGER NOT NULL)')
+            if 'job' not in {row['name'] for row in db.execute('PRAGMA table_info(storage_reservations)')}:
+                db.execute('ALTER TABLE storage_reservations ADD COLUMN job TEXT')
+            if self._store_version == STORE_VERSION:
+                db.execute('CREATE TABLE IF NOT EXISTS resource_settings('
+                           'name TEXT PRIMARY KEY,value INTEGER NOT NULL)')
+                db.execute('INSERT OR IGNORE INTO resource_settings(name,value) VALUES(?,?)',
+                           ('provider_workers',provider_workers))
+                require(db.execute('SELECT value FROM resource_settings WHERE name=?',
+                                   ('provider_workers',)).fetchone()[0] == provider_workers,
+                        'ownership','Provider capacity differs from the original store configuration.')
+                db.execute('CREATE TABLE IF NOT EXISTS resource_reservations('
+                           'operation_id TEXT PRIMARY KEY,resources TEXT NOT NULL,token TEXT NOT NULL,'
+                           'pid INTEGER NOT NULL,owner_nonce TEXT NOT NULL,heartbeat REAL NOT NULL,'
+                           'cancel INTEGER NOT NULL DEFAULT 0)')
+            else:
+                require(not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                                       "AND name='resource_reservations'").fetchone(),
+                        'ownership','A resource-aware store marker cannot be downgraded.')
 
     @contextmanager
     def _transaction(self):
+        require(_metadata(safe_path(self.root,'store.json',exists=True)) == self._store_marker,
+                'ownership','Job store configuration changed after opening.')
         safe_path(self.root,'jobs.sqlite3',exists=True)
         db=sqlite3.connect(self.root/'jobs.sqlite3', timeout=10)
         db.row_factory=sqlite3.Row
@@ -116,6 +196,8 @@ class JobStore:
             db.execute('PRAGMA synchronous=FULL')
             db.execute('BEGIN IMMEDIATE')
             yield db
+            require(_metadata(safe_path(self.root,'store.json',exists=True)) == self._store_marker,
+                    'ownership','Job store configuration changed during its transaction.')
             db.commit()
         except Exception:
             db.rollback(); raise
@@ -126,6 +208,204 @@ class JobStore:
         db.execute('INSERT INTO events(job,at,event,detail) VALUES (?,?,?,?)',
                    (job,self.clock(),event,_dump(detail or {})))
         db.execute('UPDATE jobs SET revision=revision+1 WHERE id=?',(job,))
+
+    @property
+    def store_version(self):
+        return self._store_version
+
+    @property
+    def supports_resource_reservations(self):
+        return self._store_version == STORE_VERSION
+
+    def _require_resources(self):
+        require(self._store_version == STORE_VERSION,'unsupported-feature',
+                'Generic resources require a new version-2 store; legacy render stores remain unchanged.')
+
+    def _resource_limits(self):
+        return dict(cpu_workers=self.capacity['workers'],gpu_workers=self.capacity['gpu_workers'],
+                    provider_workers=self.provider_workers,memory_bytes=self.capacity['memory_bytes'],
+                    storage_bytes=self.capacity['storage_bytes'])
+
+    @staticmethod
+    def _resource_vector(resources):
+        require(type(resources) is dict and set(resources) == set(RESOURCE_NAMES),
+                'invalid-input','Supply the complete generic resource vector.')
+        require(all(type(resources[name]) is int and 0 <= resources[name] <=
+                    (2**63-1 if name in ('memory_bytes','storage_bytes') else 2**31-1)
+                    for name in RESOURCE_NAMES),
+                'invalid-input','Generic resources must contain bounded nonnegative integers.')
+        require(sum(resources[name] for name in RESOURCE_NAMES[:3]) > 0,
+                'invalid-input','An operation must reserve at least one worker.')
+        return deepcopy(resources)
+
+    @staticmethod
+    def _operation_id(operation_id):
+        require(type(operation_id) is str and 0 < len(operation_id) <= 512
+                and operation_id.isprintable(),
+                'invalid-input','Operation IDs must be bounded strings without control characters.')
+        return operation_id
+
+    def _resource_rows(self, db):
+        if self._store_version != STORE_VERSION:return []
+        rows=[]
+        for raw in db.execute('SELECT * FROM resource_reservations ORDER BY operation_id'):
+            row=dict(raw)
+            try:
+                row['resources']=self._resource_vector(decode_json(row['resources'],max_bytes=4096))
+                self._operation_id(row['operation_id'])
+                require(type(row['pid']) is int and 0 < row['pid'] <= 2**32-1
+                        and isinstance(row['token'],str) and len(row['token']) == 32
+                        and all(char in '0123456789abcdef' for char in row['token'])
+                        and isinstance(row['owner_nonce'],str) and len(row['owner_nonce']) == 32
+                        and all(char in '0123456789abcdef' for char in row['owner_nonce'])
+                        and type(row['cancel']) is int and row['cancel'] in (0,1)
+                        and type(row['heartbeat']) in (int,float) and 0 <= row['heartbeat'] <= 10**12
+                        and math.isfinite(row['heartbeat']),
+                        'ownership','Persisted resource ownership is malformed.')
+            except (RigError,ValueError,TypeError) as exc:
+                raise Render3DError('ownership','Persisted resource reservation is invalid.') from exc
+            rows.append(row)
+        return rows
+
+    def _resource_usage(self, db):
+        live=list(db.execute('SELECT j.*,f.token FROM frames f JOIN jobs j ON j.id=f.job '
+                             'WHERE f.state="running"'))
+        requests=[self._checked_request(row) for row in live]
+        used=dict(cpu_workers=sum(req['settings']['resources']['workers'] for req,_ in requests),
+                  gpu_workers=sum(backend['device']!='cpu' for _,backend in requests),
+                  provider_workers=0,
+                  memory_bytes=sum(req['settings']['resources']['memory_bytes'] for req,_ in requests),
+                  storage_bytes=self._storage_reserved(db,live))
+        for row in self._resource_rows(db):
+            for name in RESOURCE_NAMES:used[name]+=row['resources'][name]
+        return used
+
+    @staticmethod
+    def _admit(db, admit, record):
+        if admit is None:return True
+        require(callable(admit),'invalid-input','Admission hook must be callable.')
+        # A denial cannot leave a partially updated Director readiness record.
+        # Hooks may perform bounded SQL checks/updates only; no external I/O,
+        # lock acquisition, recursive JobStore calls or transaction control.
+        db.execute('SAVEPOINT job_admission')
+        decision=admit(db,deepcopy(record))
+        require(db.in_transaction,'ownership','Admission hook ended its transaction.')
+        require(type(decision) is bool,'invalid-input','Admission hook must return a boolean.')
+        if not decision:db.execute('ROLLBACK TO job_admission')
+        db.execute('RELEASE job_admission')
+        return decision
+
+    def _resource_time(self):
+        value=self.clock()
+        require(type(value) in (int,float) and 0 <= value <= 10**12 and math.isfinite(value),
+                'invalid-input','Resource clock must return a bounded finite timestamp.')
+        return float(value)
+
+    def _resource_event(self, db, operation_id, event, resources=None):
+        db.execute('INSERT INTO events(job,at,event,detail) VALUES (?,?,?,?)',
+                   ('resources:'+operation_id,self._resource_time(),event,
+                    _dump(dict(operation_id=operation_id,resources=resources))))
+
+    @staticmethod
+    def _resource_owner_alive(row):
+        pid,nonce=_process_identity()
+        if row['pid'] == pid:return row['owner_nonce'] == nonce
+        return _alive(row['pid'])
+
+    def reserve_resources(self, operation_id, resources, *, admit=None):
+        """Reserve shared capacity, without claiming an external operation.
+
+        Native acquisition/render owners retain execution tokens and recovery.
+        Persist any budget dispatch fence before entering this SQL admission.
+        The same process and exact resource vector reuse their original lease;
+        other owners, including departed owners, require explicit recovery.
+        """
+        self._require_resources();self._operation_id(operation_id)
+        resources=self._resource_vector(resources);pid,nonce=_process_identity()
+        with self._transaction() as db:
+            previous=next((row for row in self._resource_rows(db)
+                           if row['operation_id']==operation_id),None)
+            if previous is not None:
+                require(previous['resources']==resources,'ownership','Operation resources are immutable.')
+                if previous['pid']==pid and previous['owner_nonce']==nonce:
+                    return dict(operation_id=operation_id,token=previous['token'],pid=pid)
+                return None
+            limits=self._resource_limits()
+            require(all(resources[name]<=limits[name] for name in RESOURCE_NAMES),
+                    'invalid-input','Operation resources exceed configured capacity.')
+            used=self._resource_usage(db)
+            if any(used[name]+resources[name]>limits[name] for name in RESOURCE_NAMES):return None
+            if not self._admit(db,admit,dict(operation_id=operation_id,resources=resources,pid=pid)):
+                return None
+            token=uuid.uuid4().hex
+            db.execute('INSERT INTO resource_reservations('
+                       'operation_id,resources,token,pid,owner_nonce,heartbeat) VALUES(?,?,?,?,?,?)',
+                       (operation_id,_dump(resources),token,pid,nonce,self._resource_time()))
+            self._resource_event(db,operation_id,'resources-reserved',resources)
+            return dict(operation_id=operation_id,token=token,pid=pid)
+
+    def _owned_resources(self, db, lease):
+        require(type(lease) is dict and set(lease)=={'operation_id','token','pid'},
+                'ownership','Invalid resource lease.')
+        self._operation_id(lease['operation_id']);pid,nonce=_process_identity()
+        row=next((row for row in self._resource_rows(db)
+                  if row['operation_id']==lease['operation_id']),None)
+        require(row is not None and type(lease['pid']) is int and lease['pid']==pid
+                and row['pid']==pid and row['owner_nonce']==nonce and row['token']==lease['token'],
+                'ownership','Resource lease is stale or belongs to another process.')
+        return row
+
+    def heartbeat_resources(self, lease):
+        self._require_resources()
+        with self._transaction() as db:
+            row=self._owned_resources(db,lease)
+            db.execute('UPDATE resource_reservations SET heartbeat=? WHERE operation_id=?',
+                       (self._resource_time(),row['operation_id']))
+            return bool(row['cancel'])
+
+    def cancel_resources(self, operation_id):
+        """Request cancellation; only native outcome reconciliation releases capacity."""
+        self._require_resources();self._operation_id(operation_id)
+        with self._transaction() as db:
+            require(db.execute('SELECT 1 FROM resource_reservations WHERE operation_id=?',
+                               (operation_id,)).fetchone() is not None,
+                    'invalid-input','Unknown resource reservation.')
+            db.execute('UPDATE resource_reservations SET cancel=1 WHERE operation_id=?',(operation_id,))
+            self._resource_event(db,operation_id,'resource-cancellation-requested')
+
+    def release_resources(self, lease):
+        self._require_resources()
+        with self._transaction() as db:
+            row=self._owned_resources(db,lease)
+            db.execute('DELETE FROM resource_reservations WHERE operation_id=?',(row['operation_id'],))
+            self._resource_event(db,row['operation_id'],'resources-released',row['resources'])
+
+    def recover_resources(self, *, admit=None):
+        """Release departed owners; provider uncertainty needs reconciled SQL evidence.
+
+        Live process owners are never reclaimed based on heartbeat age. A dead
+        provider reservation remains held unless the caller's SQL-only hook
+        approves its previously persisted, verified native terminal outcome.
+        """
+        self._require_resources();recovered=[]
+        with self._transaction() as db:
+            for row in self._resource_rows(db):
+                if self._resource_owner_alive(row):continue
+                if row['resources']['provider_workers'] and admit is None:continue
+                record={key:value for key,value in row.items() if key!='owner_nonce'}
+                if not self._admit(db,admit,record):continue
+                db.execute('DELETE FROM resource_reservations WHERE operation_id=?',(row['operation_id'],))
+                self._resource_event(db,row['operation_id'],'resource-owner-exited',row['resources'])
+                recovered.append(row['operation_id'])
+        return recovered
+
+    def resources_status(self):
+        self._require_resources()
+        with self._transaction() as db:
+            return dict(capacity=self._resource_limits(),used=self._resource_usage(db),
+                        reservations=[{key:value for key,value in row.items()
+                                       if key not in ('token','owner_nonce')}
+                                      for row in self._resource_rows(db)])
 
     def submit(self, request, snapshot_root, backend):
         validate(request,'RenderRequest');validate(backend,'BackendIdentity')
@@ -164,13 +444,73 @@ class JobStore:
             self._event(db,job,'submitted',{'frames':len(specs)})
         return job
 
+    def _checked_request(self, row):
+        """The stored ID binds both the exact native request and backend."""
+        try:
+            request=decode_json(row['request']);backend=decode_json(row['backend'])
+            validate(request,'RenderRequest');validate(backend,'BackendIdentity')
+        except (RigError,TypeError,ValueError) as exc:
+            raise Render3DError('ownership','Persisted job input is invalid: '+str(exc)) from exc
+        require(object_hash(dict(request=request,backend=backend))==row['id'],
+                'ownership','Persisted request/backend no longer matches its immutable job ID.')
+        require(row['priority']==request['priority'],'ownership','Persisted scheduling priority differs from its request.')
+        return request,backend
+
+    def resolve_request(self, job, request_sha256):
+        """Resolve RenderJob.id/request_sha256 through this existing store.
+
+        The returned native request contains project/scene/shot versions,
+        scheduling/resource/retry policies and source pins. Resolution does not
+        approve current source bytes or rendered output.
+        """
+        require(isinstance(job,str) and len(job)==64 and all(char in '0123456789abcdef' for char in job),
+                'invalid-input','Request binding requires a native content-addressed job ID.')
+        require(isinstance(request_sha256,str) and len(request_sha256)==64
+                and all(char in '0123456789abcdef' for char in request_sha256),
+                'invalid-input','Request binding requires a canonical SHA-256 digest.')
+        with self._transaction() as db:
+            row=db.execute('SELECT * FROM jobs WHERE id=?',(job,)).fetchone()
+            require(row is not None,'missing-asset','Request binding has no job in this store.')
+            request,_=self._checked_request(row)
+            require(object_hash(request)==request_sha256,'stale-asset','Request binding digest differs from the stored request.')
+            return request
+
     def status(self, job, *, event_limit=1000):
+        require(isinstance(job,str) and len(job)==64 and all(char in '0123456789abcdef' for char in job),
+                'invalid-input','Status requires a native content-addressed job ID.')
         require(type(event_limit) is int and 0 <= event_limit <= 10000,'invalid-input','Invalid event limit.')
         with self._transaction() as db:
             row=db.execute('SELECT * FROM jobs WHERE id=?',(job,)).fetchone()
             require(row is not None,'invalid-input','Unknown render job.')
-            result=dict(row);result['request']=json.loads(result['request']);result['backend']=json.loads(result['backend'])
-            result['frames']=[dict(x) for x in db.execute('SELECT frame,state,attempts,heartbeat,error,cache_key FROM frames WHERE job=? ORDER BY frame',(job,))]
+            request,backend=self._checked_request(row)
+            result=dict(row);result['request']=request;result['backend']=backend
+            result['request_sha256']=object_hash(request)
+            result['request_binding']=dict(owner='render3d_jobs.JobStore',job_id=job,
+                request_sha256=result['request_sha256'],resolver='JobStore.resolve_request')
+            result['project']=deepcopy(request['project']);result['scene']=deepcopy(request['scene'])
+            result['shot']=deepcopy(request['shot'])
+            result['frames']=[dict(x) for x in db.execute('SELECT frame,state,attempts,pid,token,heartbeat,error,cache_key FROM frames WHERE job=? ORDER BY frame',(job,))]
+            counts={name:sum(frame['state']==state for frame in result['frames']) for name,state in
+                    (('queued','queued'),('active','running'),('completed','complete'),('failed','failed'),('cancelled','cancelled'))}
+            counts['requested']=len(result['frames'])
+            expected=request['frame_range']['end']-request['frame_range']['start']
+            require([frame['frame'] for frame in result['frames']]==list(range(request['frame_range']['start'],request['frame_range']['end']))
+                    and counts['requested']==expected and sum(counts[key] for key in counts if key!='requested')==expected,
+                    'ownership','Persisted frames no longer partition the immutable request.')
+            result['counts']=counts
+            result['progress']=dict(completion_ratio=rational(Fraction(counts['completed'],expected)),
+                completion_percent=100*counts['completed']/expected,
+                settled_percent=100*(counts['completed']+counts['failed']+counts['cancelled'])/expected)
+            result['retry_policy']=dict(max_attempts=request['max_attempts'],retryable_categories=list(RETRYABLE))
+            resources=request['settings']['resources'];active=counts['active']
+            stages=list(db.execute('SELECT stage,bytes,pid,job FROM storage_reservations'))
+            result['reservation']=dict(basis='declared-reservations-not-measured-usage',
+                active_frames=active,workers=active*resources['workers'],
+                memory_bytes=active*resources['memory_bytes'],
+                worker_storage_bytes=active*resources['storage_bytes'],
+                gpu_workers=active if backend['device']!='cpu' else 0,
+                cache_staging_bytes=sum(stage['bytes'] for stage in stages if stage['job']==job and _alive(stage['pid'])),
+                unattributed_store_staging_bytes=sum(stage['bytes'] for stage in stages if stage['job'] is None and _alive(stage['pid'])))
             result['events']=[dict(x) for x in db.execute('SELECT seq,at,event,detail FROM (SELECT seq,at,event,detail FROM events WHERE job=? ORDER BY seq DESC LIMIT ?) ORDER BY seq',(job,event_limit))]
             return result
 
@@ -195,16 +535,40 @@ class JobStore:
             entries.append(dict(key=child.name,bytes=size))
         return entries
 
-    def _retained_cache_bytes(self):
-        """Quarantined corrupt entries remain evidence and consume the quota."""
+    def _retained_cache_bytes(self, *, active_tokens=(), reserved_stages=()):
+        """All staging bytes consume capacity, including failed worker evidence."""
         total=0
-        for entry in safe_path(self.root,'staging').glob('corrupt-*'):
-            require(entry.is_dir() and not entry.is_symlink(),
-                    'ownership','Invalid retained cache evidence.')
-            for path in entry.rglob('*'):
-                require(not path.is_symlink(),'ownership','Retained cache contains a symlink.')
-                if path.is_file():total+=path.stat().st_size
+        active={'run-'+token for token in active_tokens}|set(reserved_stages)
+        staging=safe_path(self.root,'staging')
+        for path in staging.rglob('*'):
+            if path.relative_to(staging).parts[0] in active:continue
+            require(not path.is_symlink(),'ownership','Staging contains a symlink.')
+            try:
+                info=path.stat()
+            except FileNotFoundError:
+                # A live worker may finish an intermediate file during scanning.
+                continue
+            require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode),
+                    'ownership','Staging contains a nonregular artifact.')
+            if stat.S_ISREG(info.st_mode):total+=info.st_size
         return total
+
+    def _stored_output_bytes(self, *, active_tokens=(), reserved_stages=()):
+        return sum(entry['bytes'] for entry in self._cache_entries())+self._retained_cache_bytes(
+            active_tokens=active_tokens,reserved_stages=reserved_stages)
+
+    def _storage_reserved(self, db, live):
+        reservations=[]
+        for row in db.execute('SELECT * FROM storage_reservations').fetchall():
+            if _alive(row['pid']):reservations.append(row)
+            else:
+                # The bytes remain evidence; only the dead owner's reservation
+                # is released. Physical leftovers are then counted below.
+                db.execute('DELETE FROM storage_reservations WHERE stage=?',(row['stage'],))
+        reserved=sum(json.loads(row['request'])['settings']['resources']['storage_bytes'] for row in live)
+        reserved+=sum(row['bytes'] for row in reservations)
+        return reserved+self._stored_output_bytes(active_tokens=[row['token'] for row in live],
+            reserved_stages=[row['stage'] for row in reservations])
 
     def cache_inventory(self):
         with self._transaction() as db:
@@ -242,22 +606,23 @@ class JobStore:
                'failed' if 'failed' in states and 'queued' not in states else 'queued')
         db.execute('UPDATE jobs SET state=? WHERE id=?',(state,job))
 
-    def claim(self, job=None):
+    def claim(self, job=None, *, admit=None):
         """Claim one priority-ordered frame only when global reservations permit."""
         with self._transaction() as db:
-            live=list(db.execute('SELECT j.request,j.backend FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'))
-            used={name:sum(json.loads(r['request'])['settings']['resources'][name] for r in live)
-                  for name in ('workers','memory_bytes','storage_bytes')}
-            gpu_used=sum(json.loads(r['backend'])['device']!='cpu' for r in live)
-            query='SELECT f.*,j.request,j.backend,j.snapshot FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="queued" AND j.cancel=0'
+            used=self._resource_usage(db);limits=self._resource_limits()
+            query='SELECT f.*,j.id,j.priority,j.request,j.backend,j.snapshot FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="queued" AND j.cancel=0'
             args=[]
             if job is not None:query+=' AND j.id=?';args.append(job)
             query+=' ORDER BY j.priority DESC,j.created,f.frame'
             for row in db.execute(query,args).fetchall():
-                request=json.loads(row['request']);backend=json.loads(row['backend'])
+                request,backend=self._checked_request(row)
                 budget=request['settings']['resources'];gpu=backend['device']!='cpu'
-                if any(used[n]+budget[n]>self.capacity[n] for n in used):continue
-                if gpu and gpu_used>=self.capacity['gpu_workers']:continue
+                needed=dict(cpu_workers=budget['workers'],gpu_workers=int(gpu),provider_workers=0,
+                            memory_bytes=budget['memory_bytes'],storage_bytes=budget['storage_bytes'])
+                if any(used[name]+needed[name]>limits[name] for name in RESOURCE_NAMES):continue
+                record=dict(job=row['job'],frame=row['frame'],request=request,backend=backend,
+                            snapshot=row['snapshot'],cache_key=row['cache_key'])
+                if not self._admit(db,admit,record):continue
                 token=uuid.uuid4().hex
                 db.execute('UPDATE frames SET state="running",attempts=attempts+1,token=?,pid=?,heartbeat=? WHERE job=? AND frame=?',
                            (token,os.getpid(),self.clock(),row['job'],row['frame']))
@@ -299,25 +664,30 @@ class JobStore:
             self._event(db,lease['job'],'attempt-failed',{'frame':lease['frame'],'state':state,'error':str(error)[:2048]})
             self._refresh(db,lease['job'])
 
-    def recover(self, job=None):
-        """Requeue dead-process claims; retain live claims despite old heartbeats."""
+    def _recover_rows(self, db, job=None):
         recovered=[]
-        with self._transaction() as db:
-            query='SELECT f.*,j.request,j.cancel FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'
-            args=[]
-            if job is not None:query+=' AND f.job=?';args.append(job)
-            for row in db.execute(query,args).fetchall():
-                if _alive(row['pid']):continue
-                state='cancelled' if row['cancel'] else 'queued' if row['attempts']<json.loads(row['request'])['max_attempts'] else 'failed'
-                db.execute('UPDATE frames SET state=?,token=NULL,pid=NULL,heartbeat=NULL,error="Owner process exited" WHERE job=? AND frame=?',
-                           (state,row['job'],row['frame']))
-                recovered.append((row['job'],row['frame']))
-                self._event(db,row['job'],'owner-exited',{'frame':row['frame'],'state':state});self._refresh(db,row['job'])
+        query='SELECT f.*,j.request,j.cancel FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'
+        args=[]
+        if job is not None:query+=' AND f.job=?';args.append(job)
+        for row in db.execute(query,args).fetchall():
+            if _alive(row['pid']):continue
+            state='cancelled' if row['cancel'] else 'queued' if row['attempts']<json.loads(row['request'])['max_attempts'] else 'failed'
+            db.execute('UPDATE frames SET state=?,token=NULL,pid=NULL,heartbeat=NULL,error="Owner process exited" WHERE job=? AND frame=?',
+                       (state,row['job'],row['frame']))
+            recovered.append((row['job'],row['frame']))
+            self._event(db,row['job'],'owner-exited',{'frame':row['frame'],'state':state});self._refresh(db,row['job'])
         return recovered
 
+    def recover(self, job=None):
+        """Requeue dead-process claims; retain live claims despite old heartbeats."""
+        with self._transaction() as db:
+            return self._recover_rows(db,job)
+
     def resume(self, job, *, retry_failed=False, expected_revision=None, verifier=None):
-        self.recover(job)
         snapshot=self.status(job)
+        require(expected_revision is None or type(expected_revision) is int
+                and expected_revision >= 0 and expected_revision==snapshot['revision'],
+                'ownership','Stale job revision.')
         completed=[frame for frame in snapshot['frames'] if frame['state']=='complete']
         require(not completed or verifier is not None,'verification-failed',
                 'Resuming completed frames requires an independent verifier.')
@@ -327,12 +697,15 @@ class JobStore:
             lease=dict(request=snapshot['request'],frame=frame['frame'],spec=spec,
                        cache_key=frame['cache_key'],backend=snapshot['backend'])
             try:self._verify_cache(lease,verifier)
-            except (Render3DError,ValueError,OSError,KeyError):invalid.append(frame['frame'])
+            except (ValueError,OSError,KeyError) as exc:
+                if not _cache_rejected(exc):raise
+                invalid.append(frame['frame'])
         with self._transaction() as db:
             row=db.execute('SELECT * FROM jobs WHERE id=?',(job,)).fetchone()
             require(row is not None,'invalid-input','Unknown render job.')
             require(expected_revision is None or row['revision']==expected_revision,'ownership','Stale job revision.')
             require(row['revision']==snapshot['revision'],'ownership','Job changed during resume verification.')
+            self._recover_rows(db,job)
             require(not db.execute('SELECT 1 FROM frames WHERE job=? AND state="running"',(job,)).fetchone(),
                     'ownership','Cannot resume while a live worker owns a frame.')
             db.execute('UPDATE jobs SET cancel=0 WHERE id=?',(job,))
@@ -355,7 +728,16 @@ class JobStore:
     def _verify_cache(self, lease, verifier):
         path=safe_path(self.root,'cache/'+lease['cache_key'])
         require(path.is_dir() and not path.is_symlink(),'missing-asset','Cache entry unavailable.')
-        record=json.loads(safe_path(path,'cache.json',exists=True).read_text())
+        record=_metadata(safe_path(path,'cache.json',exists=True))
+        require(isinstance(record,dict) and set(record)=={
+                    'version','cache_key','spec','backend','request','result','report'},
+                'stale-cache','Cache metadata has an invalid record shape.')
+        require(type(record['version']) is int and record['version']==VERSION
+                and isinstance(record['report'],dict),
+                'stale-cache','Cache metadata version or verification report is invalid.')
+        for field,kind in (('spec','FrameSpec'),('backend','BackendIdentity'),
+                           ('request','RenderRequest'),('result','RenderResult')):
+            validate(record[field],kind)
         require(record['cache_key']==lease['cache_key'] and record['spec']['cache_key']==lease['spec']['cache_key'] and record['backend']==lease['backend'],
                 'stale-cache','Cache identity differs from requested frame.')
         require({k:v for k,v in record['spec'].items() if k!='destination'} ==
@@ -375,7 +757,9 @@ class JobStore:
         require(current==lease['spec'],'stale-asset','Source changed since job submission.')
         if lease['request']['cache_policy']=='refresh':return False
         try:self._verify_cache(lease,verifier)
-        except (Render3DError,ValueError,OSError,KeyError):return False
+        except (ValueError,OSError,KeyError) as exc:
+            if not _cache_rejected(exc):raise
+            return False
         with self._transaction() as db:
             self._owned(db,lease)
             require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
@@ -393,46 +777,64 @@ class JobStore:
         require(result['status']=='complete','incomplete-output','Only complete verified frames can enter cache.')
         require(result['backend']==lease['backend'],'stale-cache','Backend identity changed.')
         request=self.frame_request(lease)
-        verifier(request,result,output_root)
+        report=verifier(request,result,output_root)
+        require(isinstance(report,dict),'verification-failed','Verifier did not return a metadata report.')
         current=make_frame_spec(lease['request'],lease['frame'],Path(lease['snapshot'])/'snapshot.json')
         require(current==lease['spec'],'stale-asset','Source changed before frame publication.')
-        stage=Path(tempfile.mkdtemp(prefix='cache-',dir=safe_path(self.root,'staging')))
+        refs=[i['file'] for i in result['images']]+result['logs']
+        refs += [r for r in (result['manifest'],result['verification']['evidence']) if r is not None]
+        unique={}
+        for ref in refs:
+            require(ref['path'] not in unique or unique[ref['path']]==ref,'invalid-input','Conflicting artifact references.')
+            require(ref['path'].split('/')[0]!='cache.json','invalid-input','cache.json is reserved.')
+            unique[ref['path']]=ref
+        artifact_bytes=sum(ref['bytes'] for ref in unique.values())
+        require(artifact_bytes<=request['settings']['resources']['storage_bytes'],
+                'storage-exhaustion','Artifact inventory exceeds its storage budget.')
+        record=dict(version=1,cache_key=lease['cache_key'],spec=lease['spec'],backend=lease['backend'],request=request,result=result,report=report)
+        payload=(json.dumps(record,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+        require(len(payload)<=32*1024**2,'storage-exhaustion','Cache metadata exceeds its read bound.')
+        reserve=artifact_bytes+len(payload)
+        stage=safe_path(self.root,'staging/cache-'+uuid.uuid4().hex)
+        with self._transaction() as db:
+            self._owned(db,lease)
+            require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
+                    'cancelled','Cancellation requested before cache admission.')
+            live=list(db.execute('SELECT j.request,f.token FROM frames f JOIN jobs j ON j.id=f.job WHERE f.state="running"'))
+            require(self._storage_reserved(db,live)+reserve<=self.capacity['storage_bytes'],
+                    'storage-exhaustion','Complete cache stage exceeds unreserved store capacity.')
+            db.execute('INSERT INTO storage_reservations(stage,bytes,pid,job) VALUES(?,?,?,?)',
+                       (stage.name,reserve,os.getpid(),lease['job']))
+        created=False
         try:
-            refs=[i['file'] for i in result['images']]+result['logs']
-            refs += [r for r in (result['manifest'],result['verification']['evidence']) if r is not None]
-            unique={}
-            for ref in refs:
-                require(ref['path'] not in unique or unique[ref['path']]==ref,'invalid-input','Conflicting artifact references.')
-                unique[ref['path']]=ref
-            total=0
+            stage.mkdir();created=True
+            copied=0
             for ref in unique.values():
                 source=safe_path(output_root,ref['path'],exists=True)
                 target=safe_path(stage,ref['path']);target.parent.mkdir(parents=True,exist_ok=True)
-                require(ref['path'].split('/')[0]!='cache.json','invalid-input','cache.json is reserved.')
-                size=source.stat().st_size;total+=size
-                require(size==ref['bytes'] and total<=request['settings']['resources']['storage_bytes'],
-                        'storage-exhaustion','Artifact inventory exceeds its storage budget.')
+                require(ref['bytes']<=reserve-len(payload)-copied,'storage-exhaustion','Cache copy exceeds its reservation.')
                 _copy_artifact(source,target,ref)
-            report=verifier(request,result,stage)
-            record=dict(version=1,cache_key=lease['cache_key'],spec=lease['spec'],backend=lease['backend'],request=request,result=result,report=report)
-            atomic_json(stage/'cache.json',record)
+                copied+=ref['bytes']
+            fresh=verifier(request,result,stage)
+            require(fresh==report,'verification-failed','Copied artifact verification differs from admitted source evidence.')
+            atomic_bytes(stage/'cache.json',payload)
             with self._transaction() as db:
                 self._owned(db,lease)
                 require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
                         'cancelled','Cancellation requested before publication.')
                 destination=safe_path(self.root,'cache/'+lease['cache_key'])
-                used=sum(entry['bytes'] for entry in self._cache_entries())+self._retained_cache_bytes()
-                staged=sum(path.stat().st_size for path in stage.rglob('*') if path.is_file())
-                require(destination.exists() or used+staged<=self.capacity['storage_bytes'],
+                used=self._stored_output_bytes()
+                require(destination.exists() or used<=self.capacity['storage_bytes'],
                         'storage-exhaustion','Verified cache publication exceeds store capacity.')
                 try:_rename_no_replace(stage,destination)
                 except FileExistsError:
                     try:
                         existing=self._verify_cache(lease,verifier)
-                    except (Render3DError,ValueError,OSError,KeyError):
+                    except (ValueError,OSError,KeyError) as exc:
+                        if not _cache_rejected(exc):raise
                         # Preserve corrupt bytes as evidence before installing a
                         # newly rendered and independently verified replacement.
-                        require(used+staged<=self.capacity['storage_bytes'],
+                        require(used<=self.capacity['storage_bytes'],
                                 'storage-exhaustion','Cache repair would exceed capacity while retaining corrupt evidence.')
                         quarantine=safe_path(self.root,'staging/corrupt-'+uuid.uuid4().hex)
                         _rename_no_replace(destination,quarantine)
@@ -450,11 +852,16 @@ class JobStore:
                            (lease['job'],lease['frame']))
                 self._event(db,lease['job'],'frame-published',{'frame':lease['frame'],'cache_key':lease['cache_key']});self._refresh(db,lease['job'])
         finally:
-            if stage.exists():shutil.rmtree(stage)
+            try:
+                if created and stage.exists():shutil.rmtree(stage)
+            finally:
+                with self._transaction() as db:
+                    db.execute('DELETE FROM storage_reservations WHERE stage=? AND pid=?',
+                               (stage.name,os.getpid()))
         return record
 
-    def run_one(self, backend, verifier, *, job=None):
-        lease=self.claim(job)
+    def run_one(self, backend, verifier, *, job=None, admit=None):
+        lease=self.claim(job,admit=admit)
         if lease is None:return None
         output=None;completed=False
         try:
@@ -466,7 +873,7 @@ class JobStore:
             completed=True
             return dict(lease=lease,reused=False)
         except Exception as exc:
-            try:self.fail(lease,exc,retryable=isinstance(exc,Render3DError) and exc.report['category'] in ('timeout','worker-crash','device-initialization'))
+            try:self.fail(lease,exc,retryable=isinstance(exc,Render3DError) and exc.report['category'] in RETRYABLE)
             except Render3DError:pass
             raise
         finally:
@@ -491,6 +898,14 @@ class JobStore:
         stage=Path(tempfile.mkdtemp(prefix='.render3d-delivery-',dir=destination.parent))
         try:
             images=[];logs=[];total=0
+            budget=request['settings']['resources']['storage_bytes']
+            def write_metadata(name,value):
+                nonlocal total
+                payload=(json.dumps(value,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+                require(len(payload)<=budget-total,'storage-exhaustion',
+                        'Delivery metadata exceeds request storage budget.')
+                atomic_bytes(safe_path(stage,name),payload)
+                total+=len(payload)
             for frame in state['frames']:
                 spec=make_frame_spec(request,frame['frame'],Path(state['snapshot'])/'snapshot.json')
                 lease=dict(request=request,frame=frame['frame'],cache_key=frame['cache_key'],
@@ -510,11 +925,11 @@ class JobStore:
                     _copy_artifact(src,dst,old)
                     image['file']=dict(old,path=newpath);images.append(image)
                 provenance='provenance/'+format(frame['frame'],'08d')+'.json'
-                target=safe_path(stage,provenance);atomic_json(target,record)
+                target=safe_path(stage,provenance);write_metadata(provenance,record)
                 logs.append(dict(path=provenance,sha256=sha256(target),bytes=target.stat().st_size))
             manifest=dict(version=1,job=job,request_sha256=object_hash(request),backend=backend,
                           images=images,provenance=logs)
-            atomic_json(stage/'manifest.json',manifest)
+            write_metadata('manifest.json',manifest)
             manifest_ref=dict(path='manifest.json',sha256=sha256(stage/'manifest.json'),bytes=(stage/'manifest.json').stat().st_size)
             indices=[frame['frame'] for frame in state['frames']]
             result=dict(schema_version=1,kind='render3d-result',job=job,request_sha256=object_hash(request),
@@ -526,11 +941,19 @@ class JobStore:
             report=verifier(request,result,stage)
             require(isinstance(report,dict) and isinstance(report.get('verifier'),dict),
                     'verification-failed','Verifier did not return its identity.')
-            atomic_json(stage/'verification.json',report)
+            write_metadata('verification.json',report)
             result['verification']=dict(status='passed',verifier=report['verifier'],evidence=dict(
                 path='verification.json',sha256=sha256(stage/'verification.json'),bytes=(stage/'verification.json').stat().st_size))
             result['status']='complete';validate(result,'RenderResult')
-            atomic_json(stage/'result.json',result)
+            # Include the result's own bytes in its truthful output usage.
+            for _ in range(8):
+                payload=(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+                actual=total+len(payload)
+                if result['usage']['output_bytes']==actual:break
+                result['usage']['output_bytes']=actual
+            else:raise Render3DError('invalid-input','Unable to encode stable delivery usage.')
+            require(actual<=budget,'storage-exhaustion','Complete delivery exceeds request storage budget.')
+            atomic_bytes(stage/'result.json',payload)
             with self._transaction() as db:
                 live=db.execute('SELECT revision,state FROM jobs WHERE id=?',(job,)).fetchone()
                 require(live['revision']==state['revision'] and live['state']=='complete',

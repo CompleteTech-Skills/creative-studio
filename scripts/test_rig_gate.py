@@ -11,7 +11,7 @@ GROUPS={
  'skinning':['test_rig_skinning.py', 'test_rig_weight_input_boundaries.py'],
  'animation-ik':['test_rig_controls.py', 'test_rig_animation.py', 'test_rig_specializations.py', 'test_rig_morph_authoring.py'],
  'interoperability':['test_rig_interop.py', 'test_rig_import_transforms.py', 'test_rig_material_validation.py', 'test_rig_texture_integrity.py', 'test_rig_jpeg.py', 'test_rig_scene3d_service.py', 'test_rig_scene3d_evaluate.py', 'test_render3d_scene_guards.py'],
- 'operations-archive':['test_rig_director_assets.py', 'test_rig_director_scene.py', 'test_rig_director_scene_binding.py', 'test_rig_director_delivery.py', 'test_rig_correction_validation.py', 'test_rig_workflow.py', 'test_rig_http.py', 'test_rig_render.py', 'test_rig_editor3d_repository.py', 'test_rig_scene3d_lifecycle.py', 'test_rig_director_job_graph.py', 'test_rig_director_reliability.py', 'test_rig_director_reliability_native.py', 'test_rig_director_reliability_mvp.py', 'test_rig_director_final_delivery.py', 'test_rig_director_render_effects.py'],
+ 'operations-archive':['test_rig_director_assets.py', 'test_rig_director_scene.py', 'test_rig_director_scene_binding.py', 'test_rig_director_delivery.py', 'test_rig_correction_validation.py', 'test_rig_workflow.py', 'test_rig_http.py', 'test_rig_render.py', 'test_rig_editor3d_repository.py', 'test_rig_scene3d_lifecycle.py', 'test_rig_director_job_graph.py', 'test_rig_director_reliability.py', 'test_rig_director_reliability_native.py', 'test_rig_director_reliability_mvp.py', 'test_rig_director_final_delivery.py', 'test_rig_director_render_effects.py', 'test_rig_directory_capability.py', 'test_rig_director_execution_facade.py', 'test_rig_director_execution.py', 'test_rig_director_execution_drivers.py'],
 }
 
 

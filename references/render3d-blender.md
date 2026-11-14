@@ -10,6 +10,14 @@ The adapter accepts owner-verified native-rig previews and Scene3D snapshots.
 It captures the source closure before preparing sanitized GLB derivatives, binds
 frame specifications to the requested shot, and rechecks executable and worker
 identities after execution. A caller-owned destination is never overwritten.
+The private publication adapter currently requires Linux procfs and directory-relative
+filesystem operations; other hosts fail with `unsupported-feature` before source
+decoding or destination creation. All staging and worker I/O retain an explicitly
+inherited directory capability. Publication renames the verified inner payload
+relative to pinned source and destination descriptors; cleanup preserves any
+foreign replacement at the outer staging basename. Empty owned wrappers remain
+for explicit maintenance.
+
 Failed staging directories retain `failure.json` and the bounded Blender log;
 they are diagnostic evidence, not published render results.
 
@@ -20,8 +28,12 @@ uses imported NLA actions and explicit local sample times. Scene temporal
 features require the Scene3D evaluation owner. Successful image decoding does
 not establish artistic approval or full-film acceptance.
 
-Memory, elapsed time and staged-file storage budgets are checked while the
-worker runs. Linux memory observations include descendants through procfs.
+Metadata admission reserves the frozen closure, its metadata, the overlapping
+private native validation copy and estimated output before owner decoding.
+Per-call source caps prevent a changed closure using unused request headroom.
+Prepared asset boundaries and worker-job writes recheck staged bytes while
+reserving output and later source verification. Memory, elapsed time and
+staged-file storage budgets are also checked while the worker runs. Linux memory observations include descendants through procfs.
 Cancellation and budget failures terminate the process group. Logs retain at
 most 2 MiB. This is cooperative application supervision, not an OS sandbox or a
 hard kernel memory quota. Resource admission also runs before expensive source

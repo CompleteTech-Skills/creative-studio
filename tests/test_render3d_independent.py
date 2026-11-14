@@ -84,6 +84,31 @@ class SyntheticFileAdapter:
 
 
 class Render3DIndependentTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform=='linux','Explicit directory authority requires Linux procfd.')
+    def test_snapshot_exact_directory_capability_survives_public_replacement(self):
+        from rig_errors import directory_capability
+        with tempfile.TemporaryDirectory() as temporary:
+            parent=Path(temporary);source=parent/'source';source.mkdir()
+            adapter=SyntheticFileAdapter()
+            (source/'source.bin').write_bytes(adapter.files['source.bin'])
+            create_snapshot(source,parent/'snapshot',adapter)
+            descriptor=os.open(parent/'snapshot',os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                with directory_capability(descriptor) as cap:
+                    (parent/'snapshot').rename(parent/'retained')
+                    (parent/'snapshot').mkdir()
+                    (parent/'snapshot/source.bin').write_bytes(b'foreign replacement')
+                    for root in (cap.path,Path('/proc/self/fd')/str(descriptor)):
+                        with self.subTest(root=str(root)):
+                            document=verify_snapshot(root,adapter)
+                            self.assertEqual(document['files'][0]['sha256'],digest(adapter.files['source.bin']))
+                            destination=parent/('copy-'+str(root.name))
+                            create_snapshot(root,destination,adapter)
+                            self.assertEqual((destination/'source.bin').read_bytes(),adapter.files['source.bin'])
+                with self.assertRaises(Render3DError):
+                    verify_snapshot(Path('/proc/self/fd')/str(descriptor),adapter)
+            finally:os.close(descriptor)
+
     @unittest.skipUnless(hasattr(os, 'mkfifo') and hasattr(os, 'O_NONBLOCK'),
                          'FIFO and nonblocking file descriptors required')
     def test_source_replaced_with_fifo_does_not_block_snapshot_copy(self):
@@ -426,6 +451,51 @@ class Render3DIndependentTests(unittest.TestCase):
                 create_snapshot(source, destination, adapter)
         self.assertEqual(caught.exception.report['category'], 'storage-exhaustion')
         self.assertFalse(destination.exists())
+
+    def test_per_call_snapshot_limit_rejects_before_destination_copy(self):
+        from unittest.mock import patch
+        source, adapter = self.sources()
+        destination = self.root / 'not-created' / 'snapshot'
+        with patch('render3d_snapshot._copy_verified') as copy:
+            with self.assertRaises(Render3DError) as caught:
+                create_snapshot(source, destination, adapter, max_total_bytes=1)
+        self.assertEqual(caught.exception.report['category'], 'storage-exhaustion')
+        copy.assert_not_called()
+        self.assertFalse(destination.parent.exists())
+
+    def test_per_call_native_limit_rejects_before_private_copy_or_owner_load(self):
+        from unittest.mock import patch
+        rig = fixture(self.root)
+        with patch('render3d_snapshot._copy_verified') as copy, patch('rig_models.load_rig') as load_rig:
+            with self.assertRaises(Render3DError) as caught:
+                create_snapshot(rig.root, self.root / 'native-over-limit', NativeRigAdapter(),
+                                max_total_bytes=1)
+        self.assertEqual(caught.exception.report['category'], 'storage-exhaustion')
+        copy.assert_not_called(); load_rig.assert_not_called()
+
+    def test_per_call_verification_limit_rejects_before_owner_reopen(self):
+        from unittest.mock import patch
+        source, adapter = self.sources()
+        destination = self.root / 'snapshot'
+        create_snapshot(source, destination, adapter)
+        with patch.object(adapter, 'describe') as describe:
+            with self.assertRaises(Render3DError) as caught:
+                verify_snapshot(destination, adapter, max_total_bytes=0)
+        self.assertEqual(caught.exception.report['category'], 'storage-exhaustion')
+        describe.assert_not_called()
+
+    def test_per_call_frame_plan_limit_reaches_owner_verification(self):
+        from unittest.mock import patch
+        source, adapter = self.sources()
+        destination = self.root / 'snapshot'
+        create_snapshot(source, destination, adapter)
+        path = destination / 'snapshot.json'
+        value = request(); value['snapshot'] = file_ref('snapshot/snapshot.json', path.read_bytes())
+        with patch.object(adapter, 'describe') as describe:
+            with self.assertRaises(Render3DError) as caught:
+                make_frame_spec(value, 17, path, adapter=adapter, max_total_bytes=0)
+        self.assertEqual(caught.exception.report['category'], 'storage-exhaustion')
+        describe.assert_not_called()
 
     def test_complete_result_requires_actual_verifier_identity_and_evidence(self):
         value = dict(schema_version=1, kind='render3d-result', job='job',

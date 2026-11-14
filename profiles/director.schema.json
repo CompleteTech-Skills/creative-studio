@@ -6765,6 +6765,823 @@
         "diagnostics"
       ]
     },
+    "validation-result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "status": {
+          "enum": [
+            "unverified",
+            "passed",
+            "failed",
+            "blocked"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "severity": {
+                "enum": [
+                  "info",
+                  "warning",
+                  "error"
+                ]
+              },
+              "stage": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "entity_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "field_path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "expected": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "observed": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "recommended_action": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/artifact-ref"
+                },
+                "minItems": 0,
+                "maxItems": 256
+              }
+            },
+            "required": [
+              "code",
+              "severity",
+              "stage",
+              "entity_id",
+              "field_path",
+              "expected",
+              "observed",
+              "retryable",
+              "recommended_action",
+              "evidence"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "check",
+        "status",
+        "evidence",
+        "diagnostics"
+      ]
+    },
+    "milestone-v2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": [
+            "planning",
+            "assets",
+            "scene",
+            "motion",
+            "rendering",
+            "video",
+            "native_editability",
+            "visual_qa",
+            "delivery"
+          ]
+        },
+        "status": {
+          "enum": [
+            "unverified",
+            "blocked",
+            "passed",
+            "failed"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "severity": {
+                "enum": [
+                  "info",
+                  "warning",
+                  "error"
+                ]
+              },
+              "stage": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "entity_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "field_path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "expected": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "observed": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "recommended_action": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/artifact-ref"
+                },
+                "minItems": 0,
+                "maxItems": 256
+              }
+            },
+            "required": [
+              "code",
+              "severity",
+              "stage",
+              "entity_id",
+              "field_path",
+              "expected",
+              "observed",
+              "retryable",
+              "recommended_action",
+              "evidence"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "authority": {
+          "enum": [
+            "automated",
+            "assistant",
+            "human",
+            "external"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "schema_version": {
+          "const": 2
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "maxLength": 64
+        },
+        "required_inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "artifact_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "validation_results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/validation-result"
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remaining_work": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "evidence",
+        "diagnostics",
+        "authority",
+        "scope",
+        "schema_version",
+        "timestamp",
+        "required_inputs",
+        "artifact_refs",
+        "validation_results",
+        "evidence_refs",
+        "failure_reason",
+        "remaining_work"
+      ]
+    },
+    "project-v2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "director-project"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "semantic_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "original_request": {
+          "$ref": "#/$defs/artifact-ref"
+        },
+        "brief": {
+          "$ref": "#/$defs/artifact-ref"
+        },
+        "story": {
+          "$ref": "#/$defs/artifact-ref"
+        },
+        "shot_plan": {
+          "$ref": "#/$defs/artifact-ref"
+        },
+        "asset_registry": {
+          "$ref": "#/$defs/artifact-ref"
+        },
+        "characters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "scenes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "timelines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "render_configuration": {
+          "$ref": "#/$defs/artifact-ref"
+        },
+        "execution_graph": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/artifact-ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "budget_ledger": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/artifact-ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acquisition_bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "reviews": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "exports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "inventory": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "blocked",
+            "in-progress",
+            "complete"
+          ]
+        },
+        "milestones": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/milestone-v2"
+          },
+          "minItems": 9,
+          "maxItems": 9
+        },
+        "coordinates": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "handedness": {
+              "const": "right"
+            },
+            "right": {
+              "const": "+X"
+            },
+            "up": {
+              "const": "+Y"
+            },
+            "forward": {
+              "const": "+Z"
+            },
+            "unit": {
+              "const": "meter"
+            },
+            "angles": {
+              "const": "radian"
+            },
+            "quaternion": {
+              "const": "XYZW"
+            },
+            "matrices": {
+              "const": "column-vectors"
+            },
+            "time": {
+              "const": "second"
+            }
+          },
+          "required": [
+            "handedness",
+            "right",
+            "up",
+            "forward",
+            "unit",
+            "angles",
+            "quaternion",
+            "matrices",
+            "time"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "semantic_version",
+        "original_request",
+        "brief",
+        "story",
+        "shot_plan",
+        "asset_registry",
+        "characters",
+        "scenes",
+        "timelines",
+        "render_configuration",
+        "execution_graph",
+        "budget_ledger",
+        "acquisition_bindings",
+        "dependencies",
+        "reviews",
+        "exports",
+        "inventory",
+        "status",
+        "milestones",
+        "coordinates"
+      ]
+    },
+    "execution-metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "estimated_usage": {
+          "$ref": "#/$defs/usage"
+        },
+        "actual_usage": {
+          "$ref": "#/$defs/usage"
+        },
+        "retry_classification": {
+          "enum": [
+            "unclassified",
+            "retryable",
+            "permanent"
+          ]
+        },
+        "idempotency_key": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "execution_status": {
+          "enum": [
+            "planned",
+            "blocked_capability",
+            "blocked_budget",
+            "ready",
+            "claimed",
+            "running",
+            "awaiting_external_result",
+            "awaiting_review",
+            "artifact_available",
+            "validating",
+            "validated",
+            "failed",
+            "canceled",
+            "stale"
+          ]
+        },
+        "checkpoint_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "output_artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "validation_results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/validation-result"
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "native_job_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/artifact-ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "estimated_usage",
+        "actual_usage",
+        "retry_classification",
+        "idempotency_key",
+        "execution_status",
+        "checkpoint_refs",
+        "output_artifacts",
+        "validation_results",
+        "provenance",
+        "failure_reason",
+        "native_job_ref"
+      ]
+    },
+    "output-execution-graph-v2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "operation": {
+                "enum": [
+                  "CapabilityRegistry.probe",
+                  "PlanningProvider.generate_structured",
+                  "AssetResolver.resolve",
+                  "AcquisitionGateway.prepare",
+                  "AcquisitionGateway.claim",
+                  "AcquisitionGateway.ingest",
+                  "AcquisitionGateway.fail",
+                  "AcquisitionGateway.reconcile",
+                  "AssetBuildAdapter.build",
+                  "RigMotionAdapter.prepare",
+                  "SceneAssembler.assemble",
+                  "FrameEvaluator.evaluate",
+                  "GraphCompiler.compile",
+                  "BudgetLedger.reserve",
+                  "BudgetLedger.settle",
+                  "BudgetLedger.release",
+                  "ExecutionService.submit",
+                  "ExecutionService.status",
+                  "ExecutionService.resume",
+                  "ExecutionService.cancel",
+                  "RenderAdapter.preflight",
+                  "RenderAdapter.submit",
+                  "RenderAdapter.status",
+                  "RenderAdapter.cancel",
+                  "RenderAdapter.verify",
+                  "ExportService.export",
+                  "ExportService.verify",
+                  "QAService.validate",
+                  "QAService.record_review",
+                  "RevisionService.plan",
+                  "RevisionService.apply",
+                  "RevisionService.impact"
+                ]
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/artifact-ref"
+                },
+                "minItems": 0,
+                "maxItems": 256
+              },
+              "output_schema": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "resource_class": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "cache_key": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+              },
+              "gates": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                },
+                "minItems": 0,
+                "maxItems": 256
+              },
+              "native_owner": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "execution_metadata": {
+                "$ref": "#/$defs/execution-metadata"
+              }
+            },
+            "required": [
+              "id",
+              "operation",
+              "inputs",
+              "output_schema",
+              "resource_class",
+              "cache_key",
+              "gates",
+              "native_owner",
+              "execution_metadata"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 1024
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "target": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "artifact": {
+                "$ref": "#/$defs/artifact-ref"
+              }
+            },
+            "required": [
+              "source",
+              "target",
+              "artifact"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 4096
+        },
+        "critical_path_seconds": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000000000.0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema_version": {
+          "const": 2
+        }
+      },
+      "required": [
+        "nodes",
+        "edges",
+        "critical_path_seconds",
+        "schema_version"
+      ]
+    },
     "request-CapabilityRegistry-probe": {
       "type": "object",
       "additionalProperties": false,
@@ -12529,7 +13346,14 @@
         "value": {
           "anyOf": [
             {
-              "$ref": "#/$defs/output-execution-graph"
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/output-execution-graph"
+                },
+                {
+                  "$ref": "#/$defs/output-execution-graph-v2"
+                }
+              ]
             },
             {
               "type": "null"
@@ -22184,6 +23008,9 @@
     },
     {
       "$ref": "#/$defs/project"
+    },
+    {
+      "$ref": "#/$defs/project-v2"
     },
     {
       "$ref": "#/$defs/request"
