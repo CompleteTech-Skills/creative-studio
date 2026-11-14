@@ -90,6 +90,7 @@ class HttpQueueTests(unittest.TestCase):
         try:
             for future in queued:
                 with self.assertRaises((http.client.RemoteDisconnected,ConnectionResetError)):future.result(5)
+            self.wait(lambda:self.permits.available==4 and self.permits.releases==4)
             self.assertTrue(closer.is_alive())
             self.assertEqual(self.permits.available,4);self.assertEqual(self.permits.releases,4)
         finally:
