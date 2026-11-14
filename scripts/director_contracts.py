@@ -341,6 +341,10 @@ def validate_execution_metadata(metadata, *, planned=False):
                                          'artifact_available','validating','validated'):
         _require(metadata['native_job_ref'] is not None, 'EXECUTION',
                  'Executed states require the authoritative native job reference.')
+    _require(all(check['status'] != 'passed' or
+                 (check['evidence'] and not any(d['severity'] == 'error' for d in check['diagnostics']))
+                 for check in metadata['validation_results']), 'EXECUTION',
+             'Passing validation requires evidence and no error diagnostics.')
     if metadata['execution_status'] == 'validated':
         _require(metadata['output_artifacts'] and metadata['validation_results'] and
                  all(check['status']=='passed' and check['evidence'] and

@@ -183,6 +183,62 @@ class DirectorGraphTests(unittest.TestCase):
         with self.assertRaisesRegex(RigError,'Declared node usage exceeds'):
             self.compile()
 
+    def test_v2_reconciles_each_node_before_summing(self):
+        metadata={node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']}
+        self.plan=dg.migrate_plan_v2(self.plan,metadata)
+        self.plan['nodes'][0]['estimated_seconds']=6
+        self.plan['nodes'][1]['estimated_seconds']=None
+        self.plan['nodes'][2]['estimated_seconds']=0
+        usage=self.plan['nodes'][1]['execution_metadata']['estimated_usage']
+        usage['classification']='estimated'
+        usage['cpu_seconds']['value']=5
+        self.request['input']['budget']['max_cpu_seconds']=10
+        self.refresh()
+        if not self.require_secure_reads():return
+        with self.assertRaisesRegex(RigError,'Declared node usage exceeds'):self.compile()
+        self.request['input']['budget']['max_cpu_seconds']=11
+        self.compile()
+        # Two declarations on the same node overlap; they are not added together.
+        self.plan['nodes'][0]['execution_metadata']['estimated_usage']['classification']='estimated'
+        self.plan['nodes'][0]['execution_metadata']['estimated_usage']['cpu_seconds']['value']=6
+        self.refresh()
+        self.compile()
+        # Different resource dimensions remain independently accountable.
+        usage['gpu_seconds']['value']=4
+        self.request['input']['budget']['max_gpu_seconds']=3
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'Declared node usage exceeds'):self.compile()
+
+    def test_v2_typed_usage_obeys_exact_capability_limit(self):
+        metadata={node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']}
+        self.plan=dg.migrate_plan_v2(self.plan,metadata)
+        usage=self.plan['nodes'][0]['execution_metadata']['estimated_usage']
+        usage['classification']='estimated'
+        usage['gpu_seconds']['value']=100
+        self.refresh()
+        if not self.require_secure_reads():return
+        self.compile()
+        usage['gpu_seconds']['value']=101
+        self.request['input']['budget']['max_gpu_seconds']=101
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'capability bound'):self.compile()
+
+    def test_passing_validation_requires_evidence_in_every_state(self):
+        metadata=self.planned_metadata('a')
+        metadata.update(execution_status='running',native_job_ref=deepcopy(self.input))
+        check=dict(check='native-check',status='passed',evidence=[],diagnostics=[])
+        metadata['validation_results']=[check]
+        with self.assertRaises(RigError):dc.validate_execution_metadata(metadata)
+        check['evidence']=[deepcopy(self.input)]
+        dc.validate_execution_metadata(metadata)
+        check['diagnostics']=[dict(code='INVALID',severity='error',stage='validation',entity_id=None,
+            field_path='validation',expected=None,observed=None,retryable=False,recommended_action='Fix',evidence=[])]
+        with self.assertRaises(RigError):dc.validate_execution_metadata(metadata)
+        check['status']='failed'
+        check['evidence']=[]
+        dc.validate_execution_metadata(metadata)
+        with self.assertRaises(RigError):dc.validate_execution_metadata(metadata,planned=True)
+
     def test_actual_compile_topology_exact_edges_and_critical_path(self):
         if not self.require_secure_reads():
             return

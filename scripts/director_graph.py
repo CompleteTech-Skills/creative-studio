@@ -290,20 +290,30 @@ def compile_graph(request, root, *, now=None):
     provider_calls = sum(node['resource_class'] == 'provider' for node in plan['nodes'])
     _require(provider_calls <= data['budget']['max_provider_calls'], 'BUDGET',
              'Estimated provider invocations exceed budget.')
+    reconciled = {}
     if plan['schema_version'] == 2:
-        # Rich declarations cannot bypass admission by keeping estimated_seconds
-        # small while declaring larger known costs in their typed Usage.
         metrics = {'provider_calls':'max_provider_calls','cpu_seconds':'max_cpu_seconds',
                    'gpu_seconds':'max_gpu_seconds','storage_bytes':'max_storage_bytes','amount':'max_amount'}
-        for metric,limit in metrics.items():
-            values = [node['execution_metadata']['estimated_usage'][metric]['value']
-                      for node in plan['nodes']]
-            known = sum(value for value in values if value is not None)
+        for node in plan['nodes']:
+            usage = node['execution_metadata']['estimated_usage']
+            values = {metric: usage[metric]['value'] for metric in metrics}
+            legacy = {}
+            if node['estimated_seconds'] is not None:
+                if node['resource_class'] in ('cpu', 'io', 'render'):
+                    legacy['cpu_seconds'] = node['estimated_seconds']
+                elif node['resource_class'] == 'gpu':
+                    legacy['gpu_seconds'] = node['estimated_seconds']
+            if node['resource_class'] == 'provider':
+                legacy['provider_calls'] = 1
+            for metric, value in legacy.items():
+                values[metric] = max(value, values[metric] if values[metric] is not None else 0)
+            reconciled[node['id']] = values
+            _require(usage['currency'] in (None, data['budget']['currency']),
+                     'BUDGET','Declared node cost currency differs from the project budget.')
+        for metric, limit in metrics.items():
+            known = sum(values[metric] for values in reconciled.values() if values[metric] is not None)
             _require(known == 0 or (data['budget'][limit] is not None and known <= data['budget'][limit]),
                      'BUDGET','Declared node usage exceeds the project budget: '+metric)
-        _require(all(node['execution_metadata']['estimated_usage']['currency'] in
-                     (None,data['budget']['currency']) for node in plan['nodes']),
-                 'BUDGET','Declared node cost currency differs from the project budget.')
     predecessors = {item['id']: [] for item in plan['nodes']}
     for edge in plan['edges']:
         predecessors[edge['target']].append(edge['source'])
@@ -323,6 +333,20 @@ def compile_graph(request, root, *, now=None):
                 resource_estimate['max_gpu_seconds'] = node['estimated_seconds']
         if node['resource_class'] == 'provider':
             resource_estimate['max_provider_calls'] = provider_calls
+        if plan['schema_version'] == 2:
+            for metric, limit in (('cpu_seconds', 'max_cpu_seconds'),
+                                  ('gpu_seconds', 'max_gpu_seconds'),
+                                  ('storage_bytes', 'max_storage_bytes'),
+                                  ('provider_calls', 'max_provider_calls'),
+                                  ('amount', 'max_amount')):
+                value = reconciled[node_id][metric]
+                if metric == 'amount' and value is not None:
+                    _require(all(available[name]['limits']['currency'] ==
+                                 node['execution_metadata']['estimated_usage']['currency']
+                                 for name in node['required_capabilities']),
+                             'BUDGET', 'Declared node cost currency differs from capability policy.')
+                if value is not None:
+                    resource_estimate[limit] = max(resource_estimate.get(limit, 0), value)
         assert_admission(snapshot, node['required_capabilities'], evidence_root=root, now=now,
                          resources=resource_estimate,
                          network_policy=request['context']['policy']['network'],
