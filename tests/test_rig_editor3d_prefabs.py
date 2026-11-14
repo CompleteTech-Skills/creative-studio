@@ -127,6 +127,43 @@ class EditorPrefabProjectionTests(unittest.TestCase):
         self.assertEqual(repository.snapshot(),before)
         self.assertNotIn('runtime_snapshot',value)
 
+    def test_actual_imported_components_inside_prefabs_keep_exact_mesh_membership_and_vertices(self):
+        import test_rig_editor3d_components as component_tests
+        from editor3d_viewer import preview_snapshot
+        fixture = component_tests.EditorImportedComponentTests(); fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        original = fixture.repository.snapshot()
+        native = fixture.repository.native_snapshot(original['revision'],original['sha256'])
+        graph = SceneGraph.from_bundle(original,original['scene_path'],source_root=native['root'])
+        np.testing.assert_allclose(graph.evaluate_base('model')['world_matrix'],np.eye(4),atol=1e-10,rtol=0)
+        library = PrefabLibrary.from_files(native['root'],original)
+        created = library.create(graph,'model','component-prefab','1.0.0')
+        translations = {'copy-a':[3,1,0],'copy-b':[-3,-1,0]}
+        for anchor,translation in translations.items():
+            library.instantiate(graph,created['reference'],anchor,
+                transform=dict(translation=translation,rotation=[0,0,0,1],scale=[1,1,1]))
+        reference = created['reference']
+        saved = snapshot_project(native['root'],self.root/'component-portable',graph,
+            scene_path=original['scene_path'],derived_documents={reference['path']:created['prefab']},
+            extra_payloads={reference['path']:library.payloads()[reference['path']]})
+        repository = EditorRepository.create(self.root/'component-portable',self.root/'component-repo',scene_path=saved['active_scene']['path'])
+        snapshot = repository.snapshot(); value = preview_snapshot(repository,snapshot)
+        self.assertTrue(value['viewport_state']['available'])
+        for anchor,translation in translations.items():
+            mapping = value['viewport_prefabs']['mappings'][anchor]
+            for source_id, meshes in fixture.expected.items():
+                identifier = mapping[source_id]
+                projected = value['viewport_nodes'][identifier]
+                self.assertEqual(projected['format'],'geometry')
+                self.assertEqual(len(projected['meshes']),len(meshes))
+                self.assertEqual({mesh['id'] for mesh in projected['meshes']},set(meshes))
+                matrix = np.asarray(value['viewport_state']['nodes'][identifier]['world_matrix'])
+                for mesh in projected['meshes']:
+                    actual = transform_points(matrix,mesh['positions'])
+                    np.testing.assert_allclose(actual,meshes[mesh['id']]+translation,atol=1e-6,rtol=0)
+        self.assertEqual(repository.snapshot(),snapshot)
+        self.assertEqual(fixture.repository.snapshot(),original)
+
     def test_backend_preview_counts_derived_instances_in_existing_vertex_budget(self):
         from unittest.mock import patch
         from editor3d_viewer import preview_snapshot
