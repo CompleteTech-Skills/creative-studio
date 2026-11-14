@@ -92,8 +92,8 @@ class SilentMedia(core.SilentContracts):
         with wave.open(str(self.root / 'speech.wav'), 'wb') as audio:
             audio.setparams((1, 2, 48000, 0, 'NONE', 'not compressed'))
             audio.writeframes(b'\x00\x00' * 48000)
-        for numerator, denominator in ((24, 1), (25, 1), (30, 1),
-                                       (60, 1), (30000, 1001)):
+        for numerator, denominator in ((24, 1), (25, 1), (30, 1), (60, 1),
+                                       (24000, 1001), (30000, 1001), (60000, 1001)):
             with self.subTest(fps=(numerator, denominator)):
                 source = video.build_source(self.root, self.paths,
                     fps={'numerator': numerator, 'denominator': denominator},
