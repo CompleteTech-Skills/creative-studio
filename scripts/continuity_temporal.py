@@ -43,6 +43,9 @@ def _key(event):
 
 
 def _target(operation):
+    from continuity_worldstate import WORLD_OPERATIONS, target
+    if operation['event_type'] in WORLD_OPERATIONS:
+        return target(operation)
     if operation['event_type'] == 'set-fact':
         return 'fact:' + operation['fact_id']
     return 'entity:' + operation['entity_id'] + ':' + operation['event_type']
@@ -59,7 +62,7 @@ def _equal(a, b):
     return a == b
 
 
-def _operations(events, initial, until=None):
+def _operations(events, initial, until=None, *, plan=None, root=None):
     """Replay from source; no mutable evaluator state survives a query."""
     state = deepcopy(initial)
     applied, previous = [], None
@@ -75,12 +78,21 @@ def _operations(events, initial, until=None):
         if until is not None and not until(key):
             break
         targets = set()
+        rich = 'world_state' in state
+        if rich != (event['schema_version'] == '1.1.0'):
+            fail('VERSION', 'event version must match the selected timeline state contract')
         for operation in event['operations']:
             target = _target(operation)
             if target in targets:
                 fail('DUPLICATE', 'event writes the same state field twice')
             targets.add(target)
             kind = operation['event_type']
+            if rich:
+                from continuity_worldstate import apply
+                apply(operation, state, plan, applied + [event['event_id']], _equal)
+                from continuity_worldstate import validate_native_bindings
+                validate_native_bindings(root, state['world_state'])
+                continue
             if kind == 'set-fact':
                 container, field = state['facts'], operation['fact_id']
                 current = container.get(field)
@@ -198,6 +210,18 @@ class TemporalEngine:
         if first['entry']['story_start_tick'] != 0:
             fail('MAPPING', 'initial native state must be anchored at story tick zero')
         self.initial = dict(entities=seeds[first['entry']['scene_id']], facts={})
+        self.rich = self.plan['schema_version'] == '1.1.0'
+        if self.rich:
+            from continuity_worldstate import validate_world, validate_native_bindings, validate_scene_assets
+            world = deepcopy(self.plan['world_state'])
+            validate_world(world, self.plan)
+            validate_native_bindings(self.root, world)
+            for entry in self.plan['scenes']:
+                validate_scene_assets(world, entry, scenes[entry['scene']['id']], self.native['documents'], project_directory)
+            for entity in world['entities']:
+                if self.initial['entities'][entity['entity_id']]['visible'] != entity['render_visible']:
+                    fail('SOURCE_STATE', 'native visibility disagrees with persistent seed')
+            self.initial['world_state'] = world
         for scene_id, entities in seeds.items():
             if set(entities) != set(self.initial['entities']):
                 fail('MAPPING', 'every scene must explicitly map the persistent entity set')
@@ -207,7 +231,10 @@ class TemporalEngine:
         _integer(self.max_tick, 'story end')
         if any(e['tick'] > self.max_tick for e in self.events):
             fail('MAPPING', 'event falls outside mapped story time')
-        _operations(self.events, self.initial)
+        complete, _ = _operations(self.events, self.initial, plan=self.plan, root=self.root)
+        if self.rich:
+            from continuity_worldstate import validate_native_bindings
+            validate_native_bindings(self.root, complete['world_state'])
         # An additional scene's native starting state must agree with the
         # authored chronology. Never silently discard a conflicting native
         # incoming transform/visibility under an inherited sidecar value.
@@ -220,9 +247,18 @@ class TemporalEngine:
             if not incoming:
                 fail('MAPPING', 'scene mapping has no consuming shot')
             initial_tick = min(incoming)
-            state, _ = _operations(self.events, self.initial, lambda key: key[0] <= initial_tick)
+            state, _ = _operations(self.events, self.initial, lambda key: key[0] <= initial_tick, plan=self.plan, root=self.root)
             if not _equal(entities, state['entities']):
                 fail('SOURCE_STATE', 'incoming native scene disagrees with replay; author an explicit transition and matching source')
+        if self.rich:
+            for entry in self.plan['scenes']:
+                starts = [s['entry']['story_start_tick'] for s in self.shots.values()
+                          if s['entry']['scene_id'] == entry['scene']['id']]
+                if not starts: fail('MAPPING', 'persistent scene has no consuming shot')
+                tick = min(starts)
+                state, _ = _operations(self.events, self.initial, lambda key: key[0] <= tick, plan=self.plan, root=self.root)
+                if not _equal(entry['incoming_world_state'], state['world_state']):
+                    fail('SOURCE_STATE', 'incoming persistent scene state resets authored history')
         verify_references(self.root, self.plan)
         verify_references(self.root, dict(events=self.events))
         self.dependencies_sha256 = digest(dict(plan=self.plan, events=self.events,
@@ -233,7 +269,7 @@ class TemporalEngine:
         self.evaluator_sha256 = digest(dict(
             sources={name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                      for name in ('continuity_temporal.py', 'continuity_contracts.py',
-                                  'scene3d_contracts.py', 'scene3d_math.py', 'rig_math.py')},
+                                  'scene3d_contracts.py', 'scene3d_math.py', 'rig_math.py', 'continuity_worldstate.py')},
             python=platform.python_version(), numpy=importlib.metadata.version('numpy'),
             jsonschema=importlib.metadata.version('jsonschema')))
 
@@ -277,7 +313,7 @@ class TemporalEngine:
 
     def _snapshot(self, cutoff, *, head_sha256, shot_id, scene_id, frame, boundary,
                   event_id, tick, scene_tick, presentation_tick):
-        state, applied = _operations(self.events, self.initial, cutoff)
+        state, applied = _operations(self.events, self.initial, cutoff, plan=self.plan, root=self.root)
         result = dict(schema_version='1.0.0', kind='continuity-temporal-snapshot',
             timeline_id=self.plan['timeline_id'], branch_id=self.plan['branch_id'],
             project_revision=self.plan['project_revision'], world_id=self.plan['world_id'],
@@ -289,6 +325,12 @@ class TemporalEngine:
             facts=[dict(id=k, value=state['facts'][k], evidence=[]) for k in sorted(state['facts'])],
             applied_events=applied,
             unavailable_fields=['animation', 'physics', 'pose', 'costume', 'prop-ownership', 'visual-approval'])
+        if self.rich:
+            from continuity_worldstate import active_facts
+            result.update(schema_version='1.1.0', world_state=state['world_state'],
+                active_fact_ids=active_facts(state['world_state'],tick=tick,scene_id=scene_id,shot_id=shot_id))
+            result['unavailable_fields'].remove('costume')
+            result['unavailable_fields'].append('costume-physics')
         return validate_document(result, 'temporal-snapshot')
 
 
@@ -336,6 +378,15 @@ class TemporalRegistryMixin:
         return dict(sha256=head, **record)
 
     def _validate_temporal_bindings(self, plan):
+        if plan['schema_version'] == '1.1.0':
+            for entity in plan['world_state']['entities']:
+                pin = entity['revision']
+                if pin is None: continue
+                revision = self.revision(pin['revision_id'])
+                document = revision['document']
+                if (pin['identity_id'] != document['identity_id'] or pin['semantic_version'] != document['semantic_version']
+                        or pin['sha256'] != revision['sha256'] or entity['asset'] != document['asset']):
+                    fail('IDENTITY', 'persistent entity disagrees with canonical registry revision')
         # A project with canonical sidecar bindings already has an authority for
         # shot-instance/entity identity. Temporal mappings must agree with it.
         if not self.db.execute('SELECT 1 FROM projects WHERE id=?', (plan['project_id'],)).fetchone():
@@ -358,6 +409,17 @@ class TemporalRegistryMixin:
         current = self.db.execute('SELECT hash FROM temporal_heads WHERE id=?', (identifier,)).fetchone()
         if (current[0] if current else None) != expected:
             fail('CONFLICT', 'stale temporal revision')
+        from continuity_contracts import MAX_BYTES
+        if len(record['events']) > MAX_EVENTS:
+            fail('LIMIT', 'too many temporal events')
+        # Rich before/after records can be individually valid but collectively
+        # excessive. Bound the immutable history before replay or serializing a
+        # single large aggregate; only one bounded event encoding is live here.
+        encoded_size = len(canonical_bytes(plan)) + 128 + 68 * len(record['parents'])
+        for event in record['events']:
+            encoded_size += len(canonical_bytes(event)) + 1
+            if encoded_size > MAX_BYTES:
+                fail('LIMIT', 'immutable temporal history exceeds document byte budget')
         # Verify persistent identity binding where one is declared. The native
         # scene/node mapping remains explicit; no new identity is minted here.
         for scene in plan['scenes']:
@@ -390,6 +452,8 @@ class TemporalRegistryMixin:
     def append_events(self, timeline_id, events, *, expected_sha256):
         if not isinstance(events, list) or not events:
             fail('EVENT', 'append requires a nonempty event batch')
+        if len(events) > MAX_EVENTS:
+            fail('LIMIT', 'too many appended temporal events')
         events = [validate_document(e, 'temporal-event') for e in events]
         with self._transaction():
             previous = self.temporal_history(timeline_id)

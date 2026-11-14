@@ -89,6 +89,12 @@ separates discovery from actual native rig and image-master probes. It retains
 exact source/evidence references and reports unavailable backends, incomplete
 fields, and visual approval separately; fallback never grants missing authority.
 
+The [persistent world-state contract](references/continuity-worldstate.md) extends
+the existing temporal registry with explicit v1.1 costume, accessory, presence,
+location, door/light and scoped knowledge records. Native scene files keep their
+own authority; structural state does not establish motion, physics or visual
+approval.
+
 
 <div align="center">
 <img src="assets/art/story-1-ready.jpg" width="24%" alt="Chapter 1: an egg in a nest of sketches and swatches">
