@@ -1,0 +1,1329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gethatch.pet/schemas/cinematics3d-effect-v1",
+  "$defs": {
+    "effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "kind": {
+          "const": "cinematics3d-effect"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{0,63}(?![\\s\\S])"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "registry_version": {
+          "const": "1.0.0"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fixture": {
+              "type": "boolean"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "fixture",
+            "description"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "scene",
+            "shot",
+            "object"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "operation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "depth-of-field"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "motion-blur"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "shutter_frames": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 2
+                    },
+                    "samples": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 256
+                    }
+                  },
+                  "required": [
+                    "shutter_frames",
+                    "samples"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "exposure"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "stops": {
+                      "type": "number",
+                      "minimum": -24,
+                      "maximum": 24
+                    }
+                  },
+                  "required": [
+                    "stops"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "tone-map"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "view": {
+                      "enum": [
+                        "standard",
+                        "agx",
+                        "filmic"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "view"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "color-grade"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "contrast": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 4
+                    },
+                    "saturation": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 4
+                    },
+                    "lift": {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    },
+                    "gamma": {
+                      "type": "number",
+                      "minimum": 0.01,
+                      "maximum": 10
+                    },
+                    "gain": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    }
+                  },
+                  "required": [
+                    "contrast",
+                    "saturation",
+                    "lift",
+                    "gamma",
+                    "gain"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "lut"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "strength": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "strength"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "bloom"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "threshold": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100000
+                    },
+                    "strength": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 10
+                    }
+                  },
+                  "required": [
+                    "threshold",
+                    "strength"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "glow"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "threshold": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100000
+                    },
+                    "radius_pixels": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 4096
+                    }
+                  },
+                  "required": [
+                    "threshold",
+                    "radius_pixels"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "glare"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "threshold": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100000
+                    },
+                    "streaks": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 16
+                    }
+                  },
+                  "required": [
+                    "threshold",
+                    "streaks"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "halation"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "strength": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "strength"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "vignette"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "strength": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "radius": {
+                      "type": "number",
+                      "minimum": 0.01,
+                      "maximum": 2
+                    }
+                  },
+                  "required": [
+                    "strength",
+                    "radius"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "lens-distortion"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "distortion": {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    },
+                    "dispersion": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "distortion",
+                    "dispersion"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "film-grain"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "strength": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "seed": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 4294967295
+                    }
+                  },
+                  "required": [
+                    "strength",
+                    "seed"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "volumetric-fog"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "density_per_meter": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "anisotropy": {
+                      "type": "number",
+                      "minimum": -0.99,
+                      "maximum": 0.99
+                    }
+                  },
+                  "required": [
+                    "density_per_meter",
+                    "anisotropy"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "depth-atmosphere"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "density_per_meter": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "required": [
+                    "density_per_meter"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "ambient-occlusion"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "distance_m": {
+                      "type": "number",
+                      "minimum": 1e-06,
+                      "maximum": 10000
+                    },
+                    "strength": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "distance_m",
+                    "strength"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "contact-shadows"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "distance_m": {
+                      "type": "number",
+                      "minimum": 1e-06,
+                      "maximum": 10000
+                    }
+                  },
+                  "required": [
+                    "distance_m"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "reflection"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "bounces": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 128
+                    }
+                  },
+                  "required": [
+                    "bounces"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "refraction"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "bounces": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 128
+                    }
+                  },
+                  "required": [
+                    "bounces"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "alpha-composite"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "opacity": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "opacity"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "chroma-key"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "tolerance": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "spill": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": [
+                    "tolerance",
+                    "spill"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "cryptomatte-select"
+                },
+                "parameters": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "invert": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "invert"
+                  ]
+                }
+              },
+              "required": [
+                "type",
+                "parameters"
+              ]
+            }
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}(?![\\s\\S])"
+              },
+              "version": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^(?!/)(?!.*(?:^|/) )(?!.*[\\\\:\\x00-\\x1f*?\"<>|])(?!.*//)(?!.*(?:^|/)\\.{1,2}(?:/|(?![\\s\\S])))(?!.*[. ](?:/|(?![\\s\\S])))(?!(?:[^/]+/)*(?:[cC][oO][nN]|[pP][rR][nN]|[aA][uU][xX]|[nN][uU][lL]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[cC][oO][mM][1-9\u00b9\u00b2\u00b3]|[lL][pP][tT][1-9\u00b9\u00b2\u00b3])(?:[.]|/|(?![\\s\\S])))[^/]+(?:/[^/]+)*(?![\\s\\S])"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+              },
+              "kind": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}(?![\\s\\S])"
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "path",
+              "sha256",
+              "kind"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 16
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allow_approximation": {
+              "type": "boolean"
+            },
+            "on_unavailable": {
+              "const": "reject"
+            }
+          },
+          "required": [
+            "allow_approximation",
+            "on_unavailable"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "kind",
+        "id",
+        "version",
+        "registry_version",
+        "metadata",
+        "scope",
+        "enabled",
+        "order",
+        "operation",
+        "inputs",
+        "policy"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "depth-of-field"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "motion-blur"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "exposure"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "tone-map"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "color-grade"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "lut"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "bloom"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "glow"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "glare"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "halation"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "vignette"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "lens-distortion"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "film-grain"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "volumetric-fog"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot",
+                  "object"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "depth-atmosphere"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "ambient-occlusion"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot",
+                  "object"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "contact-shadows"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot",
+                  "object"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "reflection"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot",
+                  "object"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "refraction"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot",
+                  "object"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "alpha-composite"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "chroma-key"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "properties": {
+                  "type": {
+                    "const": "cryptomatte-select"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "enum": [
+                  "scene",
+                  "shot"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$ref": "#/$defs/effect",
+  "title": "Cinematic effect authoring contract v1",
+  "description": "Structural contract only. Runtime verifies references, cycles, units and policies; no effect execution is claimed."
+}

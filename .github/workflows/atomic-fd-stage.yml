@@ -1,0 +1,50 @@
+name: Descriptor-only private staging
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  portable-fd-contract:
+    name: FD-only private staging (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -p test_atomic_fd_stage.py -v 2>&1 | tee atomic-fd-stage.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: atomic-fd-stage-${{ runner.os }}-${{ github.sha }}
+          path: atomic-fd-stage.log
+          if-no-files-found: error
+          retention-days: 30
+  registered-directory-consumer:
+    name: Actual registered directory staging consumer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests/optional -p test_atomic_capability_linux.py -v 2>&1 | tee atomic-capability.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: atomic-capability-${{ github.sha }}
+          path: atomic-capability.log
+          if-no-files-found: error
+          retention-days: 30
