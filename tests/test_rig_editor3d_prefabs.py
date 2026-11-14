@@ -27,7 +27,7 @@ class EditorPrefabProjectionTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
 
-    def fixture(self, *, noncanonical=False, instances=2, nested_animated=False):
+    def fixture(self, *, noncanonical=False, instances=2, nested_animated=False, upright=False):
         source = self.root/'source'; bundle = build_example(source)
         if noncanonical:
             reference = bundle['project']['prefabs'][0]
@@ -63,7 +63,7 @@ class EditorPrefabProjectionTests(unittest.TestCase):
         library = PrefabLibrary.from_files(source, bundle)
         for index in range(instances):
             library.instantiate(graph, bundle['project']['prefabs'][0], 'instance-' + str(index),
-                transform=dict(translation=[index*3+1, 0, 0], rotation=[0,0,0,1], scale=[1,1,1]))
+                transform=dict(translation=[index*3+1, 0, 0], rotation=[-math.sqrt(.5),0,0,math.sqrt(.5)] if upright else [0,0,0,1], scale=[1,1,1]))
         saved = snapshot_project(source, self.root/'portable', graph, scene_path='example-scene.json')
         repository = EditorRepository.create(self.root/'portable', self.root/'repo', scene_path=saved['active_scene']['path'])
         snapshot = repository.snapshot()
@@ -100,6 +100,29 @@ class EditorPrefabProjectionTests(unittest.TestCase):
         self.assertEqual(snapshot, before)
         self.assertEqual(repository.snapshot(), before)
         self.assertEqual({name: repository.read_file(name, snapshot['sha256']) for name in snapshot['inventory']}, sources)
+
+    def test_only_authored_anchor_edits_persist_and_reopen_without_rewriting_prefabs(self):
+        repository, snapshot, captured = self.fixture()
+        projection = prepare_prefab_projection(captured, snapshot)['projection']
+        derived = projection['readonly_nodes'][0]
+        transform = dict(translation=[6,0,0], rotation=[0,0,0,1], scale=[1,1,1])
+        commands = dict(schema_version=1, commands=[dict(operation='transform',
+            parameters=dict(identifier=derived, transform=transform))])
+        with self.assertRaises(RigError):
+            repository.apply(snapshot['revision'], commands, 'reject-derived-edit', expected_sha256=snapshot['sha256'])
+        self.assertEqual(repository.snapshot(), snapshot)
+        commands['commands'][0]['parameters']['identifier'] = 'instance-0'
+        saved = repository.apply(snapshot['revision'], commands, 'move-authored-instance', expected_sha256=snapshot['sha256'])
+        reopened = EditorRepository(repository.root).snapshot()
+        self.assertEqual(reopened, saved)
+        anchor = next(node for node in reopened['scene']['nodes'] if node['id']=='instance-0')
+        self.assertEqual(anchor['type'], 'prefab_instance')
+        self.assertEqual(anchor['transform'], transform)
+        self.assertEqual(reopened['project']['prefabs'], snapshot['project']['prefabs'])
+        for reference in snapshot['project']['prefabs']:
+            self.assertEqual(repository.read_file(reference['path'], reopened['sha256']),
+                             repository.read_file(reference['path'], snapshot['sha256']))
+        self.assertTrue(set(projection['readonly_nodes']).isdisjoint({node['id'] for node in reopened['scene']['nodes']}))
 
     def test_nested_prefabs_and_derived_animation_use_static_canonical_context(self):
         repository, snapshot, captured = self.fixture(nested_animated=True)
