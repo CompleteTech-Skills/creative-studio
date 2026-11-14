@@ -507,6 +507,98 @@ class DirectorGraphTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'matching currency'):
             self.compile()
 
+    def test_v2_monetary_totals_use_exact_decimals(self):
+        if not self.require_secure_reads():
+            return
+        self.plan=dg.migrate_plan_v2(self.plan,{n['id']:self.planned_metadata(n['id']) for n in self.plan['nodes']})
+        limits=self.snapshot['capabilities'][0]['limits']
+        limits.update(currency='USD',max_amount=1)
+        self.snapshot['capabilities'][0]['probe_evidence']=[self.write('decimal-receipt',dict(
+            operation='native-cpu',status='available',execution_verified=True,fixture=True,
+            policy_limits=limits,version='test',payloads=[]),kind='evidence')]
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        for node, amount in zip(self.plan['nodes'],(.1,.2,0)):
+            usage=node['execution_metadata']['estimated_usage']
+            usage.update(classification='estimated',currency='USD')
+            usage['amount']['value']=amount
+        self.request['input']['budget'].update(currency='USD',max_amount=.3)
+        self.refresh()
+        before={p.name:p.read_bytes() for p in self.root.iterdir()}
+        self.assertEqual(self.compile()['status'],'succeeded')
+        self.assertEqual(before,{p.name:p.read_bytes() for p in self.root.iterdir()})
+        self.request['input']['budget']['max_amount']=.299999999
+        with self.assertRaisesRegex(RigError,'project budget: amount'):
+            self.compile()
+
+    def test_v2_reconciles_receipt_and_declared_amounts_per_node(self):
+        if not self.require_secure_reads():
+            return
+        self.plan=dg.migrate_plan_v2(self.plan,{n['id']:self.planned_metadata(n['id']) for n in self.plan['nodes']})
+        limits=deepcopy(self.request['input']['budget'])
+        limits.update(currency='USD',max_amount=10,max_provider_calls=10)
+        caps=[]
+        for operation,extra in [('native-cpu',{}),('planning.provider',dict(
+                price_availability='known',price_per_call=6,currency='USD',provider_id='fixture-provider'))]:
+            receipt=self.write('cost-'+operation,dict(operation=operation,status='available',
+                execution_verified=True,fixture=True,version='fixture',policy_limits=limits,payloads=[],**extra),kind='evidence')
+            caps.append(dict(operation=operation,version='fixture',status='available',execution_verified=True,
+                             limits=deepcopy(limits),probe_evidence=[receipt]))
+        self.snapshot['capabilities']=caps
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        self.plan['nodes'][0].update(operation='PlanningProvider.generate_structured',native_owner='PlanningProvider',
+            output_schema='planning-artifact',resource_class='provider',required_capabilities=['planning.provider'])
+        self.request['input']['budget']=deepcopy(limits)
+        self.request['context']['policy'].update(network='allow-configured',paid='bounded',providers=['fixture-provider'],
+            policy_ref=self.write('cost-policy',{'fixture':True}))
+        self.request['context']['budget_reservation_id']='fixture-reservation'
+        provider=self.plan['nodes'][0]['execution_metadata']['estimated_usage']
+        local=self.plan['nodes'][1]['execution_metadata']['estimated_usage']
+        for usage in (provider,local):
+            usage.update(classification='estimated',currency='USD')
+        provider['amount']['value']=6
+        local['amount']['value']=4
+        self.refresh()
+        before={p.name:p.read_bytes() for p in self.root.iterdir()}
+        self.assertEqual(self.compile()['status'],'succeeded')
+        self.assertEqual(before,{p.name:p.read_bytes() for p in self.root.iterdir()})
+        local['amount']['value']=6
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'project budget: amount'):
+            self.compile()
+        local['amount']['value']=4
+        provider['amount']['value']=7
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'project budget: amount'):
+            self.compile()
+        provider['currency']='EUR'
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'currency differs'):
+            self.compile()
+        provider['currency']='USD'
+        # Unknown pricing still needs explicit authority; known typed amounts remain bounded.
+        receipt_path=self.root/caps[1]['probe_evidence'][0]['path']
+        unknown=json.loads(receipt_path.read_text())
+        unknown.update(price_availability='unknown',price_per_call=None,currency=None)
+        caps[1]['probe_evidence']=[self.write('unknown-cost',unknown,kind='evidence')]
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'Unknown provider price'):
+            self.compile()
+        self.request['context']['policy']['paid']='allow-unknown-price'
+        with self.assertRaisesRegex(RigError,'project budget: amount'):
+            self.compile()
+        provider['amount']['value']=6
+        self.refresh()
+        self.assertEqual(self.compile()['status'],'succeeded')
+        caps[1]['probe_evidence']=[self.write('restored-cost',
+            {**unknown,'price_availability':'known','price_per_call':6,'currency':'USD'},kind='evidence')]
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        receipt_path=self.root/caps[1]['probe_evidence'][0]['path']
+        receipt_path.write_text(receipt_path.read_text()+' ')
+        self.refresh()
+        with self.assertRaises(RigError):
+            self.compile()
+
     def test_traceability_rejects_unbound_plan_and_graph(self):
         if not self.require_secure_reads():
             return

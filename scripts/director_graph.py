@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from fractions import Fraction
 import heapq
 import json
 import time
@@ -311,6 +312,8 @@ def compile_graph(request, root, *, now=None):
             _require(usage['currency'] in (None, data['budget']['currency']),
                      'BUDGET','Declared node cost currency differs from the project budget.')
         for metric, limit in metrics.items():
+            if metric == 'amount':
+                continue  # Include verified receipt prices after capability admission.
             known = sum(values[metric] for values in reconciled.values() if values[metric] is not None)
             _require(known == 0 or (data['budget'][limit] is not None and known <= data['budget'][limit]),
                      'BUDGET','Declared node usage exceeds the project budget: '+metric)
@@ -332,7 +335,8 @@ def compile_graph(request, root, *, now=None):
             elif node['resource_class'] == 'gpu':
                 resource_estimate['max_gpu_seconds'] = node['estimated_seconds']
         if node['resource_class'] == 'provider':
-            resource_estimate['max_provider_calls'] = provider_calls
+            resource_estimate['max_provider_calls'] = (provider_calls if plan['schema_version'] == 1
+                                                       else reconciled[node_id]['provider_calls'])
         if plan['schema_version'] == 2:
             for metric, limit in (('cpu_seconds', 'max_cpu_seconds'),
                                   ('gpu_seconds', 'max_gpu_seconds'),
@@ -347,6 +351,7 @@ def compile_graph(request, root, *, now=None):
                              'BUDGET', 'Declared node cost currency differs from capability policy.')
                 if value is not None:
                     resource_estimate[limit] = max(resource_estimate.get(limit, 0), value)
+        verified_provider_costs = []
         assert_admission(snapshot, node['required_capabilities'], evidence_root=root, now=now,
                          resources=resource_estimate,
                          network_policy=request['context']['policy']['network'],
@@ -354,7 +359,12 @@ def compile_graph(request, root, *, now=None):
                          allow_unknown_price=request['context']['policy']['paid'] == 'allow-unknown-price',
                          budget_currency=data['budget']['currency'],budget_amount=data['budget']['max_amount'],
                          paid_policy=request['context']['policy']['paid'],
-                         allowed_providers=request['context']['policy']['providers'])
+                         allowed_providers=request['context']['policy']['providers'],
+                         verified_provider_costs=verified_provider_costs)
+        if plan['schema_version'] == 2:
+            declared = reconciled[node_id]['amount']
+            amounts = ([Fraction(str(declared))] if declared is not None else []) + verified_provider_costs
+            reconciled[node_id]['amount'] = max(amounts, default=Fraction(0))
         parent_ids = sorted(set(predecessors[node_id]))
         keys[node_id] = object_hash(dict(node=node, parents={key: keys[key] for key in parent_ids},
                                          incoming=[edge for edge in plan['edges'] if edge['target'] == node_id],
@@ -367,6 +377,11 @@ def compile_graph(request, root, *, now=None):
         nodes[-1].update(cache_key=keys[node_id], gates=sorted(node['required_capabilities']))
         if plan['schema_version'] == 2:
             nodes[-1]['execution_metadata'] = deepcopy(node['execution_metadata'])
+    if plan['schema_version'] == 2:
+        known_amount = sum(values['amount'] for values in reconciled.values())
+        limit = data['budget']['max_amount']
+        _require(known_amount == 0 or (limit is not None and known_amount <= Fraction(str(limit))),
+                 'BUDGET', 'Declared node usage exceeds the project budget: amount')
     graph = dict(nodes=nodes, edges=plan['edges'],
                  critical_path_seconds=None if any(value is None for value in finish.values()) else max(finish.values()))
     if plan['schema_version'] == 2:
