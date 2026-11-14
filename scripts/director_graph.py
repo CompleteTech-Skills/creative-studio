@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from fractions import Fraction
 import heapq
 import json
 import time
@@ -27,23 +28,48 @@ def _require(condition, code, message):
 
 def plan_schema():
     """Strict compiler input. Output intent is a schema, never a fake file."""
-    defs = {'artifact-ref': definitions()['artifact-ref']}
+    authority = definitions()
+    defs = {name: authority[name] for name in
+            ('artifact-ref','usage','diagnostic','validation-result','execution-metadata')}
     defs['graph-plan-node'] = obj(dict(
         id=ID, operation={'enum': list(METHODS)}, inputs=arr(ref('artifact-ref'), 1, 256),
         output_schema=ID, resource_class={'enum': list(RESOURCE_CLASSES)}, native_owner=ID,
         required_capabilities=arr(ID, 1, 32), estimated_seconds={'anyOf': [NUMBER, {'type': 'null'}]},
         requirement_ids=arr(ID, 1, 256)))
-    return dict(**{'$schema': 'https://json-schema.org/draft/2020-12/schema'},
-                **obj(dict(schema_version={'const': 1}, kind={'const': 'execution-plan'},
+    defs['graph-plan-node-v2'] = deepcopy(defs['graph-plan-node'])
+    defs['graph-plan-node-v2']['properties']['execution_metadata'] = ref('execution-metadata')
+    defs['graph-plan-node-v2']['required'].append('execution_metadata')
+    result = dict(**{'$schema': 'https://json-schema.org/draft/2020-12/schema'},
+                **obj(dict(schema_version={'enum': [1,2]}, kind={'const': 'execution-plan'},
                            state={'const': 'planned'},
                            requirements=arr(obj(dict(id=ID, test=TEXT, evidence=arr(ref('artifact-ref'), 0, 128))), 1, 1024),
                            nodes=arr(ref('graph-plan-node'), 1, 1024),
                            edges=arr(obj(dict(source=ID, target=ID, artifact=ref('artifact-ref'))), 0, 4096))),
                 **{'$defs': defs})
+    result['allOf'] = [{'if': {'properties': {'schema_version': {'const':2}}},
+                        'then': {'properties': {'nodes': arr(ref('graph-plan-node-v2'),1,1024)}},
+                        'else': {'properties': {'nodes': arr(ref('graph-plan-node'),1,1024)}}}]
+    # The conditional owns node admission; the shared property must accept both.
+    result['properties']['nodes'] = arr({'oneOf':[ref('graph-plan-node'),ref('graph-plan-node-v2')]},1,1024)
+    return result
 
 
 def schemas():
     return {'director-execution-plan.schema.json': plan_schema()}
+
+
+def migrate_plan_v2(plan, node_metadata):
+    """Bind caller-supplied planned metadata without dispatch or invented usage."""
+    validate_plan(plan)
+    _require(plan['schema_version']==1,'MIGRATION','Migration requires an execution plan v1.')
+    _require(isinstance(node_metadata,dict) and set(node_metadata)=={n['id'] for n in plan['nodes']},
+             'MIGRATION','Supply explicit metadata for every node.')
+    result = deepcopy(plan)
+    result['schema_version'] = 2
+    for node in result['nodes']:
+        node['execution_metadata'] = deepcopy(node_metadata[node['id']])
+    validate_plan(result)
+    return result
 
 
 def _sort_refs(refs):
@@ -57,6 +83,10 @@ def canonical_plan(plan):
         node['inputs'] = _sort_refs(node['inputs'])
         node['required_capabilities'] = sorted(node['required_capabilities'])
         node['requirement_ids'] = sorted(node['requirement_ids'])
+        if 'execution_metadata' in node:
+            metadata = node['execution_metadata']
+            for field in ('checkpoint_refs','output_artifacts','provenance'):
+                metadata[field] = _sort_refs(metadata[field])
     for item in result['requirements']:
         item['evidence'] = _sort_refs(item['evidence'])
     result['nodes'].sort(key=lambda item: item['id'])
@@ -77,7 +107,14 @@ def validate_plan(plan):
     by_id = {item['id']: item for item in plan['nodes']}
     edge_ids = set()
     used = set()
+    idempotency_keys = set()
     for node in plan['nodes']:
+        if plan['schema_version'] == 2:
+            metadata = node['execution_metadata']
+            dc.validate_execution_metadata(metadata, planned=True)
+            _require(metadata['idempotency_key'] not in idempotency_keys, 'DUPLICATE',
+                     'Every planned operation needs its own idempotency key.')
+            idempotency_keys.add(metadata['idempotency_key'])
         _require(node['native_owner'] == node['operation'].split('.')[0], 'OWNER',
                  'Nodes must delegate to the named native interface owner.')
         _require(node['output_schema'] == METHODS[node['operation']][1], 'OUTPUT',
@@ -254,6 +291,32 @@ def compile_graph(request, root, *, now=None):
     provider_calls = sum(node['resource_class'] == 'provider' for node in plan['nodes'])
     _require(provider_calls <= data['budget']['max_provider_calls'], 'BUDGET',
              'Estimated provider invocations exceed budget.')
+    reconciled = {}
+    if plan['schema_version'] == 2:
+        metrics = {'provider_calls':'max_provider_calls','cpu_seconds':'max_cpu_seconds',
+                   'gpu_seconds':'max_gpu_seconds','storage_bytes':'max_storage_bytes','amount':'max_amount'}
+        for node in plan['nodes']:
+            usage = node['execution_metadata']['estimated_usage']
+            values = {metric: usage[metric]['value'] for metric in metrics}
+            legacy = {}
+            if node['estimated_seconds'] is not None:
+                if node['resource_class'] in ('cpu', 'io', 'render'):
+                    legacy['cpu_seconds'] = node['estimated_seconds']
+                elif node['resource_class'] == 'gpu':
+                    legacy['gpu_seconds'] = node['estimated_seconds']
+            if node['resource_class'] == 'provider':
+                legacy['provider_calls'] = 1
+            for metric, value in legacy.items():
+                values[metric] = max(value, values[metric] if values[metric] is not None else 0)
+            reconciled[node['id']] = values
+            _require(usage['currency'] in (None, data['budget']['currency']),
+                     'BUDGET','Declared node cost currency differs from the project budget.')
+        for metric, limit in metrics.items():
+            if metric == 'amount':
+                continue  # Include verified receipt prices after capability admission.
+            known = sum(values[metric] for values in reconciled.values() if values[metric] is not None)
+            _require(known == 0 or (data['budget'][limit] is not None and known <= data['budget'][limit]),
+                     'BUDGET','Declared node usage exceeds the project budget: '+metric)
     predecessors = {item['id']: [] for item in plan['nodes']}
     for edge in plan['edges']:
         predecessors[edge['target']].append(edge['source'])
@@ -272,7 +335,23 @@ def compile_graph(request, root, *, now=None):
             elif node['resource_class'] == 'gpu':
                 resource_estimate['max_gpu_seconds'] = node['estimated_seconds']
         if node['resource_class'] == 'provider':
-            resource_estimate['max_provider_calls'] = provider_calls
+            resource_estimate['max_provider_calls'] = (provider_calls if plan['schema_version'] == 1
+                                                       else reconciled[node_id]['provider_calls'])
+        if plan['schema_version'] == 2:
+            for metric, limit in (('cpu_seconds', 'max_cpu_seconds'),
+                                  ('gpu_seconds', 'max_gpu_seconds'),
+                                  ('storage_bytes', 'max_storage_bytes'),
+                                  ('provider_calls', 'max_provider_calls'),
+                                  ('amount', 'max_amount')):
+                value = reconciled[node_id][metric]
+                if metric == 'amount' and value is not None:
+                    _require(all(available[name]['limits']['currency'] ==
+                                 node['execution_metadata']['estimated_usage']['currency']
+                                 for name in node['required_capabilities']),
+                             'BUDGET', 'Declared node cost currency differs from capability policy.')
+                if value is not None:
+                    resource_estimate[limit] = max(resource_estimate.get(limit, 0), value)
+        verified_provider_costs = []
         assert_admission(snapshot, node['required_capabilities'], evidence_root=root, now=now,
                          resources=resource_estimate,
                          network_policy=request['context']['policy']['network'],
@@ -280,7 +359,12 @@ def compile_graph(request, root, *, now=None):
                          allow_unknown_price=request['context']['policy']['paid'] == 'allow-unknown-price',
                          budget_currency=data['budget']['currency'],budget_amount=data['budget']['max_amount'],
                          paid_policy=request['context']['policy']['paid'],
-                         allowed_providers=request['context']['policy']['providers'])
+                         allowed_providers=request['context']['policy']['providers'],
+                         verified_provider_costs=verified_provider_costs)
+        if plan['schema_version'] == 2:
+            declared = reconciled[node_id]['amount']
+            amounts = ([Fraction(str(declared))] if declared is not None else []) + verified_provider_costs
+            reconciled[node_id]['amount'] = max(amounts, default=Fraction(0))
         parent_ids = sorted(set(predecessors[node_id]))
         keys[node_id] = object_hash(dict(node=node, parents={key: keys[key] for key in parent_ids},
                                          incoming=[edge for edge in plan['edges'] if edge['target'] == node_id],
@@ -291,8 +375,17 @@ def compile_graph(request, root, *, now=None):
         nodes.append({key: deepcopy(node[key]) for key in
                       ('id', 'operation', 'inputs', 'output_schema', 'resource_class', 'native_owner')})
         nodes[-1].update(cache_key=keys[node_id], gates=sorted(node['required_capabilities']))
+        if plan['schema_version'] == 2:
+            nodes[-1]['execution_metadata'] = deepcopy(node['execution_metadata'])
+    if plan['schema_version'] == 2:
+        known_amount = sum(values['amount'] for values in reconciled.values())
+        limit = data['budget']['max_amount']
+        _require(known_amount == 0 or (limit is not None and known_amount <= Fraction(str(limit))),
+                 'BUDGET', 'Declared node usage exceeds the project budget: amount')
     graph = dict(nodes=nodes, edges=plan['edges'],
                  critical_path_seconds=None if any(value is None for value in finish.values()) else max(finish.values()))
+    if plan['schema_version'] == 2:
+        graph['schema_version'] = 2
     # Reject input replacement/corruption during compilation, before returning.
     _verify_refs(root, _all_refs(request) + closure + _all_refs(snapshot))
     result = dict(schema_version=1, kind='director-result', method='GraphCompiler.compile', status='succeeded',
@@ -343,7 +436,11 @@ def impact(previous, current, *, uncertain=()):
     for graph in (previous, current):
         from jsonschema import Draft202012Validator
         schema = dc.schemas()['director.schema.json']
-        Draft202012Validator({'$defs': schema['$defs'], '$ref': '#/$defs/output-execution-graph'}).validate(graph)
+        definition = 'output-execution-graph-v2' if graph.get('schema_version') == 2 else 'output-execution-graph'
+        Draft202012Validator({'$defs': schema['$defs'], '$ref': '#/$defs/'+definition}).validate(graph)
+        for node in graph['nodes']:
+            if 'execution_metadata' in node:
+                dc.validate_execution_metadata(node['execution_metadata'])
     before = {item['id']: item for item in previous['nodes']}
     after = {item['id']: item for item in current['nodes']}
     changed = {key for key in set(before) | set(after) if before.get(key) != after.get(key)}

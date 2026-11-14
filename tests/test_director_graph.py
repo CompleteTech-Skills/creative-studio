@@ -82,6 +82,163 @@ class DirectorGraphTests(unittest.TestCase):
     def compile(self):
         return dg.compile_graph(self.request, self.root, now=self.now)
 
+    def planned_metadata(self, node_id):
+        return dict(schema_version=2, estimated_usage=dg._usage(), actual_usage=dg._usage(),
+            retry_classification='unclassified',idempotency_key='node-'+node_id,
+            execution_status='planned',checkpoint_refs=[],output_artifacts=[],
+            validation_results=[],provenance=[deepcopy(self.input)],failure_reason=None,native_job_ref=None)
+
+    def test_v2_metadata_migration_compiles_without_fabricating_native_execution(self):
+        original=deepcopy(self.plan)
+        metadata={node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']}
+        self.plan=dg.migrate_plan_v2(self.plan,metadata)
+        self.assertEqual(original['schema_version'],1)
+        self.assertTrue(all('execution_metadata' not in node for node in original['nodes']))
+        self.refresh()
+        if not self.require_secure_reads():return
+        graph=self.compile()['value']
+        self.assertEqual(graph['schema_version'],2)
+        for node in graph['nodes']:
+            self.assertEqual(node['execution_metadata'],metadata[node['id']])
+            self.assertIsNone(node['execution_metadata']['native_job_ref'])
+        false_result=self.compile()
+        false_result['value']['nodes'][0]['execution_metadata'].update(
+            execution_status='running',native_job_ref=deepcopy(self.input))
+        with self.assertRaises(RigError):dc.validate_method_result('GraphCompiler.compile',false_result,self.request)
+        self.assertEqual(dg.traceability(self.plan,graph,request=self.request,root=self.root,now=self.now)
+                         [0]['requirement'],'produce')
+        # Ownership/idempotency metadata is part of the dependency fingerprint.
+        self.plan['nodes'][0]['execution_metadata']['idempotency_key']='replacement-operation'
+        self.refresh()
+        changed=self.compile()['value']
+        self.assertNotEqual(graph['nodes'][0]['cache_key'],changed['nodes'][0]['cache_key'])
+        self.assertNotEqual(graph['nodes'][2]['cache_key'],changed['nodes'][2]['cache_key'])
+        self.assertEqual(dg.impact(graph,changed)['stale'],['a','b','c'])
+
+    def test_v2_plan_rejects_incomplete_or_false_executed_metadata(self):
+        metadata={node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']}
+        migrated=dg.migrate_plan_v2(self.plan,metadata)
+        for key in metadata['a']:
+            changed=deepcopy(migrated)
+            del changed['nodes'][0]['execution_metadata'][key]
+            with self.subTest(missing=key),self.assertRaises(RigError):dg.validate_plan(changed)
+        for updates in ({'execution_status':'running','native_job_ref':self.input},
+                        {'checkpoint_refs':[self.input]}, {'output_artifacts':[self.input]},
+                        {'actual_usage':dict(dg._usage(),classification='actual')}):
+            changed=deepcopy(migrated)
+            changed['nodes'][0]['execution_metadata'].update(updates)
+            with self.subTest(updates=updates),self.assertRaises(RigError):dg.validate_plan(changed)
+        with self.assertRaises(RigError):dg.migrate_plan_v2(self.plan,{})
+        duplicate=deepcopy(migrated)
+        duplicate['nodes'][1]['execution_metadata']['idempotency_key']=metadata['a']['idempotency_key']
+        with self.assertRaises(RigError):dg.validate_plan(duplicate)
+        legacy=deepcopy(self.plan)
+        legacy['nodes'][0]['execution_metadata']=metadata['a']
+        with self.assertRaises(RigError):dg.validate_plan(legacy)
+
+    def test_partial_compiler_value_cannot_claim_dispatch_or_actual_outputs(self):
+        metadata={node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']}
+        self.plan=dg.migrate_plan_v2(self.plan,metadata)
+        self.refresh()
+        if not self.require_secure_reads():return
+        result=self.compile()
+        result.update(status='partial',diagnostics=[dict(code='PARTIAL_FIXTURE',severity='warning',
+            stage='graph',entity_id=None,field_path='value',expected=None,observed=None,
+            retryable=False,recommended_action='Inspect partial planning diagnostics.',evidence=[])])
+        dc.validate_method_result('GraphCompiler.compile',result,self.request)
+        execution=result['value']['nodes'][0]['execution_metadata']
+        execution.update(execution_status='running',native_job_ref=deepcopy(self.input),
+            checkpoint_refs=[deepcopy(self.input)],output_artifacts=[deepcopy(self.input)])
+        execution['actual_usage']['classification']='actual'
+        execution['actual_usage']['cpu_seconds']['value']=10
+        for status in ('partial','succeeded'):
+            result['status']=status
+            with self.subTest(status=status),self.assertRaises(RigError):
+                dc.validate_method_result('GraphCompiler.compile',result,self.request)
+
+    def test_execution_metadata_requires_native_ownership_and_output_validation(self):
+        metadata=self.planned_metadata('a')
+        metadata['execution_status']='running'
+        with self.assertRaises(RigError):dc.validate_execution_metadata(metadata)
+        metadata['native_job_ref']=deepcopy(self.input)
+        dc.validate_execution_metadata(metadata)
+        metadata['execution_status']='validated'
+        with self.assertRaises(RigError):dc.validate_execution_metadata(metadata)
+        metadata.update(output_artifacts=[deepcopy(self.input)],validation_results=[
+            dict(check='synthetic-contract-check',status='passed',evidence=[deepcopy(self.input)],diagnostics=[])])
+        dc.validate_execution_metadata(metadata)
+        metadata['execution_status']='failed'
+        with self.assertRaises(RigError):dc.validate_execution_metadata(metadata)
+        metadata['failure_reason']='Synthetic contract failure; no native job ran.'
+        dc.validate_execution_metadata(metadata)
+
+    def test_v2_declared_usage_cannot_hide_work_from_budget_admission(self):
+        metadata={node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']}
+        self.plan=dg.migrate_plan_v2(self.plan,metadata)
+        usage=self.plan['nodes'][0]['execution_metadata']['estimated_usage']
+        usage['classification']='estimated'
+        usage['cpu_seconds']['value']=101
+        self.refresh()
+        if not self.require_secure_reads():return
+        with self.assertRaisesRegex(RigError,'Declared node usage exceeds'):
+            self.compile()
+
+    def test_v2_reconciles_each_node_before_summing(self):
+        metadata={node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']}
+        self.plan=dg.migrate_plan_v2(self.plan,metadata)
+        self.plan['nodes'][0]['estimated_seconds']=6
+        self.plan['nodes'][1]['estimated_seconds']=None
+        self.plan['nodes'][2]['estimated_seconds']=0
+        usage=self.plan['nodes'][1]['execution_metadata']['estimated_usage']
+        usage['classification']='estimated'
+        usage['cpu_seconds']['value']=5
+        self.request['input']['budget']['max_cpu_seconds']=10
+        self.refresh()
+        if not self.require_secure_reads():return
+        with self.assertRaisesRegex(RigError,'Declared node usage exceeds'):self.compile()
+        self.request['input']['budget']['max_cpu_seconds']=11
+        self.compile()
+        # Two declarations on the same node overlap; they are not added together.
+        self.plan['nodes'][0]['execution_metadata']['estimated_usage']['classification']='estimated'
+        self.plan['nodes'][0]['execution_metadata']['estimated_usage']['cpu_seconds']['value']=6
+        self.refresh()
+        self.compile()
+        # Different resource dimensions remain independently accountable.
+        usage['gpu_seconds']['value']=4
+        self.request['input']['budget']['max_gpu_seconds']=3
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'Declared node usage exceeds'):self.compile()
+
+    def test_v2_typed_usage_obeys_exact_capability_limit(self):
+        metadata={node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']}
+        self.plan=dg.migrate_plan_v2(self.plan,metadata)
+        usage=self.plan['nodes'][0]['execution_metadata']['estimated_usage']
+        usage['classification']='estimated'
+        usage['gpu_seconds']['value']=100
+        self.refresh()
+        if not self.require_secure_reads():return
+        self.compile()
+        usage['gpu_seconds']['value']=101
+        self.request['input']['budget']['max_gpu_seconds']=101
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'capability bound'):self.compile()
+
+    def test_passing_validation_requires_evidence_in_every_state(self):
+        metadata=self.planned_metadata('a')
+        metadata.update(execution_status='running',native_job_ref=deepcopy(self.input))
+        check=dict(check='native-check',status='passed',evidence=[],diagnostics=[])
+        metadata['validation_results']=[check]
+        with self.assertRaises(RigError):dc.validate_execution_metadata(metadata)
+        check['evidence']=[deepcopy(self.input)]
+        dc.validate_execution_metadata(metadata)
+        check['diagnostics']=[dict(code='INVALID',severity='error',stage='validation',entity_id=None,
+            field_path='validation',expected=None,observed=None,retryable=False,recommended_action='Fix',evidence=[])]
+        with self.assertRaises(RigError):dc.validate_execution_metadata(metadata)
+        check['status']='failed'
+        check['evidence']=[]
+        dc.validate_execution_metadata(metadata)
+        with self.assertRaises(RigError):dc.validate_execution_metadata(metadata,planned=True)
+
     def test_actual_compile_topology_exact_edges_and_critical_path(self):
         if not self.require_secure_reads():
             return
@@ -348,6 +505,98 @@ class DirectorGraphTests(unittest.TestCase):
         self.request['input']['budget']['max_amount']=1
         self.request['input']['budget']['currency']='EUR'
         with self.assertRaisesRegex(ValueError,'matching currency'):
+            self.compile()
+
+    def test_v2_monetary_totals_use_exact_decimals(self):
+        if not self.require_secure_reads():
+            return
+        self.plan=dg.migrate_plan_v2(self.plan,{n['id']:self.planned_metadata(n['id']) for n in self.plan['nodes']})
+        limits=self.snapshot['capabilities'][0]['limits']
+        limits.update(currency='USD',max_amount=1)
+        self.snapshot['capabilities'][0]['probe_evidence']=[self.write('decimal-receipt',dict(
+            operation='native-cpu',status='available',execution_verified=True,fixture=True,
+            policy_limits=limits,version='test',payloads=[]),kind='evidence')]
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        for node, amount in zip(self.plan['nodes'],(.1,.2,0)):
+            usage=node['execution_metadata']['estimated_usage']
+            usage.update(classification='estimated',currency='USD')
+            usage['amount']['value']=amount
+        self.request['input']['budget'].update(currency='USD',max_amount=.3)
+        self.refresh()
+        before={p.name:p.read_bytes() for p in self.root.iterdir()}
+        self.assertEqual(self.compile()['status'],'succeeded')
+        self.assertEqual(before,{p.name:p.read_bytes() for p in self.root.iterdir()})
+        self.request['input']['budget']['max_amount']=.299999999
+        with self.assertRaisesRegex(RigError,'project budget: amount'):
+            self.compile()
+
+    def test_v2_reconciles_receipt_and_declared_amounts_per_node(self):
+        if not self.require_secure_reads():
+            return
+        self.plan=dg.migrate_plan_v2(self.plan,{n['id']:self.planned_metadata(n['id']) for n in self.plan['nodes']})
+        limits=deepcopy(self.request['input']['budget'])
+        limits.update(currency='USD',max_amount=10,max_provider_calls=10)
+        caps=[]
+        for operation,extra in [('native-cpu',{}),('planning.provider',dict(
+                price_availability='known',price_per_call=6,currency='USD',provider_id='fixture-provider'))]:
+            receipt=self.write('cost-'+operation,dict(operation=operation,status='available',
+                execution_verified=True,fixture=True,version='fixture',policy_limits=limits,payloads=[],**extra),kind='evidence')
+            caps.append(dict(operation=operation,version='fixture',status='available',execution_verified=True,
+                             limits=deepcopy(limits),probe_evidence=[receipt]))
+        self.snapshot['capabilities']=caps
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        self.plan['nodes'][0].update(operation='PlanningProvider.generate_structured',native_owner='PlanningProvider',
+            output_schema='planning-artifact',resource_class='provider',required_capabilities=['planning.provider'])
+        self.request['input']['budget']=deepcopy(limits)
+        self.request['context']['policy'].update(network='allow-configured',paid='bounded',providers=['fixture-provider'],
+            policy_ref=self.write('cost-policy',{'fixture':True}))
+        self.request['context']['budget_reservation_id']='fixture-reservation'
+        provider=self.plan['nodes'][0]['execution_metadata']['estimated_usage']
+        local=self.plan['nodes'][1]['execution_metadata']['estimated_usage']
+        for usage in (provider,local):
+            usage.update(classification='estimated',currency='USD')
+        provider['amount']['value']=6
+        local['amount']['value']=4
+        self.refresh()
+        before={p.name:p.read_bytes() for p in self.root.iterdir()}
+        self.assertEqual(self.compile()['status'],'succeeded')
+        self.assertEqual(before,{p.name:p.read_bytes() for p in self.root.iterdir()})
+        local['amount']['value']=6
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'project budget: amount'):
+            self.compile()
+        local['amount']['value']=4
+        provider['amount']['value']=7
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'project budget: amount'):
+            self.compile()
+        provider['currency']='EUR'
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'currency differs'):
+            self.compile()
+        provider['currency']='USD'
+        # Unknown pricing still needs explicit authority; known typed amounts remain bounded.
+        receipt_path=self.root/caps[1]['probe_evidence'][0]['path']
+        unknown=json.loads(receipt_path.read_text())
+        unknown.update(price_availability='unknown',price_per_call=None,currency=None)
+        caps[1]['probe_evidence']=[self.write('unknown-cost',unknown,kind='evidence')]
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        self.refresh()
+        with self.assertRaisesRegex(RigError,'Unknown provider price'):
+            self.compile()
+        self.request['context']['policy']['paid']='allow-unknown-price'
+        with self.assertRaisesRegex(RigError,'project budget: amount'):
+            self.compile()
+        provider['amount']['value']=6
+        self.refresh()
+        self.assertEqual(self.compile()['status'],'succeeded')
+        caps[1]['probe_evidence']=[self.write('restored-cost',
+            {**unknown,'price_availability':'known','price_per_call':6,'currency':'USD'},kind='evidence')]
+        self.snapshot['digest']=object_hash({k:v for k,v in self.snapshot.items() if k!='digest'})
+        receipt_path=self.root/caps[1]['probe_evidence'][0]['path']
+        receipt_path.write_text(receipt_path.read_text()+' ')
+        self.refresh()
+        with self.assertRaises(RigError):
             self.compile()
 
     def test_traceability_rejects_unbound_plan_and_graph(self):
