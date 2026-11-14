@@ -37,6 +37,7 @@ let renderer,
   previewActive = false;
 const collapsed = new Set();
 const extensions = [];
+let pendingCommit = null, lastCommitResult = true, guardedAction = false, actionAuthority = null, lifecycleGeneration = 0;
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
 let activeNativeCameraId = null;
 const editorNode = Symbol("native-scene-node");
@@ -80,7 +81,8 @@ function diagnostic(error) {
 function clearDiagnostic() {
   $("diagnostic").hidden = true;
 }
-async function api(path, body) {
+async function api(path, body, authority = null) {
+  if (guardedAction && authority !== actionAuthority) throw Error("Another editor action is in progress.");
   const response = await fetch("/api/" + path, {
     method: body === undefined ? "GET" : "POST",
     headers: {
@@ -100,6 +102,7 @@ async function api(path, body) {
   return result;
 }
 async function upload(file) {
+  if (guardedAction) throw Error("Another editor action is in progress.");
   if (file.size <= 0 || file.size > 64 * 1024 * 1024)
     throw Error("Choose a file between 1 byte and 64 MiB.");
   const response = await fetch("/api/uploads", {
@@ -161,6 +164,7 @@ function applyNativeState(value) {
   content.updateMatrixWorld(true);
 }
 function preview(scene) {
+  if (guardedAction) throw Error("Another editor action is in progress.");
   playing = false;
   gizmo.detach();
   applyNativeState(scene.nodes);
@@ -168,6 +172,7 @@ function preview(scene) {
   refreshSelection();
 }
 function clearPreview() {
+  if (guardedAction) throw Error("Another editor action is in progress.");
   applyNativeState(savedNativeState.nodes);
   previewActive = false;
   refreshSelection();
@@ -265,12 +270,19 @@ function setBusy(value) {
     .forEach((control) => { control.draggable = !busy && !nodeLocked(control.dataset.id); });
 }
 function rejectPendingEdit() {
-  if (!busy) return false;
+  if (!busy && !guardedAction) return false;
   $("status").textContent = "Save in progress; retry this edit when saving finishes.";
   return true;
 }
-async function commit(commands) {
-  if (rejectPendingEdit() || !commands.length) return;
+function commit(commands) {
+  if (rejectPendingEdit() || !commands.length) return Promise.resolve(false);
+  const task = performCommit(commands);
+  pendingCommit = task;
+  task.then(() => { if (pendingCommit === task) pendingCommit = null; },
+    () => { if (pendingCommit === task) pendingCommit = null; });
+  return task;
+}
+async function performCommit(commands) {
   setBusy(true);
   gizmo?.detach();
   $("status").textContent = "Saving command…";
@@ -287,14 +299,56 @@ async function commit(commands) {
       commands: { schema_version: 1, commands: batch },
     });
     const displayed = await install(result);
-    if (displayed === false) return;
+    if (displayed === false) { lastCommitResult = false; return false; }
     clearDiagnostic();
     $("status").textContent = "Saved revision " + revision;
+    lastCommitResult = true;
+    return true;
   } catch (error) {
+    lastCommitResult = false;
     diagnostic(error);
-    await reload(false);
+    await reload(false, actionAuthority);
+    return false;
   } finally {
     setBusy(false);
+  }
+}
+async function runGuardedAction(callback) {
+  if (typeof callback !== "function") throw Error("An editor action must be a function.");
+  if (guardedAction) throw Error("Another editor action is in progress.");
+  const usable = () => !disposed && !lost && window.editorReady && !drag && !previewActive;
+  if (!usable()) throw Error("Finish the active viewport interaction before this action.");
+  // Blur dispatches the ordinary field change handler before we claim the action.
+  // All persistence still goes through the canonical command transaction.
+  const generation = lifecycleGeneration;
+  const beforeErrors = errors.length;
+  const focused = document.activeElement;
+  if (focused?.matches("#inspector input, #inspector select")) focused.blur();
+  if (errors.length !== beforeErrors) throw Error("The pending field edit was rejected.");
+  const pending = pendingCommit;
+  if (!pending && !lastCommitResult) throw Error("The last edit was not saved; retry the edit before this action.");
+  if (busy && !pending) throw Error("The editor is busy.");
+  guardedAction = true;
+  const authority = Symbol("saved-editor-action"); actionAuthority = authority;
+  let ownsBusy = false;
+  try {
+    if (pending && await pending !== true) throw Error("The pending edit was not saved.");
+    if (!usable() || lifecycleGeneration !== generation) throw Error("The viewport changed while saving the pending edit.");
+    setBusy(true); ownsBusy = true; gizmo?.detach();
+    const assertCurrent = () => {
+      if (!guardedAction || actionAuthority !== authority || !usable() || lifecycleGeneration !== generation) throw Error("The editor action was cancelled or has finished.");
+    };
+    const value = await callback({
+      snapshot: structuredClone(currentSnapshot),
+      api: async (...args) => { assertCurrent(); const result = await api(args[0], args[1], authority); assertCurrent(); return result; },
+      reload: async (...args) => { assertCurrent(); const result = await reload(args[0], authority, assertCurrent); assertCurrent(); return result; },
+      isCurrent: () => guardedAction && actionAuthority === authority && usable() && lifecycleGeneration === generation,
+    });
+    assertCurrent();
+    return value;
+  } finally {
+    guardedAction = false; actionAuthority = null;
+    if (ownsBusy) setBusy(false);
   }
 }
 function select(id, add = false, toggle = false) {
@@ -470,7 +524,8 @@ async function assetObject(asset) {
   }
   throw Error(asset.message || "Unsupported geometry format.");
 }
-async function install(snapshot) {
+async function install(snapshot, assertCurrent = null) {
+  assertCurrent?.();
   previewActive = false;
   currentSnapshot = snapshot;
   $("undo").disabled = busy || !snapshot.undo_available;
@@ -524,6 +579,11 @@ async function install(snapshot) {
       if (asset && asset.format !== "unavailable") {
         try {
           const actual = await assetObject(asset);
+          try { assertCurrent?.(); } catch (error) {
+            actual.traverse(object => { object.geometry?.dispose();
+              for (const material of Array.isArray(object.material) ? object.material : [object.material]) material?.dispose(); });
+            throw error;
+          }
           if (epoch !== loadEpoch) {
             actual.traverse((o) => {
               o.geometry?.dispose();
@@ -532,6 +592,7 @@ async function install(snapshot) {
           }
           object.add(actual);
         } catch (error) {
+          assertCurrent?.();
           diagnostic("Asset " + node.asset.id + ": " + error.message);
         }
       } else
@@ -643,9 +704,11 @@ async function install(snapshot) {
   if ($("diagnostic").hidden)
     $("status").textContent = "Loaded saved revision " + revision;
 }
-async function reload(frame = false) {
-  const snapshot = await api("snapshot");
-  const displayed = await install(snapshot);
+async function reload(frame = false, authority = null, assertCurrent = null) {
+  const snapshot = await api("snapshot", undefined, authority);
+  assertCurrent?.();
+  const displayed = await install(snapshot, assertCurrent);
+  assertCurrent?.();
   if (frame && displayed !== false) frameScene();
   return displayed;
 }
@@ -1395,7 +1458,7 @@ function initialize() {
     });
     renderer.domElement.addEventListener("webglcontextlost", (e) => {
       e.preventDefault();
-      lost = true;
+      lost = true; lifecycleGeneration++;
       cancelDrag();
       diagnostic(
         "WebGL context lost. Saved scene is preserved; waiting for GPU recovery.",
@@ -1403,7 +1466,7 @@ function initialize() {
     });
     renderer.domElement.addEventListener("webglcontextrestored", () => {
       lost = false;
-      reload()
+      reload(false, actionAuthority)
         .then((displayed) => {
           if (displayed === false) return;
           clearDiagnostic();
@@ -1469,7 +1532,7 @@ function frame() {
   renderer.render(world, camera);
 }
 window.addEventListener("pagehide", () => {
-  disposed = true;
+  disposed = true; lifecycleGeneration++;
   for (const extension of extensions) extension.dispose?.();
   disposeContent();
   gizmo?.dispose();
@@ -1502,6 +1565,7 @@ window.hatchEditor = {
       container,
       api,
       upload,
+      runGuardedAction,
       reload,
       preview,
       applyNativeState,
