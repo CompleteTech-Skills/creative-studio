@@ -143,12 +143,20 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
             mesh=editable.mesh.id, positions=editable.source_positions.tolist(), faces=[list(face) for face in editable.faces],
             triangle_faces=editable.triangle_faces.tolist(), normal_mode=editable.normal_mode))
         editable_bytes = (json.dumps(editable_record, allow_nan=False, separators=(',', ':'))+'\n').encode()
+    fixture = False
+    if source_snapshot is not None:
+        require(source_snapshot.model.geometry is geometry,
+                'MODEL3D_SOURCE', 'Source snapshot must own the exported geometry.')
+        fixture = source_snapshot.model.report.get('fixture') is True
+        require(not fixture or format != 'obj', 'MODEL3D_EXPORT_LOSS',
+                'OBJ cannot preserve fixture provenance; use GLB or glTF.')
     payloads = _obj_payloads(geometry, limits) if format == 'obj' else None
     stage = Path(tempfile.mkdtemp(prefix='.model3d-export-', dir=parent))
     try:
         if payloads is None:
             from rig_gltf import export_geometry
-            export_geometry(geometry, stage/('model.'+format))
+            export_geometry(geometry, stage/('model.'+format),
+                            provenance={'fixture': True} if fixture else None)
             payloads = {p.name:p.read_bytes() for p in stage.iterdir()}
         else:
             for name, data in payloads.items():(stage/name).write_bytes(data)
@@ -216,6 +224,15 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
                 source_records.append(dict(original_path=record['path'], path=name, **files[name]))
                 require(sum(f['bytes'] for f in files.values()) <= limits['dependency_bytes'],
                         'MODEL3D_EXPORT_LIMIT', 'Originals and export exceed dependency byte limits.')
+            # Classify the verified copied bytes through the native authority,
+            # not a caller-editable report or provenance receipt.
+            entry = source_snapshot.provenance.get('source_entry')
+            require(isinstance(entry, str) and any(r['original_path'] == entry for r in source_records),
+                    'MODEL3D_SOURCE', 'Source entry is absent from the verified inventory.')
+            from rig_errors import safe_path
+            verified = load_character_model(safe_path(stage/'source', entry), limits=limits)
+            require((verified.report.get('fixture') is True) == fixture,
+                    'MODEL3D_SOURCE', 'Source fixture classification does not match verified bytes.')
             envelope = dict(schema_version=1, kind='hatch-model3d-source-snapshot',
                             files=source_records, provenance=source_snapshot.provenance)
             data = (json.dumps(envelope, allow_nan=False, sort_keys=True)+'\n').encode('utf-8')

@@ -388,8 +388,9 @@ def _gltf_model(path, *, scale=1., limits=None, source_reader=None) -> ImportedM
     report.update(import_format=Path(path).suffix.lower(), scale_conversion=scale,
                   preserved_existing_rig=skeleton is not None, preserved_animation_clips=len(clips),
                   source_sha256=document.source_sha256, warnings=document.warnings)
-    extra = document.json.get('asset', {}).get('extras', {})
-    report['fixture'] = bool(extra.get('hatchSource', {}).get('fixture', False) or extra.get('hatchRig', {}).get('fixture', False))
+    # Use the same reserved-marker authority as AssetLibrary normalization.
+    from asset_library_import import document_fixture
+    report['fixture'] = document_fixture(document.json)
     return ImportedModel(geometry, document.dependencies, skeleton, weights, clips, report)
 
 
