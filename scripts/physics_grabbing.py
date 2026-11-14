@@ -10,12 +10,17 @@ from __future__ import annotations
 from copy import deepcopy
 from fractions import Fraction
 import math
+from pathlib import Path
+import tempfile
 
 import numpy as np
 
 from rig_attachments import attach_prop, detach_prop, prop_world, socket_world
 from rig_errors import RigError, require, object_hash
 from rig_math import decompose, qinverse, qmatrix, qmul, transform_matrix
+
+VELOCITY_SOURCE = 'shortest-arc finite difference of authoritative carried world poses'
+COLLISION_STATUS = 'requested: compile preserves the supplied original collision profile'
 
 
 def _number(value, label, *, positive=False, maximum=1e6):
@@ -236,8 +241,33 @@ def release_state(previous, current, *, center_of_mass=(0., 0., 0.), impulse=(0.
                 angular_impulse=_vector(angular_impulse, 3, 'angular impulse', maximum=1000).tolist(),
                 sample_interval=dict(numerator=dt.numerator, denominator=dt.denominator),
                 release_time=deepcopy(current['time']),
-                velocity_source='shortest-arc finite difference of authoritative carried world poses',
-                collision_status='requested: compile preserves the supplied original collision profile')
+                velocity_source=VELOCITY_SOURCE, collision_status=COLLISION_STATUS)
+
+
+def _promoted_snapshot(payloads, graph, scene_path):
+    """Delegate closure versioning to the existing Scene3D snapshot owner."""
+    from physics_backends import MAX_FILES, MAX_INPUT_BYTES, _paths, _write, digest
+    from scene3d_snapshot import snapshot_project
+    from asset_library import read_source_bytes
+    require(len(payloads) <= MAX_FILES and 0 < sum(map(len, payloads.values())) <= MAX_INPUT_BYTES,
+            'PHYSICS_GRIP_SOURCE_LIMIT', 'Source snapshot exceeds the bounded physical input profile.')
+    _paths(payloads)
+    with tempfile.TemporaryDirectory(prefix='hatch-grip-source-') as temporary:
+        root = Path(temporary)
+        source = root/'source';source.mkdir(mode=0o700)
+        for path, payload in payloads.items():
+            _write(source/path, payload)
+        destination = root/'snapshot'
+        receipt = snapshot_project(source, destination, graph, scene_path=scene_path, max_bytes=MAX_INPUT_BYTES)
+        # The authoritative owner already validates this closed inventory and
+        # retains old scene/shot bytes alongside new immutable versions.
+        result = {}
+        for name, record in receipt['inventory'].items():
+            payload = read_source_bytes(destination/name, record['bytes'])
+            require(len(payload) == record['bytes'] and digest(payload) == record['sha256'],
+                    'PHYSICS_GRIP_SOURCE_CHANGED', 'Promoted snapshot bytes changed before consumption.')
+            result[name] = payload
+    return result, receipt
 
 
 def compile_release(world, payloads, body_id, release):
@@ -268,7 +298,10 @@ def compile_release(world, payloads, body_id, release):
         'PHYSICS_GRIP_SAMPLE', 'Use a complete release state from two authoritative samples.')
     require(0 < _time(release['sample_interval']) <= 1, 'PHYSICS_GRIP_TIME', 'Invalid release sample interval.')
     _time(release['release_time'])
-    _vector(release['origin_linear_velocity'], 3, 'origin velocity', maximum=1e6)
+    require(type(release['velocity_source']) is str and release['velocity_source'] == VELOCITY_SOURCE and
+            type(release['collision_status']) is str and release['collision_status'] == COLLISION_STATUS,
+            'PHYSICS_GRIP_PROVENANCE', 'Release provenance must use the admitted typed semantics.')
+    origin_velocity = _vector(release['origin_linear_velocity'], 3, 'origin velocity', maximum=1e6)
     require(_vector(release['center_of_mass'], 3, 'center of mass', maximum=1000).tolist() ==
             body['mass']['center_of_mass'], 'PHYSICS_GRIP_COM',
             'Release velocity must be recovered for this exact physical center of mass.')
@@ -277,6 +310,10 @@ def compile_release(world, payloads, body_id, release):
     angular = _vector(release['angular_velocity'], 3, 'release angular velocity', maximum=50)
     require(np.linalg.norm(linear) <= 50 and np.linalg.norm(angular) <= 50,
             'PHYSICS_GRIP_SPEED', 'Release velocity exceeds the native magnitude bound.')
+    expected_linear = origin_velocity + np.cross(angular,
+        qmatrix(transform['rotation']) @ np.asarray(body['mass']['center_of_mass']))
+    require(np.allclose(linear, expected_linear, rtol=0, atol=1e-10), 'PHYSICS_GRIP_COM',
+            'Recorded COM velocity contradicts the origin motion and angular velocity.')
     body.update(mode='dynamic', authority='physics', animation=None,
                 transform={key: transform[key] for key in ('translation', 'rotation')},
                 linear_velocity=linear.tolist(), angular_velocity=angular.tolist())
@@ -304,21 +341,13 @@ def compile_release(world, payloads, body_id, release):
     # original documents/bytes are untouched; this is a new immutable snapshot.
     graph = SceneGraph(scene)
     graph.set_transform(body_id, transform, expected_revision=scene['revision'])
-    scene = graph.document()
-    validate_document(scene, 'scene')
-    sources[reference['path']] = canonical(scene)
-    new_reference = {**reference, 'sha256': digest(sources[reference['path']])}
-    result['scene'] = new_reference
     require('project.json' in sources, 'PHYSICS_GRIP_SOURCE', 'This profile requires the canonical project manifest.')
     project = parse(sources['project.json']);validate_document(project, 'project')
-    native_reference = {**new_reference, 'kind': 'scene3d-scene'}
     old_reference = {**reference, 'kind': 'scene3d-scene'}
     require(project['scenes'].count(old_reference) == 1 and project['dependency_lock'].count(old_reference) == 1,
             'PHYSICS_GRIP_SOURCE', 'Project must bind the exact source scene once in scenes and dependency lock.')
-    for field in ('scenes', 'dependency_lock'):
-        project[field] = [native_reference if item == old_reference else item
-                          for item in project[field]]
-    validate_document(project, 'project');sources['project.json'] = canonical(project)
+    sources, snapshot = _promoted_snapshot(sources, graph, reference['path'])
+    result['scene'] = {**snapshot['active_scene'], 'kind': 'scene'}
     validate_contract(result)
     return result, sources, dict(release_sha256=object_hash(release), source_world_sha256=object_hash(world),
                                 released_world_sha256=object_hash(result),

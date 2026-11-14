@@ -3,6 +3,7 @@ from copy import deepcopy
 import math
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -40,6 +41,44 @@ def release(*, impulse=(0, 0, 0), angular_impulse=(0, 0, 0)):
     return release_state(dict(time=dict(numerator=0, denominator=1), transform=transform([-.1, 3, 0])),
         dict(time=dict(numerator=1, denominator=10), transform=transform([0, 3, 0])),
         impulse=impulse, angular_impulse=angular_impulse)
+
+
+def shot_inputs():
+    """A real source-admissible primitive project with an incoming shot ref."""
+    from scene3d_example import node, SETTINGS
+    from scene3d_contracts import validate_document
+    world, payloads = build_inputs(backend='pybullet')
+    scene = parse(payloads['physics-scene.json'])
+    camera = node('camera', 'camera')
+    camera['camera'] = dict(projection='perspective', near=.1, far=100, vertical_fov=.8, orthographic_height=4)
+    scene['nodes'].append(camera);scene['roots'].append('camera')
+    scene['cameras'] = ['camera'];scene['shots'] = ['shot']
+    payloads['physics-scene.json'] = canonical(scene)
+    old = {**world['scene'], 'kind':'scene3d-scene'}
+    new = {**old, 'sha256':digest(payloads['physics-scene.json'])}
+    world['scene'] = {**new, 'kind':'scene'}
+    shot = dict(schema_version=1, kind='scene3d-shot', id='shot', version='1.0.0', name='shot', scene=new,
+        duration_frames=49, fps=world['fps'], camera='camera', camera_overrides={}, tracks=[], bindings=[],
+        material_overrides=[], temporal_constraints=[], render=deepcopy(SETTINGS), continuity=[], dependencies=[], metadata={})
+    validate_document(shot, 'shot');payloads['shot.json'] = canonical(shot)
+    shot_ref = dict(id='shot', version='1.0.0', kind='scene3d-shot', path='shot.json', sha256=digest(payloads['shot.json']))
+    project = parse(payloads['project.json'])
+    for field in ('scenes', 'dependency_lock'):
+        project[field] = [new if ref == old else ref for ref in project[field]]
+    project['shots'] = [shot_ref];project['dependency_lock'].append(shot_ref)
+    payloads['project.json'] = canonical(project)
+    return world, payloads
+
+
+def assert_native_source_admission(payloads, world):
+    from physics_backends import _source_admission
+    from scene3d_contracts import load_project
+    with tempfile.TemporaryDirectory(prefix='grip-source-test-') as temporary:
+        root = Path(temporary)
+        for name, payload in payloads.items():
+            target = root/name;target.parent.mkdir(parents=True, exist_ok=True);target.write_bytes(payload)
+        load_project(root)
+        _source_admission(root, world, 'project.json')
 
 
 class GripSpatialTests(unittest.TestCase):
@@ -181,8 +220,10 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(released['bodies'][0]['linear_velocity'], [1, 0, 0])
         self.assertEqual(released['forces'][0]['type'], 'impulse')
         self.assertNotEqual(released['scene']['sha256'], world['scene']['sha256'])
-        self.assertEqual(digest(sources['physics-scene.json']), released['scene']['sha256'])
-        self.assertEqual(parse(sources['physics-scene.json'])['revision'], 1)
+        self.assertEqual(digest(sources[released['scene']['path']]), released['scene']['sha256'])
+        self.assertEqual(parse(sources[released['scene']['path']])['revision'], 1)
+        self.assertEqual(released['scene']['version'], '1.0.1')
+        self.assertEqual(sources['physics-scene.json'], payloads['physics-scene.json'])
         self.assertEqual(sources['ball.obj'], payloads['ball.obj'])
         self.assertIn('not performed', receipt['status'])
 
@@ -232,6 +273,31 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(RigError) as error:
                 compile_release(world, payloads, 'ball', state)
             self.assertEqual(error.exception.report['code'], 'PHYSICS_GRIP_SPEED')
+
+    def test_incoming_shots_keep_originals_and_bind_new_scene_versions(self):
+        world, payloads = shot_inputs()
+        assert_native_source_admission(payloads, world)
+        released, sources, _ = compile_release(world, payloads, 'ball', release())
+        assert_native_source_admission(sources, released)
+        for name, original in payloads.items():
+            if name != 'project.json':self.assertEqual(sources[name], original)
+        history = 'history/project-'+digest(payloads['project.json'])+'.json'
+        self.assertEqual(sources[history], payloads['project.json'])
+        new_shot = parse(sources['versions/shot/1.0.1.json'])
+        self.assertEqual(new_shot['scene'], {**released['scene'], 'kind':'scene3d-scene'})
+        self.assertEqual(parse(sources['shot.json'])['scene'], {**world['scene'], 'kind':'scene3d-scene'})
+
+    def test_malformed_provenance_and_contradictory_com_motion_are_typed(self):
+        world, payloads = build_inputs(backend='pybullet')
+        for key, value in [('velocity_source', object()), ('collision_status', float('nan')),
+                           ('velocity_source', 'fabricated-execution')]:
+            state = release();state[key] = value
+            with self.subTest(key=key), self.assertRaises(RigError) as error:
+                compile_release(world, payloads, 'ball', state)
+            self.assertEqual(error.exception.report['code'], 'PHYSICS_GRIP_PROVENANCE')
+        state = release();state['linear_velocity'][0] = 2
+        with self.assertRaises(RigError) as error:compile_release(world, payloads, 'ball', state)
+        self.assertEqual(error.exception.report['code'], 'PHYSICS_GRIP_COM')
 
 
 if __name__ == '__main__':unittest.main()
