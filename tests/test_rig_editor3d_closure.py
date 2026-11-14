@@ -332,7 +332,8 @@ class EditorNativeClosureTests(unittest.TestCase):
         native=reference(self.root,'rig/rig.json','rig');native['native_kind']='Rig'
         project=deepcopy(self.bundle[0]);project['dependency_manifest'].append(native)
         with self.assertRaises(RigError) as caught:verify_editor_bundle(project,*self.bundle[1:],self.root)
-        self.assertEqual(caught.exception.report['code'],'EDITOR3D_NATIVE')
+        # Preserve the canonical rig owner's structured identity diagnostic.
+        self.assertEqual(caught.exception.report['code'],'RIG_IDENTITY_SCHEMA')
 
 
 if __name__ == '__main__':
