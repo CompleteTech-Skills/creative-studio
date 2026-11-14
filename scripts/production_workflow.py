@@ -178,6 +178,8 @@ class NativeReviewJournal:
     def _reference(cls, value):
         cls._need(next(cls._reference_validator().iter_errors(value), None) is None, 'REFERENCE',
                   'Review artifacts must use the exact Director ArtifactRef contract.')
+        from rig_errors import portable_name
+        portable_name(value['path'])
 
     def _read_reference(self, reference):
         from director_contracts import _read_artifact
@@ -296,8 +298,9 @@ class NativeReviewJournal:
         for reference in references:
             self._read_reference(reference)
 
-    def _dependencies(self, value, *, verify):
-        self._need(isinstance(value, dict) and 0 < len(value) <= 128, 'INPUT', 'Supply exact current scoped dependencies.')
+    def _dependencies(self, value, *, verify, allow_empty=False):
+        self._need(isinstance(value, dict) and (0 if allow_empty else 1) <= len(value) <= 128,
+                   'INPUT', 'Supply exact current scoped dependencies.')
         self._bounded(value)
         for name, refs in value.items():
             self._name(name)
@@ -415,7 +418,7 @@ class NativeReviewJournal:
             return copy.deepcopy(record)
 
     def status(self, current_dependencies):
-        current = self._dependencies(current_dependencies, verify=False)
+        current = self._dependencies(current_dependencies, verify=False, allow_empty=True)
         state = self._load()
         selected = {}
         for name in current:
@@ -443,7 +446,7 @@ class NativeReviewJournal:
                                 reviewer_identity_verification='self-attested', production_art_acceptance=False,
                                 synthetic_gate_only=entry['synthetic_gate_only'])
         return dict(dimensions=result, history_count=len(state['reviews']),
-                    current_pass=all(d['status'] == 'pass' for d in result.values()),
+                    current_pass=bool(result) and all(d['status'] == 'pass' for d in result.values()),
                     production_art_acceptance=False)
 
     def append_validation(self, report, transaction_id):
@@ -452,25 +455,45 @@ class NativeReviewJournal:
         self._need(isinstance(report, dict) and report.get('kind') == 'director-qa-report' and
                    type(report.get('schema_version')) in (int, float) and report['schema_version'] == 1 and report.get('project_id') == self.project_id and
                    report.get('fixture') is self.fixture and report.get('status') in
-                   ('passed', 'failed', 'partial', 'unavailable', 'canceled', 'awaiting_review') and
+                   ('passed', 'failed', 'partial', 'unverified', 'unavailable', 'canceled', 'awaiting_review') and
+                   report.get('project') == self.project_reference and
                    isinstance(report.get('inputs'), list) and bool(report['inputs']) and
                    isinstance(report.get('checks'), list), 'VALIDATION', 'Record an actual typed structural QA report.')
         self._need(report.get('production_art_acceptance', False) is False,
                    'VALIDATION', 'Structural validation cannot grant artistic acceptance.')
+        self._need(all(key not in report or type(report[key]) is bool for key in ('canceled', 'deadline_exceeded')),
+                   'VALIDATION', 'QA cancellation and deadline flags must be explicit booleans.')
         self._need(report['status'] != 'passed' or report['checks'] and
-                   all(isinstance(c, dict) and c.get('status') == 'passed' for c in report['checks']),
-                   'VALIDATION', 'A passed report requires nonempty independently passed checks.')
-        for reference in report['inputs']:
-            self._reference(reference)
+                   all(isinstance(c, dict) and c.get('status') == 'passed' for c in report['checks']) and
+                   not report.get('canceled', False) and not report.get('deadline_exceeded', False),
+                   'VALIDATION', 'A passed report requires nonempty passed checks without cancellation or deadline failure.')
+        references = self._validation_references(report)
         with hatch.ownership(self.root):
             state = self._load()
-            self._verify_references(report)
+            # Failed expected references are evidence of the failure, not a
+            # requirement that the broken/missing input suddenly verify. The
+            # exact active project/profile and every claimed passed check must
+            # still verify before a historical report can be appended.
+            positive = [report['project'], report['profile']]
+            if report['status'] == 'passed':
+                positive = references
+            else:
+                for check in report['checks']:
+                    if check['status'] == 'passed':
+                        positive.extend([check['artifact'], *check['evidence']])
+            # A project's/profile's dependency declarations can deliberately
+            # include the very missing input being diagnosed. Reverify the
+            # positive roles' primary files, rather than promoting their whole
+            # dependency declarations to successful verification on failure.
+            for reference in {hash_object(r): r for r in positive}.values():
+                self._read_reference(reference)
             request_hash = hash_object(dict(kind='validation', report=report))
             previous = self._previous(state, transaction_id, request_hash)
             if previous is not None:
                 return previous
             record = dict(report=copy.deepcopy(report), recorded_at=time.time(), transaction_id=transaction_id,
                           request_sha256=request_hash, project_reference=copy.deepcopy(self.project_reference),
+                          all_required_inputs_verified=report['status'] == 'passed',
                           production_art_acceptance=False,
                           previous_sha256=state['validations'][-1]['sha256'] if state['validations'] else None)
             record['sha256'] = hash_object(record)
@@ -478,6 +501,48 @@ class NativeReviewJournal:
             _event(state, 'native-validation-recorded', receipt_sha256=record['sha256'], transaction_id=transaction_id)
             self._write(state)
             return copy.deepcopy(record)
+
+    def _validation_references(self, report):
+        """Validate typed positions without interpreting native report details.
+
+        Native owners may retain their own path/hash descriptor formats inside
+        details. Only Director ArtifactRefs and declared typed positions carry
+        Director read authority. Failed references are never read here.
+        """
+        from director_contracts import artifact_references
+        refs = [report['project'], report.get('profile'), *report['inputs']]
+        self._reference(report.get('profile'))
+        self._need(report['profile']['kind'] == 'director-qa-profile', 'VALIDATION',
+                   'Structural report must bind its actual QA profile.')
+        check_ids = []
+        for check in report['checks']:
+            self._need(isinstance(check, dict) and check.get('status') in
+                       ('passed', 'failed', 'blocked', 'unavailable', 'unverified', 'canceled', 'pending') and
+                       isinstance(check.get('evidence'), list) and len(check['evidence']) <= 256,
+                       'VALIDATION', 'Each structural check needs a typed status, target and bounded evidence.')
+            self._name(check.get('id'))
+            check_ids.append(check['id'])
+            self._need(check['status'] != 'passed' or bool(check['evidence']), 'VALIDATION',
+                       'A claimed passing check needs actual evidence references.')
+            refs.extend([check.get('artifact'), *check['evidence']])
+        self._need(len(check_ids) == len(set(check_ids)), 'VALIDATION', 'Structural check identities must be unique.')
+        findings = report.get('findings', [])
+        self._need(isinstance(findings, list) and len(findings) <= 256, 'VALIDATION',
+                   'Structural findings must be a bounded list.')
+        for finding in findings:
+            self._need(isinstance(finding, dict) and 'artifact' in finding, 'VALIDATION',
+                       'Every structural finding must bind its expected target artifact.')
+            refs.append(finding['artifact'])
+        refs.extend(artifact_references(report))
+        unique = {}
+        for reference in refs:
+            self._reference(reference)
+            self._not_mutable_journal(reference)
+            unique[hash_object(reference)] = reference
+        references = list(unique.values())
+        # Include transitive reference byte budgets before any positive reads.
+        list(self._references(references))
+        return references
 
     def validation_history(self):
         """Historical reports only; callers must revalidate before current use."""

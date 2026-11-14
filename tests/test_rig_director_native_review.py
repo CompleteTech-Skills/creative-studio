@@ -29,9 +29,13 @@ def reference(root, name, *, kind='evidence', artifact_id='evidence', media_type
 
 
 def append_in_process(root, project, image, identifier):
+    root = Path(root)
     journal = workflow.NativeReviewJournal(root, project)
+    profile = reference(root, 'profile.json', kind='director-qa-profile', artifact_id='profile')
     report = dict(schema_version=1, kind='director-qa-report', project_id=journal.project_id,
-                  fixture=True, status='passed', inputs=[image], checks=[dict(id='exact-bytes', status='passed')])
+                  fixture=True, project=project, profile=profile, status='passed',
+                  inputs=[project, profile, image], checks=[dict(id='exact-bytes', artifact=image,
+                      evidence=[image], status='passed')])
     deadline = time.monotonic() + 15
     while True:
         try:
@@ -58,6 +62,14 @@ class NativeReviewJournalTests(unittest.TestCase):
         self.image = reference(self.root, 'inspected.png', media_type='image/png')
         (self.root/'other.json').write_text('{"scope":"unrelated"}')
         self.other = reference(self.root, 'other.json', artifact_id='other')
+        from director_schema import MILESTONES
+        profile = dict(schema_version=1, kind='director-qa-profile', id='journal-fixture',
+            checks=[dict(id='exact-bytes', operation='artifact.bytes', artifact=self.image, options={},
+                         scene=None, shot=None, frames=None)],
+            milestones={name: [] for name in MILESTONES}, review_dependencies={},
+            limits=dict(max_checks=8, max_total_bytes=16*1024**2, max_seconds=60))
+        (self.root/'profile.json').write_text(json.dumps(profile))
+        self.profile = reference(self.root, 'profile.json', kind='director-qa-profile', artifact_id='profile')
         self.journal = workflow.NativeReviewJournal(self.root, self.project)
         self.current = dict(camera_composition=[self.image], lighting_lookdev=[self.image, self.other])
 
@@ -72,8 +84,9 @@ class NativeReviewJournalTests(unittest.TestCase):
 
     def report(self, status='passed'):
         return dict(schema_version=1, kind='director-qa-report', project_id=self.journal.project_id,
-                    fixture=True, status=status, inputs=[self.image],
-                    checks=[dict(id='exact-bytes', status='passed')],
+                    fixture=True, project=self.project, profile=self.profile, status=status,
+                    inputs=[self.project, self.profile, self.image],
+                    checks=[dict(id='exact-bytes', artifact=self.image, evidence=[self.image], status='passed')],
                     production_art_acceptance=False)
 
     def test_record_reopens_exact_image_bound_chain_without_artistic_approval(self):
@@ -95,6 +108,16 @@ class NativeReviewJournalTests(unittest.TestCase):
         self.assertFalse(status['current_pass'])
         self.assertEqual({d['status'] for d in status['dimensions'].values()}, {'unreviewed'})
         self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
+
+    def test_empty_readonly_scope_never_confers_review_completion(self):
+        status = self.journal.status({})
+        self.assertEqual(status['dimensions'], {})
+        self.assertFalse(status['current_pass'])
+        self.assertFalse(status['production_art_acceptance'])
+        self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
+        self.journal.record(self.receipt(), 'actual-scope', current_dependencies=self.current)
+        self.assertTrue(self.journal.status(self.current)['current_pass'])
+        self.assertFalse(self.journal.status({})['current_pass'])
 
     def test_changed_scope_is_stale_and_unrelated_scope_retains_current_review(self):
         self.journal.record(self.receipt(), 'review-1', current_dependencies=self.current)
@@ -179,7 +202,8 @@ class NativeReviewJournalTests(unittest.TestCase):
 
     def test_structural_report_cannot_assert_missing_checks_or_art_acceptance(self):
         for change in ({'checks': []}, {'checks': [dict(id='failure', status='failed')]},
-                       {'inputs': []}, {'production_art_acceptance': True}, {'schema_version': True}):
+                       {'inputs': []}, {'production_art_acceptance': True}, {'schema_version': True},
+                       {'canceled': True}, {'deadline_exceeded': True}, {'canceled': []}):
             with self.subTest(change=change), self.assertRaises(RigError):
                 self.journal.append_validation({**self.report(), **change}, 'bad')
         self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
@@ -272,9 +296,11 @@ class NativeReviewJournalTests(unittest.TestCase):
         with self.assertRaises(RigError):
             self.journal.record(receipt, 'oversized', current_dependencies=self.current)
         report = self.report()
-        huge = deepcopy(self.image)
-        huge['byte_size'] = 256 * 1024**2
-        report['inputs'] = [huge] * 5
+        report['inputs'] = []
+        for index in range(5):
+            huge = deepcopy(self.image)
+            huge.update(byte_size=256*1024**2, path='large-'+str(index)+'.png', artifact_id='large-'+str(index))
+            report['inputs'].append(huge)
         with self.assertRaises(RigError) as error:
             self.journal.append_validation(report, 'oversized-artifacts')
         self.assertEqual(error.exception.report['code'], 'NATIVE_REVIEW_LIMIT')
@@ -358,6 +384,100 @@ class NativeReviewJournalTests(unittest.TestCase):
         self.assertEqual(state['validations'][0]['recorded_at'], 20.0)
         self.assertEqual(state['history'][0]['time'], 10.0)
         self.assertEqual(len(state['validations']), 1)
+
+    def test_actual_changed_png_failure_is_preserved_without_verifying_failed_bytes(self):
+        from director_contracts import _read_artifact
+        self.journal.append_validation(self.report(), 'before-tamper')
+        (self.root/'inspected.png').write_bytes(b'actually modified PNG bytes')
+        with self.assertRaises(RigError) as read_failure:
+            _read_artifact(self.root, self.image)
+        failed = self.report('failed')
+        failed['checks'][0].update(status='failed', details=dict(code=read_failure.exception.report['code']))
+        failed['findings'] = [dict(artifact=self.image, expected_sha256=self.image['sha256'],
+                                   current_sha256=None, observation='Exact read failed before decode.')]
+        record = self.journal.append_validation(failed, 'after-tamper')
+        self.assertFalse(record['all_required_inputs_verified'])
+        self.assertEqual(record['report']['findings'][0]['current_sha256'], None)
+        history = self.journal.validation_history()
+        self.assertEqual([r['report']['status'] for r in history['records']], ['passed', 'failed'])
+        self.assertFalse(history['current_execution_verified'])
+        self.assertEqual((self.root/'inspected.png').read_bytes(), b'actually modified PNG bytes')
+        self.assertFalse(self.journal.status(self.current)['current_pass'])
+
+    def test_partial_report_checks_passed_proof_but_retains_bad_expected_input(self):
+        from director_contracts import _read_artifact
+        profile = json.loads((self.root/'profile.json').read_text())
+        profile['checks'].append(dict(id='other-bytes', operation='artifact.bytes', artifact=self.other,
+                                      options={}, scene=None, shot=None, frames=None))
+        (self.root/'partial-profile.json').write_text(json.dumps(profile))
+        profile_ref = reference(self.root, 'partial-profile.json', kind='director-qa-profile', artifact_id='partial-profile')
+        partial = self.report('partial')
+        partial['profile'] = profile_ref
+        partial['inputs'] = [self.project, profile_ref, self.image, self.other]
+        raw = _read_artifact(self.root, self.image)
+        partial['checks'][0]['details'] = dict(bytes=len(raw), source_sha256=self.image['sha256'])
+        partial['checks'].append(dict(id='other-bytes', artifact=self.other, status='failed',
+            evidence=[self.other], details={'native_files': [{'path': 'native-owner-descriptor.bin', 'sha256': '0'*64}]}))
+        (self.root/'other.json').write_bytes(b'tampered required input')
+        with self.assertRaises(RigError):
+            _read_artifact(self.root, self.other)
+        record = self.journal.append_validation(partial, 'partial-failure')
+        self.assertFalse(record['all_required_inputs_verified'])
+        self.assertEqual(record['report']['checks'][1]['status'], 'failed')
+        before = (self.root/workflow.WORKFLOW_FILE).read_bytes()
+        false_pass = deepcopy(partial)
+        false_pass['status'] = 'passed'
+        false_pass['checks'][1]['status'] = 'passed'
+        with self.assertRaises(RigError):
+            self.journal.append_validation(false_pass, 'false-passed-input')
+        # A bad *claimed passed* check also blocks persistence of a partial report.
+        (self.root/'inspected.png').write_bytes(b'bad passed proof')
+        with self.assertRaises(RigError):
+            self.journal.append_validation(partial, 'false-positive-in-partial')
+        self.assertEqual((self.root/workflow.WORKFLOW_FILE).read_bytes(), before)
+
+    def test_failed_missing_input_in_project_or_profile_dependencies_is_not_read(self):
+        missing = deepcopy(self.image)
+        missing.update(path='missing-frame.png', artifact_id='missing-frame')
+        project = deepcopy(self.project)
+        project['dependencies'] = [missing]
+        profile = deepcopy(self.profile)
+        profile['dependencies'] = [missing]
+        journal = workflow.NativeReviewJournal(self.root, project)
+        report = self.report('failed')
+        report.update(project=project, profile=profile, inputs=[project, profile, missing])
+        report['checks'] = [dict(id='missing-frame', artifact=missing, status='failed', evidence=[missing], details={})]
+        journal.append_validation(report, 'missing-source')
+        self.assertEqual(journal.validation_history()['records'][0]['report']['checks'][0]['artifact'], missing)
+        self.assertFalse((self.root/'missing-frame.png').exists())
+        false_pass = deepcopy(report)
+        false_pass['status'] = 'passed'
+        false_pass['checks'][0]['status'] = 'passed'
+        with self.assertRaises(RigError):
+            journal.append_validation(false_pass, 'missing-source-false-pass')
+
+    def test_nonpassed_report_still_requires_actual_current_project_and_profile(self):
+        failed = self.report('failed')
+        failed['checks'][0]['status'] = 'failed'
+        (self.root/'inspected.png').unlink()
+        for bad_field in ('profile', 'project'):
+            changed = deepcopy(failed)
+            changed[bad_field]['sha256'] = '0'*64
+            with self.subTest(field=bad_field), self.assertRaises(RigError):
+                self.journal.append_validation(changed, 'invalid-'+bad_field)
+        self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
+
+    def test_failed_reference_paths_are_validated_without_reading_failed_inputs(self):
+        for name in ('../outside.png', '/absolute.png', 'nested/../../outside.png'):
+            failed = self.report('failed')
+            expected = deepcopy(self.image)
+            expected['path'] = name
+            failed['inputs'] = [expected]
+            failed['checks'][0].update(status='failed', artifact=expected, evidence=[expected])
+            with self.subTest(name=name), patch.object(self.journal, '_read_reference', side_effect=AssertionError('unexpected read')):
+                with self.assertRaises(RigError):
+                    self.journal.append_validation(failed, 'unsafe')
+        self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
 
 
 if __name__ == '__main__':
