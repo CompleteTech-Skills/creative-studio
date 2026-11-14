@@ -1315,42 +1315,56 @@ class BlenderBackend:
             report = self._bake_at(result, destination.name, parent.fd)
         return {**report, 'destination': str(destination)}
 
+    def _stage_result_at(self, result, payload_fd):
+        """Fill a fresh caller-owned private cache directory; do not publish it."""
+        owner = self._owner(result)
+        require(self._results.get(result.token) == result, 'PHYSICS_OWNERSHIP',
+                'Only this attempt\'s unmodified actual simulation result may be staged.')
+        with _Reader.from_descriptor(payload_fd) as target:
+            fresh = os.open('.', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=target.fd)
+            try:
+                with os.scandir(fresh) as entries:
+                    require(next(entries,None) is None,'PHYSICS_DESTINATION_EXISTS','Native cache staging requires a fresh empty directory.',category='invalid-input')
+            finally:os.close(fresh)
+        with _Reader(result.root) as reader:
+            for file in result.files:
+                payload = reader.read(file['path'])
+                require(digest(payload) == file['sha256'] and len(payload) == file['bytes'],
+                        'PHYSICS_CACHE_CORRUPT', 'Simulation artifacts changed before publication.', category='cache-corruption')
+                _write_relative(payload_fd, file['path'], payload)
+        world = owner['world']
+        cache = dict(schema_version=1, kind='hatch-3d-physics-cache', id='cache-' + result.token,
+            world_sha256=result.world_sha256, physics_input_sha256=result.world_sha256, backend=result.backend,
+            frame_range=world['frame_range'], fps=world['fps'], fixed_step=world['solver']['fixed_step'],
+            substeps=world['solver']['substeps'], sample_count=world['frame_range']['end'], files=list(result.files),
+            upstream_hashes=sorted({item['sha256'] for item in owner['inventory'].values()}),
+            seed=world['solver']['seed'], reproducibility='verified-cache-replay', numerical_tolerance=1e-5,
+            usage=result.usage, fixture=result.fixture, review_status='unreviewed')
+        validator, error_type = _contracts()
+        try:
+            validator(cache, 'PhysicsCache')
+        except error_type as exc:
+            raise BackendError('PHYSICS_SCHEMA', str(exc), category='invalid-input') from exc
+        cache_bytes = canonical(cache)
+        _write_relative(payload_fd, 'cache.json', cache_bytes)
+        _verify_cache_at(payload_fd, expected_world_sha256=result.world_sha256)
+        return dict(status='baked-and-verified', cache_sha256=digest(cache_bytes),
+            world_sha256=result.world_sha256, sample_count=cache['sample_count'], fixture=result.fixture,
+            review_status='unreviewed')
+
     def _bake_at(self, result, destination_name, parent_fd):
         """Publish an owned completed result beneath a caller-pinned parent."""
         from atomic_publish import private_stage_fd, rename_no_replace_at
-        owner = self._owner(result)
+        self._owner(result)
         require(self._results.get(result.token) == result, 'PHYSICS_OWNERSHIP',
                 'Only this attempt\'s unmodified actual simulation result may be published.')
         require(type(destination_name) is str and path_name(destination_name) == destination_name and '/' not in destination_name,
                 'PHYSICS_PATH', 'Publication requires a single portable destination name.')
-        # The outer wrapper is pinned before the first copied byte. Publication
-        # moves only its inner payload through the canonical FD authority.
         with private_stage_fd(parent_fd, prefix='.physics-') as stage_fd:
             os.mkdir('payload', mode=0o700, dir_fd=stage_fd)
-            payload_fd = os.open('payload', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=stage_fd)
+            payload_fd = os.open('payload', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=stage_fd)
             try:
-                with _Reader(result.root) as reader:
-                    for file in result.files:
-                        payload = reader.read(file['path'])
-                        require(digest(payload) == file['sha256'] and len(payload) == file['bytes'],
-                                'PHYSICS_CACHE_CORRUPT', 'Simulation artifacts changed before publication.', category='cache-corruption')
-                        _write_relative(payload_fd, file['path'], payload)
-                world = owner['world']
-                cache = dict(schema_version=1, kind='hatch-3d-physics-cache', id='cache-' + result.token,
-                    world_sha256=result.world_sha256, physics_input_sha256=result.world_sha256, backend=result.backend,
-                    frame_range=world['frame_range'], fps=world['fps'], fixed_step=world['solver']['fixed_step'],
-                    substeps=world['solver']['substeps'], sample_count=world['frame_range']['end'], files=list(result.files),
-                    upstream_hashes=sorted({item['sha256'] for item in owner['inventory'].values()}),
-                    seed=world['solver']['seed'], reproducibility='verified-cache-replay', numerical_tolerance=1e-5,
-                    usage=result.usage, fixture=result.fixture, review_status='unreviewed')
-                validator, error_type = _contracts()
-                try:
-                    validator(cache, 'PhysicsCache')
-                except error_type as exc:
-                    raise BackendError('PHYSICS_SCHEMA', str(exc), category='invalid-input') from exc
-                cache_bytes = canonical(cache)
-                _write_relative(payload_fd, 'cache.json', cache_bytes)
-                _verify_cache_at(payload_fd, expected_world_sha256=result.world_sha256)
+                report = self._stage_result_at(result, payload_fd)
                 try:
                     rename_no_replace_at(stage_fd, 'payload', parent_fd, destination_name)
                 except FileExistsError as exc:
@@ -1358,11 +1372,8 @@ class BlenderBackend:
                         category='invalid-input') from exc
                 except OSError as exc:
                     raise BackendError('PHYSICS_PUBLICATION_UNAVAILABLE', 'Exclusive output publication failed safely: '+str(exc)) from exc
-                return dict(status='baked-and-verified', cache_sha256=digest(cache_bytes),
-                    world_sha256=result.world_sha256, sample_count=cache['sample_count'], fixture=result.fixture,
-                    review_status='unreviewed')
-            finally:
-                os.close(payload_fd)
+                return report
+            finally:os.close(payload_fd)
 
     def inspect(self, cache, frame):
         return inspect_cache(cache, frame)
@@ -1966,7 +1977,9 @@ def _read_cache_impl(root, *, expected_world_sha256=None, directory_fd=None):
                     'PHYSICS_CACHE_CORRUPT', 'Cache lacks independent full native replay evidence.', category='cache-corruption')
         else:
             _check_pybullet_report(receipt.get('solver_report'),world,receipt.get('backend_module',{}),legacy=digest(payloads['worker.py'])==LEGACY_WORKERS['pybullet'])
-            _validate_contacts(parse(payloads['contacts.json']),world,world_hash,legacy=digest(payloads['worker.py'])==LEGACY_WORKERS['pybullet'])
+            contact_states=parse(payloads['contacts.json'])
+            _validate_contacts(contact_states,world,world_hash,legacy=digest(payloads['worker.py'])==LEGACY_WORKERS['pybullet'])
+            receipt['_contacts']=contact_states
             if 'solver-states.json' in payloads:
                 _validate_solver_samples(parse(payloads['solver-states.json']),world,world_hash,manifest['fixture'],states)
             else:
@@ -1977,6 +1990,7 @@ def _read_cache_impl(root, *, expected_world_sha256=None, directory_fd=None):
                     'PHYSICS_CACHE_CORRUPT','DIRECT sampled-cache verification receipt differs.',category='cache-corruption')
         if manifest['backend']['id']=='pybullet' and 'solver-states.json' in payloads:
             receipt['_solver_states']=parse(payloads['solver-states.json'])
+        receipt['_cache_manifest_sha256']=digest(manifest_payload)
         return manifest, world, states, receipt
 
 
@@ -2036,67 +2050,104 @@ def inspect_cache(root, frame):
     return value
 
 
-def export_animation(root, destination, *, format='native-transform-json'):
+def _stage_export_at(root, payload_fd, *, format='native-transform-json', source_fd=None):
     require(format == 'native-transform-json', 'PHYSICS_EXPORT_UNSUPPORTED',
             'Only exact sampled native-transform-json export is implemented.', category='capability-gap')
-    manifest, world, states, _ = _read_cache(root)
-    destination = _new_destination(destination)
-    stage = Path(tempfile.mkdtemp(prefix='.'+destination.name+'.physics-', dir=destination.parent))
-    try:
-        payload = dict(schema_version=1, kind='hatch-physics-transform-animation',
-            source_world_sha256=manifest['world_sha256'], source='hash-bound-cache-samples',
-            execution_evidence='retained unsigned solver receipt; not a cryptographic identity attestation',
-            coordinate_system=world['coordinate_system'], fps=world['fps'], frame_range=world['frame_range'],
-            interpolation='none-exact-samples-only', samples=states['samples'], fixture=manifest['fixture'],
-            review_status='unreviewed')
-        data = canonical(payload)
-        _write(stage/'transforms.json', data)
-        _write(stage/'export.json', canonical(dict(format=format, path='transforms.json', sha256=digest(data), bytes=len(data),
-                                                 world_sha256=manifest['world_sha256'], fixture=manifest['fixture'], review_status='unreviewed')))
-        _publish(stage, destination)
-        return dict(status='exported', destination=str(destination), sha256=digest(data), format=format,
-                    sample_count=len(states['samples']), fixture=manifest['fixture'], review_status='unreviewed')
-    finally:
-        if stage.exists():
-            shutil.rmtree(stage)
+    manifest,world,states,_=_read_cache(root,directory_fd=source_fd)
+    with _Reader.from_descriptor(payload_fd) as target:
+        require(not target.names(),'PHYSICS_DESTINATION_EXISTS','Animation staging requires a fresh empty directory.',category='invalid-input')
+    payload=dict(schema_version=1,kind='hatch-physics-transform-animation',
+        source_world_sha256=manifest['world_sha256'],source='hash-bound-cache-samples',
+        execution_evidence='retained unsigned solver receipt; not a cryptographic identity attestation',
+        coordinate_system=world['coordinate_system'],fps=world['fps'],frame_range=world['frame_range'],
+        interpolation='none-exact-samples-only',samples=states['samples'],fixture=manifest['fixture'],review_status='unreviewed')
+    data=canonical(payload)
+    descriptor=canonical(dict(format=format,path='transforms.json',sha256=digest(data),bytes=len(data),
+        world_sha256=manifest['world_sha256'],fixture=manifest['fixture'],review_status='unreviewed'))
+    require(len(data)+len(descriptor)<=min(MAX_CACHE_BYTES,world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']) and
+        max(len(data),len(descriptor))<=world['budgets']['bake_file_bytes'],
+        'PHYSICS_RESOURCE_LIMIT','Native transform export exceeds retained world storage limits.')
+    _write_relative(payload_fd,'transforms.json',data);_write_relative(payload_fd,'export.json',descriptor)
+    with _Reader.from_descriptor(payload_fd) as reader:
+        require(reader.read('transforms.json')==data and reader.read('export.json')==descriptor and
+            reader.names()=={'transforms.json','export.json'},'PHYSICS_CACHE_CORRUPT','Native export bytes changed before publication.')
+    return dict(status='exported',sha256=digest(data),format=format,sample_count=len(states['samples']),
+        fixture=manifest['fixture'],review_status='unreviewed')
+
+
+def export_animation(root, destination, *, format='native-transform-json'):
+    from atomic_publish import private_stage_fd,rename_no_replace_at
+    require(format == 'native-transform-json','PHYSICS_EXPORT_UNSUPPORTED',
+        'Only exact sampled native-transform-json export is implemented.',category='capability-gap')
+    destination=_new_destination(destination)
+    with _Reader(destination.parent) as parent, private_stage_fd(parent.fd,prefix='.'+destination.name+'.physics-') as stage_fd:
+        os.mkdir('payload',mode=0o700,dir_fd=stage_fd)
+        payload_fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=stage_fd)
+        try:
+            report=_stage_export_at(root,payload_fd,format=format)
+            try:rename_no_replace_at(stage_fd,'payload',parent.fd,destination.name)
+            except FileExistsError as exc:
+                raise BackendError('PHYSICS_DESTINATION_EXISTS','A destination created during staging was preserved.',category='invalid-input') from exc
+            except OSError as exc:
+                raise BackendError('PHYSICS_PUBLICATION_UNAVAILABLE','Exclusive output publication failed safely: '+str(exc)) from exc
+            return {**report,'destination':str(destination)}
+        finally:os.close(payload_fd)
 
 
 def demonstrate(destination,backend):
+    from atomic_publish import private_stage_fd,rename_no_replace_at
     from physics_backend_example import build_inputs
     world,payloads=build_inputs(backend=backend.backend_id)
-    destination=_new_destination(destination)
-    stage=Path(tempfile.mkdtemp(prefix='.'+destination.name+'.physics-',dir=destination.parent))
-    prepared=None
-    try:
-        for path,payload in payloads.items():_write(stage/'sources'/path,payload)
-        _write(stage/'physics-world.json',canonical(world))
-        prepared=backend.prepare(world,payloads)
-        result=backend.simulate(prepared,verify_consumption=backend.backend_id=='blender')
-        cache_report=backend.bake(result,stage/'cache')
-        export_report=backend.export_animation(stage/'cache',stage/'animation')
-        source=parse((prepared.root/'states.json').read_bytes())
-        heights=[next(body for body in source['samples'][frame]['bodies'] if body['id']=='ball')['translation'][1] for frame in (0,12,48)]
-        freefall_error=abs(heights[1]-(3-.5*9.81*.5**2))
-        resting_error=abs(heights[2]-.5)
-        require(heights[0]>heights[1] and freefall_error<=.02 and resting_error<=.03,
+    destination=_new_destination(destination);prepared=None
+    with _Reader(destination.parent) as parent, private_stage_fd(parent.fd,prefix='.'+destination.name+'.physics-') as stage_fd:
+        os.mkdir('payload',mode=0o700,dir_fd=stage_fd)
+        payload_fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=stage_fd)
+        cache_fd=None;animation_fd=None
+        try:
+            for path,payload in payloads.items():_write_relative(payload_fd,'sources/'+path,payload)
+            _write_relative(payload_fd,'physics-world.json',canonical(world))
+            prepared=backend.prepare(world,payloads)
+            result=backend.simulate(prepared,verify_consumption=backend.backend_id=='blender')
+            os.mkdir('cache',mode=0o700,dir_fd=payload_fd)
+            cache_fd=os.open('cache',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=payload_fd)
+            cache_report=backend._stage_result_at(result,cache_fd)
+            os.mkdir('animation',mode=0o700,dir_fd=payload_fd)
+            animation_fd=os.open('animation',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=payload_fd)
+            export_report=_stage_export_at(None,animation_fd,source_fd=cache_fd)
+            captured=_read_cache(None,directory_fd=cache_fd)
+            source=captured[2]
+            heights=[next(body for body in source['samples'][frame]['bodies'] if body['id']=='ball')['translation'][1] for frame in (0,12,48)]
+            freefall_error=abs(heights[1]-(3-.5*9.81*.5**2));resting_error=abs(heights[2]-.5)
+            require(heights[0]>heights[1] and freefall_error<=.02 and resting_error<=.03,
                 'PHYSICS_DEMO_NUMERICS','Actual demonstration failed its independent gravity/resting-height tolerances.',category='numerical-instability')
-        report=dict(status='executed-and-verified',fixture=True,review_status='unreviewed',backend=result.backend,
-            source_files=len(payloads),world_sha256=result.world_sha256,
-            native_source='Scene3D contract/hash closure plus genuine decoded OBJ meshes',
-            simulation_usage=result.usage,cache=verify_cache(stage/'cache'),cache_manifest_sha256=cache_report['cache_sha256'],
-            animation={**export_report,'destination':'animation'},
-            numerical=dict(frames=[0,12,48],actual_heights_m=heights,continuous_freefall_error_m=freefall_error,
-                           freefall_tolerance_m=.02,resting_height_error_m=resting_error,resting_tolerance_m=.03),
-            native_restart='unsupported; clean restart only',visual_review='not-performed')
-        if (prepared.root/'native-consumption.json').is_file():
-            report['native_consumption_control']=parse((prepared.root/'native-consumption.json').read_bytes())
-        _write(stage/'acceptance.json',canonical(report))
-        _publish(stage,destination)
-        return dict(status='executed-and-verified',destination=str(destination),world_sha256=result.world_sha256,
-                    fixture=True,review_status='unreviewed',sample_count=world['frame_range']['end'])
-    finally:
-        if prepared is not None:backend.cleanup(prepared)
-        if stage.exists():shutil.rmtree(stage)
+            report=dict(status='executed-and-verified',fixture=True,review_status='unreviewed',backend=result.backend,
+                source_files=len(payloads),world_sha256=result.world_sha256,
+                native_source='Scene3D contract/hash closure plus genuine decoded OBJ meshes',
+                simulation_usage=result.usage,cache=_cache_verification_report(*captured),cache_manifest_sha256=cache_report['cache_sha256'],
+                animation={**export_report,'destination':'animation'},
+                numerical=dict(frames=[0,12,48],actual_heights_m=heights,continuous_freefall_error_m=freefall_error,
+                    freefall_tolerance_m=.02,resting_height_error_m=resting_error,resting_tolerance_m=.03),
+                native_restart='unsupported; clean restart only',visual_review='not-performed')
+            if captured[3].get('native_consumption_control') is not None:
+                report['native_consumption_control']=captured[3]['native_consumption_control']
+            _write_relative(payload_fd,'acceptance.json',canonical(report))
+            inventory=_inventory_relative(payload_fd)
+            require(sum(x['bytes'] for x in inventory)<=min(MAX_CACHE_BYTES,world['budgets']['cache_bytes'],world['budgets']['temporary_bytes']) and
+                all(x['bytes']<=world['budgets']['bake_file_bytes'] for x in inventory),
+                'PHYSICS_RESOURCE_LIMIT','Demo artifacts exceed retained world storage limits.')
+            _verify_cache_at(cache_fd,expected_world_sha256=result.world_sha256)
+            try:rename_no_replace_at(stage_fd,'payload',parent.fd,destination.name)
+            except FileExistsError as exc:
+                raise BackendError('PHYSICS_DESTINATION_EXISTS','A destination created during staging was preserved.',category='invalid-input') from exc
+            except OSError as exc:
+                raise BackendError('PHYSICS_PUBLICATION_UNAVAILABLE','Exclusive output publication failed safely: '+str(exc)) from exc
+            return dict(status='executed-and-verified',destination=str(destination),world_sha256=result.world_sha256,
+                fixture=True,review_status='unreviewed',sample_count=world['frame_range']['end'])
+        finally:
+            if animation_fd is not None:os.close(animation_fd)
+            if cache_fd is not None:os.close(cache_fd)
+            os.close(payload_fd)
+            if prepared is not None:backend.cleanup(prepared)
 
 
 def main():

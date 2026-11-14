@@ -1,6 +1,8 @@
 """Owned isolated query worker; geometry comes from a verified cache closure."""
 import importlib.metadata
 import sys
+import os
+import stat
 
 
 def canonical(value):
@@ -11,11 +13,19 @@ def main():
     path = Path(sys.argv[-1])
     if path.name != 'worker-job.json' or path.is_symlink() or path.stat().st_size > 32*1024*1024:
         raise ValueError('Invalid private query job.')
-    root = path.resolve().parent
+    inherited=os.environ.get('HATCH_PHYSICS_DIRECTORY_FD')
+    if inherited is None:root=path.resolve().parent
+    else:
+        if not inherited.isascii() or not inherited.isdigit() or path!=Path('worker-job.json'):
+            raise ValueError('Invalid pinned query directory.')
+        owned=os.fstat(int(inherited));cwd=os.stat('.')
+        if not stat.S_ISDIR(owned.st_mode) or (owned.st_dev,owned.st_ino)!=(cwd.st_dev,cwd.st_ino):
+            raise ValueError('Pinned query directory differs from its cwd.')
+        root=Path('.')
     job = json.loads(path.read_bytes())
     if set(job) != {'protocol','mode','world','world_sha256','frame','state','queries','preview','worker_sha256'} or job['protocol'] != 1 or job['mode'] != 'collision-query':
         raise ValueError('Unsupported query operation.')
-    if hashlib.sha256(canonical(job['world'])).hexdigest() != job['world_sha256'] or hashlib.sha256(Path(__file__).read_bytes()).hexdigest() != job['worker_sha256']:
+    if hashlib.sha256(canonical(job['world'])).hexdigest() != job['world_sha256'] or hashlib.sha256((root/'worker.py' if inherited is not None else Path(__file__)).read_bytes()).hexdigest() != job['worker_sha256']:
         raise ValueError('Query source digest changed.')
     import pybullet as p
     location = Path(p.__file__).resolve()

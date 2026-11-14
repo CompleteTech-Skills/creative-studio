@@ -58,3 +58,32 @@ class NativePublicationTests(unittest.TestCase):
             self.assertEqual(raised.exception.report['code'], 'PHYSICS_DESTINATION_EXISTS')
             self.assertEqual(list(destination.iterdir()), [destination / 'foreign-marker'])
             self.assertEqual((destination / 'foreign-marker').read_bytes(), b'existing destination')
+
+    def test_transform_export_uses_verified_inner_payload(self):
+        with tempfile.TemporaryDirectory() as folder:
+            parent=Path(folder);destination=parent/'animation';changed=[]
+            original=atomic_publish.rename_no_replace_at
+            def rename(source_fd,source_name,destination_fd,destination_name):
+                info=os.fstat(source_fd)
+                stage=next(p for p in parent.iterdir() if (p.stat().st_dev,p.stat().st_ino)==(info.st_dev,info.st_ino))
+                stage.rename(parent/'owned-moved');stage.mkdir()
+                (stage/'foreign-marker').write_bytes(b'preserve replacement');changed.append(stage)
+                return original(source_fd,source_name,destination_fd,destination_name)
+            with patch.object(atomic_publish,'rename_no_replace_at',side_effect=rename):
+                report=core.export_animation(self.source,destination)
+            stored=(destination/'transforms.json').read_bytes()
+            self.assertEqual(core.digest(stored),report['sha256'])
+            self.assertEqual(core.parse(stored)['samples'],core._read_cache(self.source)[2]['samples'])
+            self.assertEqual((changed[0]/'foreign-marker').read_bytes(),b'preserve replacement')
+            self.assertFalse((destination/'foreign-marker').exists())
+
+    def test_staging_does_not_modify_an_occupied_directory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target=Path(folder);(target/'foreign-marker').write_bytes(b'existing data')
+            fd=os.open(target,os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                with self.assertRaises(core.BackendError) as raised:self.backend._stage_result_at(self.result,fd)
+                self.assertEqual(raised.exception.report['code'],'PHYSICS_DESTINATION_EXISTS')
+                self.assertEqual(list(target.iterdir()),[target/'foreign-marker'])
+                self.assertEqual((target/'foreign-marker').read_bytes(),b'existing data')
+            finally:os.close(fd)

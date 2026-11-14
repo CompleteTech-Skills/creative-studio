@@ -146,7 +146,7 @@ def simulate(world, source_payloads, destination, *, settings, executable=None, 
     core.require(all(type(v) is bytes for v in source_payloads.values()) and sum(len(v) for v in source_payloads.values())<=core.MAX_INPUT_BYTES,
         'PHYSICS_INPUTS','Liquid sources exceed input bound.')
     core._paths(source_payloads)
-    with core._Reader(destination.parent) as parent, private_stage_fd(parent.fd,prefix='.'+destination.name+'.liquid-',cleanup_on_error=False) as stage_fd:
+    with core._Reader(destination.parent) as parent, private_stage_fd(parent.fd,prefix='.'+destination.name+'.liquid-') as stage_fd:
         os.mkdir('payload',mode=0o700,dir_fd=stage_fd)
         payload_fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=stage_fd)
         try:

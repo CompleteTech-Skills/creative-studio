@@ -247,10 +247,29 @@ class CollisionNativeTests(unittest.TestCase):
 
     def test_real_playground_contacts_queries_and_tunneling_record(self):
         import physics_backends as physics
-        from physics_collision_example import build_collision_inputs
+        import atomic_publish
+        from unittest.mock import patch
+        from physics_collision_demo import demonstrate
         from physics_collision_query import raycast_cache
-        world,payloads=build_collision_inputs()
-        cache,states,contacts=self.run_world(world,payloads,'playground')
+        destination=self.root/'playground';changed=[];original=atomic_publish.rename_no_replace_at
+        def rename(source_fd,source_name,destination_fd,destination_name):
+            if destination_name==destination.name:
+                info=os.fstat(source_fd)
+                stage=next(p for p in self.root.iterdir() if (p.stat().st_dev,p.stat().st_ino)==(info.st_dev,info.st_ino))
+                stage.rename(self.root/'owned-wrapper');stage.mkdir()
+                (stage/'foreign-marker').write_bytes(b'preserve replacement');changed.append(stage)
+            return original(source_fd,source_name,destination_fd,destination_name)
+        with patch.object(atomic_publish,'rename_no_replace_at',side_effect=rename):
+            report=demonstrate(destination,interpreter=os.environ['HATCH_PYBULLET_PYTHON'])
+        self.assertEqual(len(changed),1)
+        self.assertEqual((changed[0]/'foreign-marker').read_bytes(),b'preserve replacement')
+        self.assertFalse((destination/'foreign-marker').exists())
+        self.assertEqual(len(report['previews']),13)
+        for preview in report['previews']:
+            self.assertEqual(physics.digest((destination/preview['path']).read_bytes()),preview['sha256'])
+        cache=destination/'cache'
+        captured=physics._read_cache(cache);states=captured[2];contacts=captured[3]['_contacts']
+        self.assertEqual(physics.verify_cache(cache)['status'],'hash-and-contract-verified')
         self.assertTrue(any({'left-ball','right-ball'}=={c['body_a'],c['body_b']} for f in contacts['samples'] for c in f['contacts']))
         self.assertFalse(any('excluded' in (c['body_a'],c['body_b']) for f in contacts['samples'] for c in f['contacts']))
         self.assertLess(next(b for b in states['samples'][-1]['bodies'] if b['id']=='excluded')['translation'][1],-1)
