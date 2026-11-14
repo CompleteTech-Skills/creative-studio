@@ -6,6 +6,7 @@ edited versions receive new identities before any project is published.
 """
 from __future__ import annotations
 
+from contextlib import ExitStack
 from copy import deepcopy
 import hashlib
 import os
@@ -14,8 +15,8 @@ import tempfile
 import zipfile
 
 from asset_library import read_source_bytes
-from atomic_publish import _rename_no_replace
-from rig_errors import timestamp, decode_json
+from atomic_publish import _rename_no_replace, pinned_directory, private_stage, private_stage_supported
+from rig_errors import RigError, timestamp, decode_json, directory_capability, open_payload
 from scene3d_contracts import (all_refs, canonical_bytes, load_project,
                                portable_path, validate_document)
 from scene3d_graph import require
@@ -42,7 +43,8 @@ def _new_destination(destination):
 
 def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                      scene_version=None, project_version=None, derived_documents=None,
-                     extra_payloads=None, max_bytes=1024**3):
+                     extra_payloads=None, document_replacements=None, project_selection=None,
+                     max_bytes=1024**3, expected_project_sha256=None):
     """Copy and revalidate actual source bytes, then exclusively publish a closure.
 
     New scene versions coexist with original scene/shot versions. The return value
@@ -50,8 +52,22 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     Additional derived documents must already reference complete input payloads.
     """
     require(type(max_bytes) is int and 0 < max_bytes <= 1024**3, 'Invalid snapshot byte budget.')
+    require(expected_project_sha256 is None or type(expected_project_sha256) is str and
+            len(expected_project_sha256) == 64 and all(c in '0123456789abcdef' for c in expected_project_sha256),
+            'Expected source project SHA256 must be an exact lowercase digest.')
     destination = _new_destination(destination)
     bundle = load_project(source_root)
+    require(expected_project_sha256 is None or bundle['inventory']['project.json']['sha256'] == expected_project_sha256,
+            'Source project differs from the expected exact revision.', 'SCENE3D_SOURCE_CHANGED')
+    replacements = {} if document_replacements is None else document_replacements
+    require(isinstance(replacements, dict) and len(replacements) <= 4096,
+            'Document replacements must be a bounded path/document mapping.')
+    if graph is not None:
+        for path in replacements:
+            original=bundle['documents'].get(path)
+            require(original is not None and original['kind']=='scene3d-shot' and
+                    original['scene']['path']==scene_path,
+                    'Combined graph/document editing supports only shots on the edited scene.')
     source_root = Path(source_root).resolve(strict=True)
     files, total = {}, 0
     for path, record in bundle['inventory'].items():
@@ -89,7 +105,6 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
                         files[path] = payload
                         require(sum(map(len, files.values())) <= max_bytes, 'Legacy closure exceeds snapshot byte budget.')
         except (ValueError, OSError, zipfile.BadZipFile) as exc:
-            from rig_errors import RigError
             if isinstance(exc, RigError):
                 raise
             raise RigError('SCENE3D_LEGACY_SOURCE', 'Native legacy archival validation failed: '+str(exc),
@@ -98,7 +113,7 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     project = deepcopy(bundle['project'])
     active_scene = None
     additions = []
-    def add_document(document, path=None):
+    def add_document(document, path=None, *, catalog=True):
         if isinstance(document, bytes):
             require(0 < len(document) <= 16*1024*1024, 'Manifest bytes exceed the document bound.')
             payload = document
@@ -115,10 +130,10 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         r = _file_reference(document, payload, path)
         additions.append(r)
         field = {'scene3d-asset': 'assets', 'scene3d-prefab': 'prefabs',
-                 'scene3d-animation': 'animations'}.get(document['kind'])
-        if field is not None:
+                 'scene3d-animation': 'animations', 'scene3d-shot': 'shots'}.get(document['kind'])
+        if catalog and field is not None:
             project[field].append(deepcopy(r))
-        if document['kind'] == 'scene3d-asset' and document['asset_type'] == 'character':
+        if catalog and document['kind'] == 'scene3d-asset' and document['asset_type'] == 'character':
             project['characters'].append(deepcopy(r))
         return r
     for path, payload in (extra_payloads or {}).items():
@@ -137,7 +152,10 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             require(prior_payload == payload, 'Conflicting derived document.')
         combined_derived[path] = document
     for path, document in combined_derived.items():
-        add_document(document, path)
+        created = add_document(document, path)
+        field = {'scene3d-scene': 'scenes', 'scene3d-shot': 'shots'}.get(created['kind'])
+        if field is not None:
+            project[field].append(created)
     if graph is not None:
         require(scene_path in bundle['documents'] and bundle['documents'][scene_path]['kind'] == 'scene3d-scene',
                 'Select the exact original scene for this edit.')
@@ -169,14 +187,101 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
         project['scenes'].append(active_scene)
         # Existing shots remain valid against the retained old scene; new exact
         # shot versions bind the edited scene without overwriting their originals.
-        for reference in list(project['shots']):
+        for reference in bundle['project']['shots']:
+            # An explicit shot edit is promoted once below, against this new scene.
+            if reference['path'] in (document_replacements or {}):
+                continue
             old_shot = bundle['documents'][reference['path']]
             if old_shot['scene']['path'] != scene_path:
                 continue
             shot = deepcopy(old_shot)
             shot['version'] = version_patch(shot['version'])
             shot['scene'] = deepcopy(active_scene)
-            project['shots'].append(add_document(shot))
+            add_document(shot)
+    require(project_selection is None or isinstance(project_selection, dict),
+            'Project selection must be a mapping.')
+    requested = {}
+    for old_path, replacement in replacements.items():
+        portable_path(old_path)
+        require(old_path in bundle['documents'] and old_path != 'project.json',
+                'Replacement must identify an existing native document.')
+        require(graph is None or old_path != scene_path,
+                'A scene cannot be edited through graph and document replacement together.')
+        original = bundle['documents'][old_path]
+        require(isinstance(replacement, dict) and
+                (replacement.get('kind'), replacement.get('id'), replacement.get('version')) ==
+                (original['kind'], original['id'], original['version']),
+                'Replacement must retain its original identity/version until publication.')
+        requested[old_path] = deepcopy(replacement)
+        if graph is not None and original['kind']=='scene3d-shot' and original['scene']['path']==scene_path:
+            requested[old_path]['scene']=deepcopy(active_scene)
+    # A changed document requires a new version of every consuming native
+    # document, even when only its exact child reference changes.
+    changed = True
+    while changed:
+        changed = False
+        for path, document in list(documents.items()):
+            if path == 'project.json' or path in requested:
+                continue
+            if any('kind' in ref and ref['path'] in requested for ref in all_refs(document)):
+                requested[path] = deepcopy(document)
+                changed = True
+    promoted, pending = {}, set()
+    def replace_references(document):
+        for reference in all_refs(document):
+            if 'kind' in reference and reference['path'] in requested:
+                replacement_ref = promote(reference['path'])
+                reference.clear()
+                reference.update(deepcopy(replacement_ref))
+    def promote(path):
+        if path in promoted:
+            return promoted[path]
+        require(path not in pending, 'Replacement dependencies contain a cycle.')
+        pending.add(path)
+        document = deepcopy(requested[path])
+        replace_references(document)
+        original = documents[path]
+        document['version'] = version_patch(original['version'])
+        if 'provenance' in document:
+            document['provenance']['origin'] = 'derived'
+            document['provenance']['tool'] = 'scene3d-document-edit-v1'
+            document['provenance']['inputs'].append(dict(path=path,
+                sha256=hashlib.sha256(files[path]).hexdigest()))
+        validate_document(document)
+        # Existing catalog references are rewritten below; adding another entry
+        # here would duplicate a shot/animation/asset after reference promotion.
+        promoted[path] = add_document(document, catalog=False)
+        pending.remove(path)
+        return promoted[path]
+    for path in requested:
+        promote(path)
+        retained = dict(path=path, sha256=hashlib.sha256(files[path]).hexdigest())
+        if retained not in project['provenance']['inputs']:
+            project['provenance']['inputs'].append(retained)
+    replace_references(project)
+    if graph is not None:
+        # Graph publication intentionally retains both source and derived scenes.
+        # Keep source shot associations as well as the coalesced edited shots.
+        for reference in bundle['project']['shots']:
+            if reference['path'] in replacements and bundle['documents'][reference['path']]['scene']['path']==scene_path:
+                if reference not in project['shots']:
+                    project['shots'].append(deepcopy(reference))
+    if scene_path in promoted:
+        active_scene = deepcopy(promoted[scene_path])
+    if project_selection is not None:
+        require(set(project_selection) <= {'scenes', 'shots', 'animations'},
+                'Only scene, shot and animation selection/order may be edited.')
+        for field, paths in project_selection.items():
+            require(isinstance(paths, list) and len(paths) <= 4096 and
+                    all(isinstance(path, str) for path in paths) and len(paths) == len(set(paths)),
+                    'Project selection must contain unique native document paths.')
+            allowed = {reference['path']: reference for reference in project[field]}
+            selected = []
+            for path in paths:
+                path = promoted[path]['path'] if path in promoted else path
+                require(path in allowed, 'Project selection cannot inject an unregistered reference.')
+                selected.append(deepcopy(allowed[path]))
+            project[field] = selected
     original_project = files['project.json']
     history = 'history/project-'+hashlib.sha256(original_project).hexdigest()+'.json'
     files[history] = original_project
@@ -188,26 +293,63 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
     project['provenance']['inputs'].append(dict(path=history, sha256=hashlib.sha256(original_project).hexdigest()))
     project['dependency_lock'].extend(additions)
     # Lock any exact references added by expanded prefabs or imported assets.
-    locked = {(r['kind'], r['id'], r['version']): r for r in project['dependency_lock']}
-    for document in [project, *documents.values()]:
-        for r in all_refs(document):
-            if 'kind' not in r:
-                continue
-            key = (r['kind'], r['id'], r['version'])
-            require(key not in locked or locked[key] == r, 'Conflicting dependency version in snapshot.',
-                    'SCENE3D_IMMUTABLE')
-            locked[key] = deepcopy(r)
+    if replacements or project_selection is not None:
+        # Lock only the selected current closure. Retained historical manifests
+        # remain exact raw provenance inputs, not active semantic scene versions.
+        current_project = deepcopy(project)
+        current_project['dependency_lock'] = []
+        locked, visited, pending_documents = {}, set(), [current_project]
+        while pending_documents:
+            current = pending_documents.pop()
+            for r in all_refs(current):
+                if 'kind' not in r:
+                    continue
+                key = (r['kind'], r['id'], r['version'])
+                require(key not in locked or locked[key] == r, 'Conflicting selected dependency version.',
+                        'SCENE3D_IMMUTABLE')
+                locked[key] = deepcopy(r)
+                if r['path'] in documents and r['path'] not in visited:
+                    visited.add(r['path'])
+                    pending_documents.append(documents[r['path']])
+    else:
+        locked = {(r['kind'], r['id'], r['version']): r for r in project['dependency_lock']}
+        for document in [project, *documents.values()]:
+            for r in all_refs(document):
+                if 'kind' not in r:
+                    continue
+                key = (r['kind'], r['id'], r['version'])
+                require(key not in locked or locked[key] == r, 'Conflicting dependency version in snapshot.',
+                        'SCENE3D_IMMUTABLE')
+                locked[key] = deepcopy(r)
     project['dependency_lock'] = sorted(locked.values(), key=lambda r: (r['kind'], r['id'], r['version']))
     validate_document(project, 'project')
     files['project.json'] = canonical_bytes(project)
     total = sum(map(len, files.values()))
     require(total <= min(max_bytes, project['budgets']['max_bytes']) and len(files) <= project['budgets']['max_files'],
             'Snapshot exceeds project file/byte budgets.', 'SCENE3D_SNAPSHOT_LIMIT')
-    # All writes are inside an attempt-owned private directory. The destination
-    # leaf is never reserved or replaced and is rechecked by kernel publication.
-    with tempfile.TemporaryDirectory(prefix='.scene3d-snapshot-', dir=destination.parent) as private:
-        stage = Path(private)/'project'
-        stage.mkdir(mode=0o700)
+    # Linux pins both staging and publication directories before any writes.
+    # The portable adapter retains exclusive publication, but cannot yet promise
+    # descriptor-owned staging on platforms unsupported by the shared authority.
+    with ExitStack() as stack:
+        pinned = private_stage_supported()
+        if pinned:
+            parent_fd = stack.enter_context(pinned_directory(destination.parent))
+            private, private_fd = stack.enter_context(private_stage(
+                parent_fd, prefix='.scene3d-snapshot-', cleanup_on_error=False))
+            outer = stack.enter_context(directory_capability(private_fd))
+            (outer.path/'project').mkdir(mode=0o700)
+            stage_fd = os.open('project', os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW, dir_fd=private_fd)
+            stack.callback(os.close, stage_fd)
+            project_cap = stack.enter_context(directory_capability(stage_fd))
+            stage = project_cap.path
+            identity = project_cap.identity
+        else:
+            private = stack.enter_context(tempfile.TemporaryDirectory(
+                prefix='.scene3d-snapshot-', dir=destination.parent))
+            stage = Path(private)/'project'
+            stage.mkdir(mode=0o700)
+            info = stage.stat()
+            identity = (info.st_dev, info.st_ino)
         for path, payload in sorted(files.items()):
             target = stage / portable_path(path)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -221,10 +363,55 @@ def snapshot_project(source_root, destination, graph=None, *, scene_path=None,
             try:
                 load_legacy_project(stage/legacy_prefix)
             except ValueError as exc:
-                from rig_errors import RigError
                 raise RigError('SCENE3D_LEGACY_SOURCE', 'Restored native legacy closure is invalid: '+str(exc)) from exc
         require(set(verified['inventory']) <= set(files), 'Verification opened an uninventoried payload.')
-        _rename_no_replace(stage, destination)
+        # Validation callbacks have finished. Independently bind every published
+        # byte to the attempted snapshot before the final kernel publication.
+        expected_dirs = {parent.as_posix() for path in files for parent in Path(path).parents if str(parent) != '.'}
+        observed_files = set()
+        for folder, directories, names in os.walk(stage, followlinks=False):
+            relative = Path(folder).relative_to(stage)
+            for name in directories:
+                child = Path(folder)/name
+                require(not child.is_symlink() and (relative/name).as_posix() in expected_dirs,
+                        'Snapshot directory inventory changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+            for name in names:
+                path = (relative/name).as_posix()
+                require(path in files and path not in observed_files,
+                        'Snapshot file inventory changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+                observed_files.add(path)
+        require(observed_files == set(files), 'Snapshot files disappeared after validation.', 'SCENE3D_SOURCE_CHANGED')
+        for path, payload in sorted(files.items()):
+            with open_payload(stage, path) as (stream, info):
+                require(info.st_size == len(payload), 'Snapshot bytes changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+                digest = hashlib.sha256()
+                remaining = len(payload) + 1
+                observed = 0
+                while remaining:
+                    chunk = stream.read(min(1024*1024, remaining))
+                    if not chunk:break
+                    remaining -= len(chunk)
+                    observed += len(chunk)
+                    digest.update(chunk)
+                require(observed == len(payload) and digest.digest() == hashlib.sha256(payload).digest(),
+                        'Snapshot bytes changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+        current = (os.stat('project', dir_fd=private_fd, follow_symlinks=False) if pinned else stage.stat())
+        require((current.st_dev, current.st_ino) == identity,
+                'Snapshot publication entry changed after validation.', 'SCENE3D_SOURCE_CHANGED')
+        if pinned:
+            # A held destination descriptor protects writes, but the returned
+            # pathname must still identify that selected directory as well.
+            try:
+                parent_now = destination.parent.stat(follow_symlinks=False)
+            except OSError as exc:
+                raise RigError('SCENE3D_DESTINATION', 'Snapshot destination parent disappeared during validation.') from exc
+            parent_held = os.fstat(parent_fd)
+            require((parent_now.st_dev, parent_now.st_ino) == (parent_held.st_dev, parent_held.st_ino),
+                    'Snapshot destination parent changed during validation.', 'SCENE3D_DESTINATION')
+            _rename_no_replace('project', destination.name, source_dir_fd=private_fd,
+                               destination_dir_fd=parent_fd)
+        else:
+            _rename_no_replace(stage, destination)
     return dict(destination=str(destination), project_sha256=hashlib.sha256(files['project.json']).hexdigest(),
                 project_version=project['version'], active_scene=active_scene,
                 inventory={path: dict(bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest())

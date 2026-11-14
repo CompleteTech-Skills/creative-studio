@@ -1,0 +1,25 @@
+{
+  "base": "6784c0c",
+  "snapshot_dependency_pr": 282,
+  "checks": [
+    {
+      "command": "python scripts/test_rig_gate.py operations-archive",
+      "result": "PASS",
+      "tests": 30,
+      "duration_seconds": 5.386
+    },
+    {
+      "command": "python scripts/generate_schemas.py --check",
+      "result": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "source_sha256": {
+    "scripts/rig_jobs.py": "a8228658cfe603190d87a21c8daca873801215b1ce7a74e05d5e75ea6f2ff9f6",
+    "tests/test_rig_workflow.py": "8c85d769b4b36fa9c06f6c4d3d824cb7edf9f4692ee437dfb271c311d62361b3"
+  },
+  "scope": "real source snapshot import, IO fault injection and exclusive publication; not visual approval"
+}

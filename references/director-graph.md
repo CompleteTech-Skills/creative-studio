@@ -1,5 +1,36 @@
 # Director dependency compiler
 
+## Explicit v2 execution-node contract
+
+An execution plan with `schema_version: 2` requires `execution_metadata` on
+every node. Metadata version 2 declares estimated and actual typed Usage,
+retry classification, a unique operation idempotency key, execution status,
+checkpoint references, output ArtifactRefs (including exact hashes), validation
+results, provenance, failure reason, and an authoritative `native_job_ref`.
+Unknown measurements carry null values and explanations. Planned metadata has
+no native job, actual measurements, checkpoints, outputs, validation results or
+failure reason. Compilation rejects metadata claiming an executed state.
+The scheduler/native owner later supplies real job references and observations;
+metadata validation never authenticates a provider call or replaces its claim.
+Those observations belong in a new native execution snapshot; the compiled
+definition and its dependency keys remain immutable.
+
+`migrate_plan_v2(plan, node_metadata)` requires caller-supplied complete metadata
+for every node, validates it, and returns a copy. It never dispatches work or
+modifies the original v1 plan. A v2 compile emits a graph declaring
+`schema_version: 2` and retains each node's metadata in its dependency
+fingerprint and typed output. `impact` handles either declared version and
+propagates metadata changes through descendants. This is a contract revision;
+leases, retry policy execution, native job claims and persistence belong to the
+existing execution owner.
+
+The public `output-execution-graph` schema alias and v1 compiled values remain
+unchanged for persisted native bindings. New consumers select
+`output-execution-graph-v2` only from the explicit graph version. A
+`GraphCompiler.compile` result accepts either exact graph shape; legacy
+unversioned graphs retain v1 semantics and must not be silently upgraded or
+rehash-bound to another native job.
+
 `scripts/director_graph.py` implements the read-only `GraphCompiler.compile`
 boundary from #26. It uses #24's exact artifacts and method/result contracts,
 #25's capability evidence admission, and native owner names. It neither submits

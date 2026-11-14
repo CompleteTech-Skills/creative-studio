@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "scope": "R3 correctioncandidate, notapproval",
+  "previous_reviewed_head": "9678f0d",
+  "source_sha256": {
+    "scripts/asset_library_import.py": "bd1170be312d9793164ff70b22fabde922eec84b952628ef73af9daa3a22c7c2",
+    "scripts/asset_import_worker.py": "933c27196e7e5b4f33869c1caf7624bfeb7221938bfaa34610a69b9363509d02",
+    "scripts/test_rig_gate.py": "2ddf8a8cbabc7989046c8094a1327a935c21087be900d9916d634e44c888cc5d",
+    "tests/test_rig_asset_import.py": "9af6c356519ba7b6156f327939ac28355190a27067d55ee7af1c6a8b200280cf",
+    ".github/workflows/rig-3d.yml": "04889f8b49d0d51271f55fe5c932cf569f1e6d7804af1464b6905860f0caf252",
+    "references/asset-library/import.md": "b128c2c6e432074fdf10053be8f10293a23e7ee6145edc96083d4cd2ee6f55ff"
+  },
+  "observed": "14actualtestsPASS34.155s pinnedBlender/Khronos",
+  "corrections": [
+    "reject material.animation_data before nonnode shortcut",
+    "explicitfixture classification embedded in runtime without overwriting original opaqueextras/hierarchy/channelindices"
+  ],
+  "remaining": [
+    "freshAstra",
+    "sharedtexturedecoder",
+    "currentheadCI",
+    "predecessormerges",
+    "supervisorlease"
+  ]
+}
