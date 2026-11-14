@@ -1,0 +1,1375 @@
+{
+  "schema_version": 1,
+  "kind": "cinematics3d-backend-validation",
+  "issue": 243,
+  "parent_issue": 238,
+  "fixture": true,
+  "visual_approval": false,
+  "recorded_at": "2026-11-14T01:58:39.790739+00:00",
+  "validated_code_sha": "840b03bf129231dc99d9c551552d0601606eb981",
+  "integrated_implementation_sha": "dbadb9ecd03e81452b541bc25913f7b89a93e5a3",
+  "validated_tree": "e6d8f2215f03f985bb8d1e34e2e2b13d6ae0ec56",
+  "integrated_tree": "e6d8f2215f03f985bb8d1e34e2e2b13d6ae0ec56",
+  "source_equivalence": "Exact complete Git tree identity, not merely a matching selected diff.",
+  "canonical_directory_authority": "9f70ed852ebff5d3244508e163417ccb5424c61b",
+  "source_sha256": {
+    "scripts/animation3d.py": "fdb46bd1e8ca09c0d7fd468006425c41a329dc2940cdd9ff809bc98145c5c7b0",
+    "scripts/animation3d_contracts.py": "4404669449370d91c18af973fb5e5e079514554899c4878297dd34633e60dede",
+    "scripts/animation3d_math.py": "7328e20669789408b4f3b50830ed3e8239e342bde9b3245fe3edffda99ffffc4",
+    "scripts/animation3d_registry.py": "dbf74bdaade41536c895b961a9433bef23cf57f3cf61342715406800cea43c7c",
+    "scripts/animation3d_time.py": "97960d4798fc6c1c9552d2e7e84d3142a4498fc7d75ec5c19e47d851afbe51d1",
+    "scripts/asset_contracts.py": "ada924819e6855c592a8313f91f020521c85e61f283cd2f3ec8b2b01b204fa51",
+    "scripts/asset_exporters.py": "8f922101e7a7203b4a682934a07b74b6c0410a64c06f7016a17bb58075c8c5f9",
+    "scripts/asset_library.py": "28200571a8500ea70f4024482040cbe0ce094f26159208d8a3040ce54540754b",
+    "scripts/asset_library_contracts.py": "86789b112348297536684e7f38a6a65f9b357b86ea2541d006bc08eebcc0d818",
+    "scripts/atomic_publish.py": "f9f1e983dc152a3cfcc7f77c33b864540bdadf16085e556b788b38a06498c3c6",
+    "scripts/camera3d_blender.py": "873736532add062456d2ca63c34dcc17b234339ce35b56692e98d9234f976191",
+    "scripts/camera3d_contracts.py": "8ffa961cea4cdf1fccad130ee78fd465ff961c3ad64c05993ebd9a2eb8ac5f81",
+    "scripts/camera3d_math.py": "25236a4c362e9952ff961c7e91ea350fd494bf9b45cacc61ceea33d570cc017a",
+    "scripts/character_decomposition.py": "d79b98072602a9890eda37064e089823238675778c5dcffed2e3589e46d3c101",
+    "scripts/cinematics3d_backend_example.py": "f3ce169b66867a49c7be003391263f4d6d84a45c4690110a81597af8088f2643",
+    "scripts/cinematics3d_blender.py": "70398a852ea48a1cf4e3be9fcc535f359e72afe2ba1461fa24eba7ca03318b44",
+    "scripts/cinematics3d_blender_runtime.py": "384246253a166830b521a302907651d2cd80eba9ec18ac0a8d95dd46a4aa7026",
+    "scripts/cinematics3d_contracts.py": "3f03386790df302acb57a0f589317546f5a338fe9ed736bb0244bcc229f68e5f",
+    "scripts/cinematics3d_example.py": "49de572a74e3499c3d6e51faa4b030b07f4a3e17849890f54f7d364a1a7d3d4b",
+    "scripts/compose_atlas.py": "53de4d6e8352e14a5c2f155af4544435bd5518962dc671fdd015f426500c754f",
+    "scripts/decomposition_assisted.py": "7c78eaea6246b072513f5a063d89bfb9d07b0c27868cf72b2947c6e4e635542f",
+    "scripts/decomposition_cli.py": "36caa8205a389a7999ec00903893e9e3f30cd309d30d0b92a2c4a9e67848c540",
+    "scripts/decomposition_layers.py": "69abde90cd1046e8c46c1b0ccce22985fed5581addf2eca296d079a2f3fa65f8",
+    "scripts/decomposition_masks.py": "2677891e0618283958f0ed95223a4648a25a9b5278fd412c33fad92a9cb9e675",
+    "scripts/decomposition_package.py": "8db3d1ed40cf4e7e32ea22c91bee5535abab376e0a021d0f1f6c5a5dedcb125f",
+    "scripts/decomposition_reuse.py": "008708d7320b61a17917ba7217680688ae1209de0fd3818883e49568b04bc686",
+    "scripts/decomposition_review.py": "faaadd92f841032e06441cd9de51ce9393152aa7eb6bdc5df66537fd15af29b9",
+    "scripts/decomposition_spec.py": "6c420c635a131307f4ac609d2e957b1b56b03b5aa0dd784c2d8a20bd61e4a566",
+    "scripts/demonstrate.py": "e759fa3e91930858dffc6edf7d279c1449c5b78658f95cd133da86b706e946eb",
+    "scripts/demonstrate_asset_library.py": "a325558e3b1512b86ceda79c62f6390216401d8708b892392676ba1d9bcfffd4",
+    "scripts/demonstrate_director_graph.py": "55f69fdd42134193723bd72f285e23038dc6a67891d0ca779d4802e3e23ce16c",
+    "scripts/demonstrate_scene3d_service.py": "ac8d639d9aa9509b3e2c88f1112fd3aa7b00e48d4e4ec3c9f0655ed2bf288b07",
+    "scripts/demonstrate_states.py": "73a38fdccbf1452845f044c058b695e0c163f824bfeadfe77e49d587f46cd5f8",
+    "scripts/derive_running_left_from_running_right.py": "d0112d16df6d12e8af95f901732d19623b3f83e029255833557f5feb4e0acd73",
+    "scripts/director_budget.py": "4d2a7a46e472ede95a09a24a91cafe30c2ae9c0fb3777a99bec73ec435490911",
+    "scripts/director_capabilities.py": "14d6c9e70996429d39ab6f9dc3c41817e7d248a6e87c5c29b18053884918a09f",
+    "scripts/director_contracts.py": "b4fbbe64020da18c440488f0723e8ddbb0a7141d10408b841b986a505ac65bb3",
+    "scripts/director_graph.py": "7a7deededbb19562e299e165346d4dcd6f462d61d142de25ca3b0fbcad720b69",
+    "scripts/director_planner.py": "32b0d5a8e8504dced770e809b931b00a5b4937e54242344a6124fc2eea39ec6d",
+    "scripts/director_schema.py": "50327b48d18916309282cdcc49ad181a998c6a069be44f9d198d1f33808ea5c8",
+    "scripts/doctor.py": "0116b8a125beffad1592c9f0503a0553d14a4b0e5aec53a7dba7997f5974a42c",
+    "scripts/editor3d_adapters.py": "173ec947adb6ef9228da183c044f6c1297f2c1e19a3854a796cec3dcc53e645d",
+    "scripts/editor3d_contracts.py": "7c14a96ec80dbb3e07a9beb406f3e3f775d7e65acd0b623004d148b00d4a6219",
+    "scripts/export_assets.py": "4d9d0e0839833ec6291b2b61d455d94963adc1bced11e158c6f0579087266e34",
+    "scripts/extract_strip_frames.py": "37f40ad52fac49143e2ae2368ea8defa60e323a5f46511591d1aea6f78aaf383",
+    "scripts/extraction_annotations.py": "7ef3e188b56df5d88f0105aff110d375100b21cd225edc05633fb9eeabdffe58",
+    "scripts/generate_asset_library_schemas.py": "24461b4798f5e477015a29aff5257ee6af84210fd23268e1ae546eedc57d61c3",
+    "scripts/generate_presets.py": "672dfb952c4a97f9135479c8c17f46391ce7f51e3db6a0c7fbbddab1b06191d5",
+    "scripts/generate_rig_templates.py": "c4676fcd30118e81b86acd6a1dba6cc8d1d211f2864f186cdc3e364b14e22ed6",
+    "scripts/generate_schemas.py": "f1d23b5340b0bcbd5eb4a36f010585c4b7c1f5516ec9da0a3a43b029b3ae84ae",
+    "scripts/generate_style_reference.py": "4643e18a1387fe184a03f04152d11ba97edcf3939fccc93b6395c9197100fdaf",
+    "scripts/hatch.py": "246979e97c2622ef1ecf043ca19ae346d5d4c6bc28409774f3192ef4aceb2017",
+    "scripts/inspect_frames.py": "3bc3cceceeb8a898c5b7aa18e630c5457f3e062e4276afd8af6b0fc7e8dfddc8",
+    "scripts/lookdev_contracts.py": "687c5669cdcc417f99aa5f0ab477f8964e3a02a7c5aeb3d93e894a50c167d3de",
+    "scripts/make_contact_sheet.py": "37b1a94142df0a8643a35f8121eb094e3b6f9e6661df55604a0ee6185231fe5c",
+    "scripts/model3d.py": "9e22300110a4de47316f74d6f38c64de47457a5a14d30b5229e86253f43a8c6a",
+    "scripts/model3d_contracts.py": "f3becc27230faeffc4058a30ee709e88d0432a1e5a1d1baa901dac4c01a43cfd",
+    "scripts/model3d_geometry.py": "302691c945809ca45513dfba568bb5a5376902650aaacbe626423101716379e1",
+    "scripts/model3d_validation.py": "dda748d17ff246c31df171cd2c882cbc81814da9fd0477f35e2015f73437437b",
+    "scripts/physics_backend_evidence.py": "0dcab40f6d5de0859b306ce1263c8a0f314c41dd0b2d845065abee8467a6fc1c",
+    "scripts/physics_backend_example.py": "274f9cd0488f66932a55ca797e97ec0a4d97e5cfc3fbd8ae55275b208754a605",
+    "scripts/physics_backends.py": "45d04dde14614e73d86be52ca01ca35401723dbedea144fa313e42b073640dc3",
+    "scripts/physics_blender_worker.py": "d9c7c55a795e4ccee871808c6aabc491b4c88aa9ea98e44d01b5bc2bd6169d70",
+    "scripts/physics_contracts.py": "808c29f6779ce882621b4f2540f6ad604ef17fc00a00291b745cfdd1d8b4118e",
+    "scripts/physics_pybullet_worker.py": "6ba17800c6a377f0407aa9eb91f98fe378074078eafadfbdf7169afbba959367",
+    "scripts/physics_rigid.py": "a15357d5a3b566adf8313da2827adb7d37f8ba3f04c8b35a3bd62d55ef8ac276",
+    "scripts/physics_rigid_example.py": "1a1869916d2b254a8559f65082ed099a81e75d09e2adc931f0eff57875da4fcc",
+    "scripts/physics_rigid_render.py": "722ce1c01f206c320884ecb77eed805fd896e69990ff50e33d3057c62c8ff7f2",
+    "scripts/physics_timing.py": "0ff6b649c8f203cf108ee355c5c60ad9f6cb7e1669309f085114d836e8180b1f",
+    "scripts/portable_paths.py": "c50f1675449f3a037bc774342601bf1e0787b1cf4d936b5c2a85c339966e6b29",
+    "scripts/portable_runs.py": "ad4a9b77b9f39f0355649f7dc2d6b08c0da719c9c96f53c1e84b8749c3ff1925",
+    "scripts/prepare_pet_run.py": "dc21f4262dbecef709e8bd7ba781d006469f628b27b8d1ede363b5cde12485ee",
+    "scripts/prepare_production_art.py": "e7ae991f52df86a25b968e07f5c34a03c9b60fd3bc0ab654bfbce33601c17981",
+    "scripts/production.py": "8fbed684e75a14d0db2dc97da9978993b3961db4b895942303c7babcaa2c4bd2",
+    "scripts/production_adapter.py": "2eb9e191870b09e75350937d658d38a58084fe81268049aa1b987c5a0d4d6ba1",
+    "scripts/production_bundle.py": "f708431b689298e38bfee8a06922f7e8967e34d5c85317e60b04ea6826c7a50c",
+    "scripts/production_contracts.py": "7b0c7f873a5b8cd129cf6d550cb5d1ba7ac7a367c399b1a300ccebacb98e2a46",
+    "scripts/production_delivery.py": "0718298e8c747ad3865033507500fe15f555c1c4a5686787ad6b9a124b36c6c2",
+    "scripts/production_demo.py": "082eff71b862a281a4659118a04f2d6c68c4fd08001d94e9005739a004b38823",
+    "scripts/production_fixture.py": "216d92d7accdc9375716a1f9061b78e6497d1f2b8a6461e91e75f4af2f0dc329",
+    "scripts/production_performance.py": "7791cf281a7d718237188b8aec5ed707ae21eb43d0b6874b081fdb04d11866b8",
+    "scripts/production_regression_demo.py": "af9d9210f7506ef78f8980c83e9efdd94983a1ecd38f427498fb70c44d72e6ee",
+    "scripts/production_render.py": "981b6fbafdcd0fcf009dca02b0f695bfb3742b58bd9e9a11068f0e0dd085c9be",
+    "scripts/production_sources.py": "a1a0921f39e2c6db4b200eb56db0c66a7175bc13dbd921d4750eb3257dbb9981",
+    "scripts/production_workflow.py": "4dc71e4819adf0e8a1ea2839687664f8fcef36dd0cff1311f38d293a455b1c40",
+    "scripts/profile_spec.py": "8cb2f80ee265cfec0168985cc7e5a4449322435f5046374a255516ed9cbd422d",
+    "scripts/render3d.py": "856e48a9ab6b0008d749652a91a53cb259de87a55eb439314e64be1c9fa04d55",
+    "scripts/render3d_blender.py": "bfa5de76626e937bfc1876612062f134b567017d54c6f33c694c5297deda919d",
+    "scripts/render3d_blender_worker.py": "3d9ba2b9531983bcaab3590c5cc47c6b301f814d88bfbfc9504d9f0c651dc629",
+    "scripts/render3d_contracts.py": "123daa6eda53ae1a60d214cb1d9e4582da072b5503b71ba92759909240fc8cef",
+    "scripts/render3d_snapshot.py": "486f75018a7d56683525182e187e8aa00e93ae7086ecbb39d494ef05a9c8ad38",
+    "scripts/render3d_verify.py": "cb9a7c45cfa8cdc33c1bcfd03e7b0f378f81aeb59e00a6eb3efc487f79ea46c0",
+    "scripts/render_animation_previews.py": "b8c55e3a0e70528d676aa5861a063b9e81abce0ed45e6a0fe32e70e3a9cfc518",
+    "scripts/review_ui.py": "abd3cde015c905a8fd2a61ed202e4940033170c718edb1c414dc94f2fc95ce09",
+    "scripts/rig.py": "52b54768fa419f5372486665e21db2e84164582d90af30a1789f634e3c910afa",
+    "scripts/rig_animation.py": "cd70d02d55e5cec26324d7745b90ee0bd9b2c6674fe67ef821fc32dfaf65b4ef",
+    "scripts/rig_api.py": "5501d22ac2a55ec39574a43edeaa35c0e641dbe1f2fd6f7ffc0fe0902e9b0a29",
+    "scripts/rig_attachments.py": "748cf941486db4bf3ec00f58314d8d729443b5d856aa5ec24b74351790a62d2a",
+    "scripts/rig_blender.py": "05e8cb76c0e96726a198e498a96aadeec879bae87d80757435dd9f9b33a703d6",
+    "scripts/rig_blender_worker.py": "9bb648de87c547390bc104a0afc3f20bc39d7c083ac7c5163e3fee0dcf52a6f4",
+    "scripts/rig_browser.py": "bce6a01621d34a5818fb9fd73f8fe25d42b654688ba7e0fa2cc755eae4584bb6",
+    "scripts/rig_constraints.py": "f6ce8e02bc10d2a2d746e5bf59cd2db65193327c42177f47562756455320c74b",
+    "scripts/rig_contracts.py": "6a5c2474c80478892eae5d087b51920e17c9c0c080a790781bc7b5273376a60d",
+    "scripts/rig_corrections.py": "90dd0728bf06b2c77c396bb19b175c21c2ec436073741eba9a9bcb8ec8220f9b",
+    "scripts/rig_demo.py": "0f01c3808ca86c84a46328afba093bc5a016d70bb10c87a5b35c13f661009716",
+    "scripts/rig_doctor.py": "33f4692a54fd54881d44f540f8ea9046898fcf68902675e6d5df3edb23b0c8aa",
+    "scripts/rig_errors.py": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+    "scripts/rig_facial.py": "fee3deb4a8d6522500200a96d6174bd173c603da695091d1a625766d1ab7b556",
+    "scripts/rig_geometry.py": "2d759526bfa7b36b08566509e66fba0786e6db5571c42e14bde3830e5f14b92d",
+    "scripts/rig_gltf.py": "de07fb839c2df82aeb578e09815cd1659415cbcf20f576c37781ec52243a718d",
+    "scripts/rig_http.py": "ea1003613470080b9c264fc4d6c983e21a27907d99bfe41d8bc29c3a74da2d45",
+    "scripts/rig_ik.py": "47229ac03fda6a49864d2a325ee1b3311f878b091492e2fb52173420792e62f9",
+    "scripts/rig_import.py": "b41b3a5739bed4efcc81112c5614b9aee7d7d019e9eb6160e7e2c6968675c8af",
+    "scripts/rig_interop.py": "4a10b6414e1b9c117137539be61cc37b5c6a45433bd0c8064d0ede962bd29fed",
+    "scripts/rig_jobs.py": "a134673a3c8e0f66c5d3b1deaac7808a8dfb6837636c2c5bbb0f1c1b256698d2",
+    "scripts/rig_jpeg.py": "98fd692ec3d6b3262b4329391926a40090dc39fd5c347abd0cdfe6bc3f118849",
+    "scripts/rig_math.py": "2bb7c84179af828c9f84f41e9510e59e4e88c68367b91c7e6e41279a77ee0f2c",
+    "scripts/rig_models.py": "6447ed3746d93f6020aa469db15902c71846928ec70b7c7537e2d69ae84c3c3d",
+    "scripts/rig_obj.py": "2a1c243513f3c8fb339d9fb1c31693d788a4b2364bf4a47206fd5942d1996aa5",
+    "scripts/rig_operations.py": "216fbc841ef775f345085ef78ac8719e3541767b21fd7e2c72d50580cfdd99d6",
+    "scripts/rig_package.py": "9e9d87226c26cdcd6daf85dd4ecc281ae6a52c369de54483598a3c4026b5c4fc",
+    "scripts/rig_render.py": "bae42673adc336f940493928589d39bc9ed88bd4fca591ce28acf0449a7abe3e",
+    "scripts/rig_retarget.py": "91eab4ff7cf2746b5eebcb2f7a5ef1c06be256b8c046de8a891981cf4c672d71",
+    "scripts/rig_review.py": "4ff7a6fb56fbb8a5db8ac07023b2d9a279495048b3951dbd3c4a1c3af5c63e16",
+    "scripts/rig_skeleton.py": "acf14f37834f16b2717fb4b6aae8fd6ae5e1e8ebe14034999ba5e8ae88424f90",
+    "scripts/rig_skinning.py": "ceb7855faa5537da663e6874c56c87d85d5dff887a8acc10fe26d3ea1858f99d",
+    "scripts/rig_states.py": "92bf99c7060936e00121d436a987ea6664b74a2e943f006bdf708b38a60826ca",
+    "scripts/rig_templates.py": "944efbab770f9c86b23629dc637395ee6dec81fe44ae096e64f6626491c848e7",
+    "scripts/rig_validation.py": "6923c2cd8b740249485b7d5eaab8908cc5747d5834a0b454d51b96a4245914c5",
+    "scripts/rig_viewer.py": "a905d35bcef69ec0aad1b3b6781d5c2b5e39fabac100d338866eed2678e21ac0",
+    "scripts/scene3d_contracts.py": "682f5afb820737b2037642883027571fe5a70efbcbba32a62be1e55e2b4705b3",
+    "scripts/scene3d_edit.py": "e3af7d7073103dc59b4c06a24464b94cb7e1a9de93fd3bbfa37959b04526c648",
+    "scripts/scene3d_example.py": "ac71fd5cf7d9f7e4ea34f11140740643dd365f33e008b26a474b7b504382910d",
+    "scripts/scene3d_graph.py": "8853314b2386f9020d0a11ebe2be07f3c3d913a5a14300b3bb34a5906a85bf6e",
+    "scripts/scene3d_import.py": "65864dc2354cdf9958638989ba118b7804054b1c6f7e51fea7c713c14291002f",
+    "scripts/scene3d_math.py": "4014cd32fb5efdafe07f15656e9139eb9ce47169284f5cf60386229d0587df54",
+    "scripts/scene3d_prefabs.py": "517cd0863985e543316777a164e2e6d546ab6ee2a9ea04012570216be58373a6",
+    "scripts/scene3d_snapshot.py": "9a107f00c8ab259538c3f5e2c11d7b4c117ebb19e181efd938aa22251c26418c",
+    "scripts/source_interface.py": "85d5e93ddb17c314f6bd585797d7202a4f17d15df6a798093c214d9a451eded0",
+    "scripts/state_catalog.py": "6adae5e88fd03b3d543e4bc5059ddca284ac6ad93961d655688e7a02af417376",
+    "scripts/state_selection.py": "a910632624fbf900000118850bdad7709aa3e65f2922f8f5108bd772ee90a99c",
+    "scripts/style_registry.py": "dbf5058e9a45736f64279c1f2ab239abbaff809df1765784adaec6cfe5572054",
+    "scripts/test_rig_gate.py": "4a9e9602d6f0f308a2ce64e417cc4b58cd8a952a76cef87a12bb23b4250051bd",
+    "scripts/validate_atlas.py": "cb1208ff3eeea0c7fec03921b04e9e647ac5ae7f6645184925f3c759cd0c8854",
+    "scripts/verify_camera3d_optics.py": "b2499b2ebcc05e083d87ec73f36db93e084c4beb282e74fbe6ad82519a52a3c7",
+    "scripts/verify_public_delivery.py": "abaebfa280deb071791a11d755bdc50302300f66162f5e2218bd8c4dc3817e1f",
+    "scripts/verify_rig_demos.py": "ec084e09d86043ee67c60c7376ec4e645f0832d9e18b0cec0a3d23bc9a73bdb8"
+  },
+  "native_execution": {
+    "code_sha": "840b03bf129231dc99d9c551552d0601606eb981",
+    "queue_requested_utc": "2026-11-14T00:06:52.569045+00:00",
+    "execution_started_utc": "2026-11-14T00:08:32.382280+00:00",
+    "queue_wait_seconds": 99.813235,
+    "status": "passed",
+    "execution_finished_utc": "2026-11-14T00:09:21.453490+00:00",
+    "execution_seconds": 49.07122353100567
+  },
+  "probe": {
+    "schema_version": 1,
+    "kind": "cinematics3d-blender-probe",
+    "application_version": "Blender 4.5.3 LTS",
+    "engines": [
+      "CYCLES",
+      "BLENDER_EEVEE_NEXT"
+    ],
+    "view_transforms": [
+      "Standard",
+      "AgX",
+      "Filmic",
+      "Raw",
+      "Khronos PBR Neutral"
+    ],
+    "nodes": [
+      "ShaderNodeVolumePrincipled",
+      "ShaderNodeBackground",
+      "CompositorNodeRLayers",
+      "CompositorNodeGlare",
+      "CompositorNodeExposure",
+      "CompositorNodeColorBalance",
+      "CompositorNodeCryptomatteV2"
+    ],
+    "passes": {
+      "depth": true,
+      "normal": true,
+      "vector": true,
+      "cryptomatte": true,
+      "albedo": true
+    },
+    "transparency": true,
+    "effects": {
+      "depth-of-field": {
+        "available": true,
+        "method": "Native camera DOF RNA",
+        "pixel_verified": false
+      },
+      "volumetric-fog": {
+        "available": true,
+        "method": "Native world volume shader",
+        "pixel_verified": false
+      },
+      "exposure": {
+        "available": true,
+        "method": "Native display exposure",
+        "pixel_verified": false
+      },
+      "tone-map": {
+        "available": true,
+        "method": "Native display transforms",
+        "pixel_verified": false
+      },
+      "motion-blur": {
+        "available": false,
+        "method": "Exact shutter subframe scene sampling is not integrated",
+        "pixel_verified": false
+      }
+    },
+    "devices": [
+      {
+        "id": "CUDA_NVIDIA GeForce RTX 4060 Laptop GPU_0000:01:00",
+        "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+        "type": "CUDA",
+        "initialized": false
+      },
+      {
+        "id": "CPU",
+        "name": "13th Gen Intel Core i7-13700H",
+        "type": "CPU",
+        "initialized": false
+      },
+      {
+        "id": "CUDA_NVIDIA GeForce RTX 4060 Laptop GPU_0000:01:00_OptiX",
+        "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+        "type": "OPTIX",
+        "initialized": false
+      }
+    ],
+    "rendered": false
+  },
+  "variants": {
+    "baseline": {
+      "request_sha256": "37360252253726da44cf167bd71a683422350f8dab9eaa2f027fa9057411ecd6",
+      "snapshot_sha256": "04b126a561c4fb03e2a3180d53b81c931aaf5afe28e763f7de87b5ed5aec3f29",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "3d9ba2b9531983bcaab3590c5cc47c6b301f814d88bfbfc9504d9f0c651dc629",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.png",
+            "sha256": "30fefc9658f9a66ddc712c33eca3d0735c869af4a9c3c2cd55d28737c164c463",
+            "bytes": 7339
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            96,
+            96
+          ]
+        }
+      ],
+      "independently_decoded_images": 1,
+      "worker_effective": [
+        {
+          "frame": 0,
+          "settings": {
+            "camera": "camera",
+            "exposure": 0.0,
+            "view_transform": "Standard",
+            "transparent": false,
+            "dof": {
+              "enabled": false,
+              "focus_distance_m": 5.0,
+              "f_stop": 0.5,
+              "aperture_blades": 7,
+              "aperture_rotation_rad": 0.0,
+              "anamorphic_ratio": 1.0,
+              "focal_length_mm": 40.0,
+              "sensor_width_mm": 24.0,
+              "sensor_height_mm": 24.0,
+              "sensor_fit": "HORIZONTAL",
+              "shift_x": 0.0,
+              "shift_y": 0.0,
+              "near_clip_m": 0.10000000149011612,
+              "far_clip_m": 100.0
+            },
+            "fog": null,
+            "pixel_verified": false
+          }
+        }
+      ],
+      "worker_report_sha256": "65b6441cd5f8fc7fbc6fa3b23e593cfcc14be460b4f9598c3158ffb5fb75f4cc",
+      "measured_usage": {
+        "elapsed_seconds": 4.307545660994947,
+        "peak_memory_bytes": 362516480,
+        "output_bytes": 67741,
+        "measurement": "measured"
+      },
+      "configuration_reopened": true
+    },
+    "exposure": {
+      "request_sha256": "500fad986f580254e1ce10601c11b53f3fccfe8ed0882505aa40f61bb071de0c",
+      "snapshot_sha256": "04b126a561c4fb03e2a3180d53b81c931aaf5afe28e763f7de87b5ed5aec3f29",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "3d9ba2b9531983bcaab3590c5cc47c6b301f814d88bfbfc9504d9f0c651dc629",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.png",
+            "sha256": "6603be4b289740531112dac49e723e20b6dad3002f352ffdaf248c78a974a482",
+            "bytes": 8054
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            96,
+            96
+          ]
+        }
+      ],
+      "independently_decoded_images": 1,
+      "worker_effective": [
+        {
+          "frame": 0,
+          "settings": {
+            "camera": "camera",
+            "exposure": 1.0,
+            "view_transform": "Standard",
+            "transparent": false,
+            "dof": {
+              "enabled": false,
+              "focus_distance_m": 5.0,
+              "f_stop": 0.5,
+              "aperture_blades": 7,
+              "aperture_rotation_rad": 0.0,
+              "anamorphic_ratio": 1.0,
+              "focal_length_mm": 40.0,
+              "sensor_width_mm": 24.0,
+              "sensor_height_mm": 24.0,
+              "sensor_fit": "HORIZONTAL",
+              "shift_x": 0.0,
+              "shift_y": 0.0,
+              "near_clip_m": 0.10000000149011612,
+              "far_clip_m": 100.0
+            },
+            "fog": null,
+            "pixel_verified": false
+          }
+        }
+      ],
+      "worker_report_sha256": "44f32f024b133acec0f11db0dc517a728891ce7f3b488fd489f1ac6f1d866a57",
+      "measured_usage": {
+        "elapsed_seconds": 3.9272346049983753,
+        "peak_memory_bytes": 363671552,
+        "output_bytes": 70328,
+        "measurement": "measured"
+      },
+      "configuration_reopened": true
+    },
+    "fog": {
+      "request_sha256": "ce6957421370b421ac12d84549c2e62938e7fa2dd3b94296909b171d47acd5ed",
+      "snapshot_sha256": "04b126a561c4fb03e2a3180d53b81c931aaf5afe28e763f7de87b5ed5aec3f29",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "3d9ba2b9531983bcaab3590c5cc47c6b301f814d88bfbfc9504d9f0c651dc629",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.png",
+            "sha256": "dd1e0e016c52d7438336fd68d68d2896edd15f2ec28ab240702c0e5188816ba9",
+            "bytes": 2525
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            96,
+            96
+          ]
+        }
+      ],
+      "independently_decoded_images": 1,
+      "worker_effective": [
+        {
+          "frame": 0,
+          "settings": {
+            "camera": "camera",
+            "exposure": 0.0,
+            "view_transform": "Standard",
+            "transparent": false,
+            "dof": {
+              "enabled": false,
+              "focus_distance_m": 5.0,
+              "f_stop": 0.5,
+              "aperture_blades": 7,
+              "aperture_rotation_rad": 0.0,
+              "anamorphic_ratio": 1.0,
+              "focal_length_mm": 40.0,
+              "sensor_width_mm": 24.0,
+              "sensor_height_mm": 24.0,
+              "sensor_fit": "HORIZONTAL",
+              "shift_x": 0.0,
+              "shift_y": 0.0,
+              "near_clip_m": 0.10000000149011612,
+              "far_clip_m": 100.0
+            },
+            "fog": {
+              "density_per_meter": 0.07999999821186066,
+              "anisotropy": 0.0
+            },
+            "pixel_verified": false
+          }
+        }
+      ],
+      "worker_report_sha256": "96b250678be56d9a700f99898bd940640e126367a5d366834799a7d532075c16",
+      "measured_usage": {
+        "elapsed_seconds": 3.8841825630079256,
+        "peak_memory_bytes": 361250816,
+        "output_bytes": 65205,
+        "measurement": "measured"
+      },
+      "configuration_reopened": true
+    },
+    "dof": {
+      "request_sha256": "2bed5b8ea44a63e930a87a8efd87befff7dc8dc416962e206277315d374c5a5b",
+      "snapshot_sha256": "04b126a561c4fb03e2a3180d53b81c931aaf5afe28e763f7de87b5ed5aec3f29",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "3d9ba2b9531983bcaab3590c5cc47c6b301f814d88bfbfc9504d9f0c651dc629",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.png",
+            "sha256": "27a4e7fb78a1b81041c8179d228d313b0a297f74d7212ca912382b363679bb62",
+            "bytes": 7341
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            96,
+            96
+          ]
+        }
+      ],
+      "independently_decoded_images": 1,
+      "worker_effective": [
+        {
+          "frame": 0,
+          "settings": {
+            "camera": "camera",
+            "exposure": 0.0,
+            "view_transform": "Standard",
+            "transparent": false,
+            "dof": {
+              "enabled": true,
+              "focus_distance_m": 5.0,
+              "f_stop": 0.5,
+              "aperture_blades": 7,
+              "aperture_rotation_rad": 0.0,
+              "anamorphic_ratio": 1.0,
+              "focal_length_mm": 40.0,
+              "sensor_width_mm": 24.0,
+              "sensor_height_mm": 24.0,
+              "sensor_fit": "HORIZONTAL",
+              "shift_x": 0.0,
+              "shift_y": 0.0,
+              "near_clip_m": 0.10000000149011612,
+              "far_clip_m": 100.0
+            },
+            "fog": null,
+            "pixel_verified": false
+          }
+        }
+      ],
+      "worker_report_sha256": "a6ef97da4ef8cdbbd4884808faaad557b2d34d3719182481a6b01b860b10feb2",
+      "measured_usage": {
+        "elapsed_seconds": 4.4961400119937025,
+        "peak_memory_bytes": 366505984,
+        "output_bytes": 67721,
+        "measurement": "measured"
+      },
+      "configuration_reopened": true
+    },
+    "exr": {
+      "request_sha256": "9e51b1737d7e9abe7e0e2e7f0c45eb9390b8772fbdb003465855dee09b71fe02",
+      "snapshot_sha256": "04b126a561c4fb03e2a3180d53b81c931aaf5afe28e763f7de87b5ed5aec3f29",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "3d9ba2b9531983bcaab3590c5cc47c6b301f814d88bfbfc9504d9f0c651dc629",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.exr",
+            "sha256": "327f3b83570c09bb77621826138fda20a29e4aa9ae78b87662983f4b580bacb2",
+            "bytes": 15081
+          },
+          "format": "exr",
+          "bit_depth": 32,
+          "pass_name": "combined",
+          "resolution": [
+            96,
+            96
+          ]
+        }
+      ],
+      "independently_decoded_images": 1,
+      "worker_effective": [
+        {
+          "frame": 0,
+          "settings": {
+            "camera": "camera",
+            "exposure": 1.0,
+            "view_transform": "Standard",
+            "transparent": false,
+            "dof": {
+              "enabled": false,
+              "focus_distance_m": 5.0,
+              "f_stop": 0.5,
+              "aperture_blades": 7,
+              "aperture_rotation_rad": 0.0,
+              "anamorphic_ratio": 1.0,
+              "focal_length_mm": 40.0,
+              "sensor_width_mm": 24.0,
+              "sensor_height_mm": 24.0,
+              "sensor_fit": "HORIZONTAL",
+              "shift_x": 0.0,
+              "shift_y": 0.0,
+              "near_clip_m": 0.10000000149011612,
+              "far_clip_m": 100.0
+            },
+            "fog": null,
+            "pixel_verified": false
+          }
+        }
+      ],
+      "worker_report_sha256": "d905b602894a9b6c2b2878447f7014b592b8d2f3c865dbef4f2cc2ef530e2f3e",
+      "measured_usage": {
+        "elapsed_seconds": 4.902408340989496,
+        "peak_memory_bytes": 362143744,
+        "output_bytes": 77350,
+        "measurement": "measured"
+      },
+      "configuration_reopened": true
+    }
+  },
+  "measured_pixel_mean_absolute_difference": {
+    "exposure": 0.13525582107843134,
+    "fog": 0.3485519641884532,
+    "dof": 0.00023105596405228757
+  },
+  "configuration_reopened": true,
+  "tests": [
+    {
+      "log": "final-focused.log",
+      "summary": "ent_authority_and_preserves_descendant_exclusion) ... ok\ntest_rejections_match_both_public_owners (test_portable_paths.PortablePathTests.test_rejections_match_both_public_owners) ... ok\ntest_stdlib_worker_opens_payload_without_imaging_dependencies (test_portable_paths.PortablePathTests.test_stdlib_worker_opens_payload_without_imaging_dependencies) ... ok\ntest_transport_reexports_single_authority (test_portable_paths.PortablePathTests.test_transport_reexports_single_authority) ... ok\n\n----------------------------------------------------------------------\nRan 75 tests in 10.539s\n\nOK (skipped=1)\n"
+    },
+    {
+      "log": "final-schema.log",
+      "summary": "as_required_incoming_tangent) ... ok\ntest_real_rig_resolution_sampling_and_deformation_are_nonsequential (test_animation3d_independent.AnimationIndependentRegistryTests.test_real_rig_resolution_sampling_and_deformation_are_nonsequential) ... ok\ntest_registry_and_resolved_records_do_not_alias_callers (test_animation3d_independent.AnimationIndependentRegistryTests.test_registry_and_resolved_records_do_not_alias_callers) ... ok\n\n----------------------------------------------------------------------\nRan 282 tests in 39.217s\n\nOK (skipped=1)\nDiscovered 1066 2D tests without optional 3D dependencies\n"
+    },
+    {
+      "log": "final-schema-parity.log",
+      "summary": ""
+    },
+    {
+      "log": "final-legacy.log",
+      "summary": "uctionContractTests.test_two_scenes_reuse_exact_character_versions_and_asset_inventory) ... ok\ntest_unknown_fields_unsupported_versions_and_boolean_frames_fail_closed (test_production_contracts.ProductionContractTests.test_unknown_fields_unsupported_versions_and_boolean_frames_fail_closed) ... ok\ntest_versioned_assets_reject_duplicate_identity_but_allow_a_new_version (test_production_contracts.ProductionContractTests.test_versioned_assets_reject_duplicate_identity_but_allow_a_new_version) ... ok\n\n----------------------------------------------------------------------\nRan 31 tests in 1.526s\n\nOK\n"
+    },
+    {
+      "log": "final-skinning.log",
+      "summary": "c_strength (test_rig_weight_input_boundaries.RigWeightInputBoundaryTests.test_smoothing_requires_finite_numeric_strength) ... ok\ntest_valid_identity_operations_preserve_actual_deformation (test_rig_weight_input_boundaries.RigWeightInputBoundaryTests.test_valid_identity_operations_preserve_actual_deformation) ... ok\ntest_valid_operations_normalize_and_preserve_locked_rows (test_rig_weight_input_boundaries.RigWeightInputBoundaryTests.test_valid_operations_normalize_and_preserve_locked_rows) ... ok\n\n----------------------------------------------------------------------\nRan 18 tests in 0.771s\n\nOK\n"
+    }
+  ],
+  "evidence_bundle": {
+    "path": "examples/cinematics3d/backend-current/engineering-evidence.zip",
+    "sha256": "1a7a7d2392ff4cad95f34cde8cc5142d58f6c10abdfc573e15fc010407463713",
+    "bytes": 199474,
+    "files": {
+      "native/baseline/blender.log": {
+        "sha256": "68be79564af109a66fbb12f247e766d1b752294ea1838c9f9b81fd7e9ddb307e",
+        "bytes": 5388
+      },
+      "native/baseline/cinematics/documents/dof.json": {
+        "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7",
+        "bytes": 536
+      },
+      "native/baseline/cinematics/documents/native-stack.json": {
+        "sha256": "dbb309a39d0e1b0153811e51293faa57b453012af89a9f32ed1a85ded5ddd81d",
+        "bytes": 406
+      },
+      "native/baseline/cinematics/inputs/optics.json": {
+        "sha256": "20041ed8b4e02441bc5b5bb39d66faaf224466ab21512bed9cf7be97a5d8eec3",
+        "bytes": 396
+      },
+      "native/baseline/cinematics/plan.json": {
+        "sha256": "a5755ef77b8dac57ca0b4a4dbebb66cc35c64ba2a68363d6eaaa9bf30856378a",
+        "bytes": 1571
+      },
+      "native/baseline/cinematics/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/baseline/frames/000000.png": {
+        "sha256": "30fefc9658f9a66ddc712c33eca3d0735c869af4a9c3c2cd55d28737c164c463",
+        "bytes": 7339
+      },
+      "native/baseline/manifest.json": {
+        "sha256": "d9337cc6996b8ddeb34f71807c72e291e5ffe087db6a6a07c331abbdf45e05d5",
+        "bytes": 11132
+      },
+      "native/baseline/result.json": {
+        "sha256": "ff755003f287105390f1de4957bf17b1d26b89ccc412990e94be976f66b1fecf",
+        "bytes": 2096
+      },
+      "native/baseline/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/baseline/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/baseline/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/baseline/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/baseline/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/baseline/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/baseline/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/baseline/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/baseline/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/baseline/source/.import-0.rig.lock": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "native/baseline/source/asset-0.glb": {
+        "sha256": "1367e59faaf31699c21c2d8f4b321bb8408bf0cd16c3464057d0474ca709b5e2",
+        "bytes": 928
+      },
+      "native/baseline/source/import-0/geometry/913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9.npz": {
+        "sha256": "913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9",
+        "bytes": 679
+      },
+      "native/baseline/source/import-0/identity.json": {
+        "sha256": "2f8036e9766912b7956ab3e8ad8529268774016951ecc605311a49c00a93de3a",
+        "bytes": 545
+      },
+      "native/baseline/source/import-0/job.json": {
+        "sha256": "710c9743d209037b9d85c182b87e8a6f0127200a1a7c327f8d11bbc910ae443d",
+        "bytes": 824
+      },
+      "native/baseline/source/import-0/rig.json": {
+        "sha256": "27a34375d5da38c90e6a5d1f27c13c7d8aea7401fd0286f3f6ffdc07400a1788",
+        "bytes": 2450
+      },
+      "native/baseline/source/import-0/source/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/baseline/source/import-0/validation/import.json": {
+        "sha256": "40f241fc57fd004949f2f75e58ade8e2fbb015100b75f9b8cb40196f04171471",
+        "bytes": 1943
+      },
+      "native/baseline/source/job.json": {
+        "sha256": "c80c783cc8ced2f78160e68e6e42a9ea52510888bdbc02d22d556c0429be1d7b",
+        "bytes": 9226
+      },
+      "native/baseline/verification.json": {
+        "sha256": "9a269ff4650873593ea0b96aca38ef953e74d7a7f7219ef5fd5a05ad278c096c",
+        "bytes": 2245
+      },
+      "native/baseline/worker-report.json": {
+        "sha256": "65b6441cd5f8fc7fbc6fa3b23e593cfcc14be460b4f9598c3158ffb5fb75f4cc",
+        "bytes": 5624
+      },
+      "native/baseline-request.json": {
+        "sha256": "45ade4eae9103f8dfd0c119d79fcbc29ee9df18fbf0c26219407d9ef755cc23b",
+        "bytes": 1579
+      },
+      "native/dof/blender.log": {
+        "sha256": "947ff6e560f80cfc015343e7227eadd00b3211870b45c67c01408fd1349d214d",
+        "bytes": 5388
+      },
+      "native/dof/cinematics/documents/dof.json": {
+        "sha256": "544b5fcd67eea8c486f8f708670d5df662f94ba80ec11848dbc588e0b382994a",
+        "bytes": 535
+      },
+      "native/dof/cinematics/documents/native-stack.json": {
+        "sha256": "490f89ab563be627595422f93d7c117bc34fbca7807eb1006b6d2688d592a1e3",
+        "bytes": 406
+      },
+      "native/dof/cinematics/inputs/optics.json": {
+        "sha256": "20041ed8b4e02441bc5b5bb39d66faaf224466ab21512bed9cf7be97a5d8eec3",
+        "bytes": 396
+      },
+      "native/dof/cinematics/plan.json": {
+        "sha256": "c89934a9e8ce9a1b59a31350d42dbef6eed1a1dc2a91fe9bf3e668973d379529",
+        "bytes": 1570
+      },
+      "native/dof/cinematics/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/dof/frames/000000.png": {
+        "sha256": "27a4e7fb78a1b81041c8179d228d313b0a297f74d7212ca912382b363679bb62",
+        "bytes": 7341
+      },
+      "native/dof/manifest.json": {
+        "sha256": "b20de79252031786404f501c1f0ea618f43ee07a4cfa74a80a20fdc62407af5d",
+        "bytes": 11124
+      },
+      "native/dof/result.json": {
+        "sha256": "d1b57bbc62f700f58c09a998e44cbe6a6b4b55ae39ad706d42331bda7dd2e193",
+        "bytes": 2092
+      },
+      "native/dof/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/dof/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/dof/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/dof/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/dof/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/dof/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/dof/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/dof/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/dof/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/dof/source/.import-0.rig.lock": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "native/dof/source/asset-0.glb": {
+        "sha256": "1367e59faaf31699c21c2d8f4b321bb8408bf0cd16c3464057d0474ca709b5e2",
+        "bytes": 928
+      },
+      "native/dof/source/import-0/geometry/913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9.npz": {
+        "sha256": "913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9",
+        "bytes": 679
+      },
+      "native/dof/source/import-0/identity.json": {
+        "sha256": "2f8036e9766912b7956ab3e8ad8529268774016951ecc605311a49c00a93de3a",
+        "bytes": 545
+      },
+      "native/dof/source/import-0/job.json": {
+        "sha256": "a6114bd6dffa5615823f401392b025eaa2802459bbe8d5aa36e7122bc84fd79c",
+        "bytes": 824
+      },
+      "native/dof/source/import-0/rig.json": {
+        "sha256": "1ab6431f2a6104b782de142fab9ea3fc2c4479fb8879ee55497d81c7bca9b296",
+        "bytes": 2450
+      },
+      "native/dof/source/import-0/source/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/dof/source/import-0/validation/import.json": {
+        "sha256": "40f241fc57fd004949f2f75e58ade8e2fbb015100b75f9b8cb40196f04171471",
+        "bytes": 1943
+      },
+      "native/dof/source/job.json": {
+        "sha256": "a9d6a1fda2b2b8002c8447da172f550f41ac901dc5083d850c5d54c55209444a",
+        "bytes": 9220
+      },
+      "native/dof/verification.json": {
+        "sha256": "4e25508a61e98000bfe5d85b8cc0687e29aa85e22a437ffeaee9ccd07e6d16ff",
+        "bytes": 2245
+      },
+      "native/dof/worker-report.json": {
+        "sha256": "a6ef97da4ef8cdbbd4884808faaad557b2d34d3719182481a6b01b860b10feb2",
+        "bytes": 5622
+      },
+      "native/dof-request.json": {
+        "sha256": "53e3e2cc1306b14eb38f582a84f3ead79ba810bebc21947b08860e91d72cde1e",
+        "bytes": 1569
+      },
+      "native/evidence.json": {
+        "sha256": "aa123137a08a8698c5fa25a9d07dd035d227cefc3a7cc09da207244702f45e99",
+        "bytes": 7800
+      },
+      "native/exposure/blender.log": {
+        "sha256": "07cf45a3613830db67ef7f3443718eb190c3e7d09a8c55ae5ba152762b455f2e",
+        "bytes": 5388
+      },
+      "native/exposure/cinematics/documents/dof.json": {
+        "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7",
+        "bytes": 536
+      },
+      "native/exposure/cinematics/documents/exposure.json": {
+        "sha256": "616775d9b20a077a3aa9dcb8dbad64c8af27d368aada5229a51175b8e6bb4194",
+        "bytes": 374
+      },
+      "native/exposure/cinematics/documents/native-stack.json": {
+        "sha256": "1e1fc84d733a6878e98885fb4c5a8561fbc41ce94e89574c6a4bebe28c669325",
+        "bytes": 570
+      },
+      "native/exposure/cinematics/inputs/optics.json": {
+        "sha256": "20041ed8b4e02441bc5b5bb39d66faaf224466ab21512bed9cf7be97a5d8eec3",
+        "bytes": 396
+      },
+      "native/exposure/cinematics/plan.json": {
+        "sha256": "46da83b2d160a45c191a581071a9b9312ff37da1c926b3525e024bcc6c9f8f95",
+        "bytes": 1785
+      },
+      "native/exposure/cinematics/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/exposure/frames/000000.png": {
+        "sha256": "6603be4b289740531112dac49e723e20b6dad3002f352ffdaf248c78a974a482",
+        "bytes": 8054
+      },
+      "native/exposure/manifest.json": {
+        "sha256": "fc04642504ce7b185352530bbb073515019f7a6f6cff010bb45c235883302604",
+        "bytes": 11781
+      },
+      "native/exposure/result.json": {
+        "sha256": "92222b8c3f9059ce681e61bdd9936df835f0682fb21e24938790d1b68a53d207",
+        "bytes": 2097
+      },
+      "native/exposure/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/exposure/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/exposure/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/exposure/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/exposure/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/exposure/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/exposure/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/exposure/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/exposure/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/exposure/source/.import-0.rig.lock": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "native/exposure/source/asset-0.glb": {
+        "sha256": "1367e59faaf31699c21c2d8f4b321bb8408bf0cd16c3464057d0474ca709b5e2",
+        "bytes": 928
+      },
+      "native/exposure/source/import-0/geometry/913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9.npz": {
+        "sha256": "913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9",
+        "bytes": 679
+      },
+      "native/exposure/source/import-0/identity.json": {
+        "sha256": "2f8036e9766912b7956ab3e8ad8529268774016951ecc605311a49c00a93de3a",
+        "bytes": 545
+      },
+      "native/exposure/source/import-0/job.json": {
+        "sha256": "5b031c006e70df3f957bf9a993f8b83aaaa4386607119fca3db9ebaca4cd2e77",
+        "bytes": 824
+      },
+      "native/exposure/source/import-0/rig.json": {
+        "sha256": "c6b1d755481d7ac5d743fa07ccd5f2c988b01d196e1edc5cad411fc783ebbe20",
+        "bytes": 2450
+      },
+      "native/exposure/source/import-0/source/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/exposure/source/import-0/validation/import.json": {
+        "sha256": "40f241fc57fd004949f2f75e58ade8e2fbb015100b75f9b8cb40196f04171471",
+        "bytes": 1943
+      },
+      "native/exposure/source/job.json": {
+        "sha256": "350ce139925a037495376f96d2e586d1f802d94cdc5fe27af0aa0fa722f60f6d",
+        "bytes": 9454
+      },
+      "native/exposure/verification.json": {
+        "sha256": "7ca49da5c3423906f8b52fb1c256e547fac0e64443406edde6e6816fdfeb1817",
+        "bytes": 2245
+      },
+      "native/exposure/worker-report.json": {
+        "sha256": "44f32f024b133acec0f11db0dc517a728891ce7f3b488fd489f1ac6f1d866a57",
+        "bytes": 5866
+      },
+      "native/exposure-request.json": {
+        "sha256": "7355553164f20fd8e0999f59fff8cb8fc152a4293679d71b57670a0204e55fb3",
+        "bytes": 1579
+      },
+      "native/exr/blender.log": {
+        "sha256": "cbf8ead54de7de636d21dc2ba4c755f4dfc311a7b52ba59841dee50bf22b746a",
+        "bytes": 5388
+      },
+      "native/exr/cinematics/documents/dof.json": {
+        "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7",
+        "bytes": 536
+      },
+      "native/exr/cinematics/documents/exposure.json": {
+        "sha256": "616775d9b20a077a3aa9dcb8dbad64c8af27d368aada5229a51175b8e6bb4194",
+        "bytes": 374
+      },
+      "native/exr/cinematics/documents/native-stack.json": {
+        "sha256": "1e1fc84d733a6878e98885fb4c5a8561fbc41ce94e89574c6a4bebe28c669325",
+        "bytes": 570
+      },
+      "native/exr/cinematics/inputs/optics.json": {
+        "sha256": "20041ed8b4e02441bc5b5bb39d66faaf224466ab21512bed9cf7be97a5d8eec3",
+        "bytes": 396
+      },
+      "native/exr/cinematics/plan.json": {
+        "sha256": "b67234f409217ce8bd317109f27f5f383118024ddad5a8e9282e64cd2204e110",
+        "bytes": 1785
+      },
+      "native/exr/cinematics/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/exr/frames/000000.exr": {
+        "sha256": "327f3b83570c09bb77621826138fda20a29e4aa9ae78b87662983f4b580bacb2",
+        "bytes": 15081
+      },
+      "native/exr/manifest.json": {
+        "sha256": "13d0e3d3f2d2bbbd22e13dc3feba6b4d3e2f371436b01ba4357fc77d66764cf3",
+        "bytes": 11779
+      },
+      "native/exr/result.json": {
+        "sha256": "c3f3e77ceaec8ca1e29cc1af9ee2007301000034da3cca368223461023fc508c",
+        "bytes": 2093
+      },
+      "native/exr/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/exr/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/exr/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/exr/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/exr/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/exr/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/exr/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/exr/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/exr/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/exr/source/.import-0.rig.lock": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "native/exr/source/asset-0.glb": {
+        "sha256": "1367e59faaf31699c21c2d8f4b321bb8408bf0cd16c3464057d0474ca709b5e2",
+        "bytes": 928
+      },
+      "native/exr/source/import-0/geometry/913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9.npz": {
+        "sha256": "913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9",
+        "bytes": 679
+      },
+      "native/exr/source/import-0/identity.json": {
+        "sha256": "2f8036e9766912b7956ab3e8ad8529268774016951ecc605311a49c00a93de3a",
+        "bytes": 545
+      },
+      "native/exr/source/import-0/job.json": {
+        "sha256": "bffa0b494befff89f87c5efb9f5d9778d1913e50b8e2de959126b580a66be5e2",
+        "bytes": 824
+      },
+      "native/exr/source/import-0/rig.json": {
+        "sha256": "7d7290762a721d4fa9bd826816899be0fe70c52a170e57888b951f8606ba78f0",
+        "bytes": 2450
+      },
+      "native/exr/source/import-0/source/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/exr/source/import-0/validation/import.json": {
+        "sha256": "40f241fc57fd004949f2f75e58ade8e2fbb015100b75f9b8cb40196f04171471",
+        "bytes": 1943
+      },
+      "native/exr/source/job.json": {
+        "sha256": "2a61f07c6be56c2b98984ef350fae83bcbc81ce35400da5fefe7ea6c9d1bc881",
+        "bytes": 9455
+      },
+      "native/exr/verification.json": {
+        "sha256": "561c5b679cc67bee4aeac8c81b2d0b0e8b68a33a92ea115b227b53bb03759d61",
+        "bytes": 2245
+      },
+      "native/exr/worker-report.json": {
+        "sha256": "d905b602894a9b6c2b2878447f7014b592b8d2f3c865dbef4f2cc2ef530e2f3e",
+        "bytes": 5866
+      },
+      "native/exr-request.json": {
+        "sha256": "4b698147897dee815fd58a60ace7d4f16e30d2b7f793c5b604610df99a5ba919",
+        "bytes": 1572
+      },
+      "native/fog/blender.log": {
+        "sha256": "c0f988c8c736f1e58a070bd900b4a6834db7fa12201dd263171007e640882ddd",
+        "bytes": 5388
+      },
+      "native/fog/cinematics/documents/dof.json": {
+        "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7",
+        "bytes": 536
+      },
+      "native/fog/cinematics/documents/fog.json": {
+        "sha256": "b906ef188ea86c973651878eae4a8f9e8ea036f48f27fd8a325c370d42386d42",
+        "bytes": 405
+      },
+      "native/fog/cinematics/documents/native-stack.json": {
+        "sha256": "2c2d0d5c6a9b27a4226b0b90ce8a842b4aa7f329cfd4d9dd5b0633b67f0da505",
+        "bytes": 560
+      },
+      "native/fog/cinematics/inputs/optics.json": {
+        "sha256": "20041ed8b4e02441bc5b5bb39d66faaf224466ab21512bed9cf7be97a5d8eec3",
+        "bytes": 396
+      },
+      "native/fog/cinematics/plan.json": {
+        "sha256": "f374e8773f076f91f926ecaf9d6f0ef8f398808b72d9a4def14d4d67d4b8b27f",
+        "bytes": 1827
+      },
+      "native/fog/cinematics/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/fog/frames/000000.png": {
+        "sha256": "dd1e0e016c52d7438336fd68d68d2896edd15f2ec28ab240702c0e5188816ba9",
+        "bytes": 2525
+      },
+      "native/fog/manifest.json": {
+        "sha256": "7e0111199097c835447b9d999998731f1d084a685ce01909fcc88858dbe9bf86",
+        "bytes": 11984
+      },
+      "native/fog/result.json": {
+        "sha256": "7238bca347bd1b5c9c72a8d2d6cfcc004bc0f297291609aa65744a1ddb385e7e",
+        "bytes": 2092
+      },
+      "native/fog/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/fog/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/fog/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/fog/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/fog/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/fog/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/fog/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/fog/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/fog/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/fog/source/.import-0.rig.lock": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "native/fog/source/asset-0.glb": {
+        "sha256": "1367e59faaf31699c21c2d8f4b321bb8408bf0cd16c3464057d0474ca709b5e2",
+        "bytes": 928
+      },
+      "native/fog/source/import-0/geometry/913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9.npz": {
+        "sha256": "913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9",
+        "bytes": 679
+      },
+      "native/fog/source/import-0/identity.json": {
+        "sha256": "2f8036e9766912b7956ab3e8ad8529268774016951ecc605311a49c00a93de3a",
+        "bytes": 545
+      },
+      "native/fog/source/import-0/job.json": {
+        "sha256": "c334dce5a6e7008d2f2e4d95be5b3e6e8be8b2fcdd5a9237c52904022a96f0c1",
+        "bytes": 824
+      },
+      "native/fog/source/import-0/rig.json": {
+        "sha256": "174fbfbbe3cf50d89220c7c32406ccede4118171ccd3fce14f1cf8d389cd6b67",
+        "bytes": 2450
+      },
+      "native/fog/source/import-0/source/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/fog/source/import-0/validation/import.json": {
+        "sha256": "40f241fc57fd004949f2f75e58ade8e2fbb015100b75f9b8cb40196f04171471",
+        "bytes": 1943
+      },
+      "native/fog/source/job.json": {
+        "sha256": "ab9a8149e35e4dd348a977b02f1b382a567e1ec27217bb12754446dec4fda576",
+        "bytes": 9497
+      },
+      "native/fog/verification.json": {
+        "sha256": "aee0ddf75921912e0099adfe4ad1497be398c7e0fd99e4fcd29e1ffad0f00e17",
+        "bytes": 2200
+      },
+      "native/fog/worker-report.json": {
+        "sha256": "96b250678be56d9a700f99898bd940640e126367a5d366834799a7d532075c16",
+        "bytes": 6013
+      },
+      "native/fog-request.json": {
+        "sha256": "29c02971067487fd7c076d049749e46a0f3630a1cb1819ddf72833cffe4c7e94",
+        "bytes": 1569
+      },
+      "native/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/scene/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/scene/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/scene/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/scene/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/scene/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/scene/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/scene/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/scene/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "validation/final-focused.log": {
+        "sha256": "df3484acfcdf1833841f7e74234126dc49ddccdec490b28da58a58ba830bb1f1",
+        "bytes": 12579
+      },
+      "validation/final-schema.log": {
+        "sha256": "84be5dd64eeaaa057a6c8d88b8306e01424940d9f61549290f54568eb5ea5772",
+        "bytes": 47355
+      },
+      "validation/final-schema-parity.log": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "validation/final-legacy.log": {
+        "sha256": "ef26bfade6984698fc61104fbe8cbdc55af3f10b3285b6709aa052a333cba846",
+        "bytes": 6188
+      },
+      "validation/final-skinning.log": {
+        "sha256": "ce5c7df272310d3689b7342de9df0b08380ea221ce525278f5ceefce81b73f4c",
+        "bytes": 3147
+      },
+      "validation/final-validation.log": {
+        "sha256": "5f358a30dc0d4f95a1c3a2a79715515ffd46384f06a5fa814c7dd0c51132cffc",
+        "bytes": 1378
+      },
+      "validation/native/native.log": {
+        "sha256": "d0f59970e29c561dd3ad7518363f85a9be994ae79cba4d06d1720978e18edbe6",
+        "bytes": 8010
+      },
+      "validation/native/native-timing.json": {
+        "sha256": "676cbd0dc6ae013f3093835d0bcaec1aa074ac3881cf178c0d127a6404eb574c",
+        "bytes": 348
+      },
+      "validation/native/queue-request.json": {
+        "sha256": "903dd9544509ced0cbcde9ba8fad03c43675001098b3abcc4b5104995640aa9d",
+        "bytes": 54
+      },
+      "validation/native/run.py": {
+        "sha256": "6bf2f1b55318ab38ab124c4834f3248aa175072a462a6b872c553ed350de7016",
+        "bytes": 1329
+      }
+    }
+  },
+  "publication": "Canonical inherited directory capabilities, descriptor-pinned stage and exclusive descriptor-relative rename; no raw proc-path whitelist.",
+  "prior_evidence": "Original examples/cinematics3d/backend receipt and archive remain unchanged. Earlier probe FD/absent cinematic root failures retained in coordinator scratch.",
+  "limitations": [
+    "96x96 procedural engineering fixture, not artistic approval or a complete film.",
+    "Only Cycles CPU combined PNG/EXR; unsupported GPU, auxiliary passes and motion blur reject.",
+    "Dynamic Scene3D/camera tracks require the shared animation/camera owner followup.",
+    "No optional editable .blend or silent final video is claimed; parent #238 remains open."
+  ]
+}

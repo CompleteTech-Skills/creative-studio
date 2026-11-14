@@ -1,0 +1,480 @@
+"""Trusted, bounded Blender rendering over owner-verified Render3D snapshots.
+
+This module is an execution adapter, not a scheduler or an asset authority.
+Untrusted source files are decoded by the existing rig import owners and only
+sanitized GLB derivatives are passed into the fixed Blender worker.
+"""
+from __future__ import annotations
+
+from copy import deepcopy
+from contextlib import ExitStack
+from fractions import Fraction
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import shutil
+import signal
+import subprocess
+import tempfile
+import threading
+import time
+
+from atomic_publish import _rename_no_replace, pinned_directory, private_stage, private_stage_supported
+from rig_errors import RigError, atomic_json, atomic_bytes, read_json, safe_path, sha256, object_hash, directory_capability, normalize_root, scoped_directory_descriptor
+from render3d_contracts import (Render3DError, require, validate, make_frame_spec,
+                                frame_times, VERSION, load, open_regular)
+from render3d_snapshot import NativeRigAdapter, Scene3DAdapter, verify_snapshot, create_snapshot
+
+WORKER = Path(__file__).with_name('render3d_blender_worker.py')
+MAX_LOG_BYTES = 2 * 1024**2
+
+
+def _error(category, message):
+    return Render3DError(category, message)
+
+
+def _stop(process):
+    # The worker leader can exit while descendants remain in its session.
+    # Signal the owned group even after poll() reports a completed leader.
+    if os.name == 'posix':
+        try:os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:return
+    elif process.poll() is None:
+        process.terminate()
+    else:
+        return
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        if os.name != 'posix':process.kill()
+    finally:
+        if os.name == 'posix':
+            try:os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:pass
+    if process.poll() is None:process.wait(timeout=5)
+
+
+def _rss(pid):
+    """Linux process-tree RSS, or None where the OS has no procfs."""
+    if not Path('/proc').is_dir():
+        return None
+    pending=[pid]; total=0
+    while pending:
+        current=pending.pop()
+        try:
+            for line in Path(f'/proc/{current}/status').read_text().splitlines():
+                if line.startswith('VmRSS:'):
+                    total+=int(line.split()[1])*1024
+            pending.extend(map(int,Path(f'/proc/{current}/task/{current}/children').read_text().split()))
+        except (OSError,ValueError):
+            continue
+    return total
+
+
+def _supervise(command, *, cwd, timeout, memory_bytes, storage_bytes, cancelled=None, pass_fds=()):
+    """Drain bounded logs while supervising time, memory, storage and cancellation."""
+    env=dict(os.environ,OMP_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',MKL_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1')
+    start=time.monotonic(); log=bytearray(); lock=threading.Lock(); peak=0
+    process=subprocess.Popen(command,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                             start_new_session=os.name=='posix', **({'pass_fds':pass_fds} if pass_fds else {}))
+    def drain():
+        while True:
+            chunk=process.stdout.read(16384)
+            if not chunk:break
+            with lock:
+                log.extend(chunk)
+                if len(log)>MAX_LOG_BYTES:del log[:-MAX_LOG_BYTES]
+    reader=threading.Thread(target=drain,daemon=True);reader.start()
+    error=None
+    try:
+        while process.poll() is None:
+            elapsed=time.monotonic()-start
+            usage=_rss(process.pid)
+            peak=max(peak,usage or 0)
+            if cancelled is not None and cancelled():error=_error('cancelled','Render cancellation requested.')
+            elif elapsed>timeout:error=_error('timeout','Blender exceeded the requested runtime budget.')
+            elif usage is not None and usage>memory_bytes:error=_error('system-memory','Blender exceeded the requested memory budget.')
+            else:
+                size=sum(p.stat().st_size for p in Path(cwd).rglob('*') if p.is_file() and not p.is_symlink())
+                if size>storage_bytes:error=_error('storage-exhaustion','Blender exceeded the requested storage budget.')
+            if error:
+                _stop(process);break
+            time.sleep(.1)
+        # Close descendant-held output pipes before joining the log reader.
+        _stop(process)
+        reader.join(timeout=5)
+        payload=bytes(log)
+        if error:raise error
+        require(process.returncode==0,'worker-crash',payload.decode('utf-8','replace')[-2048:] or 'Blender worker failed.')
+        return payload,dict(elapsed_seconds=time.monotonic()-start,peak_memory_bytes=peak or None)
+    finally:
+        _stop(process)
+        if process.stdout:process.stdout.close()
+        try:(Path(cwd)/'blender.log').write_bytes(bytes(log))
+        except OSError:pass
+
+
+def _output_storage_estimate(request):
+    width,height=request['settings']['resolution']
+    count=request['frame_range']['end']-request['frame_range']['start']
+    return width*height*16*count
+
+
+def _source_storage_budget(request, snapshot, *, reserved_bytes=0):
+    # Capture validation overlaps a frozen closure and one private owner copy.
+    require(type(reserved_bytes) is int and 0<=reserved_bytes<=2**40,'invalid-input','Invalid helper storage reservation.')
+    available=request['settings']['resources']['storage_bytes']-request['snapshot']['bytes']-_output_storage_estimate(request)-reserved_bytes
+    return min(snapshot['total_bytes'],available//2)
+
+
+def _check_storage(stage, budget, *, reserve=0):
+    total=sum(path.stat().st_size for path in Path(stage).rglob('*') if path.is_file())
+    require(total+reserve<=budget,'storage-exhaustion','Prepared render stage exceeds storage budget.')
+    return total
+
+
+def _plain(value):
+    if hasattr(value,'tolist'):return value.tolist()
+    if isinstance(value,dict):return {k:_plain(v) for k,v in value.items()}
+    if isinstance(value,(list,tuple)):return [_plain(v) for v in value]
+    return value
+
+
+def _prepare_asset(root, asset, workspace, index, *, native=False, storage_bytes=None):
+    from rig_gltf import export_geometry, export_gltf
+    from rig_models import load_rig
+    from rig_jobs import create_run
+    destination=workspace/f'asset-{index}.glb'
+    if storage_bytes is not None:_check_storage(workspace.parent,storage_bytes)
+    if native:
+        rig=load_rig(root)
+    elif asset.get('skeleton'):
+        path=safe_path(root,asset['skeleton']['path'],exists=True)
+        require(path.name=='rig.json','unsupported-feature','Native rig entrypoint must be rig.json.')
+        rig=load_rig(path.parent)
+    else:
+        source=safe_path(root,asset['content']['path'],exists=True)
+        require(source.suffix.lower() in ('.obj','.glb','.gltf'),'unsupported-feature','Render inputs must be owner-decoded OBJ/glTF/GLB or native rigs.')
+        rig=create_run(source,workspace/f'import-{index}',identifier=f'render-{index}',fixture=asset['provenance']['fixture'])
+    remaining=None if storage_bytes is None else storage_bytes-_check_storage(workspace.parent,storage_bytes)
+    try:
+        if rig.manifest['skeleton'] is not None:
+            export_gltf(rig,destination,max_bytes=remaining)
+        else:
+            require(not rig.clips and not rig.weights,'unsupported-feature','Unrigged animated geometry is not supported by this adapter.')
+            export_geometry(rig.geometry,destination,max_bytes=remaining)
+    except RigError as exc:
+        if exc.report['code']=='RIG_EXPORT_STORAGE':raise Render3DError('storage-exhaustion',str(exc)) from exc
+        raise
+    if storage_bytes is not None:_check_storage(workspace.parent,storage_bytes)
+    return dict(path=destination.name,sha256=sha256(destination),vertices=rig.geometry.vertex_count,
+                triangles=rig.geometry.triangle_count,rigged=rig.manifest['skeleton'] is not None,
+                clips={name:dict(duration=clip['duration']) for name,clip in rig.clips.items()})
+
+
+def _static_state(bundle,scene,shot):
+    from scene3d_math import evaluate_transforms
+    require(not shot['tracks'] and not shot['bindings'] and not shot['temporal_constraints']
+            and not shot['material_overrides'],'unsupported-feature','Dynamic Scene3D shots require the temporal owner adapter.')
+    require(not shot['camera_overrides'],'unsupported-feature','Camera overrides require the camera owner adapter.')
+    nodes=evaluate_transforms(scene)
+    collections={item['id']:item['visible'] for item in scene['collections']}
+    layers={item['id']:item['visible'] for item in scene['layers']}
+    for node in scene['nodes']:
+        nodes[node['id']]['visible'] &= node['render']['visible'] and all(collections[c] for c in node['collections']) and all(layers[l] for l in node['layers'])
+    return dict(nodes=nodes,world=scene['world'],camera=shot['camera'])
+
+
+def _prepare_scene(request,snapshot_root,workspace,*,reserved_bytes=0):
+    """Convert source geometry and reuse existing canonical evaluation owners."""
+    from scene3d_math import to_blender
+    from rig_math import BLENDER_FROM_CANONICAL
+    import numpy as np
+    snapshot=load(Path(snapshot_root)/'snapshot.json','RenderSnapshot')
+    snapshot=verify_snapshot(snapshot_root,Scene3DAdapter(),max_total_bytes=_source_storage_budget(request,snapshot,reserved_bytes=reserved_bytes))
+    from scene3d_contracts import load_project
+    bundle=load_project(snapshot_root); project=bundle['project']
+    scene_ref=next(r for r in project['scenes'] if r['id']==request['scene']['id'] and r['version']==request['scene']['version'])
+    shot_ref=next(r for r in project['shots'] if r['id']==request['shot']['id'] and r['version']==request['shot']['version'])
+    scene=bundle['documents'][scene_ref['path']]; shot=bundle['documents'][shot_ref['path']]
+    plan_bytes=len(scene['nodes'])*(request['frame_range']['end']-request['frame_range']['start'])*4096
+    require(plan_bytes+snapshot['total_bytes']*8<=request['settings']['resources']['memory_bytes'],
+            'system-memory','Evaluated frame plan exceeds memory budget.')
+    require(not scene['world']['environment'],'unsupported-feature','HDRI environment maps require the look-development adapter.')
+    require(not any(node['material_overrides'] for node in scene['nodes']),'unsupported-feature','Material overrides require the look-development adapter.')
+    preparation_budget=request['settings']['resources']['storage_bytes']-snapshot['total_bytes']-_output_storage_estimate(request)-reserved_bytes
+    assets={};nodes=[]
+    allowed={'root','group','mesh_instance','skinned_character','static_prop','animated_prop','terrain','camera','light','socket','constraint_target','locator'}
+    for node in scene['nodes']:
+        require(node['type'] in allowed,'unsupported-feature','Unsupported Scene3D node type: '+node['type'])
+        require(node['render']['receive_shadow'],'unsupported-feature','Disabling shadow reception requires a supported material mapping.')
+        entry=dict(id=node['id'],type=node['type'],camera=node.get('camera'),light=node.get('light'),
+                   cast_shadow=node['render']['cast_shadow'],frames=[])
+        if 'asset' in node:
+            asset=bundle['documents'][node['asset']['path']]
+            key=node['asset']['path']
+            if key not in assets:assets[key]=_prepare_asset(snapshot_root,asset,workspace,len(assets),storage_bytes=preparation_budget)
+            entry['asset']=assets[key]
+        nodes.append(entry)
+    frames=[]
+    for index in range(request['frame_range']['start'],request['frame_range']['end']):
+        spec=make_frame_spec(request,index,Path(snapshot_root)/'snapshot.json',max_total_bytes=_source_storage_budget(request,snapshot,reserved_bytes=reserved_bytes))
+        _,source=frame_times(request,index)
+        shot_frame=source*Fraction(**shot['fps'])
+        try:
+            from scene3d_evaluate import evaluate_scene
+        except ImportError:
+            state=_static_state(bundle,scene,shot)
+        else:
+            state=evaluate_scene(bundle,scene_ref['path'],shot_ref['path'],shot_frame,source_root=snapshot_root)
+        for entry in nodes:
+            node_state=state['nodes'][entry['id']]
+            matrix=np.asarray(node_state['world_matrix'])
+            converted=BLENDER_FROM_CANONICAL @ matrix if entry['type'] in ('camera','light') else to_blender(matrix)
+            clip=node_state.get('native_clip')
+            if clip:
+                clip=dict(id=clip['reference']['id'],time=float(Fraction(**clip['time'])))
+            entry['frames'].append(dict(index=index,matrix=_plain(converted),
+                visible=bool(node_state['visible']),clip=clip,light=node_state.get('light'),camera=node_state.get('camera')))
+        frames.append(dict(index=index,source_time=dict(numerator=source.numerator,denominator=source.denominator),
+                           world=state.get('world',scene['world']),spec=spec))
+    return dict(nodes=nodes,frames=frames,camera=request['camera'],native_preview=False,
+                geometry_vertices=sum(a['vertices'] for a in assets.values()),
+                geometry_triangles=sum(a['triangles'] for a in assets.values()))
+
+
+def _prepare_native(request,snapshot_root,workspace,*,reserved_bytes=0):
+    from rig_models import load_rig
+    from rig_math import BLENDER_FROM_CANONICAL
+    import numpy as np
+    snapshot=load(Path(snapshot_root)/'snapshot.json','RenderSnapshot')
+    preparation_budget=request['settings']['resources']['storage_bytes']-snapshot['total_bytes']-_output_storage_estimate(request)-reserved_bytes
+    asset=_prepare_asset(snapshot_root,{},workspace,0,native=True,storage_bytes=preparation_budget)
+    require(request['camera'] in ('front','side','back','three-quarter'),'unsupported-feature','Native preview camera must name a supported rig preview direction.')
+    rig=load_rig(snapshot_root)
+    clip=request['shot']['id'] if request['shot']['id'] in rig.clips else next(iter(rig.clips),None) if len(rig.clips)<=1 else None
+    require(not rig.clips or clip is not None,'unsupported-feature','Native preview shot must name an available clip.')
+    frames=[];node_frames=[]
+    for index in range(request['frame_range']['start'],request['frame_range']['end']):
+        spec=make_frame_spec(request,index,Path(snapshot_root)/'snapshot.json',max_total_bytes=_source_storage_budget(request,snapshot,reserved_bytes=reserved_bytes))
+        _,source=frame_times(request,index)
+        if clip:require(source<=Fraction(str(rig.clips[clip]['duration'])),'invalid-input','Native clip sample exceeds its duration.')
+        frames.append(dict(index=index,source_time=dict(numerator=source.numerator,denominator=source.denominator),
+                           world=dict(background=[.08,.08,.08],exposure=0),spec=spec))
+        node_frames.append(dict(index=index,matrix=np.eye(4).tolist(),visible=True,
+                                clip=dict(id=clip,time=float(source)) if clip else None))
+    return dict(nodes=[dict(id='native',type='skinned_character' if asset['rigged'] else 'mesh_instance',asset=asset,cast_shadow=True,frames=node_frames)],
+                frames=frames,camera=request['camera'],native_preview=True,
+                geometry_vertices=asset['vertices'],geometry_triangles=asset['triangles'])
+
+
+class BlenderBackend:
+    def __init__(self,executable=None):
+        from rig_blender import find_blender
+        try:self.executable=find_blender(executable)
+        except RigError as exc:raise Render3DError('unsupported-backend',str(exc)) from exc
+
+    def inspect_version(self):
+        result=subprocess.run([self.executable,'--version'],capture_output=True,text=True,timeout=15,check=False)
+        require(result.returncode==0,'unsupported-backend','Unable to inspect Blender version.')
+        first=result.stdout.splitlines()[0]
+        require(first.startswith('Blender 4.5.'),'unsupported-backend','Supported Blender release is 4.5 LTS.')
+        return dict(id='blender',adapter_version=VERSION,application_version=first,
+                    executable_sha256=sha256(self.executable),worker_sha256=sha256(WORKER),
+                    platform=platform.platform(),engine='cycles',device='cpu')
+
+    def cinematics_probe(self):
+        """Query actual native properties in a bounded, factory-startup worker."""
+        from cinematics3d_blender import validate_probe
+        from cinematics3d_blender_runtime import __file__ as runtime_file
+        runtime=Path(runtime_file); backend=self.inspect_version(); runtime_hash=sha256(runtime)
+        require(private_stage_supported(),'unsupported-feature',
+                'Native cinematic probing requires the tested Linux directory capability adapter.')
+        with tempfile.TemporaryDirectory(prefix='render3d-cinematic-probe-') as temporary:
+            with pinned_directory(temporary) as descriptor, directory_capability(descriptor) as capability:
+                root=capability.path
+                atomic_json(root/'job.json',dict(schema_version=1,mode='cinematics-probe'))
+                command=[self.executable,'--background','--factory-startup','--disable-autoexec',
+                         '--python-exit-code','1','--python',str(WORKER),'--',str(root/'job.json'),str(capability.fd)]
+                _supervise(command,cwd=root,timeout=60,memory_bytes=2*1024**3,storage_bytes=16*1024**2,
+                           pass_fds=(capability.fd,))
+                require(sha256(self.executable)==backend['executable_sha256'] and sha256(WORKER)==backend['worker_sha256']
+                        and sha256(runtime)==runtime_hash,'stale-asset','Probe code changed during execution.')
+                probe=validate_probe(read_json(root/'cinematics-probe.json'))
+                require(probe['application_version']==backend['application_version'],
+                        'verification-failed','Probe version differs from admitted executable.')
+                return probe
+
+    def capabilities(self):
+        return dict(schema_version=1,kind='render3d-capabilities',adapter=dict(id='blender',version=VERSION),
+                    backend=self.inspect_version(),discovery='available',initialization='not-run',execution='not-run',
+                    evidence=[],engines=['cycles'],features=['png','exr','native-rig','scene3d'],diagnostics=[])
+
+    def probe(self,configuration):
+        # Hardware owner implements real GPU/device initialization separately.
+        from render3d_hardware import probe_hardware
+        return probe_hardware(executable=self.executable,**configuration)
+
+    def validate(self,snapshot,settings):
+        validate(settings,'RenderSettings')
+        require(settings['engine']=='cycles','unsupported-backend','This adapter currently supports Cycles.')
+        require(settings['device_policy']=='cpu','unsupported-device','GPU selection requires the hardware-policy adapter.')
+        require(settings['output']['passes']==['combined'],'unsupported-feature','Auxiliary render passes require the pass adapter.')
+        require(snapshot['scope'] in ('scene3d','native-rig-preview'),'unsupported-feature','Unsupported source snapshot scope.')
+        return dict(valid=True)
+
+    def render_frames(self,request,snapshot_root,destination,*,cancelled=None,progress=None,cinematics=None):
+        validate(request,'RenderRequest')
+        with scoped_directory_descriptor(snapshot_root) as descriptor:
+            require(descriptor is not None or not Path(snapshot_root).is_symlink(),
+                    'invalid-input','Snapshot root cannot be an unregistered symlink.')
+        cinematic_plan=None; cinematic_files={}; cinematic_code={}; cinematic_payloads={}
+        if cinematics is not None:
+            from cinematics3d_blender import validate_compiled, validate_probe, ADAPTER_SOURCES, __file__ as compiler_file
+            from cinematics3d_blender_runtime import __file__ as runtime_file
+            cinematic_plan,cinematic_files=validate_compiled(cinematics,request)
+            cinematic_code={name:sha256(Path(compiler_file).with_name(name)) for name in ADAPTER_SOURCES}
+            probe=validate_probe(cinematics['probe'])
+            require(object_hash(probe)==cinematic_plan['probe_sha256'],'stale-asset','Probe changed after cinematic admission.')
+            cinematic_payloads=dict(cinematic_files)
+            for name,value in [('plan.json',cinematic_plan),('probe.json',probe)]:
+                cinematic_payloads[name]=(json.dumps(value,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+        helper_bytes=sum(map(len,cinematic_payloads.values()))
+        require(('cinematics_sha256' in request['settings'])==(cinematic_plan is not None),
+                'unsupported-feature','Cinematic settings require their matching compiled native plan.')
+
+        root=normalize_root(snapshot_root);target=Path(destination).absolute()
+
+        require(not target.exists() and not target.is_symlink(),'ownership','Render destination already exists.')
+        require(not target.parent.resolve().joinpath(target.name).is_relative_to(root.resolve()),'ownership','Output cannot be nested in source snapshot.')
+        snapshot=load(root/'snapshot.json','RenderSnapshot');self.validate(snapshot,request['settings'])
+        require(private_stage_supported(),'unsupported-feature',
+                'Verified private render publication requires the tested Linux procfs/dirfd adapter.')
+        adapter=Scene3DAdapter() if snapshot['scope']=='scene3d' else NativeRigAdapter()
+        # Metadata-only admission must precede owner verification: the native
+        # owner decodes full geometry while verifying the source closure.
+        settings=request['settings'];resources=settings['resources'];width,height=settings['resolution']
+        frame_count=request['frame_range']['end']-request['frame_range']['start']
+        estimate=width*height*64+snapshot['total_bytes']*8+frame_count*16384+helper_bytes*8
+        require(estimate<=resources['memory_bytes'],'system-memory','Scene/image admission exceeds memory budget.')
+        source_bytes=2*snapshot['total_bytes']+request['snapshot']['bytes']
+        require(source_bytes+width*height*16*frame_count+helper_bytes<=resources['storage_bytes'],
+                'storage-exhaustion','Overlapping source copies, metadata and output estimate exceed storage budget.')
+        source_budget=_source_storage_budget(request,snapshot,reserved_bytes=helper_bytes)
+        verify_snapshot(root,adapter,max_total_bytes=source_budget)
+        make_frame_spec(request,request['frame_range']['start'],root/'snapshot.json',max_total_bytes=source_budget)
+        target.parent.mkdir(parents=True,exist_ok=True)
+        with ExitStack() as transaction:
+            parent_fd=transaction.enter_context(pinned_directory(target.parent))
+            private_path,private_fd=transaction.enter_context(private_stage(parent_fd,prefix='.render3d-',cleanup_on_error=False))
+            capability=transaction.enter_context(directory_capability(private_fd))
+            stage=capability.path/'payload';stage.mkdir()
+            try:
+                frozen=stage/'snapshot'
+                captured=create_snapshot(root,frozen,adapter,max_total_bytes=source_budget)
+                require(captured==snapshot,'stale-asset','Snapshot changed while capturing render source.')
+                try:
+                    with open_regular(root/'snapshot.json',32*1024**2) as stream:
+                        original=stream.read(32*1024**2+1)
+                except OSError as exc:
+                    raise Render3DError('stale-asset',str(exc),path=root/'snapshot.json') from exc
+                require(len(original)<=32*1024**2,'invalid-input','Snapshot metadata exceeds32MiB.')
+                require(len(original)==request['snapshot']['bytes'] and hashlib.sha256(original).hexdigest()==request['snapshot']['sha256'],
+                        'stale-asset','Snapshot metadata differs from request-bound bytes.')
+                atomic_bytes(frozen/'snapshot.json',original)
+                _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes']+width*height*16*frame_count+helper_bytes)
+                source=stage/'source';source.mkdir()
+                prepare=_prepare_scene if snapshot['scope']=='scene3d' else _prepare_native
+                scene=prepare(request,frozen,source,**({'reserved_bytes':helper_bytes} if helper_bytes else {}))
+                require(scene['geometry_vertices']>0 and scene['geometry_triangles']>0,'missing-asset','Rendering requires actual nonempty geometry.')
+                backend=self.inspect_version()
+                job=dict(schema_version=1,mode='render',settings=settings,scene=scene,output='../frames',report='../worker-report.json')
+                if cinematic_plan is not None:
+                    job['cinematics']=cinematic_plan
+                    # The canonical capability reader requires an existing root.
+                    # Create this owned directory before checking relative names.
+                    (stage/'cinematics').mkdir()
+                    pending=helper_bytes
+                    for name,payload in cinematic_payloads.items():
+                        _check_storage(stage,resources['storage_bytes'],reserve=pending+snapshot['total_bytes']+_output_storage_estimate(request))
+                        # The canonical path owner retains any active directory
+                        # capability while checking admitted portable names.
+                        path=safe_path(stage/'cinematics',name); path.parent.mkdir(parents=True,exist_ok=True)
+                        atomic_bytes(path,payload);pending-=len(payload)
+                job_payload=(json.dumps(job,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+                _check_storage(stage,resources['storage_bytes'],reserve=len(job_payload)+snapshot['total_bytes']+width*height*16*frame_count)
+                atomic_bytes(source/'job.json',job_payload)
+                command=[self.executable,'--background','--factory-startup','--disable-autoexec','--python-exit-code','1','--python',str(WORKER),'--',str(source/'job.json'),str(capability.fd)]
+                log,usage=_supervise(command,cwd=stage,timeout=resources['timeout_seconds'],memory_bytes=resources['memory_bytes'],storage_bytes=resources['storage_bytes'],cancelled=cancelled,pass_fds=(capability.fd,))
+                (stage/'blender.log').write_bytes(log)
+                require(sha256(self.executable)==backend['executable_sha256'] and sha256(WORKER)==backend['worker_sha256'],
+                        'stale-asset','Executed backend code changed during rendering.')
+                if cinematic_plan is not None:
+                    require(all(sha256(Path(__file__).with_name(name))==digest for name,digest in cinematic_code.items()),
+                            'stale-asset','Cinematic adapter changed during rendering.')
+                report=read_json(stage/'worker-report.json')
+                require(report['version']==backend['application_version'],'verification-failed','Worker version changed after admission.')
+                require(report['rendered']==[f['index'] for f in scene['frames']],'incomplete-output','Worker did not report every requested frame.')
+                images=[]
+                extension=settings['output']['format']
+                for frame in scene['frames']:
+                    relative=f'frames/{frame["index"]:06d}.{extension}';path=stage/relative
+                    images.append(dict(frame=frame['index'],file=dict(path=relative,sha256=sha256(path),bytes=path.stat().st_size),
+                        format=extension,bit_depth=settings['output']['bit_depth'],pass_name='combined',resolution=[width,height]))
+                    if progress:progress(frame['index'])
+                manifest=dict(schema_version=1,request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],backend=backend,
+                              frames=[frame['spec'] for frame in scene['frames']],worker=report,fixture=snapshot['fixture'])
+                if cinematic_plan is not None:
+                    require(report.get('cinematics',{}).get('plan')==cinematic_plan,
+                            'verification-failed','Worker cinematic plan differs from admitted settings.')
+                    manifest['cinematics']=dict(plan=cinematic_plan,code=cinematic_code,
+                        files={name:dict(sha256=hashlib.sha256(payload).hexdigest(),bytes=len(payload))
+                               for name,payload in cinematic_files.items()})
+                atomic_json(stage/'manifest.json',manifest)
+                artifact=lambda name:dict(path=name,sha256=sha256(stage/name),bytes=(stage/name).stat().st_size)
+                indices=[frame['index'] for frame in scene['frames']]
+                result=dict(schema_version=1,kind='render3d-result',job=request['id'],request_sha256=object_hash(request),snapshot_sha256=snapshot['snapshot_sha256'],
+                    backend=backend,status='complete',requested_frames=indices,successful=indices,failed=[],skipped=[],reused=[],images=images,diagnostics=[],
+                    usage=dict(**usage,output_bytes=sum(p.stat().st_size for p in stage.rglob('*') if p.is_file()),measurement='measured' if usage['peak_memory_bytes'] is not None else 'estimated'),
+                    logs=[artifact('blender.log')],manifest=artifact('manifest.json'),verification=dict(status='not-run',verifier=None,evidence=None))
+                from render3d_verify import verify_result
+                _check_storage(stage,resources['storage_bytes'],reserve=snapshot['total_bytes'])
+                verification=verify_result(request,result,stage,snapshot_root=frozen,expected_backend=backend,max_total_bytes=source_budget)
+                atomic_json(stage/'verification.json',verification)
+                result['verification']=dict(status='passed',verifier=verification['verifier'],evidence=artifact('verification.json'))
+                # Include verification evidence and the self-describing result JSON
+                # in the measured published byte count, including its own digits.
+                base_bytes=sum(p.stat().st_size for p in stage.rglob('*') if p.is_file())
+                for _ in range(8):
+                    payload=(json.dumps(result,indent=2,ensure_ascii=False,allow_nan=False)+'\n').encode('utf-8')
+                    total_bytes=base_bytes+len(payload)
+                    if result['usage']['output_bytes']==total_bytes:break
+                    result['usage']['output_bytes']=total_bytes
+                else:raise Render3DError('invalid-input','Unable to encode stable delivery usage.')
+                require(total_bytes<=resources['storage_bytes'],
+                        'storage-exhaustion','Verified delivery exceeds storage budget.')
+                validate(result,'RenderResult');atomic_bytes(stage/'result.json',payload)
+                _rename_no_replace('payload',target.name,source_dir_fd=private_fd,destination_dir_fd=parent_fd)
+                return result
+            except Exception as exc:
+                error=exc if isinstance(exc,Render3DError) else Render3DError(
+                    'invalid-input' if isinstance(exc,RigError) else 'storage-exhaustion' if isinstance(exc,OSError) and exc.errno in (28,122) else 'external-tool',str(exc))
+                error.report['path']=os.readlink(capability.path)+'/'+stage.name
+                try:atomic_json(stage/'failure.json',error.report)
+                except OSError:pass
+                # Private failed staging is retained for diagnostics; it is never a
+                # published result and the requested destination remains untouched.
+                raise error from exc
+
+
+    def prepare(self,snapshot,settings):
+        return self.validate(snapshot,settings)
+
+    def cancel(self,worker_id):
+        raise Render3DError('unsupported-feature','Use the render cancellation callback; process identifiers are never accepted from untrusted input.')
+
+
+def render_frames(request,snapshot_root,destination,*,executable=None,cancelled=None,progress=None):
+    return BlenderBackend(executable).render_frames(request,snapshot_root,destination,cancelled=cancelled,progress=progress)

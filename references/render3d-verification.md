@@ -1,0 +1,20 @@
+# Independent Render3D image verification
+
+`render3d_verify.RenderArtifactVerifier(snapshot_root, expected_backend).verify(request, result, output_root)` runs outside Blender. The caller supplies the frozen source directory and the backend identity observed by the worker supervisor. A worker's own success string is insufficient.
+
+The verifier accepts a complete candidate whose verification is still `not-run`. It validates the result shape using a copy marked partial, then separately requires the exact requested frame/pass Cartesian product, complete frame categories, canonical filenames, actual bytes/hashes, formats, precision and dimensions. It reopens the request-bound snapshot and reruns its authoritative source adapter. A Scene3D request also verifies the project/scene/shot/camera selection and shot time range. The report records exact rational presentation/source timestamps and binds the request, settings, snapshot, backend and verifier code identity.
+
+The caller writes the returned report with the repository's atomic writer, records its actual hash and byte count as `result.verification.evidence`, and then assigns `result.verification.verifier` from the report and status `passed`. Only then may the caller mark the result complete. Publication and transaction ownership remain with the job controller.
+
+PNG verification uses a real pypng decoder after signature, chunk CRC/order, bounded zlib expansion and complete-file checks. RGB/RGBA 8- and 16-bit noninterlaced frames are supported; animated PNG, color-key transparency (`tRNS`), interrupted IDAT sequences, unsupported critical chunks, truncated data and trailing bytes reject. Use explicit RGBA for transparency. Sixteen-bit samples remain sixteen-bit through decoding. EXR verification supports single-part flat scanline files with matching full-frame data/display windows at origin. Multipart, deep and tiled files reject. It checks the bounded header and complete scanline chunk inventory before using the independent OpenEXR decoder for every channel, and validates dimensions, HALF/FLOAT precision, full-resolution channels and finite pixel values. Color outputs require RGB and the requested alpha; depth uses a scalar channel, while normals require vector channels. Pixel statistics retain values above one in HDR images. Missing optional decoders fail explicitly.
+
+Install optional verifier dependencies alongside the existing 3D dependencies:
+
+```bash
+python -m pip install OpenEXR==3.5.4 pypng==0.20220715.0
+python -m unittest discover -s tests -p test_render3d_verify.py -v
+```
+
+`decode_image(path, output=..., resolution=..., pass_name=..., max_bytes=..., memory_bytes=...)` returns `(metadata, channel_arrays)` from the same validated bytes for previews. PNG arrays contain normalized display-encoded samples; EXR arrays retain linear/raw samples. Callers must explicitly map depth and normal values for display. This interface enforces conservative decoded-size checks; it does not claim a hard operating-system resident-memory limit for native decoder libraries. Worker isolation and memory enforcement remain controller responsibilities.
+
+The verification result proves decoded image integrity and input identity binding. It cannot prove that a render interpreted a material correctly or that a supplied image actually came from Blender. The supervisor's retained process evidence and the separate real-geometry, shadow, lighting, deformation, camera and color acceptance tests provide that evidence. Likewise, declared color-space/alpha policies are retained as requested metadata; pixel decoding alone cannot prove the scene's color transforms or alpha association. Numerical ranges are evidence, not production artwork approval.

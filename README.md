@@ -62,6 +62,8 @@ Use the existing optional rig dependencies below. The [executable example](examp
 reuses unchanged source and animated GLB files; missing or corrupt required content
 fails verification. Structural-only checks explicitly leave payloads unverified.
 
+The additive [cinematic authoring contracts](references/cinematics3d-contracts.md) define versioned effect stacks, immutable references and explicit capability admission. The optional [Blender cinematic adapter](references/cinematics3d-backend.md) uses the canonical renderer for actual capability probing and bounded CPU mappings. Final silent cinematic delivery and the complete effects program remain separate acceptance work.
+
 ## Real 3D rigs and animation
 
 The optional 3D engine imports real GLB/glTF, OBJ or packed Blender models, preserves original assets, constructs editable skeletons, generates normalized skin weights, and evaluates FK, spatial IK, contacts, expressions and animation channels. It includes humanoid, quadruped, six-legged winged, robotic and extensible custom templates; manual corrections, semantic retargeting, local review, animated GLB export and independently reopened Blender files.

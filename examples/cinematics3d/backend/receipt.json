@@ -1,0 +1,1560 @@
+{
+  "schema_version": 1,
+  "kind": "cinematics3d-backend-validation",
+  "issue": 243,
+  "parent_issue": 238,
+  "fixture": true,
+  "visual_approval": false,
+  "validated_code_sha": "c0f137dc9670f961448dfa58169dcff31f8adaff",
+  "recorded_at": "2026-11-13T13:15:23.382817+00:00",
+  "source_sha256": {
+    "scripts/cinematics3d_blender.py": "70398a852ea48a1cf4e3be9fcc535f359e72afe2ba1461fa24eba7ca03318b44",
+    "scripts/cinematics3d_blender_runtime.py": "384246253a166830b521a302907651d2cd80eba9ec18ac0a8d95dd46a4aa7026",
+    "scripts/cinematics3d_backend_example.py": "f3ce169b66867a49c7be003391263f4d6d84a45c4690110a81597af8088f2643",
+    "scripts/cinematics3d_contracts.py": "3f03386790df302acb57a0f589317546f5a338fe9ed736bb0244bcc229f68e5f",
+    "scripts/render3d_blender.py": "a9bdf8ceec0ea8159a17e5cb2da385c3180abb57c3955d8ee53c3bd067773bfb",
+    "scripts/render3d_blender_worker.py": "4252cc206902becb51f59fc26bf860a119b48236f4818efdd83d4894bd199792",
+    "scripts/render3d_contracts.py": "40a1d37965384349c3a56fd0a42c3318cf3b419fe86c96a3eca016a4a63e5067",
+    "scripts/render3d_snapshot.py": "2ed5aaa18675a98920d62bfc7b3ffea117e2d96962605a8f8301deb5909d9edc",
+    "scripts/render3d_verify.py": "60d2b870206734319637c30a6be176404c92042a3093da5bc80ef2a0f9fba357",
+    "scripts/camera3d_blender.py": "873736532add062456d2ca63c34dcc17b234339ce35b56692e98d9234f976191",
+    "scripts/camera3d_math.py": "25236a4c362e9952ff961c7e91ea350fd494bf9b45cacc61ceea33d570cc017a",
+    "scripts/test_rig_gate.py": "c71b33f6db1690d67c832d55e6dd97386bdbd3a499c1879e0e2df08803340796",
+    "tests/test_rig_cinematics3d_blender.py": "792901e4cc0c65165ed22f66a83fa827dc2662b0146ef5f469fc136ee553fc40",
+    "profiles/render3d-request.schema.json": "3c422279aa880423945e3112c97315d27216c9253136d3136d8a3906053fb4b2"
+  },
+  "dependencies": {
+    "camera": "fd613b9",
+    "render_backend": "fd6d646",
+    "render_core": "d17660c",
+    "render_verifier": "72bb9ac"
+  },
+  "native_execution": {
+    "queue_requested_utc": "2026-11-13T12:41:05.492164+00:00",
+    "execution_started_utc": "2026-11-13T13:13:05.562792+00:00",
+    "queue_wait_seconds": 1920.070628,
+    "status": "passed",
+    "execution_finished_utc": "2026-11-13T13:13:40.019376+00:00",
+    "execution_seconds": 34.45660727399809
+  },
+  "probe": {
+    "schema_version": 1,
+    "kind": "cinematics3d-blender-probe",
+    "application_version": "Blender 4.5.3 LTS",
+    "engines": [
+      "CYCLES",
+      "BLENDER_EEVEE_NEXT"
+    ],
+    "view_transforms": [
+      "Standard",
+      "AgX",
+      "Filmic",
+      "Raw",
+      "Khronos PBR Neutral"
+    ],
+    "nodes": [
+      "ShaderNodeVolumePrincipled",
+      "ShaderNodeBackground",
+      "CompositorNodeRLayers",
+      "CompositorNodeGlare",
+      "CompositorNodeExposure",
+      "CompositorNodeColorBalance",
+      "CompositorNodeCryptomatteV2"
+    ],
+    "passes": {
+      "depth": true,
+      "normal": true,
+      "vector": true,
+      "cryptomatte": true,
+      "albedo": true
+    },
+    "transparency": true,
+    "effects": {
+      "depth-of-field": {
+        "available": true,
+        "method": "Native camera DOF RNA",
+        "pixel_verified": false
+      },
+      "volumetric-fog": {
+        "available": true,
+        "method": "Native world volume shader",
+        "pixel_verified": false
+      },
+      "exposure": {
+        "available": true,
+        "method": "Native display exposure",
+        "pixel_verified": false
+      },
+      "tone-map": {
+        "available": true,
+        "method": "Native display transforms",
+        "pixel_verified": false
+      },
+      "motion-blur": {
+        "available": false,
+        "method": "Exact shutter subframe scene sampling is not integrated",
+        "pixel_verified": false
+      }
+    },
+    "devices": [
+      {
+        "id": "CUDA_NVIDIA GeForce RTX 4060 Laptop GPU_0000:01:00",
+        "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+        "type": "CUDA",
+        "initialized": false
+      },
+      {
+        "id": "CPU",
+        "name": "13th Gen Intel Core i7-13700H",
+        "type": "CPU",
+        "initialized": false
+      },
+      {
+        "id": "CUDA_NVIDIA GeForce RTX 4060 Laptop GPU_0000:01:00_OptiX",
+        "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+        "type": "OPTIX",
+        "initialized": false
+      }
+    ],
+    "rendered": false
+  },
+  "variants": {
+    "baseline": {
+      "request_sha256": "37360252253726da44cf167bd71a683422350f8dab9eaa2f027fa9057411ecd6",
+      "settings_sha256": "93f2cacff588a0061cf607206b56441e41c2dbccea9c6465d51d8ef786e711fa",
+      "snapshot_sha256": "04b126a561c4fb03e2a3180d53b81c931aaf5afe28e763f7de87b5ed5aec3f29",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "4252cc206902becb51f59fc26bf860a119b48236f4818efdd83d4894bd199792",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.png",
+            "sha256": "14db40e714abd814be67f842ca9e2f408784e954cc953fe70dee3bbeecd81e40",
+            "bytes": 7339
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            96,
+            96
+          ]
+        }
+      ],
+      "independently_decoded_images": 1,
+      "worker_effective": [
+        {
+          "frame": 0,
+          "settings": {
+            "camera": "camera",
+            "exposure": 0.0,
+            "view_transform": "Standard",
+            "transparent": false,
+            "dof": {
+              "enabled": false,
+              "focus_distance_m": 5.0,
+              "f_stop": 0.5,
+              "aperture_blades": 7,
+              "aperture_rotation_rad": 0.0,
+              "anamorphic_ratio": 1.0,
+              "focal_length_mm": 40.0,
+              "sensor_width_mm": 24.0,
+              "sensor_height_mm": 24.0,
+              "sensor_fit": "HORIZONTAL",
+              "shift_x": 0.0,
+              "shift_y": 0.0,
+              "near_clip_m": 0.10000000149011612,
+              "far_clip_m": 100.0
+            },
+            "fog": null,
+            "pixel_verified": false
+          }
+        }
+      ],
+      "worker_report_sha256": "65b6441cd5f8fc7fbc6fa3b23e593cfcc14be460b4f9598c3158ffb5fb75f4cc",
+      "plan": {
+        "schema_version": 1,
+        "kind": "cinematics3d-native-plan",
+        "request_sha256": "37360252253726da44cf167bd71a683422350f8dab9eaa2f027fa9057411ecd6",
+        "configuration_sha256": "af907a61fb26fc52cef4fcf21b43e12eaa399dd2207dd689234797215931f58b",
+        "probe_sha256": "16c5e85b01601f9eb308a5871dc5ef784c58543e1039a299ff8dea2eed72a4ca",
+        "adapter_sha256": "611bc0c906153ac77faf1031716d482beea7384ba9928862ed750d3b0ea7da5d",
+        "stack": {
+          "id": "native-stack",
+          "version": "1.0.0",
+          "path": "native-stack.json",
+          "kind": "cinematics3d-stack",
+          "sha256": "dbb309a39d0e1b0153811e51293faa57b453012af89a9f32ed1a85ded5ddd81d"
+        },
+        "sources": [
+          {
+            "id": "dof",
+            "version": "1.0.0",
+            "path": "dof.json",
+            "kind": "cinematics3d-effect",
+            "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7"
+          }
+        ],
+        "camera": "camera",
+        "dof": {
+          "enabled": false,
+          "focus_distance_m": 5,
+          "f_stop": 0.5,
+          "aperture_blades": 7,
+          "aperture_rotation_rad": 0,
+          "anamorphic_ratio": 1,
+          "focal_length_mm": 40,
+          "sensor_width_mm": 36,
+          "sensor_height_mm": 24,
+          "sensor_fit": "vertical",
+          "shift_x": 0,
+          "shift_y": 0,
+          "near_clip_m": 0.1,
+          "far_clip_m": 100,
+          "native_gate": {
+            "type": "PERSP",
+            "lens": 40,
+            "sensor_width": 24.0,
+            "shift_x": 0.0,
+            "shift_y": 0.0,
+            "clip_start": 0.1,
+            "clip_end": 100
+          }
+        },
+        "fog": null,
+        "disabled": [],
+        "effective_settings": {
+          "exposure": 0,
+          "view_transform": "standard",
+          "alpha": "opaque"
+        }
+      },
+      "measured_usage": {
+        "elapsed_seconds": 2.371178985995357,
+        "peak_memory_bytes": 388386816,
+        "output_bytes": 63492,
+        "measurement": "measured"
+      },
+      "configuration_reopened": true
+    },
+    "exposure": {
+      "request_sha256": "500fad986f580254e1ce10601c11b53f3fccfe8ed0882505aa40f61bb071de0c",
+      "settings_sha256": "74698cdfd73df9592482ba1e06aac9a3437c300c0febec57398404181f623fb7",
+      "snapshot_sha256": "04b126a561c4fb03e2a3180d53b81c931aaf5afe28e763f7de87b5ed5aec3f29",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "4252cc206902becb51f59fc26bf860a119b48236f4818efdd83d4894bd199792",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.png",
+            "sha256": "3d1a1cfd2e62cdb9cb837cf5fea32a12fef31395ed368a987f701cdcd998d3e6",
+            "bytes": 8054
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            96,
+            96
+          ]
+        }
+      ],
+      "independently_decoded_images": 1,
+      "worker_effective": [
+        {
+          "frame": 0,
+          "settings": {
+            "camera": "camera",
+            "exposure": 1.0,
+            "view_transform": "Standard",
+            "transparent": false,
+            "dof": {
+              "enabled": false,
+              "focus_distance_m": 5.0,
+              "f_stop": 0.5,
+              "aperture_blades": 7,
+              "aperture_rotation_rad": 0.0,
+              "anamorphic_ratio": 1.0,
+              "focal_length_mm": 40.0,
+              "sensor_width_mm": 24.0,
+              "sensor_height_mm": 24.0,
+              "sensor_fit": "HORIZONTAL",
+              "shift_x": 0.0,
+              "shift_y": 0.0,
+              "near_clip_m": 0.10000000149011612,
+              "far_clip_m": 100.0
+            },
+            "fog": null,
+            "pixel_verified": false
+          }
+        }
+      ],
+      "worker_report_sha256": "44f32f024b133acec0f11db0dc517a728891ce7f3b488fd489f1ac6f1d866a57",
+      "plan": {
+        "schema_version": 1,
+        "kind": "cinematics3d-native-plan",
+        "request_sha256": "500fad986f580254e1ce10601c11b53f3fccfe8ed0882505aa40f61bb071de0c",
+        "configuration_sha256": "cd6525ce5e987e84428496fa56d337fe2a90a5a9085343e678bef52da19418cb",
+        "probe_sha256": "16c5e85b01601f9eb308a5871dc5ef784c58543e1039a299ff8dea2eed72a4ca",
+        "adapter_sha256": "611bc0c906153ac77faf1031716d482beea7384ba9928862ed750d3b0ea7da5d",
+        "stack": {
+          "id": "native-stack",
+          "version": "1.0.0",
+          "path": "native-stack.json",
+          "kind": "cinematics3d-stack",
+          "sha256": "1e1fc84d733a6878e98885fb4c5a8561fbc41ce94e89574c6a4bebe28c669325"
+        },
+        "sources": [
+          {
+            "id": "dof",
+            "version": "1.0.0",
+            "path": "dof.json",
+            "kind": "cinematics3d-effect",
+            "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7"
+          },
+          {
+            "id": "exposure",
+            "version": "1.0.0",
+            "path": "exposure.json",
+            "kind": "cinematics3d-effect",
+            "sha256": "616775d9b20a077a3aa9dcb8dbad64c8af27d368aada5229a51175b8e6bb4194"
+          }
+        ],
+        "camera": "camera",
+        "dof": {
+          "enabled": false,
+          "focus_distance_m": 5,
+          "f_stop": 0.5,
+          "aperture_blades": 7,
+          "aperture_rotation_rad": 0,
+          "anamorphic_ratio": 1,
+          "focal_length_mm": 40,
+          "sensor_width_mm": 36,
+          "sensor_height_mm": 24,
+          "sensor_fit": "vertical",
+          "shift_x": 0,
+          "shift_y": 0,
+          "near_clip_m": 0.1,
+          "far_clip_m": 100,
+          "native_gate": {
+            "type": "PERSP",
+            "lens": 40,
+            "sensor_width": 24.0,
+            "shift_x": 0.0,
+            "shift_y": 0.0,
+            "clip_start": 0.1,
+            "clip_end": 100
+          }
+        },
+        "fog": null,
+        "disabled": [],
+        "effective_settings": {
+          "exposure": 1,
+          "view_transform": "standard",
+          "alpha": "opaque"
+        }
+      },
+      "measured_usage": {
+        "elapsed_seconds": 8.243225636004354,
+        "peak_memory_bytes": 375324672,
+        "output_bytes": 66078,
+        "measurement": "measured"
+      },
+      "configuration_reopened": true
+    },
+    "fog": {
+      "request_sha256": "ce6957421370b421ac12d84549c2e62938e7fa2dd3b94296909b171d47acd5ed",
+      "settings_sha256": "1c9b1f6c2b861fd1bcd971c6d7d0a67dd3411f4f1de050b3ed3002798f1b170f",
+      "snapshot_sha256": "04b126a561c4fb03e2a3180d53b81c931aaf5afe28e763f7de87b5ed5aec3f29",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "4252cc206902becb51f59fc26bf860a119b48236f4818efdd83d4894bd199792",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.png",
+            "sha256": "9e95f12c9ed700568dd3a1d66d34d01b5a376c48e71d98014a179c54e7617729",
+            "bytes": 2525
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            96,
+            96
+          ]
+        }
+      ],
+      "independently_decoded_images": 1,
+      "worker_effective": [
+        {
+          "frame": 0,
+          "settings": {
+            "camera": "camera",
+            "exposure": 0.0,
+            "view_transform": "Standard",
+            "transparent": false,
+            "dof": {
+              "enabled": false,
+              "focus_distance_m": 5.0,
+              "f_stop": 0.5,
+              "aperture_blades": 7,
+              "aperture_rotation_rad": 0.0,
+              "anamorphic_ratio": 1.0,
+              "focal_length_mm": 40.0,
+              "sensor_width_mm": 24.0,
+              "sensor_height_mm": 24.0,
+              "sensor_fit": "HORIZONTAL",
+              "shift_x": 0.0,
+              "shift_y": 0.0,
+              "near_clip_m": 0.10000000149011612,
+              "far_clip_m": 100.0
+            },
+            "fog": {
+              "density_per_meter": 0.07999999821186066,
+              "anisotropy": 0.0
+            },
+            "pixel_verified": false
+          }
+        }
+      ],
+      "worker_report_sha256": "96b250678be56d9a700f99898bd940640e126367a5d366834799a7d532075c16",
+      "plan": {
+        "schema_version": 1,
+        "kind": "cinematics3d-native-plan",
+        "request_sha256": "ce6957421370b421ac12d84549c2e62938e7fa2dd3b94296909b171d47acd5ed",
+        "configuration_sha256": "db0f00e340a34367896b23ef09ace41e93131398930eacd9f036e5d87d63cdbc",
+        "probe_sha256": "16c5e85b01601f9eb308a5871dc5ef784c58543e1039a299ff8dea2eed72a4ca",
+        "adapter_sha256": "611bc0c906153ac77faf1031716d482beea7384ba9928862ed750d3b0ea7da5d",
+        "stack": {
+          "id": "native-stack",
+          "version": "1.0.0",
+          "path": "native-stack.json",
+          "kind": "cinematics3d-stack",
+          "sha256": "2c2d0d5c6a9b27a4226b0b90ce8a842b4aa7f329cfd4d9dd5b0633b67f0da505"
+        },
+        "sources": [
+          {
+            "id": "fog",
+            "version": "1.0.0",
+            "path": "fog.json",
+            "kind": "cinematics3d-effect",
+            "sha256": "b906ef188ea86c973651878eae4a8f9e8ea036f48f27fd8a325c370d42386d42"
+          },
+          {
+            "id": "dof",
+            "version": "1.0.0",
+            "path": "dof.json",
+            "kind": "cinematics3d-effect",
+            "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7"
+          }
+        ],
+        "camera": "camera",
+        "dof": {
+          "enabled": false,
+          "focus_distance_m": 5,
+          "f_stop": 0.5,
+          "aperture_blades": 7,
+          "aperture_rotation_rad": 0,
+          "anamorphic_ratio": 1,
+          "focal_length_mm": 40,
+          "sensor_width_mm": 36,
+          "sensor_height_mm": 24,
+          "sensor_fit": "vertical",
+          "shift_x": 0,
+          "shift_y": 0,
+          "near_clip_m": 0.1,
+          "far_clip_m": 100,
+          "native_gate": {
+            "type": "PERSP",
+            "lens": 40,
+            "sensor_width": 24.0,
+            "shift_x": 0.0,
+            "shift_y": 0.0,
+            "clip_start": 0.1,
+            "clip_end": 100
+          }
+        },
+        "fog": {
+          "anisotropy": 0,
+          "density_per_meter": 0.08
+        },
+        "disabled": [],
+        "effective_settings": {
+          "exposure": 0,
+          "view_transform": "standard",
+          "alpha": "opaque"
+        }
+      },
+      "measured_usage": {
+        "elapsed_seconds": 2.387389235998853,
+        "peak_memory_bytes": 434356224,
+        "output_bytes": 61005,
+        "measurement": "measured"
+      },
+      "configuration_reopened": true
+    },
+    "dof": {
+      "request_sha256": "2bed5b8ea44a63e930a87a8efd87befff7dc8dc416962e206277315d374c5a5b",
+      "settings_sha256": "9767bd8c75b963a524d8f47eb1398fd51f257dd7194d0b8a05a8bfd0b05eb839",
+      "snapshot_sha256": "04b126a561c4fb03e2a3180d53b81c931aaf5afe28e763f7de87b5ed5aec3f29",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "4252cc206902becb51f59fc26bf860a119b48236f4818efdd83d4894bd199792",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.png",
+            "sha256": "f62e7fa50b1b58c3ae3a78b323787a401a1b0b2c2badb49eccd926a03cdd55c7",
+            "bytes": 7341
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            96,
+            96
+          ]
+        }
+      ],
+      "independently_decoded_images": 1,
+      "worker_effective": [
+        {
+          "frame": 0,
+          "settings": {
+            "camera": "camera",
+            "exposure": 0.0,
+            "view_transform": "Standard",
+            "transparent": false,
+            "dof": {
+              "enabled": true,
+              "focus_distance_m": 5.0,
+              "f_stop": 0.5,
+              "aperture_blades": 7,
+              "aperture_rotation_rad": 0.0,
+              "anamorphic_ratio": 1.0,
+              "focal_length_mm": 40.0,
+              "sensor_width_mm": 24.0,
+              "sensor_height_mm": 24.0,
+              "sensor_fit": "HORIZONTAL",
+              "shift_x": 0.0,
+              "shift_y": 0.0,
+              "near_clip_m": 0.10000000149011612,
+              "far_clip_m": 100.0
+            },
+            "fog": null,
+            "pixel_verified": false
+          }
+        }
+      ],
+      "worker_report_sha256": "a6ef97da4ef8cdbbd4884808faaad557b2d34d3719182481a6b01b860b10feb2",
+      "plan": {
+        "schema_version": 1,
+        "kind": "cinematics3d-native-plan",
+        "request_sha256": "2bed5b8ea44a63e930a87a8efd87befff7dc8dc416962e206277315d374c5a5b",
+        "configuration_sha256": "f17d3d3900662e89d3cc8be5d1666f938f143e1fa82da71c1df9e6ff038915ff",
+        "probe_sha256": "16c5e85b01601f9eb308a5871dc5ef784c58543e1039a299ff8dea2eed72a4ca",
+        "adapter_sha256": "611bc0c906153ac77faf1031716d482beea7384ba9928862ed750d3b0ea7da5d",
+        "stack": {
+          "id": "native-stack",
+          "version": "1.0.0",
+          "path": "native-stack.json",
+          "kind": "cinematics3d-stack",
+          "sha256": "490f89ab563be627595422f93d7c117bc34fbca7807eb1006b6d2688d592a1e3"
+        },
+        "sources": [
+          {
+            "id": "dof",
+            "version": "1.0.0",
+            "path": "dof.json",
+            "kind": "cinematics3d-effect",
+            "sha256": "544b5fcd67eea8c486f8f708670d5df662f94ba80ec11848dbc588e0b382994a"
+          }
+        ],
+        "camera": "camera",
+        "dof": {
+          "enabled": true,
+          "focus_distance_m": 5,
+          "f_stop": 0.5,
+          "aperture_blades": 7,
+          "aperture_rotation_rad": 0,
+          "anamorphic_ratio": 1,
+          "focal_length_mm": 40,
+          "sensor_width_mm": 36,
+          "sensor_height_mm": 24,
+          "sensor_fit": "vertical",
+          "shift_x": 0,
+          "shift_y": 0,
+          "near_clip_m": 0.1,
+          "far_clip_m": 100,
+          "native_gate": {
+            "type": "PERSP",
+            "lens": 40,
+            "sensor_width": 24.0,
+            "shift_x": 0.0,
+            "shift_y": 0.0,
+            "clip_start": 0.1,
+            "clip_end": 100
+          }
+        },
+        "fog": null,
+        "disabled": [],
+        "effective_settings": {
+          "exposure": 0,
+          "view_transform": "standard",
+          "alpha": "opaque"
+        }
+      },
+      "measured_usage": {
+        "elapsed_seconds": 1.8674169589939993,
+        "peak_memory_bytes": 400195584,
+        "output_bytes": 63476,
+        "measurement": "measured"
+      },
+      "configuration_reopened": true
+    },
+    "exr": {
+      "request_sha256": "9e51b1737d7e9abe7e0e2e7f0c45eb9390b8772fbdb003465855dee09b71fe02",
+      "settings_sha256": "e64c5257cce7de5597a8a7890404b35c3560ceee53d2ad1d98a2ed659bf07303",
+      "snapshot_sha256": "04b126a561c4fb03e2a3180d53b81c931aaf5afe28e763f7de87b5ed5aec3f29",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "4252cc206902becb51f59fc26bf860a119b48236f4818efdd83d4894bd199792",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.exr",
+            "sha256": "59e4f234f51600b3dd9aa69ca793b66f9780a0b0d64d19064c64f6667c774975",
+            "bytes": 15081
+          },
+          "format": "exr",
+          "bit_depth": 32,
+          "pass_name": "combined",
+          "resolution": [
+            96,
+            96
+          ]
+        }
+      ],
+      "independently_decoded_images": 1,
+      "worker_effective": [
+        {
+          "frame": 0,
+          "settings": {
+            "camera": "camera",
+            "exposure": 1.0,
+            "view_transform": "Standard",
+            "transparent": false,
+            "dof": {
+              "enabled": false,
+              "focus_distance_m": 5.0,
+              "f_stop": 0.5,
+              "aperture_blades": 7,
+              "aperture_rotation_rad": 0.0,
+              "anamorphic_ratio": 1.0,
+              "focal_length_mm": 40.0,
+              "sensor_width_mm": 24.0,
+              "sensor_height_mm": 24.0,
+              "sensor_fit": "HORIZONTAL",
+              "shift_x": 0.0,
+              "shift_y": 0.0,
+              "near_clip_m": 0.10000000149011612,
+              "far_clip_m": 100.0
+            },
+            "fog": null,
+            "pixel_verified": false
+          }
+        }
+      ],
+      "worker_report_sha256": "d905b602894a9b6c2b2878447f7014b592b8d2f3c865dbef4f2cc2ef530e2f3e",
+      "plan": {
+        "schema_version": 1,
+        "kind": "cinematics3d-native-plan",
+        "request_sha256": "9e51b1737d7e9abe7e0e2e7f0c45eb9390b8772fbdb003465855dee09b71fe02",
+        "configuration_sha256": "cd6525ce5e987e84428496fa56d337fe2a90a5a9085343e678bef52da19418cb",
+        "probe_sha256": "16c5e85b01601f9eb308a5871dc5ef784c58543e1039a299ff8dea2eed72a4ca",
+        "adapter_sha256": "611bc0c906153ac77faf1031716d482beea7384ba9928862ed750d3b0ea7da5d",
+        "stack": {
+          "id": "native-stack",
+          "version": "1.0.0",
+          "path": "native-stack.json",
+          "kind": "cinematics3d-stack",
+          "sha256": "1e1fc84d733a6878e98885fb4c5a8561fbc41ce94e89574c6a4bebe28c669325"
+        },
+        "sources": [
+          {
+            "id": "dof",
+            "version": "1.0.0",
+            "path": "dof.json",
+            "kind": "cinematics3d-effect",
+            "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7"
+          },
+          {
+            "id": "exposure",
+            "version": "1.0.0",
+            "path": "exposure.json",
+            "kind": "cinematics3d-effect",
+            "sha256": "616775d9b20a077a3aa9dcb8dbad64c8af27d368aada5229a51175b8e6bb4194"
+          }
+        ],
+        "camera": "camera",
+        "dof": {
+          "enabled": false,
+          "focus_distance_m": 5,
+          "f_stop": 0.5,
+          "aperture_blades": 7,
+          "aperture_rotation_rad": 0,
+          "anamorphic_ratio": 1,
+          "focal_length_mm": 40,
+          "sensor_width_mm": 36,
+          "sensor_height_mm": 24,
+          "sensor_fit": "vertical",
+          "shift_x": 0,
+          "shift_y": 0,
+          "near_clip_m": 0.1,
+          "far_clip_m": 100,
+          "native_gate": {
+            "type": "PERSP",
+            "lens": 40,
+            "sensor_width": 24.0,
+            "shift_x": 0.0,
+            "shift_y": 0.0,
+            "clip_start": 0.1,
+            "clip_end": 100
+          }
+        },
+        "fog": null,
+        "disabled": [],
+        "effective_settings": {
+          "exposure": 1,
+          "view_transform": "standard",
+          "alpha": "opaque"
+        }
+      },
+      "measured_usage": {
+        "elapsed_seconds": 1.7485059339960571,
+        "peak_memory_bytes": 365752320,
+        "output_bytes": 73104,
+        "measurement": "measured"
+      },
+      "configuration_reopened": true
+    }
+  },
+  "measured_pixel_mean_absolute_difference": {
+    "exposure": 0.13525582107843134,
+    "fog": 0.3485519641884532,
+    "dof": 0.00023105596405228757
+  },
+  "optical_comparison": "All variants retain identical native lens, gate, focus distance and projection; DOF-off/on differs only in DOF enabled.",
+  "tests": [
+    {
+      "command": "PYTHONPATH=scripts:tests verifier-venv/bin/python -m unittest test_rig_cinematics3d_blender test_render3d_blender test_render3d_verify -v",
+      "log": "validation/focused.log",
+      "result": "38 tests:37 passed,1 optional backend skip"
+    },
+    {
+      "command": "rig-py312/bin/python scripts/test_rig_gate.py schema-math",
+      "log": "validation/schema-math-exact.log",
+      "result": "See retained exact-head unittest summary; discovery count is not execution"
+    },
+    {
+      "command": "pillow13-venv/bin/python -m unittest discover -s tests -p test_production_contracts.py",
+      "log": "validation/legacy.log",
+      "result": "31 passed"
+    },
+    {
+      "command": "rig-py312/bin/python scripts/test_rig_gate.py skinning",
+      "log": "validation/skinning.log",
+      "result": "18 passed"
+    },
+    {
+      "command": "rig-py312/bin/python scripts/generate_schemas.py --check",
+      "result": "exit0"
+    },
+    {
+      "command": "git diff --check bab0f28 HEAD",
+      "result": "exit0"
+    }
+  ],
+  "evidence_bundle": {
+    "path": "examples/cinematics3d/backend/engineering-evidence.zip",
+    "sha256": "957911b590bb2c58ca1b059355298cc53eed18eb69e9a48b355a27e06f68a999",
+    "bytes": 194485,
+    "files": {
+      "native/baseline/blender.log": {
+        "sha256": "447a34d5339d56c58971585d2068787265c7f2623d494fe60385f26a5055c33b",
+        "bytes": 5480
+      },
+      "native/baseline/cinematics/documents/dof.json": {
+        "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7",
+        "bytes": 536
+      },
+      "native/baseline/cinematics/documents/native-stack.json": {
+        "sha256": "dbb309a39d0e1b0153811e51293faa57b453012af89a9f32ed1a85ded5ddd81d",
+        "bytes": 406
+      },
+      "native/baseline/cinematics/inputs/optics.json": {
+        "sha256": "20041ed8b4e02441bc5b5bb39d66faaf224466ab21512bed9cf7be97a5d8eec3",
+        "bytes": 396
+      },
+      "native/baseline/cinematics/plan.json": {
+        "sha256": "a5755ef77b8dac57ca0b4a4dbebb66cc35c64ba2a68363d6eaaa9bf30856378a",
+        "bytes": 1571
+      },
+      "native/baseline/cinematics/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/baseline/frames/000000.png": {
+        "sha256": "14db40e714abd814be67f842ca9e2f408784e954cc953fe70dee3bbeecd81e40",
+        "bytes": 7339
+      },
+      "native/baseline/manifest.json": {
+        "sha256": "0ab63bb6adf0c89b3bb77e723b63e08dad3cd9bd7fa4934e716477fabc875029",
+        "bytes": 11132
+      },
+      "native/baseline/result.json": {
+        "sha256": "b1e86daabea5c47259d9347d9f8d5a5e9f317cf912664b9e3cbb8f10d1917fa8",
+        "bytes": 2096
+      },
+      "native/baseline/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/baseline/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/baseline/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/baseline/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/baseline/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/baseline/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/baseline/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/baseline/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/baseline/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/baseline/source/.import-0.rig.lock": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "native/baseline/source/asset-0.glb": {
+        "sha256": "1367e59faaf31699c21c2d8f4b321bb8408bf0cd16c3464057d0474ca709b5e2",
+        "bytes": 928
+      },
+      "native/baseline/source/import-0/geometry/913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9.npz": {
+        "sha256": "913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9",
+        "bytes": 679
+      },
+      "native/baseline/source/import-0/identity.json": {
+        "sha256": "2f8036e9766912b7956ab3e8ad8529268774016951ecc605311a49c00a93de3a",
+        "bytes": 545
+      },
+      "native/baseline/source/import-0/job.json": {
+        "sha256": "e68c5b461583b0c28740a62caac1422896e8bf99597d2bf5ac1bfec9f645ff69",
+        "bytes": 824
+      },
+      "native/baseline/source/import-0/rig.json": {
+        "sha256": "378afe27c6bed87159d9774926469e43a224b5ab2b8f88ad85e5fd2afe70bffd",
+        "bytes": 2450
+      },
+      "native/baseline/source/import-0/source/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/baseline/source/import-0/validation/import.json": {
+        "sha256": "40f241fc57fd004949f2f75e58ade8e2fbb015100b75f9b8cb40196f04171471",
+        "bytes": 1943
+      },
+      "native/baseline/source/job.json": {
+        "sha256": "c80c783cc8ced2f78160e68e6e42a9ea52510888bdbc02d22d556c0429be1d7b",
+        "bytes": 9226
+      },
+      "native/baseline/verification.json": {
+        "sha256": "dff6fc642523cef723549af7df829636ad918674498b594fe8786314dfa37711",
+        "bytes": 2245
+      },
+      "native/baseline/worker-report.json": {
+        "sha256": "65b6441cd5f8fc7fbc6fa3b23e593cfcc14be460b4f9598c3158ffb5fb75f4cc",
+        "bytes": 5624
+      },
+      "native/baseline-request.json": {
+        "sha256": "45ade4eae9103f8dfd0c119d79fcbc29ee9df18fbf0c26219407d9ef755cc23b",
+        "bytes": 1579
+      },
+      "native/dof/blender.log": {
+        "sha256": "562cb28978da94f2b642e2f698f3de9224c4606f98da41f20ffed7ebbb3939e6",
+        "bytes": 5480
+      },
+      "native/dof/cinematics/documents/dof.json": {
+        "sha256": "544b5fcd67eea8c486f8f708670d5df662f94ba80ec11848dbc588e0b382994a",
+        "bytes": 535
+      },
+      "native/dof/cinematics/documents/native-stack.json": {
+        "sha256": "490f89ab563be627595422f93d7c117bc34fbca7807eb1006b6d2688d592a1e3",
+        "bytes": 406
+      },
+      "native/dof/cinematics/inputs/optics.json": {
+        "sha256": "20041ed8b4e02441bc5b5bb39d66faaf224466ab21512bed9cf7be97a5d8eec3",
+        "bytes": 396
+      },
+      "native/dof/cinematics/plan.json": {
+        "sha256": "c89934a9e8ce9a1b59a31350d42dbef6eed1a1dc2a91fe9bf3e668973d379529",
+        "bytes": 1570
+      },
+      "native/dof/cinematics/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/dof/frames/000000.png": {
+        "sha256": "f62e7fa50b1b58c3ae3a78b323787a401a1b0b2c2badb49eccd926a03cdd55c7",
+        "bytes": 7341
+      },
+      "native/dof/manifest.json": {
+        "sha256": "0248b4574f7bd354b43f66988e516395aad506fa2717de487b775bb95a11963d",
+        "bytes": 11124
+      },
+      "native/dof/result.json": {
+        "sha256": "4c4e282adeade4e22dd4e253f4b9859f09e6f78dd5f9f3f9945722a90dedf320",
+        "bytes": 2092
+      },
+      "native/dof/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/dof/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/dof/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/dof/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/dof/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/dof/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/dof/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/dof/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/dof/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/dof/source/.import-0.rig.lock": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "native/dof/source/asset-0.glb": {
+        "sha256": "1367e59faaf31699c21c2d8f4b321bb8408bf0cd16c3464057d0474ca709b5e2",
+        "bytes": 928
+      },
+      "native/dof/source/import-0/geometry/913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9.npz": {
+        "sha256": "913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9",
+        "bytes": 679
+      },
+      "native/dof/source/import-0/identity.json": {
+        "sha256": "2f8036e9766912b7956ab3e8ad8529268774016951ecc605311a49c00a93de3a",
+        "bytes": 545
+      },
+      "native/dof/source/import-0/job.json": {
+        "sha256": "43ae6f317948a90ba5c197e6a9e37367f6e865ceb50cf20d91c3934883def770",
+        "bytes": 824
+      },
+      "native/dof/source/import-0/rig.json": {
+        "sha256": "a362730239414a6aa8d133e1a924ac74424f30a0b863c224f581892743a85848",
+        "bytes": 2450
+      },
+      "native/dof/source/import-0/source/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/dof/source/import-0/validation/import.json": {
+        "sha256": "40f241fc57fd004949f2f75e58ade8e2fbb015100b75f9b8cb40196f04171471",
+        "bytes": 1943
+      },
+      "native/dof/source/job.json": {
+        "sha256": "a9d6a1fda2b2b8002c8447da172f550f41ac901dc5083d850c5d54c55209444a",
+        "bytes": 9220
+      },
+      "native/dof/verification.json": {
+        "sha256": "e7af61d48fe198f56f7d6e9d3fa896960d6381adc6f06325add99daebc5270e6",
+        "bytes": 2245
+      },
+      "native/dof/worker-report.json": {
+        "sha256": "a6ef97da4ef8cdbbd4884808faaad557b2d34d3719182481a6b01b860b10feb2",
+        "bytes": 5622
+      },
+      "native/dof-request.json": {
+        "sha256": "53e3e2cc1306b14eb38f582a84f3ead79ba810bebc21947b08860e91d72cde1e",
+        "bytes": 1569
+      },
+      "native/evidence.json": {
+        "sha256": "29184c261437338b5a214779a86d31b33d5164ce1c43361648b8281e1ac83f56",
+        "bytes": 7800
+      },
+      "native/exposure/blender.log": {
+        "sha256": "e38766f2aba1cd7ab6b6e36172cc124fb4b53d448c9f9eabe2f28913d0abc973",
+        "bytes": 5480
+      },
+      "native/exposure/cinematics/documents/dof.json": {
+        "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7",
+        "bytes": 536
+      },
+      "native/exposure/cinematics/documents/exposure.json": {
+        "sha256": "616775d9b20a077a3aa9dcb8dbad64c8af27d368aada5229a51175b8e6bb4194",
+        "bytes": 374
+      },
+      "native/exposure/cinematics/documents/native-stack.json": {
+        "sha256": "1e1fc84d733a6878e98885fb4c5a8561fbc41ce94e89574c6a4bebe28c669325",
+        "bytes": 570
+      },
+      "native/exposure/cinematics/inputs/optics.json": {
+        "sha256": "20041ed8b4e02441bc5b5bb39d66faaf224466ab21512bed9cf7be97a5d8eec3",
+        "bytes": 396
+      },
+      "native/exposure/cinematics/plan.json": {
+        "sha256": "46da83b2d160a45c191a581071a9b9312ff37da1c926b3525e024bcc6c9f8f95",
+        "bytes": 1785
+      },
+      "native/exposure/cinematics/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/exposure/frames/000000.png": {
+        "sha256": "3d1a1cfd2e62cdb9cb837cf5fea32a12fef31395ed368a987f701cdcd998d3e6",
+        "bytes": 8054
+      },
+      "native/exposure/manifest.json": {
+        "sha256": "b63966f0bb25ff47e3c601c5384a8ac1fac2e139530fd2127f649bada807c4ab",
+        "bytes": 11781
+      },
+      "native/exposure/result.json": {
+        "sha256": "7711eb16681833c09bbb0995e2f221dcdfd6fe3b4bd78615b8fd88bcc2a2e23b",
+        "bytes": 2096
+      },
+      "native/exposure/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/exposure/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/exposure/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/exposure/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/exposure/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/exposure/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/exposure/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/exposure/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/exposure/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/exposure/source/.import-0.rig.lock": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "native/exposure/source/asset-0.glb": {
+        "sha256": "1367e59faaf31699c21c2d8f4b321bb8408bf0cd16c3464057d0474ca709b5e2",
+        "bytes": 928
+      },
+      "native/exposure/source/import-0/geometry/913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9.npz": {
+        "sha256": "913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9",
+        "bytes": 679
+      },
+      "native/exposure/source/import-0/identity.json": {
+        "sha256": "2f8036e9766912b7956ab3e8ad8529268774016951ecc605311a49c00a93de3a",
+        "bytes": 545
+      },
+      "native/exposure/source/import-0/job.json": {
+        "sha256": "24cc5d95b70edf7018ba1dca75219c07ac884b74f454f0b64e0f67c33c228a84",
+        "bytes": 824
+      },
+      "native/exposure/source/import-0/rig.json": {
+        "sha256": "5f04fb629149373e5fd77bfb73fbcac14faf04e4f3c250fcebf6a81ce3af8995",
+        "bytes": 2450
+      },
+      "native/exposure/source/import-0/source/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/exposure/source/import-0/validation/import.json": {
+        "sha256": "40f241fc57fd004949f2f75e58ade8e2fbb015100b75f9b8cb40196f04171471",
+        "bytes": 1943
+      },
+      "native/exposure/source/job.json": {
+        "sha256": "350ce139925a037495376f96d2e586d1f802d94cdc5fe27af0aa0fa722f60f6d",
+        "bytes": 9454
+      },
+      "native/exposure/verification.json": {
+        "sha256": "a2a9296cbd4c442f8c320fe06d7f12450904b6e04eaaaf16991d8ec7d6eda907",
+        "bytes": 2245
+      },
+      "native/exposure/worker-report.json": {
+        "sha256": "44f32f024b133acec0f11db0dc517a728891ce7f3b488fd489f1ac6f1d866a57",
+        "bytes": 5866
+      },
+      "native/exposure-request.json": {
+        "sha256": "7355553164f20fd8e0999f59fff8cb8fc152a4293679d71b57670a0204e55fb3",
+        "bytes": 1579
+      },
+      "native/exr/blender.log": {
+        "sha256": "32b1b1512853e74609601568f16f3b84ae797b4ea59e4dc590e5ccd27f63cafb",
+        "bytes": 5480
+      },
+      "native/exr/cinematics/documents/dof.json": {
+        "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7",
+        "bytes": 536
+      },
+      "native/exr/cinematics/documents/exposure.json": {
+        "sha256": "616775d9b20a077a3aa9dcb8dbad64c8af27d368aada5229a51175b8e6bb4194",
+        "bytes": 374
+      },
+      "native/exr/cinematics/documents/native-stack.json": {
+        "sha256": "1e1fc84d733a6878e98885fb4c5a8561fbc41ce94e89574c6a4bebe28c669325",
+        "bytes": 570
+      },
+      "native/exr/cinematics/inputs/optics.json": {
+        "sha256": "20041ed8b4e02441bc5b5bb39d66faaf224466ab21512bed9cf7be97a5d8eec3",
+        "bytes": 396
+      },
+      "native/exr/cinematics/plan.json": {
+        "sha256": "b67234f409217ce8bd317109f27f5f383118024ddad5a8e9282e64cd2204e110",
+        "bytes": 1785
+      },
+      "native/exr/cinematics/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/exr/frames/000000.exr": {
+        "sha256": "59e4f234f51600b3dd9aa69ca793b66f9780a0b0d64d19064c64f6667c774975",
+        "bytes": 15081
+      },
+      "native/exr/manifest.json": {
+        "sha256": "dc6e37f828c43a50a2bb3fc39b50b8b71ceaaa7c6627793f512449fc64bd365b",
+        "bytes": 11779
+      },
+      "native/exr/result.json": {
+        "sha256": "fe0687446a5a0964676d4f19aba0cfe4f3b1812fd5c518ddb0c596ca3d02ad89",
+        "bytes": 2094
+      },
+      "native/exr/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/exr/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/exr/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/exr/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/exr/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/exr/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/exr/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/exr/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/exr/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/exr/source/.import-0.rig.lock": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "native/exr/source/asset-0.glb": {
+        "sha256": "1367e59faaf31699c21c2d8f4b321bb8408bf0cd16c3464057d0474ca709b5e2",
+        "bytes": 928
+      },
+      "native/exr/source/import-0/geometry/913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9.npz": {
+        "sha256": "913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9",
+        "bytes": 679
+      },
+      "native/exr/source/import-0/identity.json": {
+        "sha256": "2f8036e9766912b7956ab3e8ad8529268774016951ecc605311a49c00a93de3a",
+        "bytes": 545
+      },
+      "native/exr/source/import-0/job.json": {
+        "sha256": "7f578190e61cda8752dbdf17b11679434122ac76f44054c0382d6699ac41ef4f",
+        "bytes": 824
+      },
+      "native/exr/source/import-0/rig.json": {
+        "sha256": "7221f073d3ed1ddc7a911363cdd22b11e0423ddc208f524a12f47b9ca31df541",
+        "bytes": 2450
+      },
+      "native/exr/source/import-0/source/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/exr/source/import-0/validation/import.json": {
+        "sha256": "40f241fc57fd004949f2f75e58ade8e2fbb015100b75f9b8cb40196f04171471",
+        "bytes": 1943
+      },
+      "native/exr/source/job.json": {
+        "sha256": "2a61f07c6be56c2b98984ef350fae83bcbc81ce35400da5fefe7ea6c9d1bc881",
+        "bytes": 9455
+      },
+      "native/exr/verification.json": {
+        "sha256": "fc7ceb35f4102ff4879852a247b2d60f08cad7f591648913acfa61b6ee5fc0ca",
+        "bytes": 2245
+      },
+      "native/exr/worker-report.json": {
+        "sha256": "d905b602894a9b6c2b2878447f7014b592b8d2f3c865dbef4f2cc2ef530e2f3e",
+        "bytes": 5866
+      },
+      "native/exr-request.json": {
+        "sha256": "4b698147897dee815fd58a60ace7d4f16e30d2b7f793c5b604610df99a5ba919",
+        "bytes": 1572
+      },
+      "native/fog/blender.log": {
+        "sha256": "e340ebe83ef25f61181027b3f45fccc2e6888509cbd672385d7f3184d811de99",
+        "bytes": 5480
+      },
+      "native/fog/cinematics/documents/dof.json": {
+        "sha256": "2557939d4dac8f9e8854fbd7bf621857d9c78bf5167174b3c468edd3c99b17e7",
+        "bytes": 536
+      },
+      "native/fog/cinematics/documents/fog.json": {
+        "sha256": "b906ef188ea86c973651878eae4a8f9e8ea036f48f27fd8a325c370d42386d42",
+        "bytes": 405
+      },
+      "native/fog/cinematics/documents/native-stack.json": {
+        "sha256": "2c2d0d5c6a9b27a4226b0b90ce8a842b4aa7f329cfd4d9dd5b0633b67f0da505",
+        "bytes": 560
+      },
+      "native/fog/cinematics/inputs/optics.json": {
+        "sha256": "20041ed8b4e02441bc5b5bb39d66faaf224466ab21512bed9cf7be97a5d8eec3",
+        "bytes": 396
+      },
+      "native/fog/cinematics/plan.json": {
+        "sha256": "f374e8773f076f91f926ecaf9d6f0ef8f398808b72d9a4def14d4d67d4b8b27f",
+        "bytes": 1827
+      },
+      "native/fog/cinematics/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/fog/frames/000000.png": {
+        "sha256": "9e95f12c9ed700568dd3a1d66d34d01b5a376c48e71d98014a179c54e7617729",
+        "bytes": 2525
+      },
+      "native/fog/manifest.json": {
+        "sha256": "356828a7f77cae288b428bd17f19b6386a439911df044ca1448140d53db83e2a",
+        "bytes": 11984
+      },
+      "native/fog/result.json": {
+        "sha256": "395e2c62f6656b223e5eff3069fb416d777ed11e5d0b128b28ba1a928120bb85",
+        "bytes": 2091
+      },
+      "native/fog/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/fog/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/fog/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/fog/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/fog/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/fog/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/fog/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/fog/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/fog/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/fog/source/.import-0.rig.lock": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "native/fog/source/asset-0.glb": {
+        "sha256": "1367e59faaf31699c21c2d8f4b321bb8408bf0cd16c3464057d0474ca709b5e2",
+        "bytes": 928
+      },
+      "native/fog/source/import-0/geometry/913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9.npz": {
+        "sha256": "913f29f6ef2eb2cd959dd2cd70f528f9d23dafca0fd30ab28157f5f1a4f2d7b9",
+        "bytes": 679
+      },
+      "native/fog/source/import-0/identity.json": {
+        "sha256": "2f8036e9766912b7956ab3e8ad8529268774016951ecc605311a49c00a93de3a",
+        "bytes": 545
+      },
+      "native/fog/source/import-0/job.json": {
+        "sha256": "da64bd7c6b0d15646f5be51d0a2afb00613c108441bce7f8fc7c43c51a822770",
+        "bytes": 824
+      },
+      "native/fog/source/import-0/rig.json": {
+        "sha256": "342e998cab786b58bfb127831e2a2f6492fa0d887574b7415f4b4b505d045d5d",
+        "bytes": 2450
+      },
+      "native/fog/source/import-0/source/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/fog/source/import-0/validation/import.json": {
+        "sha256": "40f241fc57fd004949f2f75e58ade8e2fbb015100b75f9b8cb40196f04171471",
+        "bytes": 1943
+      },
+      "native/fog/source/job.json": {
+        "sha256": "ab9a8149e35e4dd348a977b02f1b382a567e1ec27217bb12754446dec4fda576",
+        "bytes": 9497
+      },
+      "native/fog/verification.json": {
+        "sha256": "852086c5b7c36bfa79b0c01203bc3f81bde42e6e0eb4fb011bbe245a547f6aea",
+        "bytes": 2200
+      },
+      "native/fog/worker-report.json": {
+        "sha256": "96b250678be56d9a700f99898bd940640e126367a5d366834799a7d532075c16",
+        "bytes": 6013
+      },
+      "native/fog-request.json": {
+        "sha256": "29c02971067487fd7c076d049749e46a0f3630a1cb1819ddf72833cffe4c7e94",
+        "bytes": 1569
+      },
+      "native/probe.json": {
+        "sha256": "ca564270622817313d636ffc0ac47bad5f814b842b1b426051d7033be4cf5a16",
+        "bytes": 1876
+      },
+      "native/scene/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/scene/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/scene/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/scene/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/scene/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/scene/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/scene/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/scene/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "native/snapshot/example-animation.json": {
+        "sha256": "dd508063ef892afff20871de6f27d16e9920f04cfea8308b675b9d00355506d2",
+        "bytes": 503
+      },
+      "native/snapshot/example-prefab.json": {
+        "sha256": "11c889a93527dee19b3dd75376f5ba1764c3c62731360ba771f4b80f173c6bfe",
+        "bytes": 1532
+      },
+      "native/snapshot/example-render.json": {
+        "sha256": "6091857c0481ca8092267c7dad2a9df846dc31db2c742ed754071355e67e92a6",
+        "bytes": 663
+      },
+      "native/snapshot/example-scene.json": {
+        "sha256": "18172254c0ea3815528d2c07229cee7145d91b7e68f0e330b86d7c539dbda7f5",
+        "bytes": 3116
+      },
+      "native/snapshot/example-shot.json": {
+        "sha256": "80d0227bad117c1e8360d264fbabaaf5a46676e0e7098aa851909a851438a84e",
+        "bytes": 819
+      },
+      "native/snapshot/project.json": {
+        "sha256": "a99ff3153c4136b5eb7712d4ea093c2b1b44f9885d603bb9a46014b53e7a8a87",
+        "bytes": 2829
+      },
+      "native/snapshot/snapshot.json": {
+        "sha256": "6449c56692abdf8623ef8d79f754d874442304ce37379457ca447826563d335f",
+        "bytes": 1841
+      },
+      "native/snapshot/triangle.json": {
+        "sha256": "e9393fe5421de69c5a362036b888cd0dbcaea2ec36b6e010087341c2ea33df57",
+        "bytes": 1164
+      },
+      "native/snapshot/triangle.obj": {
+        "sha256": "6b270708cbcdbe0af87ffac82351648851a70023b929e7d5ea655b6c7a59c729",
+        "bytes": 35
+      },
+      "validation/compiler-final.log": {
+        "sha256": "18a89129dd6d814497e41fc495f986c1cafd00e28edced71892f1101a8a816a5",
+        "bytes": 98
+      },
+      "validation/focused.log": {
+        "sha256": "7e3d7639222c8fa1824909cbb6cfa442f8e9ddc858091b69d22736fd8f3560c0",
+        "bytes": 5806
+      },
+      "validation/schema-math-exact.log": {
+        "sha256": "e067605e70d17cd9c364a5cfd67648a624b27cd8facd02ab6a60559b2ad1496d",
+        "bytes": 36881
+      },
+      "validation/legacy.log": {
+        "sha256": "30b3a832c5d4ba0fe74d40396ef880639656f6f44599cd370fd9f0202ef341d5",
+        "bytes": 131
+      },
+      "validation/skinning.log": {
+        "sha256": "8b8be5c837dabef3794bf74f158212715bf065ac556dcc8119aa81ffb7ca3b12",
+        "bytes": 3147
+      },
+      "validation/native.log": {
+        "sha256": "1fa3fe9662b4b1dd1c258d2e211c731bd08f5822b8b7ef89945a362109a8b26d",
+        "bytes": 7956
+      },
+      "validation/native-timing.json": {
+        "sha256": "788cf8a7fddbfd5d4dece37aa56160059f832694615dffef4dce50d1f34f0718",
+        "bytes": 292
+      },
+      "validation/queue-request.json": {
+        "sha256": "eb7021776c986f64740cf7b747dcad45dfcdc621649a395ada32aacdf1ea9f3e",
+        "bytes": 53
+      }
+    }
+  },
+  "limitations": [
+    "96x96 procedural geometry is an engineering fixture, not production artwork or a complete film.",
+    "Only Cycles CPU and combined PNG/EXR are executable; GPU initialization/rendering, auxiliary canonical passes, motion blur and other unmapped effects reject.",
+    "Inventory properties are not pixel verification; devices are discovered but uninitialized.",
+    "No editable .blend output, visual approval or final silent video is claimed; #238 and downstream #244-258 remain open."
+  ],
+  "prior_attempts": [
+    "Initial probe and native-run1 failed on Blender sibling import; retained outside this bundle.",
+    "native-run2 used differing optical projection and was superseded for blur proof.",
+    "native-final held identical optics but preceded cache/Camera3D dependency integration and is historical.",
+    "native-cache-bound was cancelled by owner while waiting for flock, before any child execution."
+  ]
+}

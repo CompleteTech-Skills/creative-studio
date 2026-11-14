@@ -90,6 +90,9 @@ def definitions():
                         exposure=dict(type='number', minimum=-32, maximum=32),
                         view_transform={'enum': ['standard', 'agx']},
                         resources=resources))
+    # Optional owner-compiled cinematic settings participate in every settings
+    # and frame-cache hash. A backend must require the matching native plan.
+    settings['properties']['cinematics_sha256']=digest
     backend = obj(dict(id=identifier, adapter_version=version, application_version=text,
                        executable_sha256=digest, worker_sha256=digest, platform=text,
                        engine={'enum': ['cycles', 'eevee']}, device=identifier))
@@ -350,7 +353,7 @@ def frame_hash(value):
     return object_hash({k: v for k, v in value.items() if k not in ('cache_key', 'destination')})
 
 
-def make_frame_spec(request, index, snapshot_path, *, adapter=None):
+def make_frame_spec(request, index, snapshot_path, *, adapter=None, max_total_bytes=None):
     """Plan from a request-bound exact snapshot file and verified source closure."""
     from render3d_snapshot import verify_snapshot, NativeRigAdapter, Scene3DAdapter
     validate(request, 'RenderRequest')
@@ -373,7 +376,8 @@ def make_frame_spec(request, index, snapshot_path, *, adapter=None):
     require(snapshot_path.name == 'snapshot.json', 'invalid-input', 'Use the frozen snapshot.json entrypoint.')
     if adapter is None:
         adapter = Scene3DAdapter() if snapshot['scope'] == 'scene3d' else NativeRigAdapter()
-    verified = verify_snapshot(snapshot_path.parent, adapter)
+    verified = (verify_snapshot(snapshot_path.parent, adapter) if max_total_bytes is None
+                else verify_snapshot(snapshot_path.parent, adapter, max_total_bytes=max_total_bytes))
     require(verified==snapshot,'stale-asset','Owner-verified snapshot differs from request-authorized bytes.')
     if isinstance(adapter, Scene3DAdapter):
         try:
