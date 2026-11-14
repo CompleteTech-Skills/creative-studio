@@ -1198,6 +1198,9 @@ class BlenderBackend:
                         'PHYSICS_BAKE_FAILED', 'Native mass/material settings differ from the admitted request.', category='backend-crash')
 
     def bake(self, result, destination):
+        self._owner(result)
+        require(self._results.get(result.token) == result, 'PHYSICS_OWNERSHIP',
+                'Only this attempt\'s unmodified actual simulation result may be published.')
         destination = _new_destination(destination)
         with _Reader(destination.parent) as parent:
             report = self._bake_at(result, destination.name, parent.fd)
