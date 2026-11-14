@@ -89,6 +89,45 @@ class TemporalTests(unittest.TestCase):
     def snap(self, shot='shot-0', frame=0, **kw):
         return self.registry.temporal_snapshot('main', shot, frame, **kw)
 
+    def test_shot_binds_exact_selected_scene_version(self):
+        def write(document, name=None):
+            data = canonical_bytes(document)
+            name = name or document['id'] + '.json'
+            (self.root/name).write_bytes(data)
+            return dict(id=document['id'], version=document['version'], kind=document['kind'],
+                        path=name, sha256=hashlib.sha256(data).hexdigest())
+        project = json.loads((self.root/'project.json').read_bytes())
+        original = json.loads((self.root/'location-0.json').read_bytes())
+        newer = deepcopy(original)
+        newer.update(version='2.0.0', shots=['shot-0'])
+        newer['nodes'][1]['transform']['translation'] = [99,0,0]
+        newer_ref = write(newer, 'location-0-v2.json')
+        original['shots'] = ['shot-1']
+        original_ref = write(original)
+        shot0 = json.loads((self.root/'shot-0.json').read_bytes())
+        shot0['scene'] = newer_ref
+        shot0_ref = write(shot0)
+        shot1 = json.loads((self.root/'shot-1.json').read_bytes())
+        shot1['scene'] = original_ref
+        shot1_ref = write(shot1)
+        project.update(scenes=[original_ref, project['scenes'][1], newer_ref],
+                       shots=[shot0_ref, shot1_ref, project['shots'][2]])
+        project['dependency_lock'] = [*project['assets'], *project['scenes'], *project['shots']]
+        self.plan['project_revision'] = write(project)
+        self.plan['scenes'][0]['scene'] = original_ref
+        self.plan['shots'][0]['shot'] = shot0_ref
+        self.plan['shots'][1]['shot'] = shot1_ref
+        load_project(self.root)  # Both exact versions are legitimate native inputs.
+        with self.assertRaisesRegex(ValueError, 'CONTINUITY_MAPPING'):
+            TemporalEngine(self.root, dict(plan=self.plan, events=[]))
+        self.plan['scenes'][0]['scene'] = newer_ref
+        self.plan['scenes'] = [self.plan['scenes'][0]]
+        self.plan['shots'] = [self.plan['shots'][0]]
+        engine = TemporalEngine(self.root, dict(plan=self.plan, events=[]))
+        snapshot = engine.snapshot('shot-0', 0, head_sha256='0'*64)
+        entity = next(e for e in snapshot['entities'] if e['entity_id'] == 'aster')
+        self.assertEqual(entity['transform']['translation'], [99,0,0])
+
     def test_out_of_order_exact_before_after_terminal_and_flashback(self):
         first = event('discover',1001)
         transform = deepcopy(TRANSFORM); transform['translation'] = [7,0,0]

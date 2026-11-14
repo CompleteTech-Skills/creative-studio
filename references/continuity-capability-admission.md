@@ -176,3 +176,12 @@ Security is bounded local owner integration: safe portable file components and
 stable handle/hash checks detect observed changes; arbitrary hostile ancestor
 renames are not a filesystem sandbox. Native owner isolation remains mandatory
 for untrusted executable formats and long-running tools.
+
+The native rig owner applies caller memory and 100,000 vertex/triangle caps
+before native arrays are materialized. Its load allowance subtracts the measured
+process peak and a 32 MiB evaluation/evidence workspace from the reservation.
+Source revalidation also charges the first retained rig's conservative native
+load estimate before loading a second copy; texture dimensions, morphs and skin
+arrays are admitted by the canonical native loader. The discovery probe uses the
+same admission with a 512 MiB ceiling. These estimates remain conservative
+admission bounds, without an OS allocation sandbox.

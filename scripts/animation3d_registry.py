@@ -4,7 +4,7 @@ from pathlib import Path
 
 from animation3d_contracts import KINDS, target_key, validate_contract
 from animation3d_time import frame_position
-from rig_errors import RigError, require, safe_path, decode_json
+from rig_errors import RigError, require, safe_path, decode_json, open_payload
 
 
 def _load_rig():
@@ -30,9 +30,12 @@ class TargetRegistry:
     def from_rig(cls, root, actor_id):
         _load_rig()  # Preserve the optional-dependency diagnostic before file IO.
         from animation3d_assets import verify_native
-        root=Path(root).resolve(); path=safe_path(root,'rig.json',exists=True)
-        require(path.stat().st_size<=16*1024**2,'ANIMATION_LIMIT','Rig manifest exceeds document budget.')
-        payload=path.read_bytes(); manifest=decode_json(payload)
+        root=Path(root).resolve()
+        with open_payload(root, 'rig.json') as (stream, metadata):
+            require(metadata.st_size<=16*1024**2,'ANIMATION_LIMIT','Rig manifest exceeds document budget.')
+            payload=stream.read(16*1024**2+1)
+            require(len(payload)==metadata.st_size,'ANIMATION_HASH','Rig manifest changed during bounded read.')
+        manifest=decode_json(payload)
         require(isinstance(manifest,dict),'ANIMATION_KIND','Rig manifest must be an object.')
         import hashlib
         source=dict(id=manifest.get('id'),version=manifest.get('version'),path='rig.json',

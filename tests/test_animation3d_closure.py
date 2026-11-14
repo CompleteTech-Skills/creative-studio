@@ -49,6 +49,80 @@ class NativeClosureRegressionTests(unittest.TestCase):
         self.project['clips']=[self.put('clip.json',clip,'clip')]
         return rig,clip,ref
 
+    def test_project_memory_caps_native_texture_capacity_before_materialization(self):
+        import io
+        from unittest.mock import patch
+        from PIL import Image
+        from rig_models import load_rig, TextureImage, save_geometry
+        rig, clip, _ = self.bound_clip()
+        stream = io.BytesIO()
+        Image.new('RGB', (1024,1024), 'red').save(stream, format='PNG')
+        rig.geometry.images = [TextureImage('texture', 'image/png', stream.getvalue())]
+        rig.manifest['geometry'] = save_geometry(rig.root, rig.geometry, rig.manifest['limits'])
+        reference = self.put('fixture/rig.json', rig.manifest, 'rig')
+        clip['rig_binding'] = reference
+        self.project['rig_assets'] = [reference]
+        self.project['clips'] = [self.put('clip.json', clip, 'clip')]
+        before = {str(p.relative_to(self.root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                  for p in self.root.rglob('*') if p.is_file()}
+        with self.assertRaises(RigError) as native_rejection:
+            load_rig(rig.root, limits={'memory_bytes': self.project['budgets']['max_memory_bytes']})
+        self.assertEqual(native_rejection.exception.report['code'], 'RIG_LIMIT_MEMORY')
+        with patch('rig_models.load_geometry', side_effect=AssertionError('native materialization before project admission')):
+            with self.assertRaises(RigError) as rejected:
+                self.check()
+        self.assertEqual(rejected.exception.report['code'], 'ANIMATION_LIMIT')
+        self.project['budgets']['max_memory_bytes'] = 64*1024*1024
+        result = self.check()
+        self.assertTrue(result['source_ready'])
+        self.assertLessEqual(result['memory_admission']['estimated_bytes'], result['memory_admission']['limit_bytes'])
+        self.assertGreater(result['memory_admission']['native_estimated_bytes'], 10_000_000)
+        for name, digest in before.items():
+            self.assertEqual(hashlib.sha256((self.root/name).read_bytes()).hexdigest(), digest)
+
+    def test_project_memory_aggregates_distinct_retained_native_rigs(self):
+        from unittest.mock import patch
+        from rig_models import load_rig
+        first, _, first_reference = self.bound_clip()
+        second = fixture(self.root, name='second', animated=False)
+        second_reference = self.put('second/rig.json', second.manifest, 'rig')
+        self.project['rig_assets'] = [first_reference, second_reference]
+        first_cost = load_rig(first.root).resource_usage['estimated_memory_bytes']
+        second_cost = load_rig(second.root).resource_usage['estimated_memory_bytes']
+        self.project['budgets']['max_memory_bytes'] = first_cost + second_cost - 1
+        with self.assertRaises(RigError) as rejected:
+            self.check()
+        self.assertEqual(rejected.exception.report['code'], 'ANIMATION_LIMIT')
+        self.project['budgets']['max_memory_bytes'] = 4*(first_cost + second_cost)
+        with patch('rig_models.load_rig', wraps=load_rig) as native_loads:
+            result = self.check()
+        self.assertTrue(result['source_ready'])
+        self.assertEqual(native_loads.call_count, 2)
+        caps = [call.kwargs['limits']['memory_bytes'] for call in native_loads.call_args_list]
+        self.assertGreater(caps[0], caps[1])
+        self.assertGreaterEqual(result['memory_admission']['native_estimated_bytes'], first_cost + second_cost)
+        self.assertLessEqual(result['memory_admission']['estimated_bytes'], result['memory_admission']['limit_bytes'])
+
+    def test_json_object_capacity_is_admitted_before_dependency_decode(self):
+        from unittest.mock import patch
+        from animation3d_assets import Snapshot
+        for suffix in ('.json', '.data'):
+            with self.subTest(suffix=suffix):
+                source = self.root/('large'+suffix)
+                source.write_text(json.dumps(['small']*100))
+                snapshot = Snapshot(self.root, self.root/('snapshot'+suffix))
+                snapshot.memory_limit = 1000
+                self.assertLess(source.stat().st_size, snapshot.memory_limit)
+                with patch('animation3d_assets.decode_json', side_effect=AssertionError('decoder ran before capacity admission')):
+                    with self.assertRaises(RigError) as rejected:
+                        snapshot.json(source.name)
+                self.assertEqual(rejected.exception.report['code'], 'ANIMATION_LIMIT')
+        # Valid JSON with a non-JSON filename still uses the same decoder policy.
+        source = self.root/'valid.data'
+        source.write_text(json.dumps({'ok': True}))
+        snapshot = Snapshot(self.root, self.root/'snapshot-valid')
+        self.assertEqual(snapshot.json(source.name), {'ok': True})
+
     def test_unbound_or_unknown_skeletal_target_rejects(self):
         clip=self.values['clip'];self.project['clips']=[self.put('clip.json',clip,'clip')]
         with self.assertRaisesRegex(RigError,'rig binding'):self.check()

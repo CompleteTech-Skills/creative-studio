@@ -382,6 +382,61 @@ class ReleaseAdmissionRegressions(unittest.TestCase):
             if process.is_alive():process.terminate();process.join(5)
             receive.close()
 
+    def test_target_registry_manifest_fifo_replacement_is_rejected(self):
+        import multiprocessing as mp
+        import os
+        from unittest.mock import patch
+        if not hasattr(os, 'mkfifo') or 'fork' not in mp.get_all_start_methods():
+            self.skipTest('POSIX FIFO/fork replacement race')
+        context = mp.get_context('fork')
+        replaced = context.Event()
+        receive, send = context.Pipe(duplex=False)
+        root = self.rig.root
+        source = root/'rig.json'
+        def child():
+            original_open = os.open
+            original_path_open = Path.open
+            def replace():
+                if not replaced.is_set():
+                    source.unlink()
+                    os.mkfifo(source)
+                    replaced.set()
+            def descriptor_open(path, *args, **kwargs):
+                if str(path) in (str(source), source.name):
+                    replace()
+                return original_open(path, *args, **kwargs)
+            def path_open(path, *args, **kwargs):
+                if path == source:
+                    replace()
+                return original_path_open(path, *args, **kwargs)
+            supported = {descriptor_open if operation is original_open else operation for operation in os.supports_dir_fd}
+            try:
+                with patch('rig_errors.os.open', descriptor_open), patch.object(os, 'supports_dir_fd', supported), patch.object(Path, 'open', path_open):
+                    TargetRegistry.from_rig(root, 'actor')
+            except RigError as error:
+                send.send(('rejected', error.report['code']))
+            except BaseException as error:
+                send.send(('unexpected', type(error).__name__))
+            else:
+                send.send(('admitted', None))
+            finally:
+                send.close()
+        process = context.Process(target=child)
+        process.start()
+        send.close()
+        try:
+            self.assertTrue(replaced.wait(5), 'Replacement hook must execute.')
+            process.join(2)
+            self.assertFalse(process.is_alive(), 'Only this own bounded child may be stopped on blocking regression.')
+            self.assertTrue(receive.poll(1))
+            self.assertEqual(receive.recv(), ('rejected', 'RIG_PAYLOAD_TYPE'))
+            self.assertEqual(process.exitcode, 0)
+        finally:
+            if process.is_alive():
+                process.terminate()
+                process.join(5)
+            receive.close()
+
     def _set_numeric_budget_case(self, family, value):
         self.scene['markers']=[];self.scene['interactions']=[];self.actor['constraints']=[];self.layer['placements']=[]
         self.f.project['state_machines']=[];self.f.project['sequences']=[]
