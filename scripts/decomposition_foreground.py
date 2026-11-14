@@ -286,48 +286,54 @@ def propose(source, destination, *, weights, enabled=False, origin, fixture=Fals
 
 def select(root, identifiers, destination, *, name=None):
     """Explicitly select candidate union, preserving alpha and unassigned semantics."""
-    root = Path(root).resolve(); receipt = load(root)
-    if (not isinstance(identifiers, list) or not identifiers or
-            any(not isinstance(item, str) for item in identifiers) or len(identifiers) != len(set(identifiers))):
-        raise ValueError('select one or more unique candidate IDs')
-    by_id = {c['id']: c for c in receipt['candidates']}
-    if any(identifier not in by_id for identifier in identifiers):
-        raise ValueError('unknown foreground candidate')
-    source = receipt['source']; size = (source['width'], source['height'])
-    selected = Image.new('L', size)
-    for identifier in identifiers:
-        selected = union(selected, _mask(root, by_id[identifier]['mask'], size))
-    # Carry the proposal receipt and all masks into the run, independently of
-    # semantic annotations. Relocation/archive never depends on the old directory.
+    root = Path(root).resolve()
     destination = Path(destination).expanduser().absolute()
     if destination.exists() or destination.is_symlink():
         raise ValueError('decomposition destination must be new')
     with pinned_directory(destination.parent) as parent_fd, private_stage(parent_fd, prefix='.selection-') as (_, stage_fd), directory_capability(stage_fd) as capability:
         stage = capability.path
+        snapshot = stage / 'snapshot'; snapshot.mkdir()
+        receipt_bytes = _record_bytes(safe_path(root, 'foreground-proposals.json'), MAX_SOURCE_BYTES)
+        (snapshot / 'foreground-proposals.json').write_bytes(receipt_bytes)
+        receipt = read_json(snapshot / 'foreground-proposals.json')
+        validate_structure(receipt, RECEIPT, 'foreground proposal receipt')
+        source = receipt['source']
+        paths = {source['asset']['path'], receipt['overlap']['path'], receipt['overlay']['path']}
+        paths.update(c['mask']['path'] for c in receipt['candidates'])
+        for relative in sorted(paths):
+            target = safe_path(snapshot, relative)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(_record_bytes(safe_path(root, relative), MAX_SOURCE_BYTES))
+        receipt = load(snapshot)
+        if (not isinstance(identifiers, list) or not identifiers or
+                any(not isinstance(item, str) for item in identifiers) or len(identifiers) != len(set(identifiers))):
+            raise ValueError('select one or more unique candidate IDs')
+        by_id = {c['id']: c for c in receipt['candidates']}
+        if any(identifier not in by_id for identifier in identifiers):
+            raise ValueError('unknown foreground candidate')
+        source = receipt['source']; size = (source['width'], source['height'])
+        selected = Image.new('L', size)
+        for identifier in identifiers:
+            selected = union(selected, _mask(snapshot, by_id[identifier]['mask'], size))
+        receipt_hash = hashlib.sha256(receipt_bytes).hexdigest()
         annotation = {'schema_version': 1, 'source_sha256': source['asset']['sha256'],
             'author': 'Explicit foreground candidate selection',
             'note': 'Only foreground selected; semantic components remain unassigned.', 'components': [],
             'extensions': {'foreground_analysis': {'receipt': 'foreground-analysis/foreground-proposals.json',
-                'receipt_sha256': _safe_sha(root / 'foreground-proposals.json'), 'selected_ids': identifiers}}}
+                'receipt_sha256': receipt_hash, 'selected_ids': identifiers}}}
         run = stage / 'run'
-        source_bytes = _record_bytes(safe_path(root, source['asset']['path']), MAX_SOURCE_BYTES)
-        if hashlib.sha256(source_bytes).hexdigest() != source['asset']['sha256']:
-            raise ValueError('proposal source changed before selection')
-        source_snapshot = stage / 'input' / Path(source['asset']['path']).name
-        source_snapshot.parent.mkdir()
-        source_snapshot.write_bytes(source_bytes)
-        result = create_decomposition(source_snapshot, run,
+        result = create_decomposition(safe_path(snapshot, source['asset']['path']), run,
             annotations=annotation, foreground_mask={'runs': mask_to_runs(selected)},
             name=name, origin=source['origin'], fixture=source['fixture'])
-        kept = run / 'foreground-analysis'; kept.mkdir()
-        paths = {'foreground-proposals.json', source['asset']['path'], receipt['overlap']['path'], receipt['overlay']['path']}
-        paths.update(c['mask']['path'] for c in receipt['candidates'])
-        for relative in sorted(paths):
-            target = safe_path(kept, relative); target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(_record_bytes(safe_path(root, relative), MAX_SOURCE_BYTES))
-        load(kept)
-        if _safe_sha(kept / 'foreground-proposals.json') != annotation['extensions']['foreground_analysis']['receipt_sha256']:
-            raise ValueError('proposal receipt changed during selection')
+        kept = run / 'foreground-analysis'
+        snapshot.rename(kept)
+        if _safe_sha(kept / 'foreground-proposals.json') != receipt_hash or load(kept) != receipt:
+            raise ValueError('proposal snapshot changed during selection')
+        verified = Image.new('L', size)
+        for identifier in identifiers:
+            verified = union(verified, _mask(kept, by_id[identifier]['mask'], size))
+        if verified.tobytes() != selected.tobytes():
+            raise ValueError('proposal masks changed during selection')
         _rename_no_replace('run', destination.name, source_dir_fd=stage_fd, destination_dir_fd=parent_fd)
         return result
 

@@ -1,5 +1,6 @@
 """Synthetic contract fixtures only; these do not count as model evidence."""
 import copy
+import functools
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import decomposition_foreground as fg
 from asset_contracts import sha
 from character_decomposition import load_decomposition
+
+def requires_foreground_publication(test):
+    @functools.wraps(test)
+    def check(self):
+        if sys.platform.startswith('linux') and Path('/proc/self/fd').is_dir():
+            return test(self)
+        destination = Path(self.temp.name)/'unsupported-publication'
+        if 'propos' in test.__name__:
+            with patch.object(fg, 'capabilities', return_value={'available': True, 'versions': {}}), \
+                 patch.object(fg, '_weight', return_value=Path('unused')):
+                with self.assertRaisesRegex((OSError, ValueError), 'unavailable|requires|require'):
+                    fg.propose(self.root/'source/original.png', destination, weights='unused',
+                               enabled=True, origin='fixture')
+        else:
+            with self.assertRaisesRegex((OSError, ValueError), 'unavailable|requires|require'):
+                fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+        self.assertEqual(fg.load(self.root), self.receipt)
+        self.assertFalse(any(Path(self.temp.name).glob('.selection-*')))
+        self.assertFalse(any(Path(self.temp.name).glob('.foreground-*')))
+    return check
 
 class ForegroundContracts(unittest.TestCase):
     def setUp(self):
@@ -46,6 +68,7 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(len(fg.load(self.root)['candidates']), 2)
         self.assertEqual(fg.count(fg._mask(self.root,self.receipt['overlap'],(8,6))),12)
 
+    @requires_foreground_publication
     def test_selection_preserves_rgba_and_portable_receipt(self):
         before = sha(self.root/'source/original.png')
         destination = Path(self.temp.name)/'selected'
@@ -68,11 +91,13 @@ class ForegroundContracts(unittest.TestCase):
         self.receipt['runtime']['torch_threads']=2;self.save()
         with self.assertRaises(ValueError):fg.load(self.root)
 
+    @requires_foreground_publication
     def test_unknown_duplicate_empty_selection_rejected(self):
         for ids in [[],['bogus'],['candidate-1','candidate-1']]:
             with self.subTest(ids=ids), self.assertRaises(ValueError):
                 fg.select(self.root,ids,Path(self.temp.name)/'bad')
 
+    @requires_foreground_publication
     def test_proposal_timeout_cleans_pinned_stage_after_replacement(self):
         moved = Path(self.temp.name) / 'moved-proposal'
         foreign = None
@@ -96,6 +121,7 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(foreign.read_text(), 'untouched')
         self.assertEqual(list(moved.iterdir()), [])
 
+    @requires_foreground_publication
     def test_propose_publishes_valid_receipt_with_backend_provenance(self):
         versions = {'torch': '2.10.0+cpu', 'torchvision': '0.25.0+cpu'}
         destination = Path(self.temp.name) / 'published'
@@ -129,6 +155,7 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(len(receipt['candidates']), 2)
         self.assertEqual(receipt['review_status'], 'pending')
 
+    @requires_foreground_publication
     def test_selection_namespace_replacement_preserves_foreign_tree(self):
         real_create = fg.create_decomposition
         moved = Path(self.temp.name) / 'moved-wrapper'
@@ -148,6 +175,7 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(list(moved.iterdir()), [])
         self.assertEqual(load_decomposition(destination)['source']['sha256'], sha(self.root/'source/original.png'))
 
+    @requires_foreground_publication
     def test_selection_failure_cleans_owned_tree_only_after_replacement(self):
         real_create = fg.create_decomposition
         moved = Path(self.temp.name) / 'moved-failure'
@@ -209,10 +237,11 @@ class ForegroundContracts(unittest.TestCase):
             with self.subTest(bound=bound), self.assertRaises(ValueError):
                 fg._record_bytes(path, bound)
 
-    def test_selection_rechecks_source_before_creating_decomposition(self):
+    @requires_foreground_publication
+    def test_selection_uses_captured_source_after_live_source_changes(self):
         original = fg._mask
         calls = 0
-        def replace_source_after_selection(*args):
+        def replace_live_source(*args):
             nonlocal calls
             mask = original(*args)
             calls += 1
@@ -220,10 +249,77 @@ class ForegroundContracts(unittest.TestCase):
                 Image.new('RGBA', (8, 6), (240, 20, 20, 255)).save(self.root/'source/original.png')
             return mask
         destination = Path(self.temp.name)/'changed-selection'
-        with patch.object(fg, '_mask', side_effect=replace_source_after_selection), \
-             patch.object(fg, 'create_decomposition', side_effect=AssertionError('unexpected create')):
-            with self.assertRaisesRegex(ValueError, 'source changed'):
+        with patch.object(fg, '_mask', side_effect=replace_live_source):
+            fg.select(self.root, ['candidate-1'], destination)
+        self.assertEqual(load_decomposition(destination)['source']['sha256'], self.receipt['source']['asset']['sha256'])
+
+    @requires_foreground_publication
+    def test_live_bundle_replacement_after_mask_read_keeps_snapshot_consistent(self):
+        original = fg._mask
+        calls = 0
+        def replace_bundle(*args):
+            nonlocal calls
+            mask = original(*args)
+            calls += 1
+            if calls == 4:
+                changed = Image.new('L', (8, 6)); changed.paste(255, (0, 0, 2, 6))
+                changed.save(self.root/'masks/candidate-1.png')
+                Image.new('L', (8, 6)).save(self.root/'masks/overlap.png')
+                candidate = self.receipt['candidates'][0]
+                candidate.update(mask=fg._asset(self.root, 'masks/candidate-1.png'),
+                                 bbox=list(changed.getbbox()), pixels=fg.count(changed))
+                self.receipt['overlap'] = fg._asset(self.root, 'masks/overlap.png')
+                self.save()
+                fg.load(self.root)
+            return mask
+        destination = Path(self.temp.name)/'raced'
+        with patch.object(fg, '_mask', side_effect=replace_bundle):
+            fg.select(self.root, ['candidate-1'], destination)
+        kept = destination/'foreground-analysis'
+        receipt = fg.load(kept)
+        self.assertEqual(receipt['candidates'][0]['pixels'], 30)
+        self.assertEqual(fg.load(self.root)['candidates'][0]['pixels'], 12)
+        with Image.open(destination/'foreground.png') as image:
+            self.assertEqual(image.getpixel((4, 0))[3], 77)
+        manifest = load_decomposition(destination)
+        annotation = json.loads((destination / manifest['annotation']['path']).read_text())
+        self.assertEqual(annotation['extensions']['foreground_analysis']['receipt_sha256'], sha(kept/'foreground-proposals.json'))
+        self.assertEqual(manifest['validation']['semantic_status'], 'pending')
+
+    @requires_foreground_publication
+    def test_snapshot_tampering_before_promotion_rolls_back(self):
+        real_create = fg.create_decomposition
+        def corrupt(*args, **kwargs):
+            result = real_create(*args, **kwargs)
+            snapshot = args[1].parent/'snapshot'
+            (snapshot/'masks/candidate-1.png').write_bytes(b'malformed')
+            return result
+        destination = Path(self.temp.name)/'rollback'
+        with patch.object(fg, 'create_decomposition', side_effect=corrupt):
+            with self.assertRaises(ValueError):
                 fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+
+    @requires_foreground_publication
+    def test_mixed_snapshot_rejected_before_creation(self):
+        original = fg._record_bytes
+        def change_mask_before_capture(path, maximum):
+            if Path(path) == self.root/'masks/candidate-1.png':
+                Image.new('L', (8, 6)).save(path)
+            return original(path, maximum)
+        destination = Path(self.temp.name)/'mixed'
+        with patch.object(fg, '_record_bytes', side_effect=change_mask_before_capture), \
+             patch.object(fg, 'create_decomposition', side_effect=AssertionError('unexpected create')):
+            with self.assertRaisesRegex(ValueError, 'hash mismatch'):
+                fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+
+    @requires_foreground_publication
+    def test_malformed_captured_receipt_rolls_back(self):
+        (self.root/'foreground-proposals.json').write_text('{"kind":1,"kind":2}')
+        destination = Path(self.temp.name)/'malformed'
+        with self.assertRaises(ValueError):
+            fg.select(self.root, ['candidate-1'], destination)
         self.assertFalse(destination.exists())
 
     def test_geometry_confidence_and_identity_validation(self):
