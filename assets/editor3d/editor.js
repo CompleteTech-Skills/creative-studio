@@ -1465,7 +1465,7 @@ const shortcuts = [
   ["Outliner Enter / Space", "Select the focused object; native visibility and locks still apply"],
   ["Tab / Shift+Tab", "Move between controls, then edit transforms through the numeric inspector"],
 ];
-let shortcutReturnFocus = null;
+let shortcutReturnFocus = null, shortcutReturnKey = null;
 function filterShortcuts() {
   const query = $("shortcut-search").value.toLocaleLowerCase().trim();
   const matches = shortcuts.filter(entry => entry.join(" ").toLocaleLowerCase().includes(query));
@@ -1478,6 +1478,9 @@ function filterShortcuts() {
 function showShortcutHelp() {
   if ($("shortcut-dialog").open) return;
   shortcutReturnFocus = document.activeElement;
+  const row = shortcutReturnFocus?.closest('#outliner [role="treeitem"]');
+  shortcutReturnKey = row?.dataset.bone ? {bone: row.dataset.bone} :
+    row?.dataset.id ? {node: row.dataset.id} : null;
   $("shortcut-search").value = ""; filterShortcuts();
   $("shortcut-dialog").showModal(); $("shortcut-search").focus();
 }
@@ -1494,7 +1497,14 @@ $("shortcut-dialog").onkeydown = event => {
   }
 };
 $("shortcut-dialog").onclose = () => {
-  if (shortcutReturnFocus?.isConnected) shortcutReturnFocus.focus();
+  let target = shortcutReturnFocus?.isConnected ? shortcutReturnFocus : null;
+  if (!target && shortcutReturnKey) {
+    target = [...$("outliner").querySelectorAll('[role="treeitem"]')].find(row =>
+      shortcutReturnKey.bone ? row.dataset.bone === shortcutReturnKey.bone : row.dataset.id === shortcutReturnKey.node);
+  }
+  if (!target || target.disabled) target = $("keyboard-help");
+  target.focus();
+  shortcutReturnFocus = null; shortcutReturnKey = null;
 };
 window.addEventListener("keydown", (e) => {
   if (e.defaultPrevented || $("shortcut-dialog").open ||

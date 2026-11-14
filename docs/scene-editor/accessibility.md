@@ -11,7 +11,9 @@ edit persists through the existing revision-checked command service.
 
 The Keyboard reference button and `?` open a searchable modal reference listing
 only implemented shortcuts. Escape closes it, focus stays inside while it is
-open, and closing returns focus to its invoking control. Status, selection and
+open, and closing returns focus to its invoking control. If an in-flight acknowledged save
+rebuilds the outliner, focus returns to the same native node or bone row. If that
+row was removed, the stable Keyboard reference button receives focus. Status, selection and
 errors use conventional live-region semantics; this is not a claim of manual
 screen-reader certification. The search uses text nodes and never renders supplied
 HTML. Focus outlines remain visible against selected object rows.

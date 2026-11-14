@@ -123,3 +123,37 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
         self.assertFalse(page.evaluate('document.querySelector("#outliner").contains(document.activeElement)'))
         self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
         self.assertEqual(self.repository.snapshot()['revision'],1)
+
+    def test_help_restores_native_row_identity_after_acknowledgement_or_stable_fallback_after_delete(self):
+        page=self.page
+        for operation,revision,expected in [('duplicate',1,'mesh'),('delete',2,None)]:
+            with self.subTest(operation=operation):
+                page.locator('[data-id="mesh"]').focus();page.keyboard.press('Enter')
+                held=[]
+                def hold_response(route):
+                    held.append((route,route.fetch()))
+                page.route('**/api/commands',hold_response)
+                try:
+                    page.locator('#'+operation).focus();page.keyboard.press('Enter')
+                    page.wait_for_timeout(50)
+                    self.assertEqual(len(held),1)
+                    self.assertEqual(self.repository.snapshot()['revision'],revision)
+                    page.locator('[data-id="mesh"]').focus()
+                    page.evaluate('window.helpInvoker = document.activeElement')
+                    page.keyboard.press('Shift+Slash')
+                    self.assertTrue(page.get_by_role('dialog',name='Keyboard reference',exact=True).is_visible())
+                    route,response=held.pop();route.fulfill(response=response)
+                    page.wait_for_function('() => !window.helpInvoker.isConnected')
+                    page.keyboard.press('Escape')
+                    page.wait_for_function('() => !document.querySelector("#shortcut-dialog").open')
+                    focused=page.evaluate('({tag:document.activeElement.tagName,id:document.activeElement.id,node:document.activeElement.dataset.id})')
+                    if expected:
+                        self.assertEqual(focused['node'],expected)
+                        self.assertEqual(page.locator('#outliner [tabindex="0"]').count(),1)
+                    else:
+                        self.assertEqual(focused['id'],'keyboard-help')
+                    self.assertNotEqual(focused['tag'],'BODY')
+                    self.assertEqual(self.repository.snapshot()['revision'],revision)
+                finally:
+                    for route,response in held: route.fulfill(response=response)
+                    page.unroute('**/api/commands',hold_response)
