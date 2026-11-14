@@ -1,0 +1,37 @@
+name: LookDev style and color execution
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  styles-and-ocio:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r requirements-rig-test.txt 'OpenEXR==3.3.4'
+      - name: Install matching Blender Python contract dependencies
+        run: python -m pip install --target "$RUNNER_TEMP/blender-lookdev-deps" 'jsonschema==4.26.0'
+      - name: Install checksum-verified Blender 4.5.3 LTS
+        run: |
+          curl -fL --retry 3 https://download.blender.org/release/Blender4.5/blender-4.5.3-linux-x64.tar.xz -o "$RUNNER_TEMP/blender.tar.xz"
+          echo "975c58fcb244273838534bba771e64ad87739216b0f9b39a888531a49a72d845  $RUNNER_TEMP/blender.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/blender.tar.xz" -C "$RUNNER_TEMP"
+      - name: Execute twelve recipes and actual OCIO outputs
+        run: |
+          mkdir -p "$RUNNER_TEMP/lookdev-style-tmp"
+          export TMPDIR="$RUNNER_TEMP/lookdev-style-tmp"
+          export HATCH_BLENDER="$RUNNER_TEMP/blender-4.5.3-linux-x64/blender"
+          export HATCH_LOOKDEV_BLENDER_PYTHONPATH="$RUNNER_TEMP/blender-lookdev-deps"
+          export HATCH_LOOKDEV_STYLE_EVIDENCE="$RUNNER_TEMP/lookdev-style-evidence"
+          python -m unittest discover -s tests -p '*lookdev*py' -v
+          HATCH_LOOKDEV_STYLE_TEST=1 python -m unittest discover -s tests -p test_rig_lookdev_styles.py -v
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lookdev-style-evidence
+          path: ${{ runner.temp }}/lookdev-style-evidence/
