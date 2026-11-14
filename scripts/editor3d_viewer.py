@@ -65,7 +65,13 @@ def preview_snapshot(repository, snapshot):
             path = safe_path(root, name)
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(payload)
-        for document_path, document in snapshot['documents'].items():
+        from editor3d_prefabs import prepare_prefab_projection, project_prefab_state
+        prepared = prepare_prefab_projection(root, snapshot)
+        runtime_snapshot = prepared['runtime_snapshot'] if prepared else snapshot
+        scene = runtime_snapshot['scene']
+        if prepared:
+            result['viewport_prefabs'] = prepared['projection']
+        for document_path, document in runtime_snapshot['documents'].items():
             if document.get('kind') != 'scene3d-asset':
                 continue
             identifier = asset_identity(dict(id=document['id'], version=document['version'],
@@ -114,11 +120,11 @@ def preview_snapshot(repository, snapshot):
             except (RigError, ValueError, OSError) as error:
                 assets[identifier] = dict(format='unavailable', message=str(error))
         from editor3d_components import project_components
-        components, component_vertices = project_components(root, snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices,
+        components, component_vertices = project_components(root, runtime_snapshot, max_vertices=MAX_PREVIEW_VERTICES-projected_vertices,
             max_resource_bytes=MAX_COMPONENT_RESOURCE_BYTES, max_decoded_vertices=MAX_PREVIEW_DECODED_VERTICES-decoded_vertices)
         from editor3d_state import project_editor_state
         try:
-            result['viewport_state'] = project_editor_state(snapshot, root)
+            result['viewport_state'] = project_prefab_state(prepared) if prepared else project_editor_state(snapshot, root)
         except RigError as error:
             result['viewport_state'] = dict(schema_version=1, available=False, revision=snapshot['revision'],
                 sha256=snapshot['sha256'], error=error.report)
@@ -266,7 +272,7 @@ class EditorHandler(BaseHTTPRequestHandler):
                 path = ROOT / 'assets/editor3d/index.html'
             elif route.path.startswith('/editor/'):
                 relative = route.path.removeprefix('/editor/')
-                require(relative in ('editor.js', 'editor.css', 'TransformControls.js', 'asset-browser.js', 'inspectors.js', 'timeline.js', 'render-panel.js'), 'EDITOR3D_VIEW_PATH', 'Unknown editor asset.')
+                require(relative in ('editor.js', 'editor.css', 'TransformControls.js', 'asset-browser.js', 'inspectors.js', 'timeline.js', 'render-panel.js', 'prefabs.js'), 'EDITOR3D_VIEW_PATH', 'Unknown editor asset.')
                 path = ROOT / 'assets/editor3d' / relative
             elif route.path.startswith('/vendor/'):
                 path = safe_path(ROOT / 'assets/rig-viewer/vendor', route.path.removeprefix('/vendor/'), exists=True)

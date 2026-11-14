@@ -101,6 +101,56 @@ class EditorPrefabProjectionTests(unittest.TestCase):
         self.assertEqual(repository.snapshot(), before)
         self.assertEqual({name: repository.read_file(name, snapshot['sha256']) for name in snapshot['inventory']}, sources)
 
+    def test_backend_preview_decodes_real_runtime_geometry_without_replacing_saved_scene(self):
+        from editor3d_viewer import preview_snapshot
+        repository, snapshot, captured = self.fixture()
+        before = deepcopy(snapshot)
+        value = preview_snapshot(repository, snapshot)
+        prepared = prepare_prefab_projection(captured, snapshot)
+        self.assertEqual(value['scene'], before['scene'])
+        self.assertEqual(value['documents'], before['documents'])
+        self.assertEqual(value['inventory'], before['inventory'])
+        self.assertEqual(value['viewport_prefabs'], prepared['projection'])
+        self.assertEqual(value['viewport_state'], project_prefab_state(prepared))
+        self.assertEqual(len(value['viewport_assets']),1)
+        geometry = next(iter(value['viewport_assets'].values()))
+        self.assertEqual(geometry['format'],'geometry')
+        self.assertEqual(len(geometry['meshes']),1)
+        vertices = geometry['meshes'][0]['positions']
+        self.assertEqual(len(vertices),3)
+        for index in range(2):
+            identifier = value['viewport_prefabs']['mappings']['instance-'+str(index)]['prefab-mesh']
+            matrix = value['viewport_state']['nodes'][identifier]['world_matrix']
+            np.testing.assert_allclose(transform_points(np.asarray(matrix),vertices),
+                np.asarray(vertices)+[index*3+1,0,0],atol=1e-10,rtol=0)
+        self.assertEqual(snapshot,before)
+        self.assertEqual(repository.snapshot(),before)
+        self.assertNotIn('runtime_snapshot',value)
+
+    def test_backend_preview_counts_derived_instances_in_existing_vertex_budget(self):
+        from unittest.mock import patch
+        from editor3d_viewer import preview_snapshot
+        repository, snapshot, _ = self.fixture()
+        # One actual three-vertex resource is instanced three times: the
+        # authored mesh plus two canonical prefab children.
+        with patch('editor3d_viewer.MAX_PREVIEW_VERTICES',8):
+            rejected = preview_snapshot(repository,snapshot)
+        self.assertEqual(next(iter(rejected['viewport_assets'].values()))['format'],'unavailable')
+        with patch('editor3d_viewer.MAX_PREVIEW_VERTICES',9), patch('editor3d_viewer.MAX_PREVIEW_DECODED_VERTICES',3):
+            admitted = preview_snapshot(repository,snapshot)
+        self.assertEqual(next(iter(admitted['viewport_assets'].values()))['format'],'geometry')
+        self.assertEqual(len(admitted['viewport_state']['nodes']),9)
+
+    def test_backend_nested_prefab_derived_clips_need_no_fabricated_source_files(self):
+        from editor3d_viewer import preview_snapshot
+        repository, snapshot, _ = self.fixture(nested_animated=True)
+        value = preview_snapshot(repository,snapshot)
+        self.assertTrue(value['viewport_state']['available'])
+        self.assertTrue(value['viewport_state']['base_pose_only'])
+        self.assertFalse(value['viewport_state']['animation_evaluated'])
+        self.assertEqual(len(value['viewport_prefabs']['readonly_nodes']),8)
+        self.assertEqual(value['scene'],snapshot['scene'])
+
     def test_only_authored_anchor_edits_persist_and_reopen_without_rewriting_prefabs(self):
         repository, snapshot, captured = self.fixture()
         projection = prepare_prefab_projection(captured, snapshot)['projection']
@@ -226,7 +276,7 @@ console.log('PASS: real canonical runtime metadata; authored anchors; wrong-pare
         path.unlink(); outside = self.root/'outside.json'; outside.write_bytes(original)
         try: path.symlink_to(outside)
         except OSError: self.skipTest('Filesystem does not support symlink creation.')
-        with self.assertRaises((RigError, OSError)): prepare_prefab_projection(captured, snapshot)
+        with self.assertRaises(RigError): prepare_prefab_projection(captured, snapshot)
 
     def test_unsafe_scene_path_and_virtual_namespace_conflicts_fail_closed(self):
         _, snapshot, captured = self.fixture()
