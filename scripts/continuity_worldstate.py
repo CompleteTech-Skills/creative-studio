@@ -97,6 +97,8 @@ def validate_world(state, plan, *, applied=()):
     for scene_id, entry in scenes.items():
         location = locations.get(entry['location_id'])
         if location is None or scene_id not in location['scene_ids']: fail('scene has an unmapped location')
+        if sum(scene_id in loc['scene_ids'] for loc in locations.values()) != 1:
+            fail('scene is ambiguously mapped to multiple physical locations')
     instance_ids, render_ids = set(), set()
     for identifier, entity in entities.items():
         if entity['location_id'] not in locations: fail('entity has an unmapped location')
@@ -231,6 +233,9 @@ def validate_scene_assets(world, entry, native_scene, documents, project_directo
     """Prove persistent canonical assets agree with actual mapped native nodes."""
     from pathlib import Path
     entities = {e['entity_id']:e for e in world['entities']}
+    for entity in entry['incoming_world_state']['entities']:
+        if entity['render_visible'] and entity['location_id'] != entry['location_id']:
+            fail('visible incoming entity belongs to another physical location')
     nodes = {n['id']:n for n in native_scene['nodes']}
     for binding in entry['entities']:
         entity = entities[binding['entity_id']]

@@ -4,77 +4,161 @@
   "title": "Continuity temporal-event v1.0.0",
   "$defs": {
     "temporal-event": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "schema_version": {
-          "const": "1.0.0"
-        },
-        "kind": {
-          "const": "continuity-temporal-event"
-        },
-        "event_id": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
-        },
-        "tick": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "priority": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 65535
-        },
-        "prerequisites": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": "1.0.0"
+            },
+            "kind": {
+              "const": "continuity-temporal-event"
+            },
+            "event_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "tick": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "prerequisites": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "minItems": 0,
+              "maxItems": 4096,
+              "uniqueItems": true
+            },
+            "operations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/temporal-operation"
+              },
+              "minItems": 1,
+              "maxItems": 4096
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              },
+              "minItems": 0,
+              "maxItems": 4096
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
           },
-          "minItems": 0,
-          "maxItems": 4096,
-          "uniqueItems": true
+          "required": [
+            "schema_version",
+            "kind",
+            "event_id",
+            "tick",
+            "priority",
+            "prerequisites",
+            "operations",
+            "sources",
+            "author",
+            "revision"
+          ]
         },
-        "operations": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/temporal-operation"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": "1.1.0"
+            },
+            "kind": {
+              "const": "continuity-temporal-event"
+            },
+            "event_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "tick": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "prerequisites": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "minItems": 0,
+              "maxItems": 4096,
+              "uniqueItems": true
+            },
+            "operations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/world-operation"
+              },
+              "minItems": 1,
+              "maxItems": 4096
+            },
+            "sources": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ref"
+              },
+              "minItems": 0,
+              "maxItems": 4096
+            },
+            "author": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
           },
-          "minItems": 1,
-          "maxItems": 4096
-        },
-        "sources": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ref"
-          },
-          "minItems": 0,
-          "maxItems": 4096
-        },
-        "author": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
-        },
-        "revision": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
+          "required": [
+            "schema_version",
+            "kind",
+            "event_id",
+            "tick",
+            "priority",
+            "prerequisites",
+            "operations",
+            "sources",
+            "author",
+            "revision",
+            "reason"
+          ]
         }
-      },
-      "required": [
-        "schema_version",
-        "kind",
-        "event_id",
-        "tick",
-        "priority",
-        "prerequisites",
-        "operations",
-        "sources",
-        "author",
-        "revision"
       ]
     },
     "temporal-operation": {
@@ -246,6 +330,672 @@
         "path",
         "sha256",
         "kind"
+      ]
+    },
+    "world-operation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "event_type": {
+              "const": "world-entity"
+            },
+            "entity_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "reason": {
+              "enum": [
+                "costume-change",
+                "accessory-change",
+                "enter",
+                "exit",
+                "occlusion",
+                "reveal",
+                "environment-change",
+                "attachment-change",
+                "enable-change",
+                "render-visibility"
+              ]
+            },
+            "before": {
+              "$ref": "#/$defs/world-entity"
+            },
+            "after": {
+              "$ref": "#/$defs/world-entity"
+            }
+          },
+          "required": [
+            "event_type",
+            "entity_id",
+            "reason",
+            "before",
+            "after"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "event_type": {
+              "const": "world-fact"
+            },
+            "fact_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "before": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/world-fact"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "after": {
+              "$ref": "#/$defs/world-fact"
+            }
+          },
+          "required": [
+            "event_type",
+            "fact_id",
+            "before",
+            "after"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "event_type": {
+              "const": "world-relocate"
+            },
+            "entity_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "reason": {
+              "enum": [
+                "continuous-travel",
+                "authored-teleport",
+                "time-jump"
+              ]
+            },
+            "before": {
+              "$ref": "#/$defs/transform"
+            },
+            "after": {
+              "$ref": "#/$defs/transform"
+            },
+            "previous_location_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "next_location_id": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            "cause": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            }
+          },
+          "required": [
+            "event_type",
+            "entity_id",
+            "reason",
+            "before",
+            "after",
+            "previous_location_id",
+            "next_location_id",
+            "cause"
+          ]
+        }
+      ]
+    },
+    "world-entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entity_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "entity_type": {
+          "enum": [
+            "character",
+            "prop",
+            "environment"
+          ]
+        },
+        "asset": {
+          "$ref": "#/$defs/ref"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/revision-pin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "instances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/world-instance"
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "location_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "physical_presence": {
+          "type": "boolean"
+        },
+        "render_visible": {
+          "type": "boolean"
+        },
+        "visibility_reason": {
+          "enum": [
+            "visible",
+            "out-of-frame",
+            "occluded",
+            "hidden",
+            "absent"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "parent_entity_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costume": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/world-costume"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accessories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/world-accessory"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "environment": {
+          "$ref": "#/$defs/world-environment"
+        }
+      },
+      "required": [
+        "entity_id",
+        "entity_type",
+        "asset",
+        "revision",
+        "instances",
+        "location_id",
+        "physical_presence",
+        "render_visible",
+        "visibility_reason",
+        "enabled",
+        "parent_entity_id",
+        "costume",
+        "accessories",
+        "attachments",
+        "environment"
+      ]
+    },
+    "revision-pin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "revision_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "semantic_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        }
+      },
+      "required": [
+        "identity_id",
+        "revision_id",
+        "semantic_version",
+        "sha256"
+      ]
+    },
+    "world-instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "shot_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "node_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "render_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "id",
+        "shot_id",
+        "node_id",
+        "render_ids"
+      ]
+    },
+    "world-costume": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "costume": {
+          "$ref": "#/$defs/ref"
+        },
+        "compatible_revisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/revision-pin"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "clothing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "materials": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "textures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "visible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "visible"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "approved_combination": {
+          "$ref": "#/$defs/ref"
+        },
+        "appearance": {
+          "enum": [
+            "clean",
+            "worn",
+            "dirty",
+            "damaged"
+          ]
+        },
+        "physics_state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reference_renders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "costume",
+        "compatible_revisions",
+        "clothing",
+        "materials",
+        "textures",
+        "attachments",
+        "layers",
+        "approved_combination",
+        "appearance",
+        "physics_state",
+        "reference_renders"
+      ]
+    },
+    "world-accessory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "asset": {
+          "$ref": "#/$defs/ref"
+        },
+        "status": {
+          "enum": [
+            "equipped",
+            "removed",
+            "damaged"
+          ]
+        },
+        "attachment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "material": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "asset",
+        "status",
+        "attachment",
+        "material"
+      ]
+    },
+    "world-environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "door": {
+          "enum": [
+            "open",
+            "closed",
+            "ajar",
+            "broken"
+          ]
+        },
+        "light_on": {
+          "type": "boolean"
+        },
+        "device": {
+          "enum": [
+            "active",
+            "inactive",
+            "broken"
+          ]
+        },
+        "condition": {
+          "enum": [
+            "intact",
+            "damaged",
+            "destroyed",
+            "repaired"
+          ]
+        },
+        "weather": {
+          "enum": [
+            "clear",
+            "cloudy",
+            "rain",
+            "snow",
+            "storm",
+            "unknown"
+          ]
+        },
+        "time_of_day": {
+          "enum": [
+            "dawn",
+            "day",
+            "dusk",
+            "night",
+            "unknown"
+          ]
+        },
+        "atmosphere": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lighting": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": []
+    },
+    "world-fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "scope": {
+          "$ref": "#/$defs/world-fact-scope"
+        },
+        "category": {
+          "enum": [
+            "knowledge",
+            "objective",
+            "relationship",
+            "intention",
+            "emotion",
+            "discovery",
+            "action",
+            "consequence",
+            "milestone",
+            "condition",
+            "other"
+          ]
+        },
+        "certainty": {
+          "enum": [
+            "definitive",
+            "inferred",
+            "unknown",
+            "unresolved"
+          ]
+        },
+        "value": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ],
+          "maxLength": 4096
+        },
+        "causes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "id",
+        "scope",
+        "category",
+        "certainty",
+        "value",
+        "causes",
+        "evidence"
+      ]
+    },
+    "world-fact-scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "project",
+            "world",
+            "scene",
+            "character",
+            "shot",
+            "trait",
+            "time-bounded"
+          ]
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_tick": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_tick": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "subject",
+        "start_tick",
+        "end_tick"
       ]
     }
   },

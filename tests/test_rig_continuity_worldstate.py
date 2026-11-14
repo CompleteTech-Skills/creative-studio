@@ -189,7 +189,41 @@ class WorldStateTests(unittest.TestCase):
         event=rich_event('fact',2002,dict(event_type='world-fact',fact_id='caused',before=None,after=fact))
         with self.assertRaisesRegex(ValueError,'cause'):
             self.registry.append_events('main',[event],expected_sha256=head)
-        after=deepcopy(self.world['entities'][0]);after['asset']={**after['asset'],'id':'different'}
+        after=deepcopy(self.world['entities'][0]);after['revision']['revision_id']='different'
         invalid=rich_event('replacement',2002,dict(event_type='world-entity',entity_id='aster',reason='costume-change',before=self.world['entities'][0],after=after))
         with self.assertRaisesRegex(ValueError,'identity'):
             self.registry.append_events('main',[invalid],expected_sha256=head)
+
+    def test_accessory_equipped_then_removed_has_retained_scene_history(self):
+        accessory=dict(id='badge',asset=pointer(),status='equipped',attachment=None,material=None)
+        wear=entity_event(self.world,'equip-badge',1001,entity_id='aster',reason='accessory-change',accessories=[accessory])
+        incoming=deepcopy(self.world);incoming['entities'][0]['accessories']=[accessory]
+        self.incoming(incoming);head=self.create([wear])
+        self.assertEqual(self.snapshot('shot-2',0)['world_state']['entities'][0]['accessories'],[accessory])
+        before=deepcopy(incoming['entities'][0]);after=deepcopy(before);after['accessories'][0]['status']='removed'
+        remove=rich_event('remove-badge',2002,dict(event_type='world-entity',entity_id='aster',reason='accessory-change',before=before,after=after),prerequisites=['equip-badge'])
+        self.registry.append_events('main',[remove],expected_sha256=head)
+        self.assertEqual(self.snapshot('shot-2',1)['world_state']['entities'][0]['accessories'][0]['status'],'removed')
+        self.assertEqual(self.registry.temporal_history('main',revision=head)['events'],[wear])
+
+    def test_intentional_relocation_uses_explicit_mapped_location_and_cause(self):
+        self.create();head=self.registry.temporal_history('main')['sha256']
+        before=dict(translation=[2,0,0],rotation=[0,0,0,1],scale=[1,1,1])
+        after=deepcopy(before);after['translation']=[7,0,0]
+        operation=dict(event_type='world-relocate',entity_id='aster',reason='time-jump',before=before,after=after,
+                       previous_location_id='stage',next_location_id='unmapped',cause='authored offscreen travel')
+        event=rich_event('travel',2002,operation)
+        with self.assertRaisesRegex(ValueError,'unmapped'):
+            self.registry.append_events('main',[event],expected_sha256=head)
+        operation['next_location_id']='stage'
+        self.registry.append_events('main',[event],expected_sha256=head)
+        self.assertEqual(next(e for e in self.snapshot(frame=2)['entities'] if e['entity_id']=='aster')['transform']['translation'],[7,0,0])
+
+    def test_exact_native_asset_and_registry_pin_cannot_be_substituted(self):
+        bad=deepcopy(self.plan);bad['world_state']['entities'][0]['asset']=pointer()
+        for scene in bad['scenes']:scene['incoming_world_state']=deepcopy(bad['world_state'])
+        with self.assertRaisesRegex(ValueError,'canonical registry|native scene'):
+            self.registry.create_timeline(bad)
+        bad=deepcopy(self.plan);bad['world_state']['entities'][0]['revision']['sha256']='0'*64
+        with self.assertRaisesRegex(ValueError,'canonical registry'):
+            self.registry.create_timeline(bad)

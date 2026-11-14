@@ -409,6 +409,17 @@ class TemporalRegistryMixin:
         current = self.db.execute('SELECT hash FROM temporal_heads WHERE id=?', (identifier,)).fetchone()
         if (current[0] if current else None) != expected:
             fail('CONFLICT', 'stale temporal revision')
+        from continuity_contracts import MAX_BYTES
+        if len(record['events']) > MAX_EVENTS:
+            fail('LIMIT', 'too many temporal events')
+        # Rich before/after records can be individually valid but collectively
+        # excessive. Bound the immutable history before replay or serializing a
+        # single large aggregate; only one bounded event encoding is live here.
+        encoded_size = len(canonical_bytes(plan)) + 128 + 68 * len(record['parents'])
+        for event in record['events']:
+            encoded_size += len(canonical_bytes(event)) + 1
+            if encoded_size > MAX_BYTES:
+                fail('LIMIT', 'immutable temporal history exceeds document byte budget')
         # Verify persistent identity binding where one is declared. The native
         # scene/node mapping remains explicit; no new identity is minted here.
         for scene in plan['scenes']:
@@ -441,6 +452,8 @@ class TemporalRegistryMixin:
     def append_events(self, timeline_id, events, *, expected_sha256):
         if not isinstance(events, list) or not events:
             fail('EVENT', 'append requires a nonempty event batch')
+        if len(events) > MAX_EVENTS:
+            fail('LIMIT', 'too many appended temporal events')
         events = [validate_document(e, 'temporal-event') for e in events]
         with self._transaction():
             previous = self.temporal_history(timeline_id)

@@ -141,3 +141,8 @@ as appended events. Contradicting native state or invalid initial events reject 
 any timeline head is persisted. Omitting events retains empty-history creation.
 
 A retained trace can be reproduced with `python tests/continuity_temporal_probe.py NEW_OUTPUT_DIRECTORY`. It writes the native fixture, event history, exact snapshots and source/runtime hashes. The SQLite file is a disposable probe sidecar, never an approved asset.
+
+Issue 117 adds explicitly selected `1.1.0` rich world-state plans, events and
+snapshots through this same temporal owner. See [persistent world state](continuity-worldstate.md)
+for costume/accessory, physical presence, location, environment and scoped
+knowledge contracts. Original `1.0.0` records retain their closed shapes.
