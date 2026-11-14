@@ -88,7 +88,7 @@ class PhysicsBackendAdmissionTests(unittest.TestCase):
                 value=deepcopy(self.world);mutate(value)
                 error_code(self,code,lambda:self.backend.validate_scene(value))
 
-    def test_valid_joint_and_force_requests_are_explicit_capability_errors(self):
+    def test_unsupported_joint_controls_and_force_requests_are_explicit_capability_errors(self):
         joint=dict(id='hinge',type='hinge',body_a='ball',body_b='floor',
             anchor_a=dict(translation=[0,0,0],rotation=[0,0,0,1]),anchor_b=dict(translation=[0,0,0],rotation=[0,0,0,1]),
             axis=[1,0,0],limits=[-1,1],stiffness=1,damping=.1,motor_velocity=0,motor_max_force=0,collide_connected=False)
@@ -96,7 +96,7 @@ class PhysicsBackendAdmissionTests(unittest.TestCase):
             frame_range=dict(start=0,end=49),strength=1,seed=1,categories=['rigid-body'])
         for key,item in [('joints',joint),('forces',force)]:
             value=deepcopy(self.world);value[key]=[item]
-            error_code(self,'PHYSICS_CAPABILITY_UNAVAILABLE' if key=='joints' else 'PHYSICS_FORCE_UNSUPPORTED',lambda:self.backend.validate_scene(value))
+            error_code(self,'PHYSICS_JOINT_UNSUPPORTED' if key=='joints' else 'PHYSICS_FORCE_UNSUPPORTED',lambda:self.backend.validate_scene(value))
 
     def test_box_property_storage_is_not_extra_contact_skin_support(self):
         value=deepcopy(self.world)
@@ -496,17 +496,18 @@ class BlenderPhysicsLifecycleTests(unittest.TestCase):
         modified=replace(self.result,usage={**self.result.usage,'solver_steps':0})
         error_code(self,'PHYSICS_OWNERSHIP',lambda:self.backend.bake(modified,self.path/'forged'))
         import atomic_publish
-        original=atomic_publish._rename_no_replace
+        original=atomic_publish.rename_no_replace_at
         target=self.path/'racing'
         unrelated=self.path/'.unrelated-stage';unrelated.mkdir();(unrelated/'sentinel').write_bytes(b'preserve')
-        def racing(stage,destination):
-            Path(destination).mkdir()
-            return original(stage,destination)
-        with patch.object(atomic_publish,'_rename_no_replace',racing):
+        def racing(source_fd,source_name,destination_fd,destination_name):
+            os.mkdir(destination_name,dir_fd=destination_fd)
+            return original(source_fd,source_name,destination_fd,destination_name)
+        with patch.object(atomic_publish,'rename_no_replace_at',racing):
             error_code(self,'PHYSICS_DESTINATION_EXISTS',lambda:self.backend.bake(self.result,target))
         self.assertTrue(target.is_dir());self.assertEqual(list(target.iterdir()),[])
         self.assertEqual((unrelated/'sentinel').read_bytes(),b'preserve')
-        self.assertFalse(any(self.path.glob('.racing.physics-*')))
+        for wrapper in self.path.glob('.physics-*'):
+            self.assertEqual(list(wrapper.iterdir()),[])
         link=self.path/'link';absent=self.path/'absent';link.symlink_to(absent,target_is_directory=True)
         error_code(self,'PHYSICS_DESTINATION_EXISTS',lambda:self.backend.bake(self.result,link))
         self.assertTrue(link.is_symlink());self.assertFalse(absent.exists())

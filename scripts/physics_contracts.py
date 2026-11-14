@@ -128,13 +128,15 @@ def definitions() -> dict:
                  'linear_velocity', 'angular_velocity', 'colliders', 'animation'])
     body['properties']['sleep'] = obj(dict(enabled={'type': 'boolean'}, initially_sleeping={'type': 'boolean'},
         linear_threshold=dict(type='number', minimum=0, maximum=100), angular_threshold=dict(type='number', minimum=0, maximum=100)), ['enabled', 'initially_sleeping'])
-    joint = obj(dict(id=identifier, type={'enum': ['fixed', 'hinge', 'slider', 'ball', 'spring', 'generic-6dof']},
+    joint = obj(dict(id=identifier, type={'enum': ['fixed', 'hinge', 'slider', 'ball', 'point', 'spring', 'generic-6dof']},
                      body_a=identifier, body_b=identifier, anchor_a=transform, anchor_b=transform,
                      axis=vector, limits=arr(number, 2, 2), stiffness=nonnegative,
                      damping=nonnegative, motor_velocity=number, motor_max_force=nonnegative,
                      break_force=positive, collide_connected={'type': 'boolean'}),
                 ['id', 'type', 'body_a', 'body_b', 'anchor_a', 'anchor_b', 'axis', 'limits',
                  'stiffness', 'damping', 'motor_velocity', 'motor_max_force', 'collide_connected'])
+    joint['properties']['linear_limits'] = arr(arr(number, 2, 2), 3, 3)
+    joint['properties']['angular_limits'] = arr(arr(number, 2, 2), 3, 3)
     force = obj(dict(id=identifier, type={'enum': ['force', 'impulse', 'torque', 'angular-impulse', 'wind', 'drag', 'turbulence', 'vortex']},
                      bodies=arr(identifier, 1, 10000), vector=vector, point=vector,
                      frame_range=frame_range, strength=nonnegative, seed=integer,
@@ -183,7 +185,7 @@ def definitions() -> dict:
                        cpu_workers=dict(type='integer',minimum=1,maximum=64),
                        concurrent_jobs=dict(type='integer',minimum=1,maximum=64),
                        restart_attempts=dict(type='integer',minimum=0,maximum=99), timeout_seconds=positive))
-    solver = obj(dict(backend={'enum': ['blender', 'pybullet']}, adapter_version=version,
+    solver = obj(dict(backend={'enum': ['blender', 'pybullet', 'particles-native']}, adapter_version=version,
                       fixed_step=rate, substeps=dict(type='integer', minimum=1, maximum=1024),
                       iterations=dict(type='integer', minimum=1, maximum=1000),
                       seed=integer, quality={'enum': ['draft', 'preview', 'production', 'custom']},
@@ -202,7 +204,9 @@ def definitions() -> dict:
                      materials=arr(material, 1, 1000), bodies=arr(body, 0, 10000),
                      components=arr(component, 0, 10000), joints=arr(joint, 0, 10000),
                      forces=arr(force, 0, 10000), events=arr(event, 0, 100000)))
-    backend = obj(dict(id={'enum': ['blender', 'pybullet']}, adapter_version=version,
+    world['properties']['collision_profile'] = {'const': 'explicit-proxies-v1'}
+    world['properties']['collision_exclusions'] = arr(arr(identifier, 2, 2), 0, 496)
+    backend = obj(dict(id={'enum': ['blender', 'pybullet', 'particles-native']}, adapter_version=version,
                        solver_name=text, solver_version=text, application_version=text,
                        platform=text, precision={'enum': ['float32', 'float64', 'mixed']},
                        device={'enum': ['cpu', 'gpu']}, executable_sha256=digest))
@@ -411,6 +415,14 @@ def _world(world: dict) -> None:
                     'PHYSICS_REFERENCE', 'Unknown PBR material.', '/materials/' + identifier)
     aliases = [unicodedata.normalize('NFC', item['path']).casefold() for item in world['assets']]
     require(len(aliases) == len(set(aliases)), 'PHYSICS_PATH_ALIAS', 'Asset paths must not alias.', '/assets')
+    excluded_pairs = set()
+    for pair in world.get('collision_exclusions', []):
+        require(pair[0] != pair[1] and set(pair) <= set(bodies), 'PHYSICS_REFERENCE',
+                'Collision exclusion requires two distinct body IDs.', '/collision_exclusions')
+        key = tuple(sorted(pair))
+        require(key not in excluded_pairs, 'PHYSICS_DUPLICATE_ID',
+                'Collision exclusion pair is duplicated.', '/collision_exclusions')
+        excluded_pairs.add(key)
     collider_ids = set()
     for identifier, body in bodies.items():
         path = '/bodies/' + identifier

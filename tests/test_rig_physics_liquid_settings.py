@@ -1,0 +1,97 @@
+from copy import deepcopy
+from fractions import Fraction
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+import physics_backends as core
+from physics_liquid_example import build_liquid_inputs
+from physics_liquid_settings import admit,validate_settings,schemas
+
+
+class LiquidSettingsTests(unittest.TestCase):
+    def test_exact_adapter_and_supported_reproducibility_preserve_source_identity(self):
+        for reproducibility in ('not-guaranteed','verified-cache-replay'):
+            with self.subTest(reproducibility=reproducibility):
+                world,_,settings=build_liquid_inputs()
+                world['solver']['reproducibility']=reproducibility
+                original=core.canonical(world)
+                checked,_=admit(world,settings)
+                self.assertEqual(core.canonical(checked),original)
+                self.assertEqual(core.canonical(world),original)
+        for key,value,code in [('adapter_version','999.0.0','PHYSICS_BACKEND'),
+            ('reproducibility','pinned-numerical','PHYSICS_REPRODUCIBILITY'),
+            ('reproducibility','approximate','PHYSICS_REPRODUCIBILITY')]:
+            with self.subTest(key=key,value=value):
+                world,_,settings=build_liquid_inputs()
+                world['solver'][key]=value
+                original=core.canonical(world)
+                with self.assertRaises(core.BackendError) as raised:admit(world,settings)
+                self.assertEqual(raised.exception.report['code'],code)
+                self.assertEqual(core.canonical(world),original)
+
+    def test_native_clock_representability_is_checked_before_execution(self):
+        for numerator,denominator,accepted in [(24,1,True),(30000,1001,True),(240,1,True),
+            (1000000,1,False),(1000000,33333,False),(1,2,False)]:
+            with self.subTest(numerator=numerator,denominator=denominator):
+                world,_,settings=build_liquid_inputs()
+                world['budgets']['duration_seconds']=1000000
+                world['fps']=dict(numerator=numerator,denominator=denominator)
+                step=Fraction(denominator,numerator)
+                world['solver']['fixed_step']=dict(numerator=step.numerator,denominator=step.denominator)
+                if accepted:admit(world,settings)
+                else:
+                    with self.assertRaises(core.BackendError) as raised:admit(world,settings)
+                    self.assertEqual(raised.exception.report['code'],'PHYSICS_LIQUID_UNSUPPORTED')
+
+    def test_integer_valued_domain_resolution_preserves_source_bytes(self):
+        world,_,settings=build_liquid_inputs()
+        world['components'][0]['resolution']=[24.,24.,24.]
+        original=core.canonical(world)
+        checked,_=admit(world,settings)
+        self.assertEqual(core.canonical(world),original)
+        self.assertEqual(core.canonical(checked),original)
+        self.assertTrue(all(type(v) is float for v in checked['components'][0]['resolution']))
+
+    def test_static_and_authored_obstacle_reuse_real_native_source_owner(self):
+        for moving in [False,True]:
+            world,payloads,settings=build_liquid_inputs(moving=moving)
+            before=deepcopy(world);checked,options=admit(world,settings)
+            self.assertEqual(world,before)
+            with tempfile.TemporaryDirectory() as folder:
+                root=Path(folder)
+                for path,payload in payloads.items():core._write(root/path,payload)
+                bundle,meshes,v,t=core._source_admission(root,checked,'project.json')
+                self.assertEqual(len(meshes),7 if moving else 6)
+                self.assertEqual(v,len(meshes)*8);self.assertEqual(t,len(meshes)*12)
+                if moving:self.assertEqual(meshes['paddle']['motion']['keys'][0]['value'],[-.5,.45,0])
+                self.assertEqual(set(bundle['inventory']),set(payloads))
+
+    def test_render_timing_and_allocation_settings_fail_closed(self):
+        _,_,base=build_liquid_inputs()
+        for key,value in [('render_frames',[0,48]),('render_frames',[0,0]),('render_size',True),('mesh_scale',3),
+            ('initial_velocity',[float('nan'),0,0]),('initial_velocity',[21,0,0]),('boundaries',{'top':True}),
+            ('maximum_substeps',False),('flow_behavior','SCRIPT')]:
+            with self.subTest(key=key,value=value),self.assertRaises((core.BackendError,ValueError)):
+                validate_settings({**base,key:value},48)
+        with self.assertRaises(core.BackendError):validate_settings({**base,'unrecognized':1},48)
+
+    def test_unimplemented_physical_requests_are_not_ignored(self):
+        world,_,settings=build_liquid_inputs()
+        changes=[lambda w:w['components'][0].update(max_secondary_particles=1),
+            lambda w:w['components'][0].update(density=500),lambda w:w['solver'].update(iterations=20),
+            lambda w:w['components'][0].update(resolution=[24,12,24]),
+            lambda w:w['components'][0].update(viscosity=2)]
+        for change in changes:
+            w=deepcopy(world);change(w)
+            with self.assertRaises(core.BackendError):admit(w,settings)
+
+    def test_generated_schema_has_exact_fields_and_matches_validated_settings(self):
+        import jsonschema
+        world,_,settings=build_liquid_inputs()
+        schema=schemas()['physics-liquid-settings.schema.json']
+        jsonschema.Draft202012Validator(schema).validate(settings)
+        self.assertFalse(schema['additionalProperties'])
+        self.assertEqual(set(schema['required']),set(settings))
+        self.assertEqual(admit(world,settings)[1],settings)

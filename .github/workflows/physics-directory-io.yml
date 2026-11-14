@@ -1,0 +1,68 @@
+name: Physics owned directory transport
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  directory-io:
+    name: Physics directory I/O (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash --noprofile --norc -eo pipefail {0}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Actual POSIX descriptor and process contracts
+        if: runner.os != 'Windows'
+        run: |
+          python -B -m unittest discover -s tests -p test_rig_physics_descriptor_io.py -v
+          python -B -m unittest discover -s tests -p test_rig_physics_directory_transport.py -v
+          python -B -m unittest discover -s tests -p test_rig_physics_directory_runner.py -v
+      - name: Actual unsupported Windows physics boundaries
+        if: runner.os == 'Windows'
+        run: |
+          python -I - <<'PY'
+          import errno
+          import subprocess
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path('scripts').resolve()))
+          import physics_backends as core
+          import physics_directory_transport as transport
+          assert sys.platform == 'win32'
+          try:
+              core._Reader.from_descriptor(0)
+          except core.BackendError as error:
+              assert error.report['code'] == 'PHYSICS_PLATFORM_UNSUPPORTED'
+          else:
+              raise AssertionError('Windows directory reader unexpectedly admitted POSIX transport')
+          try:
+              transport.launch_at(0, [sys.executable, '-I', '-c', 'raise SystemExit(1)'],
+                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={})
+          except OSError as error:
+              assert error.errno == errno.ENOTSUP
+          else:
+              raise AssertionError('Windows worker unexpectedly admitted POSIX transport')
+          try:
+              with core._slot():
+                  raise AssertionError('Windows worker unexpectedly claimed POSIX ownership')
+          except core.BackendError as error:
+              assert error.report['code'] == 'PHYSICS_PLATFORM_UNSUPPORTED'
+          print('Three actual unsupported-platform checks passed; no POSIX test was reported executed.')
+          PY
