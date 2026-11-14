@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scene3d_contracts import canonical_bytes, load_project
 from scene3d_example import build_example
@@ -94,6 +95,31 @@ class CliAdmissionTests(unittest.TestCase):
         self.assertEqual((existing / 'marker').read_bytes(), b'preserved')
         self.assertFalse((self.root / 'missing-parent').exists())
         self.assertEqual(load_project(self.source)['inventory'], before)
+
+    def test_all_mutating_routes_pin_the_admitted_source_across_concurrent_changes(self):
+        import scene3d
+        import scene3d_snapshot
+        from rig_errors import RigError
+        actual_snapshot = scene3d_snapshot.snapshot_project
+        counter = 0
+        for arguments in self.all_routes():
+            for dry_run in (True, False):
+                target = self.root / ('source-race-' + str(counter))
+                label = 'CONCURRENT USER PROJECT ' + str(counter)
+                counter += 1
+                def interleave(*args, **kwargs):
+                    current = load_project(self.source)['project']
+                    current['name'] = label
+                    (self.source / 'project.json').write_bytes(canonical_bytes(current))
+                    load_project(self.source)  # A valid actual concurrent source edit.
+                    return actual_snapshot(*args, **kwargs)
+                tokens = arguments + ['--destination', str(target)] + (['--dry-run'] if dry_run else [])
+                with self.subTest(route=arguments[:2], dry_run=dry_run), \
+                     patch.object(scene3d_snapshot, 'snapshot_project', side_effect=interleave):
+                    with self.assertRaises(RigError):
+                        scene3d.execute(scene3d._parser().parse_args(tokens))
+                self.assertFalse(target.exists())
+                self.assertEqual(load_project(self.source)['project']['name'], label)
 
     def test_valid_dry_runs_preserve_sources_and_publish_nothing(self):
         before = load_project(self.source)['inventory']

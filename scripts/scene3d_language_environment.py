@@ -87,7 +87,8 @@ def _preflight_project(graph, recipes, *, destination=None):
     output = destination if destination is not None else Path(source).absolute().parent / ('.scene3d-language-preflight-' + uuid4().hex)
     snapshot_project(source, output,
                      candidate, scene_path=scene_path, derived_documents=documents,
-                     extra_payloads=payloads, dry_run=True)
+                     extra_payloads=payloads, dry_run=True,
+                     expected_project_sha256=bundle['inventory']['project.json']['sha256'])
 
 
 def _preflight_edit(graph, candidate):
@@ -113,7 +114,8 @@ def _preflight_edit(graph, candidate):
                           animation_documents=candidate._animation_documents,
                           animation_payloads=candidate._animation_payloads)
     snapshot_project(source, Path(source).absolute().parent / ('.scene3d-language-preflight-' + uuid4().hex),
-                     prepared, scene_path=scene_path, derived_documents=candidate.derived_documents(), dry_run=True)
+                     prepared, scene_path=scene_path, derived_documents=candidate.derived_documents(), dry_run=True,
+                     expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     return 'project-closure'
 
 
@@ -163,7 +165,8 @@ def apply_environment_plan(source, destination, scene_path, plan, *, dry_run=Fal
     from scene3d_graph import SceneGraph
     from scene3d_environment import apply_recipes
     require(isinstance(plan, dict) and isinstance(plan.get('original_text'), str), 'Invalid environment plan.')
-    graph = SceneGraph.from_bundle(load_project(source), scene_path, source_root=source)
+    bundle = load_project(source)
+    graph = SceneGraph.from_bundle(bundle, scene_path, source_root=source)
     require(type(plan.get('base_revision')) is int and plan['base_revision'] == graph.revision and
             plan.get('base_sha256') == graph.digest, 'Scene changed after environment planning.',
             'SCENE3D_LANGUAGE_STALE')
@@ -175,6 +178,7 @@ def apply_environment_plan(source, destination, scene_path, plan, *, dry_run=Fal
         from scene3d_snapshot import _new_destination
         _new_destination(destination)
         return {'dry_run': True, 'plan': plan, 'destination': str(destination)}
-    result = apply_recipes(source, destination, scene_path, plan['recipes'])
+    result = apply_recipes(source, destination, scene_path, plan['recipes'],
+                           expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     result['language_plan'] = plan
     return result

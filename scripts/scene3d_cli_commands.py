@@ -22,6 +22,9 @@ def add_parsers(sub):
     for category in ('scene', 'asset', 'object', 'prefab', 'camera', 'shot', 'lighting', 'environment'):
         group = sub.add_parser(category, help='Native ' + category + ' inspection and typed operations')
         commands = group.add_subparsers(dest='action', required=True)
+        if category == 'asset':
+            from scene3d_cli_assets import add_parsers as add_asset_parsers
+            add_asset_parsers(commands)
         if category in ('scene', 'asset', 'prefab', 'camera', 'shot'):
             command = commands.add_parser('list')
             command.add_argument('--project', required=True, type=Path)
@@ -86,7 +89,8 @@ def execute(args):
             return {'dry_run': True, 'recipes': recipes, 'generated_nodes': sum(map(len, geometry)),
                     'triangles': sum(len(item['mesh'].triangles) for group in geometry for item in group),
                     'destination': str(args.destination)}
-        return apply_recipes(args.project, args.destination, args.scene, recipes)
+        return apply_recipes(args.project, args.destination, args.scene, recipes,
+                             expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     if args.action in OPERATIONS.get(args.command, {}):
         from asset_library import read_source_bytes
         from rig_errors import decode_json
@@ -112,7 +116,8 @@ def execute(args):
             {'operation': OPERATIONS[args.command][args.action], 'parameters': parameters}]}
         applied = apply_commands(graph, PrefabLibrary.from_files(args.project, bundle), batch)
         result = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
-                                  derived_documents=applied['derived_documents'], dry_run=args.dry_run)
+                                  derived_documents=applied['derived_documents'], dry_run=args.dry_run,
+                                  expected_project_sha256=bundle['inventory']['project.json']['sha256'])
         result['operations'] = len(applied['results'])
         return result
     if args.command in ('object', 'camera') and args.action != 'list':

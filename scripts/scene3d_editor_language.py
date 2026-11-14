@@ -50,10 +50,12 @@ def apply_repository_plan(repository, plan, transaction_id):
         if inner.get('kind') == 'scene3d-environment-language-plan':
             result = apply_environment_plan(root, destination, scene_path, inner)
             return result['snapshot']['active_scene']['path']
-        graph = SceneGraph.from_bundle(load_project(root), scene_path, source_root=root)
-        result = apply_plan(graph, PrefabLibrary.from_files(root, load_project(root)), inner)
+        bundle = load_project(root)
+        graph = SceneGraph.from_bundle(bundle, scene_path, source_root=root)
+        result = apply_plan(graph, PrefabLibrary.from_files(root, bundle), inner)
         receipt = snapshot_project(root, destination, graph, scene_path=scene_path,
-                                   derived_documents=result['derived_documents'])
+                                   derived_documents=result['derived_documents'],
+                                   expected_project_sha256=bundle['inventory']['project.json']['sha256'])
         return receipt['active_scene']['path']
     return repository.transact_native(plan['expected_revision'], transaction_id, {'language_plan': plan}, build,
         expected_sha256=plan['expected_sha256'], label='Apply reviewed scene language plan')

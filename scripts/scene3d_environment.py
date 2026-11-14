@@ -162,7 +162,7 @@ def _prepare_recipe(bundle,scene,recipe,*,policy='preserve',offset=None,parent=N
                 triangles=sum(len(o['mesh'].triangles) for o in objects))
 
 
-def apply_recipes(source,destination,scene_path,recipes,*,policy='preserve',offsets=None,parents=None):
+def apply_recipes(source,destination,scene_path,recipes,*,policy='preserve',offsets=None,parents=None,expected_project_sha256=None):
     """Prepare up to 16 named recipes, validate together, and publish one snapshot.
 
     Offsets are local translations and parents are exact node IDs. Both are
@@ -175,6 +175,8 @@ def apply_recipes(source,destination,scene_path,recipes,*,policy='preserve',offs
     offsets={} if offsets is None else offsets;parents={} if parents is None else parents
     require(isinstance(offsets,dict) and isinstance(parents,dict) and not (set(offsets)|set(parents))-set(ids),'Placement maps must select batch recipe IDs.')
     bundle=load_project(source)
+    require(expected_project_sha256 is None or bundle['inventory']['project.json']['sha256']==expected_project_sha256,
+            'Source project differs from the expected exact revision.','SCENE3D_SOURCE_CHANGED')
     require(scene_path in bundle['documents'],'Unknown selected scene.')
     scene=deepcopy(bundle['documents'][scene_path]);documents={};payloads={};conflicts=[];generated=0;triangles=0
     context=dict(bundle);context['documents']=dict(bundle['documents'])
@@ -188,7 +190,8 @@ def apply_recipes(source,destination,scene_path,recipes,*,policy='preserve',offs
         documents.update(prepared['documents']);context['documents'].update(prepared['documents']);conflicts+=prepared['conflicts']
     scene['revision']+=1
     graph=SceneGraph(scene)
-    result=snapshot_project(source,destination,graph,scene_path=scene_path,derived_documents=documents,extra_payloads=payloads)
+    result=snapshot_project(source,destination,graph,scene_path=scene_path,derived_documents=documents,extra_payloads=payloads,
+        expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     return dict(snapshot=result,conflicts=sorted(set(conflicts)),generated=generated)
 
 

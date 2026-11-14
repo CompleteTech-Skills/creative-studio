@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -167,6 +169,48 @@ class NativeAssetCommandTests(unittest.TestCase):
             self.assertEqual(next(node['name'] for node in remaining['nodes'] if node['id'] == 'mesh'),
                              'CONCURRENT USER EDIT')
         self.assertEqual((self.library_root / 'library.sqlite3').read_bytes(), library_before)
+
+    def test_parent_cli_import_version_export_attach_and_project_discovery(self):
+        cli = [sys.executable, str(Path(__file__).resolve().parents[1] / 'scripts/scene3d.py'), 'asset']
+        library = self.root / 'cli-library'
+        def run(arguments):
+            result = subprocess.run(cli + arguments, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout)
+        imported = run(['import', '--library', str(library), '--create-library', '--source', str(self.source),
+            '--asset-id', 'cli-model', '--attribution', 'Fixture author', '--license-file', str(self.license), '--fixture'])
+        self.assertTrue(imported['fixture'])
+        self.assertTrue(imported['independent_validator']['ok'])
+        self.assertEqual(imported['geometry']['triangles'], 2)
+        reference = self.root / 'cli-reference.json'
+        reference.write_text(json.dumps(imported['reference']))
+        versioned = run(['version', '--library', str(library), '--source', str(self.source),
+            '--reference-file', str(reference), '--version', '1.0.1', '--attribution', 'Fixture author',
+            '--license-file', str(self.license), '--fixture'])
+        self.assertEqual(versioned['previous_reference'], imported['reference'])
+        self.assertEqual(versioned['reference']['version'], '1.0.1')
+        package = self.root / 'cli-export'
+        run(['export', '--library', str(library), '--reference-file', str(reference), '--destination', str(package)])
+        self.assertEqual((package / 'imports/cli-model/1.0.0/native/source/model.glb').read_bytes(), self.original)
+        project = self.root / 'cli-project'
+        bundle = build_example(project)
+        graph = SceneGraph.from_bundle(bundle, 'example-scene.json', source_root=project)
+        target = self.root / 'cli-attached'
+        arguments = ['attach', '--library', str(library), '--reference-file', str(reference),
+            '--project', str(project), '--scene', 'example-scene.json', '--identifier', 'cli-instance',
+            '--expected-revision', '0', '--expected-sha256', graph.digest, '--destination', str(target)]
+        self.assertTrue(run(arguments + ['--dry-run'])['dry_run'])
+        self.assertFalse(target.exists())
+        result = run(arguments)
+        listed = run(['list', '--project', str(target)])
+        self.assertIn(imported['scene_asset_reference'], listed['assets'])
+        inspected = run(['inspect', '--project', str(target), '--identifier', imported['scene_asset_reference']['path']])
+        self.assertEqual(inspected['status'], 'valid')
+        self.assertEqual(inspected['document']['id'], imported['scene_asset_reference']['id'])
+        reopened = load_project(target)['documents'][result['active_scene']['path']]
+        self.assertEqual(len([node for node in reopened['nodes'] if node.get('asset') == imported['scene_asset_reference']]), 2)
+        self.assertEqual(load_project(project)['inventory'], bundle['inventory'])
+        self.assertEqual(self.source.read_bytes(), self.original)
 
     def test_nonfinite_scale_fails_before_library_creation_and_does_not_change_source(self):
         destination = self.root / 'not-created'

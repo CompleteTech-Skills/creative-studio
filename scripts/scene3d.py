@@ -54,7 +54,7 @@ def _parser():
 def capabilities():
     return {"schema_version": 1, "kind": "scene3d-cli-capabilities", "language_backend": "offline-grammar-v1",
             "supported": ["validated-closure-inspection", "immutable-snapshot", "language-plan", "bounded-environment-template-prose",
-                          "exact-rational-scene-evaluation", "named-native-command-adapters", "atomic-typed-batch", "exact-target-transform", "visibility-lock", "subtree-duplicate", "reparent", "safe-delete"],
+                          "exact-rational-scene-evaluation", "named-native-command-adapters", "native-asset-registration", "exact-asset-package-export", "exact-asset-project-attachment", "atomic-typed-batch", "exact-target-transform", "visibility-lock", "subtree-duplicate", "reparent", "safe-delete"],
             "language_statements": ["move TARGET 2 meters east", "position TARGET at 1, 0, 3",
                                     "scale TARGET by 2", "rotate TARGET 30 degrees around y", "hide TARGET",
                                     "show TARGET", "lock TARGET", "unlock TARGET", "duplicate TARGET as new-id",
@@ -76,6 +76,10 @@ def execute(args):
     if args.command in ("init", "archive", "restore", "impact"):
         from scene3d_cli_lifecycle import execute as execute_lifecycle
         return execute_lifecycle(args)
+    if args.command == "asset":
+        from scene3d_cli_assets import ACTIONS, execute as execute_asset
+        if args.action in ACTIONS:
+            return execute_asset(args)
     if args.command in ("scene", "asset", "object", "prefab", "camera", "shot", "lighting", "environment", "terrain", "room", "building", "layout"):
         from scene3d_cli_commands import execute as execute_native
         return execute_native(args)
@@ -101,7 +105,8 @@ def execute(args):
     if args.command == "inspect":
         return {"status": bundle["status"], "project": bundle["project"], "inventory": bundle["inventory"]}
     if args.command == "snapshot":
-        return snapshot_project(args.project, args.destination, dry_run=args.dry_run)
+        return snapshot_project(args.project, args.destination, dry_run=args.dry_run,
+                                expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     from scene3d_language import compile_description, apply_plan
     graph = SceneGraph.from_bundle(bundle, args.scene, source_root=args.project)
     if args.command == "scene-state":
@@ -119,7 +124,8 @@ def execute(args):
         library = PrefabLibrary.from_files(args.project, bundle)
         applied = apply_commands(graph, library, commands)
         result = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
-                                  derived_documents=applied["derived_documents"], dry_run=args.dry_run)
+                                  derived_documents=applied["derived_documents"], dry_run=args.dry_run,
+                                  expected_project_sha256=bundle['inventory']['project.json']['sha256'])
         result["operations"] = len(applied["results"])
         return result
     if args.command in ("apply-plan", "generate"):
@@ -144,7 +150,8 @@ def execute(args):
     library = PrefabLibrary.from_files(args.project, bundle)
     applied = apply_plan(graph, library, plan)
     result = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
-                              derived_documents=applied["derived_documents"], dry_run=args.dry_run)
+                              derived_documents=applied["derived_documents"], dry_run=args.dry_run,
+                                  expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     result["language_plan"] = plan
     return result
 
