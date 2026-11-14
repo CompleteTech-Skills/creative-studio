@@ -1,0 +1,3 @@
+# Optional local human-face/eye proposal adapter, isolated from ordinary 2D use.
+Pillow==13.0.0
+opencv-python-headless==4.13.0.92
