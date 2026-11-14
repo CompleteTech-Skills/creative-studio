@@ -97,9 +97,10 @@ jobs:
           python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json
           python -B scripts/physics_backends.py probe --backend pybullet --python "$HATCH_PYBULLET_PYTHON" --smoke > physics-evidence/pybullet-probe.json
       - name: Retain genuine native sources, real caches and transform exports
+        env:
+          HATCH_PHYSICS_DEMO_EVIDENCE: physics-evidence
         run: |
-          python -B scripts/physics_backends.py demo physics-evidence/blender-demo > physics-evidence/blender-demo.json
-          python -B scripts/physics_backends.py demo --backend pybullet --python "$HATCH_PYBULLET_PYTHON" physics-evidence/pybullet-demo > physics-evidence/pybullet-demo.json
+          python -B -m unittest discover -s tests -p test_rig_physics_demonstration.py -v 2>&1 | tee physics-evidence/demo-publication-tests.log
           python -B scripts/physics_backends.py verify physics-evidence/blender-demo/cache
           python -B scripts/physics_backends.py verify physics-evidence/pybullet-demo/cache
       - name: Verify owned publication against genuine native artifacts
