@@ -414,6 +414,34 @@ print(json.dumps({'state':result['state']}),flush=True)
         self.service.dispatch_ready('graph')
         self.assertEqual(before, [self.store.status(job) for job in self.jobs.values()])
 
+    def test_resume_interleaved_with_public_reconciliation_has_no_failed_partial_native_requeue(self):
+        submitted = self.submit()
+        cancelled = self.service.cancel_graph('graph', expected_revision=submitted['revision'])
+        native_resume = self.driver.resume
+        interleaved = False
+        def resume_and_observe(binding):
+            nonlocal interleaved
+            result = native_resume(binding)
+            if not interleaved:
+                interleaved = True
+                # Exercise an actual concurrent observer at the native/core
+                # boundary. The underlying native mutation is never mocked.
+                self.service.reconcile_graph('graph')
+            return result
+        self.driver.resume = resume_and_observe
+        try:
+            try:
+                result = self.service.resume_graph('graph', expected_revision=cancelled['revision'])
+            except RigError:
+                native = self.store.status(self.jobs['a'])
+                self.assertEqual(native['state'], 'cancelled', 'Failed Director CAS left native work requeued.')
+                self.assertTrue(native['cancel'])
+            else:
+                self.assertEqual(result['state'], 'queued')
+                self.assertFalse(result['cancel_requested'])
+        finally:
+            self.driver.resume = native_resume
+
     def test_expired_capability_never_claims_native_work(self):
         self.submit()
         self.clock_value += 3601
