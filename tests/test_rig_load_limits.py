@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -293,6 +295,86 @@ class NativeLoadLimitTests(unittest.TestCase):
         rig.manifest['skins'] = [desc if item['mesh'] == name else item for item in rig.manifest['skins']]
         (self.root / 'rig.json').write_text(json.dumps(rig.manifest))
         self.assert_before_arrays({}, 'RIG_SKIN')
+
+    def test_clip_preflight_cannot_admit_unhashed_shorter_replacement(self):
+        import rig_models
+        manifest = json.loads((self.root / 'rig.json').read_bytes())
+        before = self.hashes()
+        original = rig_models._preflight_load
+        changed = []
+        def shorter_during_preflight(*args, **kwargs):
+            for descriptor in manifest['animations']:
+                path = self.root / descriptor['path']
+                payload = path.read_bytes()
+                value = json.loads(payload)
+                value['duration'] /= 10
+                for track in value['tracks']:
+                    track['times'] = [time / 10 for time in track['times']]
+                path.write_text(json.dumps(value))
+                changed.append((path, payload))
+            try:
+                return original(*args, **kwargs)
+            finally:
+                for path, payload in changed:
+                    path.write_bytes(payload)
+        with patch('rig_models._preflight_load', side_effect=shorter_during_preflight):
+            self.assert_before_arrays({'duration': 1}, 'RIG_HASH')
+        self.assertTrue(changed)
+        self.assertEqual(before, self.hashes())
+
+    def test_live_clip_load_reapplies_all_caller_caps(self):
+        # Exercise live admission independently of a cached preflight result.
+        # Real source-bound clips and arrays are still read and verified.
+        for cap, code in (({'duration': 1}, 'RIG_LIMIT_ANIMATION'),
+                          ({'fps': 1}, 'RIG_LIMIT_ANIMATION'),
+                          ({'keyframes': 1}, 'RIG_LIMIT_KEYFRAMES')):
+            with self.subTest(cap=cap), patch('rig_models._preflight_load', return_value=None):
+                with self.assertRaises(RigError) as caught:
+                    load_rig(self.root, limits=cap)
+                self.assertEqual(caught.exception.report['code'], code)
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'FIFO unavailable.')
+    def test_fifo_replacement_between_admission_and_read_is_bounded(self):
+        # A subprocess timeout turns a blocking path.open regression into a
+        # bounded failure instead of hanging the whole suite.
+        code = r'''
+import os, tempfile
+from pathlib import Path
+from rig_errors import RigError
+from rig_contracts import DEFAULT_LIMITS
+from rig_load_limits import LoadBudget, scan_bundle
+from rig_models import _binary_bundle
+for method in ('json', 'hash', 'bundle'):
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary).resolve()
+        path = root / 'payload'
+        payload = _binary_bundle({}, {}) if method == 'bundle' else b'{}'
+        path.write_bytes(payload)
+        original = root / 'original'
+        budget = LoadBudget(DEFAULT_LIMITS)
+        real_file = budget.file
+        def replaced_after_admission(selected, **kwargs):
+            size = real_file(selected, **kwargs)
+            selected.rename(original)
+            os.mkfifo(selected)
+            return size
+        budget.file = replaced_after_admission
+        try:
+            try:
+                if method == 'bundle': scan_bundle(path, DEFAULT_LIMITS, budget)
+                else: getattr(budget, method)(path)
+            except RigError as exc:
+                assert exc.report['code'] in ('RIG_MISSING_ASSET', 'RIG_PAYLOAD_TYPE'), exc.report
+            else:
+                raise AssertionError('FIFO admitted by ' + method)
+        finally:
+            path.unlink()
+            original.rename(path)
+        assert path.read_bytes() == payload
+'''
+        result = subprocess.run([sys.executable, '-c', code], capture_output=True,
+                                text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_runtime_bundle_snapshot_hash_is_checked_before_arrays(self):
         path = Path(self.temp.name) / 'valid.npz'
