@@ -63,8 +63,11 @@ already completed first artifact and cannot produce a completed final result.
 Existing media requires `retained_receipts={profile: file_ref}` with externally
 pinned `path`, `sha256` and `bytes`, read from `receipt_root` (or `root`). Every
 retained receipt and actual movie is reverified before reuse. Neither a filename
-nor a mutable producer-side verified flag authorizes reuse. The scheduler owns
+nor a mutable producer-side verified flag authorizes reuse. The existing execution/media controller owns
 persistence, cancellation, checkpoints and publication of the returned result.
+The current scheduler runs the native render graph; media phases remain
+synchronous calls to the canonical media authority until its native driver and
+atomic admission hook are available. No unregistered export driver is implied.
 The required trusted `checkpoint(profile, receipt, request)` callback persists
 an immutable receipt before the next profile can begin and returns its exact
 file reference. The adapter reads those bytes back from `receipt_root` and

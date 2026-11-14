@@ -452,8 +452,9 @@ def encode_final_media(store, root, bindings, destinations, *, narrative=None, r
     Existing output requires a trusted externally pinned receipt file reference
     (path/SHA256/bytes), read from receipt_root or root. Every reuse is reverified.
     A failed second format does not label the production complete.
-    The caller's ExecutionService owns persistence, checkpointing and publication
-    of this returned result; this function creates no controller or status store.
+    The authoritative execution/media controller owns persistence, checkpointing
+    and publication; this function creates no controller or status store.
+    checkpoint(profile, receipt, request) must return the exact persisted FileRef.
     """
     from silent_video import make_request, encode, validate_request, validate_receipt
     paths = _media_paths(destinations)
