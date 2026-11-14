@@ -1,0 +1,544 @@
+{
+  "schema_version": 1,
+  "kind": "silent-image-sequence",
+  "source": {
+    "schema_version": 1,
+    "kind": "silent-sequence-source",
+    "origin": "blender3d",
+    "identity_sha256": "9ed136bbb9fd326a316d1268141cb76011d9a9179305af61a255eec29054f1a6",
+    "resolution": [
+      64,
+      64
+    ],
+    "fps": {
+      "numerator": 4,
+      "denominator": 1
+    },
+    "output": {
+      "format": "png",
+      "bit_depth": 8,
+      "passes": [
+        "combined"
+      ],
+      "alpha": "straight",
+      "color_space": "srgb"
+    },
+    "frames": [
+      {
+        "index": 0,
+        "source_index": 0,
+        "source_path": "frames/000000.png",
+        "path": "frames/000000.png",
+        "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+        "bytes": 2111
+      },
+      {
+        "index": 1,
+        "source_index": 1,
+        "source_path": "frames/000001.png",
+        "path": "frames/000001.png",
+        "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+        "bytes": 2178
+      },
+      {
+        "index": 2,
+        "source_index": 2,
+        "source_path": "frames/000002.png",
+        "path": "frames/000002.png",
+        "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+        "bytes": 2123
+      }
+    ]
+  },
+  "source_sha256": "3e38b1a7dc8915e14c13ec33ad6050ca49eac64cae76a4f4280440d01be3a868",
+  "request_sha256": "86596c419476af337751339edce6f427c4179d3e3659ae22f58f27ffaf2b8b76",
+  "provenance": {
+    "request": {
+      "schema_version": 1,
+      "kind": "render3d-request",
+      "id": "backend-recovery",
+      "project": {
+        "id": "fixture",
+        "version": "1.0.0"
+      },
+      "scene": {
+        "id": "fixture",
+        "version": "1.0.0"
+      },
+      "shot": {
+        "id": "motion",
+        "version": "1.0.0"
+      },
+      "mode": "3d",
+      "snapshot": {
+        "path": "snapshot.json",
+        "bytes": 1733,
+        "sha256": "20e172024463cc2ed4fcccfdd1e7a218c4330b099e36481cc13d1dff5721dde4"
+      },
+      "fps": {
+        "numerator": 4,
+        "denominator": 1
+      },
+      "frame_range": {
+        "start": 0,
+        "end": 3
+      },
+      "source_start": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "playback_rate": {
+        "numerator": 1,
+        "denominator": 1
+      },
+      "camera": "front",
+      "priority": 0,
+      "max_attempts": 1,
+      "cache_policy": "verify-reuse",
+      "destination": {
+        "path": "render",
+        "owner_token": "backend-recovery-owner"
+      },
+      "settings": {
+        "engine": "cycles",
+        "device_policy": "cpu",
+        "device": "cpu",
+        "allow_cpu_fallback": false,
+        "resolution": [
+          64,
+          64
+        ],
+        "samples": 2,
+        "seed": 4,
+        "denoise": false,
+        "output": {
+          "format": "png",
+          "bit_depth": 8,
+          "passes": [
+            "combined"
+          ],
+          "alpha": "straight",
+          "color_space": "srgb"
+        },
+        "exposure": 0,
+        "view_transform": "standard",
+        "resources": {
+          "memory_bytes": 2147483648,
+          "storage_bytes": 134217728,
+          "timeout_seconds": 120,
+          "workers": 1,
+          "max_frames": 10
+        }
+      }
+    },
+    "result": {
+      "schema_version": 1,
+      "kind": "render3d-result",
+      "job": "backend-recovery",
+      "request_sha256": "873c27e62d3428c08f3c83118bd448d755cc06a907aa0bceb13e018b44545fe9",
+      "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "status": "complete",
+      "requested_frames": [
+        0,
+        1,
+        2
+      ],
+      "successful": [
+        0,
+        1,
+        2
+      ],
+      "failed": [],
+      "skipped": [],
+      "reused": [],
+      "images": [
+        {
+          "frame": 0,
+          "file": {
+            "path": "frames/000000.png",
+            "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+            "bytes": 2111
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            64,
+            64
+          ]
+        },
+        {
+          "frame": 1,
+          "file": {
+            "path": "frames/000001.png",
+            "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+            "bytes": 2178
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            64,
+            64
+          ]
+        },
+        {
+          "frame": 2,
+          "file": {
+            "path": "frames/000002.png",
+            "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+            "bytes": 2123
+          },
+          "format": "png",
+          "bit_depth": 8,
+          "pass_name": "combined",
+          "resolution": [
+            64,
+            64
+          ]
+        }
+      ],
+      "diagnostics": [],
+      "usage": {
+        "elapsed_seconds": 0.5050398460007273,
+        "peak_memory_bytes": 424038400,
+        "output_bytes": 57242,
+        "measurement": "measured"
+      },
+      "logs": [
+        {
+          "path": "blender.log",
+          "sha256": "cef57bad992444d24da1b5a4e5089b05f1079dda5736ef9789b675fe52b5af88",
+          "bytes": 15536
+        }
+      ],
+      "manifest": {
+        "path": "manifest.json",
+        "sha256": "2e307743b7f1aca8752ac44de05238ca82342242563258076e5bde51fcb36a6b",
+        "bytes": 7317
+      },
+      "verification": {
+        "status": "passed",
+        "verifier": {
+          "id": "render3d-independent-pixels",
+          "version": "1.0.0",
+          "code_sha256": "0903f4ff8555d08e0851d082724944cfd1eade62cf94a487d2fb989595246097",
+          "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+        },
+        "evidence": {
+          "path": "verification.json",
+          "sha256": "fc33e8abe3e38620f9128b0e50e2484d292155c5a3878e2c8f5158fcb361cea4",
+          "bytes": 4368
+        }
+      }
+    },
+    "expected_backend": {
+      "id": "blender",
+      "adapter_version": "1.0.0",
+      "application_version": "Blender 4.5.3 LTS",
+      "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+      "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+      "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+      "engine": "cycles",
+      "device": "cpu"
+    },
+    "verification": {
+      "schema_version": 1,
+      "kind": "render3d-verification",
+      "status": "passed",
+      "verifier": {
+        "id": "render3d-independent-pixels",
+        "version": "1.0.0",
+        "code_sha256": "ddc91b3a7aa35d879614f0ac877b884017a6d87ab25777613cc24aa0515bb92b",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+      },
+      "request_sha256": "873c27e62d3428c08f3c83118bd448d755cc06a907aa0bceb13e018b44545fe9",
+      "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+      "settings_sha256": "51d189f904f9ae809c7ee4642598ba1ef5725e624de185b9e7c316071f8d3cb4",
+      "backend": {
+        "id": "blender",
+        "adapter_version": "1.0.0",
+        "application_version": "Blender 4.5.3 LTS",
+        "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+        "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+        "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+        "engine": "cycles",
+        "device": "cpu"
+      },
+      "images": [
+        {
+          "frame": 0,
+          "path": "frames/000000.png",
+          "presentation_time": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "source_time": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "bytes": 2111,
+          "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+          "channels": {
+            "R": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "G": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "A": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          },
+          "decoder": "pypng",
+          "decoder_version": "0.20220715.0",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 8,
+          "format": "png",
+          "pass_name": "combined",
+          "requested_color_space": "srgb",
+          "requested_alpha": "straight"
+        },
+        {
+          "frame": 1,
+          "path": "frames/000001.png",
+          "presentation_time": {
+            "numerator": 1,
+            "denominator": 4
+          },
+          "source_time": {
+            "numerator": 1,
+            "denominator": 4
+          },
+          "bytes": 2178,
+          "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+          "channels": {
+            "R": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "G": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "A": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          },
+          "decoder": "pypng",
+          "decoder_version": "0.20220715.0",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 8,
+          "format": "png",
+          "pass_name": "combined",
+          "requested_color_space": "srgb",
+          "requested_alpha": "straight"
+        },
+        {
+          "frame": 2,
+          "path": "frames/000002.png",
+          "presentation_time": {
+            "numerator": 1,
+            "denominator": 2
+          },
+          "source_time": {
+            "numerator": 1,
+            "denominator": 2
+          },
+          "bytes": 2123,
+          "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+          "channels": {
+            "R": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "G": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "A": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          },
+          "decoder": "pypng",
+          "decoder_version": "0.20220715.0",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 8,
+          "format": "png",
+          "pass_name": "combined",
+          "requested_color_space": "srgb",
+          "requested_alpha": "straight"
+        }
+      ],
+      "artifacts": [],
+      "decoded_frames": 3,
+      "decoded_images": 3,
+      "output_bytes": 6412,
+      "limitation": "Decoded integrity and input binding do not establish semantic scene correctness or visual approval."
+    }
+  },
+  "provenance_sha256": "09fca644740542a233c6802942797d9c224309bc86d74c756feeaed75a2cd093",
+  "decoded": [
+    {
+      "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+      "bytes": 2111,
+      "format": "png",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 8,
+      "channels": {
+        "R": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "G": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "B": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "A": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      },
+      "requested_color_space": "srgb",
+      "requested_alpha": "straight",
+      "decoder": "pypng",
+      "decoder_version": "0.20220715.0",
+      "compression": "deflate"
+    },
+    {
+      "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+      "bytes": 2178,
+      "format": "png",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 8,
+      "channels": {
+        "R": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "G": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "B": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "A": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      },
+      "requested_color_space": "srgb",
+      "requested_alpha": "straight",
+      "decoder": "pypng",
+      "decoder_version": "0.20220715.0",
+      "compression": "deflate"
+    },
+    {
+      "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+      "bytes": 2123,
+      "format": "png",
+      "resolution": [
+        64,
+        64
+      ],
+      "bit_depth": 8,
+      "channels": {
+        "R": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "G": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "B": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "A": {
+          "type": "uint8",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      },
+      "requested_color_space": "srgb",
+      "requested_alpha": "straight",
+      "decoder": "pypng",
+      "decoder_version": "0.20220715.0",
+      "compression": "deflate"
+    }
+  ],
+  "transform": "byte-preserving-copy",
+  "visual_review": "not-performed"
+}

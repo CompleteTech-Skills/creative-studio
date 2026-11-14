@@ -1,0 +1,4 @@
+render 3 {'format': 'png', 'bit_depth': 8, 'passes': ['combined'], 'alpha': 'straight', 'color_space': 'srgb'}
+png16 1 {'format': 'png', 'bit_depth': 16, 'passes': ['combined'], 'alpha': 'straight', 'color_space': 'srgb'}
+exr16 1 {'format': 'exr', 'bit_depth': 16, 'passes': ['combined'], 'alpha': 'straight', 'color_space': 'linear'}
+exr32 1 {'format': 'exr', 'bit_depth': 32, 'passes': ['combined'], 'alpha': 'straight', 'color_space': 'linear'}

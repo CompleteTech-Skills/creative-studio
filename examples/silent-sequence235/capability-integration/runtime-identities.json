@@ -1,0 +1,97 @@
+{
+  "source_commit": "ceab2d3f16d3e293eed219e210a392ba3131f9ad",
+  "modules": {
+    "atomic_publish": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/atomic_publish.py",
+      "sha256": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567"
+    },
+    "asset_contracts": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/asset_contracts.py",
+      "sha256": "ada924819e6855c592a8313f91f020521c85e61f283cd2f3ec8b2b01b204fa51"
+    },
+    "production_contracts": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/production_contracts.py",
+      "sha256": "7b0c7f873a5b8cd129cf6d550cb5d1ba7ac7a367c399b1a300ccebacb98e2a46"
+    },
+    "rig_errors": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_errors.py",
+      "sha256": "d0ffbe0a2daee0ae3ec341ab5e95f9cc8cdbce222cd7a58267b9304439ad9d57"
+    },
+    "production_render": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/production_render.py",
+      "sha256": "981b6fbafdcd0fcf009dca02b0f695bfb3742b58bd9e9a11068f0e0dd085c9be"
+    },
+    "silent_profiles": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/silent_profiles.py",
+      "sha256": "f27d39cbfc12532d0dad2f5481ec56a0f81e886968657eb0627f8560631ad616"
+    },
+    "silent_video": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/silent_video.py",
+      "sha256": "9fd2eb7e57ea0fd7a03158d7ac5cb291092d945e605493586c80b94f895ab45a"
+    },
+    "silent_sequence": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/silent_sequence.py",
+      "sha256": "3e4aa79d91688753d33ea8d246836b416a4411d269433cabcbc6d9f0b3bdb382"
+    },
+    "rig_contracts": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_contracts.py",
+      "sha256": "6a5c2474c80478892eae5d087b51920e17c9c0c080a790781bc7b5273376a60d"
+    },
+    "render3d_contracts": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/render3d_contracts.py",
+      "sha256": "5c3176d354fd9d732f0d5c3f283ff9c7e84219317701a35e2e6dbe17d7bae425"
+    },
+    "render3d_verify": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/render3d_verify.py",
+      "sha256": "ddc91b3a7aa35d879614f0ac877b884017a6d87ab25777613cc24aa0515bb92b"
+    },
+    "render3d_snapshot": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/render3d_snapshot.py",
+      "sha256": "486f75018a7d56683525182e187e8aa00e93ae7086ecbb39d494ef05a9c8ad38"
+    },
+    "decomposition_package": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/decomposition_package.py",
+      "sha256": "5b7a59e6bb4a11fa1b35cf38bcf9331927b79347c15ccabe6a4251720cb53b33"
+    },
+    "rig_models": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_models.py",
+      "sha256": "6447ed3746d93f6020aa469db15902c71846928ec70b7c7537e2d69ae84c3c3d"
+    },
+    "rig_math": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_math.py",
+      "sha256": "2bb7c84179af828c9f84f41e9510e59e4e88c68367b91c7e6e41279a77ee0f2c"
+    },
+    "rig_skeleton": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_skeleton.py",
+      "sha256": "acf14f37834f16b2717fb4b6aae8fd6ae5e1e8ebe14034999ba5e8ae88424f90"
+    },
+    "rig_constraints": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_constraints.py",
+      "sha256": "f6ce8e02bc10d2a2d746e5bf59cd2db65193327c42177f47562756455320c74b"
+    },
+    "rig_ik": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_ik.py",
+      "sha256": "47229ac03fda6a49864d2a325ee1b3311f878b091492e2fb52173420792e62f9"
+    },
+    "rig_geometry": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_geometry.py",
+      "sha256": "2d759526bfa7b36b08566509e66fba0786e6db5571c42e14bde3830e5f14b92d"
+    },
+    "rig_skinning": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_skinning.py",
+      "sha256": "ceb7855faa5537da663e6874c56c87d85d5dff887a8acc10fe26d3ea1858f99d"
+    },
+    "rig_animation": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_animation.py",
+      "sha256": "cd70d02d55e5cec26324d7745b90ee0bd9b2c6674fe67ef821fc32dfaf65b4ef"
+    }
+  },
+  "python": "3.12.15",
+  "packages": {
+    "Pillow": "13.0.0",
+    "numpy": "2.5.4",
+    "jsonschema": "4.26.0",
+    "pypng": "0.20220715.0",
+    "OpenEXR": "3.5.4"
+  }
+}

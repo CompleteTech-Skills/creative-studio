@@ -1,0 +1,487 @@
+{
+  "schema_version": 1,
+  "kind": "actual-native-lossless-sequence-execution",
+  "validated_source_commit": "1ff87917c19b75ac8eb38b92b05ee5c92a54f180",
+  "implementation_sha256": {
+    "scripts/silent_sequence.py": "8792aa357759e2b591c114027e0bb36d7e7bc87d6db56bda4998bb1749ec2c51",
+    "tests/test_silent_sequence.py": "c1e8ac889d5e2cdda7246078f0cd9e6d692f2a9626caed35d2529e6f02d64ed9"
+  },
+  "runtime_identities": {
+    "source_commit": "1ff87917c19b75ac8eb38b92b05ee5c92a54f180",
+    "modules": {
+      "rig_errors": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/render-verifier/scripts/rig_errors.py",
+        "sha256": "57901cbc8e8ac5047bbac766154e3331eaa52d0135565c6996212b623b5dbba1"
+      },
+      "atomic_publish": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/atomic_publish.py",
+        "sha256": "310fcf5f43cabab4e79fcd3f1dfc420af9cd5b27385ac5c47524d155ca47c6e3"
+      },
+      "asset_contracts": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/asset_contracts.py",
+        "sha256": "ada924819e6855c592a8313f91f020521c85e61f283cd2f3ec8b2b01b204fa51"
+      },
+      "production_contracts": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/production_contracts.py",
+        "sha256": "7b0c7f873a5b8cd129cf6d550cb5d1ba7ac7a367c399b1a300ccebacb98e2a46"
+      },
+      "production_render": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/production_render.py",
+        "sha256": "981b6fbafdcd0fcf009dca02b0f695bfb3742b58bd9e9a11068f0e0dd085c9be"
+      },
+      "silent_video": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/silent_video.py",
+        "sha256": "914b694d5bddb96cab81b86c7b99b205c19d72b437462bfbd19a951aca1be988"
+      },
+      "silent_sequence": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/silent_sequence.py",
+        "sha256": "8792aa357759e2b591c114027e0bb36d7e7bc87d6db56bda4998bb1749ec2c51"
+      },
+      "rig_contracts": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_contracts.py",
+        "sha256": "6a5c2474c80478892eae5d087b51920e17c9c0c080a790781bc7b5273376a60d"
+      },
+      "render3d_contracts": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/render-verifier/scripts/render3d_contracts.py",
+        "sha256": "81697af0f6f5dd97614a490c3fe4e5d9fef7d31a4e4dd31dbb515968f44719c3"
+      },
+      "render3d_verify": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/render-verifier/scripts/render3d_verify.py",
+        "sha256": "60d2b870206734319637c30a6be176404c92042a3093da5bc80ef2a0f9fba357"
+      },
+      "render3d_snapshot": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/render-verifier/scripts/render3d_snapshot.py",
+        "sha256": "a2f95dcf3f84062efe36d2d52c633d53bb6fdcc6a9302bfbe551dc8bdc4394ba"
+      },
+      "decomposition_package": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/decomposition_package.py",
+        "sha256": "5b7a59e6bb4a11fa1b35cf38bcf9331927b79347c15ccabe6a4251720cb53b33"
+      },
+      "rig_models": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_models.py",
+        "sha256": "1c0fe8ee7b990088097504cfffde63dd30b2ac3156c4aa98c1d9a4ba91ac3af5"
+      },
+      "rig_math": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_math.py",
+        "sha256": "2bb7c84179af828c9f84f41e9510e59e4e88c68367b91c7e6e41279a77ee0f2c"
+      },
+      "rig_skeleton": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_skeleton.py",
+        "sha256": "acf14f37834f16b2717fb4b6aae8fd6ae5e1e8ebe14034999ba5e8ae88424f90"
+      },
+      "rig_constraints": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_constraints.py",
+        "sha256": "f6ce8e02bc10d2a2d746e5bf59cd2db65193327c42177f47562756455320c74b"
+      },
+      "rig_ik": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_ik.py",
+        "sha256": "47229ac03fda6a49864d2a325ee1b3311f878b091492e2fb52173420792e62f9"
+      },
+      "rig_geometry": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_geometry.py",
+        "sha256": "2d759526bfa7b36b08566509e66fba0786e6db5571c42e14bde3830e5f14b92d"
+      },
+      "rig_skinning": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_skinning.py",
+        "sha256": "ceb7855faa5537da663e6874c56c87d85d5dff887a8acc10fe26d3ea1858f99d"
+      },
+      "rig_animation": {
+        "path": "/home/complete/.cache/hatch-coordination-20261112/worktrees/silent-sequence235/scripts/rig_animation.py",
+        "sha256": "cd70d02d55e5cec26324d7745b90ee0bd9b2c6674fe67ef821fc32dfaf65b4ef"
+      }
+    },
+    "python": "3.12.15",
+    "packages": {
+      "Pillow": "13.0.0",
+      "numpy": "2.5.4",
+      "jsonschema": "4.26.0",
+      "pypng": "0.20220715.0",
+      "OpenEXR": "3.5.4"
+    }
+  },
+  "native_source_owner": {
+    "base": "/home/complete/.cache/hatch-coordination-20261112/render-backend-recovery/native-smoke",
+    "evidence_sha256": "a4e103642923aa1e498af239131a977bb22864133410c5b3f6755760ef0a20d3",
+    "classification": "Retained real Blender procedural engineering fixtures, not production-art acceptance"
+  },
+  "exports": {
+    "render": {
+      "frames": 3,
+      "sample_indices": [
+        0,
+        1,
+        2
+      ],
+      "receipt_sha256": "31407131cf8a0595993bafa23cf54484fe364b48e4e412045537b158cf3d6c07",
+      "output": {
+        "format": "png",
+        "bit_depth": 8,
+        "passes": [
+          "combined"
+        ],
+        "alpha": "straight",
+        "color_space": "srgb"
+      },
+      "decoded": [
+        {
+          "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+          "bytes": 2111,
+          "format": "png",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 8,
+          "channels": {
+            "R": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "G": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "A": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          },
+          "requested_color_space": "srgb",
+          "requested_alpha": "straight",
+          "decoder": "pypng",
+          "decoder_version": "0.20220715.0",
+          "compression": "deflate"
+        },
+        {
+          "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+          "bytes": 2178,
+          "format": "png",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 8,
+          "channels": {
+            "R": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "G": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "A": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          },
+          "requested_color_space": "srgb",
+          "requested_alpha": "straight",
+          "decoder": "pypng",
+          "decoder_version": "0.20220715.0",
+          "compression": "deflate"
+        },
+        {
+          "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+          "bytes": 2123,
+          "format": "png",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 8,
+          "channels": {
+            "R": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "G": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "A": {
+              "type": "uint8",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          },
+          "requested_color_space": "srgb",
+          "requested_alpha": "straight",
+          "decoder": "pypng",
+          "decoder_version": "0.20220715.0",
+          "compression": "deflate"
+        }
+      ],
+      "source_identity": "9ed136bbb9fd326a316d1268141cb76011d9a9179305af61a255eec29054f1a6",
+      "pixel_samples": [
+        {
+          "index": 0,
+          "opaque_pixels": 272,
+          "transparent_pixels": 3790,
+          "semitransparent_pixels": 34,
+          "all_channels_pixel_equal": true
+        },
+        {
+          "index": 1,
+          "opaque_pixels": 287,
+          "transparent_pixels": 3766,
+          "semitransparent_pixels": 43,
+          "all_channels_pixel_equal": true
+        },
+        {
+          "index": 2,
+          "opaque_pixels": 276,
+          "transparent_pixels": 3782,
+          "semitransparent_pixels": 38,
+          "all_channels_pixel_equal": true
+        }
+      ]
+    },
+    "png16": {
+      "frames": 1,
+      "sample_indices": [
+        0
+      ],
+      "receipt_sha256": "62e1ba0f448d4115640800d0529f70c860da35cd6d6c3a5f34e41f8c3edcd5fc",
+      "output": {
+        "format": "png",
+        "bit_depth": 16,
+        "passes": [
+          "combined"
+        ],
+        "alpha": "straight",
+        "color_space": "srgb"
+      },
+      "decoded": [
+        {
+          "sha256": "2710ad3e096f0887585e20b943d9721a47089bf76944208a06c03cfd66c0ff10",
+          "bytes": 1262,
+          "format": "png",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 16,
+          "channels": {
+            "R": {
+              "type": "uint16",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "G": {
+              "type": "uint16",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "uint16",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "A": {
+              "type": "uint16",
+              "minimum": 0.0,
+              "maximum": 1.0
+            }
+          },
+          "requested_color_space": "srgb",
+          "requested_alpha": "straight",
+          "decoder": "pypng",
+          "decoder_version": "0.20220715.0",
+          "compression": "deflate"
+        }
+      ],
+      "source_identity": "cd3dabf7ef91f4b9c9ce56a8f449360dc82f4cfa4dd0100a40f8fd29fa80b38c",
+      "pixel_samples": [
+        {
+          "index": 0,
+          "opaque_pixels": 272,
+          "transparent_pixels": 3790,
+          "semitransparent_pixels": 34,
+          "all_channels_pixel_equal": true
+        }
+      ]
+    },
+    "exr16": {
+      "frames": 1,
+      "sample_indices": [
+        0
+      ],
+      "receipt_sha256": "71258415dc1f3a5a2ee8354a4fb4a2769a6f13b98de11da8f3b8e3cfd6702164",
+      "output": {
+        "format": "exr",
+        "bit_depth": 16,
+        "passes": [
+          "combined"
+        ],
+        "alpha": "straight",
+        "color_space": "linear"
+      },
+      "decoded": [
+        {
+          "sha256": "813278f25cdbf5458cb03a697b5971cdab4387e7262e20ce157a885553300fc6",
+          "bytes": 2453,
+          "format": "exr",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 16,
+          "channels": {
+            "A": {
+              "type": "half",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "half",
+              "minimum": 0.0,
+              "maximum": 2.79296875
+            },
+            "G": {
+              "type": "half",
+              "minimum": 0.0,
+              "maximum": 2.79296875
+            },
+            "R": {
+              "type": "half",
+              "minimum": 0.0,
+              "maximum": 2.79296875
+            }
+          },
+          "requested_color_space": "linear",
+          "requested_alpha": "straight",
+          "decoder": "OpenEXR",
+          "decoder_version": "3.5.4",
+          "compression": "zip"
+        }
+      ],
+      "source_identity": "1c209ceb9239116cf41b009e19e1350ac407933fc349b4b4482ba88040f4fd19",
+      "pixel_samples": [
+        {
+          "index": 0,
+          "opaque_pixels": 272,
+          "transparent_pixels": 3790,
+          "semitransparent_pixels": 34,
+          "all_channels_pixel_equal": true
+        }
+      ]
+    },
+    "exr32": {
+      "frames": 1,
+      "sample_indices": [
+        0
+      ],
+      "receipt_sha256": "5aa8ab6656f8f0f26245a3960404bb8d9000346100d4cd06e4fd5fea709474a2",
+      "output": {
+        "format": "exr",
+        "bit_depth": 32,
+        "passes": [
+          "combined"
+        ],
+        "alpha": "straight",
+        "color_space": "linear"
+      },
+      "decoded": [
+        {
+          "sha256": "9877bb6cefdc8c2d9dcf2cb27142042591aab3f81406d51f892806c199177d30",
+          "bytes": 3309,
+          "format": "exr",
+          "resolution": [
+            64,
+            64
+          ],
+          "bit_depth": 32,
+          "channels": {
+            "A": {
+              "type": "float",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "B": {
+              "type": "float",
+              "minimum": 0.0,
+              "maximum": 2.7936770915985107
+            },
+            "G": {
+              "type": "float",
+              "minimum": 0.0,
+              "maximum": 2.7936770915985107
+            },
+            "R": {
+              "type": "float",
+              "minimum": 0.0,
+              "maximum": 2.7936770915985107
+            }
+          },
+          "requested_color_space": "linear",
+          "requested_alpha": "straight",
+          "decoder": "OpenEXR",
+          "decoder_version": "3.5.4",
+          "compression": "zip"
+        }
+      ],
+      "source_identity": "b37fa61fd100a1002ca0a38b703a878359284ca76ee19a541488a9b03df54690",
+      "pixel_samples": [
+        {
+          "index": 0,
+          "opaque_pixels": 272,
+          "transparent_pixels": 3790,
+          "semitransparent_pixels": 34,
+          "all_channels_pixel_equal": true
+        }
+      ]
+    }
+  },
+  "verification": {
+    "current_sequence_tests": {
+      "passed": 10,
+      "skipped": 0,
+      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-sequence-evidence/tests-release-current.log",
+      "log_sha256": "f2790a24bfb5518887cc0afb63a20c3e01be0a4723826cda10e91e633b7db994"
+    },
+    "legacy_2d_contract_tests": {
+      "passed": 31,
+      "skipped": 0,
+      "log": "/home/complete/.cache/hatch-coordination-20261112/silent-sequence-evidence/legacy-contracts.log",
+      "log_sha256": "df6210ed39d2ac450f3d118a98178012babcb15d0e5104f9d344c93308895546"
+    },
+    "actual_export_log": {
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-sequence-evidence/actual-release.log",
+      "sha256": "ea505b30d1a5d457973001e8735e6cec199a6dd7cced9f42a3209cb15b5530be"
+    },
+    "new_blender_renders": false,
+    "heavy_lock": "Not needed: retained-frame copy and independent decode only, bounded queue policy"
+  },
+  "limitations": [
+    "No visual/semantic approval issued.",
+    "PNG8 native source contains3frames; PNG16/EXR16/EXR32 source smokes each contain1frame.",
+    "This does not establish3shotfilm acceptance or full235release integration.",
+    "Original native snapshots are retained by canonical renderer, not packaged here; offline verification does not claim to re-open absent snapshots.",
+    "Canonical Render3D verifier owner is an external pending integration dependency; exact Python module origins/hashes recorded.",
+    "All exported bytes and sampled decoded channels match actual source files exactly; no color/precision conversion."
+  ]
+}

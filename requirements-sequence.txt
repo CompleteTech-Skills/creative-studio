@@ -1,0 +1,6 @@
+# Optional standalone image-sequence verification; ordinary 2D does not install this.
+Pillow==13.0.0
+numpy==2.5.4
+jsonschema==4.26.0
+pypng==0.20220715.0
+OpenEXR==3.5.4

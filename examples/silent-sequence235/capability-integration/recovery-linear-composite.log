@@ -1,0 +1,7 @@
+test_arbitrary_background_and_rgb_identity (test_silent_render3d_numerical.LinearCompositeNumericalTests.test_arbitrary_background_and_rgb_identity) ... ok
+test_linear_over_preserves_opaque_and_transparent_and_half_coverage (test_silent_render3d_numerical.LinearCompositeNumericalTests.test_linear_over_preserves_opaque_and_transparent_and_half_coverage) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.035s
+
+OK
