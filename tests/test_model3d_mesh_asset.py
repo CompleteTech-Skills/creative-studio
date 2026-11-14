@@ -66,7 +66,8 @@ class MeshAsset(unittest.TestCase):
         export_geometry(primitive('box').geometry(),self.root/'asset.glb',provenance={'fixture':True})
         geometry=record(self.root,'asset.glb','model/gltf-binary')
         manifest={'identity':{'id':'box','namespace':'engineering','library':'local-fixtures'},'version':'1.0.0',
-                  'files':[{'path':'runtime/asset.glb','sha256':geometry['sha256'],'bytes':geometry['bytes']}]}
+                  'compatibility':{'coordinate_system':'right-handed-y-up-z-forward','unit_scale':1},
+                  'files':[{'path':'runtime/asset.glb','sha256':geometry['sha256'],'bytes':geometry['bytes'],'role':'runtime','format':'glb'}]}
         manifest['manifest_sha256']=object_hash(manifest)
         ref={'id':'box','version':'1.0.0','sha256':manifest['manifest_sha256']}
         envelope={'canonical_ref':ref,'manifest':manifest}
@@ -81,7 +82,8 @@ class MeshAsset(unittest.TestCase):
         export_geometry(primitive('box').geometry(),self.root/'asset.glb',provenance={'fixture':True})
         geometry=record(self.root,'asset.glb','model/gltf-binary')
         base={'identity':{'id':'box','namespace':'engineering','library':'local-fixtures'},'version':'1.0.0',
-              'files':[{'path':'runtime/asset.glb','sha256':geometry['sha256'],'bytes':geometry['bytes']}]}
+              'compatibility':{'coordinate_system':'right-handed-y-up-z-forward','unit_scale':1},
+              'files':[{'path':'runtime/asset.glb','sha256':geometry['sha256'],'bytes':geometry['bytes'],'role':'runtime','format':'glb'}]}
         mutations=[
             ('boolean-version', lambda m,r: (m.__setitem__('version',True),r.__setitem__('version',True))),
             ('invalid-version', lambda m,r: (m.__setitem__('version','definitely-not-semver'),r.__setitem__('version','definitely-not-semver'))),
@@ -110,6 +112,56 @@ class MeshAsset(unittest.TestCase):
             (self.root/'canonical.json').write_text(json.dumps({'canonical_ref':ref,'manifest':manifest}))
             with self.subTest(digest=malformed), self.assertRaises(RigError):
                 self.build(geometry,canonical_evidence=record(self.root,'canonical.json','application/json'))
+    def test_canonical_binding_uses_selected_active_path_not_retained_source(self):
+        from model3d_mesh_asset import _canonical_binding
+        export_geometry(primitive('box').geometry(),self.root/'normalized.glb',provenance={'fixture':True})
+        geometry=record(self.root,'normalized.glb','model/gltf-binary')
+        manifest={'identity':{'id':'box','namespace':'engineering','library':'local-fixtures'},'version':'1.0.0',
+                  'compatibility':{'coordinate_system':'right-handed-y-up-z-forward','unit_scale':1},
+                  'files':[dict(path='runtime/asset.glb',sha256=geometry['sha256'],bytes=geometry['bytes'],role='source',format='glb'),
+                           dict(path='derived/unit-normalized.glb',sha256=geometry['sha256'],bytes=geometry['bytes'],role='runtime',format='glb')]}
+        def envelope(value,**fields):
+            value=deepcopy(value);value['manifest_sha256']=object_hash({k:v for k,v in value.items() if k!='manifest_sha256'})
+            return dict(canonical_ref=dict(id='box',version='1.0.0',sha256=value['manifest_sha256']),manifest=value,**fields)
+        _canonical_binding(envelope(manifest),geometry)
+        _canonical_binding(envelope(manifest,source_entry='derived/unit-normalized.glb'),geometry)
+        with self.assertRaises(RigError) as caught:_canonical_binding(envelope(manifest,source_entry='runtime/asset.glb'),geometry)
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_ENTRY')
+        # The public builder retains the full original namespace-bearing manifest.
+        payload=envelope(manifest,source_entry='derived/unit-normalized.glb')
+        (self.root/'canonical.json').write_text(json.dumps(payload));evidence=record(self.root,'canonical.json','application/json')
+        built=self.build(geometry,canonical_evidence=evidence)
+        self.assertEqual(built['extensions'][0]['payload'],evidence)
+        self.assertEqual(json.loads((self.root/'canonical.json').read_text()),payload)
+        for field,value in [('role','source'),('format','obj')]:
+            wrong=deepcopy(manifest);wrong['files'][1][field]=value
+            with self.subTest(field=field),self.assertRaises(RigError):_canonical_binding(envelope(wrong),geometry)
+        for scale in (.01,True,None):
+            wrong=deepcopy(manifest);wrong['compatibility']['unit_scale']=scale
+            with self.subTest(scale=scale),self.assertRaises(RigError):_canonical_binding(envelope(wrong),geometry)
+        wrong=deepcopy(manifest);wrong['compatibility']['coordinate_system']='left-handed-y-up'
+        with self.assertRaises(RigError):_canonical_binding(envelope(wrong),geometry)
+        for entry in ('missing.glb',None,True):
+            with self.subTest(entry=entry),self.assertRaises(RigError):_canonical_binding(envelope(manifest,source_entry=entry),geometry)
+
+    def test_canonical_binding_multiple_active_entries_require_exact_selection(self):
+        from model3d_mesh_asset import _canonical_binding
+        export_geometry(primitive('box').geometry(),self.root/'asset.glb',provenance={'fixture':True})
+        geometry=record(self.root,'asset.glb','model/gltf-binary')
+        manifest={'identity':{'id':'box','namespace':'engineering','library':'local-fixtures'},'version':'1.0.0',
+                  'compatibility':{'coordinate_system':'right-handed-y-up-z-forward','unit_scale':1},
+                  'files':[dict(path=name,sha256=geometry['sha256'],bytes=geometry['bytes'],role='runtime',format='glb') for name in ('derived/one.glb','derived/two.glb')]}
+        manifest['manifest_sha256']=object_hash(manifest)
+        payload=dict(canonical_ref=dict(id='box',version='1.0.0',sha256=manifest['manifest_sha256']),manifest=manifest)
+        with self.assertRaises(RigError) as caught:_canonical_binding(payload,geometry)
+        self.assertEqual(caught.exception.report['code'],'MODEL3D_ENTRY')
+        _canonical_binding(dict(payload,source_entry='derived/two.glb'),geometry)
+        for media in ('model/gltf+json','model/obj'):
+            with self.subTest(media=media),self.assertRaises(RigError):_canonical_binding(dict(payload,source_entry='derived/two.glb'),dict(geometry,media_type=media))
+        wrong=deepcopy(payload);wrong['manifest']['files'][1]['sha256']='0'*64
+        wrong['manifest']['manifest_sha256']=object_hash({k:v for k,v in wrong['manifest'].items() if k!='manifest_sha256'});wrong['canonical_ref']['sha256']=wrong['manifest']['manifest_sha256']
+        with self.assertRaises(RigError):_canonical_binding(dict(wrong,source_entry='derived/two.glb'),geometry)
+
     def test_actual_material_texture_binding(self):
         import io
         from PIL import Image

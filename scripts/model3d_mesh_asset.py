@@ -30,7 +30,7 @@ def _fragment(value, name):
 
 
 def _canonical_binding(payload, geometry_record):
-    require(isinstance(payload, dict) and set(payload) == {'canonical_ref', 'manifest'},
+    require(isinstance(payload, dict) and {'canonical_ref','manifest'} <= set(payload) and set(payload) <= {'canonical_ref','manifest','source_entry'},
             'MODEL3D_REFERENCE', 'Canonical evidence must retain exact reference and original manifest.')
     ref, manifest = payload['canonical_ref'], payload['manifest']
     require(isinstance(ref, dict) and set(ref) == {'id','version','sha256'} and isinstance(manifest, dict),
@@ -55,7 +55,7 @@ def _canonical_binding(payload, geometry_record):
     inventory = manifest.get('files', [])
     require(isinstance(inventory,list) and 1 <= len(inventory) <= 256,
             'MODEL3D_REFERENCE', 'Canonical inventory must be a bounded nonempty list.')
-    names = set(); total = 0; runtime = None
+    names = set(); total = 0
     for item in inventory:
         require(isinstance(item,dict) and {'path','sha256','bytes'} <= set(item),
                 'MODEL3D_REFERENCE', 'Canonical inventory record is incomplete.')
@@ -75,10 +75,15 @@ def _canonical_binding(payload, geometry_record):
                 'MODEL3D_REFERENCE', 'Canonical inventory size or digest is malformed.')
         total += int(count)
         require(total <= 256*1024**2, 'MODEL3D_REFERENCE', 'Canonical version inventory exceeds its byte limit.')
-        if name == 'runtime/asset.glb': runtime = item
-    require(runtime is not None and runtime['sha256'] == geometry_record['sha256']
-            and runtime['bytes'] == geometry_record['bytes'],
-            'MODEL3D_REFERENCE', 'Unique canonical runtime inventory does not bind these geometry bytes.')
+    from model3d_mesh_import import select_canonical_geometry
+    require('source_entry' not in payload or isinstance(payload['source_entry'],str),
+            'MODEL3D_ENTRY','Optional source_entry must be an exact active inventory path.')
+    runtime=select_canonical_geometry(manifest,entry=payload.get('source_entry'))
+    media={'glb':'model/gltf-binary','gltf':'model/gltf+json','obj':'model/obj'}
+    require(geometry_record['media_type']==media[runtime['format']],
+            'MODEL3D_ENTRY','Canonical active entry format and supplied geometry media type disagree.')
+    require(runtime['sha256']==geometry_record['sha256'] and runtime['bytes']==geometry_record['bytes'],
+            'MODEL3D_REFERENCE','Selected canonical active entry does not bind these exact geometry bytes.')
 
 
 def build_asset(root, geometry, *, asset_id, version, category, sources, provenance,
@@ -88,6 +93,9 @@ def build_asset(root, geometry, *, asset_id, version, category, sources, provena
     All provenance/source/acquisition/license claims are supplied by the caller.
     When canonical_evidence is supplied it references an existing JSON payload
     containing canonical_ref and the original namespace-bearing registry manifest.
+    Optional source_entry selects an active geometry/runtime inventory path; a
+    unique active entry remains the default. Original source-role files never
+    become canonical geometry or receive another coordinate conversion.
     The namespace is retained in that immutable evidence, never flattened to ID.
     """
     from model3d_validation import _Snapshot, validate_document

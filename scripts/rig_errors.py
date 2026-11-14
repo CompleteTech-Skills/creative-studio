@@ -362,7 +362,6 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
                     actual = actual[4:]
                 require(os.path.normcase(actual) == os.path.normcase(os.path.abspath(target)),
                         'RIG_PAYLOAD_PATH', 'Opened source was redirected.', asset=name)
-            check_root(root.stat())
             current = safe_path(root, name, exists=True).stat()
             check_root(root.stat())
             require((current.st_dev, current.st_ino) == (before.st_dev, before.st_ino),

@@ -1,15 +1,19 @@
 """Actual bounded-file publication; native desktop gates must execute it."""
+import contextlib
 import errno
 import hashlib
 import os
+import stat
 from pathlib import Path
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import atomic_publish as atomic
+import atomic_windows as windows
 
 
 class VerifiedFilePublication(unittest.TestCase):
@@ -56,6 +60,98 @@ class VerifiedFilePublication(unittest.TestCase):
     def test_bad_digest_never_publishes_and_cleans_owned_bytes(self):
         with self.assertRaises(ValueError): self.publish(expected_sha256='0' * 64)
         self.assert_no_output()
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX descriptor cleanup')
+    def test_payload_close_failure_preserves_precommit_error(self):
+        for collision in (False, True):
+            with self.subTest(collision=collision):
+                if collision:
+                    self.output.write_bytes(b'original destination')
+                close = os.close
+                payload_fds = []
+                def fail_payload(fd):
+                    info = os.fstat(fd)
+                    is_payload = stat.S_ISREG(info.st_mode) and info.st_ino != os.fstat(self.fd).st_ino
+                    close(fd)
+                    if is_payload:
+                        payload_fds.append(fd)
+                        raise OSError(errno.EIO, 'payload close failed')
+                with mock.patch.object(atomic.os, 'close', side_effect=fail_payload):
+                    with self.assertRaises(FileExistsError if collision else ValueError) as caught:
+                        self.publish(**({} if collision else {'expected_sha256': '0' * 64}))
+                self.assertEqual(len(payload_fds), 1)
+                self.assertIn('payload close failed', ' '.join(getattr(caught.exception, '__notes__', [])))
+                if collision:
+                    self.assertEqual(self.output.read_bytes(), b'original destination')
+                    self.output.unlink()
+                else:
+                    self.assert_no_output()
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX descriptor cleanup')
+    def test_multiple_close_failures_preserve_operation_and_all_notes(self):
+        close = os.close
+        failed = []
+        def fail_owned(fd):
+            info = os.fstat(fd)
+            is_payload = stat.S_ISREG(info.st_mode) and info.st_ino != os.fstat(self.fd).st_ino
+            is_stage = any((info.st_dev, info.st_ino) == (p.stat().st_dev, p.stat().st_ino)
+                           for p in self.root.glob('.file-*'))
+            close(fd)
+            if is_payload or is_stage:
+                failed.append(fd)
+                raise OSError(errno.EIO, 'injected close %d' % len(failed))
+        with mock.patch.object(atomic.os, 'close', side_effect=fail_owned):
+            with self.assertRaises(ValueError) as caught:
+                self.publish(expected_sha256='0' * 64)
+        self.assertEqual(len(failed), 3)  # payload, cleanup stream, stage
+        notes = ' '.join(getattr(caught.exception, '__notes__', []))
+        for number in range(1, 4):
+            self.assertIn('injected close %d' % number, notes)
+        self.assertFalse(self.output.exists())
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX descriptor cleanup')
+    def test_pinned_parent_close_preserves_collision(self):
+        self.output.write_bytes(b'original destination')
+        close = os.close
+        parent_closes = []
+        root_info = self.root.stat()
+        def fail_last_parent(fd):
+            info = os.fstat(fd)
+            is_parent = (info.st_dev, info.st_ino) == (root_info.st_dev, root_info.st_ino)
+            close(fd)
+            if is_parent:
+                parent_closes.append(fd)
+                if len(parent_closes) == 2:
+                    raise OSError(errno.EIO, 'pinned parent close failed')
+        with mock.patch.object(atomic.os, 'close', side_effect=fail_last_parent):
+            with self.assertRaises(FileExistsError) as caught:
+                self.publish()
+        self.assertEqual(len(parent_closes), 2)
+        self.assertIn('pinned parent close failed', ' '.join(getattr(caught.exception, '__notes__', [])))
+        self.assertEqual(self.output.read_bytes(), b'original destination')
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX descriptor cleanup')
+    def test_payload_close_after_commit_inside_ambient_exception(self):
+        close = os.close
+        calls = []
+        def fail_payload(fd):
+            info = os.fstat(fd)
+            is_payload = stat.S_ISREG(info.st_mode) and info.st_ino != os.fstat(self.fd).st_ino
+            close(fd)
+            if is_payload:
+                calls.append(fd)
+                raise OSError(errno.EIO, 'committed payload close')
+        try:
+            raise RuntimeError('ambient')
+        except RuntimeError as ambient:
+            with mock.patch.object(atomic.os, 'close', side_effect=fail_payload):
+                with self.assertRaises(atomic.VerifiedFileCleanupError) as caught:
+                    self.publish()
+            self.assertFalse(getattr(ambient, '__notes__', []))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(caught.exception.receipt, {'sha256': self.digest, 'byte_size': len(self.data)})
+        self.assertIn('committed payload close', str(caught.exception.__cause__))
+        self.assertEqual(self.output.read_bytes(), self.data)
 
     def test_wrong_size_and_bound_fail_without_publication(self):
         for options in ({'expected_size': len(self.data)-1}, {'expected_size': len(self.data)+1},
@@ -203,6 +299,76 @@ class VerifiedFilePublication(unittest.TestCase):
         self.assertTrue(self.output.is_symlink())
         self.assertEqual(self.source.read_bytes(), self.data)
 
+    def test_windows_rename_commit_survives_nested_cleanup_errors(self):
+        if os.name == 'nt':
+            self.skipTest('portable adapter simulation uses POSIX rename semantics')
+        staged = self.root / 'staged'
+        error = OSError(errno.EIO, 'destination pin close failed')
+        fake_os = types.SimpleNamespace(**vars(os))
+        fake_os.name = 'nt'
+
+        @contextlib.contextmanager
+        def pin(parent):
+            yield types.SimpleNamespace(path=parent)
+            raise error
+
+        @contextlib.contextmanager
+        def private(parent):
+            fd = os.open(staged, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+            try:
+                yield windows._PrivateFile(fd)
+            except BaseException as exc:
+                try:
+                    raise
+                finally:
+                    windows._finish_cleanups(exc, [lambda: os.close(fd),
+                                                  lambda: (_ for _ in ()).throw(OSError('outer close failed'))])
+            else:
+                os.close(fd)
+
+        with mock.patch.object(atomic, 'os', fake_os), \
+             mock.patch.object(windows, 'private_file', private), \
+             mock.patch.object(windows, '_path', Path), \
+             mock.patch.object(windows, 'pinned_directory', pin), \
+             mock.patch.object(windows, '_rename_handle', side_effect=lambda fd, dst: os.rename(staged, dst)), \
+             mock.patch.dict(sys.modules, {'msvcrt': types.SimpleNamespace(get_osfhandle=lambda fd: fd)}):
+            with self.assertRaises(atomic.VerifiedFileCleanupError) as caught:
+                self.publish()
+        self.assertIs(caught.exception.__cause__, error)
+        self.assertTrue(any('outer close failed' in note for note in error.__notes__))
+        self.assertEqual(caught.exception.receipt, {'sha256': self.digest, 'byte_size': len(self.data)})
+        self.assertEqual(self.output.read_bytes(), self.data)
+
+    def test_windows_failed_rename_is_not_reported_as_committed(self):
+        if os.name == 'nt':
+            self.skipTest('portable adapter simulation')
+        staged = self.root / 'staged'
+        error = OSError(errno.EIO, 'rename failed')
+        fake_os = types.SimpleNamespace(**vars(os)); fake_os.name = 'nt'
+
+        @contextlib.contextmanager
+        def private(parent):
+            fd = os.open(staged, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+            try:
+                yield windows._PrivateFile(fd)
+            finally:
+                os.close(fd)
+
+        @contextlib.contextmanager
+        def pin(parent):
+            yield types.SimpleNamespace(path=parent)
+
+        with mock.patch.object(atomic, 'os', fake_os), \
+             mock.patch.object(windows, 'private_file', private), \
+             mock.patch.object(windows, '_path', Path), \
+             mock.patch.object(windows, 'pinned_directory', pin), \
+             mock.patch.object(windows, '_rename_handle', side_effect=error), \
+             mock.patch.dict(sys.modules, {'msvcrt': types.SimpleNamespace(get_osfhandle=lambda fd: fd)}):
+            with self.assertRaises(OSError) as caught:
+                self.publish()
+        self.assertIs(caught.exception, error)
+        self.assertFalse(self.output.exists())
+
     def test_posix_cleanup_failure_reports_committed_verified_receipt(self):
         if os.name == 'nt': return  # Native HANDLE cleanup is exercised separately.
         with mock.patch.object(atomic, '_clear_private_directory_fd',
@@ -214,7 +380,7 @@ class VerifiedFilePublication(unittest.TestCase):
         self.assertEqual(self.output.read_bytes(), self.data)
         self.assertEqual(os.fstat(self.fd).st_size, len(self.data))
 
-    def test_posix_final_stage_close_failure_reports_committed_receipt(self):
+    def _assert_posix_final_stage_close_failure_reports_committed_receipt(self):
         if os.name == 'nt': return  # POSIX owned stage FD; native HANDLE tests are separate.
         close = os.close
         stage_closes = []
@@ -238,6 +404,134 @@ class VerifiedFilePublication(unittest.TestCase):
         self.assertTrue(caught.exception.committed)
         self.assertEqual(self.output.read_bytes(), self.data)
         self.assertEqual(os.fstat(self.fd).st_size, len(self.data))
+
+    def test_posix_final_stage_close_failure_reports_committed_receipt(self):
+        self._assert_posix_final_stage_close_failure_reports_committed_receipt()
+
+    def test_posix_final_stage_close_error_inside_unrelated_exception_handler(self):
+        try:
+            raise RuntimeError('earlier operation already handled by caller')
+        except RuntimeError as previous:
+            self._assert_posix_final_stage_close_failure_reports_committed_receipt()
+            self.assertFalse(getattr(previous, '__notes__', []))
+
+    def separate_parents(self):
+        destination = self.root / 'immutable'; destination.mkdir()
+        staging = self.root / 'mutable-work'; staging.mkdir()
+        self.output = destination / 'archive.zip'
+        return destination, staging
+
+    def test_separate_staging_keeps_immutable_parent_inventory_exact(self):
+        destination, staging = self.separate_parents()
+        before = destination.stat()
+        receipt = self.publish(staging_parent=staging,
+                               expected_parent_identity=(before.st_dev, before.st_ino))
+        self.assertEqual(receipt, {'sha256': self.digest, 'byte_size': len(self.data)})
+        self.assertEqual(list(destination.iterdir()), [self.output])
+        self.assertEqual(self.output.read_bytes(), self.data)
+        wrappers = list(staging.iterdir())
+        self.assertEqual(len(wrappers), 1)
+        self.assertTrue(wrappers[0].name.startswith('.file-'))
+        self.assertEqual(list(wrappers[0].iterdir()), [])
+
+    def test_parent_identity_rejection_precedes_any_staging_write(self):
+        destination, staging = self.separate_parents()
+        info = destination.stat()
+        destination.rename(self.root / 'original-immutable'); destination.mkdir()
+        with self.assertRaises(OSError) as caught:
+            self.publish(staging_parent=staging,
+                         expected_parent_identity=(info.st_dev, info.st_ino))
+        self.assertEqual(caught.exception.errno, errno.ESTALE)
+        self.assertEqual(list(staging.iterdir()), [])
+        self.assertEqual(list(destination.iterdir()), [])
+        self.assertEqual(list((self.root / 'original-immutable').iterdir()), [])
+
+    def test_parent_identity_and_staging_arguments_are_strict(self):
+        destination, staging = self.separate_parents()
+        for value in ([1, 2], (1,), (1, 2, 3), (True, 2), (-1, 2), ('1', 2)):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.publish(staging_parent=staging, expected_parent_identity=value)
+        with self.assertRaises(ValueError):
+            self.publish(staging_parent=staging / '..' / 'mutable-work')
+        with self.assertRaises(OSError): self.publish(staging_parent=staging / 'missing')
+        self.assertEqual(list(staging.iterdir()), [])
+        self.assertEqual(list(destination.iterdir()), [])
+
+    def test_separate_staging_collision_preserves_immutable_inventory(self):
+        destination, staging = self.separate_parents()
+        self.output.write_bytes(b'foreign existing asset')
+        with self.assertRaises(OSError): self.publish(staging_parent=staging)
+        self.assertEqual(list(destination.iterdir()), [self.output])
+        self.assertEqual(self.output.read_bytes(), b'foreign existing asset')
+        self.assertTrue(all(not list(p.iterdir()) for p in staging.iterdir()))
+
+    def test_posix_separate_parent_swaps_stay_on_original_inodes(self):
+        if os.name == 'nt': return  # Native Windows holds both parents against deletion.
+        destination, staging = self.separate_parents()
+        original_copy = atomic._copy_verified_file
+        original_destination_info = destination.stat()
+        fsync = os.fsync; synced_directories = []
+        def swap(source, payload, digest, size):
+            destination.rename(self.root / 'original-immutable'); destination.mkdir()
+            (destination / 'foreign').write_bytes(b'foreign destination directory')
+            staging.rename(self.root / 'original-work'); staging.mkdir()
+            (staging / 'foreign').write_bytes(b'foreign staging directory')
+            original_copy(source, payload, digest, size)
+        def observe_sync(fd):
+            info = os.fstat(fd)
+            if stat.S_ISDIR(info.st_mode): synced_directories.append((info.st_dev, info.st_ino))
+            fsync(fd)
+        with mock.patch.object(atomic, '_copy_verified_file', side_effect=swap), \
+             mock.patch.object(atomic.os, 'fsync', side_effect=observe_sync):
+            self.publish(staging_parent=staging)
+        self.assertEqual((self.root / 'original-immutable/archive.zip').read_bytes(), self.data)
+        self.assertEqual((destination / 'foreign').read_bytes(), b'foreign destination directory')
+        self.assertEqual((staging / 'foreign').read_bytes(), b'foreign staging directory')
+        self.assertEqual(synced_directories,
+                         [(original_destination_info.st_dev, original_destination_info.st_ino)])
+        self.assertTrue(all(not list(p.iterdir()) for p in (self.root / 'original-work').iterdir()))
+
+    def test_posix_directory_fsync_failure_is_committed_completion_pending(self):
+        if os.name == 'nt': return  # Windows directory durability has a separate OS contract.
+        destination, staging = self.separate_parents()
+        fsync = os.fsync
+        def fail_directory_sync(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError(errno.EIO, 'destination directory durability failure')
+            fsync(fd)
+        with mock.patch.object(atomic.os, 'fsync', side_effect=fail_directory_sync):
+            with self.assertRaises(atomic.VerifiedFileCleanupError) as caught:
+                self.publish(staging_parent=staging)
+        self.assertTrue(caught.exception.committed)
+        self.assertEqual(caught.exception.receipt,
+                         {'sha256': self.digest, 'byte_size': len(self.data)})
+        self.assertEqual(caught.exception.__cause__.errno, errno.EIO)
+        self.assertEqual(self.output.read_bytes(), self.data)
+        self.assertEqual(list(destination.iterdir()), [self.output])
+
+    def test_posix_symlink_staging_parent_is_rejected(self):
+        if os.name == 'nt': return  # Native junction case runs in Windows gate.
+        destination, staging = self.separate_parents()
+        link = self.root / 'stage-link'; link.symlink_to(staging, target_is_directory=True)
+        with self.assertRaises(OSError): self.publish(staging_parent=link)
+        self.assertEqual(list(destination.iterdir()), [])
+        self.assertEqual(list(staging.iterdir()), [])
+
+    def test_posix_cross_filesystem_staging_fails_without_copy_where_available(self):
+        if os.name == 'nt': return  # Windows native rename never falls back to a copy.
+        destination, staging = self.separate_parents()
+        for candidate in (Path('/dev/shm'), Path('/tmp')):
+            if (not candidate.is_dir() or not os.access(candidate, os.W_OK)
+                    or candidate.stat().st_dev == destination.stat().st_dev):
+                continue
+            with tempfile.TemporaryDirectory(dir=candidate) as foreign:
+                with mock.patch.object(atomic, '_copy_verified_file') as copier:
+                    with self.assertRaises(OSError) as caught: self.publish(staging_parent=foreign)
+                self.assertEqual(caught.exception.errno, errno.EXDEV)
+                copier.assert_not_called()
+                self.assertEqual(list(Path(foreign).iterdir()), [])
+                self.assertEqual(list(destination.iterdir()), [])
+            break
 
     def test_linux_descriptor_lifetimes_on_success_and_failure(self):
         if not sys.platform.startswith('linux'): return

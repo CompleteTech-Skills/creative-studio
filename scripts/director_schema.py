@@ -83,7 +83,7 @@ def _definitions():
     size = arr(dict(type='integer', minimum=1, maximum=32768), 2, 2)
     coordinates = obj({key: {'const': value} for key, value in COORDINATES.items()})
     # Same portable component restrictions as Model3D and the native package owner.
-    from decomposition_package import _RESERVED
+    from portable_paths import _RESERVED
     end=r'(?![\s\S])'
     reserved='|'.join(''.join('['+c.lower()+c.upper()+']' if c.isalpha() else re.escape(c)
                             for c in word) for word in sorted(_RESERVED))
