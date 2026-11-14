@@ -64,6 +64,7 @@ def build():
     from editor3d_contracts import schemas as editor3d_schemas
     from render3d_contracts import schemas as render3d_schemas
     from asset_dependency_schemas import schemas as asset_dependency_schemas
+    from animation3d_contracts import schemas as animation3d_schemas
     return {ROOT/'profiles/profile.schema.json':profile,ROOT/'profiles/asset-inputs.schema.json':inputs,
             ROOT/'profiles/style-catalog.schema.json':catalog_schema(),
             **{ROOT / 'profiles' / name: value for name, value in decomposition_schemas().items()},
@@ -77,7 +78,8 @@ def build():
             **{ROOT / 'profiles' / name: value for name, value in scene3d_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in editor3d_schemas().items()},
             **{ROOT / 'profiles' / name: value for name, value in render3d_schemas().items()},
-            **{ROOT / 'profiles' / name: value for name, value in asset_dependency_schemas().items()}}
+            **{ROOT / 'profiles' / name: value for name, value in asset_dependency_schemas().items()},
+            **{ROOT / 'profiles' / name: value for name, value in animation3d_schemas().items()}}
 
 
 if __name__=='__main__':

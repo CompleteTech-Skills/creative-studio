@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlsplit
 import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS, validate_contract
-from rig_errors import RigError, atomic_bytes, decode_json, require, safe_path
+from rig_errors import RigError, atomic_bytes, decode_json, require, safe_path, normalize_root
 from rig_math import compose, qmatrix, quaternion, vector
 
 DTYPES = {5120: np.dtype('i1'), 5121: np.dtype('u1'), 5122: np.dtype('<i2'),
@@ -130,7 +130,7 @@ def read_gltf(path: str | Path, limits=None, *, source_reader=None) -> GltfDocum
     limits = dict(limits or DEFAULT_LIMITS)
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'RIG_SOURCE', 'Model must be a regular local file.')
-    path = path.absolute() if source_reader is not None else path.resolve()
+    path = path.absolute() if source_reader is not None else normalize_root(path.parent)/path.name
     if source_reader is None:
         require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'Encoded model exceeds the source byte limit.')
         raw = path.read_bytes()
