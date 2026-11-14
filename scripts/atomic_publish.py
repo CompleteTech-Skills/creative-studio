@@ -224,14 +224,13 @@ def _registered_directory(path):
 
 
 @contextmanager
-def pinned_directory(path):
+def _pinned_directory_common(path):
     """Open every existing path component without following symbolic links.
 
     The borrowed descriptor is valid only inside this context. Do not call
     resolve()/realpath() on a subsequent procfd capability: that discards its
     protection against namespace replacement.
     """
-    _private_support()
     with _registered_directory(path) as descriptor:
         if descriptor is not None:
             yield descriptor
@@ -248,6 +247,28 @@ def pinned_directory(path):
         yield descriptor
     finally:
         os.close(descriptor)
+
+
+@contextmanager
+def pinned_directory(path):
+    """Existing Linux path-adapter parent pinning contract."""
+    _private_support()
+    with _pinned_directory_common(path) as descriptor:
+        yield descriptor
+
+
+@contextmanager
+def pinned_directory_fd(path):
+    """Lend a parent directory FD on POSIX without requiring procfs paths.
+
+    The single canonical no-follow component walk is shared with the existing
+    Linux adapter. Callers retain descriptor-relative I/O on macOS; this does not
+    expose an ordinary mutable path as a substitute for an FD capability.
+    """
+    if not private_stage_fd_supported():
+        raise OSError(errno.ENOTSUP, 'descriptor-only parent pinning is unavailable')
+    with _pinned_directory_common(path) as descriptor:
+        yield descriptor
 
 
 def _clear_private_directory(descriptor):

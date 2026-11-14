@@ -6,6 +6,7 @@ No pathname stat-then-rename is used as proof of source identity. This does not
 isolate callers from hostile processes running as the same Windows user.
 """
 from contextlib import contextmanager
+from contextvars import ContextVar
 import ctypes
 import errno
 from functools import lru_cache
@@ -23,6 +24,7 @@ _REPARSE = 0x400
 _INVALID = ctypes.c_void_p(-1).value
 _DWORD = ctypes.c_uint32
 _HANDLE = ctypes.c_void_p
+_PINS = ContextVar('atomic_windows_directory_pins', default=())
 
 
 class _Attributes(ctypes.Structure):
@@ -145,9 +147,25 @@ def _path(path):
 
 
 class _DirectoryPin:
-    def __init__(self, path, handle):
+    def __init__(self, path, handle, stage=None):
         self.path = path
         self._handle = handle
+        self._active = True
+        self._stage = stage
+
+    @contextmanager
+    def pin_child(self, name, *, create=False):
+        """Pin a physical direct child without reopening the held ancestors."""
+        if not self._active or self._stage is not None and self._stage.published:
+            raise ValueError('directory pin is inactive or has already been published')
+        _component(name)
+        if type(create) is not bool:
+            raise ValueError('child creation policy must be a boolean')
+        child = self.path / name
+        if create:
+            child.mkdir(mode=0o700)
+        with pinned_directory(child) as pin:
+            yield pin
 
 
 @contextmanager
@@ -156,9 +174,35 @@ def pinned_directory(path):
     _api()  # Unsupported hosts fail before inspecting or touching caller paths.
     path = _path(path)
     handles = []
-    current = Path(path.anchor)
+    registration = None
+    result = None
+    owner = None
+    counted = False
     try:
-        for part in (None, *path.parts[1:]):
+        parent = None
+        suffix = None
+        for candidate in sorted(_PINS.get(), key=lambda pin: len(pin.path.parts), reverse=True):
+            if not candidate._active or candidate._stage is not None and candidate._stage.published:
+                continue
+            try:
+                relative = path.relative_to(candidate.path)
+            except ValueError:
+                continue
+            parent = candidate
+            suffix = relative.parts
+            break
+        if parent is not None:
+            current = parent.path
+            handle = parent._handle
+            owner = parent._stage
+            attributes = _attributes(handle)
+            if not attributes & _DIRECTORY or attributes & _REPARSE:
+                raise ValueError('registered Windows directory is no longer valid')
+            parts = suffix
+        else:
+            current = Path(path.anchor)
+            parts = (None, *path.parts[1:])
+        for part in parts:
             if part is not None:
                 current /= part
             handle = _open(current)
@@ -166,10 +210,21 @@ def pinned_directory(path):
             attributes = _attributes(handle)
             if not attributes & _DIRECTORY or attributes & _REPARSE:
                 raise ValueError('Windows publication ancestors must be physical directories without reparse points')
-        yield _DirectoryPin(path, handles[-1])
+        result = _DirectoryPin(path, handle, owner)
+        if owner is not None and handles:
+            owner._children += 1
+            counted = True
+        registration = _PINS.set((*_PINS.get(), result))
+        yield result
     finally:
+        if registration is not None:
+            _PINS.reset(registration)
+        if result is not None:
+            result._active = False
         for handle in reversed(handles):
             _close(handle)
+        if counted:
+            owner._children -= 1
 
 
 def _rename_handle(handle, destination):
@@ -218,18 +273,20 @@ def _clear_owned(path, *, depth=0, count=None):
                 _close(handle)
 
 
-class PrivateStage:
+class PrivateStage(_DirectoryPin):
     """A pinned Path for writers plus exclusive publication of the exact payload."""
     def __init__(self, path, handle):
-        self.path = path
-        self._handle = handle
-        self._active = True
+        super().__init__(path, handle)
+        self._stage = self
+        self._children = 0
         self.published = False
 
     def publish_to(self, destination):
         """Rename the held payload by handle; never replace a destination."""
         if not self._active or self.published:
             raise ValueError('private stage is inactive or has already been published')
+        if self._children:
+            raise ValueError('close child directory pin contexts before publication')
         destination = _path(destination)
         _component(destination.name)
         with pinned_directory(destination.parent) as parent:
@@ -276,12 +333,14 @@ def private_stage(parent, *, prefix='.publish-', cleanup=True, cleanup_on_error=
             if not attributes & _DIRECTORY or attributes & _REPARSE:
                 raise ValueError('private payload changed before acquisition')
             stage = PrivateStage(payload, payload_handle)
+            registration = _PINS.set((*_PINS.get(), stage))
             try:
                 yield stage
             except BaseException as exc:
                 body_error = exc
                 raise
             finally:
+                _PINS.reset(registration)
                 stage._active = False
                 if not stage.published and cleanup and (body_error is None or cleanup_on_error):
                     try:

@@ -10,12 +10,13 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 import atomic_windows as windows
+import atomic_publish as publication
 
 
 class ActualWindowsPublicationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        if not windows.supported():
+        if not publication.windows_private_stage_supported():
             raise RuntimeError('actual Windows publication gate requires Windows APIs')
 
     def setUp(self):
@@ -29,7 +30,7 @@ class ActualWindowsPublicationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_actual_path_writes_and_by_handle_exclusive_publication(self):
-        with windows.private_stage(self.root) as stage:
+        with publication.windows_private_stage(self.root) as stage:
             (stage.path / 'verified').write_bytes(b'actual verified bytes')
             (stage.path / 'nested').mkdir()
             (stage.path / 'nested/original').write_bytes(b'original')
@@ -37,6 +38,38 @@ class ActualWindowsPublicationTests(unittest.TestCase):
         self.assertEqual((self.root / 'result/verified').read_bytes(), b'actual verified bytes')
         self.assertEqual((self.root / 'result/nested/original').read_bytes(), b'original')
         with self.assertRaises(ValueError): stage.publish_to(self.root / 'again')
+
+    def test_child_pins_reuse_live_payload_ancestors_and_close_before_publish(self):
+        with windows.private_stage(self.root) as stage:
+            with stage.pin_child('receipts', create=True) as child:
+                with child.pin_child('nested', create=True) as nested:
+                    (nested.path / 'verified').write_bytes(b'actual nested bytes')
+                    with self.assertRaises(ValueError): stage.publish_to(self.root / 'result')
+                    with self.assertRaises(OSError): child.path.rename(stage.path / 'replacement')
+            with self.assertRaises(ValueError):
+                with child.pin_child('late', create=True): self.fail('expired child admitted')
+            stage.publish_to(self.root / 'result')
+        self.assertEqual((self.root / 'result/receipts/nested/verified').read_bytes(), b'actual nested bytes')
+
+    def test_registered_child_path_pinning_does_not_reopen_delete_held_payload(self):
+        with windows.private_stage(self.root) as stage:
+            (stage.path / 'existing').mkdir()
+            with windows.pinned_directory(stage.path / 'existing') as child:
+                (child.path / 'verified').write_bytes(b'actual verified bytes')
+                with self.assertRaises(ValueError): stage.publish_to(self.root / 'result')
+            stage.publish_to(self.root / 'result')
+        self.assertEqual((self.root / 'result/existing/verified').read_bytes(), b'actual verified bytes')
+
+    def test_child_pinning_rejects_junction_without_touching_foreign_target(self):
+        foreign = self.root / 'foreign'; foreign.mkdir(); (foreign / 'original').write_bytes(b'user data')
+        with windows.private_stage(self.root) as stage:
+            self.junction(stage.path / 'link', foreign)
+            with self.assertRaises(ValueError):
+                with stage.pin_child('link'): self.fail('junction child admitted')
+            for name in ('../escape', 'x/y', 'x:stream'):
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    with stage.pin_child(name, create=True): self.fail('unsafe child admitted')
+        self.assertEqual((foreign / 'original').read_bytes(), b'user data')
 
     def test_private_wrapper_has_protected_owner_and_system_acl(self):
         with windows.private_stage(self.root) as stage:

@@ -8,6 +8,14 @@ workers and verification, then call `stage.publish_to(destination)`. Publication
 is exclusive and moves the exact held payload; it never reopens a mutable source
 basename. Calls after context exit or successful publication are rejected.
 
+Use `with stage.pin_child('receipts', create=True) as child:` for a new physical
+direct child, and `child.path` for its writers. Child pins can nest. Existing
+`pinned_directory(stage.path / 'existing-child')` contexts reuse the active
+held-parent capability instead of reopening the DELETE-held payload and causing
+a Windows sharing violation. Every descendant is checked for reparse points.
+Close all child pin contexts before calling `publish_to`; premature publication
+is rejected. Expired child contexts cannot create more children.
+
 Every physical ancestor is held with delete sharing denied before caller I/O.
 Reparse ancestors, traversal, device namespaces, drive-relative paths, alternate
 streams and UNC paths fail closed. New wrapper ACLs are protected and inherited
