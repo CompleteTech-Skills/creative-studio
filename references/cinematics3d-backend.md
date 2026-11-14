@@ -80,8 +80,10 @@ production artwork, motion-blur validation or the final three-shot film. Parent
 For shared development hosts, acquire the coordination native-validation flock
 for the entire example invocation.
 
-The [retained validation receipt](../examples/cinematics3d/backend/receipt.json)
+The [current validation receipt](../examples/cinematics3d/backend-current/receipt.json)
 records exact source hashes, actual tool/settings and independently decoded
 outputs. Its adjacent `engineering-evidence.zip` preserves the complete native
 fixture deliveries and test logs with a verified per-file inventory. The receipt
 identifies the tested source commit separately from this evidence-only commit.
+
+The [historical validation receipt](../examples/cinematics3d/backend/receipt.json) and its original archive remain unchanged. The current receipt binds all Python script hashes, exact native execution and the complete tested tree to the integrated implementation. Source-equivalent ancestry merges are recorded explicitly. Per-frame Scene3D and camera animation remain a shared-owner followup and are not silently approximated.
