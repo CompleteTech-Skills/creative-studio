@@ -22,7 +22,9 @@ from test_model3d_mesh_asset import record, provenance, source
 class FixtureProvenanceRegression(unittest.TestCase):
     def test_normalized_fixture_import_rig_export_and_spoof(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            # This fixture owns the temporary directory and explicitly admits
+            # its canonical location before creating any source files.
+            root = Path(tmp).resolve(strict=True)
             original = root / 'original.glb'
             export_geometry(primitive('box').geometry(), original)
             before = original.read_bytes()
