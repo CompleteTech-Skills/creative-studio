@@ -214,7 +214,7 @@ class VerifiedFilePublication(unittest.TestCase):
         self.assertEqual(self.output.read_bytes(), self.data)
         self.assertEqual(os.fstat(self.fd).st_size, len(self.data))
 
-    def test_posix_final_stage_close_failure_reports_committed_receipt(self):
+    def _assert_posix_final_stage_close_failure_reports_committed_receipt(self):
         if os.name == 'nt': return  # POSIX owned stage FD; native HANDLE tests are separate.
         close = os.close
         stage_closes = []
@@ -238,6 +238,16 @@ class VerifiedFilePublication(unittest.TestCase):
         self.assertTrue(caught.exception.committed)
         self.assertEqual(self.output.read_bytes(), self.data)
         self.assertEqual(os.fstat(self.fd).st_size, len(self.data))
+
+    def test_posix_final_stage_close_failure_reports_committed_receipt(self):
+        self._assert_posix_final_stage_close_failure_reports_committed_receipt()
+
+    def test_posix_final_stage_close_error_inside_unrelated_exception_handler(self):
+        try:
+            raise RuntimeError('earlier operation already handled by caller')
+        except RuntimeError as previous:
+            self._assert_posix_final_stage_close_failure_reports_committed_receipt()
+            self.assertFalse(getattr(previous, '__notes__', []))
 
     def test_linux_descriptor_lifetimes_on_success_and_failure(self):
         if not sys.platform.startswith('linux'): return

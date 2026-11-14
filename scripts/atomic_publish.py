@@ -143,6 +143,7 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
     identity = None
     body_error = None
     borrowed = None
+    operation_error = None
     try:
         borrowed = os.fstat(parent)
         if (borrowed.st_dev, borrowed.st_ino) != (parent_identity.st_dev, parent_identity.st_ino):
@@ -180,8 +181,13 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
                         raise
                     if hasattr(body_error, 'add_note'):
                         body_error.add_note('Pinned staging cleanup also failed: ' + str(cleanup_error))
+    except BaseException as exc:
+        operation_error = exc
+        raise
     finally:
-        primary = sys.exc_info()[1]
+        # An ambient caller ``except`` also appears in sys.exc_info() on a
+        # normal generator exit. Only this invocation's error is primary.
+        primary = operation_error
         closing_errors = []
         # Never retry close(): an error may be reported after the OS has already
         # released the descriptor, and retrying could close a reused foreign FD.
