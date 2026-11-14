@@ -61,6 +61,14 @@ class RenderExecutionDriverTests(unittest.TestCase):
         with self.assertRaises(RigError):
             self.driver.validate(self.binding, node, self.fixture.root)
 
+    def test_changed_frozen_geometry_rejects_before_native_admission(self):
+        source = self.fixture.root / 'snapshot' / 'triangle.obj'
+        self.assertTrue(source.is_file())
+        source.write_bytes(source.read_bytes() + b'\n# changed frozen geometry\n')
+        with self.assertRaises(ValueError):
+            self.driver.inspect(self.binding)
+        self.assertTrue(all(frame['attempts'] == 0 for frame in self.store.status(self.job)['frames']))
+
     def test_status_label_without_verified_cache_never_completes(self):
         # Deliberately corrupt persistent native state, rather than mock a
         # successful backend response. The adapter must still require bytes.
