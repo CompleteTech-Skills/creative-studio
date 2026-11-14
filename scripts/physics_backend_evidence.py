@@ -151,10 +151,17 @@ def direct_report(value,world):
          all(integer(value[key]) for key in ('sample_count','object_count','actual_solver_steps')) and
          value['cache_storage']=='immutable native transform/contact samples' and value['restart']=='clean-restart-only','Invalid DIRECT observations.')
     need(type(value['actual_bodies']) is list and len(value['actual_bodies'])==len(world['bodies']),'Invalid DIRECT body observations.')
-    for body in value['actual_bodies']:
+    for index,body in enumerate(value['actual_bodies']):
+        semantic_options=('inherent sphere radius','transformed primitive wrapper margin','explicit box collision margin')
+        if world.get('collision_profile')=='explicit-proxies-v1':
+            source=world['bodies'][index]
+            control=value['rigid_controls']['bodies'][index]
+            child=control['collision_children'][0]
+            wrapped=any(abs(x)>1e-10 for x in child['translation']) or abs(abs(child['rotation'][3])-1)>1e-10
+            semantic_options=('inherent sphere radius',) if source['colliders'][0]['shape']['type']=='sphere' and not wrapped else ('explicit proxy margin',)
         object_fields(body,('id','mass','friction','inertia','center_of_mass','restitution','native_margin','margin_semantics'),'DIRECT body')
         need(type(body['id']) is str and all(number(body[key]) for key in ('mass','friction','restitution','native_margin')) and
-             vector(body['inertia']) and vector(body['center_of_mass']) and body['margin_semantics'] in ('inherent sphere radius','transformed primitive wrapper margin','explicit box collision margin'),
+             vector(body['inertia']) and vector(body['center_of_mass']) and body['margin_semantics'] in semantic_options,
              'Invalid DIRECT physical body observations.')
 
 
@@ -248,6 +255,7 @@ def rigid_report(report,world,backend):
     for observed,body in zip(value['bodies'],world['bodies']):
         fields=('id','mode','sleep')+(('kinematic',) if backend=='blender' else
             ('inertial_position','inertial_rotation','principal_inertia','initial_linear_velocity','initial_angular_velocity','collision'))
+        if world.get('collision_profile')=='explicit-proxies-v1' and backend=='pybullet':fields += ('collision_children',)
         object_fields(observed,fields,'Rigid body controls')
         need(observed['id']==body['id'] and observed['mode']==body['mode'],'Physical authority differs.')
         expected=dict(enabled=body.get('sleep',{}).get('enabled',False),initially_sleeping=body.get('sleep',{}).get('initially_sleeping',False),
@@ -263,9 +271,18 @@ def rigid_report(report,world,backend):
         else:
             shape=observed['collision']
             object_fields(shape,('type','dimensions','translation','rotation'),'Native collision child')
-            need(shape['type'] in ('sphere','box') and vector(shape['dimensions']) and vector(shape['translation']) and
+            need(shape['type'] in (('sphere','box','capsule','cylinder','mesh') if world.get('collision_profile')=='explicit-proxies-v1' else ('sphere','box')) and vector(shape['dimensions']) and vector(shape['translation']) and
                  type(shape['rotation']) is list and len(shape['rotation'])==4 and all(number(x) for x in shape['rotation']) and
                  abs(sum(x*x for x in shape['rotation'])-1)<=1e-6, 'Native primitive collision child is malformed.')
+            if world.get('collision_profile')=='explicit-proxies-v1':
+                need(type(observed['collision_children']) is list and 1<=len(observed['collision_children'])<=64, 'Missing native proxy children.')
+                for child in observed['collision_children']:
+                    object_fields(child,('type','dimensions','filename','translation','rotation'),'Native proxy child')
+                    need(type(child['type']) is int and child['type'] in (2,3,4,5,7) and
+                         vector(child['dimensions']) and vector(child['translation']) and type(child['filename']) is str and
+                         len(child['filename'])<=4096 and type(child['rotation']) is list and len(child['rotation'])==4 and
+                         all(number(x) for x in child['rotation']) and abs(sum(x*x for x in child['rotation'])-1)<=1e-6,
+                         'Malformed native proxy child observations.')
             need(vector(observed['inertial_position']) and all(abs(a-b)<=1e-6 for a,b in zip(observed['inertial_position'],body['mass']['center_of_mass'])) and
                  type(observed['inertial_rotation']) is list and len(observed['inertial_rotation'])==4 and
                  all(number(x) for x in observed['inertial_rotation']) and abs(sum(x*x for x in observed['inertial_rotation'])-1)<=1e-6 and

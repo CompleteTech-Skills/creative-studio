@@ -191,3 +191,65 @@ def collision_native_observations(p, client, body_id):
 
 def collision_query(p, client, start, end, mask=-1):
     return collision_raycast(p,client,start,end,0xffffffff if mask == -1 else mask)
+
+
+def collision_query_collider(collider):
+    """Exact closed box surfaces for native rays; solver proxies stay unchanged.
+
+    Bullet 3.2.7 zero-margin box support shapes can falsely miss rays. A static
+    twelve-triangle surface preserves the declared box boundary, including local
+    frames, without adding a collision skin. Other admitted proxies stay native.
+    """
+    result = json.loads(json.dumps(collider))
+    def convert(shape):
+        if shape['type'] == 'compound':
+            for child in shape['children']:
+                convert(child['shape'])
+        elif shape['type'] == 'box':
+            size = shape['size']
+            vertices = [[x*size[0]/2,y*size[1]/2,z*size[2]/2] for x,y,z in
+                [(-1,-1,-1),(1,-1,-1),(1,1,-1),(-1,1,-1),(-1,-1,1),(1,-1,1),(1,1,1),(-1,1,1)]]
+            triangles = [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],
+                         [3,7,6],[3,6,2],[0,4,7],[0,7,3],[1,2,6],[1,6,5]]
+            shape.clear()
+            shape.update(type='triangle-mesh',source='internal-query-box-surface',vertices=vertices,triangles=triangles)
+    convert(result['shape'])
+    return result
+
+
+def collision_build_query_shapes(p, client, collider, root):
+    """One native query shape per leaf, preserving double-precision box vertices.
+
+    OBJ import rounds vertices to float32; use the native vertex API for boxes.
+    Separate static query bodies allow compounds without that lossy file route.
+    """
+    shapes=[]
+    for leaf in collision_leaves(collider):
+        native_shape=json.loads(json.dumps(leaf['shape']))
+        # Flattened leaf frames already contain the authored axis conversion.
+        if native_shape['type'] in ('capsule','cylinder'):
+            native_shape['axis']='Z'
+        local=dict(shape=native_shape,transform=dict(translation=leaf['translation'],rotation=leaf['rotation']))
+        if leaf['shape']['type']=='box':
+            surface=collision_query_collider(local)['shape']
+            shape=p.createCollisionShape(p.GEOM_MESH,vertices=surface['vertices'],
+                indices=[index for triangle in surface['triangles'] for index in triangle],
+                flags=p.GEOM_FORCE_CONCAVE_TRIMESH,collisionFramePosition=leaf['translation'],
+                collisionFrameOrientation=leaf['rotation'],physicsClientId=client)
+            if type(shape) is not int or shape<0:
+                raise ValueError('Bullet rejected the exact query box surface.')
+        else:
+            shape=collision_build_shape(p,client,local,root)
+        shapes.append(shape)
+    return shapes
+
+
+def collision_query_box_surface_valid(point, pose, leaf, tolerance=1e-8):
+    """Validate a native hit; never synthesize an intersection or a ray miss."""
+    rotation=pose['rotation'];inverse=[-rotation[0],-rotation[1],-rotation[2],rotation[3]]
+    body_point=_collision_rotate(inverse,[a-b for a,b in zip(point,pose['translation'])])
+    rotation=leaf['rotation'];inverse=[-rotation[0],-rotation[1],-rotation[2],rotation[3]]
+    local=_collision_rotate(inverse,[a-b for a,b in zip(body_point,leaf['translation'])])
+    half=[v/2 for v in leaf['shape']['size']]
+    return (all(abs(v)<=h+tolerance for v,h in zip(local,half)) and
+            min(abs(abs(v)-h) for v,h in zip(local,half))<=tolerance)
