@@ -50,6 +50,26 @@ def _validate_ref(reference):
     error = next(Draft202012Validator({'$defs': definitions(), '$ref': '#/$defs/artifact-ref'}).iter_errors(reference), None)
     if error:
         _fail('REQUEST', 'Invalid ArtifactRef: ' + error.message)
+    # Reuse Director's exact ArtifactRef traversal authority; schema admission
+    # alone does not enforce cross-reference path/identity consistency.
+    from director_contracts import artifact_references, MAX_FILES, MAX_TOTAL_BYTES
+    from rig_errors import portable_name
+    import unicodedata
+    paths, identities, aliases = {}, {}, {}
+    for item in artifact_references(reference):
+        path = portable_name(item['path'])
+        if path != unicodedata.normalize('NFC', path):
+            _fail('PATH', 'Artifact paths must use Unicode NFC.')
+        alias = path.casefold()
+        identity = item['artifact_id'], item['semantic_version']
+        if ((path in paths and paths[path] != item) or
+                (identity in identities and identities[identity] != item)):
+            _fail('CONFLICT', 'Artifact closure contains conflicting exact path or identity references.')
+        if alias in aliases and aliases[alias] != path:
+            _fail('PATH', 'Artifact closure contains case-aliased paths.')
+        paths[path], identities[identity], aliases[alias] = item, item, path
+    if len(paths) > MAX_FILES or sum(item['byte_size'] for item in paths.values()) > MAX_TOTAL_BYTES:
+        _fail('LIMIT', 'Artifact reference closure exceeds Director bounds.')
     return reference
 
 

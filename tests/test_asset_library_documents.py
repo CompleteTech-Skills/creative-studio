@@ -127,9 +127,8 @@ class DocumentPublicationTests(unittest.TestCase):
         original = self.library.register
         barrier = threading.Barrier(2)
         def register(*args, **kwargs):
-            result = original(*args, **kwargs)
             barrier.wait(timeout=10)
-            return result
+            return original(*args, **kwargs)
         def publish(artifact_id):
             try:
                 return self.publish(b'{"race":true}', artifact_id=artifact_id)
@@ -137,9 +136,48 @@ class DocumentPublicationTests(unittest.TestCase):
                 return error.report['code']
         with patch.object(self.library, 'register', register), ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(publish, ('race-a', 'race-b')))
-        self.assertLessEqual(sum(isinstance(result, dict) for result in results), 1)
+        self.assertEqual(sum(isinstance(result, dict) for result in results), 1)
         self.assertIn('LIBRARY_DOCUMENT_CONFLICT', results)
+        self.assertEqual(len(self.library.list_references()), 2)
         self.assertEqual(self.library.events('editor-history'), [])
+
+    def test_delayed_alias_writer_cannot_poison_successful_publication(self):
+        original = self.library.register
+        waiting, release = threading.Event(), threading.Event()
+        def register(manifest, sources, **kwargs):
+            if manifest['identity']['name'] == 'late':
+                waiting.set()
+                if not release.wait(timeout=10):
+                    raise AssertionError('Late writer was not released.')
+            return original(manifest, sources, **kwargs)
+        def late():
+            try:
+                return self.publish(b'{}', artifact_id='late')
+            except RigError as error:
+                return error.report['code']
+        with patch.object(self.library, 'register', register), ThreadPoolExecutor(max_workers=1) as pool:
+            result = pool.submit(late)
+            self.assertTrue(waiting.wait(timeout=10))
+            first = self.publish(b'{}', artifact_id='first')
+            release.set()
+            self.assertEqual(result.result(timeout=10), 'LIBRARY_DOCUMENT_CONFLICT')
+        self.assertEqual(self.publisher.read_ref(first), b'{}')
+        self.assertEqual(self.publish(b'{}', artifact_id='first'), first)
+        self.assertEqual(len(self.library.list_references()), 1)
+
+    def test_native_sibling_or_self_path_aliases_fail_before_owner_resolution(self):
+        native = dict(artifact_id='native', kind='prop', schema_version=1, semantic_version='1.0.0',
+            path='library/native/source.json', sha256=hashlib.sha256(b'{}').hexdigest(), byte_size=2,
+            media_type='application/json', provenance_ref=None, fixture=True, dependencies=[])
+        owner = unittest.mock.Mock(side_effect=AssertionError('Aliased request must fail before native owner invocation.'))
+        publisher = DocumentPublisher(self.library, artifact_root=self.root, native_dependency_resolver=owner)
+        for dependencies in ([native, {**native, 'artifact_id':'other'}],
+                             [{**native, 'path':'library/records/blobs/' + native['sha256']}],
+                             [native, {**native, 'artifact_id':'other', 'path':native['path'].upper()}]):
+            with self.subTest(dependencies=dependencies), self.assertRaises(RigError):
+                publisher.publish_document(b'{}', 'project', 'director-project', 1, '1.0.0', dependencies, True)
+        owner.assert_not_called()
+        self.assertEqual(self.library.list_references(), [])
 
     def test_raw_canonical_document_malformed_metadata_fails_typed(self):
         from asset_library_contracts import seal
@@ -152,7 +190,10 @@ class DocumentPublicationTests(unittest.TestCase):
         record = manifest['files'][1]
         record.update(sha256=hashlib.sha256(bad_metadata).hexdigest(), bytes=len(bad_metadata))
         manifest['provenance']['license_evidence'] = [deepcopy(record)]
-        payloads = {'document.payload': self.publisher.read_ref(ref), 'document-metadata.json': bad_metadata}
+        bad_source = b'{"malformed-source":true}'
+        manifest['files'][0].update(sha256=hashlib.sha256(bad_source).hexdigest(), bytes=len(bad_source))
+        manifest['provenance']['sources'] = [deepcopy(manifest['files'][0])]
+        payloads = {'document.payload': bad_source, 'document-metadata.json': bad_metadata}
         sources = {}
         for name, payload in payloads.items():
             path = self.root / name

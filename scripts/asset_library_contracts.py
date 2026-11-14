@@ -251,6 +251,12 @@ def validate(value, kind='AssetVersion'):
         if not any(f['required'] for f in value['files']):
             raise RigError('LIBRARY_REQUIRED', 'At least one runtime payload must be required.')
         files = {f['path']: f for f in value['files']}
+        if value['identity']['kind'] == 'document':
+            mandatory = ('document.payload', 'document-metadata.json')
+            if any(name not in files or not files[name]['required'] for name in mandatory):
+                raise RigError('LIBRARY_DOCUMENT_SCHEMA', 'Document versions require complete mandatory source and metadata files.')
+            if files['document-metadata.json']['format'] != 'json':
+                raise RigError('LIBRARY_DOCUMENT_SCHEMA', 'Document metadata must be retained as JSON.')
         if set(value['publication']['inventory']) != set(files):
             raise RigError('LIBRARY_INVENTORY', 'Publication inventory must exactly match the payloads.')
         p = value['provenance']

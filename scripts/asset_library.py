@@ -289,6 +289,19 @@ class AssetLibrary:
                     _fail('CONFLICT', 'Identity history changed after lifecycle validation; reload before creating a version.')
             if db.execute('SELECT 1 FROM versions WHERE id=? AND version=?', (identity, version)).fetchone():
                 _fail('IMMUTABLE', 'This asset version already exists; publish a new version.')
+            if manifest['identity']['kind'] == 'document':
+                # Director requires one exact ArtifactRef per source path. The
+                # adapter returns canonical content-addressed blob paths, so
+                # enforce their document uniqueness under this SAME writer
+                # transaction before any index/durable source commit. Different
+                # document IDs have independent identity-history CAS checks.
+                payload = next(f for f in manifest['files'] if f['path'] == 'document.payload')
+                for (encoded,) in db.execute('SELECT manifest FROM versions'):
+                    prior_document = load_manifest(encoded)
+                    if prior_document['identity']['kind'] == 'document':
+                        old_payload = next(f for f in prior_document['files'] if f['path'] == 'document.payload')
+                        if old_payload['sha256'] == payload['sha256']:
+                            _fail('DOCUMENT_CONFLICT', 'Canonical document source path already belongs to another exact publication.')
             if db.execute('SELECT COUNT(*) FROM versions').fetchone()[0] >= MAX_VERSIONS:
                 _fail('LIMIT', 'Library version limit exceeded.')
             prior = db.execute('SELECT manifest FROM versions WHERE id=? LIMIT 1', (identity,)).fetchone()

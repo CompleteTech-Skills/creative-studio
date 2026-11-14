@@ -57,12 +57,15 @@ CAS; a racing identical publication can return its existing exact reference. A
 racing different version invalidates stale identity history and requires reload.
 Every returned ref is verified against its actual canonical bytes. Because Director
 requires one exact ArtifactRef per path, different references to identical source
-bytes are rejected. The adapter scans the existing canonical publications before
-registration and again on readback, covering races across different canonical
-identities. A conflict discovered after registration may leave unselected sources;
-it never returns a successful conflicting ref. Retrying identical bytes with a
+bytes are rejected. Canonical registration checks source-path uniqueness inside its existing writer
+transaction before any immutable version or durable source commit. That guard
+covers different-ID races and prevents a rejected late writer from poisoning an
+earlier successful reference or idempotent retry. Adapter inventory checks before
+registration and on readback are additional verification. Retrying identical bytes with a
 different ID/version/metadata cannot silently alias the original publication.
-Malformed canonical document envelopes and identity/source/dependency bindings
+The entire nested ArtifactRef graph also obeys Director's path/identity uniqueness,
+NFC/case spelling, count, and aggregate byte bounds using its existing reference
+traversal authority. Malformed canonical document envelopes and identity/source/dependency bindings
 fail with typed metadata errors, including registrations made through the lower
 level canonical API.
 
