@@ -7,9 +7,11 @@ import hashlib
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from director_final_delivery import (validate_final_requests, assemble_final_frames,
                                     validate_production_selection,
+                                    encode_final_media, _media_paths,
                                     _validate_binding, _binding_state, _read_json, _directory)
 from render3d_contracts import Render3DError
 from rig_errors import RigError, object_hash
@@ -131,6 +133,28 @@ class FinalPlanTests(unittest.TestCase):
 
 
 class FinalEvidenceTests(unittest.TestCase):
+    def test_invalid_media_configuration_fails_before_reading_720_frames(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            valid = {'h264-mp4': root/'movie.mp4', 'vp9-webm': root/'movie.webm'}
+            invalid = [dict(valid, **{'h264-mp4': None}),
+                       dict(valid, **{'vp9-webm': root/'wrong.mp4'}),
+                       dict(valid, **{'h264-mp4': root/'..'/'outside.mp4'}),
+                       dict(valid, **{'vp9-webm': 'bad\0.webm'}),
+                       dict(valid, **{'vp9-webm': 'bad-\ud800.webm'}),
+                       {'h264-mp4': root/'movie.mp4'}]
+            with patch('director_final_delivery.assemble_final_frames',
+                       side_effect=AssertionError('Read native frames for malformed output configuration')):
+                for destinations in invalid:
+                    with self.subTest(destinations=destinations), self.assertRaises(RigError):
+                        encode_final_media(None, root, [], destinations)
+
+    def test_media_metadata_validation_preserves_publisher_path_spelling(self):
+        paths = {'h264-mp4': Path.cwd()/'media'/'movie.mp4',
+                 'vp9-webm': Path.cwd()/'media'/'movie.webm'}
+        with patch.object(Path, 'resolve', side_effect=AssertionError('Collapsed publisher capability')):
+            self.assertEqual(_media_paths(paths), paths)
+
     def test_native_directory_binding_uses_directory_type_not_regular_file_gate(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

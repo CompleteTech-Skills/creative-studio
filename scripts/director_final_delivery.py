@@ -416,6 +416,33 @@ def _recheck_delivery_sources(store, root, bindings, admission, narrative):
                                    for binding in bindings], report)
 
 
+def _media_paths(destinations):
+    _need(isinstance(destinations, dict) and set(destinations) == set(PROFILES),
+          'Both explicit MP4 and WebM destinations are required.')
+    paths = {}
+    for profile, value in destinations.items():
+        _need(isinstance(value, (str, Path)) and 0 < len(str(value)) <= 4096 and
+              '\0' not in str(value), 'Media destinations must be bounded filesystem paths.')
+        try:
+            str(value).encode('utf-8')
+        except UnicodeError as exc:
+            raise RigError('DIRECTOR_FINAL_DELIVERY', 'Media destination is not valid Unicode.',
+                           stage='director-final-delivery') from exc
+        path = Path(value)
+        _need('..' not in path.parts and not path.drive.startswith('\\\\'),
+              'Media destinations must not traverse parents or remote shares.')
+        portable_name(path.name)
+        _need(path.suffix == ('.mp4' if profile == 'h264-mp4' else '.webm'),
+              'Media destination extension differs from its explicit profile.')
+        # The canonical media publisher owns directory capabilities, system
+        # path aliases and no-follow capture. Preserve the caller's spelling;
+        # do not collapse a registered descriptor path into a mutable pathname.
+        paths[profile] = path.absolute()
+    aliases = [unicodedata.normalize('NFC', str(path)).casefold() for path in paths.values()]
+    _need(len(set(aliases)) == len(PROFILES), 'Final media destinations must differ.')
+    return paths
+
+
 def encode_final_media(store, root, bindings, destinations, *, narrative=None, retained_receipts=None,
                        receipt_root=None,
                        ffmpeg=None, ffprobe=None, timeout_seconds=3600, cancel=None):
@@ -428,16 +455,13 @@ def encode_final_media(store, root, bindings, destinations, *, narrative=None, r
     of this returned result; this function creates no controller or status store.
     """
     from silent_video import make_request, encode, validate_request, validate_receipt
-    _need(isinstance(destinations, dict) and set(destinations) == set(PROFILES),
-          'Both explicit MP4 and WebM destinations are required.')
+    paths = _media_paths(destinations)
     _need(type(timeout_seconds) is int and 1 <= timeout_seconds <= 3600,
           'Use a bounded encoding timeout between one and 3600 seconds.')
     _need(retained_receipts is None or isinstance(retained_receipts, dict)
           and set(retained_receipts) <= set(PROFILES), 'Unknown retained export profile.')
     bindings = deepcopy(bindings)
     admission = assemble_final_frames(store, root, bindings, narrative=narrative)
-    paths = {profile: Path(path).absolute() for profile, path in destinations.items()}
-    _need(len(set(paths.values())) == len(PROFILES), 'Final media destinations must differ.')
     protected = [_directory(root, binding[field]).resolve()
                  for binding in bindings for field in ('directory', 'snapshot_directory')]
     protected.append(store.root.resolve())
