@@ -615,16 +615,81 @@ def _slot():
         manager.__exit__(None,None,None)
 
 
+class _ProcessDirectory:
+    """Internal worker I/O adapter; one runner owns both path and FD jobs."""
+    def __init__(self, root, descriptor):
+        self.root = root
+        self.reader = None if descriptor is None else _Reader.from_descriptor(descriptor)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        if self.reader is not None:self.reader.__exit__(*exc)
+
+    def open_log(self, name):
+        if self.reader is None:return (self.root/name).open('wb')
+        require('/' not in path_name(name), 'PHYSICS_PATH', 'Worker log name must be a basename.')
+        fd = os.open(name, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600, dir_fd=self.reader.fd)
+        return os.fdopen(fd, 'wb')
+
+    def launch(self, command, out, err):
+        if self.reader is None:
+            return subprocess.Popen(command, cwd=self.root, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+                env=_environment(self.root), shell=False, start_new_session=os.name == 'posix')
+        from physics_directory_transport import launch_at
+        return launch_at(self.reader.fd, command, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
+            env=_environment(Path('.')), start_new_session=True)
+
+    def size(self):
+        return _tree_size(self.root) if self.reader is None else _tree_size_relative(self.reader.fd)
+
+    def log_size(self, name):
+        return (self.root/name).stat().st_size if self.reader is None else self.reader.stat(name).st_size
+
+    def failure(self):
+        if self.reader is None:
+            path=self.root/'worker-report.json'
+            return parse(path.read_bytes()) if path.is_file() and path.stat().st_size <= 32768 else None
+        try:info=os.stat('worker-report.json', dir_fd=self.reader.fd, follow_symlinks=False)
+        except FileNotFoundError:return None
+        if stat.S_ISREG(info.st_mode) and info.st_size <= 32768:return parse(self.reader.read('worker-report.json',32768))
+        return None
+
+    def tail(self, name):
+        if self.reader is None:return _tail(self.root/name)
+        try:
+            fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=self.reader.fd)
+            with os.fdopen(fd,'rb') as stream:
+                info=os.fstat(fd)
+                if not stat.S_ISREG(info.st_mode):return ''
+                stream.seek(max(0,info.st_size-8192))
+                return stream.read(8192).decode('utf-8',errors='replace')
+        except OSError:return ''
+
+
 def _run_process(command, root, *, timeout, memory_bytes, output_bytes, cancel_token=None, progress=None, label='simulation'):
-    stdout = root / (label + '-stdout.log')
-    stderr = root / (label + '-stderr.log')
+    with _ProcessDirectory(root, None) as directory:
+        return _run_process_owned(command, directory, timeout=timeout, memory_bytes=memory_bytes,
+            output_bytes=output_bytes, cancel_token=cancel_token, progress=progress, label=label)
+
+
+def _run_process_at(command, directory_fd, *, timeout, memory_bytes, output_bytes, cancel_token=None, progress=None, label='simulation'):
+    with _ProcessDirectory(None, directory_fd) as directory:
+        return _run_process_owned(command, directory, timeout=timeout, memory_bytes=memory_bytes,
+            output_bytes=output_bytes, cancel_token=cancel_token, progress=progress, label=label)
+
+
+def _run_process_owned(command, directory, *, timeout, memory_bytes, output_bytes, cancel_token=None, progress=None, label='simulation'):
+    require('/' not in path_name(label), 'PHYSICS_PATH', 'Worker log labels must be portable basenames.', category='invalid-input')
+    stdout = label + '-stdout.log'
+    stderr = label + '-stderr.log'
     start = time.monotonic()
     peak = 0
     process = None
     try:
-        with _slot(), stdout.open('wb') as out, stderr.open('wb') as err:
-            process = subprocess.Popen(command, cwd=root, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
-                                       env=_environment(root), shell=False, start_new_session=os.name == 'posix')
+        with _slot(), directory.open_log(stdout) as out, directory.open_log(stderr) as err:
+            process = directory.launch(command, out, err)
             while process.poll() is None:
                 if cancel_token is not None and cancel_token.is_set():
                     raise BackendError('PHYSICS_CANCELLED', 'The user cancelled this owned worker.', category='timeout')
@@ -632,7 +697,7 @@ def _run_process(command, root, *, timeout, memory_bytes, output_bytes, cancel_t
                     raise BackendError('PHYSICS_TIMEOUT', 'Physics worker exceeded its wall-clock deadline.', category='timeout')
                 peak = max(peak, _rss(process.pid))
                 require(peak <= memory_bytes, 'PHYSICS_RESOURCE_LIMIT', 'Worker RSS exceeded the configured memory cap.', category='resource-exhaustion')
-                require(_tree_size(root) <= output_bytes and stdout.stat().st_size <= MAX_LOG_BYTES and stderr.stat().st_size <= MAX_LOG_BYTES,
+                require(directory.size() <= output_bytes and directory.log_size(stdout) <= MAX_LOG_BYTES and directory.log_size(stderr) <= MAX_LOG_BYTES,
                         'PHYSICS_RESOURCE_LIMIT', 'Worker files/logs exceeded the configured output cap.', category='resource-exhaustion')
                 if progress is not None:
                     progress(dict(status='running', elapsed_seconds=time.monotonic()-start,
@@ -642,10 +707,10 @@ def _run_process(command, root, *, timeout, memory_bytes, output_bytes, cancel_t
             # than its budget. Stop any owned descendants before checking the
             # settled inventory and before trusting or reading worker reports.
             _stop(process)
-            require(_tree_size(root) <= output_bytes and stdout.stat().st_size <= MAX_LOG_BYTES and stderr.stat().st_size <= MAX_LOG_BYTES,
+            require(directory.size() <= output_bytes and directory.log_size(stdout) <= MAX_LOG_BYTES and directory.log_size(stderr) <= MAX_LOG_BYTES,
                     'PHYSICS_RESOURCE_LIMIT', 'Worker files/logs exceeded the configured output cap.', category='resource-exhaustion')
-            if process.returncode != 0 and (root/'worker-report.json').is_file() and (root/'worker-report.json').stat().st_size <= 32768:
-                failure=parse((root/'worker-report.json').read_bytes())
+            if process.returncode != 0:
+                failure=directory.failure()
                 if isinstance(failure,dict) and failure.get('ok') is False and isinstance(failure.get('error'),dict):
                     detail=failure['error']
                     if detail.get('code')=='PHYSICS_NUMERICAL_INSTABILITY':
@@ -657,12 +722,12 @@ def _run_process(command, root, *, timeout, memory_bytes, output_bytes, cancel_t
     except BackendError as exc:
         if process is not None:
             _stop(process)
-        exc.report.update(preserved_workspace=str(root), process_exit_code=process.returncode if process else None,
-                          stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+        exc.report.update(preserved_workspace=str(directory.root) if directory.reader is None else 'owned-directory-descriptor', process_exit_code=process.returncode if process else None,
+                          stdout_tail=directory.tail(stdout), stderr_tail=directory.tail(stderr))
         raise
     except OSError as exc:
         error = BackendError('PHYSICS_BACKEND_CRASH', 'Cannot execute configured backend: ' + str(exc), category='backend-crash')
-        error.report.update(preserved_workspace=str(root), stdout_tail=_tail(stdout), stderr_tail=_tail(stderr))
+        error.report.update(preserved_workspace=str(directory.root) if directory.reader is None else 'owned-directory-descriptor', stdout_tail=directory.tail(stdout), stderr_tail=directory.tail(stderr))
         raise error from exc
     finally:
         if process is not None:
