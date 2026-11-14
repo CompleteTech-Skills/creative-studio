@@ -1,4 +1,4 @@
-"""Linux-only descriptor cleanup and portable Windows adapter simulations."""
+"""POSIX descriptor cleanup and portable Windows adapter simulations."""
 import contextlib
 import errno
 import hashlib
@@ -15,11 +15,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 import atomic_publish as atomic
 import atomic_windows as windows
 
-if not sys.platform.startswith('linux'):
-    raise RuntimeError('This module requires Linux')
+if not (sys.platform.startswith('linux') or sys.platform == 'darwin'):
+    raise RuntimeError('This module requires Linux or macOS')
 
 
-class VerifiedFileLinuxTests(unittest.TestCase):
+class VerifiedFilePosixTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
