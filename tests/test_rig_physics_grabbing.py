@@ -98,6 +98,26 @@ class GripSpatialTests(unittest.TestCase):
             with self.subTest(corrupt=corrupt), self.assertRaises(RigError):
                 attach_kinematic(rig, candidate, 'grip.right', transform(), asset, transform([-.5,0,0]), 'handle')
 
+    def test_malformed_attachment_and_socket_inputs_remain_typed(self):
+        rig, pose, asset = grip_fixture()
+        for bad in [None, [], {}, dict(owner=None, socket='grip.right', transform=transform()),
+                    dict(owner='shared-character', socket=[], transform=transform()),
+                    dict(owner='shared-character', socket='missing', transform=transform())]:
+            for function in [attachment_pose, detach_kinematic]:
+                with self.subTest(bad=bad, function=function.__name__), self.assertRaises(RigError):
+                    function(rig, pose, bad, transform())
+        for bad in [None, [], {}, True, 'x'*129]:
+            with self.subTest(socket=bad), self.assertRaises(RigError):
+                attach_kinematic(rig, pose, bad, transform(), asset, transform(), 'handle')
+
+    def test_duplicate_and_wrong_character_sockets_fail_before_fk(self):
+        rig, pose, asset = grip_fixture()
+        for sockets in [[*rig.manifest['attachments'], *rig.manifest['attachments']],
+                        [{**rig.manifest['attachments'][0], 'owner':'other-character'}]]:
+            rig.manifest['attachments'] = sockets
+            with self.subTest(sockets=sockets), self.assertRaises(RigError):
+                attach_kinematic(rig, pose, 'grip.right', transform(), asset, transform(), 'handle')
+
     def test_malformed_numeric_values_do_not_escape_typed_boundary(self):
         for value in [True, '1', None, float('nan'), float('inf'), 10**400, [1], {}]:
             with self.subTest(value=str(value)[:20]), self.assertRaises(RigError):

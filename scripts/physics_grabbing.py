@@ -62,6 +62,13 @@ def _rigid_matrix(matrix):
 
 def _validate_pose(rig, pose):
     from rig_contracts import validate_contract
+    from rig_models import RigAsset
+    require(isinstance(rig, RigAsset) and isinstance(rig.manifest, dict) and
+            isinstance(rig.manifest.get('character'), dict) and
+            type(rig.manifest['character'].get('id')) is str and
+            isinstance(rig.manifest.get('skeleton'), dict),
+            'PHYSICS_GRIP_RIG', 'Expected a canonical rig with character and skeleton identity.')
+    validate_contract(rig.skeleton, 'Skeleton')
     validate_contract(pose, 'Pose')
     require(pose['rig_version'] == rig.skeleton['version'], 'PHYSICS_GRIP_RIG_VERSION',
             'Pose and authoritative rig skeleton versions differ.')
@@ -70,6 +77,34 @@ def _validate_pose(rig, pose):
         for key, size in (('translation', 3), ('rotation', 4), ('scale', 3)):
             if key in override:
                 _vector(override[key], size, 'pose '+key)
+
+
+def _socket_id(rig, identifier):
+    from rig_contracts import validate_contract
+    require(type(identifier) is str and 1 <= len(identifier) <= 128,
+            'PHYSICS_GRIP_REFERENCE', 'Socket identifier must be a bounded string.')
+    sockets = rig.manifest.get('attachments')
+    require(type(sockets) is list and len(sockets) <= 1024,
+            'PHYSICS_GRIP_REFERENCE', 'Rig sockets must be a bounded canonical inventory.')
+    for socket in sockets:
+        validate_contract(socket, 'AttachmentPoint')
+    require(len({s['id'] for s in sockets}) == len(sockets), 'PHYSICS_GRIP_REFERENCE',
+            'Rig socket identifiers must be unique.')
+    matches = [s for s in sockets if s['id'] == identifier]
+    require(len(matches) == 1 and matches[0]['owner'] == rig.manifest['character']['id'],
+            'PHYSICS_GRIP_REFERENCE', 'Socket is unavailable or belongs to a different rig character.')
+    rigid_transform(matches[0]['transform'])
+    return identifier
+
+
+def _attachment(rig, value):
+    require(isinstance(value, dict) and set(value) == {'owner', 'socket', 'transform'},
+            'PHYSICS_GRIP_ATTACHMENT', 'Expected one complete owner-bound attachment.')
+    require(type(value['owner']) is str and value['owner'] == rig.manifest['character']['id'],
+            'PHYSICS_GRIP_ATTACHMENT', 'Attachment must be owned by the selected rig character.')
+    _socket_id(rig, value['socket'])
+    rigid_transform(value['transform'])
+    return value
 
 
 def grip_world(asset, prop_transform, grip_id):
@@ -85,6 +120,7 @@ def grip_world(asset, prop_transform, grip_id):
 def socket_in_world(rig, pose, socket_id, actor_transform):
     """Apply the authoritative actor root to the canonical rig socket FK."""
     _validate_pose(rig, pose)
+    _socket_id(rig, socket_id)
     matrix = transform_matrix(rigid_transform(actor_transform)) @ socket_world(rig, pose, socket_id)
     _rigid_matrix(matrix)
     return matrix
@@ -127,13 +163,13 @@ def attach_kinematic(rig, pose, socket_id, actor_transform, asset, prop_transfor
 def attachment_pose(rig, pose, attachment, actor_transform):
     """Evaluate the same owner-bound attachment under a later rig/root pose."""
     _validate_pose(rig, pose)
-    rigid_transform(attachment['transform'])
+    _attachment(rig, attachment)
     return _rigid_matrix(transform_matrix(rigid_transform(actor_transform)) @ prop_world(rig, pose, attachment))
 
 
 def detach_kinematic(rig, pose, attachment, actor_transform):
     _validate_pose(rig, pose)
-    rigid_transform(attachment['transform'])
+    _attachment(rig, attachment)
     detached = detach_prop(rig, pose, attachment)
     return _rigid_matrix(transform_matrix(rigid_transform(actor_transform)) @ transform_matrix(detached['transform']))
 
