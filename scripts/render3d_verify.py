@@ -266,14 +266,17 @@ def verify_retained_files(root, references, *, max_total_bytes, strict=False):
     are allowed; special files and symlink ancestors remain forbidden.
     """
     from rig_errors import portable_name
+    from bisect import bisect_left
     import os
     require(isinstance(references,dict) and 0<len(references)<=4096,
             'corrupt-output','Invalid retained artifact inventory.')
     require(type(max_total_bytes) in (int,float) and 0<=max_total_bytes<=2**40
             and max_total_bytes%1==0,'storage-exhaustion','Invalid retained artifact byte budget.')
-    expected_total=0;aliases=set();directories=set()
+    expected_total=0;aliases=set()
     try:
         for name,reference in references.items():
+            require(isinstance(name,str) and 0<len(name)<=2048,
+                    'corrupt-output','Retained artifact path exceeds its bounded spelling.')
             portable_name(name)
             require(name.casefold() not in aliases,'corrupt-output','Aliased retained artifact path.')
             aliases.add(name.casefold())
@@ -286,7 +289,6 @@ def verify_retained_files(root, references, *, max_total_bytes, strict=False):
                     'corrupt-output','Invalid retained artifact digest.',path=name)
             expected_total+=size
             require(expected_total<=max_total_bytes,'storage-exhaustion','Retained artifacts exceed their byte budget.')
-            directories.update(parent.as_posix() for parent in Path(name).parents if parent.as_posix()!='.')
         root=Path(root)
         verified={}
         for name,reference in references.items():
@@ -300,7 +302,8 @@ def verify_retained_files(root, references, *, max_total_bytes, strict=False):
             require(actual==reference,'corrupt-output','Retained artifact differs from its declared bytes.',path=name)
             verified[name]=actual
         if strict:
-            pending=[root];actual=set();actual_directories=set()
+            names=sorted(references)
+            pending=[root];actual=set()
             while pending:
                 directory=pending.pop()
                 with os.scandir(directory) as entries:
@@ -308,13 +311,16 @@ def verify_retained_files(root, references, *, max_total_bytes, strict=False):
                         relative=Path(entry.path).relative_to(root).as_posix()
                         require(not entry.is_symlink(),'corrupt-output','Retained artifact inventory contains a symlink.',path=relative)
                         if entry.is_dir(follow_symlinks=False):
-                            require(relative in directories,'corrupt-output','Unexpected retained artifact directory.',path=relative)
-                            actual_directories.add(relative);pending.append(Path(entry.path))
+                            prefix=relative+'/'
+                            selected=bisect_left(names,prefix)
+                            require(selected<len(names) and names[selected].startswith(prefix),
+                                    'corrupt-output','Unexpected retained artifact directory.',path=relative)
+                            pending.append(Path(entry.path))
                         else:
                             require(entry.is_file(follow_symlinks=False) and relative in references,
                                     'corrupt-output','Unexpected or nonregular retained artifact.',path=relative)
                             actual.add(relative)
-            require(actual==set(references) and actual_directories==directories,
+            require(actual==set(references),
                     'corrupt-output','Retained artifact inventory differs from declared files.')
         return verified
     except Render3DError:

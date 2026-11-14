@@ -112,7 +112,7 @@ class RetainedFileIntegrity(unittest.TestCase):
                 with self.assertRaises(Render3DError):verify_retained_files(root,refs,max_total_bytes=1024)
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);_,refs=self.fixture(root)
-            for name in ('../plan.json','/plan.json','PLAN.JSON'):
+            for name in ('../plan.json','/plan.json','PLAN.JSON','a/'*1025+'x'):
                 changed=dict(refs);changed[name]=refs['plan.json']
                 with self.assertRaises(Render3DError):verify_retained_files(root,changed,max_total_bytes=1024)
 
