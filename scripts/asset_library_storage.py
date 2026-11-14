@@ -57,6 +57,7 @@ class Storage:
     def _check(self):
         # The parent library remains a private owned trust boundary, matching
         # AssetLibrary._connect. Reject aliases even inside that boundary.
+        admitted = {}
         for path in (self.library.root, self.root, *(self.root / n for n in ('blobs', 'commits', 'staging'))):
             info = path.lstat()
             if path == self.library.root and hasattr(self.library, '_root_identity') and (info.st_dev, info.st_ino) != self.library._root_identity:
@@ -65,6 +66,8 @@ class Storage:
                     getattr(info, 'st_file_attributes', 0) & 0x400 or
                     (os.name != 'nt' and (info.st_uid != os.geteuid() or info.st_mode & 0o077))):
                 _fail('Canonical storage directories must remain private, owned and free of aliases.')
+            admitted[path] = info
+        return admitted
 
     def _read(self, path, limit):
         from asset_library import read_source_bytes
@@ -74,7 +77,10 @@ class Storage:
         return read_source_bytes(path, limit)
 
     def _publish(self, directory, name, payload):
-        self._check()
+        admitted = self._check()
+        if directory not in admitted:
+            _fail('Canonical publication parent is outside its admitted storage directories.')
+        parent_info = admitted[directory]
         destination = directory / name
         if destination.exists() or destination.is_symlink():
             if self._read(destination, max(len(payload), 1)) != payload:
@@ -91,7 +97,8 @@ class Storage:
                 publish_verified_file(stream.fileno(), destination,
                     expected_sha256=hashlib.sha256(payload).hexdigest(),
                     expected_size=len(payload), max_bytes=max(len(payload), 1),
-                    staging_parent=self.root / 'staging')
+                    staging_parent=self.root / 'staging',
+                    expected_parent_identity=(parent_info.st_dev, parent_info.st_ino))
             except VerifiedFileCleanupError as exc:
                 # A file commit is not a claim that its enclosing SQLite
                 # transaction committed. Preserve the exact file receipt and
@@ -106,7 +113,6 @@ class Storage:
                 raise RigError('LIBRARY_DURABILITY', 'Canonical file publication failed: ' + str(exc),
                                asset=str(destination)) from exc
         self._check()
-        _sync_directory(directory)
         if self._read(destination, max(len(payload), 1)) != payload:
             _fail('Published bytes differ from the verified staged bytes.')
 

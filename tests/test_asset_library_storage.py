@@ -46,7 +46,12 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(self.library.list_references(), [])
         self.assertEqual(list((self.library.storage.root/'blobs').glob('[0-9a-f]'*64)), [])
         self.assertEqual(list((self.library.storage.root/'commits').iterdir()), [])
-        self.assertEqual(list((self.library.storage.root/'staging').iterdir()), [])
+        # Canonical ownership policy retains empty wrappers in mutable staging,
+        # while immutable namespaces remain empty after failed admission.
+        for wrapper in (self.library.storage.root/'staging').iterdir():
+            self.assertTrue(wrapper.is_dir())
+            self.assertFalse(wrapper.is_symlink())
+            self.assertEqual(list(wrapper.iterdir()), [])
 
     def test_canonical_file_cleanup_failure_retains_commit_for_explicit_recovery(self):
         import asset_library_storage as storage

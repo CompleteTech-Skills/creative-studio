@@ -33,6 +33,11 @@ the strict blob/commit inventories. Empty ownership-retained wrappers are not
 commit records or payloads. Namespace replacement cannot redirect a staged-file
 lookup or cause cleanup to delete a foreign replacement. An exclusive destination
 collision preserves the pre-existing bytes.
+The destination identity admitted by the storage owner is checked again after
+canonical parent pinning and before staged writes. POSIX directory durability is
+flushed through that held destination descriptor; the consumer does not reopen a
+mutable parent pathname to supply fsync. Windows retains its documented flushed
+FILE/HANDLE rename boundary without claiming POSIX directory fsync.
 
 If a file is committed but owned publisher cleanup fails, publication raises
 `LIBRARY_PUBLICATION_CLEANUP` with `observed.file_committed=true`, the exact verified
