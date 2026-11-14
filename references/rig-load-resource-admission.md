@@ -32,6 +32,12 @@ admits a genuinely zero-morph rig. Omitting it preserves existing behavior.
 The native `limits['morphs']` remains a separate per-mesh cap. Consumers retaining
 several unique rigs must pass their remaining aggregate allowance on each load.
 
+Both aggregate budgets retain the byte charge measured by the initial bounded
+manifest reader. They account for the actual captured JSON object, without
+reopening or re-statting its path for that charge. Replacing `rig.json` with a
+smaller file after capture cannot lower the captured manifest's input or memory
+estimate; the optional manifest pin continues to verify the captured raw bytes.
+
 Before the first NumPy array allocation, admission inspects the complete native
 geometry/skin bundles and all retained JSON inputs. It measures actual NPY
 shape/dtype/payload lengths, mesh/influence/morph counts, clip timing/key counts,

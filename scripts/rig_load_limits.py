@@ -65,6 +65,12 @@ class LoadBudget:
     def file(self, path: Path, *, source=False) -> int:
         with open_payload(path.parent, path.name) as (_, info):
             size = info.st_size
+        return self._record_file_size(path, size, source=source)
+
+    def _record_file_size(self, path: Path, size: int, *, source=False) -> int:
+        """Account an already captured size without reopening its mutable path."""
+        require(type(size) is int and size >= 0, 'RIG_LIMIT_BINARY',
+                'Captured input size must be a nonnegative integer.', asset=path.name)
         cap = self.limits['source_bytes'] if source else self.limits['dependency_bytes']
         require(size <= cap, 'RIG_LIMIT_BINARY', 'Input exceeds its byte budget.',
                 asset=path.name, expected=cap, observed=size)
@@ -91,8 +97,9 @@ class LoadBudget:
             require(stream.read(1) == b'', 'RIG_SOURCE_CHANGED', 'Input grew during hashing.', asset=path.name)
         return digest.hexdigest()
 
-    def charge_json(self, path: Path):
-        size = self.file(path)
+    def charge_json(self, path: Path, *, captured_size=None):
+        size = (self.file(path) if captured_size is None
+                else self._record_file_size(path, captured_size))
         require(size <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'JSON exceeds 32 MiB.', asset=path.name)
         self.add(size * _JSON_FACTOR, path.name + ': JSON object estimate')
         self.json_bytes += size

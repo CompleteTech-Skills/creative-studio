@@ -446,10 +446,11 @@ def _check_clip_load_limits(clip, limits, keyframes):
     return keyframes
 
 
-def _preflight_load(root, manifest, limits, verify_source, *, max_total_morph_targets=None):
+def _preflight_load(root, manifest, limits, verify_source, *, max_total_morph_targets=None,
+                    captured_manifest_bytes=None):
     from rig_load_limits import LoadBudget, scan_bundle, read_bundle_member
     budget = LoadBudget(limits)
-    budget.charge_json(safe_path(root, 'rig.json', exists=True))
+    budget.charge_json(root / 'rig.json', captured_size=captured_manifest_bytes)
     budget.json(safe_path(root, 'identity.json', exists=True),
                 expected_hash=manifest['character']['identity_sha256'], hash_code='RIG_IDENTITY_CHANGED')
     if verify_source:
@@ -500,11 +501,13 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
     manifest_budget = LoadBudget(preliminary)
     manifest = validate_contract(manifest_budget.json(safe_path(root, 'rig.json', exists=True),
                                  expected_hash=expected_manifest_sha256), 'Rig')
+    captured_manifest_bytes = manifest_budget.json_bytes
     limits = effective_limits(manifest['limits'], limits)
-    _preflight_load(root, manifest, limits, verify_source, max_total_morph_targets=max_total_morph_targets)
+    _preflight_load(root, manifest, limits, verify_source, max_total_morph_targets=max_total_morph_targets,
+                    captured_manifest_bytes=captured_manifest_bytes)
     budget = LoadBudget(limits)
     # Count the already parsed manifest in the live aggregate as well.
-    budget.charge_json(safe_path(root, 'rig.json', exists=True))
+    budget.charge_json(root / 'rig.json', captured_size=captured_manifest_bytes)
     require(budget.hash(safe_path(root, 'identity.json', exists=True)) == manifest['character']['identity_sha256'],
             'RIG_IDENTITY_CHANGED', 'Character identity bytes differ from the manifest.')
     identity=budget.json(safe_path(root, 'identity.json', exists=True),

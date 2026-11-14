@@ -479,6 +479,62 @@ for method in ('json', 'hash', 'bundle'):
                         load_rig(self.root, max_total_morph_targets=value)
                     self.assertEqual(caught.exception.report['code'], 'RIG_LIMITS')
 
+    def write_large_manifest_fixture(self):
+        path = self.root / 'rig.json'
+        manifest = json.loads(path.read_bytes())
+        manifest['state_mapping'] = {f'state-{index}': dict(status='unavailable', clips=[], reason='a' * 4096)
+                                     for index in range(128)}
+        payload = json.dumps(manifest).encode()
+        path.write_bytes(payload)
+        return path, payload, sha256(path)
+
+    def test_captured_manifest_size_is_charged_before_arrays_in_both_budgets(self):
+        import rig_models
+        path, payload, pin = self.write_large_manifest_fixture()
+        before = self.hashes()
+        # Initial JSON admission fits by one byte; retaining that parsed object
+        # together with any additional native inputs must exceed this cap.
+        cap = 2 * 1024**2 + 64 * len(payload) + 1
+        original = rig_models._preflight_load
+        for bypass_preflight in (False, True):
+            def shrink_after_capture(*args, **kwargs):
+                path.write_bytes(b'{}')
+                if not bypass_preflight:
+                    return original(*args, **kwargs)
+            try:
+                with self.subTest(bypass_preflight=bypass_preflight):
+                    with patch('rig_models._preflight_load', side_effect=shrink_after_capture):
+                        with patch('rig_models._materialize_array', side_effect=AssertionError('undercharged manifest reached arrays')) as arrays:
+                            with self.assertRaises(RigError) as caught:
+                                load_rig(self.root, limits={'memory_bytes': cap}, expected_manifest_sha256=pin)
+                            self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+                            self.assertGreater(caught.exception.report['observed'], cap)
+                            arrays.assert_not_called()
+            finally:
+                path.write_bytes(payload)
+            self.assertEqual(before, self.hashes())
+
+    def test_captured_manifest_accounting_matches_stable_control_after_path_shrink(self):
+        import rig_models
+        path, payload, pin = self.write_large_manifest_fixture()
+        before = self.hashes()
+        stable = load_rig(self.root, expected_manifest_sha256=pin)
+        original = rig_models._preflight_load
+        def shrink_after_capture(*args, **kwargs):
+            path.write_bytes(b'{}')
+            return original(*args, **kwargs)
+        try:
+            with patch('rig_models._preflight_load', side_effect=shrink_after_capture):
+                captured = load_rig(self.root, expected_manifest_sha256=pin,
+                                    limits={'memory_bytes': stable.resource_usage['estimated_memory_bytes']})
+            self.assertEqual(captured.manifest, stable.manifest)
+            self.assertEqual(len(captured.manifest['state_mapping']), 128)
+            self.assertEqual(captured.resource_usage, stable.resource_usage)
+            self.assertEqual(path.read_bytes(), b'{}')
+        finally:
+            path.write_bytes(payload)
+        self.assertEqual(before, self.hashes())
+
     def test_runtime_bundle_snapshot_hash_is_checked_before_arrays(self):
         path = Path(self.temp.name) / 'valid.npz'
         path.write_bytes(_binary_bundle({}, {'safe': np.zeros(3)}))
