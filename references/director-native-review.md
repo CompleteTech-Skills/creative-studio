@@ -123,6 +123,30 @@ that returns an existing immutable record does not invoke admission again;
 services still perform their own current context checks before requesting it.
 The default adds no admission action and does not change legacy v1 methods.
 
+`append_project_event(event, transaction_id, expected_selected_sha256=...,
+select_reference=None, admit=None)` adds bounded revision audit events to the same
+journal and transaction namespace. `project_history()` reads its separate
+hash-linked chain. The optional paired fields `native_project_schema_version: 1`
+and `project_events` leave existing review and validation rows unchanged. All
+three chains share the existing owner lock, event history and total record bound.
+
+Events distinguish `planned`, `native_prepared`, `logical_prepared` and `failed`.
+Their exact project identity, canonical diagnostics and bounded revision metadata
+are validated. Both `planned_refs` and `verified_refs` must identify existing,
+byte-verified immutable artifacts; planned references cannot pretend that future
+outputs exist. A prepared native candidate is unselected. A failed publication
+preserves audit history without changing the active native repository or logical
+project.
+
+This audit-only stage deliberately rejects `complete` events and non-null
+`select_reference` with `NATIVE_REVIEW_PROJECT_SELECTOR`. `selected_project()`
+returns the verified constructor context, not the last prepared event. Activation
+requires the native repository owner's forthcoming single-HEAD logical-reference
+contract; the journal does not create a competing selector or current-pointer
+file. The expected selected hash still protects audit appends against a mismatched
+caller context. Admission callbacks reject by raising, and exact retries return
+the original record before repeating admission.
+
 Journal metadata is limited to 8 MiB and 4,096 total records. Each operation has
 bounded reference counts and byte totals; decoded inspected images have a
 128-megapixel aggregate limit per scoped review. Larger reviews must be split

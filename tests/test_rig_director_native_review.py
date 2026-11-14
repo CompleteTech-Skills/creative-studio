@@ -46,6 +46,20 @@ def append_in_process(root, project, image, identifier):
             time.sleep(.01)
 
 
+def append_event_in_process(root, project, profile, identifier):
+    journal = workflow.NativeReviewJournal(root, project)
+    event = dict(schema_version=1, phase='planned', project_id=journal.project_id, fixture=True,
+                 planned_refs=[project, profile], verified_refs=[], details={}, diagnostics=[])
+    deadline = time.monotonic() + 15
+    while True:
+        try:
+            return journal.append_project_event(event, identifier, expected_selected_sha256=project['sha256'])['sha256']
+        except ValueError as exc:
+            if str(exc) != 'run is owned by another controller' or time.monotonic() >= deadline:
+                raise
+            time.sleep(.01)
+
+
 class NativeReviewJournalTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix='native-review-')
@@ -88,6 +102,10 @@ class NativeReviewJournalTests(unittest.TestCase):
                     inputs=[self.project, self.profile, self.image],
                     checks=[dict(id='exact-bytes', artifact=self.image, evidence=[self.image], status='passed')],
                     production_art_acceptance=False)
+
+    def project_event(self, phase='planned'):
+        return dict(schema_version=1, phase=phase, project_id=self.journal.project_id, fixture=True,
+                    planned_refs=[self.project, self.profile], verified_refs=[], details={}, diagnostics=[])
 
     def test_record_reopens_exact_image_bound_chain_without_artistic_approval(self):
         row = self.journal.record(self.receipt(), 'review-1', current_dependencies=self.current)
@@ -540,6 +558,211 @@ class NativeReviewJournalTests(unittest.TestCase):
             self.journal.append_validation(report, 'invalid-report', admit=admit)
         self.assertEqual(called, [])
         self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
+
+    def test_project_audit_extension_preserves_prior_review_and_validation_bodies(self):
+        review = self.journal.record(self.receipt(), 'review', current_dependencies=self.current)
+        validation = self.journal.append_validation(self.report(), 'validation')
+        before = self.journal.history()
+        self.assertNotIn('native_project_schema_version', before)
+        selected = self.journal.selected_project()
+        event = self.journal.append_project_event(self.project_event(), 'event', expected_selected_sha256=selected['sha256'])
+        after = self.journal.history()
+        self.assertEqual(after['native_project_schema_version'], 1)
+        self.assertEqual(after['reviews'], before['reviews'])
+        self.assertEqual(after['validations'], before['validations'])
+        self.assertEqual(after['reviews'][0]['sha256'], review['sha256'])
+        self.assertEqual(after['validations'][0]['sha256'], validation['sha256'])
+        self.assertEqual(after['project_events'][0]['sha256'], event['sha256'])
+        self.assertEqual(len(after['history']), 3)
+        self.assertEqual(self.journal.selected_project(), selected)
+
+    def test_project_history_and_legacy_constructor_selection_are_readonly(self):
+        self.assertEqual(self.journal.project_history()['records'], [])
+        self.assertEqual(self.journal.selected_project(), self.project)
+        self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
+
+    def test_project_event_cas_and_admission_failure_never_append(self):
+        event = self.project_event()
+        with self.assertRaises(RigError) as error:
+            self.journal.append_project_event(event, 'stale', expected_selected_sha256='0'*64)
+        self.assertEqual(error.exception.report['code'], 'NATIVE_REVIEW_STALE')
+        def deny():
+            raise RigError('DIRECTOR_REVISION_STALE', 'Native input changed after planning.')
+        with self.assertRaises(RigError):
+            self.journal.append_project_event(event, 'denied', expected_selected_sha256=self.project['sha256'], admit=deny)
+        self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
+
+    def test_project_event_idempotency_is_global_across_all_workflow_records(self):
+        event = self.project_event()
+        first = self.journal.append_project_event(event, 'event-once', expected_selected_sha256=self.project['sha256'])
+        def must_not_run():
+            self.fail('An exact historical event retry must not re-admit')
+        self.assertEqual(self.journal.append_project_event(event, 'event-once',
+            expected_selected_sha256=self.project['sha256'], admit=must_not_run), first)
+        with self.assertRaises(RigError):
+            self.journal.append_validation(self.report(), 'event-once')
+        self.journal.record(self.receipt(), 'review-once', current_dependencies=self.current)
+        with self.assertRaises(RigError):
+            self.journal.append_project_event(event, 'review-once', expected_selected_sha256=self.project['sha256'])
+        changed = self.project_event('failed')
+        with self.assertRaises(RigError):
+            self.journal.append_project_event(changed, 'event-once', expected_selected_sha256=self.project['sha256'])
+        self.assertEqual(self.journal.project_history()['history_count'], 1)
+
+    def test_project_events_require_real_existing_refs_and_canonical_diagnostics(self):
+        event = self.project_event()
+        missing = deepcopy(self.profile)
+        missing['path'] = 'future-output.json'
+        event['planned_refs'].append(missing)
+        with self.assertRaises(RigError):
+            self.journal.append_project_event(event, 'future-placeholder', expected_selected_sha256=self.project['sha256'])
+        event = self.project_event('failed')
+        event['diagnostics'] = [dict(code='NATIVE_PUBLISH_FAILED', severity='error', stage='logical-publication',
+            entity_id=self.journal.project_id, field_path='logical-version', expected='Verified immutable publication',
+            observed='Publication failed before activation', retryable=True,
+            recommended_action='Resume the existing transaction; preserve native HEAD.', evidence=[])]
+        self.journal.append_project_event(event, 'real-failure', expected_selected_sha256=self.project['sha256'])
+        self.assertEqual(self.journal.project_history()['records'][0]['event']['phase'], 'failed')
+        self.assertFalse(self.journal.project_history()['current_execution_verified'])
+
+    def test_project_events_reject_phase_confusion_paths_and_mutable_self_references(self):
+        for update in ({'phase': 'native_committed'}, {'phase': []},
+                       {'details': {'current_pointer': 'untracked.json'}},
+                       {'details': {'native_project_id': '/absolute/project'}},
+                       {'diagnostics': [dict(message='Unversioned error')]}):
+            event = self.project_event()
+            event.update(update)
+            with self.subTest(update=update), self.assertRaises(RigError):
+                self.journal.append_project_event(event, 'malformed', expected_selected_sha256=self.project['sha256'])
+        self.journal.append_validation(self.report(), 'existing')
+        loop = reference(self.root, workflow.WORKFLOW_FILE, artifact_id='mutable-workflow')
+        event = self.project_event()
+        event['planned_refs'].append(loop)
+        with self.assertRaises(RigError) as error:
+            self.journal.append_project_event(event, 'self-reference', expected_selected_sha256=self.project['sha256'])
+        self.assertEqual(error.exception.report['code'], 'NATIVE_REVIEW_SELF_REFERENCE')
+
+    def test_project_event_chain_tampering_or_incomplete_extension_is_rejected(self):
+        self.journal.append_project_event(self.project_event(), 'event', expected_selected_sha256=self.project['sha256'])
+        path = self.root/workflow.WORKFLOW_FILE
+        original = path.read_bytes()
+        for target in ('payload', 'extension', 'history'):
+            state = json.loads(original)
+            if target == 'payload':
+                state['project_events'][0]['event']['phase'] = 'failed'
+            elif target == 'extension':
+                state.pop('native_project_schema_version')
+            else:
+                state['history'].clear()
+            path.write_text(json.dumps(state))
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                self.journal.project_history()
+        path.write_bytes(original)
+        self.assertEqual(self.journal.project_history()['history_count'], 1)
+
+    def test_project_event_capacity_counts_reviews_validations_and_events_together(self):
+        self.journal.append_validation(self.report(), 'existing')
+        before = (self.root/workflow.WORKFLOW_FILE).read_bytes()
+        with patch.object(self.journal, 'MAX_RECORDS', 1), self.assertRaises(RigError):
+            self.journal.append_project_event(self.project_event(), 'over-capacity', expected_selected_sha256=self.project['sha256'])
+        self.assertEqual((self.root/workflow.WORKFLOW_FILE).read_bytes(), before)
+
+    def test_concurrent_project_events_use_the_existing_owner_and_no_pointer_file(self):
+        with ProcessPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(append_event_in_process, str(self.root), self.project, self.profile, 'project-'+str(i))
+                       for i in range(4)]
+            hashes = [f.result(timeout=30) for f in futures]
+        self.assertEqual(len(set(hashes)), 4)
+        self.assertEqual(self.journal.project_history()['history_count'], 4)
+        self.assertEqual(self.journal.selected_project(), self.project)
+        self.assertEqual({p.name for p in self.root.iterdir()},
+                         {'director-project.json', 'inspected.png', 'other.json', 'profile.json', workflow.WORKFLOW_FILE})
+
+    def test_complete_cannot_be_guessed_from_prepared_metadata(self):
+        event = self.project_event('complete')
+        event['verified_refs'] = [self.project]
+        with self.assertRaises(RigError) as error:
+            self.journal.append_project_event(event, 'unsupported-selection',
+                expected_selected_sha256=self.project['sha256'], select_reference=self.project, admit=lambda: True)
+        self.assertEqual(error.exception.report['code'], 'NATIVE_REVIEW_PROJECT_SELECTOR')
+        self.assertEqual(self.journal.selected_project(), self.project)
+        self.assertFalse((self.root/workflow.WORKFLOW_FILE).exists())
+
+    def test_real_native_candidate_and_publication_failure_leave_active_head_unselected(self):
+        from atomic_publish import _rename_no_replace
+        from editor3d_repository import EditorRepository
+        from rig_import import load_character_model
+        from scene3d_example import build_example
+        from scene3d_graph import SceneGraph
+        from scene3d_edit import apply_commands
+        from scene3d_snapshot import snapshot_project
+        from scene3d_prefabs import PrefabLibrary
+        source = self.root/'active-source'
+        build_example(source)
+        active = EditorRepository.create(source, self.root/'active-editor')
+        before = active.snapshot()
+        source_ref = active.native_snapshot(0, before['sha256'])
+        old_scene_path = Path(source_ref['root'])/before['scene_path']
+        old_scene = reference(self.root, old_scene_path.relative_to(self.root).as_posix(),
+                              kind='scene3d-scene', artifact_id=before['scene']['id'])
+        old_scene['semantic_version'] = before['scene']['version']
+        logical = json.loads((self.root/'director-project.json').read_text())
+        logical['scenes'] = [old_scene]
+        (self.root/'logical-before.json').write_text(json.dumps(logical))
+        logical_ref = reference(self.root, 'logical-before.json', kind='director-project', artifact_id=logical['id'])
+        journal = workflow.NativeReviewJournal(active.root, logical_ref, artifact_root=self.root)
+        batch = dict(schema_version=1, commands=[dict(operation='transform', parameters=dict(identifier='camera',
+            transform=dict(translation=[0, 3, 6], rotation=[0, 0, 0, 1], scale=[1, 1, 1])))])
+        (self.root/'camera-plan.json').write_text(json.dumps(batch))
+        plan_ref = reference(self.root, 'camera-plan.json', kind='scene3d-command-batch', artifact_id='camera-plan')
+        event = self.project_event()
+        event['planned_refs'] = [logical_ref, plan_ref]
+        event['details'] = dict(native_project_id=before['project']['id'], native_before_revision=0,
+            native_before_snapshot_sha256=before['sha256'], native_candidate_snapshot_sha256=None,
+            patch_sha256=plan_ref['sha256'], input_digest=plan_ref['sha256'])
+        journal.append_project_event(event, 'planned', expected_selected_sha256=logical_ref['sha256'])
+        graph = SceneGraph.from_bundle(before, before['scene_path'], source_root=source_ref['root'])
+        library = PrefabLibrary.from_files(source_ref['root'], before)
+        apply_commands(graph, library, batch)
+        native = snapshot_project(source_ref['root'], self.root/'candidate-native', graph, scene_path=before['scene_path'])
+        candidate = EditorRepository.create(self.root/'candidate-native', self.root/'candidate-editor',
+                                            scene_path=native['active_scene']['path'])
+        candidate_snapshot = candidate.snapshot()
+        candidate_source = candidate.native_snapshot(0, candidate_snapshot['sha256'])
+        geometry = load_character_model(Path(candidate_source['root'])/'triangle.obj').geometry
+        self.assertEqual((geometry.vertex_count, geometry.triangle_count), (3, 1))
+        camera = next(n for n in candidate_snapshot['scene']['nodes'] if n['id'] == 'camera')
+        self.assertEqual(camera['transform']['translation'], [0, 3, 6])
+        candidate_path = Path(candidate_source['root'])/candidate_snapshot['scene_path']
+        candidate_ref = reference(self.root, candidate_path.relative_to(self.root).as_posix(),
+                                  kind='scene3d-scene', artifact_id=candidate_snapshot['scene']['id'])
+        candidate_ref['semantic_version'] = candidate_snapshot['scene']['version']
+        prepared = deepcopy(event)
+        prepared.update(phase='native_prepared', verified_refs=[candidate_ref])
+        prepared['details']['native_candidate_snapshot_sha256'] = candidate_snapshot['sha256']
+        journal.append_project_event(prepared, 'prepared', expected_selected_sha256=logical_ref['sha256'])
+        self.assertEqual(active.snapshot(), before)
+        self.assertEqual(journal.selected_project(), logical_ref)
+        logical['semantic_version'] = '1.0.1'
+        logical['scenes'] = [candidate_ref]
+        stage = self.root/'logical-stage.json'
+        stage.write_text(json.dumps(logical))
+        occupied = self.root/'logical-target.json'
+        occupied.write_bytes(b'Unrelated existing output; do not replace')
+        with self.assertRaises(FileExistsError):
+            _rename_no_replace(stage, occupied)
+        failed = deepcopy(prepared)
+        failed['phase'] = 'failed'
+        failed['diagnostics'] = [dict(code='LOGICAL_PUBLICATION_FAILED', severity='error', stage='logical-publication',
+            entity_id=logical['id'], field_path='logical-version', expected='New immutable output',
+            observed='Exclusive publication refused the occupied destination', retryable=True,
+            recommended_action='Resume this transaction using a new approved output identity.', evidence=[])]
+        journal.append_project_event(failed, 'failed-publication', expected_selected_sha256=logical_ref['sha256'])
+        self.assertEqual(occupied.read_bytes(), b'Unrelated existing output; do not replace')
+        self.assertEqual(active.snapshot(), before)
+        self.assertEqual(journal.selected_project(), logical_ref)
+        self.assertEqual([r['event']['phase'] for r in journal.project_history()['records']],
+                         ['planned', 'native_prepared', 'failed'])
 
 
 if __name__ == '__main__':
