@@ -297,6 +297,21 @@ def _gltf_model(path, *, scale=1., limits=None, source_reader=None, budget=None)
             if not image['uri'].startswith('data:'):
                 document.uri(image['uri'])
     preflight_gltf(document, encoded_bytes=sum(document.encoded_sources.values()), budget=budget)
+    # Reserve synthetic rigid skin, default morph positions, normalized output
+    # and geometry analysis alongside the preflight's accessor work. Each scene
+    # instance has its own retained arrays even when accessors are shared.
+    if budget is not None:
+        _, _, active = scene_graph(document)
+        for node_id in active:
+            node = document.json['nodes'][node_id]
+            if 'mesh' not in node: continue
+            mesh = document.json['meshes'][node['mesh']]
+            for primitive in mesh['primitives']:
+                accessor = document.json['accessors'][primitive['attributes']['POSITION']]
+                count = accessor['count']
+                targets = primitive.get('targets', [])
+                budget.add(count * (512 + 96 * len(targets)),
+                           'normalized geometry, synthetic arrays and analysis')
     require(np.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'Import scale must be finite and positive.')
     parents, world, order = scene_graph(document, import_scale=scale)
     skeleton, ids, normalized = _import_skeleton(document, parents, world, order, scale)
@@ -422,7 +437,32 @@ def load_character_model(path: str | Path, *, scale=1., limits=None, blender=Non
     suffix = path.suffix.lower()
     if suffix == '.obj':
         from rig_obj import import_obj
-        return import_obj(path, scale=scale, limits=limits, source_reader=source_reader, budget=budget)
+        from rig_load_limits import LoadBudget, effective_limits
+        from rig_errors import open_payload
+        if budget is None:
+            budget = LoadBudget(effective_limits(DEFAULT_LIMITS, limits))
+        child = budget.fork(limits or budget.limits)
+        prefix = uuid.uuid4().hex
+        reads = 0
+
+        def admitted_read(source, maximum):
+            nonlocal reads
+            source = Path(source)
+            with open_payload(source.parent, source.name) as (stream, info):
+                size = info.st_size
+                require(size <= maximum, 'RIG_LIMIT_SOURCE', 'OBJ source exceeds its byte budget.')
+                child.captured_input(key=f'{prefix}:input:{reads}', size=size, source=reads == 0)
+                # Text tokens, triangulated corners, Python containers, NumPy
+                # output and analysis may coexist. Charge before parser reads.
+                child.add(size * 1024, 'OBJ parsing and normalized geometry output')
+                reads += 1
+                data = source_reader(source, size) if source_reader is not None else stream.read(size + 1)
+                require(len(data) == size, 'RIG_SOURCE_CHANGED', 'OBJ source size changed during reading.')
+                return data
+
+        model = import_obj(path, scale=scale, limits=child.limits, source_reader=admitted_read, budget=child)
+        budget.commit(child)
+        return model
     if suffix == '.blend':
         require(source_reader is None, 'RIG_SOURCE_READER', 'Controlled source readers support GLB, glTF and OBJ only.')
         from rig_blender import import_blend
