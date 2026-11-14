@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -81,6 +82,18 @@ class DirectorGraphTests(unittest.TestCase):
 
     def compile(self):
         return dg.compile_graph(self.request, self.root, now=self.now)
+
+    def test_artifact_read_platform_authority(self):
+        secure_reads = hasattr(os, 'O_NOFOLLOW') and os.open in os.supports_dir_fd
+        if sys.platform.startswith('linux') or sys.platform == 'darwin':
+            self.assertTrue(secure_reads, 'Linux and macOS must exercise secure graph compilation')
+        if os.name == 'nt':
+            self.assertFalse(secure_reads, 'Windows requires a separately secured artifact reader')
+            self.assertFalse(self.require_secure_reads())
+
+    def test_graph_compile_fails_closed_without_descriptor_relative_reads(self):
+        with patch.object(os, 'supports_dir_fd', set()):
+            self.assertFalse(self.require_secure_reads())
 
     def planned_metadata(self, node_id):
         return dict(schema_version=2, estimated_usage=dg._usage(), actual_usage=dg._usage(),
@@ -267,6 +280,8 @@ class DirectorGraphTests(unittest.TestCase):
 
     def test_v2_legacy_and_mixed_resource_decimal_boundaries(self):
         self.plan=dg.migrate_plan_v2(self.plan,{n['id']:self.planned_metadata(n['id']) for n in self.plan['nodes']})
+        self.refresh()
+        if not self.require_secure_reads():return
         for resource in ('cpu', 'io', 'render', 'gpu'):
             metric='gpu_seconds' if resource == 'gpu' else 'cpu_seconds'
             operation='blender.gpu' if resource == 'gpu' else 'blender.cpu' if resource == 'render' else 'native-cpu'
