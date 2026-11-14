@@ -520,11 +520,10 @@ class ResourceReservationTests(unittest.TestCase):
         self.assertEqual(render3d_jobs.VERSION,1)
 
     def test_legacy_store_reopens_without_marker_changes_and_refuses_generic_work(self):
-        with self.store._transaction() as db:
-            db.execute('DROP TABLE resource_reservations');db.execute('DROP TABLE resource_settings')
-        marker=self.store.root/'store.json';value=json.loads(marker.read_text());value['version']=1
-        atomic_json(marker,value);original=marker.read_bytes()
-        legacy=JobStore(self.store.root,gpu_workers=1)
+        from render3d_job_fixtures import create_legacy_store
+        root=create_legacy_store(self.root/'legacy',gpu_workers=1)
+        marker=root/'store.json';original=marker.read_bytes()
+        legacy=JobStore(root,gpu_workers=1)
         self.assertFalse(legacy.supports_resource_reservations)
         with self.assertRaises(Render3DError):legacy.reserve_resources('new-operation',self.resources())
         self.assertEqual(marker.read_bytes(),original)

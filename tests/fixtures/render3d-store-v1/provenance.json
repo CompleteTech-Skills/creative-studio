@@ -1,0 +1,10 @@
+{
+  "kind": "synthetic-scheduler-compatibility-fixture",
+  "description": "Empty v1 schema captured from an actual historical JobStore construction. Test host metadata is authored for the current host; this is not a historical production store or render proof.",
+  "source_commit": "369bd707f665f611849a0487bbf0a8ac341d985d",
+  "source_file": "scripts/render3d_jobs.py",
+  "source_sha256": "e9da580ece3053069121de10164aff12c50f260b6be4e03ab5c8751b37e2e6ca",
+  "schema_sha256": "bdea36563e8692d649cc36dd5f1aa08fb6efbee3e6822d0e8d48f9aa3be842f2",
+  "tables": ["events", "frames", "jobs", "storage_reservations"],
+  "rendering_executed": false
+}
