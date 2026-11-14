@@ -77,8 +77,10 @@
     },
     {
       "id": "nasa-astronaut-pilot",
-      "availability": "on PR292; not in this base",
-      "origin": "NASA Eileen Collins portrait via retained OpenCV example",
+      "availability": "repository pilot: examples/decomposition/analysis/astronaut.png",
+      "origin": "NASA Eileen Collins portrait distributed by scikit-image v0.25.2",
+      "origin_evidence": "examples/decomposition/analysis/README.md",
+      "execution_evidence": "examples/decomposition/analysis/execution.json",
       "evaluation_role": "development-only-already-observed",
       "held_out": false,
       "rights_status": "existing example records NASA public-domain attribution; preserve original provenance before corpus promotion",

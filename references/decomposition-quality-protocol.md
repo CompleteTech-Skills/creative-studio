@@ -95,6 +95,8 @@ PNG files. Record their applicable image-resource notice and attribution before
 corpus promotion; this is an evidence task, not an established external blocker.
 This inventory does not redistribute new Noto image files or present the
 already-observed pilots as held-out cases. Penn-Fudan research
-terms and NASA source attribution also need their exact records retained before
-new corpus promotion. Existing project artwork is already observed development
+terms need their exact records retained before new corpus promotion. The NASA
+pilot's source attribution and execution record are retained in
+`examples/decomposition/analysis/`; preserve that provenance for any future use.
+Existing project artwork is already observed development
 material, with no new blanket redistribution license asserted here.
