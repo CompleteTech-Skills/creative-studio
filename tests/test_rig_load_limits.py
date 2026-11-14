@@ -29,6 +29,47 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SharedLoadBudgetTests(unittest.TestCase):
+    def test_lifecycle_capture_parse_discovery_and_retained_copies(self):
+        parent = LoadBudget(DEFAULT_LIMITS)
+        discovery = parent.fork(DEFAULT_LIMITS)
+        discovery.captured_input(key='snapshot:entry', size=100, source=True)
+        discovery.parsed_json(key='discovery:manifest', size=100)
+        self.assertEqual(parent.input_bytes, 0)
+        live = parent.fork(DEFAULT_LIMITS)
+        self.assertTrue(live.captured_input(key='snapshot:entry', size=100, source=True))
+        self.assertFalse(live.captured_input(key='snapshot:entry', size=100, source=True))
+        self.assertTrue(live.parsed_json(key='load:manifest', size=100))
+        self.assertFalse(live.parsed_json(key='load:manifest', size=100))
+        parent.commit(live)
+        before = deepcopy(parent._state())
+        with self.assertRaises(RigError):
+            parent.captured_input(key='snapshot:entry', size=101, source=True)
+        self.assertEqual(parent._state(), before)
+        parent.captured_input(key='second-copy:entry', size=100, source=True)
+        self.assertEqual(parent.input_bytes, 200)
+        self.assertEqual(parent.json_bytes, 100)
+
+    def test_keyed_cubic_animation_boundary_and_rollback(self):
+        probe = LoadBudget(DEFAULT_LIMITS)
+        probe.animation(key='load:channel', keys=10, width=4, destinations=3, cubic=True)
+        cap = probe.memory
+        budget = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': cap, 'keyframes': 30})
+        budget.animation(key='load:channel', keys=10, width=4, destinations=3, cubic=True)
+        budget.animation(key='load:channel', keys=10, width=4, destinations=3, cubic=True)
+        self.assertEqual((budget.memory, budget.animation_keyframes, budget.animation_tracks), (cap, 30, 3))
+        before = deepcopy(budget._state())
+        with self.assertRaises(RigError):
+            budget.animation(key='load:channel', keys=10, width=4, destinations=3, cubic=False)
+        with self.assertRaises(RigError):
+            budget.animation(key='next:channel', keys=1, width=1, destinations=1)
+        self.assertEqual(budget._state(), before)
+        limited = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': cap - 1})
+        with patch('builtins.list', side_effect=AssertionError('expanded')) as expansion:
+            with self.assertRaises(RigError):
+                limited.animation(key='load:channel', keys=10, width=4, destinations=3, cubic=True)
+                list(range(10))
+            expansion.assert_not_called()
+
     def test_commit_requires_fresh_owned_child_and_preserves_parent_on_failure(self):
         parent = LoadBudget(dict(DEFAULT_LIMITS, memory_bytes=3_000_000))
         stale = parent.fork(DEFAULT_LIMITS)

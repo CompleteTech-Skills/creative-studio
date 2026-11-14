@@ -57,7 +57,18 @@ def effective_limits(declared: dict, requested: dict | None) -> dict:
 
 
 class LoadBudget:
-    """Conservative aggregate estimate; charge before materializing each input."""
+    """Conservative aggregate estimate; charge before materializing each input.
+
+    Named reservations live for the entire ledger lifetime, including after a
+    commit; there is deliberately no release operation. Keys identify allocation
+    instances, not paths or content hashes: reuse a key only for the same live
+    allocation, and use a fresh key for every retained copy or subsequent load.
+    Discovery that discards its objects runs in an uncommitted fork. A successful
+    retaining operation commits its fork only after all its allocations succeed.
+    Callers serialize access and must reserve before the allocation, including
+    any separately retained snapshot, parsed document, image, output, or report.
+    The ledger does not itself capture, pin, or authenticate source bytes.
+    """
     def __init__(self, limits: dict):
         self.limits = limits
         self.memory = 0
@@ -137,6 +148,40 @@ class LoadBudget:
         """
         return self._reserve(key, amount, asset, ('generic', amount, asset))
 
+    def captured_input(self, *, key: str, size: int, source: bool = False) -> bool:
+        """Admit one retained immutable input copy before reading its bytes.
+
+        Use a distinct key per retained copy; source selects the entry-file cap.
+        Size comes from a verified open handle, not an untrusted path re-open.
+        """
+        require(type(size) is int and size >= 0 and type(source) is bool,
+                'RIG_LIMITS', 'Invalid captured input dimensions.')
+        require(type(key) is str and 0 < len(key) <= _RESERVATION_STRING_MAX,
+                'RIG_LIMITS', 'Reservation strings must be bounded.')
+        cap = self.limits['source_bytes'] if source else self.limits['dependency_bytes']
+        require(size <= cap, 'RIG_LIMIT_BINARY', 'Input exceeds its byte budget.',
+                expected=cap, observed=size)
+        identity = ('captured_input', size, source)
+        if key in self._reservations:
+            return self._reserve(key, size, 'captured input', identity)
+        require(self.input_bytes + size <= self.limits['dependency_bytes'], 'RIG_LIMIT_BINARY',
+                'Aggregate native input files exceed the dependency byte budget.',
+                expected=self.limits['dependency_bytes'], observed=self.input_bytes + size)
+        added = self._reserve(key, size, 'captured input', identity)
+        if added:
+            self.input_bytes += size
+        return added
+
+    def parsed_json(self, *, key: str, size: int) -> bool:
+        """Admit a parsed JSON object before decoding already-accounted bytes."""
+        require(type(size) is int and 0 <= size <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON',
+                'Invalid JSON byte count.')
+        added = self._reserve(key, size * _JSON_FACTOR, 'parsed JSON object',
+                              ('parsed_json', size))
+        if added:
+            self.json_bytes += size
+        return added
+
     def _reserve(self, key, amount, asset, identity):
         require(type(key) is str and 0 < len(key) <= _RESERVATION_STRING_MAX
                 and type(asset) is str and len(asset) <= _RESERVATION_STRING_MAX,
@@ -174,7 +219,8 @@ class LoadBudget:
                          ('animation_report', keys, tracks)):
             self.report_bytes += amount
 
-    def animation(self, *, keys: int, width: int, destinations: int, cubic: bool = False) -> None:
+    def animation(self, *, keys: int, width: int, destinations: int, cubic: bool = False,
+                  key: str | None = None) -> None:
         """Admit one channel's expanded tracks before decoding or list creation.
 
         Counts and widths describe each destination, including shared samplers;
@@ -183,7 +229,13 @@ class LoadBudget:
         require(all(type(v) is int and v > 0 for v in (keys, width, destinations))
                 and type(cubic) is bool, 'RIG_ANIMATION_VALUES',
                 'Animation admission requires positive integer dimensions.')
+        require(key is None or type(key) is str and 0 < len(key) <= _RESERVATION_STRING_MAX,
+                'RIG_LIMITS', 'Reservation strings must be bounded.')
         expanded = keys * destinations
+        identity = ('animation', keys, width, destinations, cubic)
+        if key is not None and key in self._reservations:
+            self._reserve(key, 0, 'expanded animation', identity)
+            return
         total = self.animation_keyframes + expanded
         require(total <= self.limits['keyframes'], 'RIG_LIMIT_KEYFRAMES',
                 'Aggregate animation keys exceed the load budget.',
@@ -192,7 +244,10 @@ class LoadBudget:
         # Cubic retains three independently materialized value/tangent lists.
         groups = 3 if cubic else 1
         amount = destinations * (1024 + keys * (32 + groups * (64 + 32 * width)))
-        self.add(amount, 'expanded animation tracks, times, values and tangents')
+        if key is None:
+            self.add(amount, 'expanded animation tracks, times, values and tangents')
+        else:
+            self._reserve(key, amount, 'expanded animation tracks, times, values and tangents', identity)
         self.animation_keyframes = total
         self.animation_tracks += destinations
 
