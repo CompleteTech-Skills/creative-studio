@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "issue": 242,
+  "recorded_at": "2026-11-13T02:56:04.524987+00:00",
+  "original_default_sha": "d2744d91082f7ce7fe54f2bb13c5985825adadc2",
+  "integrated_base_sha": "6bb3079b840b03d253ce9f9960b626802f3f007e",
+  "validated_code_sha": "d9c6d1516048a2f4a86189bcfd5be59dc80ffcfb",
+  "source_files_sha256": {
+    "README.md": "0c9eb2f5406a2bba6300195e5af151d19c34077dbba3babc3754ab82584838e9",
+    "SKILL.md": "831b8ac5a379bac5cb094f2908702c291fd82df7055c4b4746bd523e708a0403",
+    "examples/cinematics3d/README.md": "b160ae4c6d9d74e93a33f862a71cb5df0323a6ab8503c4054a3118caa589e2dd",
+    "examples/cinematics3d/exposure.json": "848d88224592bb5af8b3ae2926b446631d8e96cefeb4e6b12a070d453511cb67",
+    "examples/cinematics3d/grain.json": "b610620b4d39d43cd02a026a54a68903d4e51a68652da1ecae683e0bc3fa4ca7",
+    "examples/cinematics3d/look.json": "5966c85e34ff14d1b8dbe6fd39bc376955dcd60e164deb4eb6dd490dc72c98f0",
+    "examples/cinematics3d/scene-stack.json": "c3985aa5374ba18a06756bda9f754fb5c0a4a9ab79d41d22bc768f750126a7a1",
+    "examples/cinematics3d/scene.json": "759f472659091ea8896be8ec094adca0cd043789d5e633678288c0e4e57c7a18",
+    "examples/cinematics3d/shot-stack.json": "31ab01071ed697eb669178946f67cda79df10619f8884fc1931c9e5c3378b240",
+    "examples/cinematics3d/shot.json": "706f35278ac4a7f0690ff88d70ffbfba4a1df0cc4fb5853c286c0324f9881a16",
+    "profiles/cinematics3d-effect.schema.json": "e703a60c381eab73441ffe9e67a9b41240e3bbb9cc088256cf6adf61a80270a1",
+    "profiles/cinematics3d-graph.schema.json": "352c71c0153432ee2d546b84174b8e99b269bdd4ed038e06b1d95666546bd5c3",
+    "profiles/cinematics3d-preset.schema.json": "6ce0cd019bc82d8f50468fe2cfba033be5aa197cca04c80624624432ed35a077",
+    "profiles/cinematics3d-render.schema.json": "580f38316e0bef883d99303779c5e399eb7103888c2ddf06162c2ddaa9b04643",
+    "profiles/cinematics3d-scene.schema.json": "ef809a4f85d0754604f2ab64dd2536b17b42c8756150d4b560bbdf0a1da3439e",
+    "profiles/cinematics3d-shot.schema.json": "692ff866c41dd7f683278cb258b9f97a7bccfd880656b3160eb84cff27b23d91",
+    "profiles/cinematics3d-stack.schema.json": "63b0cc745d1002530bfcb36773970901021c2b41fb49b9192986ede66ea66d5e",
+    "references/cinematics3d-contracts.md": "912a47a0c971d4f78af047fc1939cc580e68de9212a785936f86d4fda3d2c04c",
+    "scripts/cinematics3d_contracts.py": "55342ad787b02c225b3321dfe31f1ae7b14828b03aeb15167e03e30450edb2f9",
+    "scripts/cinematics3d_example.py": "49de572a74e3499c3d6e51faa4b030b07f4a3e17849890f54f7d364a1a7d3d4b",
+    "scripts/generate_schemas.py": "1b7a5ab6363db99bdf7bebf0fea52ccf52e5c6e3aec13ae578ebdfc529c59b02",
+    "scripts/test_rig_gate.py": "5181a57d0bfc2c255007d3abea22092cd253c35f5cbdc3420b0327897f674956",
+    "tests/test_rig_cinematics3d_contracts.py": "eefe3d608a4ae26fe4f1d3a3e9c3fe262a1ddbd3cf6f7900f9b62ffe4b195073"
+  },
+  "environment": {
+    "python": "3.12.15",
+    "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+    "Pillow": "13.0.0",
+    "jsonschema": "4.25.1",
+    "numpy": "2.3.5",
+    "python_executable": "/home/complete/.cache/creative-studio-pillow13-venv/bin/python"
+  },
+  "checks": [
+    {
+      "command": "python -m unittest discover -s tests -p test_rig_cinematics3d_contracts.py -v",
+      "tests": 29,
+      "failures": 0,
+      "skips": 0,
+      "log": "contracts.log"
+    },
+    {
+      "command": "python scripts/test_rig_gate.py schema-math",
+      "tests": 98,
+      "failures": 0,
+      "skips": 0,
+      "log": "schema-math.log",
+      "notes": "Includes import-isolation discovery of 952 legacy tests, not execution of all 952."
+    },
+    {
+      "command": "python -m unittest discover -s tests -p test_production_contracts.py -v",
+      "tests": 31,
+      "failures": 0,
+      "skips": 0,
+      "log": "legacy-production.log"
+    },
+    {
+      "command": "python scripts/generate_schemas.py --check",
+      "exit_code": 0
+    },
+    {
+      "command": "python scripts/cinematics3d_contracts.py --check",
+      "exit_code": 0
+    },
+    {
+      "command": "python scripts/cinematics3d_example.py",
+      "exit_code": 0,
+      "report": "example.json"
+    },
+    {
+      "command": "python scripts/production_sources.py verify-delivery",
+      "exit_code": 0,
+      "report": "delivery.json",
+      "notes": "Executed after integration at e9603e7; later edits affect only cinematic contracts/tests/docs."
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "prior_attempts": [
+    {
+      "command": "python scripts/generate_schemas.py",
+      "result": "failed before checks: initial system Python lacked PIL; rerun succeeded in existing isolated dependency environment."
+    },
+    {
+      "command": "first focused 22-case test run",
+      "result": "one fixture path error (exposure.json referenced but fixture saved as effect.json), corrected; later 22/28/29-case runs passed."
+    }
+  ],
+  "limits": [
+    "No full 952-case legacy suite execution claimed by this receipt.",
+    "No backend process or render effect was implemented or executed by this contract package.",
+    "No image/video render, silent-media verification, production artwork, or visual approval claimed.",
+    "External reference bytes verified by Registry are opaque; native owner semantic validation and frozen source execution remain required.",
+    "Hosted checks and independent review are not asserted by this local receipt."
+  ],
+  "evidence_sha256": {
+    "contracts.log": "03c8500bddd68fe1459a4e24aad1d7667628699a1b21c60eee632fa13e8a970c",
+    "schema-math.log": "e42bd891ccd10facc53e8e6cde72aef589af9111cbf8957895c051aafe936fef",
+    "legacy-production.log": "3d64e6c1d04c6cd24213e08710999115d81f428bad02baef743861807dcf6eb9",
+    "example.json": "2f8589c0365b5e5d2f7f7d0463c458c758762c00440ab2b9e49cf5cfc68193c7",
+    "delivery.json": "7d59ca4103d32ae90d1ba145e50d0827d9b061616ea1b560bbe3aaba76747ec8"
+  }
+}

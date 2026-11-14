@@ -15,7 +15,7 @@ import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS, validate_contract
 from rig_errors import (atomic_bytes, decode_json, finite_json, object_hash, read_json, require,
-                        safe_path, sha256)
+                        safe_path, sha256, normalize_root)
 
 
 @dataclass
@@ -473,7 +473,7 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
     loading, not an OS memory sandbox or subsequent evaluation/render operations.
     """
     from rig_load_limits import LoadBudget, effective_limits
-    root = Path(root).resolve()
+    root = normalize_root(root)
     preliminary = effective_limits(DEFAULT_LIMITS, limits)
     manifest_budget = LoadBudget(preliminary)
     manifest = validate_contract(manifest_budget.json(safe_path(root, 'rig.json', exists=True)), 'Rig')
