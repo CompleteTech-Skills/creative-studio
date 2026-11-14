@@ -41,7 +41,7 @@ jobs:
           git rev-parse HEAD | tee scene3d-evidence/head.txt
           python scripts/generate_schemas.py --check 2>&1 | tee scene3d-evidence/schemas.log
           python scripts/generate_rig_templates.py --check 2>&1 | tee scene3d-evidence/templates.log
-          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service test_rig_scene3d_lifecycle test_rig_scene3d_language test_rig_scene3d_cli_commands test_rig_scene3d_environment_language test_rig_scene3d_editor_language test_rig_scene3d_materials -v 2>&1 | tee scene3d-evidence/service.log
+          PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_service test_rig_scene3d_lifecycle test_rig_scene3d_language test_rig_scene3d_cli_commands test_rig_scene3d_environment_language test_rig_scene3d_editor_language test_rig_scene3d_editor_language_routes test_rig_scene3d_project_bytes test_rig_scene3d_cli_admission test_rig_scene3d_materials -v 2>&1 | tee scene3d-evidence/service.log
           PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_evaluate test_rig_scene3d_export -v 2>&1 | tee scene3d-evidence/evaluation.log
 
         env:
@@ -51,7 +51,7 @@ jobs:
           HATCH_RIG_INTEROP_TEST: '1'
           HATCH_BLENDER: /tmp/blender-4.5.3-linux-x64/blender
       - name: Editor native component and persistence browser acceptance
-        run: PYTHONPATH=scripts:tests python -m unittest test_rig_editor3d_viewer test_rig_editor3d_components test_rig_editor3d_state test_rig_editor3d_actions -v 2>&1 | tee scene3d-evidence/editor-browser.log
+        run: PYTHONPATH=scripts:tests python -m unittest test_rig_editor3d_viewer test_rig_editor3d_components test_rig_editor3d_state test_rig_editor3d_actions test_rig_editor3d_language_browser -v 2>&1 | tee scene3d-evidence/editor-browser.log
         env:
           HATCH_EDITOR_BROWSER_TEST: '1'
           OPENBLAS_NUM_THREADS: '1'

@@ -136,7 +136,10 @@ class EditorServer(HTTPServer):
     def __init__(self, repository, *, port=0, token=None, workers=4, routes=None):
         require(isinstance(workers, int) and 1 <= workers <= 8, 'EDITOR3D_VIEW_WORKERS', 'Use 1–8 workers.')
         self.repository = repository
-        self.routes = dict(routes or {})
+        if routes is None:
+            from scene3d_editor_language_routes import language_routes
+            routes = language_routes()
+        self.routes = dict(routes)
         self.upload_directory = tempfile.TemporaryDirectory(prefix="hatch-editor-uploads-")
         self.uploads = {}
         self.upload_lock = threading.Lock()
