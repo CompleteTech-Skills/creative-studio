@@ -136,6 +136,26 @@ class DirectorGraphTests(unittest.TestCase):
         legacy['nodes'][0]['execution_metadata']=metadata['a']
         with self.assertRaises(RigError):dg.validate_plan(legacy)
 
+    def test_partial_compiler_value_cannot_claim_dispatch_or_actual_outputs(self):
+        metadata={node['id']:self.planned_metadata(node['id']) for node in self.plan['nodes']}
+        self.plan=dg.migrate_plan_v2(self.plan,metadata)
+        self.refresh()
+        if not self.require_secure_reads():return
+        result=self.compile()
+        result.update(status='partial',diagnostics=[dict(code='PARTIAL_FIXTURE',severity='warning',
+            stage='graph',entity_id=None,field_path='value',expected=None,observed=None,
+            retryable=False,recommended_action='Inspect partial planning diagnostics.',evidence=[])])
+        dc.validate_method_result('GraphCompiler.compile',result,self.request)
+        execution=result['value']['nodes'][0]['execution_metadata']
+        execution.update(execution_status='running',native_job_ref=deepcopy(self.input),
+            checkpoint_refs=[deepcopy(self.input)],output_artifacts=[deepcopy(self.input)])
+        execution['actual_usage']['classification']='actual'
+        execution['actual_usage']['cpu_seconds']['value']=10
+        for status in ('partial','succeeded'):
+            result['status']=status
+            with self.subTest(status=status),self.assertRaises(RigError):
+                dc.validate_method_result('GraphCompiler.compile',result,self.request)
+
     def test_execution_metadata_requires_native_ownership_and_output_validation(self):
         metadata=self.planned_metadata('a')
         metadata['execution_status']='running'
