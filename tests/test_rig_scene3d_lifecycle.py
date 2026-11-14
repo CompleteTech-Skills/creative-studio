@@ -1,6 +1,7 @@
 """Exact selective invalidation and process-independent native lifecycle tests."""
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -110,9 +111,13 @@ class SceneLifecycleTests(unittest.TestCase):
         repository.restore_revision(0,1,'restore',expected_sha256=moved['snapshot_sha256'])
         restored=inspect_revision(repository.root)
         self.assertEqual(before['nodes'],restored['nodes'])
+        environment=dict(os.environ)
+        scripts=str(Path(__file__).resolve().parents[1]/'scripts')
+        environment['PYTHONPATH']=scripts+(os.pathsep+environment['PYTHONPATH'] if environment.get('PYTHONPATH') else '')
         result=subprocess.run([sys.executable,'-c',
             'import json,sys;from scene3d_lifecycle import inspect_revision;print(json.dumps(inspect_revision(sys.argv[1])))',
-            str(repository.root)],check=True,capture_output=True,text=True)
+            str(repository.root)],env=environment,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
         self.assertEqual(json.loads(result.stdout),restored)
         self.assertEqual((self.source/'triangle.obj').read_bytes(),repository.read_file('triangle.obj',restored['snapshot_sha256']))
 

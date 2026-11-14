@@ -198,7 +198,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.16.0'
       - run: python -m pip install -r requirements-rig-test.txt
+      - run: npm ci --ignore-scripts --prefix tools/rig
       - run: python scripts/test_rig_gate.py operations-archive 2>&1 | tee rig-artifact-integrity.log
       - run: python scripts/verify_rig_demos.py --destination examples/rig-3d --archives
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
