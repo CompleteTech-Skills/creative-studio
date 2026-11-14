@@ -1,0 +1,34 @@
+name: Verified atomic byte installation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  byte-installer:
+    name: Actual byte installation (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests -p test_atomic_install.py -v 2>&1 | tee installer-portable.log
+      - run: python -m unittest discover -s tests/optional -p test_atomic_install_native.py -v 2>&1 | tee installer-native.log
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: atomic-install-${{ runner.os }}-${{ github.sha }}
+          path: |
+            installer-portable.log
+            installer-native.log
+          if-no-files-found: error
+          retention-days: 30
