@@ -31,6 +31,26 @@ class DocumentPublicationTests(unittest.TestCase):
         args.update(kwargs)
         return self.publisher.publish_document(payload, **args)
 
+    def test_owned_temporary_source_is_canonical_before_registration(self):
+        from asset_library import read_source_bytes
+        temporary_directory = tempfile.TemporaryDirectory
+        class AliasedTemporary:
+            def __enter__(self):
+                self.temporary = temporary_directory(dir=self_root)
+                self.path = Path(self.temporary.name)
+                (self.path / 'child').mkdir()
+                return str(self.path / 'child' / '..')
+            def __exit__(self, *args):
+                self.temporary.cleanup()
+        self_root = self.root
+        def read_canonical(path, *args):
+            self.assertEqual(Path(path), Path(path).resolve(strict=True))
+            return read_source_bytes(path, *args)
+        with patch('asset_library_documents.tempfile.TemporaryDirectory', return_value=AliasedTemporary()), \
+             patch('asset_library.read_source_bytes', side_effect=read_canonical):
+            ref = self.publish()
+        self.assertEqual(self.publisher.read_ref(ref), b'{"kind":"director-project","id":"project"}')
+
     def test_actual_registration_restart_root_relative_path_and_readback(self):
         data = b'{"kind":"director-project","id":"project"}'
         ref = self.publish(data)
@@ -322,7 +342,7 @@ from asset_library_documents import DocumentPublisher
 import tempfile
 import threading
 with tempfile.TemporaryDirectory() as temp:
-    lib=AssetLibrary(Path(temp)/'library',create=True)
+    lib=AssetLibrary(Path(temp).resolve()/'library',create=True)
     DocumentPublisher(lib).publish_document(b'{}','project','director-project',1,'1.0.0',[],True)
 assert not {'numpy','scipy','PIL','trimesh','bpy'} & sys.modules.keys()
 """

@@ -1,4 +1,5 @@
 """Actual library registration and offline search; provider doubles test gates only."""
+from contextlib import closing
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -127,7 +128,7 @@ class SearchTests(unittest.TestCase):
         self.assert_code('STALE',lambda:self.index.search())
         self.index.rebuild(self.refs)
         self.assertEqual(self.index.search(filters={'tags':['favorite-robot'],'favorite':True})['total'],1)
-        with sqlite3.connect(self.library.database) as db:db.execute('UPDATE blobs SET payload=?',(b'corrupt',))
+        with closing(sqlite3.connect(self.library.database)) as db, db:db.execute('UPDATE blobs SET payload=?',(b'corrupt',))
         self.assert_code('STALE',lambda:self.index.search())
         rebuilt=self.index.rebuild(self.refs)
         self.assertEqual(rebuilt['indexed'],0);self.assertEqual(len(rebuilt['diagnostics']),1)
@@ -148,7 +149,7 @@ class SearchTests(unittest.TestCase):
 
     def test_index_is_derived_and_corruption_or_missing_index_never_becomes_authority(self):
         self.register('hero');self.index.rebuild(self.refs)
-        with sqlite3.connect(self.index.database) as db:
+        with closing(sqlite3.connect(self.index.database)) as db, db:
             db.execute('UPDATE entries SET text=?',('forged metadata',))
         self.assert_code('INDEX',lambda:self.index.search())
         self.index.rebuild(self.refs)
@@ -295,7 +296,7 @@ class LocalEmbeddingAdmissionTests(unittest.TestCase):
     def test_custom_python_or_pickle_models_fail_snapshot_admission(self):
         from asset_search_embeddings import model_snapshot
         with tempfile.TemporaryDirectory() as name:
-            root=Path(name)
+            root=Path(name).resolve()
             (root/'modules.json').write_text('[]')
             (root/'config.json').write_text('{"model_type":"bert"}')
             (root/'model.bin').write_bytes(b'not a safe tensor')
@@ -306,7 +307,7 @@ class LocalEmbeddingAdmissionTests(unittest.TestCase):
         from unittest.mock import patch
         import asset_search_embeddings as embedding
         with tempfile.TemporaryDirectory() as name:
-            root=Path(name)
+            root=Path(name).resolve()
             for i in range(140): (root / f'{i:03}.json').write_bytes(b'{}')
             real_read=embedding.read_source_bytes
             with patch.object(embedding, 'read_source_bytes', wraps=real_read) as read:
@@ -314,7 +315,7 @@ class LocalEmbeddingAdmissionTests(unittest.TestCase):
                 self.assertEqual(error.exception.report['code'], 'LIBRARY_SEARCH_LIMIT')
                 self.assertEqual(read.call_count, 128)
         with tempfile.TemporaryDirectory() as name:
-            root=Path(name)
+            root=Path(name).resolve()
             for i in range(513): (root / f'{i:03}').mkdir()
             real_scandir=embedding.os.scandir
             seen=[]
@@ -334,7 +335,7 @@ class LocalEmbeddingAdmissionTests(unittest.TestCase):
     def test_model_snapshot_valid_nested_closure_and_symlink(self):
         from asset_search_embeddings import model_snapshot
         with tempfile.TemporaryDirectory() as name:
-            root=Path(name)
+            root=Path(name).resolve()
             (root/'modules.json').write_text('[{"type":"sentence_transformers.models.Pooling","path":"nested"}]')
             (root/'config.json').write_text('{"model_type":"bert"}')
             (root/'nested').mkdir()

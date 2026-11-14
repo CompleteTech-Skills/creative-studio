@@ -286,6 +286,9 @@ class DocumentPublisher:
             _fail('STORAGE', 'Document publication requires explicit canonical storage upgrade.')
         try:
             with tempfile.TemporaryDirectory(prefix='asset-document-') as temporary:
+                # This directory is created by us; normalize the OS temp alias
+                # before passing its files to the strict untrusted source reader.
+                temporary = Path(temporary).resolve(strict=True)
                 sources = {}
                 for record, data in zip(files, (payload, metadata)):
                     path = Path(temporary) / record['path']
