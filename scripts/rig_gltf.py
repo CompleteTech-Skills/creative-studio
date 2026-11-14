@@ -12,6 +12,7 @@ import json
 import hashlib
 from pathlib import Path
 import struct
+import uuid
 from urllib.parse import unquote, urlsplit
 import numpy as np
 
@@ -50,6 +51,9 @@ class GltfDocument:
     source_sha256: str | None = None
     encoded_sources: dict = field(default_factory=dict)
     external_payloads: dict = field(default_factory=dict)
+    budget: object = None
+    reservation_prefix: str = ""
+    admitted_source: bool = False
 
     def uri(self, uri: str, maximum: int | None = None) -> bytes:
         maximum = maximum or self.limits['source_bytes']
@@ -58,6 +62,8 @@ class GltfDocument:
             prefix, separator, data = uri.partition(',')
             require(separator and prefix.endswith(';base64') and len(data)*3//4 <= maximum,
                     'RIG_GLTF_URI', 'Embedded data must be bounded base64.')
+            if self.budget is not None:
+                self.budget.add(len(data) * 3 // 4 + 3, 'embedded glTF data')
             try:return base64.b64decode(data, validate=True)
             except (ValueError, base64.binascii.Error) as exc:raise RigError('RIG_GLTF_URI', 'Invalid base64 data.') from exc
         parts = urlsplit(uri)
@@ -68,8 +74,17 @@ class GltfDocument:
             payload = self.external_payloads[target]
             require(len(payload) <= maximum, 'RIG_LIMIT_SOURCE', 'glTF dependency exceeds its byte budget.')
             return payload
+        if self.budget is not None:
+            from rig_errors import open_payload
+            with open_payload(target.parent, target.name) as (_, info):
+                size = info.st_size
+            require(size <= maximum, 'RIG_LIMIT_SOURCE', 'glTF dependency exceeds its byte budget.')
+            self.budget.captured_input(key=self.reservation_prefix + ':file:' + str(len(self.external_payloads)), size=size)
+            maximum = min(maximum, size)
         if self.source_reader is not None:
             payload = self.source_reader(target, maximum)
+            if self.budget is not None:
+                require(len(payload) == size, 'RIG_SOURCE_CHANGED', 'glTF dependency size changed during reading.')
             if target not in self.dependencies:self.dependencies.append(target)
             self.encoded_sources[target] = len(payload)
             self.external_payloads[target] = payload
@@ -78,7 +93,11 @@ class GltfDocument:
         if target not in self.dependencies:self.dependencies.append(target)
         require(sum(p.stat().st_size for p in self.dependencies) <= self.limits['dependency_bytes'],
                 'RIG_LIMIT_DEPENDENCIES', 'Expanded source dependency inventory exceeds its byte budget.')
-        payload = target.read_bytes()
+        from rig_errors import open_payload
+        with open_payload(target.parent, target.name) as (stream, info):
+            require(info.st_size <= maximum, 'RIG_LIMIT_SOURCE', 'glTF dependency exceeds its byte budget.')
+            payload = stream.read(maximum + 1)
+        require(len(payload) <= maximum, 'RIG_SOURCE_CHANGED', 'glTF dependency grew during reading.')
         self.encoded_sources[target] = len(payload)
         self.external_payloads[target] = payload
         return payload
@@ -137,16 +156,34 @@ class GltfDocument:
         return data
 
 
-def read_gltf(path: str | Path, limits=None, *, source_reader=None) -> GltfDocument:
+def read_gltf(path: str | Path, limits=None, *, source_reader=None, budget=None) -> GltfDocument:
     limits = dict(limits or DEFAULT_LIMITS)
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'RIG_SOURCE', 'Model must be a regular local file.')
     path = path.absolute() if source_reader is not None else normalize_root(path.parent)/path.name
+    prefix = uuid.uuid4().hex
+    if budget is not None:
+        from rig_errors import open_payload
+        with open_payload(path.parent, path.name) as (_, info):
+            size = info.st_size
+        budget.captured_input(key=prefix + ':entry', size=size, source=True)
+        budget.parsed_json(key=prefix + ':json', size=size)
+        # GLB chunk slices and buffer slices may coexist with the original.
+        budget.add(size * 2, 'glTF source slicing workspace')
+        require(size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'Encoded model exceeds the source byte limit.')
     if source_reader is None:
         require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'Encoded model exceeds the source byte limit.')
-        raw = path.read_bytes()
+        if budget is None:
+            raw = path.read_bytes()
+        else:
+            with open_payload(path.parent, path.name) as (stream, info):
+                require(info.st_size == size, 'RIG_SOURCE_CHANGED', 'Source size changed during admission.')
+                raw = stream.read(size + 1)
+            require(len(raw) == size, 'RIG_SOURCE_CHANGED', 'Source size changed during reading.')
     else:
-        raw = source_reader(path, limits['source_bytes'])
+        raw = source_reader(path, min(limits['source_bytes'], size) if budget is not None else limits['source_bytes'])
+        if budget is not None:
+            require(len(raw) == size, 'RIG_SOURCE_CHANGED', 'Source size changed during reading.')
     binary = None
     if path.suffix.lower() == '.glb':
         require(len(raw) >= 20, 'RIG_GLB_HEADER', 'GLB is truncated.')
@@ -171,7 +208,8 @@ def read_gltf(path: str | Path, limits=None, *, source_reader=None) -> GltfDocum
     missing = set(document.get('extensionsRequired', []))-MATERIAL_EXTENSIONS
     require(not missing, 'RIG_GLTF_EXTENSION', 'Decode required unsupported extensions before import.', observed=sorted(missing))
     result = GltfDocument(path, document, [], limits, [path], source_reader=source_reader,
-                          source_sha256=hashlib.sha256(raw).hexdigest(), encoded_sources={path: len(raw)})
+                          source_sha256=hashlib.sha256(raw).hexdigest(), encoded_sources={path: len(raw)},
+                          budget=budget, reservation_prefix=prefix, admitted_source=budget is not None)
     buffers = document.get('buffers', [])
     require(len(buffers) <= 1024, 'RIG_GLTF_BUFFER', 'Too many buffers.')
     total = sum(_count(b.get('byteLength'), 'buffer byte length', limits['dependency_bytes']) for b in buffers)
@@ -287,11 +325,12 @@ def preflight_gltf(document: GltfDocument, *, encoded_bytes: int, limits=None, b
     budget = budget.fork(caps) if budget is not None else LoadBudget(caps)
     size = _count(encoded_bytes, 'encoded source closure', caps['dependency_bytes'])
     require(size > 0, 'RIG_GLTF_COUNT', 'Measured encoded source closure must be nonempty.')
-    require(budget.input_bytes + size <= caps['dependency_bytes'], 'RIG_LIMIT_DEPENDENCIES',
-            'Aggregate encoded sources exceed the byte budget.')
-    budget.input_bytes += size
-    budget.json_bytes += size  # Conservative encoded-closure upper bound.
-    budget.add(size * _JSON_FACTOR, 'captured glTF JSON/buffer metadata estimate')
+    if not document.admitted_source:
+        require(budget.input_bytes + size <= caps['dependency_bytes'], 'RIG_LIMIT_DEPENDENCIES',
+                'Aggregate encoded sources exceed the byte budget.')
+        budget.input_bytes += size
+        budget.json_bytes += size
+        budget.add(size * _JSON_FACTOR, 'captured glTF JSON/buffer metadata estimate')
     try:
         body = document.json
         require(isinstance(body, dict), 'RIG_GLTF_PREFLIGHT', 'glTF root must be an object.')

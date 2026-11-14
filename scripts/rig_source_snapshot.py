@@ -47,7 +47,7 @@ class SourceSnapshot:
         self.close()
 
 
-def import_snapshot(path, *, scale=1., limits=None, blender=None):
+def import_snapshot(path, *, scale=1., limits=None, blender=None, budget=None):
     """Import one frozen local closure, preserving source bytes and identities.
 
     Explicit scale is meters per source unit. Rig/skin/morph/clip conversion
@@ -57,7 +57,12 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
     """
     from rig_import import load_character_model
     from rig_errors import open_payload
-    limits = import_limits(limits)
+    from rig_load_limits import LoadBudget, effective_limits
+    limits = effective_limits(DEFAULT_LIMITS, import_limits(limits))
+    require(budget is None or type(budget) is LoadBudget, 'RIG_LIMITS', 'Invalid caller load budget.')
+    caller_budget = budget
+    budget = budget.fork(limits) if budget is not None else LoadBudget(limits)
+    limits = budget.limits
     require(type(scale) in (int, float) and 0 < scale <= 10000
             and (type(scale) is int or math.isfinite(scale)),
             'RIG_SCALE', 'Import scale must be finite and positive, at most 10000.')
@@ -122,15 +127,19 @@ def import_snapshot(path, *, scale=1., limits=None, blender=None):
             # libraries; only the immutable source copy reaches that worker.
             capture(entry, limits['source_bytes'])
         else:
-            discovered = load_character_model(entry, scale=scale, limits=limits, source_reader=capture)
+            discovery_budget = budget.fork(limits)
+            discovered = load_character_model(entry, scale=scale, limits=limits, source_reader=capture,
+                                              budget=discovery_budget)
             names = {p.absolute().relative_to(source_root).as_posix() for p in discovered.source_files}
             require(names == set(records), 'RIG_SOURCE_INVENTORY', 'Decoded source closure and captured files disagree.')
             del discovered
         # Reopening the private closure proves it is independently loadable and
         # does not rely on live source handles or parser callbacks.
-        model = load_character_model(root/entry.name, scale=scale, limits=limits, blender=blender)
+        model = load_character_model(root/entry.name, scale=scale, limits=limits, blender=blender, budget=budget)
         actual = {p.relative_to(root).as_posix() for p in model.source_files}
         require(actual == set(records), 'RIG_SOURCE_INVENTORY', 'Frozen closure dependencies changed during reopening.')
+        if caller_budget is not None:
+            caller_budget.commit(budget)
         return SourceSnapshot(model, list(records.values()),
                               dict(authority='rig_import.load_character_model', source_entry=entry.name,
                                    scale_conversion=scale, source_consistency='private exact-byte snapshot'),

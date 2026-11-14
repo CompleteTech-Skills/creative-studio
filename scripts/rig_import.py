@@ -112,7 +112,7 @@ def _verify_png_raster(data: bytes, size: tuple[int, int]) -> None:
     require(inflater.eof and decoded == expected, 'RIG_TEXTURE_DECODE', 'PNG raster or zlib footer is incomplete.')
 
 
-def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0, *, budget=None, reservation_key=None) -> tuple[str, int]:
+def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0, *, budget=None, reservation_key=None, encoded_reserved=False) -> tuple[str, int]:
     """Verify containers and decode pixels before accepting immutable source bytes.
 
     ``verify`` alone does not decode JPEG entropy data. Keep the existing
@@ -133,7 +133,7 @@ def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0, *, budget=
                 require(0 < pixels <= 16_777_216 and (total_pixels + pixels) * 16 <= limits['memory_bytes'] // 2,
                         'RIG_LIMIT_TEXTURE', 'Decoded textures exceed the pixel/memory budget.')
                 if budget is not None:
-                    budget.image(key=reservation_key, encoded_bytes=len(data), pixels=pixels)
+                    budget.image(key=reservation_key, encoded_bytes=0 if encoded_reserved else len(data), pixels=pixels)
                 mime = 'image/png' if image.format == 'PNG' else 'image/jpeg'
                 if image.format == 'PNG':
                     _verify_png_raster(data, image.size)
@@ -162,13 +162,18 @@ def _images(document: GltfDocument, *, budget=None, reservation_prefix=None) -> 
     images = []
     total_pixels = 0
     for i, item in enumerate(document.json.get('images', [])):
+        encoded_reserved = False
         if 'uri' in item:
             data = document.uri(item['uri'])
         else:
             buffer, offset, length, _ = document.view(item['bufferView'])
+            if budget is not None:
+                budget.reserve(f'{reservation_prefix}:image-bytes:{i}', length, 'image buffer slice')
+                encoded_reserved = True
             data = buffer[offset:offset+length]
         mime, pixels = _decode_texture(data, document.limits, total_pixels, budget=budget,
-                                       reservation_key=f'{reservation_prefix}:image:{i}' if budget else None)
+                                       reservation_key=f'{reservation_prefix}:image:{i}' if budget else None,
+                                       encoded_reserved=encoded_reserved)
         total_pixels += pixels
         require(item.get('mimeType', mime) == mime, 'RIG_TEXTURE_FORMAT', 'Texture MIME does not match its actual bytes.')
         images.append(TextureImage(item.get('name', f'image-{i}'), mime, data))
@@ -283,7 +288,7 @@ def _animations(document, ids, node_meshes, geometry, parents, scale):
 
 
 def _gltf_model(path, *, scale=1., limits=None, source_reader=None, budget=None) -> ImportedModel:
-    document = read_gltf(path, limits, source_reader=source_reader)
+    document = read_gltf(path, limits, source_reader=source_reader, budget=budget)
     # Capture external image bytes too, so admission measures the exact closure
     # consumed by this document without reopening mutable source paths.
     for image in document.json.get('images', []):
@@ -424,7 +429,8 @@ def load_character_model(path: str | Path, *, scale=1., limits=None, blender=Non
         return import_blend(path, scale=scale, limits=limits, executable=blender)
     require(suffix in ('.gltf', '.glb'), 'RIG_FORMAT', 'Supported model inputs are GLB, glTF, OBJ and Blender.')
     if budget is None:
-        return _gltf_model(path, scale=scale, limits=limits, source_reader=source_reader)
+        from rig_load_limits import LoadBudget, effective_limits
+        budget = LoadBudget(effective_limits(DEFAULT_LIMITS, limits))
     child = budget.fork(limits or budget.limits)
     model = _gltf_model(path, scale=scale, limits=child.limits, source_reader=source_reader, budget=child)
     budget.commit(child)

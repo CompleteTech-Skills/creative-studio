@@ -12,6 +12,9 @@ import rig_import
 from rig_errors import RigError
 from rig_gltf import GltfBuilder
 from rig_source_snapshot import import_snapshot
+from rig_contracts import DEFAULT_LIMITS
+from rig_load_limits import LoadBudget
+from copy import deepcopy
 
 
 class ImportSourceProvenanceTests(unittest.TestCase):
@@ -69,6 +72,22 @@ class ImportSourceProvenanceTests(unittest.TestCase):
         with self.assertRaises(RigError):
             import_snapshot(self.path, limits={'source_bytes': len(self.original) - 1})
         self.assertEqual(self.path.read_bytes(), self.original)
+
+    def test_shared_budget_rejects_before_source_read_and_rolls_back(self):
+        probe = LoadBudget(DEFAULT_LIMITS)
+        rig_import.load_character_model(self.path, budget=probe)
+        budget = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': probe.memory})
+        with import_snapshot(self.path, budget=budget) as snapshot:
+            self.assert_source(snapshot.model)
+        before = deepcopy(budget._state())
+        with patch('rig_gltf.decode_json', side_effect=AssertionError('decoded before admission')):
+            with self.assertRaises(RigError) as caught:
+                import_snapshot(self.path, budget=budget)
+        self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+        self.assertEqual(budget._state(), before)
+        fresh = LoadBudget({**DEFAULT_LIMITS, 'memory_bytes': probe.memory})
+        with import_snapshot(self.path, budget=fresh) as snapshot:
+            self.assert_source(snapshot.model)
 
     def test_missing_captured_digest_fails_closed(self):
         read = rig_import.read_gltf
