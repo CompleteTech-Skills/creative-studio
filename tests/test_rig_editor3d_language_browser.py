@@ -57,7 +57,11 @@ class EditorLanguageBrowserTests(unittest.TestCase):
                 self.assertEqual(next(n for n in reopened['scene']['nodes'] if n['id'] == 'mesh')['transform']['translation'][0], 9)
                 self.assertAlmostEqual(page.evaluate("() => hatchEditor.objects.get('mesh').matrixWorld.elements[12]"), 9)
                 self.assertTrue(apply.is_disabled())
-                page.reload()
+                # Credentials are intentionally memory-only: reopen the saved
+                # scene in a fresh authenticated page, not an unauthenticated URL.
+                page.close()
+                page = browser.new_page(viewport={'width': 1400, 'height': 900})
+                page.goto(self.server.url)
                 page.wait_for_function("() => window.editorReady === true && hatchEditor.snapshot.revision === 2")
                 self.assertAlmostEqual(page.evaluate("() => hatchEditor.objects.get('mesh').matrixWorld.elements[12]"), 9)
                 self.assertEqual(self.repository.snapshot()['sha256'], reopened['sha256'])
@@ -87,7 +91,7 @@ class EditorLanguageBrowserTests(unittest.TestCase):
                 self.repository.apply(saved['revision'], dict(schema_version=1, commands=[dict(operation='rename',
                     parameters=dict(identifier='mesh', name='Externally edited'))]), 'outside-language', expected_sha256=saved['sha256'])
                 apply.click()
-                page.wait_for_function("() => document.querySelector('#scene-language [role=status]').textContent.includes('changed')")
+                page.wait_for_function("() => document.querySelector('#scene-language [role=status]').textContent.includes('current revision')")
                 self.assertEqual(self.repository.snapshot()['revision'], 1)
                 self.assertTrue(next(n for n in self.repository.snapshot()['scene']['nodes'] if n['id'] == 'mesh')['visible'])
                 page.evaluate('() => hatchEditor.reload()')
