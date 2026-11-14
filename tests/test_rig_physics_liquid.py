@@ -5,6 +5,7 @@ import sys
 import struct
 import zlib
 import tempfile
+import shutil
 import unittest
 from unittest.mock import patch
 from contextlib import contextmanager, ExitStack
@@ -58,6 +59,21 @@ class NativeLiquidTests(unittest.TestCase):
             self.assertTrue(report['geometry']['reopened_geometry_verified'])
             self.assertLessEqual(report['geometry']['maximum_native_vertex_error'],2e-5)
             self.assertEqual(len(report['geometry']['samples']),48)
+            # Reopen a detached copy after publication at its final public path;
+            # no private directory descriptor or original namespace remains.
+            original_blend=(root/'scene.blend').read_bytes()
+            with tempfile.TemporaryDirectory(prefix='liquid-published-reopen-') as directory:
+                copied=Path(directory)/'published-copy';shutil.copytree(root,copied)
+                executable=core.BlenderBackend().executable
+                command=[executable,'--background','--factory-startup','--disable-autoexec','--threads','2',
+                    '--python-exit-code','2','--python',str(copied/'worker.py'),'--',str(copied/'liquid-job.json')]
+                core._run_process(command,copied,timeout=180,memory_bytes=2*1024**3,
+                    output_bytes=256*1024**2,label='published-reopen')
+                reopened=core.parse((copied/'replay-report.json').read_bytes())
+                self.assertEqual(reopened['frames'],list(range(48)))
+                self.assertEqual(reopened['blend_sha256'],core.digest(original_blend))
+                self.assertEqual((copied/'scene.blend').read_bytes(),original_blend)
+            self.assertEqual((root/'scene.blend').read_bytes(),original_blend)
             observed=core.parse((root/'liquid-report.json').read_bytes())['observed']
             self.assertEqual((observed['fps_numerator'],observed['fps_base']),(30000,1001))
             # Updating inventory hashes cannot conceal stale source/worker/replay bindings.
