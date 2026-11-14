@@ -1263,8 +1263,10 @@ function resize() {
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.setSize(Math.min(width, 2048), Math.min(height, 2048), false);
   if (camera.isPerspectiveCamera) camera.aspect = width / Math.max(height, 1);
-  else if (camera === orthographic) {
-    const span = orthographic.userData.span || 5;
+  else if (camera.isOrthographicCamera) {
+    const span = camera === orthographic
+      ? orthographic.userData.span || 5
+      : camera.top - camera.bottom;
     camera.left = (-span * width) / Math.max(height, 1) / 2;
     camera.right = -camera.left;
     camera.top = span / 2;
