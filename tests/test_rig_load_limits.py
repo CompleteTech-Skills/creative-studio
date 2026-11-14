@@ -373,8 +373,11 @@ for method in ('json', 'hash', 'bundle'):
             original.rename(path)
         assert path.read_bytes() == payload
 '''
+        environment = dict(os.environ)
+        environment['PYTHONPATH'] = os.pathsep.join(filter(None, (
+            str(ROOT / 'scripts'), environment.get('PYTHONPATH'))))
         result = subprocess.run([sys.executable, '-c', code], capture_output=True,
-                                text=True, timeout=5)
+                                text=True, timeout=5, env=environment)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_matching_raw_manifest_pin_preserves_sources_and_caller_limits(self):
