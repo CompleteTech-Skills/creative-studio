@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "kind": "hatch-3d-animation",
+  "id": "neutral",
+  "version": "1.0.0",
+  "rig_id": "render91-fixture",
+  "skeleton_version": "1.0.0",
+  "duration": 1.0,
+  "fps": 12,
+  "loop": true,
+  "tracks": [
+    {
+      "schema_version": 1,
+      "target": "b0",
+      "path": "rotation",
+      "interpolation": "LINEAR",
+      "times": [
+        0.0,
+        1.0
+      ],
+      "values": [
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      ]
+    }
+  ],
+  "events": [],
+  "contacts": [],
+  "root_motion": "embedded",
+  "interruptible": true,
+  "reduced_motion_pose": "neutral",
+  "provenance": {
+    "schema_version": 1,
+    "tool_version": "1.0.0",
+    "operation": "Authored pose keyframes",
+    "created_at": "2026-11-13T13:05:30Z",
+    "input_hashes": {},
+    "ancestry": []
+  }
+}

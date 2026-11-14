@@ -46,7 +46,8 @@
             "reference",
             "legacy-pet",
             "legacy-cast",
-            "legacy-clip"
+            "legacy-clip",
+            "document"
           ]
         },
         "subtype": {
