@@ -37,8 +37,10 @@ class CanonicalObjTests(unittest.TestCase):
             self.assertEqual((rig.root/'source/materials.mtl').read_bytes(), mtl.read_bytes())
             self.assertEqual(rig.geometry.triangle_count, 1)
             for bad in (None, {**ref, 'id': 'foreign'}, {**ref, 'sha256': 'f'*64}):
-                with self.subTest(bad=bad), self.assertRaises((RigError, TypeError)):
-                    create_run(CanonicalArtifact(reopened, bad, entry='model.obj'), root/'bad')
+                with self.subTest(bad=bad), patch('model3d_mesh_import._load') as decode:
+                    with self.assertRaises((RigError, TypeError)):
+                        create_run(CanonicalArtifact(reopened, bad, entry='model.obj'), root/'bad')
+                    decode.assert_not_called()
             with patch.object(reopened, 'resolve', return_value={**manifest, 'version': '2.0.0'}), \
                  patch('model3d_mesh_import._load') as decode:
                 with self.assertRaises(RigError):
@@ -50,5 +52,11 @@ class CanonicalObjTests(unittest.TestCase):
                     create_run(CanonicalArtifact(reopened, ref, entry='model.obj'), root/'tampered')
                 decode.assert_not_called()
             self.assertFalse((root/'tampered').exists())
+            with patch.object(reopened, 'read_file', side_effect=lambda r, name: (_ for _ in ()).throw(RigError('MISSING', 'Missing source')) if name == 'materials.mtl' else library.read_file(r, name)), \
+                 patch('model3d_mesh_import._load') as decode:
+                with self.assertRaises(RigError):
+                    create_run(CanonicalArtifact(reopened, ref, entry='model.obj'), root/'missing')
+                decode.assert_not_called()
+            self.assertFalse((root/'missing').exists())
             bare = create_run(obj, root/'bare')
             self.assertFalse(bare.manifest['source']['fixture'])

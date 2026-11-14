@@ -97,6 +97,7 @@ class FixtureProvenanceRegression(unittest.TestCase):
             root = Path(tmp).resolve()
             report = demonstrate(root / 'demo')
             self.assertTrue(report['fixture'])
+            self.assertEqual(report['approval'], 'not-reviewed')
             self.assertEqual(len(report['records']), 18)
             for record in report['records']:
                 path = root / 'demo' / (record['primitive'] + '-' + record['format']) / ('model.' + record['format'])
@@ -108,6 +109,8 @@ class FixtureProvenanceRegression(unittest.TestCase):
                     library = AssetLibrary(root / 'demo/registry')
                     rig = create_run(CanonicalArtifact(library, record['canonical_ref'], entry='model.obj'), root / ('check-' + record['primitive']))
                     self.assertTrue(rig.manifest['source']['fixture'])
+                    self.assertEqual(rig.manifest['review']['status'], 'pending')
+                    self.assertFalse(json.loads((rig.root / 'identity.json').read_text())['approved_artwork'])
                     self.assertEqual((rig.root / rig.manifest['source']['path']).read_bytes(), path.read_bytes())
             self.assertTrue(create_run(root / 'demo/box-glb/model.glb', root / 'rig').manifest['source']['fixture'])
             self.assertEqual(len(list((root / 'demo').glob('*-obj/model.obj'))), 6)
