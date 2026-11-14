@@ -13,3 +13,19 @@ def launch_chromium(runtime):
         raise unittest.SkipTest('Chromium is not installed; run python -m playwright install chromium')
     return runtime.chromium.launch(headless=True, executable_path=executable,
                                    args=['--no-sandbox', '--disable-dev-shm-usage'])
+
+
+def launch_browser(runtime, *, engine='chromium', headless=True):
+    """Launch the requested real engine; never substitute Chromium for another."""
+    if engine not in ('chromium', 'firefox', 'webkit'):
+        raise ValueError('browser engine must be chromium, firefox or webkit')
+    if type(headless) is not bool:
+        raise ValueError('headless must be a boolean')
+    if engine == 'chromium':
+        if not headless:
+            raise ValueError('the existing Chromium launcher is headless; choose Firefox or WebKit for an explicit display')
+        return launch_chromium(runtime)
+    browser_type = getattr(runtime, engine)
+    if not Path(browser_type.executable_path).is_file():
+        raise RuntimeError(engine + ' is not installed; run python -m playwright install ' + engine)
+    return browser_type.launch(headless=headless)

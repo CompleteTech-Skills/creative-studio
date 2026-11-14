@@ -1,0 +1,84 @@
+name: Editor3D cross-browser keyboard acceptance
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: editor3d-cross-browser-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+jobs:
+  keyboard-persistence:
+    name: Editor keyboard persistence (${{ matrix.engine }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [firefox, webkit]
+    env:
+      PYTHONPATH: scripts:tests
+      HATCH_EDITOR_BROWSER_TEST: '1'
+      HATCH_EDITOR_BROWSER_ENGINE: ${{ matrix.engine }}
+      HATCH_EDITOR_BROWSER_HEADLESS: ${{ matrix.engine == 'firefox' && '0' || '1' }}
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      NUMEXPR_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-rig-test.txt
+      - name: Install the requested real browser and its system libraries
+        run: python -m playwright install --with-deps '${{ matrix.engine }}'
+      - name: Verify public-evidence credential redaction
+        run: python -m unittest -v test_rig_editor3d_browser_evidence
+      - name: Execute native keyboard, persistence and focus workflows
+        run: |
+          mkdir -p editor-cross-browser-evidence
+          git rev-parse HEAD > editor-cross-browser-evidence/head.txt
+          python -m playwright --version > editor-cross-browser-evidence/playwright-version.txt
+          test_status=0
+          browser_runner=(python)
+          if [[ '${{ matrix.engine }}' == 'firefox' ]]; then
+            browser_runner=(xvfb-run --auto-servernum python)
+          fi
+          "${browser_runner[@]}" - <<'PY' > editor-browser-private.log 2>&1 || test_status=$?
+          import json, os, unittest
+          from pathlib import Path
+          suite = unittest.defaultTestLoader.loadTestsFromName('test_rig_editor3d_accessibility')
+          expected = suite.countTestCases()
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          receipt = dict(requested_engine=os.environ['HATCH_EDITOR_BROWSER_ENGINE'], expected=expected,
+                         ran=result.testsRun, skipped=[(str(test), why) for test, why in result.skipped],
+                         failures=len(result.failures), errors=len(result.errors), success=result.wasSuccessful())
+          Path('editor-cross-browser-evidence/result.json').write_text(json.dumps(receipt, indent=2)+'\n')
+          raise SystemExit(not (expected >= 6 and result.testsRun == expected and result.wasSuccessful() and not result.skipped))
+          PY
+          python scripts/editor3d_browser_evidence.py < editor-browser-private.log > editor-cross-browser-evidence/tests.redacted.log
+          python - <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          raw = Path('editor-browser-private.log').read_bytes()
+          public = Path('editor-cross-browser-evidence/tests.redacted.log').read_bytes()
+          receipt = dict(raw_sha256=hashlib.sha256(raw).hexdigest(), redacted_sha256=hashlib.sha256(public).hexdigest(),
+                         publication='Only the redacted log is published; raw log remains private to this job workspace.')
+          Path('editor-cross-browser-evidence/log-publication.json').write_text(json.dumps(receipt, indent=2)+'\n')
+          PY
+          cat editor-cross-browser-evidence/tests.redacted.log
+          exit "$test_status"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: editor-keyboard-${{ matrix.engine }}-${{ github.sha }}
+          path: editor-cross-browser-evidence/
+          retention-days: 14
