@@ -91,3 +91,13 @@ Render result JSON has a separate 1 GiB decoding budget for large frame/pass
 inventories; all other documents and the default shared decoder retain the
 32 MiB limit. Oversized non-result documents still reject. This is an input-byte
 bound, not a promise that arbitrary result inventories fit available memory.
+
+Python callers with a smaller storage reservation may pass `max_total_bytes` to
+`create_snapshot`, `verify_snapshot`, and `make_frame_spec`. The effective closure limit is the
+smaller of that reservation and the global snapshot limit. Admission checks run
+before destination copying and native owner loading; streaming copies also
+consume the remaining allowance, including native private validation copies.
+The limit covers source closure bytes; callers reserve snapshot metadata and
+other rendering/preparation outputs separately. Omitting the argument retains
+the established global limit. Custom source adapters still own resources used
+inside their own `describe` implementation.

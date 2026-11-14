@@ -6,14 +6,15 @@ from pathlib import Path
 import shlex
 import numpy as np
 from rig_contracts import DEFAULT_LIMITS
-from rig_errors import require, safe_path, sha256, slug
+from rig_errors import require, safe_path, sha256, slug, normalize_root
 from rig_geometry import analyze_geometry
 from rig_models import Geometry, Mesh, TextureImage, validate_geometry
 
 
 def import_obj(path: Path, *, scale=1., limits=None):
     from rig_import import ImportedModel, _decode_texture
-    limits = limits or DEFAULT_LIMITS;path = Path(path).resolve()
+    limits = limits or DEFAULT_LIMITS;path = Path(path)
+    path = normalize_root(path.parent)/path.name
     require(path.stat().st_size <= limits['source_bytes'], 'RIG_LIMIT_SOURCE', 'OBJ exceeds the encoded source budget.')
     require(math.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'OBJ scale must be positive.')
     vertices, uv, normals, groups, dependencies = [], [], [], {}, [path]
