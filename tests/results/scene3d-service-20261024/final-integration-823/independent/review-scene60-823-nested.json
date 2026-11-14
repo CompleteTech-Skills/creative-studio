@@ -1,0 +1,37 @@
+[
+  {
+    "case": "unknown",
+    "api_accepted": false,
+    "published": false,
+    "structured_rejection": true
+  },
+  {
+    "case": "type",
+    "api_accepted": false,
+    "published": false,
+    "structured_rejection": true
+  },
+  {
+    "case": "scale",
+    "api_accepted": false,
+    "published": false,
+    "structured_rejection": true
+  },
+  {
+    "case": "quaternion",
+    "api_accepted": false,
+    "published": false,
+    "structured_rejection": true
+  },
+  {
+    "case": "valid",
+    "api_accepted": true,
+    "published": true,
+    "structured_rejection": true
+  },
+  {
+    "case": "composed-transform-depth-70-plus-70",
+    "accepted": false,
+    "unchanged": true
+  }
+]

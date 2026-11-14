@@ -1,0 +1,165 @@
+{
+  "edges": [
+    {
+      "artifact": {
+        "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+        "byte_size": 32,
+        "dependencies": [],
+        "fixture": true,
+        "kind": "capability-probe-evidence",
+        "media_type": "text/plain",
+        "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+        "provenance_ref": null,
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713"
+      },
+      "source": "inspect",
+      "target": "resolve"
+    },
+    {
+      "artifact": {
+        "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+        "byte_size": 32,
+        "dependencies": [],
+        "fixture": true,
+        "kind": "capability-probe-evidence",
+        "media_type": "text/plain",
+        "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+        "provenance_ref": null,
+        "schema_version": 1,
+        "semantic_version": "1.0.0",
+        "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713"
+      },
+      "source": "resolve",
+      "target": "reuse"
+    }
+  ],
+  "kind": "execution-plan",
+  "nodes": [
+    {
+      "estimated_seconds": 1,
+      "id": "inspect",
+      "inputs": [
+        {
+          "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "byte_size": 32,
+          "dependencies": [],
+          "fixture": true,
+          "kind": "capability-probe-evidence",
+          "media_type": "text/plain",
+          "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+          "provenance_ref": null,
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713"
+        }
+      ],
+      "native_owner": "AssetResolver",
+      "operation": "AssetResolver.resolve",
+      "output_schema": "resolution-plan",
+      "required_capabilities": [
+        "importer.obj"
+      ],
+      "requirement_ids": [
+        "exact-native-input"
+      ],
+      "resource_class": "cpu"
+    },
+    {
+      "estimated_seconds": 2,
+      "id": "resolve",
+      "inputs": [
+        {
+          "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "byte_size": 32,
+          "dependencies": [],
+          "fixture": true,
+          "kind": "capability-probe-evidence",
+          "media_type": "text/plain",
+          "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+          "provenance_ref": null,
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713"
+        }
+      ],
+      "native_owner": "AssetResolver",
+      "operation": "AssetResolver.resolve",
+      "output_schema": "resolution-plan",
+      "required_capabilities": [
+        "importer.obj"
+      ],
+      "requirement_ids": [
+        "exact-native-input"
+      ],
+      "resource_class": "cpu"
+    },
+    {
+      "estimated_seconds": 3,
+      "id": "reuse",
+      "inputs": [
+        {
+          "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+          "byte_size": 32,
+          "dependencies": [],
+          "fixture": true,
+          "kind": "capability-probe-evidence",
+          "media_type": "text/plain",
+          "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+          "provenance_ref": null,
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713"
+        }
+      ],
+      "native_owner": "AssetResolver",
+      "operation": "AssetResolver.resolve",
+      "output_schema": "resolution-plan",
+      "required_capabilities": [
+        "importer.obj"
+      ],
+      "requirement_ids": [
+        "exact-native-input"
+      ],
+      "resource_class": "cpu"
+    }
+  ],
+  "requirements": [
+    {
+      "evidence": [
+        {
+          "artifact_id": "probe-000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25",
+          "byte_size": 4696,
+          "dependencies": [
+            {
+              "artifact_id": "probe-697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713",
+              "byte_size": 32,
+              "dependencies": [],
+              "fixture": true,
+              "kind": "capability-probe-evidence",
+              "media_type": "text/plain",
+              "path": "payloads/697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713.obj",
+              "provenance_ref": null,
+              "schema_version": 1,
+              "semantic_version": "1.0.0",
+              "sha256": "697b00ab13410c52a542d2e9c63711fcc04e9cbf6c0d3439a9b43cc812e6e713"
+            }
+          ],
+          "fixture": true,
+          "kind": "capability-probe-evidence",
+          "media_type": "application/json",
+          "path": "receipts/000c44645c6dce912d87f61959d8dd443c94298696a31b3a3482464e012f0b25.json",
+          "provenance_ref": null,
+          "schema_version": 1,
+          "semantic_version": "1.0.0",
+          "sha256": "1d854acee3396d4adff332cc4472e28618f6dfd998bd1ab0634a62fef1b9b689"
+        }
+      ],
+      "id": "exact-native-input",
+      "test": "test_actual_compile_topology_exact_edges_and_critical_path"
+    }
+  ],
+  "schema_version": 1,
+  "state": "planned"
+}

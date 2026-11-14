@@ -1,0 +1,61 @@
+Fri Nov 13 12:43:03 UTC 2026
+test_shared_atomic_publisher_pins_both_parents (test_silent_video.DescriptorPublication.test_shared_atomic_publisher_pins_both_parents) ... ok
+test_audio_policy_cannot_be_relaxed_or_silence_substituted (test_silent_video.SilentContracts.test_audio_policy_cannot_be_relaxed_or_silence_substituted) ... ok
+test_committed_schema_parity (test_silent_video.SilentContracts.test_committed_schema_parity) ... ok
+test_default_request_is_explicitly_audio_forbidden (test_silent_video.SilentContracts.test_default_request_is_explicitly_audio_forbidden) ... ok
+test_high_precision_png_is_rejected_before_lossy_pillow_decode (test_silent_video.SilentContracts.test_high_precision_png_is_rejected_before_lossy_pillow_decode) ... ok
+test_huge_integer_fails_as_contract_error (test_silent_video.SilentContracts.test_huge_integer_fails_as_contract_error) ... ok
+test_invalid_exact_fps_is_rejected (test_silent_video.SilentContracts.test_invalid_exact_fps_is_rejected) ... ok
+test_mismatched_frame_dimensions_are_rejected (test_silent_video.SilentContracts.test_mismatched_frame_dimensions_are_rejected) ... ok
+test_missing_tools_are_reported_as_unavailable (test_silent_video.SilentContracts.test_missing_tools_are_reported_as_unavailable) ... ok
+test_non_image_source_is_rejected (test_silent_video.SilentContracts.test_non_image_source_is_rejected) ... ok
+test_profile_schema_rejects_mixed_codec_and_container (test_silent_video.SilentContracts.test_profile_schema_rejects_mixed_codec_and_container) ... ok
+test_resource_limits_reject_unbounded_or_nonfinite_values (test_silent_video.SilentContracts.test_resource_limits_reject_unbounded_or_nonfinite_values) ... ok
+test_rgb_png_transparency_is_not_silently_discarded (test_silent_video.SilentContracts.test_rgb_png_transparency_is_not_silently_discarded) ... ok
+test_symlink_source_is_rejected (test_silent_video.SilentContracts.test_symlink_source_is_rejected) ... ok
+test_unknown_fields_and_injected_flags_are_rejected (test_silent_video.SilentContracts.test_unknown_fields_and_injected_flags_are_rejected) ... ok
+test_unsafe_source_paths_fail_before_media_execution (test_silent_video.SilentContracts.test_unsafe_source_paths_fail_before_media_execution) ... ok
+test_unsupported_or_injected_profile_is_rejected (test_silent_video.SilentContracts.test_unsupported_or_injected_profile_is_rejected) ... ok
+test_actual_h264_all_required_rates_and_adjacent_wav (test_silent_video.SilentMedia.test_actual_h264_all_required_rates_and_adjacent_wav) ... ok
+test_actual_vp9_webm_passes_independent_silent_verifier (test_silent_video.SilentMedia.test_actual_vp9_webm_passes_independent_silent_verifier) ... ok
+test_audio_policy_cannot_be_relaxed_or_silence_substituted (test_silent_video.SilentMedia.test_audio_policy_cannot_be_relaxed_or_silence_substituted) ... ok
+test_cancellation_never_publishes_partial_output (test_silent_video.SilentMedia.test_cancellation_never_publishes_partial_output) ... ok
+test_committed_schema_parity (test_silent_video.SilentMedia.test_committed_schema_parity) ... ok
+test_corrupt_receipt_cannot_claim_verification (test_silent_video.SilentMedia.test_corrupt_receipt_cannot_claim_verification) ... ok
+test_default_request_is_explicitly_audio_forbidden (test_silent_video.SilentMedia.test_default_request_is_explicitly_audio_forbidden) ... ok
+test_existing_destination_is_preserved (test_silent_video.SilentMedia.test_existing_destination_is_preserved) ... ok
+test_extra_video_stream_is_rejected (test_silent_video.SilentMedia.test_extra_video_stream_is_rejected) ... ok
+test_ffprobe_nonzero_exit_is_rejected (test_silent_video.SilentMedia.test_ffprobe_nonzero_exit_is_rejected) ... ok
+test_high_precision_png_is_rejected_before_lossy_pillow_decode (test_silent_video.SilentMedia.test_high_precision_png_is_rejected_before_lossy_pillow_decode) ... ok
+test_huge_integer_fails_as_contract_error (test_silent_video.SilentMedia.test_huge_integer_fails_as_contract_error) ... ok
+test_invalid_exact_fps_is_rejected (test_silent_video.SilentMedia.test_invalid_exact_fps_is_rejected) ... ok
+test_legacy_render_video_cli_keeps_aac_audio (test_silent_video.SilentMedia.test_legacy_render_video_cli_keeps_aac_audio) ... ok
+test_mismatched_frame_dimensions_are_rejected (test_silent_video.SilentMedia.test_mismatched_frame_dimensions_are_rejected) ... ok
+test_missing_source_is_rejected_without_publishing (test_silent_video.SilentMedia.test_missing_source_is_rejected_without_publishing) ... ok
+test_missing_tools_are_reported_as_unavailable (test_silent_video.SilentMedia.test_missing_tools_are_reported_as_unavailable) ... ok
+test_non_image_source_is_rejected (test_silent_video.SilentMedia.test_non_image_source_is_rejected) ... ok
+test_output_size_budget_prevents_publication (test_silent_video.SilentMedia.test_output_size_budget_prevents_publication) ... ok
+test_parent_symlink_swap_cannot_redirect_publication (test_silent_video.SilentMedia.test_parent_symlink_swap_cannot_redirect_publication) ... ok
+test_profile_schema_rejects_mixed_codec_and_container (test_silent_video.SilentMedia.test_profile_schema_rejects_mixed_codec_and_container) ... ok
+test_real_presentation_timestamp_gap_is_rejected (test_silent_video.SilentMedia.test_real_presentation_timestamp_gap_is_rejected) ... ok
+test_resource_limits_reject_unbounded_or_nonfinite_values (test_silent_video.SilentMedia.test_resource_limits_reject_unbounded_or_nonfinite_values) ... ok
+test_rgb_png_transparency_is_not_silently_discarded (test_silent_video.SilentMedia.test_rgb_png_transparency_is_not_silently_discarded) ... ok
+test_stale_source_is_rejected_without_publishing (test_silent_video.SilentMedia.test_stale_source_is_rejected_without_publishing) ... ok
+test_symlink_source_is_rejected (test_silent_video.SilentMedia.test_symlink_source_is_rejected) ... ok
+test_truncated_and_corrupt_artifacts_are_rejected (test_silent_video.SilentMedia.test_truncated_and_corrupt_artifacts_are_rejected) ... ok
+test_unknown_fields_and_injected_flags_are_rejected (test_silent_video.SilentMedia.test_unknown_fields_and_injected_flags_are_rejected) ... ok
+test_unrequested_color_metadata_is_rejected (test_silent_video.SilentMedia.test_unrequested_color_metadata_is_rejected) ... ok
+test_unsafe_source_paths_fail_before_media_execution (test_silent_video.SilentMedia.test_unsafe_source_paths_fail_before_media_execution) ... ok
+test_unsupported_or_injected_profile_is_rejected (test_silent_video.SilentMedia.test_unsupported_or_injected_profile_is_rejected) ... ok
+test_wrong_dimensions_are_rejected (test_silent_video.SilentMedia.test_wrong_dimensions_are_rejected) ... ok
+test_wrong_fps_is_rejected (test_silent_video.SilentMedia.test_wrong_fps_is_rejected) ... ok
+test_wrong_sample_aspect_ratio_is_rejected (test_silent_video.SilentMedia.test_wrong_sample_aspect_ratio_is_rejected) ... ok
+test_wrong_source_frame_count_is_rejected (test_silent_video.SilentMedia.test_wrong_source_frame_count_is_rejected) ... ok
+test_zero_valued_aac_track_is_not_silent_delivery (test_silent_video.SilentMedia.test_zero_valued_aac_track_is_not_silent_delivery) ... ok
+test_zero_valued_opus_track_is_not_silent_delivery (test_silent_video.SilentMedia.test_zero_valued_opus_track_is_not_silent_delivery) ... ok
+
+----------------------------------------------------------------------
+Ran 54 tests in 29.221s
+
+OK
+Fri Nov 13 12:43:32 UTC 2026

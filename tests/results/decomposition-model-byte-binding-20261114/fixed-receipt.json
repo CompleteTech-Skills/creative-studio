@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "kind": "real-opencv-captured-model-byte-binding",
+  "source_commit": "cb66cb6d46721d53dc0cf7423546c559a18141fa",
+  "implementation_sha256": "0c8fb60c478b6eadebf4bd34c4457f5e57201f70262e1b3a7c200179799a04b4",
+  "environment": {
+    "python": "3.14.8",
+    "opencv": "4.13.0"
+  },
+  "source_sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5",
+  "request_model": {
+    "provider": "local-opencv",
+    "name": "opencv-haar-face-eye",
+    "version": "4.13.0",
+    "files": [
+      {
+        "name": "haarcascade_frontalface_default.xml",
+        "sha256": "0f7d4527844eb514d4a4948e822da90fbb16a34a0bbbbc6adc6498747a5aafb0"
+      },
+      {
+        "name": "haarcascade_eye.xml",
+        "sha256": "71cc64fc305a355dc60067880f6fbbd43dd155bd63ee3844661a1bda34b2fd8c"
+      }
+    ],
+    "identity_evidence": "Installed OpenCV version and exact cascade bytes; not a remote call."
+  },
+  "response_model": {
+    "provider": "local-opencv",
+    "name": "opencv-haar-face-eye",
+    "version": "4.13.0",
+    "files": [
+      {
+        "name": "haarcascade_frontalface_default.xml",
+        "sha256": "0f7d4527844eb514d4a4948e822da90fbb16a34a0bbbbc6adc6498747a5aafb0"
+      },
+      {
+        "name": "haarcascade_eye.xml",
+        "sha256": "71cc64fc305a355dc60067880f6fbbd43dd155bd63ee3844661a1bda34b2fd8c"
+      }
+    ],
+    "identity_evidence": "Installed OpenCV version and exact cascade bytes; not a remote call."
+  },
+  "actually_loaded": [
+    {
+      "file": "haarcascade_frontalface_default.xml",
+      "actually_loaded_sha256": "0f7d4527844eb514d4a4948e822da90fbb16a34a0bbbbc6adc6498747a5aafb0",
+      "actual_window_size": [
+        24,
+        24
+      ]
+    },
+    {
+      "file": "haarcascade_eye.xml",
+      "actually_loaded_sha256": "71cc64fc305a355dc60067880f6fbbd43dd155bd63ee3844661a1bda34b2fd8c",
+      "actual_window_size": [
+        20,
+        20
+      ]
+    }
+  ],
+  "native_memory_inputs": [
+    {
+      "sha256": "0f7d4527844eb514d4a4948e822da90fbb16a34a0bbbbc6adc6498747a5aafb0",
+      "flags": 4,
+      "bytes": 930127
+    },
+    {
+      "sha256": "71cc64fc305a355dc60067880f6fbbd43dd155bd63ee3844661a1bda34b2fd8c",
+      "flags": 4,
+      "bytes": 341406
+    }
+  ],
+  "real_constructor_replacement": [
+    {
+      "file": "haarcascade_frontalface_default.xml",
+      "replaced_sha256": "7b0c967d9abbdfbde025eb9c786947d151b6426040d07a8f9562ed8fd90724b4",
+      "filename_arguments": false
+    },
+    {
+      "file": "haarcascade_frontalface_default.xml",
+      "replaced_sha256": "7b0c967d9abbdfbde025eb9c786947d151b6426040d07a8f9562ed8fd90724b4",
+      "filename_arguments": false
+    }
+  ],
+  "worker_response_status": "proposed",
+  "proposals": 3,
+  "model_hash_mismatch_accepted": false,
+  "original_source_untouched": true,
+  "original_installed_models_untouched": true,
+  "owned_model_copies_restored": true,
+  "model_loader": "FileStorage READ|MEMORY and actual CascadeClassifier.read; no filename arguments",
+  "method": "Actual detector inference. Only owned model-copy filenames changed/restored during real native classifier construction; no detector outputs or parser results mocked.",
+  "limitations": [
+    "Photographic human face/eye region proposals only; no pixel segmentation or general character anatomy.",
+    "Uncalibrated confidence and semantic proposals still require independent review."
+  ]
+}

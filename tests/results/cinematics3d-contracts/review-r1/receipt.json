@@ -1,0 +1,23 @@
+{
+  "reviewed_parent": "28b16ea6701a709eabcc66e0c5d454d8bdb55ea6",
+  "fixed_code_sha": "1beaf603c518bb8edac4dce9bc2d8aa32864bfa8",
+  "finding": "P2: schema-valid semver over Python integer digit limit caused raw ValueError during preset history comparison.",
+  "fix": "Compare canonical components by decimal digit count then lexicographic order; preserve original schema range.",
+  "regression": "4301-digit increasing/decreasing preset versions, actual Registry reload",
+  "checks": {
+    "focused": 30,
+    "schema_math": 99,
+    "skinning": 18,
+    "schema_generation": "passed"
+  },
+  "source_hashes": {
+    "scripts/cinematics3d_contracts.py": "e81a1a6ece4f7b2c3d18b4edd5182dae10bec0645f3f87113be8305bf12e51a3",
+    "tests/test_rig_cinematics3d_contracts.py": "738a36290d2730528f584461885b9ada07443765da7b46b8e47bafb4c2f6e1bb",
+    "scripts/test_rig_gate.py": "a7b040dab7f34f6a82ab5c6aaba94a852b1ba46f28e1f9e0886768ea011ce1c0"
+  },
+  "logs": {
+    "contracts.log": "1b4ee99cac136c8c0ca85fdb5260718a7f723d1d075915c241e2ac80ffd740c5",
+    "schema-math.log": "f6a349a8cf0999584b93131596800bfe7b69d54075e75c968f71846d4c905658",
+    "skinning.log": "ab01701df18041951641682e08d1ae192e0f36bcf564a18fcaac1345e587094a"
+  }
+}

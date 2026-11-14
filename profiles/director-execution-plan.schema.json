@@ -1,0 +1,1052 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "kind": {
+      "const": "execution-plan"
+    },
+    "state": {
+      "const": "planned"
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "test": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/artifact-ref"
+            },
+            "minItems": 0,
+            "maxItems": 128
+          }
+        },
+        "required": [
+          "id",
+          "test",
+          "evidence"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 1024
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/graph-plan-node"
+          },
+          {
+            "$ref": "#/$defs/graph-plan-node-v2"
+          }
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 1024
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "artifact": {
+            "$ref": "#/$defs/artifact-ref"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "artifact"
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 4096
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "state",
+    "requirements",
+    "nodes",
+    "edges"
+  ],
+  "$defs": {
+    "artifact-ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "kind": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999
+        },
+        "semantic_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+        },
+        "byte_size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "provenance_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/artifact-ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fixture": {
+          "type": "boolean"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "artifact_id",
+        "kind",
+        "schema_version",
+        "semantic_version",
+        "path",
+        "sha256",
+        "byte_size",
+        "media_type",
+        "provenance_ref",
+        "fixture",
+        "dependencies"
+      ]
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "classification": {
+          "enum": [
+            "actual",
+            "estimated",
+            "unavailable"
+          ]
+        },
+        "provider_calls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "explanation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "explanation"
+          ]
+        },
+        "input_tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "explanation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "explanation"
+          ]
+        },
+        "output_tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "explanation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "explanation"
+          ]
+        },
+        "cpu_seconds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "explanation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "explanation"
+          ]
+        },
+        "gpu_seconds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "explanation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "explanation"
+          ]
+        },
+        "storage_bytes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "explanation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "explanation"
+          ]
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Z]{3}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "amount": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "value": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "explanation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4096
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "value",
+            "explanation"
+          ]
+        },
+        "measurement_source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "classification",
+        "provider_calls",
+        "input_tokens",
+        "output_tokens",
+        "cpu_seconds",
+        "gpu_seconds",
+        "storage_bytes",
+        "currency",
+        "amount",
+        "measurement_source"
+      ]
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "stage": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "entity_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "field_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expected": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "recommended_action": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "stage",
+        "entity_id",
+        "field_path",
+        "expected",
+        "observed",
+        "retryable",
+        "recommended_action",
+        "evidence"
+      ]
+    },
+    "validation-result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "status": {
+          "enum": [
+            "unverified",
+            "passed",
+            "failed",
+            "blocked"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "severity": {
+                "enum": [
+                  "info",
+                  "warning",
+                  "error"
+                ]
+              },
+              "stage": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+              },
+              "entity_id": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "field_path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "expected": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "observed": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "retryable": {
+                "type": "boolean"
+              },
+              "recommended_action": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "evidence": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/artifact-ref"
+                },
+                "minItems": 0,
+                "maxItems": 256
+              }
+            },
+            "required": [
+              "code",
+              "severity",
+              "stage",
+              "entity_id",
+              "field_path",
+              "expected",
+              "observed",
+              "retryable",
+              "recommended_action",
+              "evidence"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "check",
+        "status",
+        "evidence",
+        "diagnostics"
+      ]
+    },
+    "execution-metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "estimated_usage": {
+          "$ref": "#/$defs/usage"
+        },
+        "actual_usage": {
+          "$ref": "#/$defs/usage"
+        },
+        "retry_classification": {
+          "enum": [
+            "unclassified",
+            "retryable",
+            "permanent"
+          ]
+        },
+        "idempotency_key": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "execution_status": {
+          "enum": [
+            "planned",
+            "blocked_capability",
+            "blocked_budget",
+            "ready",
+            "claimed",
+            "running",
+            "awaiting_external_result",
+            "awaiting_review",
+            "artifact_available",
+            "validating",
+            "validated",
+            "failed",
+            "canceled",
+            "stale"
+          ]
+        },
+        "checkpoint_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "output_artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "validation_results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/validation-result"
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "native_job_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/artifact-ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "estimated_usage",
+        "actual_usage",
+        "retry_classification",
+        "idempotency_key",
+        "execution_status",
+        "checkpoint_refs",
+        "output_artifacts",
+        "validation_results",
+        "provenance",
+        "failure_reason",
+        "native_job_ref"
+      ]
+    },
+    "graph-plan-node": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "operation": {
+          "enum": [
+            "CapabilityRegistry.probe",
+            "PlanningProvider.generate_structured",
+            "AssetResolver.resolve",
+            "AcquisitionGateway.prepare",
+            "AcquisitionGateway.claim",
+            "AcquisitionGateway.ingest",
+            "AcquisitionGateway.fail",
+            "AcquisitionGateway.reconcile",
+            "AssetBuildAdapter.build",
+            "RigMotionAdapter.prepare",
+            "SceneAssembler.assemble",
+            "FrameEvaluator.evaluate",
+            "GraphCompiler.compile",
+            "BudgetLedger.reserve",
+            "BudgetLedger.settle",
+            "BudgetLedger.release",
+            "ExecutionService.submit",
+            "ExecutionService.status",
+            "ExecutionService.resume",
+            "ExecutionService.cancel",
+            "RenderAdapter.preflight",
+            "RenderAdapter.submit",
+            "RenderAdapter.status",
+            "RenderAdapter.cancel",
+            "RenderAdapter.verify",
+            "ExportService.export",
+            "ExportService.verify",
+            "QAService.validate",
+            "QAService.record_review",
+            "RevisionService.plan",
+            "RevisionService.apply",
+            "RevisionService.impact"
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "output_schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "resource_class": {
+          "enum": [
+            "none",
+            "cpu",
+            "gpu",
+            "io",
+            "provider",
+            "render"
+          ]
+        },
+        "native_owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "estimated_seconds": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000000000.0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requirement_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "id",
+        "operation",
+        "inputs",
+        "output_schema",
+        "resource_class",
+        "native_owner",
+        "required_capabilities",
+        "estimated_seconds",
+        "requirement_ids"
+      ]
+    },
+    "graph-plan-node-v2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "operation": {
+          "enum": [
+            "CapabilityRegistry.probe",
+            "PlanningProvider.generate_structured",
+            "AssetResolver.resolve",
+            "AcquisitionGateway.prepare",
+            "AcquisitionGateway.claim",
+            "AcquisitionGateway.ingest",
+            "AcquisitionGateway.fail",
+            "AcquisitionGateway.reconcile",
+            "AssetBuildAdapter.build",
+            "RigMotionAdapter.prepare",
+            "SceneAssembler.assemble",
+            "FrameEvaluator.evaluate",
+            "GraphCompiler.compile",
+            "BudgetLedger.reserve",
+            "BudgetLedger.settle",
+            "BudgetLedger.release",
+            "ExecutionService.submit",
+            "ExecutionService.status",
+            "ExecutionService.resume",
+            "ExecutionService.cancel",
+            "RenderAdapter.preflight",
+            "RenderAdapter.submit",
+            "RenderAdapter.status",
+            "RenderAdapter.cancel",
+            "RenderAdapter.verify",
+            "ExportService.export",
+            "ExportService.verify",
+            "QAService.validate",
+            "QAService.record_review",
+            "RevisionService.plan",
+            "RevisionService.apply",
+            "RevisionService.impact"
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/artifact-ref"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "output_schema": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "resource_class": {
+          "enum": [
+            "none",
+            "cpu",
+            "gpu",
+            "io",
+            "provider",
+            "render"
+          ]
+        },
+        "native_owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "estimated_seconds": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000000000.0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requirement_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "minItems": 1,
+          "maxItems": 256
+        },
+        "execution_metadata": {
+          "$ref": "#/$defs/execution-metadata"
+        }
+      },
+      "required": [
+        "id",
+        "operation",
+        "inputs",
+        "output_schema",
+        "resource_class",
+        "native_owner",
+        "required_capabilities",
+        "estimated_seconds",
+        "requirement_ids",
+        "execution_metadata"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schema_version": {
+            "const": 2
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/graph-plan-node-v2"
+            },
+            "minItems": 1,
+            "maxItems": 1024
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/graph-plan-node"
+            },
+            "minItems": 1,
+            "maxItems": 1024
+          }
+        }
+      }
+    }
+  ]
+}
