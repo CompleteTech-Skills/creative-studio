@@ -84,6 +84,43 @@ class MeshImportTests(unittest.TestCase):
                 with open_payload(selected, 'child.bin'):
                     pass
 
+    def test_payload_rejects_root_alias_without_directory_fd_support(self):
+        from rig_errors import open_payload
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            real = root/'real'; real.mkdir()
+            (real/'bytes.bin').write_bytes(b'unchanged')
+            alias = root/'alias'
+            try:
+                alias.symlink_to(real, target_is_directory=True)
+            except OSError:
+                self.skipTest('This host cannot create symlinks.')
+            # Exercise the path-based branch used on Windows on POSIX too.
+            with patch.object(os, 'supports_dir_fd', set()):
+                with self.assertRaises(RigError):
+                    with open_payload(alias, 'bytes.bin'):
+                        pass
+                with open_payload(real, 'bytes.bin') as (stream, _):
+                    self.assertEqual(stream.read(), b'unchanged')
+
+    def test_payload_rejects_reparse_metadata_on_root_and_child(self):
+        from types import SimpleNamespace
+        from rig_errors import open_payload
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            child = root/'bytes.bin'; child.write_bytes(b'unchanged')
+            original = Path.lstat
+            for marked in (root, child):
+                def lstat(path, *args, **kwargs):
+                    info = original(path, *args, **kwargs)
+                    if path == marked:
+                        return SimpleNamespace(st_mode=info.st_mode, st_file_attributes=0x400)
+                    return info
+                with self.subTest(marked=marked), patch.object(Path, 'lstat', lstat):
+                    with self.assertRaises(RigError):
+                        with open_payload(root, 'bytes.bin'):
+                            pass
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup);self.root=Path(self.tmp.name).resolve()

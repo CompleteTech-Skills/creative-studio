@@ -297,7 +297,12 @@ def safe_path(root: str | Path, name: str, *, exists: bool = False) -> Path:
     cursor = root
     for part in PurePosixPath(name).parts:
         cursor = cursor / part
-        require(not cursor.is_symlink(), 'RIG_SYMLINK', 'Symbolic links are not portable rig assets.', asset=name)
+        try:
+            info = cursor.lstat()
+        except FileNotFoundError:
+            continue
+        require(not stat.S_ISLNK(info.st_mode) and not getattr(info, 'st_file_attributes', 0) & 0x400,
+                'RIG_SYMLINK', 'Links and reparse points are not portable rig assets.', asset=name)
     if exists:
         require(target.is_file(), 'RIG_MISSING_ASSET', 'Referenced regular file is missing.', asset=name)
     return target
@@ -314,7 +319,16 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
     """
     capability,anchored,root_parts = _directory_anchor(root)
     root = anchored if capability is not None else Path(root).absolute()
-    target = safe_path(root, name, exists=True)
+    safe_path(root, name, exists=True)
+    # Keep the caller's spelling for the Windows handle comparison. Resolving
+    # it here would silently admit an untrusted root alias.
+    target = root / portable_name(name)
+    def check_root_path():
+        if capability is None:
+            for component in (root, *root.parents):
+                info = component.lstat()
+                require(not stat.S_ISLNK(info.st_mode) and not getattr(info, 'st_file_attributes', 0) & 0x400,
+                        'RIG_SYMLINK', 'Source directory paths cannot contain links or reparse points.', asset=name)
     def check_root(info):
         require(root_identity is None or (info.st_dev,info.st_ino) == root_identity,
                 'RIG_PAYLOAD_CHANGED','Selected source directory changed.',asset=name)
@@ -322,6 +336,7 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
     descriptors = []
     try:
         check_root(root.stat())
+        check_root_path()
         if os.open in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW'):
             directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
             if capability is not None:
@@ -363,11 +378,13 @@ def open_payload(root: str | Path, name: str, *, root_identity=None):
                 require(os.path.normcase(actual) == os.path.normcase(os.path.abspath(target)),
                         'RIG_PAYLOAD_PATH', 'Opened source was redirected.', asset=name)
             current = safe_path(root, name, exists=True).stat()
+            check_root_path()
             check_root(root.stat())
             require((current.st_dev, current.st_ino) == (before.st_dev, before.st_ino),
                     'RIG_PAYLOAD_CHANGED', 'Payload changed while opening.', asset=name)
             yield stream, before
             after = os.fstat(stream.fileno())
+            check_root_path()
             check_root(root.stat())
             current = safe_path(root, name, exists=True).stat()
             def fingerprint(info):
