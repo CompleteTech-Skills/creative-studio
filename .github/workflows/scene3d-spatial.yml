@@ -19,7 +19,9 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r requirements-rig-test.txt
       - run: PYTHONPATH=scripts:tests python -m unittest test_rig_scene3d_spatial test_rig_scene3d_environment test_rig_scene3d_math -v
-      - run: python scripts/demonstrate_scene3d_spatial.py --destination spatial-evidence/rooms
+      - run: |
+          mkdir -p spatial-evidence
+          python scripts/demonstrate_scene3d_spatial.py --destination spatial-evidence/rooms
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
