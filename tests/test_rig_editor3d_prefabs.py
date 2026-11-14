@@ -163,7 +163,7 @@ class EditorPrefabProjectionTests(unittest.TestCase):
                 matrix = np.asarray(value['viewport_state']['nodes'][identifier]['world_matrix'])
                 for mesh in projected['meshes']:
                     actual = transform_points(matrix,mesh['positions'])
-                    np.testing.assert_allclose(actual,meshes[mesh['id']]+translation,atol=1e-6,rtol=0)
+                    np.testing.assert_allclose(actual,np.asarray(meshes[mesh['id']])+translation,atol=1e-6,rtol=0)
         self.assertEqual(repository.snapshot(),snapshot)
         self.assertEqual(fixture.repository.snapshot(),original)
 
