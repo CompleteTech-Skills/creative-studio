@@ -185,11 +185,16 @@ class RetainedCinematicPublication(unittest.TestCase):
                             verification=json.loads((target/'verification.json').read_bytes())
                             self.assertIn('plan.json',verification['retained_cinematics'])
                             self.assertIn('probe.json',verification['retained_cinematics'])
+                            print(json.dumps(dict(case='unchanged',status='published',
+                                retained_cinematic_files=len(verification['retained_cinematics']),
+                                retained_artifact_files=len(verification['retained_artifacts']))),flush=True)
                         else:
                             with self.assertRaises(Render3DError) as caught:
                                 backend.render_frames(compiled['request'],snapshot,target,cinematics=compiled,progress=progress)
                             self.assertEqual(caught.exception.report['category'],'corrupt-output')
                             self.assertFalse(target.exists(),'Mutated retained provenance must never be published')
+                            print(json.dumps(dict(case=role,status='rejected',category=caught.exception.report['category'],
+                                destination_created=target.exists())),flush=True)
 
 
 if __name__=='__main__':unittest.main()
