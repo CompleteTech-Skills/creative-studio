@@ -13,7 +13,7 @@ from typing import Any
 import zipfile
 import numpy as np
 
-from rig_contracts import DEFAULT_LIMITS, validate_contract
+from rig_contracts import COORDINATES, DEFAULT_LIMITS, validate_contract
 from rig_errors import (atomic_bytes, decode_json, finite_json, object_hash, read_json, require,
                         safe_path, sha256, normalize_root)
 
@@ -437,20 +437,18 @@ def _check_load_headers(metadata, headers, limits, kind, descriptor, max_total_m
         raise RigError('RIG_BINARY', 'Invalid native metadata/header inventory.') from exc
 
 
-def _check_clip_load_limits(clip, limits, keyframes):
+def _check_clip_load_limits(clip, limits, budget):
     require(clip['duration'] <= limits['duration'] and clip['fps'] <= limits['fps'],
             'RIG_LIMIT_ANIMATION', 'Clip timing exceeds the caller/manifest budget.')
-    keyframes += sum(len(track['times']) for track in clip['tracks'])
-    require(keyframes <= limits['keyframes'], 'RIG_LIMIT_KEYFRAMES',
-            'Aggregate animation keys exceed the load budget.')
-    return keyframes
+    budget.native_animation(keys=sum(len(track['times']) for track in clip['tracks']),
+                            tracks=len(clip['tracks']))
 
 
-def _preflight_load(root, manifest, limits, verify_source, *, max_total_morph_targets=None,
-                    captured_manifest_bytes=None):
+def _preflight_load(root, manifest, limits, verify_source, manifest_bytes, *, max_total_morph_targets=None,
+                    budget=None):
     from rig_load_limits import LoadBudget, scan_bundle, read_bundle_member
-    budget = LoadBudget(limits)
-    budget.charge_json(root / 'rig.json', captured_size=captured_manifest_bytes)
+    budget = budget.fork(limits) if budget is not None else LoadBudget(limits)
+    budget.charge_immutable_json(manifest_bytes)
     budget.json(safe_path(root, 'identity.json', exists=True),
                 expected_hash=manifest['character']['identity_sha256'], hash_code='RIG_IDENTITY_CHANGED')
     if verify_source:
@@ -465,11 +463,10 @@ def _preflight_load(root, manifest, limits, verify_source, *, max_total_morph_ta
         path = safe_path(root, descriptor['data']['path'], exists=True)
         meta, headers, _ = scan_bundle(path, limits, budget, descriptor['data']['sha256'])
         _check_load_headers(meta, headers, limits, kind, descriptor, max_total_morph_targets)
-    keyframes = 0
     for descriptor in manifest['animations']:
         clip = validate_contract(budget.json(safe_path(root, descriptor['path'], exists=True),
                                  expected_hash=descriptor['sha256']), 'AnimationClip')
-        keyframes = _check_clip_load_limits(clip, limits, keyframes)
+        _check_clip_load_limits(clip, limits, budget)
     for descriptor in manifest['validation']:
         budget.file(safe_path(root, descriptor['path'], exists=True))
     for descriptor in manifest['review']['receipts']:
@@ -481,13 +478,20 @@ def _preflight_load(root, manifest, limits, verify_source, *, max_total_morph_ta
 
 
 def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | None = None,
-             expected_manifest_sha256: str | None = None,
-             max_total_morph_targets: int | None = None) -> RigAsset:
+             manifest_bytes: bytes | None = None, expected_manifest_sha256: str | None = None,
+             max_total_morph_targets: int | None = None,
+             budget=None) -> RigAsset:
     """Load using restrictive caller caps without modifying source/review identity.
 
     Aggregate admission precedes every NumPy allocation. Limits cover native input
     loading, not an OS memory sandbox or subsequent evaluation/render operations.
     An optional manifest pin checks the exact captured JSON bytes before decoding.
+    Supplied manifest_bytes must be immutable and caller-verified; they are used
+    without reopening rig.json. The optional pin hashes those exact bytes.
+    A caller-owned budget accumulates successful loads and prior reservations;
+    preflight is speculative and failures leave that budget unchanged. Each
+    call is a distinct retained load, even when the same path is loaded twice.
+    Callers must serialize access to a shared budget.
     """
     from rig_load_limits import LoadBudget, effective_limits
     if max_total_morph_targets is not None:
@@ -498,20 +502,42 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
         max_total_morph_targets = int(max_total_morph_targets)
     root = normalize_root(root)
     preliminary = effective_limits(DEFAULT_LIMITS, limits)
-    manifest_budget = LoadBudget(preliminary)
-    manifest = validate_contract(manifest_budget.json(safe_path(root, 'rig.json', exists=True),
-                                 expected_hash=expected_manifest_sha256), 'Rig')
-    captured_manifest_bytes = manifest_budget.json_bytes
+    require(budget is None or type(budget) is LoadBudget, 'RIG_LIMITS', 'Invalid caller load budget.')
+    manifest_budget = budget.fork(preliminary) if budget is not None else LoadBudget(preliminary)
+    if manifest_bytes is None:
+        manifest_bytes = manifest_budget.capture_json(
+            safe_path(root, 'rig.json', exists=True), expected_hash=expected_manifest_sha256)
+        from rig_load_limits import decode_json as decode_captured_json
+        manifest = validate_contract(decode_captured_json(manifest_bytes), 'Rig')
+    else:
+        require(type(manifest_bytes) is bytes, 'RIG_JSON', 'Expected immutable JSON bytes.')
+        require(expected_manifest_sha256 is None or hashlib.sha256(manifest_bytes).hexdigest() == expected_manifest_sha256,
+                'RIG_HASH', 'Native JSON bytes differ from their immutable reference.', asset='rig.json')
+        manifest = validate_contract(manifest_budget.immutable_json(manifest_bytes), 'Rig')
     limits = effective_limits(manifest['limits'], limits)
-    _preflight_load(root, manifest, limits, verify_source, max_total_morph_targets=max_total_morph_targets,
-                    captured_manifest_bytes=captured_manifest_bytes)
-    budget = LoadBudget(limits)
+    if budget is not None:
+        limits = effective_limits(limits, budget.limits)
+    _preflight_load(root, manifest, limits, verify_source, manifest_bytes,
+                    max_total_morph_targets=max_total_morph_targets, budget=budget)
+    caller_budget = budget
+    budget = budget.fork(limits) if budget is not None else LoadBudget(limits)
     # Count the already parsed manifest in the live aggregate as well.
-    budget.charge_json(root / 'rig.json', captured_size=captured_manifest_bytes)
+    budget.charge_immutable_json(manifest_bytes)
     require(budget.hash(safe_path(root, 'identity.json', exists=True)) == manifest['character']['identity_sha256'],
             'RIG_IDENTITY_CHANGED', 'Character identity bytes differ from the manifest.')
     identity=budget.json(safe_path(root, 'identity.json', exists=True),
                 expected_hash=manifest['character']['identity_sha256'], hash_code='RIG_IDENTITY_CHANGED')
+    require(isinstance(identity,dict) and set(identity)=={'schema_version','id','source_sha256',
+            'fixture','origin','attribution','coordinate_system','import_scale','approved_artwork'},
+            'RIG_IDENTITY_SCHEMA','Identity must contain the complete versioned source record.')
+    require(type(identity['schema_version']) is int and identity['schema_version']==1
+            and isinstance(identity['id'],str) and isinstance(identity['source_sha256'],str)
+            and isinstance(identity['origin'],str) and type(identity['fixture']) is bool
+            and type(identity['approved_artwork']) is bool
+            and isinstance(identity['attribution'],str) and 0<len(identity['attribution'])<=4096
+            and identity['coordinate_system']==COORDINATES
+            and type(identity['import_scale']) in (int,float) and 0<identity['import_scale']<=10000,
+            'RIG_IDENTITY_SCHEMA','Identity fields do not match the supported source contract.')
     require(identity['id']==manifest['character']['id']==manifest['id'] and identity['fixture']==manifest['source']['fixture']
             and identity['source_sha256']==manifest['source']['sha256'] and identity['origin']==manifest['source']['origin'],
             'RIG_IDENTITY_CHANGED','Source origin, fixture classification and character identity must match their immutable record.')
@@ -532,11 +558,10 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
                              max_total_morph_targets=max_total_morph_targets)
     weights = {d['mesh']: load_weights(root, d, limits, budget=budget) for d in manifest['skins']}
     clips = {}
-    keyframes = 0
     for descriptor in manifest['animations']:
         path = safe_path(root, descriptor['path'], exists=True)
         clip = validate_contract(budget.json(path, expected_hash=descriptor['sha256']), 'AnimationClip')
-        keyframes = _check_clip_load_limits(clip, limits, keyframes)
+        _check_clip_load_limits(clip, limits, budget)
         require(clip['id'] == descriptor['id'] and clip['version'] == descriptor['version'],
                 'RIG_ANIMATION', 'Animation identity/version mismatch.')
         clips[clip['id']] = clip
@@ -558,4 +583,7 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
         require(any(r.get('expected_sha256')==rig_signature(manifest) and r.get('reviewer_kind') in ('human','agent')
                     and set(r.get('dimensions',{}))==set(REVIEW_DIMENSIONS) and all(v['verdict']=='approved' for v in r['dimensions'].values()) for r in receipts),
                 'RIG_REVIEW_MISSING','Approved status requires a matching real visual review receipt.')
-    return RigAsset(manifest, geometry, weights, clips, root, budget.report())
+    result = RigAsset(manifest, geometry, weights, clips, root, budget.report())
+    if caller_budget is not None:
+        caller_budget.commit(budget)
+    return result

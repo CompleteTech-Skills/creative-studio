@@ -4,11 +4,11 @@
   "id": "animation",
   "native": {
     "owner": "scene3d",
-    "id": "native-scene",
+    "id": "native-animation",
     "version": "1.0.0",
-    "native_kind": "scene3d-scene",
+    "native_kind": "scene3d-animation",
     "file": {
-      "path": "unavailable/scene.json",
+      "path": "unavailable/animation.json",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "bytes": 1,
       "media_type": "application/json"

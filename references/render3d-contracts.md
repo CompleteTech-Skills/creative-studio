@@ -1,6 +1,6 @@
 # Render3D contract and snapshot foundation
 
-This is the bounded foundation for [issue #91](https://github.com/CompleteTech-Skills/creative-studio/issues/91), based on main `bb5a6810afd06cf57185ffdfe2234e0fdc6e6240`. It does not complete the full renderer mission #16. Executable source adapters freeze an existing native rig or the Scene3D owner's complete project closure. Real Blender rendering, scheduling, image decoding and output publication belong to #92–#98.
+This is the bounded foundation for [issue #91](https://github.com/CompleteTech-Skills/creative-studio/issues/91), with its original historical baseline at main `bb5a6810afd06cf57185ffdfe2234e0fdc6e6240`. The [complete current audit and field-level acceptance map](render3d-foundation-audit.md) records all seven required audit deliverables, exact source revisions, real source workflows and the native JobStore resolution follow-up. It does not complete the full renderer mission #16. Executable source adapters freeze an existing native rig or the Scene3D owner's complete project closure. Real Blender rendering, scheduling, image decoding and output publication belong to #92–#98.
 
 ## Current ownership audit
 
@@ -61,12 +61,12 @@ The dedicated tests use labeled synthetic contract data and an actual generated 
 | #91 acceptance | State |
 | --- | --- |
 | Audit existing locks, provenance, jobs, frame timing, FFmpeg and delivery | Audited; legacy ownership preserved |
-| Strict request/job/frame/result, source assets and errors | Implemented as additive schemas with structural and semantic validation |
+| Strict request/job/frame/result, source assets and errors | Foundation schemas implemented; full mandatory job context uses the separate exact native JobStore resolver/status follow-up, subject to its integration/review gates |
 | Immutable snapshots, shared scene adapters and exact conversions | Native rig and Scene3D project closures plus exact conversions implemented; owner validation is preserved |
 | Backend identities, output ownership, independent verifier contracts | Typed protocol/contract boundary implemented; executing workers and verifiers remain downstream |
 | Actual affected workflows and legacy regression | Local source snapshot workflow and selected regressions run; no hosted/native render acceptance claimed |
 
-Rollback removes only the new Render3D modules/schemas, their test registration and documentation. Existing source formats, outputs, cache ownership and review receipts do not require migration. Keep #16 open until downstream renderer acceptance passes. #91 requires current-head independent review, relevant regression checks and the source workflows documented here; these foundations do not establish rendering acceptance.
+Rollback removes only the new Render3D modules/schemas, their test registration and documentation. Existing source formats, outputs, cache ownership and review receipts do not require migration. Keep #16 open until downstream renderer acceptance passes. Keep #91 open until its complete audit, field-level interface representation/native job equivalent, newly spawned whole-final-head review, current hosted checks and postmerge receipts are verified. These foundations do not establish rendering acceptance.
 
 The local [validation receipt](../tests/results/render3d-foundation-20261025.json)
 records 39 foundation tests, 31 production-contract tests, 20 production-render
