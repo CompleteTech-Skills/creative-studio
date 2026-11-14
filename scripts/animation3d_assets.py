@@ -54,6 +54,7 @@ class Snapshot:
         self.memory_limit = MAX_BYTES
         self.expanded_bytes = 0
         self.native_memory = 0
+        self.memory_charges = {}
 
     def copy(self, name, digest=None):
         source = safe_path(self.root, name, exists=True)
@@ -121,14 +122,28 @@ class Snapshot:
                                 'ANIMATION_LIMIT', 'Binary array header exceeds memory admission budget.')
         self.expanded_bytes += expanded
         require(self.expanded_bytes + self.native_memory <= self.memory_limit, 'ANIMATION_LIMIT', 'Dependency memory admission budget exceeded.')
+        self.memory_charges[name] = expanded
         require(target.suffix != '.json' or count <= 16 * 1024**2,
                 'ANIMATION_LIMIT', 'JSON document exceeds 16 MiB.')
         return target
 
+    def json(self, name, digest=None):
+        """Admit the actual JSON decoder independently of a filename suffix."""
+        path = self.copy(name, digest)
+        from rig_load_limits import _JSON_FACTOR
+        count = self.inventory[name]['bytes']
+        require(count <= 16 * 1024**2, 'ANIMATION_LIMIT', 'JSON document exceeds 16 MiB.')
+        extra = max(0, count * _JSON_FACTOR - self.memory_charges[name])
+        require(self.expanded_bytes + self.native_memory + extra <= self.memory_limit,
+                'ANIMATION_LIMIT', 'JSON object capacity exceeds project memory budget.')
+        self.expanded_bytes += extra
+        self.memory_charges[name] += extra
+        return decode_json(path.read_bytes())
+
     def native(self, name, expected=None, depth=0):
         require(depth <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Native dependency depth exceeded.')
         path = self.copy(name, None if expected is None else expected['sha256'])
-        value = decode_json(path.read_bytes())
+        value = self.json(name, None if expected is None else expected['sha256'])
         require(isinstance(value, dict), 'ANIMATION_KIND', 'Native source must be an object.')
         if expected is not None:
             require(value.get('id') == expected['id'] and value.get('version') == expected['version'],
@@ -147,7 +162,7 @@ class Snapshot:
                 relative = str(Path(owner_prefix) / node['path'])
                 child = self.copy(relative, node['sha256'])
                 if child.suffix == '.json':
-                    payload = decode_json(child.read_bytes())
+                    payload = self.json(relative, node['sha256'])
                     require(isinstance(payload, dict), 'ANIMATION_KIND', 'Native dependency must be an object.')
                     capture(payload, relative, level+1)
         capture(value, name, depth)
@@ -214,7 +229,7 @@ def load_project(root, name='animation-project.json'):
         snapshot = Snapshot(root, temporary)
         documents, edges, active, native = {}, {}, set(), {}
         identities = {}
-        project = decode_json(snapshot.copy(name).read_bytes())
+        project = snapshot.json(name)
         validate_contract(project)
         require(project['kind'] == KINDS['project'], 'ANIMATION_KIND', 'Expected animation project root.')
         snapshot.max_bytes = min(MAX_BYTES, project['budgets']['max_work_bytes'])
@@ -224,8 +239,7 @@ def load_project(root, name='animation-project.json'):
         def visit(path, expected=None, depth=0):
             require(depth <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Animation dependency depth exceeded.')
             require(path not in active, 'ANIMATION_CYCLE', 'Animation dependency cycle.')
-            file = snapshot.copy(path, None if expected is None else expected['sha256'])
-            value = decode_json(file.read_bytes())
+            value = snapshot.json(path, None if expected is None else expected['sha256'])
             require(isinstance(value, dict), 'ANIMATION_KIND', 'Animation dependency must be an object.')
             if value.get('kind') not in KINDS.values():
                 require(expected is not None, 'ANIMATION_KIND', 'Expected typed native source.')

@@ -104,16 +104,24 @@ class NativeClosureRegressionTests(unittest.TestCase):
         self.assertLessEqual(result['memory_admission']['estimated_bytes'], result['memory_admission']['limit_bytes'])
 
     def test_json_object_capacity_is_admitted_before_dependency_decode(self):
+        from unittest.mock import patch
         from animation3d_assets import Snapshot
-        source = self.root/'large.json'
-        source.write_text(json.dumps(['small']*100))
-        destination = self.root/'snapshot'
-        snapshot = Snapshot(self.root, destination)
-        snapshot.memory_limit = 1000
-        self.assertLess(source.stat().st_size, snapshot.memory_limit)
-        with self.assertRaises(RigError) as rejected:
-            snapshot.copy('large.json')
-        self.assertEqual(rejected.exception.report['code'], 'ANIMATION_LIMIT')
+        for suffix in ('.json', '.data'):
+            with self.subTest(suffix=suffix):
+                source = self.root/('large'+suffix)
+                source.write_text(json.dumps(['small']*100))
+                snapshot = Snapshot(self.root, self.root/('snapshot'+suffix))
+                snapshot.memory_limit = 1000
+                self.assertLess(source.stat().st_size, snapshot.memory_limit)
+                with patch('animation3d_assets.decode_json', side_effect=AssertionError('decoder ran before capacity admission')):
+                    with self.assertRaises(RigError) as rejected:
+                        snapshot.json(source.name)
+                self.assertEqual(rejected.exception.report['code'], 'ANIMATION_LIMIT')
+        # Valid JSON with a non-JSON filename still uses the same decoder policy.
+        source = self.root/'valid.data'
+        source.write_text(json.dumps({'ok': True}))
+        snapshot = Snapshot(self.root, self.root/'snapshot-valid')
+        self.assertEqual(snapshot.json(source.name), {'ok': True})
 
     def test_unbound_or_unknown_skeletal_target_rejects(self):
         clip=self.values['clip'];self.project['clips']=[self.put('clip.json',clip,'clip')]
