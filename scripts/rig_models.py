@@ -13,7 +13,7 @@ from typing import Any
 import zipfile
 import numpy as np
 
-from rig_contracts import DEFAULT_LIMITS, validate_contract
+from rig_contracts import COORDINATES, DEFAULT_LIMITS, validate_contract
 from rig_errors import (atomic_bytes, decode_json, finite_json, object_hash, read_json, require,
                         safe_path, sha256, normalize_root)
 
@@ -410,6 +410,17 @@ def load_rig(root: str | Path, verify_source: bool = True) -> RigAsset:
     require(sha256(safe_path(root, 'identity.json', exists=True)) == manifest['character']['identity_sha256'],
             'RIG_IDENTITY_CHANGED', 'Character identity bytes differ from the manifest.')
     identity=read_json(root/'identity.json')
+    require(isinstance(identity,dict) and set(identity)=={'schema_version','id','source_sha256',
+            'fixture','origin','attribution','coordinate_system','import_scale','approved_artwork'},
+            'RIG_IDENTITY_SCHEMA','Identity must contain the complete versioned source record.')
+    require(type(identity['schema_version']) is int and identity['schema_version']==1
+            and isinstance(identity['id'],str) and isinstance(identity['source_sha256'],str)
+            and isinstance(identity['origin'],str) and type(identity['fixture']) is bool
+            and type(identity['approved_artwork']) is bool
+            and isinstance(identity['attribution'],str) and 0<len(identity['attribution'])<=4096
+            and identity['coordinate_system']==COORDINATES
+            and type(identity['import_scale']) in (int,float) and 0<identity['import_scale']<=10000,
+            'RIG_IDENTITY_SCHEMA','Identity fields do not match the supported source contract.')
     require(identity['id']==manifest['character']['id']==manifest['id'] and identity['fixture']==manifest['source']['fixture']
             and identity['source_sha256']==manifest['source']['sha256'] and identity['origin']==manifest['source']['origin'],
             'RIG_IDENTITY_CHANGED','Source origin, fixture classification and character identity must match their immutable record.')
