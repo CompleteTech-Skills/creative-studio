@@ -41,10 +41,20 @@ does not convert PNG to EXR or render replacement frames. Each sequence has an
 independently decoded complete hash inventory. No visual approval is implied by
 these numerical and media checks.
 
+`silent_native_sequence_jobs.create_native` accepts the canonical render request,
+result, render root, snapshot root and expected backend. It authenticates the
+actual native closure through `silent_sequence.native_source` and revalidates it
+when work runs. Its immutable outer delivery contains the unchanged native
+sequence plus a separate job receipt. The controller forwards canonical verified
+copy/reuse observations for actual cache counters. It does not rerender geometry
+or replace the native receipt with job metadata. The retained CI fixture keeps
+the original animated-mesh evidence and every relocated byte hash; CI exercises
+new export/recovery work over those frames, rather than claiming a new render.
+
 The secure persistent worker currently requires Linux procfs, directory file
 descriptors and the canonical scoped descriptor capability. Other platforms
 report an explicit unavailable capability. The portable contracts run on all
 three CI platforms; actual FFmpeg interruption and recovery tests run explicitly
-on Linux. Preview batches, native render/timeline context authentication and
-cross-platform worker support remain integration requirements
+on Linux. Preview batches and cross-platform persistent worker support remain
+integration requirements
 of issue #239; this video-job increment alone does not satisfy that issue.

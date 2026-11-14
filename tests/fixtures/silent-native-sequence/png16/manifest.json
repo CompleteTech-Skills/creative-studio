@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "request_sha256": "ad6b5d122a001836b5c5f79ec384660b809a0a9d069f66902daf5a401fe38d39",
+  "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+  "backend": {
+    "id": "blender",
+    "adapter_version": "1.0.0",
+    "application_version": "Blender 4.5.3 LTS",
+    "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+    "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+    "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+    "engine": "cycles",
+    "device": "cpu"
+  },
+  "frames": [
+    {
+      "schema_version": 1,
+      "kind": "render3d-frame",
+      "project": {
+        "id": "fixture",
+        "version": "1.0.0"
+      },
+      "scene": {
+        "id": "fixture",
+        "version": "1.0.0"
+      },
+      "shot": {
+        "id": "motion",
+        "version": "1.0.0"
+      },
+      "index": 0,
+      "local_index": 0,
+      "presentation_time": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "source_time": {
+        "numerator": 0,
+        "denominator": 1
+      },
+      "camera": "front",
+      "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+      "settings_sha256": "b64f321be0806b4680990f0a0aaf3600ae3bed1e2e74406c9c6d3b4582635014",
+      "dependencies": [
+        "92a48e8fd7b2d6fa52d88f22963a42e32e08ef199c985e09bd7cab3957fdf672",
+        "f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a",
+        "59fff471d947d1823236016b81c771f610bacf6638c495fbddcee8ace16a2ce2",
+        "0f3424ddf5d0d180b004dae9b00b0d6f950f3993515d5b7cc53c9bfeb0bbf7cb",
+        "aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66",
+        "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e"
+      ],
+      "output": {
+        "format": "png",
+        "bit_depth": 16,
+        "passes": [
+          "combined"
+        ],
+        "alpha": "straight",
+        "color_space": "srgb"
+      },
+      "destination": "png16",
+      "cache_key": "f617c5c259900a53058a4dfd06efea4fb4aa019623f43e08ec3276b428a3586e"
+    }
+  ],
+  "worker": {
+    "version": "Blender 4.5.3 LTS",
+    "engine": "cycles",
+    "device": "cpu",
+    "rendered": [
+      0
+    ],
+    "geometry_vertices": 4,
+    "geometry_triangles": 2,
+    "armatures": 1,
+    "samples": [
+      {
+        "index": 0,
+        "world_vertices": {
+          "strip": [
+            [
+              0.10000000149011612,
+              0.0,
+              -6.955190926851311e-27
+            ],
+            [
+              -0.10000000149011612,
+              0.0,
+              6.955190926851311e-27
+            ],
+            [
+              0.10000000149011612,
+              0.0,
+              2.0
+            ],
+            [
+              -0.10000000149011612,
+              0.0,
+              2.0
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "fixture": true
+}

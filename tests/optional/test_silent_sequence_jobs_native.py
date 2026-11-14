@@ -91,6 +91,33 @@ class ActualSequenceJobs(unittest.TestCase):
         # persistent cache itself remains available for exact retry evidence.
         self.assertEqual((first.stat().st_ino,first.stat().st_mtime_ns,first.read_bytes()),before)
 
+    def test_retry_delegates_owned_partial_recovery_to_canonical_exporter(self):
+        self.create()
+        def stop(state):
+            if state['progress'].get('checkpoint')==3:adapter.cancel(self.root/'job')
+        result=adapter.run(self.root/'job',progress=stop)
+        self.assertEqual(result['state']['phase'],'cancelled',result)
+        stage=self.root/('.sequence-job-'+result['plan']['id'][:32])
+        (stage/'frames/.000001.png.partial').write_bytes(b'interrupted bounded frame write')
+        (stage/'.sequence.json.partial').write_bytes(b'interrupted bounded receipt write')
+        result=adapter.run(self.root/'job',retry=True)
+        self.assertEqual(result['state']['phase'],'completed',result)
+        self.assertEqual(result['state']['progress']['cached_reused'],1)
+        self.assertEqual(result['state']['progress']['cached_created'],2)
+        self.assertFalse((stage/'frames/.000001.png.partial').exists())
+        self.assertEqual(len(adapter.sequence.verify_sequence(self.root/'job-out')['decoded']),3)
+
+    def test_bootstrap_partial_plan_recovers_without_adapter_preinspection(self):
+        created=self.create();plan=created['plan']
+        stage=self.root/('.sequence-job-'+plan['id'][:32]);stage.mkdir(mode=0o700)
+        (stage/'lock').touch(mode=0o600)
+        (stage/'.plan.json.partial').write_bytes(adapter.sequence._json_bytes(
+            {'source':plan['source'],'provenance':adapter._provenance(plan)}))
+        result=adapter.run(self.root/'job')
+        self.assertEqual(result['state']['phase'],'completed',result)
+        self.assertEqual(result['state']['progress']['cached_created'],3)
+        self.assertEqual(result['state']['progress']['cached_reused'],0)
+
     def test_active_owner_and_corrupt_completed_output(self):
         self.create()
         with adapter._locked(self.root/'job') as (fd,plan):

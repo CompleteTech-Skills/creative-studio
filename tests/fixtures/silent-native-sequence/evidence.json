@@ -1,0 +1,87 @@
+{
+  "head": "f822afb",
+  "geometry_vertices": 4,
+  "triangles": 2,
+  "armatures": 1,
+  "frames": 3,
+  "pixel_components_changed": 1755,
+  "max_world_vertex_displacement": 0.3434082195162773,
+  "images": [
+    {
+      "frame": 0,
+      "file": {
+        "path": "frames/000000.png",
+        "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+        "bytes": 2111
+      },
+      "format": "png",
+      "bit_depth": 8,
+      "pass_name": "combined",
+      "resolution": [
+        64,
+        64
+      ]
+    },
+    {
+      "frame": 1,
+      "file": {
+        "path": "frames/000001.png",
+        "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+        "bytes": 2178
+      },
+      "format": "png",
+      "bit_depth": 8,
+      "pass_name": "combined",
+      "resolution": [
+        64,
+        64
+      ]
+    },
+    {
+      "frame": 2,
+      "file": {
+        "path": "frames/000002.png",
+        "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+        "bytes": 2123
+      },
+      "format": "png",
+      "bit_depth": 8,
+      "pass_name": "combined",
+      "resolution": [
+        64,
+        64
+      ]
+    }
+  ],
+  "backend": {
+    "id": "blender",
+    "adapter_version": "1.0.0",
+    "application_version": "Blender 4.5.3 LTS",
+    "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+    "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+    "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+    "engine": "cycles",
+    "device": "cpu"
+  },
+  "usage": {
+    "elapsed_seconds": 0.5050398460007273,
+    "peak_memory_bytes": 424038400,
+    "output_bytes": 57242,
+    "measurement": "measured"
+  },
+  "verification": {
+    "status": "passed",
+    "verifier": {
+      "id": "render3d-independent-pixels",
+      "version": "1.0.0",
+      "code_sha256": "0903f4ff8555d08e0851d082724944cfd1eade62cf94a487d2fb989595246097",
+      "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+    },
+    "evidence": {
+      "path": "verification.json",
+      "sha256": "fc33e8abe3e38620f9128b0e50e2484d292155c5a3878e2c8f5158fcb361cea4",
+      "bytes": 4368
+    }
+  },
+  "evidence_scope": "actual synthetic native-rig fixture; no production artwork approval"
+}

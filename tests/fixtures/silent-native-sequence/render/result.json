@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "kind": "render3d-result",
+  "job": "backend-recovery",
+  "request_sha256": "873c27e62d3428c08f3c83118bd448d755cc06a907aa0bceb13e018b44545fe9",
+  "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a",
+  "backend": {
+    "id": "blender",
+    "adapter_version": "1.0.0",
+    "application_version": "Blender 4.5.3 LTS",
+    "executable_sha256": "5e15447670804c855fef6033ac9b8fd82696b762095becf0df79b1c2f8034397",
+    "worker_sha256": "5382df36be922e63b92feb98a4cb7d37500da6cad7c84075caffd8744dc7bb59",
+    "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44",
+    "engine": "cycles",
+    "device": "cpu"
+  },
+  "status": "complete",
+  "requested_frames": [
+    0,
+    1,
+    2
+  ],
+  "successful": [
+    0,
+    1,
+    2
+  ],
+  "failed": [],
+  "skipped": [],
+  "reused": [],
+  "images": [
+    {
+      "frame": 0,
+      "file": {
+        "path": "frames/000000.png",
+        "sha256": "766266411f894e824880f470620350ac4cc9e4a608086d4c32b2caf95750c072",
+        "bytes": 2111
+      },
+      "format": "png",
+      "bit_depth": 8,
+      "pass_name": "combined",
+      "resolution": [
+        64,
+        64
+      ]
+    },
+    {
+      "frame": 1,
+      "file": {
+        "path": "frames/000001.png",
+        "sha256": "2e75eaed44d73a9d64883f609a11b111b60ccff5634c47956ff406f3cc771695",
+        "bytes": 2178
+      },
+      "format": "png",
+      "bit_depth": 8,
+      "pass_name": "combined",
+      "resolution": [
+        64,
+        64
+      ]
+    },
+    {
+      "frame": 2,
+      "file": {
+        "path": "frames/000002.png",
+        "sha256": "f1d6dfbf4b4088d73b39656daa57181bf63ce614b741c7e613d7bfd0dfcd9785",
+        "bytes": 2123
+      },
+      "format": "png",
+      "bit_depth": 8,
+      "pass_name": "combined",
+      "resolution": [
+        64,
+        64
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "usage": {
+    "elapsed_seconds": 0.5050398460007273,
+    "peak_memory_bytes": 424038400,
+    "output_bytes": 57242,
+    "measurement": "measured"
+  },
+  "logs": [
+    {
+      "path": "blender.log",
+      "sha256": "cef57bad992444d24da1b5a4e5089b05f1079dda5736ef9789b675fe52b5af88",
+      "bytes": 15536
+    }
+  ],
+  "manifest": {
+    "path": "manifest.json",
+    "sha256": "2e307743b7f1aca8752ac44de05238ca82342242563258076e5bde51fcb36a6b",
+    "bytes": 7317
+  },
+  "verification": {
+    "status": "passed",
+    "verifier": {
+      "id": "render3d-independent-pixels",
+      "version": "1.0.0",
+      "code_sha256": "0903f4ff8555d08e0851d082724944cfd1eade62cf94a487d2fb989595246097",
+      "platform": "Linux-7.2.15-1-omarchy-x86_64-with-glibc2.44"
+    },
+    "evidence": {
+      "path": "verification.json",
+      "sha256": "fc33e8abe3e38620f9128b0e50e2484d292155c5a3878e2c8f5158fcb361cea4",
+      "bytes": 4368
+    }
+  }
+}

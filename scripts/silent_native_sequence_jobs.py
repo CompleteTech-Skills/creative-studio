@@ -26,6 +26,8 @@ def _boundary():
     sequence._capability_factory()
     if 'destination_dir_fd' not in inspect.signature(sequence.export_sequence).parameters:
         raise ValueError('canonical native sequence descriptor destination is unavailable')
+    if 'progress' not in inspect.signature(sequence.export_sequence).parameters:
+        raise ValueError('canonical verified native sequence progress API unavailable')
     sequence._decoder()
 
 
@@ -146,16 +148,20 @@ def _workspace(fd):
             else:raise ValueError('unowned partial artifact in native job workspace')
 
 
-def _cache(fd,plan,checkpoint):
+def _cache(fd,plan,checkpoint,observed):
     proof=plan['proof']
     with sequence._capability(fd) as authority:
         cache=authority.path/'native-sequence'
-        if not jobs._exists(fd,'native-sequence'):
+        existing=jobs._exists(fd,'native-sequence')
+        if not existing:
             sequence.export_native_sequence(proof['request'],proof['result'],plan['render_root'],'native-sequence',
                 snapshot_root=plan['snapshot_root'],expected_backend=proof['expected_backend'],
-                destination_dir_fd=fd,stage_name='.native-sequence-cache',cancel=checkpoint)
+                destination_dir_fd=fd,stage_name='.native-sequence-cache',cancel=checkpoint,progress=observed)
         report=sequence.verify_sequence(cache)
         if report['source']!=plan['source'] or report['provenance']!=proof:raise ValueError('native cache identity changed')
+        if existing:
+            for index in range(len(report['source']['frames'])):
+                observed({'action':'reused','frame':index+1,'total_frames':len(report['source']['frames'])})
         return report
 
 
@@ -233,14 +239,22 @@ def run(job_root,*,resume=False,retry=False,progress=None):
         if state['runs']>=plan['budget']['max_runs']:raise ValueError('native job run quota exhausted')
         if retry and jobs._exists(fd,'cancel'):jobs._unlink(fd,'cancel')
         state['runs']+=1;controls._save(fd,state,'validating',error=None);started=time.monotonic();checks=0
+        counters={'cached_reused':0,'cached_created':0}
         def checkpoint(phase='preparing'):
             nonlocal checks
             if time.monotonic()-started>plan['budget']['wall_seconds']:raise ValueError('native sequence wall-time budget exceeded')
             checks+=1
             stage={'validating':'canonical-native-verify','finalizing':'native-publication'}.get(phase,'canonical-native-export')
-            controls._save(fd,state,phase,progress={'stage':stage,'checkpoint':checks})
+            controls._save(fd,state,phase,progress={'stage':stage,'checkpoint':checks,**counters})
             if progress is not None:progress(copy.deepcopy(state))
             return jobs._exists(fd,'cancel')
+        def observed(event):
+            action=event.get('action')
+            if action not in ('reused','copied'):raise ValueError('invalid canonical native sequence progress event')
+            counters['cached_reused' if action=='reused' else 'cached_created']+=1
+            controls._save(fd,state,'preparing',progress={'stage':'canonical-native-export','checkpoint':checks,
+                'frame':event['frame'],'total_frames':event['total_frames'],**counters})
+            if progress is not None:progress(copy.deepcopy(state))
         try:
             _boundary()
             if checkpoint('validating'):raise ValueError('native sequence cancelled')
@@ -248,12 +262,15 @@ def run(job_root,*,resume=False,retry=False,progress=None):
             _live_source(plan)
             if Path(plan['destination']).exists():
                 controls._save(fd,state,'verifying');digest,report=_delivery(plan,state)
+                counters['cached_reused']=len(report['source']['frames'])
             else:
-                report=_cache(fd,plan,checkpoint)
+                report=_cache(fd,plan,checkpoint,observed)
+                if sum(counters.values())!=len(plan['source']['frames']):
+                    raise ValueError('canonical native sequence progress inventory incomplete')
                 if checkpoint('finalizing'):raise ValueError('native sequence cancelled before publication')
                 digest=_publish(fd,plan,state)
             controls._save(fd,state,'completed',receipt_sha256=digest,error=None,
-                progress={'stage':'completed','frames':len(report['source']['frames']),'elapsed_seconds':time.monotonic()-started})
+                progress={'stage':'completed','frames':len(report['source']['frames']),**counters,'elapsed_seconds':time.monotonic()-started})
         except (ValueError,OSError) as exc:
             controls._save(fd,state,'cancelled' if jobs._exists(fd,'cancel') else 'failed',error=str(exc)[:4096])
         return {'plan':plan,'state':state}

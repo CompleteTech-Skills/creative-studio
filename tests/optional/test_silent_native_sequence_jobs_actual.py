@@ -15,7 +15,13 @@ class ActualNativeSequenceJobs(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if os.environ.get('HATCH_NATIVE_SEQUENCE_JOBS_TEST')!='1':raise RuntimeError('Explicit retained-native job gate requires HATCH_NATIVE_SEQUENCE_JOBS_TEST=1')
-        cls.fixture=Path(os.environ['HATCH_NATIVE_SEQUENCE_FIXTURE'])
+        cls.fixture=Path(os.environ.get('HATCH_NATIVE_SEQUENCE_FIXTURE',
+            str(Path(__file__).resolve().parents[1]/'fixtures/silent-native-sequence')))
+        relocation=json.loads((cls.fixture/'relocation.json').read_text())
+        for name,record in relocation['inventory'].items():
+            data=(cls.fixture/name).read_bytes()
+            if len(data)!=record['bytes'] or hashlib.sha256(data).hexdigest()!=record['sha256']:
+                raise RuntimeError('Retained native fixture changed after immutable relocation')
         cls.evidence=json.loads((cls.fixture/'evidence.json').read_text())
         if cls.evidence.get('geometry_vertices',0)<=0 or cls.evidence.get('max_world_vertex_displacement',0)<=0:
             raise RuntimeError('Fixture must retain actual animated geometry proof')
@@ -52,6 +58,8 @@ class ActualNativeSequenceJobs(unittest.TestCase):
         result=native.run(self.job,retry=True)
         self.assertEqual(result['state']['phase'],'completed',result)
         self.assertEqual((cached.stat().st_ino,cached.stat().st_mtime_ns,cached.read_bytes()),before)
+        self.assertEqual(result['state']['progress']['cached_reused'],1)
+        self.assertEqual(result['state']['progress']['cached_created'],2)
 
     def test_renamed_job_directory_keeps_owned_fd_and_preserves_foreign_replacement(self):
         self.create();held=self.root/'held';renamed=[False]

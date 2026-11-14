@@ -8,6 +8,7 @@ import copy
 from contextlib import contextmanager
 import hashlib
 import importlib.metadata
+import inspect
 import os
 from pathlib import Path
 import stat
@@ -102,6 +103,8 @@ def _locked(root):
 def create(source,source_root,job_root,destination,*,provenance,budget=None):
     if not sequence.publication_supported():raise ValueError('secure sequence staging unavailable on this platform')
     sequence._capability_factory()
+    if 'progress' not in inspect.signature(sequence.export_sequence).parameters:
+        raise ValueError('canonical verified sequence progress API unavailable')
     source=_source(copy.deepcopy(source));budget=copy.deepcopy(budget or DEFAULT_BUDGET)
     _budget(budget)
     if source['origin']!='imported':raise ValueError('native jobs require canonical render closure integration')
@@ -138,28 +141,6 @@ def create(source,source_root,job_root,destination,*,provenance,budget=None):
 
 
 def _provenance(plan):return {'job':plan['id'],'source':plan['provenance']}
-
-
-def _cache_reuse(plan):
-    stage=Path(plan['destination']).parent/('.sequence-job-'+plan['id'][:32])
-    try:
-        with pinned_directory(stage) as fd,sequence._capability(fd) as authority:
-            if sequence._read_json(authority.path,'plan.json')!={'source':plan['source'],'provenance':_provenance(plan)}:
-                raise ValueError('sequence cache belongs to another job')
-            sequence._inventory(authority.path,plan['source'],staging=True)
-            count=0
-            for frame in plan['source']['frames']:
-                if not jobs._exists(fd,frame['path']):continue
-                data=jobs._read(fd,frame['path'],sequence.MAX_FRAME_BYTES)
-                if len(data)!=frame['bytes'] or hashlib.sha256(data).hexdigest()!=frame['sha256']:
-                    raise ValueError('sequence cache bytes changed')
-                count+=1
-            return count
-    except FileNotFoundError:
-        # Only an absent cache is fresh. A partial cache whose plan or frame
-        # directory disappeared remains a malformed cache, not reusable input.
-        if stage.exists():raise ValueError('incomplete sequence cache')
-        return 0
 
 
 def _verify(plan,state):
@@ -216,27 +197,35 @@ def run(job_root,*,resume=False,retry=False,progress=None):
         if state['runs']>=plan['budget']['max_runs']:raise ValueError('sequence job run quota exhausted')
         if retry and jobs._exists(fd,'cancel'):jobs._unlink(fd,'cancel')
         state['runs']+=1;_save(fd,state,'validating',error=None);started=time.monotonic();checks=0
+        counters={'cached_reused':0,'cached_created':0}
         def checkpoint():
             nonlocal checks
             if time.monotonic()-started>plan['budget']['wall_seconds']:raise ValueError('sequence job wall-time budget exceeded')
             checks+=1
-            _save(fd,state,'preparing',progress={'stage':'canonical-sequence-copy','checkpoint':checks})
+            _save(fd,state,'preparing',progress={'stage':'canonical-sequence-copy','checkpoint':checks,**counters})
             if progress is not None:progress(copy.deepcopy(state))
             return jobs._exists(fd,'cancel')
+        def observed(event):
+            action=event.get('action')
+            if action not in ('reused','copied'):raise ValueError('invalid canonical sequence progress event')
+            counters['cached_reused' if action=='reused' else 'cached_created']+=1
+            _save(fd,state,'preparing',progress={'stage':'canonical-sequence-copy','checkpoint':checks,
+                'frame':event['frame'],'total_frames':event['total_frames'],**counters})
+            if progress is not None:progress(copy.deepcopy(state))
         try:
             if checkpoint():raise ValueError('sequence job cancelled')
-            reused=0
             if Path(plan['destination']).exists():
                 report,digest=_verify(plan,state)
-                reused=len(plan['source']['frames'])
+                counters['cached_reused']=len(plan['source']['frames'])
             else:
-                reused=_cache_reuse(plan)
                 sequence.export_sequence(plan['source'],plan['source_root'],plan['destination'],
-                    provenance=_provenance(plan),stage_name='.sequence-job-'+plan['id'][:32],cancel=checkpoint)
+                    provenance=_provenance(plan),stage_name='.sequence-job-'+plan['id'][:32],cancel=checkpoint,progress=observed)
                 _save(fd,state,'verifying');report,digest=_verify(plan,state)
+                if sum(counters.values())!=len(plan['source']['frames']):
+                    raise ValueError('canonical verified sequence progress inventory incomplete')
             _save(fd,state,'completed',receipt_sha256=digest,error=None,
                 progress={'stage':'completed','frames':len(report['source']['frames']),
-                          'cached_reused':reused,'cached_created':len(plan['source']['frames'])-reused,
+                          **counters,
                           'elapsed_seconds':time.monotonic()-started})
             return {'plan':plan,'state':state}
         except (ValueError,OSError) as exc:

@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "kind": "hatch-3d-rig",
+  "id": "fixture",
+  "version": "1.0.0",
+  "revision": 0,
+  "character": {
+    "schema_version": 1,
+    "id": "fixture",
+    "version": "1.0.0",
+    "identity_sha256": "59fff471d947d1823236016b81c771f610bacf6638c495fbddcee8ace16a2ce2"
+  },
+  "source": {
+    "schema_version": 1,
+    "path": "source/fixture.glb",
+    "sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e",
+    "origin": "procedural-fixture",
+    "fixture": true,
+    "attribution": "User-supplied model; see original source files.",
+    "dependencies": [
+      {
+        "path": "source/fixture.glb",
+        "sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e"
+      }
+    ]
+  },
+  "coordinate_system": {
+    "handedness": "right",
+    "right": "+X",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "angles": "radian",
+    "quaternion": "XYZW",
+    "matrices": "column-vectors",
+    "time": "second"
+  },
+  "archetype": "custom",
+  "geometry": {
+    "schema_version": 1,
+    "version": "1.0.0",
+    "data": {
+      "path": "geometry/f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a.npz",
+      "sha256": "f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a"
+    },
+    "meshes": [
+      "strip"
+    ],
+    "vertices": 4,
+    "triangles": 2
+  },
+  "skeleton": null,
+  "skins": [],
+  "controllers": {
+    "ik": [],
+    "constraints": []
+  },
+  "facial": {
+    "schema_version": 1,
+    "eyes": [],
+    "morph_targets": {
+      "strip": [
+        "blink"
+      ]
+    },
+    "expressions": {}
+  },
+  "attachments": [],
+  "animations": [],
+  "state_mapping": {},
+  "uncertainties": [],
+  "provenance": {
+    "schema_version": 1,
+    "tool_version": "1.0.0",
+    "operation": "import",
+    "created_at": "2026-11-13T06:24:22Z",
+    "input_hashes": {
+      "source": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e"
+    },
+    "ancestry": []
+  },
+  "limits": {
+    "source_bytes": 268435456,
+    "dependency_bytes": 1073741824,
+    "vertices": 1000000,
+    "triangles": 2000000,
+    "bones": 256,
+    "influences": 4,
+    "morphs": 128,
+    "clips": 64,
+    "keyframes": 250000,
+    "duration": 120,
+    "fps": 60,
+    "memory_bytes": 2147483648,
+    "solver_iterations": 128,
+    "timeout_seconds": 300,
+    "archive_files": 10000,
+    "archive_bytes": 1073741824,
+    "attempts": 3
+  },
+  "review": {
+    "status": "pending",
+    "receipts": []
+  },
+  "validation": []
+}

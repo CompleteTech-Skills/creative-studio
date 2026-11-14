@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "kind": "render3d-snapshot",
+  "adapter": {
+    "id": "native-rig-preview",
+    "version": "1.0.0"
+  },
+  "source": {
+    "id": "fixture",
+    "version": "1.0.2"
+  },
+  "coordinate_system": {
+    "handedness": "right",
+    "right": "+X",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "angles": "radian",
+    "quaternion": "XYZW",
+    "matrices": "column-vectors",
+    "time": "second"
+  },
+  "entrypoint": "rig.json",
+  "files": [
+    {
+      "path": "animations/bend-49de809d5e4e1c0d376c73fdcaa4df352c00a66a24d684979dc55d8b50bc7628.json",
+      "sha256": "92a48e8fd7b2d6fa52d88f22963a42e32e08ef199c985e09bd7cab3957fdf672",
+      "bytes": 1026
+    },
+    {
+      "path": "geometry/f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a.npz",
+      "sha256": "f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a",
+      "bytes": 1110
+    },
+    {
+      "path": "identity.json",
+      "sha256": "59fff471d947d1823236016b81c771f610bacf6638c495fbddcee8ace16a2ce2",
+      "bytes": 544
+    },
+    {
+      "path": "rig.json",
+      "sha256": "0f3424ddf5d0d180b004dae9b00b0d6f950f3993515d5b7cc53c9bfeb0bbf7cb",
+      "bytes": 6397
+    },
+    {
+      "path": "rig/weights/aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66.npz",
+      "sha256": "aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66",
+      "bytes": 978
+    },
+    {
+      "path": "source/fixture.glb",
+      "sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e",
+      "bytes": 1340
+    }
+  ],
+  "total_bytes": 11395,
+  "fixture": true,
+  "scope": "native-rig-preview",
+  "snapshot_sha256": "3c54e222b1247a40883675dc40f0a2fc33a3761fa6ae580b5d9c63053abc020a"
+}

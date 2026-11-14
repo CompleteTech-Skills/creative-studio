@@ -688,6 +688,9 @@ def run_batch(job_roots,*,retry_failed=False,progress=None):
         elif plan.get('kind')=='silent-sequence-job':
             try:import silent_sequence_jobs as authority
             except ImportError as exc:raise ValueError('canonical sequence job authority unavailable') from exc
+        elif plan.get('kind')=='silent-native-sequence-job':
+            try:import silent_native_sequence_jobs as authority
+            except ImportError as exc:raise ValueError('canonical native sequence job authority unavailable') from exc
         else:raise ValueError('unsupported batch job kind')
         authorities.append(authority)
     inventories=[authority.status(root) for root,authority in zip(roots,authorities)]
