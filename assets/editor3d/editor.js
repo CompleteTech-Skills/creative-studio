@@ -363,6 +363,19 @@ function preview(scene) {
     throw Error("Evaluated preview exposure is supported from -20 to +20 stops.");
   if (scene.revision !== undefined && (scene.revision !== revision || scene.snapshot_sha256 !== sha256 ||
       scene.scene?.path !== currentSnapshot.scene_path)) throw Error("Evaluation belongs to another saved scene revision.");
+  const entries = Array.isArray(scene.nodes) ? scene.nodes.map(node => [node.id, node]) : Object.entries(scene.nodes);
+  if ((scene.native_geometry && Object.keys(scene.native_geometry).length) || entries.some(([, node]) =>
+      node.native_clip || node.native_pose || node.native_pose_evaluated || node.native_state))
+    throw Error("Native deformed geometry preview requires the canonical installed geometry adapter.");
+  for (const [id, node] of entries) {
+    if (JSON.stringify(node.material_overrides || []) !== JSON.stringify(nodes.get(id)?.material_overrides || []))
+      throw Error("Evaluated material changes require the canonical installed material adapter.");
+    if (node.camera) {
+      const actual = objects.get(id)?.children.find(child => child.isCamera);
+      if (!actual || Boolean(actual.isPerspectiveCamera) !== (node.camera.projection === "perspective"))
+        throw Error("The evaluated camera projection has no matching browser adapter.");
+    }
+  }
   lastEvaluation = structuredClone(scene);
   playing = false;
   gizmo.detach();

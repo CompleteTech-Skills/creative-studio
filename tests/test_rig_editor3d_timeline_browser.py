@@ -157,7 +157,13 @@ class TimelineBrowserTests(unittest.TestCase):
                         page.locator('[data-id="mesh"]').click()
                         timeline=page.locator('[aria-label="Animation timeline"]')
                         timeline.get_by_role('button',name='Play',exact=True).click()
-                        page.wait_for_function("() => Number(document.querySelector('[aria-label=\"Exact frame\"]').value)>=2 && hatchEditor.objects.get('mesh').position.x>2")
+                        try:
+                            page.wait_for_function("() => Number(document.querySelector('[aria-label=\"Exact frame\"]').value)>=2 && hatchEditor.objects.get('mesh').position.x>2")
+                        except Exception:
+                            print('PLAYBACK_DIAGNOSTIC '+json.dumps(page.evaluate("""() => ({frame:document.querySelector('[aria-label="Exact frame"]').value,
+                                x:hatchEditor.objects.get('mesh').position.x, status:document.querySelector('[aria-label="Animation timeline"] [role=status]').textContent,
+                                buttons:[...document.querySelectorAll('[aria-label="Animation timeline"] button')].map(node=>node.textContent), errors:hatchEditor.errors})""")),flush=True)
+                            raise
                         self.assertEqual(timeline.get_by_role('button',name='Pause',exact=True).count(),1)
                         pending=[]
                         page.route('**/api/timeline/evaluate',lambda route:pending.append(route))
@@ -173,6 +179,57 @@ class TimelineBrowserTests(unittest.TestCase):
                         self.assertEqual(timeline.get_by_role('button',name='Play',exact=True).count(),1)
                         self.assertEqual(repo.snapshot()['revision'],before['revision']+1)
                         self.assertEqual(errors,[])
+                    finally:browser.close()
+            finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
+    def test_actual_native_deformation_is_rejected_before_rest_geometry_can_claim_a_preview(self):
+        import numpy as np
+        from asset_library import AssetLibrary
+        from rig_gltf import export_gltf
+        from rig_test_helpers import fixture
+        from scene3d_graph import SceneGraph
+        from scene3d_import import import_gltf,add_import
+        from editor3d_timeline import evaluate_timeline
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);rig=fixture(root,name='actor')
+            source=root/'actor.glb';export_gltf(rig,source)
+            license_file=root/'license.txt';license_file.write_text('CC0-1.0 procedural fixture')
+            library=AssetLibrary(root/'library',create=True)
+            imported=import_gltf(source,library,asset_id='actor-import',attribution='Procedural fixture',license_file=license_file)
+            bundle=build_example(root/'project');graph=SceneGraph.from_bundle(bundle,'example-scene.json')
+            add_import(graph,imported,'actor')
+            shot=deepcopy(bundle['documents']['example-shot.json'])
+            clip=next(ref for ref in imported.asset['animations'] if ref['id']==imported.report['native_clip_map']['bend'])
+            shot['bindings'].append(dict(target='actor',clip=clip,start_frame=0,end_frame=24,speed=1,loop=True))
+            shot['dependencies'].append(clip)
+            manifest=library.resolve(imported.library_reference)
+            payloads={record['path']:library.read_file(imported.library_reference,record['path'])
+                for record in manifest['files'] if record['path']!=imported.asset_reference['path']}
+            saved=snapshot_project(root/'project',root/'portable',graph,scene_path='example-scene.json',
+                derived_documents={imported.asset_reference['path']:imported.asset},
+                document_replacements={'example-shot.json':shot},extra_payloads=payloads)
+            repo=EditorRepository.create(root/'portable',root/'saved',scene_path=saved['active_scene']['path'])
+            native=repo.snapshot();shot_path=next(ref['path'] for ref in native['project']['shots'] if ref['id']=='example-shot')
+            def sample(at):return evaluate_timeline(repo,dict(revision=native['revision'],sha256=native['sha256'],shot=shot_path,frame=at,sample_geometry=True))
+            first,changed=sample(0),sample(12)
+            self.assertTrue(changed['native_geometry'])
+            a=np.vstack([points for meshes in first['native_geometry'].values() for points in meshes.values()])
+            b=np.vstack([points for meshes in changed['native_geometry'].values() for points in meshes.values()])
+            self.assertGreater(float(np.max(np.abs(a-b))),.01)
+            server=EditorServer(repo,routes=routes());thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+            try:
+                with sync_playwright() as runtime:
+                    browser=launch_chromium(runtime)
+                    try:
+                        page=browser.new_page();page.goto(server.url);page.wait_for_function('() => window.editorReady===true')
+                        value=page.evaluate("""evaluated => {const positions=()=>[...hatchEditor.objects].map(([id,root])=>{
+                            const meshes=[];root.traverse(node=>{if(node.isMesh)meshes.push([...node.geometry.attributes.position.array]);});return [id,root.matrix.elements.slice(),meshes];});
+                            const before=JSON.stringify(positions());let error='';try{hatchEditor.preview(evaluated);}catch(e){error=e.message;}
+                            return {error,unchanged:before===JSON.stringify(positions())};}""",changed)
+                        self.assertIn('Native deformed geometry',value['error']);self.assertTrue(value['unchanged'])
+                        self.assertEqual(repo.snapshot()['sha256'],native['sha256'])
                     finally:browser.close()
             finally:server.shutdown();server.server_close();thread.join(timeout=5)
 
