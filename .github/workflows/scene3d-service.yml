@@ -55,7 +55,7 @@ jobs:
         env:
           HATCH_EDITOR_BROWSER_TEST: '1'
       - name: Editor native component and persistence browser acceptance
-        run: PYTHONPATH=scripts:tests python -m unittest test_rig_editor3d_viewer test_rig_editor3d_components test_rig_editor3d_state test_rig_editor3d_timeline_browser -v 2>&1 | tee scene3d-evidence/editor-browser.log
+        run: PYTHONPATH=scripts:tests python -m unittest test_rig_editor3d_viewer test_rig_editor3d_components test_rig_editor3d_state test_rig_editor3d_timeline_browser test_rig_editor3d_http_queue -v 2>&1 | tee scene3d-evidence/editor-browser.log
         env:
           HATCH_EDITOR_BROWSER_TEST: '1'
           OPENBLAS_NUM_THREADS: '1'
