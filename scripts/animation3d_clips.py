@@ -741,24 +741,42 @@ def events_between(clip, previous, current):
     return deepcopy(sorted(events,key=lambda e:(e['frame'],e['id']),reverse=b<a))
 
 
+def _document_cost(value):
+    """Conservative retained JSON-object estimate, distinct from process RSS."""
+    import json
+    return len(json.dumps(value,ensure_ascii=False,allow_nan=False).encode('utf-8'))*64
+
+
 class ClipHistory:
-    """Validated reversible document transactions; callers never alias history."""
-    def __init__(self, clip, *, max_edits=256):
+    """Validated reversible transactions with bounded retained document state."""
+    def __init__(self, clip, *, max_edits=256,max_bytes=64*1024*1024):
         require(type(max_edits) is int and 1<=max_edits<=4096,'ANIMATION_LIMIT','Edit history capacity must be 1..4096.')
-        self._past=[];self._future=[];self._value=_clip(clip);self._max_edits=max_edits
+        require(type(max_bytes) is int and 1<=max_bytes<=1024**3,'ANIMATION_LIMIT','History estimate must be 1 byte..1 GiB.')
+        value=_validate_clip(clip);cost=_document_cost(value)
+        require(cost<=max_bytes,'ANIMATION_LIMIT','Initial history document exceeds its memory estimate.')
+        self._past=[];self._future=[];self._value=deepcopy(value);self._max_edits=max_edits
+        self._past_costs=[];self._future_costs=[];self._current_cost=cost;self._bytes=cost;self._max_bytes=max_bytes
     @property
-    def document(self): return deepcopy(self._value)
+    def document(self):return deepcopy(self._value)
+    @property
+    def estimated_bytes(self):return self._bytes
     def apply(self, operation, *args, **kwargs):
         require(len(self._past)<self._max_edits,'ANIMATION_LIMIT','Edit history is full; save an explicit checkpoint before further edits.')
-        candidate=_clip(operation(self.document,*args,**kwargs))
-        self._past.append(self._value); self._value=candidate; self._future=[]
+        candidate=_validate_clip(operation(self.document,*args,**kwargs));cost=_document_cost(candidate)
+        admitted=self._bytes-sum(self._future_costs)+cost
+        require(admitted<=self._max_bytes,'ANIMATION_LIMIT','Edit history memory estimate exceeded.')
+        owned=deepcopy(candidate)
+        self._past.append(self._value);self._past_costs.append(self._current_cost)
+        self._value=owned;self._current_cost=cost;self._bytes=admitted;self._future=[];self._future_costs=[]
         return self.document
     def undo(self):
         require(bool(self._past),'ANIMATION_EDIT','Nothing to undo.')
-        self._future.append(self._value); self._value=self._past.pop(); return self.document
+        self._future.append(self._value);self._future_costs.append(self._current_cost)
+        self._value=self._past.pop();self._current_cost=self._past_costs.pop();return self.document
     def redo(self):
         require(bool(self._future),'ANIMATION_EDIT','Nothing to redo.')
-        self._past.append(self._value); self._value=self._future.pop(); return self.document
+        self._past.append(self._value);self._past_costs.append(self._current_cost)
+        self._value=self._future.pop();self._current_cost=self._future_costs.pop();return self.document
 
 
 class ClipLibrary:
@@ -770,14 +788,13 @@ class ClipLibrary:
         self._lock=threading.RLock()
         self._clips={};self._max_clips=max_clips;self._max_bytes=max_bytes;self._bytes=0
     def _admit(self,clip):
-        import json
         _validate_clip(clip)
         key=(clip['id'],clip['version']);digest=object_hash(clip)
         prior=self._clips.get(key)
         require(prior is None or prior[0]==digest,'ANIMATION_IDENTITY','An immutable clip version already has different content.')
         # Same conservative JSON factor as native document admission; this is a
         # cache estimate, not an operating-system allocation sandbox.
-        cost=len(json.dumps(clip,ensure_ascii=False,allow_nan=False).encode('utf-8'))*64
+        cost=_document_cost(clip)
         require(prior is not None or len(self._clips)<self._max_clips,'ANIMATION_LIMIT','Clip index capacity exceeded.')
         require(prior is not None or self._bytes+cost<=self._max_bytes,'ANIMATION_LIMIT','Clip index memory estimate exceeded.')
         return deepcopy(clip),key,digest,cost,prior

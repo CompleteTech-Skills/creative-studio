@@ -297,6 +297,19 @@ class ClipEditingTests(unittest.TestCase):
         with self.assertRaises(RigError):history.apply(edit_clip,name='blocked')
         self.assertEqual(history.document,before);history.undo();history.redo()
         self.assertEqual(history.document,before)
+    def test_history_aggregate_memory_rejection_preserves_redo_and_source(self):
+        value=clip();before=object_hash(value)
+        estimate=len(json.dumps(value,ensure_ascii=False,allow_nan=False).encode('utf-8'))*64
+        with self.assertRaises(RigError):ClipHistory(value,max_bytes=1)
+        history=ClipHistory(value,max_bytes=estimate*2+1024)
+        history.apply(edit_clip,name='Changed');retained=history.estimated_bytes
+        history.undo()
+        with self.assertRaises(RigError):history.apply(edit_clip,name='x'*4000)
+        self.assertEqual(history.estimated_bytes,retained)
+        self.assertEqual(history.document,value)
+        self.assertEqual(history.redo()['name'],'Changed')
+        self.assertEqual(object_hash(value),before)
+
 
 
 class ClipLibraryTests(unittest.TestCase):
