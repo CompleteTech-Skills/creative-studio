@@ -16,11 +16,12 @@ from rig_skeleton import evaluate_fk, neutral_pose
 
 def validate_animation(rig: RigAsset, clip: dict) -> dict:
     validate_contract(clip, 'AnimationClip')
-    skeleton = rig.skeleton;limits = rig.manifest.get('limits', DEFAULT_LIMITS)
+    skeleton = rig.manifest.get('skeleton');limits = rig.manifest.get('limits', DEFAULT_LIMITS)
     require(clip['rig_id'] in (rig.manifest.get('id'), 'imported'), 'RIG_CLIP_COMPATIBILITY', 'Clip targets a different rig.')
-    require(clip['skeleton_version'] == skeleton['version'], 'RIG_CLIP_VERSION', 'Clip skeleton version is stale.')
+    if skeleton is not None:
+        require(clip['skeleton_version'] == skeleton['version'], 'RIG_CLIP_VERSION', 'Clip skeleton version is stale.')
     require(clip['duration'] <= limits['duration'] and clip['fps'] <= limits['fps'], 'RIG_LIMIT_ANIMATION', 'Clip duration/frame rate exceeds its budget.')
-    bones = {b['id'] for b in skeleton['bones']};meshes = rig.geometry.by_id();seen = set();keys = 0
+    bones = {b['id'] for b in skeleton['bones']} if skeleton is not None else set();meshes = rig.geometry.by_id();seen = set();keys = 0
     for track in clip['tracks']:
         key = (track['target'], track['path'])
         require(key not in seen, 'RIG_ANIMATION_DUPLICATE', 'A clip cannot repeat a target/path channel.');seen.add(key)
@@ -34,6 +35,7 @@ def validate_animation(rig: RigAsset, clip: dict) -> dict:
             width = len(meshes[track['target']].morphs)
             require(np.all(np.abs(values) <= 2), 'RIG_MORPH_RANGE', 'Morph keys must stay in [-2,2].')
         else:
+            require(skeleton is not None, 'RIG_NO_SKELETON', 'Bone animation requires a skeleton.')
             require(track['target'] in bones, 'RIG_ANIMATION_REFERENCE', 'Bone animation target is missing.')
             width = 4 if track['path'] == 'rotation' else 3
             if track['path'] == 'rotation':

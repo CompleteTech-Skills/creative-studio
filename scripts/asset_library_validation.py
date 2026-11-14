@@ -144,8 +144,6 @@ def _inspect_geometry(path, *, limits=None):
                                                  'head': b['head'], 'tail': b['tail']}
                                                 for b in model.skeleton['bones']]),
                     'bone_ids': [b['id'] for b in model.skeleton['bones']]}
-        rig = RigAsset({'id': 'imported', 'skeleton': model.skeleton, 'limits': limits,
-                        'controllers': {'ik': [], 'constraints': []}}, geometry, model.weights, model.clips)
         for key, skin in sorted(model.weights.items()):
             measured = validate_skin(skin, geometry.by_id()[key], model.skeleton, limits)
             skins.append({'mesh': key, 'joints': list(skin.joints), 'metrics': measured,
@@ -153,18 +151,20 @@ def _inspect_geometry(path, *, limits=None):
                           'binding_sha256': object_hash({'joints': skin.joints,
                               'indices': hashlib.sha256(skin.indices.tobytes()).hexdigest(),
                               'weights': hashlib.sha256(skin.weights.tobytes()).hexdigest()})})
-        for name, clip in sorted(model.clips.items()):
-            measured = validate_animation(rig, clip)
-            clips.append({'id': name, 'duration_seconds': clip['duration'],
-                          'duration_exact': _ratio(clip['duration']), 'metrics': measured,
-                          'root_motion': clip['root_motion'], 'loop': clip['loop'],
-                          'fps': clip['fps'], 'fps_origin': 'native import default; not source sampling rate',
-                          'tracks': [{'target': t['target'], 'path': t['path'],
-                                      'interpolation': t['interpolation'],
-                                      'key_times_exact': [_ratio(v) for v in t['times']]}
-                                     for t in clip['tracks']]})
-    elif model.clips:
-        fail('ANIMATION', 'Animations have no validated native skeleton.')
+    if model.weights and not model.skeleton:
+        fail('ANIMATION', 'Skins have no validated native skeleton.')
+    rig = RigAsset({'id': 'imported', 'skeleton': model.skeleton, 'limits': limits,
+                    'controllers': {'ik': [], 'constraints': []}}, geometry, model.weights, model.clips)
+    for name, clip in sorted(model.clips.items()):
+        measured = validate_animation(rig, clip)
+        clips.append({'id': name, 'duration_seconds': clip['duration'],
+                      'duration_exact': _ratio(clip['duration']), 'metrics': measured,
+                      'root_motion': clip['root_motion'], 'loop': clip['loop'],
+                      'fps': clip['fps'], 'fps_origin': 'native import default; not source sampling rate',
+                      'tracks': [{'target': t['target'], 'path': t['path'],
+                                  'interpolation': t['interpolation'],
+                                  'key_times_exact': [_ratio(v) for v in t['times']]}
+                                 for t in clip['tracks']]})
     hierarchy = None
     if document is not None:
         from rig_gltf import scene_graph
