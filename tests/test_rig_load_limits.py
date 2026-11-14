@@ -29,6 +29,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SharedLoadBudgetTests(unittest.TestCase):
+    def test_file_admission_failure_does_not_poison_retry(self):
+        budget = LoadBudget({**DEFAULT_LIMITS, 'dependency_bytes': 10})
+        budget._record_file_size(Path('first'), 7)
+        before = deepcopy(budget._state())
+        with self.assertRaises(RigError):
+            budget._record_file_size(Path('second'), 4)
+        self.assertEqual(budget._state(), before)
+        budget._record_file_size(Path('second'), 3)
+        self.assertEqual(budget.input_bytes, 10)
+
     def test_lifecycle_capture_parse_discovery_and_retained_copies(self):
         parent = LoadBudget(DEFAULT_LIMITS)
         discovery = parent.fork(DEFAULT_LIMITS)
@@ -246,6 +256,32 @@ class SharedLoadBudgetTests(unittest.TestCase):
         self.assertEqual(expanded, [])
         self.assertEqual(budget.report_bytes, 0)
 
+    def test_inspection_rejects_actual_201_track_fanout_before_ratios(self):
+        from asset_library_validation import _inspect_geometry
+        from rig_gltf import GltfBuilder
+        builder = GltfBuilder()
+        position = builder.accessor([[0, 0, 0], [1, 0, 0], [0, 1, 0]], 'VEC3', target=34962, bounds=True)
+        delta = builder.accessor([[0, 0, .1]] * 3, 'VEC3', target=34962, bounds=True)
+        times = builder.accessor(np.linspace(0, 1, 1000), 'SCALAR', bounds=True)
+        values = builder.accessor([0] * 1000, 'SCALAR')
+        short_times = builder.accessor([0, 1], 'SCALAR', bounds=True)
+        translations = builder.accessor([[0, 0, 0], [1, 0, 0]], 'VEC3')
+        builder.json.update(nodes=[{'mesh': 0}], meshes=[{'primitives': [
+            {'attributes': {'POSITION': position}, 'targets': [{'POSITION': delta}]}
+            for _ in range(200)]}], scenes=[{'nodes': [0]}], animations=[{
+                'samplers': [{'input': times, 'output': values},
+                             {'input': short_times, 'output': translations}],
+                'channels': [{'sampler': 0, 'target': {'node': 0, 'path': 'weights'}},
+                             {'sampler': 1, 'target': {'node': 0, 'path': 'translation'}}]}])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'fanout.glb'
+            builder.write(path)
+            with patch('rig_interop.validate_gltf', return_value={'ok': True}), \
+                    patch('asset_library_validation._ratio') as ratio:
+                with self.assertRaises(RigError) as caught:
+                    _inspect_geometry(path, limits={'memory_bytes': 29_387_328})
+                self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+                ratio.assert_not_called()
     def test_cubic_and_large_report_exact_boundary_and_repeat(self):
         limits = {**DEFAULT_LIMITS, 'memory_bytes': 2 * 1024**3}
         probe = LoadBudget(limits)

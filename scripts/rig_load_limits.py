@@ -277,11 +277,12 @@ class LoadBudget:
         require(path not in self.files or self.files[path] == size, 'RIG_SOURCE_CHANGED',
                 'Input size changed during admission.', asset=path.name)
         if path not in self.files:
-            self.files[path] = size
-            self.input_bytes += size
-            require(self.input_bytes <= self.limits['dependency_bytes'], 'RIG_LIMIT_BINARY',
+            total = self.input_bytes + size
+            require(total <= self.limits['dependency_bytes'], 'RIG_LIMIT_BINARY',
                     'Aggregate native input files exceed the dependency byte budget.',
-                    expected=self.limits['dependency_bytes'], observed=self.input_bytes)
+                    expected=self.limits['dependency_bytes'], observed=total)
+            self.files[path] = size
+            self.input_bytes = total
         return size
 
     def hash(self, path: Path):
