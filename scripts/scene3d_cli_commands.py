@@ -81,7 +81,7 @@ def execute(args):
         require(sum(len(item['mesh'].triangles) for group in geometry for item in group) <= 200000,
                 'Aggregate generator batch triangle budget exceeded.')
         from scene3d_language_environment import _preflight_project
-        _preflight_project(graph, recipes)
+        _preflight_project(graph, recipes, destination=args.destination)
         if args.dry_run:
             return {'dry_run': True, 'recipes': recipes, 'generated_nodes': sum(map(len, geometry)),
                     'triangles': sum(len(item['mesh'].triangles) for group in geometry for item in group),
@@ -111,11 +111,8 @@ def execute(args):
         batch = {'schema_version': 1, 'commands': [
             {'operation': OPERATIONS[args.command][args.action], 'parameters': parameters}]}
         applied = apply_commands(graph, PrefabLibrary.from_files(args.project, bundle), batch)
-        if args.dry_run:
-            return {'dry_run': True, 'revision': graph.revision, 'scene_sha256': graph.digest,
-                    'operations': len(applied['results']), 'destination': str(args.destination)}
         result = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
-                                  derived_documents=applied['derived_documents'])
+                                  derived_documents=applied['derived_documents'], dry_run=args.dry_run)
         result['operations'] = len(applied['results'])
         return result
     if args.command in ('object', 'camera') and args.action != 'list':

@@ -235,3 +235,9 @@ samples actual geometry and writes independently validated `scene.glb` plus
 `report.json` through exclusive atomic publication. This is one baked static
 frame: animation/light/world format losses remain explicit in the native report.
 Existing destinations fail, and authored project bytes remain unchanged.
+
+All mutating CLI dry runs check the requested destination and prepare the same
+complete immutable snapshot closure as a write. This includes typed batches,
+named operations, ordinary language, environment recipes and snapshot copies.
+A dry run rejects exhausted project budgets and existing or invalid destinations;
+it publishes no output.
