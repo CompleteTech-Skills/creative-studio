@@ -31,6 +31,49 @@ def _scope(nodes,target):
     return selected
 
 
+def _native_clip_conflict(snapshot,nodes,owner,rig_reference):
+    """Static Pose bindings have no clip blend policy at any saved shot time.
+
+    Inspect declared bindings, including nested clips and other active-scene
+    shots, rather than mistaking one sampled frame for a complete timeline.
+    Spatial animation tracks remain compatible with authored native poses.
+    """
+    affected={identifier for identifier in _scope(nodes,owner)
+        if nodes[identifier].get('asset') and
+        snapshot['documents'][nodes[identifier]['asset']['path']].get('skeleton')==rig_reference}
+    count=0
+    def inspect(values,stack=()):
+        nonlocal count
+        for binding in values:
+            count+=1
+            if count>8192 or len(stack)>=128:_fail('Native pose clip-admission budget exceeded.')
+            reference=binding['clip']
+            if reference['kind']=='hatch-3d-animation':
+                target=binding['target']
+                if target not in nodes:_fail('Native clip target is absent from the active scene.')
+                for identifier in affected & _scope(nodes,target):
+                    asset=snapshot['documents'][nodes[identifier]['asset']['path']]
+                    if reference in asset['animations']:
+                        return 'A declared native clip targets this rig subtree. Static Pose and clip blending is unavailable, including future frames and other shots.'
+            else:
+                path=reference['path']
+                if path in stack:_fail('Recursive animation binding prevents native pose authoring.')
+                clip=snapshot['documents'].get(path)
+                if not clip or clip.get('kind')!='scene3d-animation':_fail('Native pose requires registered animation bindings.')
+                reason=inspect(clip['bindings'],(*stack,path))
+                if reason:return reason
+        return None
+    for node in nodes.values():
+        reason=inspect(node['animation_bindings'])
+        if reason:return reason
+    for reference in snapshot['project']['shots']:
+        shot=snapshot['documents'][reference['path']]
+        if shot['scene']['path']==snapshot['scene_path']:
+            reason=inspect(shot['bindings'])
+            if reason:return reason
+    return None
+
+
 @contextmanager
 def _authoring_context(repository,snapshot,identifier):
     from scene3d_import_capture import resolve_captured_import
@@ -78,16 +121,18 @@ def _authoring_context(repository,snapshot,identifier):
         if pose['rig_version']!=rig.skeleton['version']:_fail('Pose targets another native skeleton version.')
         from scene3d_graph import SceneGraph
         graph=SceneGraph.from_bundle(captured['bundle'],snapshot['scene_path'],source_root=captured['root'])
-        editable=not graph.evaluate_base(owner)['locked']
+        reason=('Node or inherited collection/layer membership is locked.' if graph.evaluate_base(owner)['locked'] else
+                _native_clip_conflict(snapshot,nodes,owner,rig_reference))
+        editable=reason is None
         yield dict(owner=nodes[owner],rig=rig,rig_reference=deepcopy(rig_reference),pose=deepcopy(pose),
-                   editable=editable)
+                   editable=editable,read_only_reason=reason)
 
 
 def describe_pose(repository,snapshot,node_id):
     """Copy-only native authoring state, with no absolute filesystem locations."""
     with _authoring_context(repository,snapshot,node_id) as context:
         rig=context['rig']
-        return dict(owner_id=context['owner']['id'],editable=context['editable'],read_only_reason=None if context['editable'] else 'Node or inherited collection/layer membership is locked.',
+        return dict(owner_id=context['owner']['id'],editable=context['editable'],read_only_reason=context['read_only_reason'],
             rig_reference=context['rig_reference'],skeleton=deepcopy(rig.skeleton),
             authored_pose=context['pose'],
             morph_targets={mesh.id:sorted(mesh.morphs) for mesh in rig.geometry.meshes if mesh.morphs},
@@ -124,7 +169,7 @@ def apply_pose_edit(repository,request):
         previous_evaluation=evaluate_timeline(repository,dict(revision=snapshot['revision'],sha256=snapshot['sha256'],
             shot=timeline['shot_path'],frame=timeline['frame']))
         with _authoring_context(repository,snapshot,request['node_id']) as context:
-            if not context['editable']:_fail('Unlock the pose owner or its inherited collection/layer membership before editing it.')
+            if not context['editable']:_fail(context['read_only_reason'])
             rig=context['rig'];pose=deepcopy(context['pose'])
             if operation=='reset':pose=neutral_pose(rig.skeleton,pose['id'])
             elif operation=='mirror':

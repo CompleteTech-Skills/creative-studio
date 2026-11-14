@@ -18,9 +18,11 @@ are accepted. Surface and texture structures are checked by LookDev itself.
 
 Issue #103 remains open. The native camera contract in this integration supports
 projection, clipping and field of view, but does not expose persistent Camera3D
-optics, target or path adapters. The native rig adapter for persistent bone posing,
-constraints, mirroring and morph editing is also not connected. These controls are
-explicitly unavailable rather than simulated.
+optics, target or path adapters. Native bone and mesh-qualified morph poses are authored through immutable Pose
+resources and exact selected-frame geometry sampling, as described below.
+Constraint configuration, rest-skeleton editing and Pose/clip blending remain
+explicitly unavailable. Bone gizmos and bone keyframe authoring are separate
+acceptance work.
 
 Scalar PBR assignment consumes the canonical `material_bindings` mapping from the
 Scene3D importer. Imported source surfaces are read-only; assigning a new authored
@@ -62,6 +64,10 @@ coordinates and the 100,000-vertex budget before applying an update, then
 recomputes normals and bounds. Clearing preview restores bind geometry; saved
 pose-bound components stay hidden until their exact frame is sampled. Constraint
 configuration, rest-skeleton editing and pose/clip blending remain unavailable.
+A static Pose cannot coexist with a declared native clip affecting the same rig
+subtree in any active-scene shot, including future frames and nested clips. Such
+assets show a read-only diagnostic before editing. Native clips on an independent
+character and spatial animation tracks do not disable posing.
 These engineering fixtures do not establish full issue103 acceptance or visual
 approval.
 

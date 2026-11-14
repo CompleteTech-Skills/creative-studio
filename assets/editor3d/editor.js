@@ -873,7 +873,7 @@ async function install(snapshot) {
             });
             return;
           }
-          applyProjectedMaterials(actual, snapshot.viewport_materials?.[node.id] || []);
+          applyProjectedMaterials(actual, (snapshot.viewport_materials && Object.hasOwn(snapshot.viewport_materials,node.id) ? snapshot.viewport_materials[node.id] : []));
           object.add(actual);
           object.userData.requiresTimelinePreview = asset.requires_timeline_preview === true;
           if (object.userData.requiresTimelinePreview) object.visible = false;

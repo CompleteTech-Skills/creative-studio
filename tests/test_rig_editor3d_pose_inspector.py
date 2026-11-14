@@ -149,6 +149,59 @@ class PoseInspectorTests(unittest.TestCase):
         with self.assertRaises(RigError):apply_pose_edit(self.repository,self.request('reset','overlap-reset'))
         self.assertEqual(self.repository.snapshot()['sha256'],unchanged['sha256'])
 
+    def test_future_native_clip_rejects_static_pose_without_damaging_later_frames(self):
+        before=self.repository.snapshot();native=self.repository.native_snapshot(before['revision'],before['sha256'])
+        bundle=load_project(native['root']);graph=SceneGraph.from_bundle(bundle,before['scene_path'],source_root=native['root'])
+        scene=graph.document();next(node for node in scene['nodes'] if node['id']=='actor')['animation_bindings']=[dict(
+            target='actor',clip=self.imported.asset['animations'][0],start_frame=1,end_frame=2,speed=1,loop=False)]
+        saved=snapshot_project(native['root'],self.root/'future-clip',SceneGraph(scene),scene_path=before['scene_path'])
+        self.repository=EditorRepository.create(self.root/'future-clip',self.root/'future-repository',scene_path=saved['active_scene']['path'])
+        before=self.repository.snapshot();selected=self.timeline(before)
+        request=dict(revision=before['revision'],sha256=before['sha256'],shot=selected['shot_path'],frame=1,sample_geometry=True)
+        prior=evaluate_timeline(self.repository,request)
+        self.assertTrue(prior['native_geometry'])
+        descriptor=describe_pose(self.repository,before,'actor')
+        self.assertFalse(descriptor['editable']);self.assertIn('future frames',descriptor['read_only_reason'])
+        with self.assertRaises(RigError):
+            apply_pose_edit(self.repository,self.request('set','future-pose',bones={'b1':{'translation':[.2,.1,0]}}))
+        self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
+        self.assertEqual(evaluate_timeline(self.repository,request)['native_geometry'],prior['native_geometry'])
+
+    def test_other_character_native_clip_does_not_disable_independent_pose(self):
+        before=self.repository.snapshot();native=self.repository.native_snapshot(before['revision'],before['sha256'])
+        bundle=load_project(native['root']);graph=SceneGraph.from_bundle(bundle,before['scene_path'],source_root=native['root'])
+        scene=graph.document();next(node for node in scene['nodes'] if node['id']=='other')['animation_bindings']=[dict(
+            target='other',clip=self.imported.asset['animations'][0],start_frame=1,end_frame=2,speed=1,loop=False)]
+        saved=snapshot_project(native['root'],self.root/'other-clip',SceneGraph(scene),scene_path=before['scene_path'])
+        self.repository=EditorRepository.create(self.root/'other-clip',self.root/'other-repository',scene_path=saved['active_scene']['path'])
+        before=self.repository.snapshot();self.assertTrue(describe_pose(self.repository,before,'actor')['editable'])
+        after=apply_pose_edit(self.repository,self.request('set','independent-pose',bones={'b1':{'translation':[.2,.1,0]}}))
+        selected=self.timeline(after)
+        sampled=evaluate_timeline(self.repository,dict(revision=after['revision'],sha256=after['sha256'],shot=selected['shot_path'],frame=1,sample_geometry=True))
+        self.assertTrue(sampled['native_geometry_sampled'])
+        self.assertEqual(describe_pose(self.repository,after,'actor')['authored_pose']['bones']['b1']['translation'],[.2,.1,0])
+
+    def test_other_active_scene_shot_native_clip_blocks_global_static_pose(self):
+        before=self.repository.snapshot();native=self.repository.native_snapshot(before['revision'],before['sha256'])
+        bundle=load_project(native['root']);graph=SceneGraph.from_bundle(bundle,before['scene_path'],source_root=native['root'])
+        source=next(ref for ref in before['project']['shots'] if before['documents'][ref['path']]['scene']['path']==before['scene_path'])
+        second=deepcopy(before['documents'][source['path']]);second.update(id='native-second',version='1.0.0',name='Native second')
+        second['bindings']=[dict(target='actor',clip=self.imported.asset['animations'][0],start_frame=1,end_frame=2,speed=1,loop=False)]
+        scene=graph.document();scene['shots'].append(second['id'])
+        saved=snapshot_project(native['root'],self.root/'another-shot',SceneGraph(scene),scene_path=before['scene_path'],shot_documents=[second])
+        self.repository=EditorRepository.create(self.root/'another-shot',self.root/'another-shot-repository',scene_path=saved['active_scene']['path'])
+        before=self.repository.snapshot()
+        refs={ref['id']:ref for ref in before['project']['shots'] if before['documents'][ref['path']]['scene']['path']==before['scene_path']}
+        evaluation=dict(revision=before['revision'],sha256=before['sha256'],shot=refs['native-second']['path'],frame=1,sample_geometry=True)
+        prior=evaluate_timeline(self.repository,evaluation)
+        self.assertTrue(prior['native_geometry'])
+        self.assertFalse(describe_pose(self.repository,before,'actor')['editable'])
+        request=dict(node_id='actor',operation='reset',expected_revision=before['revision'],expected_sha256=before['sha256'],
+            transaction_id='another-shot-pose',timeline=dict(shot_path=refs[source['id']]['path'],frame=dict(numerator=0,denominator=1)))
+        with self.assertRaises(RigError):apply_pose_edit(self.repository,request)
+        self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
+        self.assertEqual(evaluate_timeline(self.repository,evaluation)['native_geometry'],prior['native_geometry'])
+
     def test_standard_server_pose_routes_authenticate_and_publish_exact_native_pose(self):
         import json
         import threading
@@ -265,7 +318,7 @@ class PoseInspectorTests(unittest.TestCase):
                 timeline.get_by_role('button',name='Return to authored scene',exact=True).click()
                 for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
                 timeline.get_by_role('button',name='Play',exact=True).click()
-                page.wait_for_function('(ids) => ids.every(id=>window.hatchEditor.objects.get(id).visible)',posed)
+                page.wait_for_function('(ids) => ids.every(id=>window.hatchEditor.objects.get(id).visible)',arg=posed)
                 if timeline.get_by_role('button',name='Pause',exact=True).count():
                     timeline.get_by_role('button',name='Pause',exact=True).click()
                 page.reload();page.wait_for_function('() => window.editorReady === true')
@@ -273,7 +326,7 @@ class PoseInspectorTests(unittest.TestCase):
                 page.locator('#show-all').click()
                 for identifier in posed:self.assertFalse(page.evaluate('(id)=>window.hatchEditor.objects.get(id).visible',identifier))
                 timeline.get_by_role('button',name='Scrub',exact=True).click()
-                page.wait_for_function('(ids) => ids.every(id=>window.hatchEditor.objects.get(id).visible)',posed)
+                page.wait_for_function('(ids) => ids.every(id=>window.hatchEditor.objects.get(id).visible)',arg=posed)
                 for identifier,meshes in evaluated['native_geometry'].items():
                     for mesh,points in meshes.items():np.testing.assert_allclose(world_vertices()[identifier][mesh],points,atol=1e-6,rtol=1e-6)
                 reopened=EditorRepository(self.repository.root)
