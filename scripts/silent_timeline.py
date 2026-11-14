@@ -136,9 +136,16 @@ def assemble(shots, destination, *, cancel=None, destination_dir_fd=None):
             if len(encoded) > MAX_MANIFEST_BYTES:
                 raise ValueError('timeline manifest exceeds byte budget')
             (stage / 'timeline.json').write_bytes(encoded)
-            validate(stage)
             if cancel is not None and cancel():
                 raise ValueError('timeline assembly cancelled before publication')
+            with video._open_source(stage, 'timeline.json') as stream:
+                if stream.read(len(encoded) + 1) != encoded:
+                    raise ValueError('timeline manifest changed before publication')
+            if {path.name for path in stage.iterdir()} != {'frames', 'timeline.json'}:
+                raise ValueError('unexpected timeline payload inventory')
+            for shot in planned:
+                video._snapshot(video.make_request(shot['source']), shot['root'], None)
+            validate(stage)
             _rename_no_replace('payload', destination_name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
     return manifest
 

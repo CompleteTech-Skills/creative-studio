@@ -19,6 +19,34 @@ import test_silent_transform as core
 
 
 class TransformNativeTests(core._TransformFixture):
+    def test_final_callback_cannot_publish_changed_private_payload(self):
+        settings = transform.profile(64, 48, self.source['fps'])
+        for change in ('frame', 'manifest', 'extra'):
+            with self.subTest(change=change):
+                changed = []
+                output = self.root / ('changed-' + change)
+
+                def alter_ready_payload():
+                    for manifest in self.root.glob('.silent-transform-*/payload/transform.json'):
+                        if changed:
+                            break
+                        if change == 'frame':
+                            with Image.new('RGB', (64, 48), (250, 0, 0)) as image:
+                                image.save(manifest.parent / 'frames/000000.png')
+                        elif change == 'manifest':
+                            manifest.write_bytes(manifest.read_bytes() + b' ')
+                        else:
+                            (manifest.parent / 'unverified.txt').write_text('unverified payload')
+                        changed.append(change)
+                    return False
+
+                with self.assertRaisesRegex(ValueError, 'stale|changed|inventory'):
+                    transform.transform(self.source, self.root, settings, output,
+                                        cancel=alter_ready_payload)
+                self.assertEqual(changed, [change])
+                self.assertFalse(output.exists())
+                video._snapshot(video.make_request(self.source), self.root, None)
+
     def test_exact_nearest_duplicate_map_and_full_pixel_reverification(self):
         profile = transform.profile(64,48,{'numerator':48,'denominator':1},fps_policy='nearest')
         result = transform.transform(self.source, self.root, profile, self.output)

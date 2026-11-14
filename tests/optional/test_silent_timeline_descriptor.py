@@ -28,6 +28,32 @@ class DescriptorTimeline(unittest.TestCase):
                                     {'numerator': 24, 'denominator': 1})
         self.shots = [{'id': 'shot', 'root': source_root, 'source': source, 'start': 0, 'end': 3}]
 
+    def test_final_callback_cannot_publish_changed_private_payload(self):
+        for change in ('frame', 'manifest', 'extra'):
+            with self.subTest(change=change):
+                changed = []
+                output = self.root / ('changed-' + change)
+
+                def alter_ready_payload():
+                    for manifest in self.root.glob('.silent-timeline-*/payload/timeline.json'):
+                        if changed:
+                            break
+                        if change == 'frame':
+                            with Image.new('RGB', (8, 8), (250, 0, 0)) as image:
+                                image.save(manifest.parent / 'frames/000000.png')
+                        elif change == 'manifest':
+                            manifest.write_bytes(manifest.read_bytes() + b' ')
+                        else:
+                            (manifest.parent / 'unverified.txt').write_text('unverified payload')
+                        changed.append(change)
+                    return False
+
+                with self.assertRaisesRegex(ValueError, 'stale|changed|inventory'):
+                    timeline.assemble(self.shots, output, cancel=alter_ready_payload)
+                self.assertEqual(changed, [change])
+                self.assertFalse(output.exists())
+                video._snapshot(video.make_request(self.shots[0]['source']), self.shots[0]['root'], None)
+
     def test_parent_namespace_replacement_preserves_original_authority_and_borrowed_fd(self):
         parent = self.root / 'parent'
         parent.mkdir()
