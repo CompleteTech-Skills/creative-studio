@@ -979,8 +979,18 @@ class Block(importlib.abc.MetaPathFinder):
  def find_spec(self,fullname,path=None,target=None):
   if fullname.split('.')[0] in ('numpy','bpy','pygltflib'): raise ImportError(fullname)
 sys.meta_path.insert(0,Block())
-from scene3d_contracts import load_project
-assert len(load_project('examples/scene3d-contracts')['documents']) == 7
+from scene3d_contracts import load_project,validate_document
+from rig_errors import RigError
+bundle=load_project('examples/scene3d-contracts')
+assert len(bundle['documents']) == 7
+shot=next(value for value in bundle['documents'].values() if value['kind']=='scene3d-shot')
+shot['path_bindings']=[dict(schema_version=1,id='travel',target='mesh',points=[[0,0,0],[1,0,0]],
+ start_frame=0,end_frame=1,start_fraction=0,end_fraction=1,space='world',orientation='preserve')]
+validate_document(shot,'shot')
+shot['path_bindings'][0]['points']=[[0,0,0],[0,0,0]]
+try:validate_document(shot,'shot')
+except RigError:pass
+else:raise AssertionError('Zero-length path must be rejected without optional imports')
 '''
         result = subprocess.run([sys.executable, '-c', code], cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)

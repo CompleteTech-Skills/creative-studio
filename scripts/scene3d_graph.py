@@ -232,6 +232,8 @@ class SceneGraph:
                 targets = [t['target'] for t in document.get('tracks', []) if t['target'] != 'world']
                 targets += [b['target'] for b in document.get('bindings', [])]
                 targets += [o['target'] for o in document.get('material_overrides', [])]
+                targets += [o['target'] for o in document.get('light_overrides', [])]
+                targets += [o['target'] for o in document.get('path_bindings', [])]
                 targets += [t for c in document.get('temporal_constraints', [])
                             for t in (c['target'], c['constraint']['target'])]
                 if document['kind'] == 'scene3d-shot':
@@ -418,7 +420,7 @@ class SceneGraph:
         """
         self._editable(identifier)
         require(isinstance(properties, dict) and properties and
-                set(properties) <= {'name', 'camera', 'light', 'material_overrides', 'metadata'},
+                set(properties) <= {'name', 'camera', 'light', 'light_binding', 'pose_binding', 'material_overrides', 'metadata'},
                 'Unsupported node property update.', 'SCENE3D_COMMAND')
         finite_json(properties)
         candidate = self.document()
@@ -429,7 +431,7 @@ class SceneGraph:
     def configure_world(self, properties, *, expected_revision=None):
         """Replace bounded world properties without changing coordinates."""
         require(isinstance(properties, dict) and properties and
-                set(properties) <= {'background', 'exposure', 'environment', 'metadata'},
+                set(properties) <= {'background', 'exposure', 'environment', 'light_binding', 'metadata'},
                 'Unsupported world property update.', 'SCENE3D_COMMAND')
         finite_json(properties)
         candidate = self.document()
@@ -728,6 +730,7 @@ class SceneGraph:
             return result
         for current in chosen:
             result = deepcopy({k: v for k, v in evaluate(current).items() if not k.startswith('_')})
+            result['own_world_bounds'] = deepcopy(result['world_bounds'])
             result['world_bounds'] = deepcopy(aggregate(current))
             if self._isolate is not None:
                 result['editor_visible'] = result['editor_visible'] and current in self._isolate

@@ -583,30 +583,13 @@ def _load_verified_native(imported, native_root):
     require(len(manifests) == 1, 'Imported asset needs one exact native manifest.')
     prefix = manifests[0]['path'][:-len('rig.json')]
     records = [r for r in imported.asset['dependencies'] if r['path'].startswith(prefix)]
-    require(0 < len(records) <= DEFAULT_LIMITS['archive_files'], 'Native dependency count exceeds its bound.')
-    seen, total = set(), 0
-    # The private closure remains alive until every legacy loader has finished;
-    # no later read can return to a mutable caller-owned package.
-    with tempfile.TemporaryDirectory(prefix='scene3d-native-admission-') as temporary:
-        admitted = Path(temporary)
-        for record in records:
-            relative = record['path'][len(prefix):]
-            portable_path(relative)
-            require(relative not in seen, 'Native dependency inventory repeats a path.')
-            seen.add(relative)
-            remaining = DEFAULT_LIMITS['dependency_bytes'] - total
-            require(remaining > 0, 'Native dependency bytes exceed their aggregate bound.')
-            payload = read_source_bytes(Path(native_root)/relative, min(MAX_FILE_BYTES, remaining))
-            require(hashlib.sha256(payload).hexdigest() == record['sha256'],
-                    'Native dependency differs from registered exact bytes.', 'SCENE3D_SOURCE_CHANGED')
-            total += len(payload)
-            target = admitted/relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(payload)
+    from scene3d_capture import capture_verified_native
+    relative_inventory = [dict(record, path=record['path'][len(prefix):]) for record in records]
+    with capture_verified_native(native_root, 'rig.json', relative_inventory) as admitted:
         return load_rig(admitted)
 
 
-def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=0.):
+def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=0., loop=False, pose=None):
     """Evaluate actual native deformation then each scene component's edit delta."""
     from rig_animation import evaluate_animation
     from rig_skinning import evaluate_deformation
@@ -614,14 +597,33 @@ def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=
     rig = _load_verified_native(imported, native_root)
     require(rig.manifest['source']['sha256'] == imported.report['source_sha256'],
             'Native run does not match the imported source.', 'SCENE3D_SOURCE_CHANGED')
-    if clip is not None:
+    require(clip is None or pose is None, 'Choose a native clip or a pose; blending is not declared.')
+    if pose is not None:
+        from rig_operations import pose_operation
+        evaluated = evaluate_deformation(rig, pose_operation(rig, {'pose':pose}))
+    elif clip is not None:
         clip = imported.report['native_clip_map'].get(clip, clip)
         require(clip in rig.clips, 'Unknown imported native clip.')
-        evaluated = evaluate_deformation(rig, evaluate_animation(rig, clip, time)['pose'])
+        evaluated = evaluate_deformation(rig, evaluate_animation(rig, clip, time, loop=loop)['pose'])
     elif rig.manifest.get('skeleton') and rig.weights:
         evaluated = evaluate_deformation(rig)
     else:
         evaluated = {m.id: dict(positions=m.positions) for m in rig.geometry.meshes}
+    projected = project_imported_vertices(graph,imported,rig,evaluated)
+    return dict(**projected,native_clip=clip,time=time,actual_deformation=True,production_approved=False)
+
+
+def project_imported_vertices(graph, imported, rig, evaluated):
+    """Project admitted native deformation through canonical imported edits.
+
+    The caller owns source admission and numerical deformation. This pure adapter
+    performs no file reads, decoder calls or native sampling; exact component
+    identity and source transform mapping are still checked for every node.
+    """
+    from rig_math import transform_points
+    require(rig.manifest['source']['sha256'] == imported.report['source_sha256'],
+            'Native run does not match the imported source.', 'SCENE3D_SOURCE_CHANGED')
+    require(set(evaluated) == set(rig.geometry.by_id()), 'Native deformation mesh set differs from admitted rig.')
     source_world = {h['source_node']: np.asarray(h['world_matrix']) for h in imported.hierarchy}
     by_id = rig.geometry.by_id()
     result = {}
@@ -640,4 +642,4 @@ def evaluate_imported_vertices(graph, imported, native_root, *, clip=None, time=
         for mesh in imported.asset['components'][component]:
             require(mesh in by_id and by_id[mesh].source_node == index, 'Mesh component/source node mismatch.')
             result[node['id']][mesh] = transform_points(delta, evaluated[mesh]['positions']).tolist()
-    return dict(nodes=result, native_clip=clip, time=time, actual_deformation=True, production_approved=False)
+    return dict(nodes=result)

@@ -2,9 +2,14 @@ import * as THREE from "three";
 import { OrbitControls } from "/vendor/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "/vendor/examples/jsm/loaders/GLTFLoader.js";
 import { TransformControls } from "./TransformControls.js";
-const $ = (id) => document.getElementById(id),
-  token = location.hash.slice(1);
-// The bearer token lives in memory only, never in a query, asset URL or saved document.
+const $ = (id) => document.getElementById(id);
+const tokenKey = "hatch-editor-bearer-v1";
+let token = location.hash.slice(1);
+try {
+  if (token.length >= 24 && token.length <= 1024) sessionStorage.setItem(tokenKey, token);
+  else if (!token) token = sessionStorage.getItem(tokenKey) || "";
+} catch { /* A launch URL still works if tab storage is unavailable. */ }
+// The bearer token stays in this origin/tab session, never in a query, asset URL or saved document.
 history.replaceState(null, "", location.pathname);
 const world = new THREE.Scene(),
   content = new THREE.Group(),
@@ -39,6 +44,94 @@ const collapsed = new Set();
 const extensions = [];
 let evaluatedStates = new Map(), savedNativeState = null, nativeTransformReadonly = {};
 let activeNativeCameraId = null;
+const commitInterceptors = new Set(), installSubscribers = new Map(), unavailableNodes = new Map(), previewEditAuthorizers = new Set(), timelineProviders = new Set();
+let lastEvaluation = null;
+function clearInstallSubscriptions() {
+  for (const record of installSubscribers.values()) {
+    record.cleanup?.(); record.cleanup = null;
+  }
+}
+async function notifyInstalled(epoch) {
+  const snapshot = structuredClone(currentSnapshot);
+  await Promise.all([...installSubscribers].map(async ([callback, record]) => {
+    const cleanup = await callback({snapshot: structuredClone(snapshot), epoch,
+      isCurrent: () => !disposed && !lost && loadEpoch === epoch && installSubscribers.get(callback) === record});
+    if (typeof cleanup !== "function") return;
+    if (disposed || lost || loadEpoch !== epoch || installSubscribers.get(callback) !== record) cleanup();
+    else record.cleanup = cleanup;
+  }));
+}
+function canEditPreview() {
+  if (!previewActive || !lastEvaluation || lastEvaluation.revision !== revision ||
+      lastEvaluation.snapshot_sha256 !== sha256 || lastEvaluation.scene?.path !== currentSnapshot.scene_path ||
+      !selection.size || selectedBone || $("clip").value) return false;
+  const shot = currentSnapshot.documents[lastEvaluation.shot?.path];
+  if (!shot || !currentSnapshot.project.shots.some(ref => ref.path === lastEvaluation.shot.path)) return false;
+  const frame = lastEvaluation.frame;
+  if (!frame || !Number.isSafeInteger(frame.numerator) || frame.denominator !== 1) return false;
+  for (const id of roots()) {
+    const node = nodes.get(id), state = lastEvaluation.nodes?.[id];
+    if (!node || transformReason(id) || !state || state.locked || state.selectable === false ||
+        node.transform.pivot?.some(value => value !== 0) ||
+        (id === shot.camera && shot.camera_overrides?.transform) ||
+        node.constraints?.length || node.attachment || node.path_binding ||
+        state.native_clip || shot.path_bindings?.length || shot.temporal_constraints?.some(item =>
+          item.target === id && item.start_frame <= frame.numerator && frame.numerator < item.end_frame)) return false;
+  }
+  let allowed = 0;
+  for (const callback of previewEditAuthorizers) {
+    try { if (callback({snapshot: structuredClone(currentSnapshot), evaluation: structuredClone(lastEvaluation), selection: [...selection]}) === true) allowed++; }
+    catch { return false; }
+  }
+  return allowed === 1;
+}
+function registerTimelineProvider(callback) {
+  if (typeof callback !== "function") throw Error("A timeline provider must be a function.");
+  timelineProviders.add(callback);
+  return () => timelineProviders.delete(callback);
+}
+function getTimelineContext() {
+  if (timelineProviders.size === 0) return null;
+  if (timelineProviders.size !== 1) throw Error("Exactly one timeline provider is required.");
+  const value = [...timelineProviders][0]();
+  if (value == null) return null;
+  const expected = ["revision", "sha256", "scene_path", "shot_path", "frame"];
+  if (Object.keys(value).sort().join() !== expected.sort().join() ||
+      value.revision !== revision || value.sha256 !== sha256 || value.scene_path !== currentSnapshot.scene_path ||
+      !currentSnapshot.project.shots.some(ref => ref.path === value.shot_path)) throw Error("Timeline context is stale or unregistered.");
+  const shot = currentSnapshot.documents[value.shot_path], f = value.frame;
+  if (shot.scene.path !== value.scene_path || !f || Object.keys(f).sort().join() !== "denominator,numerator" ||
+      !Number.isSafeInteger(f.numerator) || !Number.isSafeInteger(f.denominator) || f.denominator <= 0 ||
+      f.numerator < 0 || BigInt(f.numerator) >= BigInt(shot.duration_frames) * BigInt(f.denominator))
+    throw Error("Timeline context does not name an exact frame in the active saved shot.");
+  return structuredClone(value);
+}
+function refreshPreviewEditState() { inspect(); attach(); }
+function registerPreviewEditAuthorizer(callback) {
+  if (typeof callback !== "function") throw Error("A preview edit authorizer must be a function.");
+  previewEditAuthorizers.add(callback);
+  return () => { previewEditAuthorizers.delete(callback); refreshPreviewEditState(); };
+}
+function registerCommitInterceptor(callback) {
+  if (typeof callback !== "function") throw Error("A command interceptor must be a function.");
+  commitInterceptors.add(callback);
+  return () => commitInterceptors.delete(callback);
+}
+function subscribeInstalled(callback) {
+  if (typeof callback !== "function") throw Error("An install subscriber must be a function.");
+  if (installSubscribers.has(callback)) throw Error("Install subscriber is already registered.");
+  const record = {cleanup: null}; installSubscribers.set(callback, record);
+  if (window.editorReady) {
+    const epoch = loadEpoch;
+    Promise.resolve(callback({snapshot: structuredClone(currentSnapshot), epoch,
+      isCurrent: () => !disposed && !lost && loadEpoch === epoch && installSubscribers.get(callback) === record}))
+      .then(cleanup => { if (typeof cleanup !== "function") return;
+        if (disposed || lost || loadEpoch !== epoch || installSubscribers.get(callback) !== record) cleanup();
+        else record.cleanup = cleanup;
+      }).catch(diagnostic);
+  }
+  return () => { record.cleanup?.(); installSubscribers.delete(callback); };
+}
 const editorNode = Symbol("native-scene-node");
 const errors = [],
   nativeMaterials = new Map(),
@@ -160,15 +253,127 @@ function applyNativeState(value) {
   }
   content.updateMatrixWorld(true);
 }
+async function downloadArtifact(body) {
+  const response = await fetch("/api/render/artifact", {method: "POST",
+    headers: {Authorization: "Bearer " + token, "Content-Type": "application/json"}, body: JSON.stringify(body)});
+  if (!response.ok) { const result = await response.json(); throw Error(result.error?.message || "Artifact download rejected."); }
+  const media = response.headers.get("Content-Type");
+  if (!["image/png", "image/x-exr", "video/mp4", "video/webm"].includes(media)) throw Error("Unsupported artifact response.");
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const filename = /^attachment; filename="([A-Za-z0-9][A-Za-z0-9_.-]{0,127})"$/.exec(disposition)?.[1];
+  if (!filename) throw Error("Artifact has no safe download name.");
+  const blob = await response.blob(), url = URL.createObjectURL(blob), anchor = document.createElement("a");
+  try { anchor.href = url; anchor.download = filename; anchor.click(); }
+  finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+  return {bytes: blob.size, content_type: media, filename};
+}
+function applyNativeProperties(object, node) {
+  if (node.light) {
+    const light = object.children.find(child => child.isLight);
+    if (light) { light.intensity = node.light.intensity; light.color.setRGB(...node.light.color); }
+  }
+  if (node.camera) {
+    const actual = object.children.find(child => child.isCamera), c = node.camera;
+    if (actual) {
+      actual.near = c.near; actual.far = c.far;
+      if (actual.isPerspectiveCamera) actual.fov = THREE.MathUtils.radToDeg(c.vertical_fov);
+      else { actual.top = c.orthographic_height/2; actual.bottom = -actual.top;
+        actual.right = actual.top * (actual.aspect || 1); actual.left = -actual.right; }
+      actual.updateProjectionMatrix();
+    }
+  }
+}
+async function capturePreview(metadata) {
+  if (busy || lost || disposed || !window.editorReady) throw Error("The saved viewport is not ready for capture.");
+  if (drag || $("clip").value || $("shading").value !== "material")
+    throw Error("Return to saved material shading without a local clip or active drag before capture.");
+  const required = ["revision", "sha256", "shot", "camera", "frame", "source_time", "color_space", "view_transform", "resolution"];
+  if (Object.keys(metadata).sort().join() !== required.sort().join() || metadata.revision !== revision || metadata.sha256 !== sha256)
+    throw Error("Capture requires the exact current saved revision and complete metadata.");
+  if (metadata.color_space !== "srgb" || metadata.view_transform !== "standard")
+    throw Error("Browser PNG capture supports srgb with the standard view transform only.");
+  const [width, height] = metadata.resolution || [];
+  if (metadata.resolution.length !== 2 || ![width, height].every(n => Number.isSafeInteger(n) && n > 0 && n <= 4096) || width*height > 8388608)
+    throw Error("Capture resolution exceeds the bounded viewport budget.");
+  const shotRefs = currentSnapshot.project.shots.filter(ref => ref.id === metadata.shot?.id && ref.version === metadata.shot?.version);
+  if (shotRefs.length !== 1) throw Error("Capture shot identity is absent or ambiguous.");
+  const shot = currentSnapshot.documents[shotRefs[0].path];
+  if (shot.scene.path !== currentSnapshot.scene_path || shot.camera !== metadata.camera || !Number.isSafeInteger(metadata.frame) || metadata.frame < 0 || metadata.frame >= shot.duration_frames)
+    throw Error("Capture camera/frame does not belong to the active saved shot.");
+  const time = metadata.source_time;
+  if (!time || !Number.isSafeInteger(time.numerator) || !Number.isSafeInteger(time.denominator) || time.denominator <= 0 ||
+      BigInt(time.numerator)*BigInt(shot.fps.numerator) !== BigInt(metadata.frame)*BigInt(shot.fps.denominator)*BigInt(time.denominator))
+    throw Error("Capture source time differs from the exact saved shot frame.");
+  busy = true;
+  gizmo.detach();
+  const epoch = loadEpoch, previous = lastEvaluation && structuredClone(lastEvaluation);
+  const size = renderer.getSize(new THREE.Vector2()), ratio = renderer.getPixelRatio();
+  const oldTone = renderer.toneMapping, oldColor = renderer.outputColorSpace;
+  const oldOverlay = overlays.visible, oldGizmo = gizmo.getHelper().visible;
+  try {
+    const evaluated = await api("timeline/evaluate", {revision, sha256, shot: shotRefs[0].path, frame: metadata.frame});
+    if (epoch !== loadEpoch || metadata.revision !== revision || metadata.sha256 !== sha256) throw Error("Saved viewport changed during capture.");
+    if (evaluated.camera !== metadata.camera || evaluated.shot?.id !== metadata.shot.id || evaluated.shot?.version !== metadata.shot.version ||
+        evaluated.frame?.numerator !== metadata.frame || evaluated.frame?.denominator !== 1 ||
+        JSON.stringify(evaluated.time) !== JSON.stringify(time)) throw Error("Native evaluation differs from capture metadata.");
+    for (const [id, node] of Object.entries(evaluated.nodes)) {
+      if (!objects.has(id) || node.native_clip || node.native_pose || node.native_pose_evaluated || node.native_state || JSON.stringify(node.material_overrides || []) !== JSON.stringify(nodes.get(id)?.material_overrides || []))
+        throw Error("This evaluated geometry/material binding has no exact browser capture adapter.");
+      if (node.visible !== false && unavailableNodes.has(id)) throw Error(unavailableNodes.get(id));
+      if (node.camera_visible === false) throw Error("Separate native camera-ray visibility has no exact browser capture adapter.");
+      if (node.camera) {
+        const actual = objects.get(id).children.find(child => child.isCamera);
+        if (!actual || Boolean(actual.isPerspectiveCamera) !== (node.camera.projection === "perspective"))
+          throw Error("The evaluated camera projection has no matching browser capture adapter.");
+      }
+    }
+    preview(evaluated);
+    // Capture the native render visibility without changing the saved editor flags.
+    for (const [id, state] of Object.entries(evaluated.nodes)) objects.get(id).visible = state.render_visible;
+    const captureCamera = objects.get(metadata.camera)?.children.find(child => child.isCamera);
+    if (!captureCamera) throw Error("The exact native capture camera is unavailable.");
+    const projected = captureCamera.clone();
+    content.updateMatrixWorld(true); captureCamera.updateWorldMatrix(true, false);
+    projected.matrixAutoUpdate = false; projected.matrix.copy(captureCamera.matrixWorld);
+    projected.matrixWorld.copy(captureCamera.matrixWorld); projected.matrixWorldInverse.copy(projected.matrixWorld).invert();
+    if (projected.isPerspectiveCamera) projected.aspect = width / height;
+    else { const halfHeight = (projected.top - projected.bottom)/2; projected.left = -halfHeight*width/height; projected.right = halfHeight*width/height; }
+    projected.updateProjectionMatrix();
+    renderer.setPixelRatio(1); renderer.setSize(width, height, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.LinearToneMapping;
+    overlays.visible = false; gizmo.getHelper().visible = false;
+    renderer.render(world, projected);
+    const image = renderer.domElement.toDataURL("image/png");
+    if (epoch !== loadEpoch || lost) throw Error("Viewport became unavailable during capture.");
+    return {...structuredClone(metadata), image, backend: "three-0.180.0", offline_render: false};
+  } finally {
+    renderer.setPixelRatio(ratio); renderer.setSize(size.x, size.y, false);
+    renderer.toneMapping = oldTone; renderer.outputColorSpace = oldColor;
+    overlays.visible = oldOverlay; gizmo.getHelper().visible = oldGizmo;
+    if (epoch === loadEpoch) { if (previous) preview(previous); else clearPreview(); }
+    busy = false; attach();
+  }
+}
 function preview(scene) {
+  if (scene.world && (!Number.isFinite(scene.world.exposure) || scene.world.exposure < -20 || scene.world.exposure > 20))
+    throw Error("Evaluated preview exposure is supported from -20 to +20 stops.");
+  if (scene.revision !== undefined && (scene.revision !== revision || scene.snapshot_sha256 !== sha256 ||
+      scene.scene?.path !== currentSnapshot.scene_path)) throw Error("Evaluation belongs to another saved scene revision.");
+  lastEvaluation = structuredClone(scene);
   playing = false;
   gizmo.detach();
   applyNativeState(scene.nodes);
+  const evaluated = Array.isArray(scene.nodes) ? scene.nodes : Object.values(scene.nodes);
+  for (const node of evaluated) applyNativeProperties(objects.get(node.id), node);
+  if (scene.world) renderer.toneMappingExposure = 2 ** scene.world.exposure;
   previewActive = true;
   refreshSelection();
 }
 function clearPreview() {
+  lastEvaluation = null;
   applyNativeState(savedNativeState.nodes);
+  for (const node of doc.nodes) applyNativeProperties(objects.get(node.id), node);
+  renderer.toneMappingExposure = 2 ** doc.world.exposure;
   previewActive = false;
   refreshSelection();
 }
@@ -253,6 +458,20 @@ function nativeCommands(commands) {
     throw Error("Unsupported editor command.");
   });
 }
+function previewCommitContext() {
+  if (!previewActive || !lastEvaluation) return null;
+  return {revision: lastEvaluation.revision, sha256: lastEvaluation.snapshot_sha256,
+    scene_path: lastEvaluation.scene?.path, shot_path: lastEvaluation.shot?.path,
+    frame: structuredClone(lastEvaluation.frame), selection: [...selection].sort(), roots: roots().sort()};
+}
+function checkCommitContext(envelope, previewEdit) {
+  if (revision !== envelope.expected_revision || sha256 !== envelope.expected_sha256 ||
+      JSON.stringify(getTimelineContext()) !== JSON.stringify(envelope.timeline_context) ||
+      JSON.stringify(previewCommitContext()) !== JSON.stringify(envelope.preview_context) ||
+      (previewEdit && !canEditPreview()))
+    throw Error("The selected timeline or evaluated preview changed while preparing the edit. Reapply at the intended frame.");
+}
+
 function setBusy(value) {
   busy = value;
   inspect();
@@ -268,6 +487,8 @@ function rejectPendingEdit() {
   if (!busy) return false;
   $("status").textContent = "Save in progress; retry this edit when saving finishes.";
   return true;
+
+
 }
 async function commit(commands) {
   if (rejectPendingEdit() || !commands.length) return;
@@ -280,12 +501,32 @@ async function commit(commands) {
       if (command.operation === "transform" && transformReason(command.parameters.identifier))
         throw Error(transformReason(command.parameters.identifier));
     }
-    const result = await api("commands", {
-      expected_revision: revision,
-      expected_sha256: sha256,
-      transaction_id: crypto.randomUUID(),
-      commands: { schema_version: 1, commands: batch },
-    });
+    const envelope = {expected_revision: revision, expected_sha256: sha256,
+      transaction_id: crypto.randomUUID(), commands: batch, snapshot: structuredClone(currentSnapshot),
+      timeline_context: getTimelineContext(), preview_context: previewCommitContext()};
+    const previewEdit = previewActive;
+    if (previewEdit && (!canEditPreview() || envelope.commands.some(command => command.operation !== "transform" || !roots().includes(command.parameters?.identifier))))
+      throw Error("Evaluated preview edits require authorized atomic transform autokey.");
+    // Start each independent interceptor before yielding to user interaction.
+    const intercepted = (await Promise.all([...commitInterceptors].map(async callback =>
+      callback(structuredClone(envelope))))).filter(handled => handled != null);
+    checkCommitContext(envelope, previewEdit);
+    if (previewEdit && intercepted.length !== 1) throw Error("Preview edits require one atomic native command interceptor.");
+    if (intercepted.length > 1) throw Error("More than one extension claimed this command transaction.");
+    let result;
+    if (intercepted.length) {
+      const handled = intercepted[0];
+      if (!/^[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*$/.test(handled.route) ||
+          handled.body?.expected_revision !== envelope.expected_revision ||
+          handled.body?.expected_sha256 !== envelope.expected_sha256 ||
+          handled.body?.transaction_id !== envelope.transaction_id)
+        throw Error("Extension command must retain the exact transaction identity.");
+      const acknowledged = await api(handled.route, handled.body);
+      result = await api("snapshot");
+      if (acknowledged.revision !== result.revision || acknowledged.sha256 !== result.sha256)
+        throw Error("The acknowledged extension revision changed before reload.");
+    } else result = await api("commands", {...envelope, snapshot: undefined, timeline_context: undefined, preview_context: undefined,
+      commands: {schema_version: 1, commands: envelope.commands}});
     const displayed = await install(result);
     if (displayed === false) return;
     clearDiagnostic();
@@ -353,7 +594,7 @@ function refreshSelection() {
   inspect();
 }
 function attach() {
-  if (!gizmo || busy || lost || previewActive || selectedBone || !transformSelectionAllowed()) {
+  if (!gizmo || busy || lost || (previewActive && !canEditPreview()) || selectedBone || !transformSelectionAllowed()) {
     gizmo?.detach();
     return;
   }
@@ -471,6 +712,9 @@ async function assetObject(asset) {
   throw Error(asset.message || "Unsupported geometry format.");
 }
 async function install(snapshot) {
+  window.editorReady = false;
+  clearInstallSubscriptions();
+  lastEvaluation = null;
   previewActive = false;
   currentSnapshot = snapshot;
   $("undo").disabled = busy || !snapshot.undo_available;
@@ -496,6 +740,7 @@ async function install(snapshot) {
   if (!doc?.nodes)
     throw Error("The repository supplied no native Scene3D scene.");
   disposeContent();
+  unavailableNodes.clear();
   $("revision").textContent =
     "Revision " + revision + " · " + String(sha256).slice(0, 10);
   world.background = new THREE.Color(
@@ -511,6 +756,7 @@ async function install(snapshot) {
     setTransform(object, node.transform);
     object.visible = node.visible;
     content.add(object);
+    if (["prefab_instance", "billboard_2d"].includes(node.type)) unavailableNodes.set(node.id, "No exact viewport adapter for " + node.type);
     if (node.asset) {
       const reference = node.asset;
       const component = node.metadata?.source_component;
@@ -532,15 +778,18 @@ async function install(snapshot) {
           }
           object.add(actual);
         } catch (error) {
+          unavailableNodes.set(node.id, error.message);
           diagnostic("Asset " + node.asset.id + ": " + error.message);
         }
-      } else
+      } else {
+        unavailableNodes.set(node.id, asset?.message || "No verified viewport adapter.");
         diagnostic(
           "Asset " +
             node.asset.id +
             ": " +
             (asset?.message || "No verified viewport adapter."),
         );
+      }
     }
     if (node.type === "camera") {
       const c = node.camera,
@@ -574,6 +823,7 @@ async function install(snapshot) {
           spot: THREE.SpotLight,
         }[l.type];
       if (!ctor) {
+        unavailableNodes.set(node.id, "The native area light has no exact viewport adapter.");
         diagnostic(
           "Area-light preview is unavailable: the native scene light has no area dimensions. No point-light substitute was rendered.",
         );
@@ -639,6 +889,8 @@ async function install(snapshot) {
       0,
     ) +
     " triangles";
+  await notifyInstalled(epoch);
+  if (epoch !== loadEpoch || disposed || lost) return;
   window.editorReady = true;
   if ($("diagnostic").hidden)
     $("status").textContent = "Loaded saved revision " + revision;
@@ -748,6 +1000,7 @@ function inspect() {
   const id = [...selection][0],
     node = nodes.get(id),
     object = objects.get(id);
+  const previewAllowed = previewActive && canEditPreview();
   $("base-inspector")
     .querySelectorAll("input,select,button")
     .forEach((e) => {
@@ -755,7 +1008,8 @@ function inspect() {
         !e.closest("#overlay-controls") &&
         !["clip", "play", "time", "show-all"].includes(e.id)
       )
-        e.disabled = !node || busy || nodeLocked(id) || previewActive ||
+        e.disabled = !node || busy || nodeLocked(id) ||
+          (previewActive && (!e.closest("#transform-fields") || !previewAllowed)) ||
           ((e.closest("#transform-fields") || ["parent", "reset", "paste", "ground"].includes(e.id)) && !transformSelectionAllowed());
     });
   $("locked").disabled = !node || busy || previewActive;
@@ -1396,6 +1650,7 @@ function initialize() {
     renderer.domElement.addEventListener("webglcontextlost", (e) => {
       e.preventDefault();
       lost = true;
+      clearInstallSubscriptions();
       cancelDrag();
       diagnostic(
         "WebGL context lost. Saved scene is preserved; waiting for GPU recovery.",
@@ -1433,7 +1688,7 @@ window.addEventListener("keydown", (e) => {
     ];
     gizmo.setMode($("tool").value);
   } else if (
-    !previewActive && transformSelectionAllowed() &&
+    (!previewActive || canEditPreview()) && transformSelectionAllowed() &&
     ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
   ) {
     e.preventDefault();
@@ -1470,6 +1725,7 @@ function frame() {
 }
 window.addEventListener("pagehide", () => {
   disposed = true;
+  clearInstallSubscriptions();
   for (const extension of extensions) extension.dispose?.();
   disposeContent();
   gizmo?.dispose();
@@ -1502,6 +1758,17 @@ window.hatchEditor = {
       container,
       api,
       upload,
+      registerCommitInterceptor,
+      registerPreviewEditAuthorizer,
+      registerTimelineProvider,
+      getTimelineContext,
+      refreshPreviewEditState,
+      capturePreview,
+      downloadArtifact,
+      subscribeInstalled,
+      getRenderer: () => renderer,
+      getScene: () => world,
+      getCamera: () => camera,
       reload,
       preview,
       applyNativeState,
@@ -1517,6 +1784,14 @@ window.hatchEditor = {
     if (currentSnapshot) extension.refresh?.(currentSnapshot, [...selection]);
     return extension;
   },
+  registerCommitInterceptor,
+  registerPreviewEditAuthorizer,
+  registerTimelineProvider,
+  getTimelineContext,
+  refreshPreviewEditState,
+  capturePreview,
+  downloadArtifact,
+  subscribeInstalled,
   commit,
   applyNativeState,
   preview,
