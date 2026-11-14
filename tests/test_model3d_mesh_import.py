@@ -61,7 +61,7 @@ class MeshImportTests(unittest.TestCase):
     def test_trusted_root_alias_is_canonicalized_without_accepting_child_links(self):
         if not hasattr(os, 'symlink'):
             self.skipTest('Symlinks are unavailable.')
-        from rig_errors import open_payload
+        from rig_errors import open_payload, normalize_root
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             real = root/'real'; real.mkdir()
@@ -71,11 +71,17 @@ class MeshImportTests(unittest.TestCase):
                 alias.symlink_to(real, target_is_directory=True)
             except OSError:
                 self.skipTest('This host cannot create symlinks.')
-            with open_payload(alias, 'bytes.bin') as (stream, info):
+            # The caller explicitly admits its trusted root. The shared payload
+            # reader keeps rejecting unregistered aliases at its own boundary.
+            with self.assertRaises(RigError):
+                with open_payload(alias, 'bytes.bin'):
+                    pass
+            selected = normalize_root(alias)
+            with open_payload(selected, 'bytes.bin') as (stream, info):
                 self.assertEqual(stream.read(), b'unchanged')
             (real/'child.bin').symlink_to(real/'bytes.bin')
             with self.assertRaises(RigError):
-                with open_payload(alias, 'child.bin'):
+                with open_payload(selected, 'child.bin'):
                     pass
 
     def setUp(self):
