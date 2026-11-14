@@ -415,6 +415,124 @@ class VerifiedFilePublication(unittest.TestCase):
             self._assert_posix_final_stage_close_failure_reports_committed_receipt()
             self.assertFalse(getattr(previous, '__notes__', []))
 
+    def separate_parents(self):
+        destination = self.root / 'immutable'; destination.mkdir()
+        staging = self.root / 'mutable-work'; staging.mkdir()
+        self.output = destination / 'archive.zip'
+        return destination, staging
+
+    def test_separate_staging_keeps_immutable_parent_inventory_exact(self):
+        destination, staging = self.separate_parents()
+        before = destination.stat()
+        receipt = self.publish(staging_parent=staging,
+                               expected_parent_identity=(before.st_dev, before.st_ino))
+        self.assertEqual(receipt, {'sha256': self.digest, 'byte_size': len(self.data)})
+        self.assertEqual(list(destination.iterdir()), [self.output])
+        self.assertEqual(self.output.read_bytes(), self.data)
+        wrappers = list(staging.iterdir())
+        self.assertEqual(len(wrappers), 1)
+        self.assertTrue(wrappers[0].name.startswith('.file-'))
+        self.assertEqual(list(wrappers[0].iterdir()), [])
+
+    def test_parent_identity_rejection_precedes_any_staging_write(self):
+        destination, staging = self.separate_parents()
+        info = destination.stat()
+        destination.rename(self.root / 'original-immutable'); destination.mkdir()
+        with self.assertRaises(OSError) as caught:
+            self.publish(staging_parent=staging,
+                         expected_parent_identity=(info.st_dev, info.st_ino))
+        self.assertEqual(caught.exception.errno, errno.ESTALE)
+        self.assertEqual(list(staging.iterdir()), [])
+        self.assertEqual(list(destination.iterdir()), [])
+        self.assertEqual(list((self.root / 'original-immutable').iterdir()), [])
+
+    def test_parent_identity_and_staging_arguments_are_strict(self):
+        destination, staging = self.separate_parents()
+        for value in ([1, 2], (1,), (1, 2, 3), (True, 2), (-1, 2), ('1', 2)):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.publish(staging_parent=staging, expected_parent_identity=value)
+        with self.assertRaises(ValueError):
+            self.publish(staging_parent=staging / '..' / 'mutable-work')
+        with self.assertRaises(OSError): self.publish(staging_parent=staging / 'missing')
+        self.assertEqual(list(staging.iterdir()), [])
+        self.assertEqual(list(destination.iterdir()), [])
+
+    def test_separate_staging_collision_preserves_immutable_inventory(self):
+        destination, staging = self.separate_parents()
+        self.output.write_bytes(b'foreign existing asset')
+        with self.assertRaises(OSError): self.publish(staging_parent=staging)
+        self.assertEqual(list(destination.iterdir()), [self.output])
+        self.assertEqual(self.output.read_bytes(), b'foreign existing asset')
+        self.assertTrue(all(not list(p.iterdir()) for p in staging.iterdir()))
+
+    def test_posix_separate_parent_swaps_stay_on_original_inodes(self):
+        if os.name == 'nt': return  # Native Windows holds both parents against deletion.
+        destination, staging = self.separate_parents()
+        original_copy = atomic._copy_verified_file
+        original_destination_info = destination.stat()
+        fsync = os.fsync; synced_directories = []
+        def swap(source, payload, digest, size):
+            destination.rename(self.root / 'original-immutable'); destination.mkdir()
+            (destination / 'foreign').write_bytes(b'foreign destination directory')
+            staging.rename(self.root / 'original-work'); staging.mkdir()
+            (staging / 'foreign').write_bytes(b'foreign staging directory')
+            original_copy(source, payload, digest, size)
+        def observe_sync(fd):
+            info = os.fstat(fd)
+            if stat.S_ISDIR(info.st_mode): synced_directories.append((info.st_dev, info.st_ino))
+            fsync(fd)
+        with mock.patch.object(atomic, '_copy_verified_file', side_effect=swap), \
+             mock.patch.object(atomic.os, 'fsync', side_effect=observe_sync):
+            self.publish(staging_parent=staging)
+        self.assertEqual((self.root / 'original-immutable/archive.zip').read_bytes(), self.data)
+        self.assertEqual((destination / 'foreign').read_bytes(), b'foreign destination directory')
+        self.assertEqual((staging / 'foreign').read_bytes(), b'foreign staging directory')
+        self.assertEqual(synced_directories,
+                         [(original_destination_info.st_dev, original_destination_info.st_ino)])
+        self.assertTrue(all(not list(p.iterdir()) for p in (self.root / 'original-work').iterdir()))
+
+    def test_posix_directory_fsync_failure_is_committed_completion_pending(self):
+        if os.name == 'nt': return  # Windows directory durability has a separate OS contract.
+        destination, staging = self.separate_parents()
+        fsync = os.fsync
+        def fail_directory_sync(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError(errno.EIO, 'destination directory durability failure')
+            fsync(fd)
+        with mock.patch.object(atomic.os, 'fsync', side_effect=fail_directory_sync):
+            with self.assertRaises(atomic.VerifiedFileCleanupError) as caught:
+                self.publish(staging_parent=staging)
+        self.assertTrue(caught.exception.committed)
+        self.assertEqual(caught.exception.receipt,
+                         {'sha256': self.digest, 'byte_size': len(self.data)})
+        self.assertEqual(caught.exception.__cause__.errno, errno.EIO)
+        self.assertEqual(self.output.read_bytes(), self.data)
+        self.assertEqual(list(destination.iterdir()), [self.output])
+
+    def test_posix_symlink_staging_parent_is_rejected(self):
+        if os.name == 'nt': return  # Native junction case runs in Windows gate.
+        destination, staging = self.separate_parents()
+        link = self.root / 'stage-link'; link.symlink_to(staging, target_is_directory=True)
+        with self.assertRaises(OSError): self.publish(staging_parent=link)
+        self.assertEqual(list(destination.iterdir()), [])
+        self.assertEqual(list(staging.iterdir()), [])
+
+    def test_posix_cross_filesystem_staging_fails_without_copy_where_available(self):
+        if os.name == 'nt': return  # Windows native rename never falls back to a copy.
+        destination, staging = self.separate_parents()
+        for candidate in (Path('/dev/shm'), Path('/tmp')):
+            if (not candidate.is_dir() or not os.access(candidate, os.W_OK)
+                    or candidate.stat().st_dev == destination.stat().st_dev):
+                continue
+            with tempfile.TemporaryDirectory(dir=candidate) as foreign:
+                with mock.patch.object(atomic, '_copy_verified_file') as copier:
+                    with self.assertRaises(OSError) as caught: self.publish(staging_parent=foreign)
+                self.assertEqual(caught.exception.errno, errno.EXDEV)
+                copier.assert_not_called()
+                self.assertEqual(list(Path(foreign).iterdir()), [])
+                self.assertEqual(list(destination.iterdir()), [])
+            break
+
     def test_linux_descriptor_lifetimes_on_success_and_failure(self):
         if not sys.platform.startswith('linux'): return
         before = len(list(Path('/proc/self/fd').iterdir()))

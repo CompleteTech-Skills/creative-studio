@@ -260,6 +260,42 @@ class ActualWindowsPublicationTests(unittest.TestCase):
                     expected_sha256=digest, expected_size=8, max_bytes=1024)
         self.assertEqual(caught.exception.receipt, {'sha256': digest, 'byte_size': 8})
         self.assertEqual(destination.read_bytes(), b'original')
+    def test_actual_separate_file_staging_pins_both_parents_and_keeps_inventory(self):
+        import hashlib
+        destination_parent = self.root / 'immutable'; destination_parent.mkdir()
+        staging_parent = self.root / 'mutable-work'; staging_parent.mkdir()
+        source = self.root / 'source'; data = b'actual native separate file bytes' * 1024
+        source.write_bytes(data); destination = destination_parent / 'asset.zip'
+        parent_identity = destination_parent.stat()
+        original_copy = publication._copy_verified_file
+        def attack_parents(source_fd, target_fd, digest, size):
+            with self.assertRaises(OSError): destination_parent.rename(self.root / 'moved-destination')
+            with self.assertRaises(OSError): staging_parent.rename(self.root / 'moved-work')
+            original_copy(source_fd, target_fd, digest, size)
+        with source.open('rb') as stream, mock.patch.object(publication, '_copy_verified_file',
+                                                           side_effect=attack_parents):
+            receipt = publication.publish_verified_file(stream.fileno(), destination,
+                expected_sha256=hashlib.sha256(data).hexdigest(), expected_size=len(data),
+                max_bytes=1048576, staging_parent=staging_parent,
+                expected_parent_identity=(parent_identity.st_dev, parent_identity.st_ino))
+        self.assertEqual(receipt['sha256'], hashlib.sha256(data).hexdigest())
+        self.assertEqual(destination.read_bytes(), data)
+        self.assertEqual(list(destination_parent.iterdir()), [destination])
+        self.assertEqual(len(list(staging_parent.iterdir())), 1)
+        self.assertTrue(all(not list(p.iterdir()) for p in staging_parent.iterdir()))
+
+    def test_actual_separate_file_staging_rejects_junction(self):
+        import hashlib
+        destination_parent = self.root / 'immutable'; destination_parent.mkdir()
+        foreign = self.root / 'foreign'; foreign.mkdir()
+        staging_link = self.root / 'work-link'; self.junction(staging_link, foreign)
+        source = self.root / 'source'; source.write_bytes(b'original')
+        with source.open('rb') as stream, self.assertRaises(ValueError):
+            publication.publish_verified_file(stream.fileno(), destination_parent / 'result.zip',
+                expected_sha256=hashlib.sha256(b'original').hexdigest(), expected_size=8,
+                max_bytes=1024, staging_parent=staging_link)
+        self.assertEqual(list(destination_parent.iterdir()), [])
+        self.assertEqual(list(foreign.iterdir()), [])
 
     def test_actual_verified_file_junction_parent_rejected(self):
         import hashlib
