@@ -11,7 +11,7 @@ import zlib
 import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS
-from rig_errors import RigError, require, sha256, slug, timestamp
+from rig_errors import RigError, require, slug, timestamp
 from rig_geometry import analyze_geometry, vertex_normals
 from rig_gltf import GltfDocument, _index, node_matrix, preflight_gltf, read_gltf, scene_graph
 from rig_math import decompose, transform_points
@@ -266,12 +266,15 @@ def _animations(document, ids, node_meshes, geometry, parents, scale):
                 tracks.append(item)
         if tracks:
             require(duration <= document.limits['duration'], 'RIG_LIMIT_DURATION', 'Imported animation exceeds the duration limit.')
+            require(isinstance(document.source_sha256, str) and len(document.source_sha256) == 64
+                    and all(c in '0123456789abcdef' for c in document.source_sha256),
+                    'RIG_SOURCE', 'Captured source digest is unavailable for animation provenance.')
             clips[name] = dict(schema_version=1, kind='hatch-3d-animation', id=name, version='1.0.0',
                 rig_id='imported', skeleton_version='1.0.0', duration=max(duration, 1/24), fps=24,
                 loop=False, tracks=tracks, events=[], contacts=[], root_motion='embedded', interruptible=True,
                 reduced_motion_pose='neutral', provenance=dict(schema_version=1, tool_version='1.0.0',
                 operation='Imported existing glTF animation', created_at=timestamp(),
-                input_hashes={'source': sha256(document.path)}, ancestry=[]))
+                input_hashes={'source': document.source_sha256}, ancestry=[]))
     return clips
 
 
