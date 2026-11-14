@@ -11,6 +11,7 @@ import hashlib
 import io
 from pathlib import Path
 import tempfile
+import uuid
 
 from asset_library_contracts import portable_path
 from rig_errors import RigError, decode_json, object_hash
@@ -47,17 +48,29 @@ def inspect_geometry(path, *, limits=None):
     from asset_library_import import SourceSnapshot, dependency_errors
     with tempfile.TemporaryDirectory(prefix='hatch-technical-source-') as directory:
         profile = _limits(limits)
+        from rig_load_limits import LoadBudget
+        budget = LoadBudget(profile)
         snapshot = SourceSnapshot(path, Path(directory) / 'source',
                                   maximum_bytes=min(96 * 1024**2, profile['dependency_bytes'],
-                                                    profile['memory_bytes'] // 4))
-        result = dependency_errors(_inspect_geometry)(snapshot.root / snapshot.entry, limits=profile)
+                                                    profile['memory_bytes'] // 4), budget=budget)
+        result = dependency_errors(_inspect_geometry)(snapshot.root / snapshot.entry, limits=profile, budget=budget)
         result['source_files'] = {name: {'sha256': hashlib.sha256(payload).hexdigest(),
                                          'bytes': len(payload)}
                                   for name, payload in sorted(snapshot.files.items())}
         return result
 
 
-def _inspect_geometry(path, *, limits=None):
+def _inspect_geometry(path, *, limits=None, budget=None):
+    from rig_load_limits import LoadBudget
+    limits = _limits(limits)
+    parent = budget if budget is not None else LoadBudget(limits)
+    child = parent.fork(limits)
+    result = _inspect_geometry_admitted(path, limits=child.limits, budget=child)
+    parent.commit(child)
+    return result
+
+
+def _inspect_geometry_admitted(path, *, limits, budget):
     """Inspect a private verified snapshot; native owners retain decoding."""
     import numpy as np
     from rig_animation import validate_animation
@@ -75,9 +88,7 @@ def _inspect_geometry(path, *, limits=None):
     if path.suffix.lower() in ('.glb', '.gltf'):
         # Bound accessors and graph depth before the native model loader allocates
         # decoded meshes or recursively composes the transform hierarchy.
-        document, independent = _check_gltf(path, limits)
-    from rig_load_limits import LoadBudget
-    budget = LoadBudget(limits)
+        document, independent = _check_gltf(path, limits, budget=budget)
     model = load_character_model(path, limits=limits, budget=budget)
     geometry = model.geometry
     validate_geometry(geometry, limits)
@@ -157,7 +168,7 @@ def _inspect_geometry(path, *, limits=None):
         fail('ANIMATION', 'Skins have no validated native skeleton.')
     rig = RigAsset({'id': 'imported', 'skeleton': model.skeleton, 'limits': limits,
                     'controllers': {'ik': [], 'constraints': []}}, geometry, model.weights, model.clips)
-    budget.animation_report(key='inspection report',
+    budget.animation_report(key=uuid.uuid4().hex + ':inspection report',
                             keys=sum(len(track['times']) for clip in model.clips.values()
                                      for track in clip['tracks']),
                             tracks=sum(len(clip['tracks']) for clip in model.clips.values()))
@@ -367,9 +378,12 @@ def validate_asset(library, reference, *, limits=None, requirements=None):
     expected_total = sum(record['bytes'] for record in manifest['files'])
     if expected_total > min(limits['dependency_bytes'], limits['memory_bytes'] // 4):
         fail('LIMIT', 'Registered closure exceeds the bounded validation snapshot working set.')
+    from rig_load_limits import LoadBudget
+    budget = LoadBudget(limits)
     payloads = {}
     total = 0
     for record in manifest['files']:
+        budget.captured_input(key=uuid.uuid4().hex, size=record['bytes'])
         payload = library.read_file(reference, record['path'])
         total += len(payload)
         if total > limits['dependency_bytes']:
@@ -384,7 +398,7 @@ def validate_asset(library, reference, *, limits=None, requirements=None):
             target.write_bytes(payload)
         for record in manifest['files']:
             if record['role'] in ('runtime', 'geometry') and record['format'] in ('glb', 'gltf', 'obj'):
-                results[record['path']] = _inspect_geometry(root / record['path'], limits=limits)
+                results[record['path']] = _inspect_geometry(root / record['path'], limits=limits, budget=budget)
         scenes = _scene_documents(root, manifest, payloads, results, limits)
     if not results and not scenes:
         fail('UNSUPPORTED', 'No supported runtime geometry or Scene3D payload was registered.')

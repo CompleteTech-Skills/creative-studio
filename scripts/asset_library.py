@@ -61,7 +61,7 @@ def _bounded_integer(value, minimum, maximum, *, code, label):
     return int(value)
 
 
-def _read_source_bytes(path, limit=MAX_FILE_BYTES):
+def _read_source_bytes(path, limit=MAX_FILE_BYTES, *, admit=None):
     """Reject symlink/reparse components, bound allocation, detect changed files."""
     limit = _bounded_integer(limit, 1, MAX_FILE_BYTES, code='LIMIT', label='Source read bound')
     path = Path(path).absolute()
@@ -113,6 +113,8 @@ def _read_source_bytes(path, limit=MAX_FILE_BYTES):
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= limit:
             _fail('PAYLOAD', 'Expected a nonempty bounded regular file.', path)
+        if admit is not None:
+            admit(before.st_size)
         payload = stream.read(limit + 1)
         after = os.fstat(stream.fileno())
     if (len(payload) != before.st_size or len(payload) > limit or
@@ -122,10 +124,10 @@ def _read_source_bytes(path, limit=MAX_FILE_BYTES):
     return payload
 
 
-def read_source_bytes(path: str | Path, limit: int | float = MAX_FILE_BYTES) -> bytes:
+def read_source_bytes(path: str | Path, limit: int | float = MAX_FILE_BYTES, *, admit=None) -> bytes:
     """Read exact bounded source bytes or return a structured library diagnostic."""
     try:
-        return _read_source_bytes(path, limit)
+        return _read_source_bytes(path, limit, admit=admit)
     except (OSError, TypeError) as exc:
         raise RigError('LIBRARY_SOURCE', 'Cannot safely read the source file: ' + str(exc),
                        asset=str(path)) from exc

@@ -246,6 +246,41 @@ class AssetTechnicalTests(unittest.TestCase):
         with self.assertRaises(RigError):
             inspect_geometry(path, limits={'dependency_bytes': len(before) - 1})
 
+    def test_snapshot_and_inspection_share_ledger_and_rollback(self):
+        from asset_library_import import SourceSnapshot
+        from asset_library_validation import _inspect_geometry, _limits
+        from rig_load_limits import LoadBudget
+        path = self.geometry()
+        profile = _limits(None)
+        ledger = LoadBudget(profile)
+        snapshot = SourceSnapshot(path, self.root / 'capture', budget=ledger)
+        snapshot_memory = ledger.memory
+        _inspect_geometry(snapshot.root / snapshot.entry, limits=profile, budget=ledger)
+        first = ledger.memory
+        self.assertGreater(first, snapshot_memory)
+        _inspect_geometry(snapshot.root / snapshot.entry, limits=profile, budget=ledger)
+        second = ledger.memory
+        self.assertGreater(second, first)
+        capped = LoadBudget({**profile, 'memory_bytes': second - 1})
+        captured = SourceSnapshot(path, self.root / 'capture2', budget=capped)
+        _inspect_geometry(captured.root / captured.entry, limits=profile, budget=capped)
+        before = capped._state().copy()
+        with self.assertRaises(RigError):
+            _inspect_geometry(captured.root / captured.entry, limits=profile, budget=capped)
+        self.assertEqual(capped._state(), before)
+
+    def test_failed_snapshot_preserves_caller_ledger(self):
+        from asset_library_import import SourceSnapshot
+        from asset_library_validation import _limits
+        from rig_load_limits import LoadBudget
+        path = self.root / 'malformed.gltf'
+        path.write_bytes(b'{"asset":{"version":"2.0"},"buffers":[{"byteLength":4,"uri":"missing.bin"}]}')
+        ledger = LoadBudget(_limits(None))
+        before = ledger._state().copy()
+        with self.assertRaises(RigError):
+            SourceSnapshot(path, self.root / 'bad-capture', budget=ledger)
+        self.assertEqual(ledger._state(), before)
+
     def test_category_and_manifest_identity_are_bound_to_actual_payload(self):
         path = self.geometry()
         ref = self.register({'runtime/asset.glb': (path, 'runtime')})

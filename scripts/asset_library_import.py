@@ -26,6 +26,7 @@ import sys
 import tempfile
 import time
 import unicodedata
+import uuid
 from urllib.parse import unquote, urlsplit
 
 from asset_library import AssetLibrary, detect_format, read_source_bytes
@@ -229,7 +230,9 @@ def _integer_document(document):
 
 class SourceSnapshot:
     """Private source closure with exact originals and deterministic source mapping."""
-    def __init__(self, source, destination, *, maximum_bytes=MAX_INPUT_BYTES, cancelled=None):
+    def __init__(self, source, destination, *, maximum_bytes=MAX_INPUT_BYTES, cancelled=None, budget=None):
+        self.budget = budget.fork(budget.limits) if budget is not None else None
+        self._budget_prefix = uuid.uuid4().hex
         self.root = Path(destination).resolve(); self.root.mkdir(mode=0o700)
         self.maximum = integer(maximum_bytes, 1, MAX_INPUT_BYTES)
         self.cancelled = cancelled or (lambda: False)
@@ -249,6 +252,8 @@ class SourceSnapshot:
             self.document = None; self._obj_closure()
         elif self.format == 'blend': self.document = None
         else: fail('UNSUPPORTED', 'Content is not a supported GLB/glTF/OBJ/trusted packed Blender asset.')
+        if budget is not None:
+            budget.commit(self.budget)
 
     def check_cancelled(self):
         if self.cancelled(): fail('CANCELLED', 'Import cancelled before publication.')
@@ -268,7 +273,17 @@ class SourceSnapshot:
         self._aliases[alias] = name
         if name not in self.files:
             if len(self.files) >= MAX_FILES: fail('LIMIT', 'Source dependency count exceeded.')
-            payload = read_source_bytes(self.source_root / name, min(self.maximum, MAX_FILE_BYTES))
+            def admit(size):
+                if sum(map(len, self.files.values())) + size > self.maximum:
+                    fail('LIMIT', 'Complete source closure exceeds the aggregate byte budget.')
+                if self.budget is not None:
+                    key = self._budget_prefix + ':' + str(len(self.files))
+                    self.budget.captured_input(key=key, size=size, source=role == 'source')
+                    if role == 'source':
+                        # Format detection, GLB chunk slicing, JSON decode and the
+                        # normalized document can coexist with the captured bytes.
+                        self.budget.add(size * 132, 'snapshot format and document workspace')
+            payload = read_source_bytes(self.source_root / name, min(self.maximum, MAX_FILE_BYTES), admit=admit)
             if sum(map(len, self.files.values())) + len(payload) > self.maximum:
                 fail('LIMIT', 'Complete source closure exceeds the aggregate byte budget.')
             self.files[name] = payload
@@ -587,11 +602,11 @@ def _graph_admission(document):
         if len(set(roots))!=len(roots) or any(v in parents for v in roots):fail('GRAPH','Invalid selected scene roots.')
 
 
-def _check_gltf(path, limits, captured_document=None):
+def _check_gltf(path, limits, captured_document=None, *, budget=None):
     """Bounded accessor/graph and independent Khronos checks before publication."""
     from rig_gltf import read_gltf, scene_graph, WIDTHS
     from rig_interop import validate_gltf
-    document=captured_document if captured_document is not None else read_gltf(path,limits)
+    document=captured_document if captured_document is not None else read_gltf(path,limits,budget=budget)
     accessors=document.json.get('accessors',[])
     if len(accessors)>16384:fail('LIMIT','Too many accessors.')
     allocation=0
@@ -600,6 +615,9 @@ def _check_gltf(path, limits, captured_document=None):
         count=integer(item.get('count'),1,limits['vertices']*16)
         allocation+=count*WIDTHS.get(item.get('type'),128)*8
         if allocation>limits['memory_bytes']//2:fail('LIMIT','Expanded accessor working set exceeds admission.')
+    if budget is not None:
+        budget.add(allocation + len(document.json.get('nodes', [])) * 2048,
+                   'preliminary accessor and scene graph inspection')
     _graph_admission(document.json)
     try:scene_graph(document)
     except RigError:raise
@@ -722,8 +740,12 @@ class ImportPipeline:
 
     @dependency_errors
     def probe(self,source):
+        from rig_contracts import DEFAULT_LIMITS
+        from rig_load_limits import LoadBudget
+        limits = {**DEFAULT_LIMITS, 'influences': 8, 'memory_bytes': self.memory}
+        budget = LoadBudget(limits)
         with tempfile.TemporaryDirectory(prefix='hatch-library-probe-') as temp:
-            snapshot=SourceSnapshot(source,Path(temp)/'source',maximum_bytes=min(MAX_INPUT_BYTES,(self.memory-256*1024**2)//12),cancelled=self.cancelled)
+            snapshot=SourceSnapshot(source,Path(temp)/'source',maximum_bytes=min(MAX_INPUT_BYTES,(self.memory-256*1024**2)//12),cancelled=self.cancelled,budget=budget)
             return dict(schema_version=1,format=snapshot.format,source_sha256=digest(snapshot.files[snapshot.entry]),
                         files=snapshot.inventory(),embedded=snapshot.embedded,
                         estimated_memory_bytes=256*1024**2+12*sum(map(len,snapshot.files.values())),
@@ -739,20 +761,22 @@ class ImportPipeline:
             fail('REQUEST','Fixture/backend/trust policies must be boolean.')
         if provenance_method not in ('import','generated','fixture'):fail('REQUEST','Unsupported provenance method.')
         if provenance_method=='generated' and generator_record is None:fail('PROVENANCE','Generated imports require actual generator evidence.')
+        from rig_contracts import DEFAULT_LIMITS
+        from rig_load_limits import LoadBudget
+        limits={**DEFAULT_LIMITS,'source_bytes':MAX_FILE_BYTES,'dependency_bytes':MAX_INPUT_BYTES,
+                'memory_bytes':self.memory,'timeout_seconds':self.timeout,'influences':8}
+        budget = LoadBudget(limits)
         with tempfile.TemporaryDirectory(prefix='hatch-library-import-') as temp:
-            root=Path(temp);snapshot=SourceSnapshot(source,root/'source',maximum_bytes=min(MAX_INPUT_BYTES,(self.memory-256*1024**2)//12),cancelled=self.cancelled)
+            root=Path(temp);snapshot=SourceSnapshot(source,root/'source',maximum_bytes=min(MAX_INPUT_BYTES,(self.memory-256*1024**2)//12),cancelled=self.cancelled,budget=budget)
             if snapshot.format=='blend' and not trusted_packed_blend:
                 fail('QUARANTINE','Untrusted Blender input preserved; select explicit trusted-packed policy after independent source review.')
             source_bytes=sum(map(len,snapshot.files.values()))
             estimate=256*1024**2+12*source_bytes
             if estimate>self.memory:fail('LIMIT','Conservative import working-set estimate exceeds memory admission.')
             license_payload=read_source_bytes(license_file,MAX_REPORT)
-            from rig_contracts import DEFAULT_LIMITS
-            limits={**DEFAULT_LIMITS,'source_bytes':MAX_FILE_BYTES,'dependency_bytes':MAX_INPUT_BYTES,
-                    'memory_bytes':self.memory,'timeout_seconds':self.timeout,'influences':8}
             tool=None;input_path=snapshot.root/snapshot.entry
             if snapshot.format in ('glb','gltf'):
-                source_doc,source_validation=_check_gltf(input_path,limits,snapshot.native_document)
+                source_doc,source_validation=_check_gltf(input_path,limits,snapshot.native_document,budget=budget)
                 target,observation,conversion=normalize_gltf(snapshot,root/'normalized.glb',unit_scale=unit_scale,
                                                              basis=basis,ground=ground,limits=limits,fixture=fixture)
             else:
