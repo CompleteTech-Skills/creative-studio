@@ -69,6 +69,12 @@ class MeshImportTests(unittest.TestCase):
             original = rig_errors.open_payload
             @contextmanager
             def redirect(path, name, **kwargs):
+                # Budget admission opens first; replace at the snapshot's
+                # identity-bound capture to exercise that contract.
+                if kwargs.get('root_identity') is None:
+                    with original(path, name, **kwargs) as value:
+                        yield value
+                    return
                 source.rename(root/'original')
                 try:
                     source.symlink_to(outside, target_is_directory=True)
@@ -81,6 +87,33 @@ class MeshImportTests(unittest.TestCase):
                 with self.assertRaises(RigError) as caught:
                     import_mesh(source/'mesh.obj')
             self.assertEqual(caught.exception.report['code'], 'RIG_PAYLOAD_CHANGED')
+            self.assertEqual((root/'original/mesh.obj').read_bytes(), data)
+
+    def test_source_root_link_at_budget_admission_is_rejected(self):
+        from contextlib import contextmanager
+        import rig_errors
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            source = root/'source'; source.mkdir()
+            outside = root/'outside'; outside.mkdir()
+            data = b'o mesh\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n'
+            (source/'mesh.obj').write_bytes(data)
+            (outside/'mesh.obj').write_bytes(data.replace(b'v 1 0 0', b'v 9 0 0'))
+            original = rig_errors.open_payload
+            @contextmanager
+            def redirect(path, name, **kwargs):
+                source.rename(root/'original')
+                try:
+                    source.symlink_to(outside, target_is_directory=True)
+                except OSError:
+                    (root/'original').rename(source)
+                    self.skipTest('Directory symlinks unavailable on this host.')
+                with original(path, name, **kwargs) as value:
+                    yield value
+            with patch.object(rig_errors, 'open_payload', redirect):
+                with self.assertRaises(RigError) as caught:
+                    import_mesh(source/'mesh.obj')
+            self.assertEqual(caught.exception.report['code'], 'RIG_SYMLINK')
             self.assertEqual((root/'original/mesh.obj').read_bytes(), data)
 
     def test_deep_hierarchy_returns_structured_bounded_failure(self):
