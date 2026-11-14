@@ -7,6 +7,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from copy import deepcopy
 from fractions import Fraction
+import errno
 import json
 import hashlib
 import math
@@ -53,6 +54,29 @@ def _metadata(path):
             return decode_json(stream.read(limit+1),max_bytes=limit)
     except (OSError,RigError) as exc:
         raise Render3DError('invalid-input',str(exc),path=path) from exc
+
+
+def _cache_rejected(error):
+    """Separate invalid cache evidence from unavailable verification capability."""
+    cause=error
+    for _ in range(16):
+        if isinstance(cause,PermissionError):return False
+        if isinstance(cause,OSError) and cause.errno not in (None,errno.ENOENT,errno.ENOTDIR,errno.ELOOP):
+            return False
+        cause=getattr(cause,'__cause__',None)
+        if cause is None:break
+    if isinstance(error,Render3DError):
+        return error.report['category'] in {
+            'missing-asset','stale-asset','corrupt-output','incomplete-output',
+            'stale-cache','verification-failed','invalid-input'}
+    if isinstance(error,RigError):
+        return error.report['code'] in {
+            'RIG_MISSING_ASSET','RIG_SYMLINK','RIG_PATH','RIG_SCHEMA',
+            'RIG_NONFINITE','RIG_LIMIT_JSON','RIG_JSON_DEPTH','RIG_JSON','RIG_JSON_DUPLICATE'}
+    # Legacy verifier callbacks explicitly reject data with ValueError; preserve
+    # that contract. Missing dictionary keys instead indicate a verifier bug.
+    return isinstance(error,(ValueError,FileNotFoundError,NotADirectoryError)) or (
+        isinstance(error,OSError) and error.errno is None)
 
 
 def _alive(pid):
@@ -217,7 +241,7 @@ class JobStore:
     @staticmethod
     def _operation_id(operation_id):
         require(type(operation_id) is str and 0 < len(operation_id) <= 512
-                and all(ord(char) >= 32 and ord(char) != 127 for char in operation_id),
+                and operation_id.isprintable(),
                 'invalid-input','Operation IDs must be bounded strings without control characters.')
         return operation_id
 
@@ -673,7 +697,9 @@ class JobStore:
             lease=dict(request=snapshot['request'],frame=frame['frame'],spec=spec,
                        cache_key=frame['cache_key'],backend=snapshot['backend'])
             try:self._verify_cache(lease,verifier)
-            except (Render3DError,ValueError,OSError,KeyError):invalid.append(frame['frame'])
+            except (ValueError,OSError,KeyError) as exc:
+                if not _cache_rejected(exc):raise
+                invalid.append(frame['frame'])
         with self._transaction() as db:
             row=db.execute('SELECT * FROM jobs WHERE id=?',(job,)).fetchone()
             require(row is not None,'invalid-input','Unknown render job.')
@@ -731,7 +757,9 @@ class JobStore:
         require(current==lease['spec'],'stale-asset','Source changed since job submission.')
         if lease['request']['cache_policy']=='refresh':return False
         try:self._verify_cache(lease,verifier)
-        except (Render3DError,ValueError,OSError,KeyError):return False
+        except (ValueError,OSError,KeyError) as exc:
+            if not _cache_rejected(exc):raise
+            return False
         with self._transaction() as db:
             self._owned(db,lease)
             require(not db.execute('SELECT cancel FROM jobs WHERE id=?',(lease['job'],)).fetchone()[0],
@@ -802,7 +830,8 @@ class JobStore:
                 except FileExistsError:
                     try:
                         existing=self._verify_cache(lease,verifier)
-                    except (Render3DError,ValueError,OSError,KeyError):
+                    except (ValueError,OSError,KeyError) as exc:
+                        if not _cache_rejected(exc):raise
                         # Preserve corrupt bytes as evidence before installing a
                         # newly rendered and independently verified replacement.
                         require(used<=self.capacity['storage_bytes'],

@@ -57,6 +57,61 @@ class JobTests(unittest.TestCase):
             self.store.resume(job,expected_revision=before['revision']-1)
         self.assertEqual(self.store.status(job),before)
 
+    def test_missing_actual_png_decoder_does_not_invalidate_completed_cache(self):
+        from unittest.mock import patch
+        from render3d_verify import verify_image
+        job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
+        self.store.publish(lease,output,result,self.verify)
+        before=self.store.status(job)
+        cached=self.store.root/'cache'/lease['cache_key']/'frame.png';original=cached.read_bytes()
+        def decode(request,result,root):
+            verify_image(root/result['images'][0]['file']['path'],
+                         output=request['settings']['output'],resolution=[8,8])
+            return self.verify(request,result,root)
+        with patch.dict(sys.modules,png=None):
+            with self.assertRaises(Render3DError) as caught:
+                self.store.resume(job,expected_revision=before['revision'],verifier=decode)
+        self.assertEqual(caught.exception.report['category'],'unsupported-feature')
+        self.assertEqual(self.store.status(job),before)
+        self.assertEqual(cached.read_bytes(),original)
+
+    def test_resume_propagates_environment_errors_without_recovery_events(self):
+        import errno
+        job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
+        self.store.publish(lease,output,result,self.verify)
+        self._departed_owner(job)
+        before=self.store.status(job)
+        errors=[Render3DError(name,'unavailable verifier environment') for name in
+                ('unsupported-feature','unsupported-device','external-tool','system-memory','timeout')]
+        errors += [PermissionError(errno.EACCES,'access unavailable'),OSError(errno.EIO,'I/O unavailable'),
+                   KeyError('verifier configuration is missing')]
+        for error in errors:
+            with self.subTest(error=type(error).__name__,category=getattr(error,'report',{}).get('category')):
+                def unavailable(*args):raise error
+                with self.assertRaises(type(error)):
+                    self.store.resume(job,expected_revision=before['revision'],verifier=unavailable)
+                self.assertEqual(self.store.status(job),before)
+
+    def test_missing_png_decoder_does_not_render_over_a_valid_reusable_cache(self):
+        from unittest.mock import patch
+        from render3d_verify import verify_image
+        job=self.submit();lease=self.store.claim(job);output,result=self.output(lease)
+        self.store.publish(lease,output,result,self.verify)
+        reused=deepcopy(self.request);reused['id']='unavailable-decoder';reused['destination']['path']='other-delivery'
+        other=self.submit(reused)
+        original=self.store.status(job)
+        def decode(request,result,root):
+            verify_image(root/result['images'][0]['file']['path'],
+                         output=request['settings']['output'],resolution=[8,8])
+            return self.verify(request,result,root)
+        class NoRender:
+            def render_frames(*args,**kwargs):raise AssertionError('Unavailable decoder triggered a rerender')
+        with patch.dict(sys.modules,png=None):
+            with self.assertRaises(Render3DError) as caught:
+                self.store.run_one(NoRender(),decode,job=other)
+        self.assertEqual(caught.exception.report['category'],'unsupported-feature')
+        self.assertEqual(self.store.status(job),original)
+
     def output(self,lease):
         from PIL import Image
         output=self.root/('output-'+lease['token']);output.mkdir()
@@ -646,6 +701,8 @@ sys.stdin.readline()
             with self.subTest(fields=list(changes)):
                 with self.assertRaises(Render3DError):self.store.reserve_resources('invalid',self.resources(**changes))
         with self.assertRaises(Render3DError):self.store.reserve_resources('invalid',self.resources(),admit=lambda *args:1)
+        for identifier in ('','newline\n','control\x80','surrogate\ud800'):
+            with self.assertRaises(Render3DError):self.store.reserve_resources(identifier,self.resources())
         self.assertEqual(self.store.resources_status()['reservations'],[])
 
 
