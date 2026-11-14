@@ -142,6 +142,7 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
     descriptor = None
     identity = None
     body_error = None
+    borrowed = None
     try:
         borrowed = os.fstat(parent)
         if (borrowed.st_dev, borrowed.st_ino) != (parent_identity.st_dev, parent_identity.st_ino):
@@ -180,14 +181,29 @@ def private_stage_fd(parent_fd, *, prefix='.publish-', cleanup=True, cleanup_on_
                     if hasattr(body_error, 'add_note'):
                         body_error.add_note('Pinned staging cleanup also failed: ' + str(cleanup_error))
     finally:
-        if descriptor is not None:
+        primary = sys.exc_info()[1]
+        closing_errors = []
+        # Never retry close(): an error may be reported after the OS has already
+        # released the descriptor, and retrying could close a reused foreign FD.
+        # Close the owned parent even if closing the stage itself fails.
+        for owned, expected in ((descriptor, identity), (parent, borrowed)):
+            if owned is None:
+                continue
             try:
-                current = os.fstat(descriptor)
-                if identity is None or (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
-                    os.close(descriptor)
-            except OSError:
-                pass
-        os.close(parent)
+                current = os.fstat(owned)
+                if expected is not None and (current.st_dev, current.st_ino) != (expected.st_dev, expected.st_ino):
+                    raise OSError(errno.ESTALE, 'private stage owned descriptor was closed and reused')
+                os.close(owned)
+            except BaseException as closing_error:
+                closing_errors.append(closing_error)
+        if closing_errors:
+            first = primary if primary is not None else closing_errors[0]
+            if hasattr(first, 'add_note'):
+                for closing_error in closing_errors:
+                    if closing_error is not first:
+                        first.add_note('Pinned staging descriptor close also failed: ' + str(closing_error))
+            if primary is None:
+                raise first
 
 
 def private_stage_supported():
