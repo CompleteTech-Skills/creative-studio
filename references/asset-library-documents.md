@@ -55,7 +55,16 @@ Different bytes, kind, schema, fixture flag, dependency order/content, or retain
 root-relative path conflict. Writers use the existing canonical identity-history
 CAS; a racing identical publication can return its existing exact reference. A
 racing different version invalidates stale identity history and requires reload.
-Every returned ref is verified against its actual canonical bytes.
+Every returned ref is verified against its actual canonical bytes. Because Director
+requires one exact ArtifactRef per path, different references to identical source
+bytes are rejected. The adapter scans the existing canonical publications before
+registration and again on readback, covering races across different canonical
+identities. A conflict discovered after registration may leave unselected sources;
+it never returns a successful conflicting ref. Retrying identical bytes with a
+different ID/version/metadata cannot silently alias the original publication.
+Malformed canonical document envelopes and identity/source/dependency bindings
+fail with typed metadata errors, including registrations made through the lower
+level canonical API.
 
 By default dependencies must already be documents published by this adapter in
 the same configured library/root. A native owner can be injected explicitly as

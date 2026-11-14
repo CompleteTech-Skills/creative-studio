@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -117,6 +118,51 @@ class DocumentPublicationTests(unittest.TestCase):
         self.assertEqual(sum(isinstance(value, dict) for value in outcomes), 1)
         self.assertIn('LIBRARY_DOCUMENT_CONFLICT', outcomes)
 
+    def test_identical_blob_different_refs_rejected_including_cross_identity_race(self):
+        first = self.publish(b'{}', artifact_id='first')
+        with self.assertRaises(RigError) as caught:
+            self.publish(b'{}', artifact_id='second')
+        self.assertEqual(caught.exception.report['code'], 'LIBRARY_DOCUMENT_CONFLICT')
+        self.assertEqual(self.publisher.read_ref(first), b'{}')
+        original = self.library.register
+        barrier = threading.Barrier(2)
+        def register(*args, **kwargs):
+            result = original(*args, **kwargs)
+            barrier.wait(timeout=10)
+            return result
+        def publish(artifact_id):
+            try:
+                return self.publish(b'{"race":true}', artifact_id=artifact_id)
+            except RigError as error:
+                return error.report['code']
+        with patch.object(self.library, 'register', register), ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(publish, ('race-a', 'race-b')))
+        self.assertLessEqual(sum(isinstance(result, dict) for result in results), 1)
+        self.assertIn('LIBRARY_DOCUMENT_CONFLICT', results)
+        self.assertEqual(self.library.events('editor-history'), [])
+
+    def test_raw_canonical_document_malformed_metadata_fails_typed(self):
+        from asset_library_contracts import seal
+        from asset_library_documents import _identity
+        ref = self.publish()
+        existing, = self.library.list_references()
+        manifest = deepcopy(self.library.resolve(existing))
+        manifest['identity'].update(id=_identity('malformed'), slug=_identity('malformed'), name='malformed')
+        bad_metadata = b'{}'
+        record = manifest['files'][1]
+        record.update(sha256=hashlib.sha256(bad_metadata).hexdigest(), bytes=len(bad_metadata))
+        manifest['provenance']['license_evidence'] = [deepcopy(record)]
+        payloads = {'document.payload': self.publisher.read_ref(ref), 'document-metadata.json': bad_metadata}
+        sources = {}
+        for name, payload in payloads.items():
+            path = self.root / name
+            path.write_bytes(payload)
+            sources[name] = path
+        self.library.register(seal(manifest), sources)
+        with self.assertRaises(RigError) as caught:
+            self.publisher.read_ref({**ref, 'artifact_id':'malformed'})
+        self.assertEqual(caught.exception.report['code'], 'LIBRARY_DOCUMENT_METADATA')
+
     def test_stale_history_does_not_register_or_activate(self):
         register = self.library.register
         def race(manifest, sources, **kwargs):
@@ -171,6 +217,7 @@ import sys
 from asset_library import AssetLibrary
 from asset_library_documents import DocumentPublisher
 import tempfile
+import threading
 from pathlib import Path
 with tempfile.TemporaryDirectory() as temp:
     lib=AssetLibrary(Path(temp)/'library',create=True)

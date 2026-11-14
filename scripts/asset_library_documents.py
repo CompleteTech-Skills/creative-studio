@@ -76,9 +76,44 @@ class DocumentPublisher:
             _fail('STORAGE', 'Document publication requires explicit canonical storage upgrade.')
         library.storage.validate_ready()
 
-    def _ref(self, manifest):
+    def _ref(self, manifest, *, verify_dependencies=True):
         meta = decode_json(self.library.read_file(self._asset_ref(manifest), 'document-metadata.json'))
-        return _validate_ref(meta['artifact'])
+        if (not isinstance(meta, dict) or set(meta) != {'adapter', 'artifact'} or
+                meta['adapter'] != 'asset-library-document-v1'):
+            _fail('METADATA', 'Expected the closed canonical document metadata envelope.')
+        reference = _validate_ref(meta['artifact'])
+        payload = next((file for file in manifest['files'] if file['path'] == 'document.payload'), None)
+        if (payload is None or not payload['required'] or manifest['identity']['kind'] != 'document' or
+                manifest['identity']['id'] != _identity(reference['artifact_id']) or
+                manifest['version'] != reference['semantic_version'] or
+                manifest['identity']['subtype'] != reference['kind'] or
+                manifest['provenance']['fixture'] != reference['fixture'] or
+                payload['sha256'] != reference['sha256'] or payload['bytes'] != reference['byte_size'] or
+                payload['mime_type'] != reference['media_type'] or
+                reference['path'] != self.prefix + 'records/blobs/' + payload['sha256'] or
+                len(manifest['dependencies']) != len(reference['dependencies'])):
+            _fail('METADATA', 'Document metadata differs from its canonical identity/source binding.')
+        if verify_dependencies:
+            for declared, retained in zip(reference['dependencies'], manifest['dependencies']):
+                target = retained['target']
+                dependency = self.library.resolve(target)
+                if dependency['identity']['kind'] == 'document':
+                    if self._ref(dependency, verify_dependencies=False) != declared:
+                        _fail('METADATA', 'Document dependency differs from its exact canonical publication.')
+                elif self._native_dependency(declared, check_alias=False)[0] != target:
+                    _fail('METADATA', 'Native dependency differs from its owning canonical version.')
+        return reference
+
+    def _check_path_alias(self, reference):
+        # The canonical registry is the only inventory. Check again after
+        # registration: different IDs have independent identity-history CAS and
+        # can race. A conflicting publication remains unselected on failure.
+        for target in self.library.list_references():
+            manifest = self.library.resolve(target)
+            if manifest['identity']['kind'] == 'document':
+                other = self._ref(manifest)
+                if other['path'] == reference['path'] and other != reference:
+                    _fail('CONFLICT', 'One canonical source path cannot have conflicting ArtifactRefs.')
 
     @staticmethod
     def _asset_ref(manifest):
@@ -97,7 +132,7 @@ class DocumentPublisher:
             _fail('DEPENDENCY', 'Dependency source bytes differ from its exact reference.')
         return candidates[0]
 
-    def _native_dependency(self, reference):
+    def _native_dependency(self, reference, *, check_alias=True):
         """The native owner binds full ArtifactRef metadata to an existing AssetRef.
 
         This explicit capability never admits a free filesystem-only dependency.
@@ -116,10 +151,12 @@ class DocumentPublisher:
         if not matches:
             _fail('DEPENDENCY', 'Native dependency is not an exact inventoried canonical payload.')
         payload = self.library.read_file(target, matches[0]['path'])
-        self._verify_path(reference, payload)
+        self._verify_path(reference, payload, check_alias=check_alias)
         return target, payload
 
-    def _verify_path(self, reference, payload):
+    def _verify_path(self, reference, payload, *, check_alias=True):
+        if check_alias:
+            self._check_path_alias(reference)
         try:
             from asset_library import read_source_bytes
             info = self.artifact_root.lstat()
@@ -164,6 +201,7 @@ class DocumentPublisher:
             schema_version=schema_version, semantic_version=semantic_version,
             path=self.prefix + 'records/blobs/' + digest, sha256=digest, byte_size=len(payload),
             media_type=mime, provenance_ref=None, fixture=fixture, dependencies=dependencies))
+        self._check_path_alias(reference)
         identity = _identity(artifact_id)
         dependency_refs = [self._dependency(item) for item in dependencies]
         metadata = canonical_bytes(dict(adapter='asset-library-document-v1', artifact=reference))
