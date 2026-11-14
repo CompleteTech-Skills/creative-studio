@@ -114,7 +114,8 @@ def _attach(args):
     reference = _reference(args.reference_file)
     library = AssetLibrary(args.library)
     manifest = library.resolve(reference)
-    # Bound immutable package materialization before reading payloads. Final
+    # Bound this adapter's retained payload map. Canonical library resolution
+    # independently verifies bounded stored blobs before this materialization;
     # exact retained-history/file/node/byte budgets remain the snapshot owner's.
     require(sum(record['bytes'] for record in manifest['files']) <=
             min(bundle['project']['budgets']['max_bytes'], 128 * 1024 * 1024),
@@ -138,6 +139,7 @@ def _attach(args):
             'SCENE3D_ASSET_COMMAND', 'Registered package lacks its exact scene asset document.')
     instance = add_import(graph, imported, args.identifier, parent=args.parent)
     report = snapshot_project(args.project, args.destination, graph, scene_path=args.scene,
-        derived_documents=derived, extra_payloads=payloads, dry_run=args.dry_run)
+        derived_documents=derived, extra_payloads=payloads, dry_run=args.dry_run,
+        expected_project_sha256=bundle['inventory']['project.json']['sha256'])
     return dict(report, library_reference=reference, scene_asset_reference=imported.asset_reference,
-                instance=instance, library_unchanged=True, production_approved=False)
+                source_project_sha256=bundle['inventory']['project.json']['sha256'], instance=instance, library_unchanged=True, production_approved=False)

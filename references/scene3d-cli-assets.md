@@ -42,7 +42,10 @@ instancing to `add_import`. It publishes one complete independently reopened
 Scene3D snapshot containing the exact imported asset manifest, normalized
 geometry, original source bytes, native authoring data and evidence. `--dry-run`
 performs the same project closure and destination admission without publication.
-The library remains unchanged during attachment. Failed scene publication does
+The exact raw project manifest admitted with the expected scene revision is bound
+through the canonical snapshot owner (`expected_project_sha256`). A valid
+concurrent source change is rejected before snapshot copy or publication, including
+in dry-run mode. The library remains unchanged during attachment. Failed scene publication does
 not roll back or delete a separately registered immutable asset version.
 
 `asset version` registers a new version with an exact parent reference; it does

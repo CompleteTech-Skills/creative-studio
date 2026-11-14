@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from asset_library import AssetLibrary
 from rig_errors import RigError
@@ -110,6 +111,62 @@ class NativeAssetCommandTests(unittest.TestCase):
             self.command([value if value != graph.digest else '0' * 64 for value in arguments] +
                          ['--destination', str(self.root / 'stale')])
         self.assertFalse((self.root / 'stale').exists())
+
+    def test_concurrent_valid_selected_scene_edit_rejects_both_dry_run_and_publication(self):
+        from scene3d_contracts import canonical_bytes
+        import scene3d_import
+        import scene3d_snapshot
+        imported = self.import_model()
+        reference = self.write_reference(imported['reference'])
+        actual_resolve = scene3d_import.resolve_import
+        library_before = (self.library_root / 'library.sqlite3').read_bytes()
+        for dry_run in (True, False):
+            project = self.root / ('race-dry' if dry_run else 'race-actual')
+            bundle = build_example(project)
+            original = SceneGraph.from_bundle(bundle, 'example-scene.json', source_root=project)
+            def resolve_then_edit(library, selected):
+                resolved = actual_resolve(library, selected)
+                current = load_project(project)
+                graph = SceneGraph.from_bundle(current, 'example-scene.json', source_root=project)
+                graph.rename('mesh', 'CONCURRENT USER EDIT', expected_revision=0)
+                documents = current['documents']
+                documents['example-scene.json'] = graph.document()
+                def rebind(value, hashes):
+                    if isinstance(value, dict):
+                        if value.get('path') in hashes and 'sha256' in value:
+                            value['sha256'] = hashes[value['path']]
+                        for child in value.values():
+                            rebind(child, hashes)
+                    elif isinstance(value, list):
+                        for child in value:
+                            rebind(child, hashes)
+                for _ in range(8):
+                    hashes = {path: hashlib.sha256(canonical_bytes(document)).hexdigest()
+                              for path, document in documents.items()}
+                    for document in documents.values():
+                        rebind(document, hashes)
+                for path, document in documents.items():
+                    (project / path).write_bytes(canonical_bytes(document))
+                load_project(project)  # The concurrent replacement is a valid actual closure.
+                return resolved
+            output = self.root / ('rejected-dry' if dry_run else 'rejected-actual')
+            arguments = ['attach', '--library', str(self.library_root), '--reference-file', str(reference),
+                '--project', str(project), '--scene', 'example-scene.json', '--identifier', 'attached-asset',
+                '--expected-revision', '0', '--expected-sha256', original.digest, '--destination', str(output)]
+            if dry_run:
+                arguments.append('--dry-run')
+            with patch.object(scene3d_import, 'resolve_import', side_effect=resolve_then_edit), \
+                    patch.object(scene3d_snapshot, 'read_source_bytes', wraps=scene3d_snapshot.read_source_bytes) as copier:
+                with self.assertRaises(RigError) as error:
+                    self.command(arguments)
+                self.assertEqual(error.exception.report['code'], 'SCENE3D_SOURCE_CHANGED')
+                copier.assert_not_called()
+            self.assertFalse(output.exists())
+            remaining = load_project(project)['documents']['example-scene.json']
+            self.assertEqual(remaining['revision'], 1)
+            self.assertEqual(next(node['name'] for node in remaining['nodes'] if node['id'] == 'mesh'),
+                             'CONCURRENT USER EDIT')
+        self.assertEqual((self.library_root / 'library.sqlite3').read_bytes(), library_before)
 
     def test_nonfinite_scale_fails_before_library_creation_and_does_not_change_source(self):
         destination = self.root / 'not-created'
