@@ -49,6 +49,13 @@ class RenderExecutionDriverTests(unittest.TestCase):
                 self.driver.inspect(wrong)
         self.assertEqual(before, self.store.status(self.job))
 
+    def test_oversized_native_binding_is_rejected_before_native_lookup(self):
+        wrong = dict(self.binding, job='x' * 129)
+        before = self.store.status(self.job)
+        with self.assertRaisesRegex(RigError, 'bounded'):
+            self.driver.inspect(wrong)
+        self.assertEqual(before, self.store.status(self.job))
+
     def test_graph_cannot_substitute_unrelated_snapshot_reference(self):
         node = dict(operation='RenderAdapter.submit', inputs=[dict(sha256='0' * 64, byte_size=1)])
         with self.assertRaises(RigError):

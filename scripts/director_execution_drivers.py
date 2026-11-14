@@ -53,8 +53,15 @@ class RenderJobDriver:
               object_hash(state['backend']) == binding['backend_sha256'] and
               state['request']['snapshot']['sha256'] == binding['snapshot_sha256'],
               'The persisted native request/backend/snapshot binding changed.', 'BINDING')
-        from render3d_contracts import make_frame_spec
-        # Reopen and verify the pinned snapshot even while the job is queued.
+        from render3d_contracts import make_frame_spec, load
+        from render3d_snapshot import verify_snapshot, Scene3DAdapter, NativeRigAdapter
+        # Metadata identity alone is insufficient: admission must also re-read
+        # every pinned source byte through the existing snapshot authority.
+        snapshot = load(Path(state['snapshot']) / 'snapshot.json', 'RenderSnapshot')
+        adapter = Scene3DAdapter() if snapshot['scope'] == 'scene3d' else NativeRigAdapter()
+        verified = verify_snapshot(state['snapshot'], adapter)
+        _need(verified == snapshot, 'Native snapshot changed during admission.', 'BINDING')
+        state['_snapshot_fixture'] = verified['fixture']
         make_frame_spec(state['request'], state['request']['frame_range']['start'],
                         Path(state['snapshot']) / 'snapshot.json')
         return state
@@ -67,14 +74,23 @@ class RenderJobDriver:
                   for ref in node['inputs']),
               'The graph must pin the native render snapshot.', 'BINDING')
 
+    def required_capabilities(self, binding):
+        state = self._state(binding)
+        return ['blender.cpu' if state['backend']['device'] == 'cpu' else 'blender.gpu']
+
+    def admission_resources(self, binding):
+        resources = self._state(binding)['request']['settings']['resources']
+        # timeout_seconds is wall time, not a CPU/GPU consumption measurement.
+        return dict(max_memory_bytes=resources['memory_bytes'],
+                    max_storage_bytes=resources['storage_bytes'])
+
     def inspect(self, binding):
         state = self._state(binding)
         artifacts = []
         records = []
         if state['state'] == 'complete':
-            from render3d_contracts import make_frame_spec, load
+            from render3d_contracts import make_frame_spec
             from director_contracts import _read_artifact
-            snapshot = load(Path(state['snapshot']) / 'snapshot.json', 'RenderSnapshot')
             for frame in state['frames']:
                 _need(frame['state'] == 'complete', 'Native completion has unfinished frames.', 'INCOMPLETE')
                 spec = make_frame_spec(state['request'], frame['frame'], Path(state['snapshot']) / 'snapshot.json')
@@ -87,7 +103,7 @@ class RenderJobDriver:
                     native = image['file']
                     artifact = _artifact('render-' + frame['cache_key'] + '-' + image['pass_name'],
                         'cache/' + frame['cache_key'] + '/' + native['path'],
-                        native['sha256'], native['bytes'], fixture=snapshot['fixture'],
+                        native['sha256'], native['bytes'], fixture=state['_snapshot_fixture'],
                         kind='render-frame', media='image/' + state['request']['settings']['output']['format'])
                     # The verifier checks decoding; this independent no-follow
                     # read also binds the public reference's exact bytes/path.
@@ -160,6 +176,16 @@ class NativeAcquisitionDriver:
     def validate(self, binding, node, input_root):
         _need(node['operation'] in self.operations, 'Driver does not implement this operation.')
         self.gateway.prepare(binding['job'], _check=self._check(binding))
+
+    def required_capabilities(self, binding):
+        _binding(binding, self.binding_fields)
+        return ['native.acquisition']
+
+    def admission_resources(self, binding):
+        _binding(binding, self.binding_fields)
+        # Claiming the existing token does not invoke a provider or establish
+        # provider usage. The canonical owner exposes no request memory budget.
+        return {}
 
     def inspect(self, binding):
         report = self.gateway.reconcile(binding['job'], _check=self._check(binding))
