@@ -26,7 +26,8 @@ does not certify that legacy history as a bounded long-running log.
 
 Output uses text nodes, identifies warnings in text rather than color alone, and
 announces warnings politely while retaining assertive operation errors. The
-region is keyboard focusable and scrollable. Error/warning display never steals
+region is keyboard focusable and scrollable. Its arrow keys are excluded from
+scene transform shortcuts even while an editable mesh is selected. Error/warning display never steals
 focus from a pending edit.
 
 The actual browser regressions in `test_rig_editor3d_accessibility.py` cover a

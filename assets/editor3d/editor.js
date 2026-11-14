@@ -1574,7 +1574,7 @@ window.addEventListener("keydown", (e) => {
     ];
     gizmo.setMode($("tool").value);
   } else if (
-    (e.target === document.body || e.target.closest("#viewport")) && !previewActive && transformSelectionAllowed() &&
+    !e.target.closest("#diagnostic") && (e.target === document.body || e.target.closest("#viewport")) && !previewActive && transformSelectionAllowed() &&
     ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
   ) {
     e.preventDefault();

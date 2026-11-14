@@ -243,10 +243,28 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
         page=self.page;self.install_area_fixture(70)
         self.assert_current_preview_warning(1,64)
         self.assertEqual(page.locator('#diagnostic [data-code="EDITOR_VIEW_DIAGNOSTIC_LIMIT"]').count(),1)
+        page.locator('[data-id="mesh"]').focus();page.keyboard.press('Enter')
+        before=self.repository.snapshot()
         page.locator('#diagnostic').focus()
         self.assertTrue(page.locator('#diagnostic').evaluate('element => element === document.activeElement'))
+        page.evaluate("""() => {
+            window.diagnosticArrowTrace=[];
+            window.addEventListener('keydown',event=>{
+                if(event.target.closest('#diagnostic') && event.key.startsWith('Arrow'))
+                    window.diagnosticArrowTrace.push({key:event.key,prevented:event.defaultPrevented});
+            });
+        }""")
+        page.keyboard.press('ArrowDown')
+        page.wait_for_function('() => document.querySelector("#diagnostic").scrollTop > 0 || window.hatchEditor.snapshot.revision !== 1')
+        self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
+        self.assertEqual(self.repository.snapshot()['revision'],1)
+        for key in ['ArrowUp','ArrowLeft','ArrowRight']:page.keyboard.press(key)
+        self.assertEqual(page.evaluate('window.diagnosticArrowTrace'),[
+            dict(key=key,prevented=False) for key in ['ArrowDown','ArrowUp','ArrowLeft','ArrowRight']])
+        self.assertEqual(page.evaluate('window.hatchEditor.selection'),['mesh'])
         page.keyboard.press('End');page.wait_for_function('() => document.querySelector("#diagnostic").scrollTop > 0')
         self.assertGreater(page.locator('#diagnostic').evaluate('element => element.scrollTop'),0)
+        self.assertEqual(self.repository.snapshot()['sha256'],before['sha256'])
         page.evaluate('window.previousWarningObject = window.hatchEditor.objects.get("area-0")')
         page.click('#refresh');page.wait_for_function('() => window.hatchEditor.objects.get("area-0") !== window.previousWarningObject')
         self.assert_current_preview_warning(1,64)
