@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "owner": "Scene62 canonical spatial query owner",
+  "source_commit": "8238c3ede4e6f674d1303325c8d1257ed7e6738f",
+  "source_author": "Timothy Wayne Gregg <Timothy.Gregg@complete.tech>",
+  "transport_base": "d6d06eb9dbba94e6b38dc64ede2138d7b96452c2",
+  "files": {
+    "scripts/scene3d_spatial.py": {
+      "sha256": "3360e766a48dc880537c61d11a42e0ff108e1eccdf56e7fad24b58a95fd90737",
+      "source_blob": "5d30b848fcfb50de55641e80c423c529cbd617cc",
+      "byte_identical": true
+    },
+    "scripts/scene3d_sweep.py": {
+      "sha256": "241be2510045a641edc85dc9cbeb900175693501a3f7ee846b1dbbb863f57a47",
+      "source_blob": "085c4c2c2385106af4f543371827dd4ee4cf9992",
+      "byte_identical": true
+    },
+    "tests/test_rig_scene3d_sweep.py": {
+      "sha256": "79f9275e180c67003e89220051b911c5fba35f116f8ed73c0b407dcd5ddccdf2",
+      "source_blob": "acb8c753fe0e335095a22b581edc933c38c44014",
+      "byte_identical": true
+    }
+  },
+  "review_history": "Retained original independent source review: coordination scene-program/review-scene62-initial.md; whole integration candidate requires new independent review.",
+  "scope": "Exact canonical query transport for Director38; no placement, native-import adapter, temporal constraints, generated environments or full Scene62 acceptance claim.",
+  "tests": "Query regressions selected from original test_rig_scene3d_spatial.py; original sweep tests byte-identical; new cumulative shared-query-budget regression.",
+  "resource_limits": {
+    "vertices": 1000000,
+    "triangles": 1000000,
+    "shared_pair_and_containment_tests": 2000000
+  },
+  "semantics": {
+    "mesh_input": "node-local vertices and integer topology mapped to matching SceneGraph node IDs; world transform applies once",
+    "surface_overlap": "actual triangle separating-axis tests, touching counts; supports open source surfaces",
+    "solid_overlap": "oriented closed edge inventory and signed-solid-angle containment of components; rejects open geometry",
+    "clearance": "Positive clearance exists only for conservative AABB overlap; no exact positive triangle-distance guarantee",
+    "query_budget": "One _QueryBudget can be shared across mesh_overlap calls using _budget; reject when cumulative operation exceeds the limit",
+    "bounds_only": "Never treated as actual triangles; consumer must verify actual collider inventory before claiming collision-free state",
+    "sphere_sweep": "Unsupported nested/cavity or interior-overlapping closed components explicitly reject; this limit does not replace separate solid mesh_overlap containment."
+  }
+}
