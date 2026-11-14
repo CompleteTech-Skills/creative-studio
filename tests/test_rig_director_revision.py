@@ -181,7 +181,7 @@ class CoreRevisionTests(unittest.TestCase):
     def test_authoritative_identity_lock_needs_exact_trusted_authorizer(self):
         other = self.root/'locked'; other.mkdir()
         repository = project(other, constraints=['identity:mesh'])
-        service = RevisionService(repository, locked_constraints=constraints)
+        service = RevisionService(repository)
         state = repository.snapshot()
         patch = service.plan('Make the mesh blue', expected_revision=0, expected_sha256=state['sha256'],
             change=dict(operation='material', target='mesh', slot='surface', surface={'base_color': [0, 0, 1, 1]}))['patch']
@@ -208,7 +208,7 @@ class CoreRevisionTests(unittest.TestCase):
     def test_many_original_constraints_are_counted_once_and_revalidated(self):
         constraints = ['identity:protected-'+str(index) for index in range(129)]
         repository = project(self.root/'many-locks', constraints=constraints)
-        service = RevisionService(repository)
+        service = RevisionService(repository, locked_constraints=constraints)
         state = repository.snapshot()
         patch = service.plan('Set camera camera near to 0.2', expected_revision=0,
                              expected_sha256=state['sha256'], locked_constraints=constraints)['patch']
