@@ -330,6 +330,7 @@ def main(argv=None):
                 body['request'] = decode_json(_read_json_file(args.request))
             need(args.operation == 'qa' or 'request' in body, 'INPUT', 'This operation requires an exact request file.')
             if args.operation in CLI_METHODS:
+                need(isinstance(body['request'], dict), 'INPUT', 'Use a canonical request object.')
                 need(body['request'].get('method') in CLI_METHODS[args.operation], 'INPUT',
                      'The exact request method does not match the selected command.')
             result = getattr(service, 'validate' if args.operation == 'qa' else 'record_review' if args.operation == 'review' else 'action')(body)
