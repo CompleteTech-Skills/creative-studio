@@ -120,7 +120,7 @@ def _png(stream, resolution, bit_depth, memory_bytes, pixels=False):
         if kind == b'IDAT':
             require(not idat_finished,'corrupt-output','PNG IDAT chunks must be consecutive.')
             idat_started=True
-            require(not inflater.eof, 'corrupt-output', 'Trailing compressed PNG stream.')
+            require(not inflater.eof or not payload, 'corrupt-output', 'Trailing compressed PNG stream.')
             expanded=inflater.decompress(payload,header[3]-inflated+1);inflated+=len(expanded)
             require(inflated <= header[3] and not inflater.unconsumed_tail and not inflater.unused_data,
                     'corrupt-output', 'PNG decompressed data exceeds declared dimensions.')

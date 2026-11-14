@@ -8,6 +8,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import zlib
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
@@ -20,14 +21,51 @@ from scene3d_example import build_example
 try:
     import png
     import numpy as np
+    PNG_DEPENDENCIES=True
+except ImportError:
+    PNG_DEPENDENCIES=False
+try:
     import OpenEXR
-    DEPENDENCIES=True
+    DEPENDENCIES=PNG_DEPENDENCIES
 except ImportError:
     DEPENDENCIES=False
 
 
 def output(format='png',depth=8,alpha='straight',passes=None):
     return dict(format=format,bit_depth=depth,alpha=alpha,passes=passes or ['combined'],color_space='srgb' if format=='png' else 'linear')
+
+
+@unittest.skipUnless(PNG_DEPENDENCIES,'optional pypng/numpy decoder packages unavailable')
+class EmptyIdatVerification(unittest.TestCase):
+    def test_empty_idat_after_eof_and_corruption_controls(self):
+        def chunk(kind,payload):
+            return struct.pack('>I',len(payload))+kind+payload+struct.pack('>I',zlib.crc32(kind+payload)&0xffffffff)
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary)/'image.png'
+            with path.open('wb') as stream:
+                png.Writer(1,1,greyscale=False).write(stream,[[255,0,128]])
+            original=path.read_bytes()
+            length=struct.unpack('>I',original[33:37])[0]
+            self.assertEqual(original[37:41],b'IDAT')
+            end=45+length
+            empty=chunk(b'IDAT',b'')
+            path.write_bytes(original[:end]+empty+original[end:])
+            report,pixels=decode_image(path,output=output(alpha='opaque'),resolution=[1,1])
+            self.assertEqual(report['decoder'],'pypng')
+            self.assertEqual(float(pixels['R'][0,0]),1.0)
+            self.assertAlmostEqual(float(pixels['B'][0,0]),128/255)
+            self.assertEqual(report['sha256'],hashlib.sha256(path.read_bytes()).hexdigest())
+            bad_crc=empty[:-1]+bytes([empty[-1]^1])
+            cases=(('nonempty',chunk(b'IDAT',b'x'), 'Trailing compressed PNG stream.'),
+                   ('crc',bad_crc,'PNG CRC mismatch.'),
+                   ('ordering',chunk(b'tEXt',b'note\0interrupt')+empty,'PNG IDAT chunks must be consecutive.'))
+            for name,addition,message in cases:
+                with self.subTest(case=name):
+                    path.write_bytes(original[:end]+addition+original[end:])
+                    with self.assertRaises(Render3DError) as error:
+                        verify_image(path,output=output(alpha='opaque'),resolution=[1,1])
+                    self.assertEqual(error.exception.report['category'],'corrupt-output')
+                    self.assertIn(message,str(error.exception))
 
 
 @unittest.skipUnless(DEPENDENCIES,'optional OpenEXR/pypng decoder packages unavailable')
