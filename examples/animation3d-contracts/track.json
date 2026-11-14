@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "kind": "animation_track_3d",
+  "value": {
+    "id": "move",
+    "target": {
+      "kind": "bone",
+      "actor_id": "actor",
+      "bone_id": "root",
+      "property": "translation"
+    },
+    "value_type": "vec3",
+    "default_value": [
+      0,
+      0,
+      0
+    ],
+    "keys": [
+      {
+        "time": {
+          "frame": 0
+        },
+        "value": [
+          0,
+          0,
+          0
+        ],
+        "interpolation": "linear"
+      },
+      {
+        "time": {
+          "frame": 24
+        },
+        "value": [
+          1,
+          0,
+          0
+        ],
+        "interpolation": "linear"
+      }
+    ],
+    "extrapolation_before": "hold",
+    "extrapolation_after": "hold",
+    "enabled": true
+  }
+}
