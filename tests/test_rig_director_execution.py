@@ -211,6 +211,32 @@ if sys.argv[4]=='hold':
         self.assertEqual(self.store.resources_status()['reservations'], [])
         self.assertTrue(all(frame['attempts'] == 0 for frame in self.store.status(self.jobs['a'])['frames']))
 
+    def test_historical_v1_render_store_remains_unchanged_when_dag_constructor_rejects(self):
+        from render3d_job_fixtures import create_legacy_store
+        from render3d_jobs import JobStore
+        root = create_legacy_store(self.root / 'legacy-v1')
+        legacy = JobStore(root)
+        self.assertEqual(legacy.store_version, 1)
+        self.assertFalse(legacy.supports_resource_reservations)
+        job = legacy.submit(self.fixture.request, self.root / 'snapshot', self.fixture.backend)
+        marker = (root / 'store.json').read_bytes()
+        history = legacy.status(job)
+        with legacy._transaction() as db:
+            tables = {row['name'] for row in db.execute('SELECT name FROM sqlite_master WHERE type="table"')}
+        self.assertNotIn('director_runs', tables)
+        with self.assertRaisesRegex(RigError, 'historical render stores remain unchanged'):
+            ExecutionService(legacy, drivers={}, ledger=self.ledger)
+        self.assertEqual((root / 'store.json').read_bytes(), marker)
+        self.assertEqual(legacy.status(job), history)
+        with legacy._transaction() as db:
+            after = {row['name'] for row in db.execute('SELECT name FROM sqlite_master WHERE type="table"')}
+        self.assertEqual(after, tables)
+        lease = legacy.claim(job)
+        self.assertIsNotNone(lease)
+        self.assertFalse(legacy.heartbeat(lease))
+        legacy.fail(lease, 'known compatibility fixture cleanup')
+        self.assertEqual((root / 'store.json').read_bytes(), marker)
+
     def test_external_cpu_capacity_and_plain_native_render_claim_share_one_limit(self):
         lease = self.store.reserve_resources('external-cpu', self.resources(cpu_workers=1))
         self.assertIsNotNone(lease)
@@ -441,6 +467,51 @@ print(json.dumps({'state':result['state']}),flush=True)
                 self.assertFalse(result['cancel_requested'])
         finally:
             self.driver.resume = native_resume
+
+    def test_os_crash_after_native_resume_rolls_forward_original_intent_without_requeue(self):
+        submitted = self.submit()
+        cancelled = self.service.cancel_graph('graph', expected_revision=submitted['revision'])
+        operation_key = 'resume-after-owned-crash'
+        input_digest = object_hash(dict(action='resume', expected_revision=cancelled['revision'], retry_after='30'))
+        code = '''import os,sys
+from director_execution import ExecutionService
+from director_execution_drivers import RenderJobDriver
+from director_budget import BudgetLedger
+from render3d_jobs import JobStore
+from render3d_verify import RenderArtifactVerifier
+store=JobStore(sys.argv[1]);job=store.status(store.list_jobs()[0]['id'])
+class CrashAfterNativeResume(RenderJobDriver):
+ def resume(self,binding):
+  super().resume(binding)
+  os._exit(31)
+driver=CrashAfterNativeResume(store,None,RenderArtifactVerifier(job['snapshot'],job['backend']).verify)
+service=ExecutionService(store,drivers={'RenderAdapter.submit':driver},ledger=BudgetLedger(sys.argv[2]),clock=lambda:float(sys.argv[3]))
+service.resume_graph('graph',expected_revision=sys.argv[4],retry_after='30',operation_key=sys.argv[5],input_digest=sys.argv[6])
+raise AssertionError('The controlled exit boundary did not execute')
+'''
+        child = subprocess.run([sys.executable, '-c', code, str(self.store.root), str(self.ledger.root),
+            str(self.clock_value), cancelled['revision'], operation_key, input_digest],
+            capture_output=True, text=True, timeout=20, env=self.process_environment())
+        self.assertEqual(child.returncode, 31, child.stdout + child.stderr)
+        native = self.store.status(self.jobs['a'])
+        self.assertEqual(native['state'], 'queued')
+        self.assertEqual(sum(event['event'] == 'resumed' for event in native['events']), 1)
+        plans = [json.loads(event['detail']) for event in self.service.history('graph')
+                 if event['event'] == 'resume-prepared']
+        original = next(plan for plan in plans if plan['node'] == 'a')
+        self.assertEqual(original['not_before'], self.clock_value + 30)
+        self.clock_value += 5
+        recovered = self.service.resume_graph('graph', expected_revision=cancelled['revision'],
+            retry_after='30', operation_key=operation_key, input_digest=input_digest)
+        self.assertEqual(recovered['state'], 'queued')
+        self.assertFalse(recovered['cancel_requested'])
+        self.assertEqual(recovered['nodes']['a']['not_before'], original['not_before'])
+        self.assertEqual(sum(event['event'] == 'resumed' for event in self.store.status(self.jobs['a'])['events']), 1)
+        replay = self.service.resume_graph('graph', expected_revision=cancelled['revision'],
+            retry_after='30', operation_key=operation_key, input_digest=input_digest)
+        self.assertEqual(replay, recovered)
+        self.assertTrue(all(frame['attempts'] == 0 for job in self.jobs.values()
+                            for frame in self.store.status(job)['frames']))
 
     def test_expired_capability_never_claims_native_work(self):
         self.submit()
