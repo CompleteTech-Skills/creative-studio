@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "native_scene_status": "hash-and-contract-verified",
+  "config_hashes": {
+    "examples/cinematics3d/exposure.json": "848d88224592bb5af8b3ae2926b446631d8e96cefeb4e6b12a070d453511cb67",
+    "examples/cinematics3d/grain.json": "b610620b4d39d43cd02a026a54a68903d4e51a68652da1ecae683e0bc3fa4ca7",
+    "examples/cinematics3d/look.json": "5966c85e34ff14d1b8dbe6fd39bc376955dcd60e164deb4eb6dd490dc72c98f0",
+    "examples/cinematics3d/scene-stack.json": "c3985aa5374ba18a06756bda9f754fb5c0a4a9ab79d41d22bc768f750126a7a1",
+    "examples/cinematics3d/scene.json": "759f472659091ea8896be8ec094adca0cd043789d5e633678288c0e4e57c7a18",
+    "examples/cinematics3d/shot-stack.json": "31ab01071ed697eb669178946f67cda79df10619f8884fc1931c9e5c3378b240",
+    "examples/cinematics3d/shot.json": "706f35278ac4a7f0690ff88d70ffbfba4a1df0cc4fb5853c286c0324f9881a16"
+  },
+  "relocation": "exact-byte-verified",
+  "effective_effect_ids": [
+    "exposure",
+    "grain"
+  ],
+  "admission": {
+    "admitted": false,
+    "effects": [
+      {
+        "id": "exposure",
+        "effect": "exposure",
+        "status": "unavailable",
+        "admitted": false,
+        "required_passes": [],
+        "executed": false
+      },
+      {
+        "id": "grain",
+        "effect": "film-grain",
+        "status": "unavailable",
+        "admitted": false,
+        "required_passes": [],
+        "executed": false
+      }
+    ],
+    "executed": false,
+    "capability_source": "caller-supplied, not independently verified"
+  },
+  "rendered": false,
+  "visual_approval": false
+}

@@ -585,6 +585,11 @@ def _load_checked(root, verify):
         validate_structure(annotation, ANNOTATION_SCHEMA, 'current annotation')
         if annotation['source_sha256'] != source['sha256']:
             raise ValueError('current annotation names another source')
+        from decomposition_analysis import provenance as analysis_provenance
+        analysis_record = analysis_provenance(root, annotation, source['sha256'])
+        expected_call = bool(analysis_record and analysis_record['evidence']['execution'] == 'local')
+        if manifest['analysis']['semantic_model_called'] != expected_call or (manifest['analysis']['mode'] == 'model-assisted') != bool(analysis_record):
+            raise ValueError('analysis metadata disagrees with verified lineage')
         identity = read_json(safe_path(root, manifest['identity']['path']))
         directions = identity.get('directions', {}) if isinstance(identity, dict) else {}
         validate_identity(identity, {'states': [{'id': name} for name in directions]})
@@ -605,12 +610,12 @@ def _analysis_request(root, manifest):
     request = {'schema_version': 1, 'kind': 'semantic-analysis-request', 'source_sha256': manifest['source']['sha256'],
         'source': {'path': 'original.png', 'sha256': manifest['source']['normalized_sha256']},
         'foreground': manifest['foreground'], 'canvas': manifest['canvas'],
-        'semantic_model_called': False, 'status': 'awaiting-source-bound-annotations',
+        'semantic_model_called': manifest['analysis']['semantic_model_called'], 'status': 'awaiting-source-bound-annotations',
         'instructions': 'Inspect the original and foreground. Identify only visible semantic parts appropriate to this character. '
             'Use anatomical left/right relative to its stated orientation, or unknown. Return source-bound annotations with '
             'binary masks, polygons or color/seed selectors. Group disconnected pixels when they belong to one logical feature. '
             'Record confidence, occlusion and ambiguity. Never label generated or hidden pixels as observed. '
-            'No Python semantic-model API or paid inference dependency is configured. The local review desk provides a complete manual route.',
+            'Optional analysis uses decompose-analyze --analysis-backend with explicit enablement; the local review desk remains the complete manual route.',
         'annotation_schema': 'profiles/decomposition-annotations.schema.json',
         'optional_capability': 'An assistant with image understanding may inspect these images and author the annotation file. '
             'Any raster generation/edit uses the installed imagegen skill and its real interface, followed by explicit reconstruction ingestion.'}
@@ -628,6 +633,8 @@ def _build(root, source, source_info, annotation, foreground_mask, foreground_in
     foreground_asset.update(mask=_content_image(root, 'masks', 'foreground', foreground_mask), **foreground_info)
     candidates = character_candidates(foreground)
     annotations_are_semantic = any(c['category'] != 'unassigned' for c in components)
+    from decomposition_analysis import provenance as analysis_provenance
+    analysis_record = analysis_provenance(root, annotation, source_info['sha256'])
     suspected = len(candidates) > 1
     analysis_warnings = []
     if suspected:
@@ -645,8 +652,8 @@ def _build(root, source, source_info, annotation, foreground_mask, foreground_in
         'source': source_info, 'canvas': {'width': source.width, 'height': source.height, 'pixel_art': pixel_art},
         'foreground': foreground_asset, 'components': components,
         'annotation': {'path': 'annotations/current.json', 'sha256': sha(root / 'annotations/current.json')},
-        'analysis': {'mode': 'annotation-assisted' if annotations_are_semantic else 'manual-pending',
-            'semantic_model_called': False, 'candidates': candidates, 'multiple_characters_suspected': suspected,
+        'analysis': {'mode': 'model-assisted' if analysis_record else ('annotation-assisted' if annotations_are_semantic else 'manual-pending'),
+            'semantic_model_called': bool(analysis_record and analysis_record['evidence']['execution'] == 'local'), 'candidates': candidates, 'multiple_characters_suspected': suspected,
             'selection': selection, 'selection_resolved': bool(selection is not None or annotations_are_semantic or not suspected),
             'warnings': analysis_warnings},
         'quality': quality(source, foreground, pixel_art), 'rig': _rig(components),

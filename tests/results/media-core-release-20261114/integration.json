@@ -1,0 +1,662 @@
+{
+  "base": "e2765dd494125a2f4dbfe13e4f4a66a3a5aba5dd",
+  "candidate": "f95b234501f857e7e28248ea2ab38558b0054a99",
+  "tree": "55df4f96d87cf3572ede35c142f07a061bdc0588",
+  "sources": {
+    "391": "f59514e3b963608fdafe8b51e54368d671646591",
+    "292": "3d30731e549fb00c5495c96736b302fba46c4790",
+    "341": "6ba61738636e4f157d368647ac0a4b8572b01b6c"
+  },
+  "rerere": false,
+  "resolved_conflicts": {
+    "scripts/atomic_publish.py": "exact391 additive FD APIs preserved over older341 helper",
+    "references/atomic-publication.md": "exact391 preserves addedPOSIX/capability documentation"
+  },
+  "collector_union_assertions": "all source and current-main group memberships preserved",
+  "hybrid_files": [
+    "README.md"
+  ],
+  "files": {
+    ".github/workflows/atomic-fd-stage.yml": {
+      "blob": "d38f5c1a336a51206a2da10d86b9b5d9886f678e",
+      "identical_source_prs": [
+        "391"
+      ],
+      "sha256": "db9f5b2da7b6bbfe3cf81a938144df4690f46f7e0c2ff94aea883919e13aad5d"
+    },
+    ".github/workflows/atomic-private-stage.yml": {
+      "blob": "1f67e3b5aa5ecd09f8623e8ab61a1e88fc51e96a",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "90dc632f941125df7a111144172d0cc54c58bfa3c9e4e1c8b54b1477fb24cf81"
+    },
+    ".github/workflows/decomposition-analysis.yml": {
+      "blob": "5954620fde6426d8f031facd230435e23a908a3e",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "9f2966ff95a46acd93544132c6a7481894775d17ab829db2ea5d03a8043c9b9f"
+    },
+    ".github/workflows/silent-video.yml": {
+      "blob": "55ef72034d7cd5dccb8a84996b256d14d25d5325",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "690491379b3fe04e598136294b5ac9faf0e4eaea88e5227369d84ea129e354b5"
+    },
+    "README.md": {
+      "blob": "a90706f6e8ebc3a819df6a01aae2503375feaffe",
+      "identical_source_prs": [],
+      "sha256": "061a47c4640c1d3c257ef762c102479e0529e004535f8901ea5b2a906637cc5a"
+    },
+    "SKILL.md": {
+      "blob": "0b56e26d0319e9f2ed1cecf743a4d603cc8e1406",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "59d68b16953a5103bc1484716503239c44b0707b28d03fa215dca0b876bf84fe"
+    },
+    "examples/cinematics3d/README.md": {
+      "blob": "87a6f225a87b46558de42310a45a2bf058cc973d",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "b160ae4c6d9d74e93a33f862a71cb5df0323a6ab8503c4054a3118caa589e2dd"
+    },
+    "examples/cinematics3d/exposure.json": {
+      "blob": "608690725333cd7c035e4857c58f3f56f683c9ce",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "848d88224592bb5af8b3ae2926b446631d8e96cefeb4e6b12a070d453511cb67"
+    },
+    "examples/cinematics3d/grain.json": {
+      "blob": "8434af7b2f412d1a0ae70ae5f911f95fa08b714c",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "b610620b4d39d43cd02a026a54a68903d4e51a68652da1ecae683e0bc3fa4ca7"
+    },
+    "examples/cinematics3d/look.json": {
+      "blob": "7c19112bf08069fff207e0a8c3a30bf9ac0f27b2",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "5966c85e34ff14d1b8dbe6fd39bc376955dcd60e164deb4eb6dd490dc72c98f0"
+    },
+    "examples/cinematics3d/scene-stack.json": {
+      "blob": "c655a0467cd72a5761f294bf67c6dee67634b405",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "c3985aa5374ba18a06756bda9f754fb5c0a4a9ab79d41d22bc768f750126a7a1"
+    },
+    "examples/cinematics3d/scene.json": {
+      "blob": "ec748a16210a98e2c231d78a31bc54b8cfdebc3f",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "759f472659091ea8896be8ec094adca0cd043789d5e633678288c0e4e57c7a18"
+    },
+    "examples/cinematics3d/shot-stack.json": {
+      "blob": "2115e75c787bf56aff940c6ba19edbb72e394faa",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "31ab01071ed697eb669178946f67cda79df10619f8884fc1931c9e5c3378b240"
+    },
+    "examples/cinematics3d/shot.json": {
+      "blob": "dd249e42ef05e7c58477a577f0270338e7274d9a",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "706f35278ac4a7f0690ff88d70ffbfba4a1df0cc4fb5853c286c0324f9881a16"
+    },
+    "examples/decomposition/analysis/README.md": {
+      "blob": "6d33936289345876970ce2cc721683d9360dfa83",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "1bee89e4cf62102772c419edad83832da00cecd740a5ef665be3ae1752d1ae42"
+    },
+    "examples/decomposition/analysis/astronaut.png": {
+      "blob": "834cda0012478c5edc8d43bade96d315dedeaab4",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "88431cd9653ccd539741b555fb0a46b61558b301d4110412b5bc28b5e3ea6cb5"
+    },
+    "examples/decomposition/analysis/execution.json": {
+      "blob": "a7beec147c5d18a938ba6008d512e428b2fb73a4",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "08284b5d9471b425b984a0fdbf596ae7ac3b8099219e7cfe4bf6ec4436756263"
+    },
+    "profiles/cinematics3d-effect.schema.json": {
+      "blob": "409fe636c5553459b904f1113e5e97d39c3e5334",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "e703a60c381eab73441ffe9e67a9b41240e3bbb9cc088256cf6adf61a80270a1"
+    },
+    "profiles/cinematics3d-graph.schema.json": {
+      "blob": "4ed2a6fe6699316f64350336260b1824bfc2e8ce",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "352c71c0153432ee2d546b84174b8e99b269bdd4ed038e06b1d95666546bd5c3"
+    },
+    "profiles/cinematics3d-preset.schema.json": {
+      "blob": "2c0f79a8d9247fe5fbba5c76dd1d680067aa5e35",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "6ce0cd019bc82d8f50468fe2cfba033be5aa197cca04c80624624432ed35a077"
+    },
+    "profiles/cinematics3d-render.schema.json": {
+      "blob": "fca1b17351a5492157ed77ddb21dfa0414a45d6d",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "580f38316e0bef883d99303779c5e399eb7103888c2ddf06162c2ddaa9b04643"
+    },
+    "profiles/cinematics3d-scene.schema.json": {
+      "blob": "f1402173d117b3d72ad99eacdb077e61091ec143",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "ef809a4f85d0754604f2ab64dd2536b17b42c8756150d4b560bbdf0a1da3439e"
+    },
+    "profiles/cinematics3d-shot.schema.json": {
+      "blob": "5cce8e71931dddfe389fcbbe32df49525037c3c9",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "692ff866c41dd7f683278cb258b9f97a7bccfd880656b3160eb84cff27b23d91"
+    },
+    "profiles/cinematics3d-stack.schema.json": {
+      "blob": "050d0ff5486fbb21c912ce6add773d36d5a18ab3",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "63b0cc745d1002530bfcb36773970901021c2b41fb49b9192986ede66ea66d5e"
+    },
+    "profiles/decomposition-analysis-request.schema.json": {
+      "blob": "7598280ba0f6c7e2506bbe5d99f573845b5c91ec",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "676e1a89761c76c502e28b97d86e6c0cfce141df20f7477ee9a00ede10017bb1"
+    },
+    "profiles/decomposition-analysis-response.schema.json": {
+      "blob": "5b2e4679f3ee5766e3a376d213634c4da1664fb9",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "9bb0fe69df8fc5594fa014dfabe03db7adc1c99093cbc4c7416b1fdd18eabe48"
+    },
+    "profiles/decomposition-analysis-state.schema.json": {
+      "blob": "c377154ae43753f9b74e049b476e7769b6a81ec3",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "ccb9283baa6d4101d5e1d148a1eebcb50e084ba371cba5ac7b9aec770e9daa09"
+    },
+    "profiles/decomposition.schema.json": {
+      "blob": "aae9c36c50b049fbf0174257d9ee0352ccdd6684",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "e3c74cbaac47e36031a403770d88a5a44d26062682a1a1d05c886c27c3889372"
+    },
+    "references/atomic-publication.md": {
+      "blob": "9a5a3fc4df224c0502ffbea45c784352b5e4dc98",
+      "identical_source_prs": [
+        "391"
+      ],
+      "sha256": "116bee126f2ee5b6be598be598962854506af2ce4ce187fdca751ceda2f0137e"
+    },
+    "references/character-decomposition.md": {
+      "blob": "220795076a1f1e63cc2a43e80eec5132d8145108",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "1b2ed5ddc9550c221067cde8311d2ff867f325d91d104ab6f0409ee9703f0aa5"
+    },
+    "references/cinematics3d-contracts.md": {
+      "blob": "dc7207ee58f66a6086363b239143703744f185e6",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "912a47a0c971d4f78af047fc1939cc580e68de9212a785936f86d4fda3d2c04c"
+    },
+    "references/decomposition-analysis.md": {
+      "blob": "30239e9f1a40afe7288ed32163dc3de3a1fcb682",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "f1ace2b487cbc850f42ee06956a6c9b196d20a2fc6e1b91ca131bc7153f97090"
+    },
+    "references/directory-capability.md": {
+      "blob": "dcf7c565b852a8a4491383bd92526a81bb015940",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "99d92f6794cc0e12180fecc5f2eb690b2090a496fb848336040418f1ec31fff5"
+    },
+    "references/silent-video.md": {
+      "blob": "f16709abbd76b63b418fd9c9cef5527f1301e532",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "e694dff68608990cc17c2b136feee5ec57f43660cd68d3deabf42ca71541d75f"
+    },
+    "requirements-analysis.txt": {
+      "blob": "7884c86eb13bad9741dc4de03536f4871a3d6050",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "bdfb5ed2737506c8a3238ae16eaa001675e565bc255f9876f93a356cfb98fef9"
+    },
+    "schemas/silent-video-v1/artifact.schema.json": {
+      "blob": "0c302490794148ea756b0c3331e4d1f9319ec204",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "f86e12a70e54ba713f0da11138ae6f0f2d071489c7b65b39906e7c93f66b5075"
+    },
+    "schemas/silent-video-v1/capability.schema.json": {
+      "blob": "f32d7bec124847c336f1a7816316917f5a4e4798",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "38b6452c576f8140c04313ac0fa9ea11c715681d372d30d5afcaf50328941180"
+    },
+    "schemas/silent-video-v1/job.schema.json": {
+      "blob": "427c6de9ffe969b986a706aed107346c25354f38",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "edd0eda4229fb2b3e1d75a8a7cb0990e7269e75f7ced64562cfbd19ce26d0740"
+    },
+    "schemas/silent-video-v1/profile.schema.json": {
+      "blob": "5863c6715735b581a1a7571baf248c0f9892e53a",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "8266407f8ffdaefd45dae43acbf1df01475e7910f802b7b3dc02b15471dc3412"
+    },
+    "schemas/silent-video-v1/request.schema.json": {
+      "blob": "4588493cd6f6cd8561bbf8e2d547be4d6286a489",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "b500cd90ede1e31d0b4d13fc9820f98982fc6ba70a162fa2d2cd7e850bee843d"
+    },
+    "schemas/silent-video-v1/source.schema.json": {
+      "blob": "172ed07c0fe42cc1d02b8b2f3cad3e1c894a3c8f",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "09b137489c7a4171915ba79bb265218809664d827a0c59bbc3e5ac40ca92054b"
+    },
+    "scripts/atomic_publish.py": {
+      "blob": "1900231a98609c17f650c1cdec5ec5885f590089",
+      "identical_source_prs": [
+        "391"
+      ],
+      "sha256": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567"
+    },
+    "scripts/character_decomposition.py": {
+      "blob": "24f1b1c782d1ff3c9e10ef86a3bf4bef484ab0a9",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "f474fb0f4ec641aaf77590bd41b712e65aa35edc267e61b25a84f2eba5663a9c"
+    },
+    "scripts/cinematics3d_contracts.py": {
+      "blob": "b3643e1ba6efc572bc45a78446db137478c9307c",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "e81a1a6ece4f7b2c3d18b4edd5182dae10bec0645f3f87113be8305bf12e51a3"
+    },
+    "scripts/cinematics3d_example.py": {
+      "blob": "c65077c5ee3bd82904ac6cd4e785488723d4bc60",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "49de572a74e3499c3d6e51faa4b030b07f4a3e17849890f54f7d364a1a7d3d4b"
+    },
+    "scripts/decomposition_analysis.py": {
+      "blob": "68faaec2e446724145b902ee68933db1a15eace7",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "bba8ede1128bfc213f424ffcc0f2685a4bf8308e636ca12c947deba389cadf81"
+    },
+    "scripts/decomposition_cli.py": {
+      "blob": "ba5aea917e82e448a7f7b29a0fff6a05caf17989",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "eb29e3c90c760c93c4c8cfe052e0b758eaf54b9512ae7136996b3b66f6508363"
+    },
+    "scripts/decomposition_package.py": {
+      "blob": "4ddb803ddee40e5e0ad836be1c820445f78e5585",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "8db3d1ed40cf4e7e32ea22c91bee5535abab376e0a021d0f1f6c5a5dedcb125f"
+    },
+    "scripts/decomposition_spec.py": {
+      "blob": "5a212e16a67b6792b4061c3621e9f90e47308727",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "cf6ebfa0b6699c98fad47754f877782daaa457a295c53e592509d9955ba006c8"
+    },
+    "scripts/demonstrate_silent_video.py": {
+      "blob": "14c003ed865355ad5095aec3275375e67e6a0d5c",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "256691cfa71e83a01332ae11009c642c4a4810f5bd5e4ed1550d64748e77f537"
+    },
+    "scripts/generate_schemas.py": {
+      "blob": "7ecbdf31c5346e092d9416758738adabc0e190a7",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "8ac979f0e58a7d7fbaf03c381343acfdefb882892400a9b9aec10fc48f8b381f"
+    },
+    "scripts/portable_paths.py": {
+      "blob": "9199993fe1cbe6c982fb8ecb860ea9fb71619793",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "c50f1675449f3a037bc774342601bf1e0787b1cf4d936b5c2a85c339966e6b29"
+    },
+    "scripts/rig_errors.py": {
+      "blob": "70978eb966b8b1ad065073b16e1e24a3cf9d2d16",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b"
+    },
+    "scripts/rig_gltf.py": {
+      "blob": "98b1a80481dd62e4ad387e1556331f0e5565a559",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "d5b1cb52eb7acd776182973fc663b7b57f6b834817cad3d538e2da083a6f6e90"
+    },
+    "scripts/rig_jobs.py": {
+      "blob": "2b07cb5114c80b670760486c67efb83cf53a1666",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "a134673a3c8e0f66c5d3b1deaac7808a8dfb6837636c2c5bbb0f1c1b256698d2"
+    },
+    "scripts/rig_models.py": {
+      "blob": "86827c17354152837a2ac09c439304e85c30b047",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "6447ed3746d93f6020aa469db15902c71846928ec70b7c7537e2d69ae84c3c3d"
+    },
+    "scripts/rig_obj.py": {
+      "blob": "bdcb9ce1822d1323b9754f62adeb0a790a49d9a1",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "2a1c243513f3c8fb339d9fb1c31693d788a4b2364bf4a47206fd5942d1996aa5"
+    },
+    "scripts/silent_video.py": {
+      "blob": "8a406b5aaee08728f79f521c34a56e53c2acd2ec",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "4a69f059ef314ea2875a10b4182b3c2c895907b0c590793d2ed237888db3bf45"
+    },
+    "scripts/test_rig_gate.py": {
+      "blob": "e63f62a98257092817b0bec9d6037255983a5a7a",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "a35b47da83138cf140874e74ad966c9d1eb0f8aaac308feb45d676351deec1de"
+    },
+    "tests/optional/test_atomic_capability_linux.py": {
+      "blob": "5c59c05de35e7ce89a803243da01ac4993744b6f",
+      "identical_source_prs": [
+        "391"
+      ],
+      "sha256": "8e1bc30da9bdc79ca933bb763a2c3f90a1365fff5a8721f46594bd50298d9f87"
+    },
+    "tests/optional/test_atomic_private_stage_linux.py": {
+      "blob": "199f07fa2d9772b2dd8a7e9eeea86347d21c9ab2",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "16c2d2c21769d2baf8ff8b5f4a462174951f6d3bfe2443f05839f444923b7dc3"
+    },
+    "tests/optional/test_decomposition_analysis_backend.py": {
+      "blob": "fceff18bf61abd4a2286b803be1661f08ffd7ef4",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "59a45f5757833377d3145336f74a4e97f817998322e906bfa93db5f78572120e"
+    },
+    "tests/optional/test_decomposition_windows_records.py": {
+      "blob": "74a71cd667ae2a4c79ca158b2a5d76652788ac23",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "9e30002d4c86467dbb546bbe2cbf6b72674750637401fc867cab499f28974fcc"
+    },
+    "tests/optional/test_silent_video_native.py": {
+      "blob": "71587e06b35668d4e5780b5f140f47a4744f88c0",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "76059e981ca5becd0a85b225d253676c4121334a40130fa10b7e35a9f842d905"
+    },
+    "tests/results/cinematics3d-contracts/contracts.log": {
+      "blob": "9a33bc3441046d432fd876126dee57c6aadd7ac4",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "03c8500bddd68fe1459a4e24aad1d7667628699a1b21c60eee632fa13e8a970c"
+    },
+    "tests/results/cinematics3d-contracts/delivery.json": {
+      "blob": "881375dbb49e30ef1d8b5943477dcf45e7d32c35",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "7d59ca4103d32ae90d1ba145e50d0827d9b061616ea1b560bbe3aaba76747ec8"
+    },
+    "tests/results/cinematics3d-contracts/example.json": {
+      "blob": "6d3714d992034106926130bef0e8cd4503d2ef16",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "2f8589c0365b5e5d2f7f7d0463c458c758762c00440ab2b9e49cf5cfc68193c7"
+    },
+    "tests/results/cinematics3d-contracts/legacy-production.log": {
+      "blob": "b03ea46186d823642576e959e778590038954e00",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "3d64e6c1d04c6cd24213e08710999115d81f428bad02baef743861807dcf6eb9"
+    },
+    "tests/results/cinematics3d-contracts/receipt.json": {
+      "blob": "f3f444dcb51f24354b5b2aebe2c7d034e039d7e9",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "20274868c278895e97a44ecf43dbe2110aab465174b7bdc7f2702ac8da6fb3e4"
+    },
+    "tests/results/cinematics3d-contracts/review-r1/contracts.log": {
+      "blob": "c69a88a2ef079b0914aa4747762cebe5294d7ebb",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "1b4ee99cac136c8c0ca85fdb5260718a7f723d1d075915c241e2ac80ffd740c5"
+    },
+    "tests/results/cinematics3d-contracts/review-r1/receipt.json": {
+      "blob": "e1e1020c18be61ec5491b0f44c15a27bcb4bc567",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "83a4740d72ac8aed05d634fe4ffb01539dcb010e462934a5c2323302b0bf7841"
+    },
+    "tests/results/cinematics3d-contracts/review-r1/schema-math.log": {
+      "blob": "295e1d3952ac602a3f78ea729605b3c69f2ae507",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "f6a349a8cf0999584b93131596800bfe7b69d54075e75c968f71846d4c905658"
+    },
+    "tests/results/cinematics3d-contracts/review-r1/skinning.log": {
+      "blob": "e572e7955cc0c86074ccb4cf253c2f5f3f5b9fa8",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "ab01701df18041951641682e08d1ae192e0f36bcf564a18fcaac1345e587094a"
+    },
+    "tests/results/cinematics3d-contracts/schema-math.log": {
+      "blob": "bca5d334199ddcce3059bf6d4a42108bffd819ad",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "e42bd891ccd10facc53e8e6cde72aef589af9111cbf8957895c051aafe936fef"
+    },
+    "tests/results/media-foundations-integration/actual-media.log": {
+      "blob": "22c10ad8be7b8241d4ccbd0a22966bee926536e6",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "79a418f612e5ba020642785785dccadeb2d1f3c737bb58898d6e9cf602f3c889"
+    },
+    "tests/results/media-foundations-integration/cinematics-example.json": {
+      "blob": "6d3714d992034106926130bef0e8cd4503d2ef16",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "2f8589c0365b5e5d2f7f7d0463c458c758762c00440ab2b9e49cf5cfc68193c7"
+    },
+    "tests/results/media-foundations-integration/combined-unit.log": {
+      "blob": "2dfc4b0069c69110abfefa4efcc56afba6365280",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "bfaade427a411097cf710cf0ccc6e3cf85d2fcc215c2b5b3cbb21cde0781ef2a"
+    },
+    "tests/results/media-foundations-integration/receipt-capability-20261113.json": {
+      "blob": "9361d9e4abffe6bcbe284265648d1b008fb1de1a",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "a99190cc6769dcac8849e12db0975e06cd714a062742dd25b20c99d5fa23ee74"
+    },
+    "tests/results/media-foundations-integration/receipt-stdlib-20261113.json": {
+      "blob": "24db38efed68d239f522fe1bbe55880bbee5593f",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "5768c6c2dc09ebcc1b5bd86bd97302ff982407622161fba6a2a80375c2680ca1"
+    },
+    "tests/results/media-foundations-integration/receipt.json": {
+      "blob": "3d9ee51bb67007b12028cb04f2528f72ec4a20d3",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "e94252c095f51a7849d82d8f90085b20abf33cadf122ad2801b004ebce801196"
+    },
+    "tests/results/media-foundations-integration/schema-math.log": {
+      "blob": "3a7a7b27bdbc8797bb467f80719b0a3173d6b1cf",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "a6c96e71909adc2cc5a41b187e87290982fdf591eb579d9cb22496085941dab9"
+    },
+    "tests/results/silent-video-foundations.json": {
+      "blob": "ac8ca7dc28981d9c1234c497f35b04732184c809",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "13e66dedf0d4d5a204ea52c76d0992e8e72839f851b767d8a8d7187a086a06a4"
+    },
+    "tests/test_atomic_fd_stage.py": {
+      "blob": "8f594af1ed5f8f9b985dc1c0ba621c766a2f9b62",
+      "identical_source_prs": [
+        "391"
+      ],
+      "sha256": "11c1d16d63a1e1edcc98255ad00da979f50e442f5d0773548ec324d63bd30443"
+    },
+    "tests/test_atomic_private_stage.py": {
+      "blob": "8fd4e221b470217a060f3ad1cdc13c70b15f4eef",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "fbc71343487b9d082165326155258ba8e82045a7751c484e53420acabc2a9ecf"
+    },
+    "tests/test_decomposition_analysis.py": {
+      "blob": "7f1e24fc00548c16a4e66391fbde66429cbb4b63",
+      "identical_source_prs": [
+        "292"
+      ],
+      "sha256": "53d884bd772e4005a600b49725f151a96fc674723f61e99ba44a0311199d2e74"
+    },
+    "tests/test_portable_paths.py": {
+      "blob": "1054a4094020bfdcd05ba392c7c28f763132b547",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "620b6c28f420e8848fa17af578076e66cb1b3d5edd01df6390b277c62f9e47d3"
+    },
+    "tests/test_rig_cinematics3d_contracts.py": {
+      "blob": "fe34fecac8bb91f6d0f88a77e3eace1f45cddf36",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "738a36290d2730528f584461885b9ada07443765da7b46b8e47bafb4c2f6e1bb"
+    },
+    "tests/test_rig_directory_capability.py": {
+      "blob": "3dc4dcb1392cf65721893f2a48559a4dc8843a44",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "d7e41237a8a022f311fbff38ee8cb63447f1202a365c984d58f0271f9fcaaf2b"
+    },
+    "tests/test_rig_workflow.py": {
+      "blob": "dab8d4a91038985fee3f640be454dac2fd9cbfc5",
+      "identical_source_prs": [
+        "391",
+        "341"
+      ],
+      "sha256": "f33726e179c1a6a9549702fbcbec32a010cd22e1e64364addd31aaf17b289218"
+    },
+    "tests/test_silent_video.py": {
+      "blob": "a9efa36b9e080ff63c19c0253748e92fb657c4ad",
+      "identical_source_prs": [
+        "341"
+      ],
+      "sha256": "575b7798fc02ac67234b7b2a8bd22c7c546728b1c5383393d1cd12cde032e678"
+    }
+  }
+}
