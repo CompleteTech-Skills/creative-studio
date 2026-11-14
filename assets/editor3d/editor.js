@@ -2,7 +2,6 @@ import * as THREE from "three";
 import { OrbitControls } from "/vendor/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "/vendor/examples/jsm/loaders/GLTFLoader.js";
 import { TransformControls } from "./TransformControls.js";
-import { createPrefabProjection } from "./prefabs.js";
 const $ = (id) => document.getElementById(id);
 const tokenKey = "hatch-editor-bearer-v1";
 let token = location.hash.slice(1);
@@ -833,8 +832,15 @@ async function install(snapshot, assertCurrent = null) {
   if (!doc?.nodes)
     throw Error("The repository supplied no native Scene3D scene.");
   try {
-    prefabProjection = createPrefabProjection(snapshot);
-    runtimeDoc = prefabProjection.scene;
+    if (snapshot.viewport_prefabs) {
+      const { createPrefabProjection } = await import("./prefabs.js");
+      assertCurrent?.();
+      if (epoch !== loadEpoch || disposed || lost) return false;
+      prefabProjection = createPrefabProjection(snapshot);
+      runtimeDoc = prefabProjection.scene;
+    } else if (doc.nodes.some(node => node.type === "prefab_instance")) {
+      throw Error("No canonical read-only prefab projection is available.");
+    }
   } catch (error) {
     disposeContent(); evaluatedStates.clear(); selection.clear(); selectedBone = null;
     $("outliner").replaceChildren(); $("collections").replaceChildren();
