@@ -114,14 +114,25 @@ class DocumentPublisher:
                 len(manifest['dependencies']) != len(reference['dependencies'])):
             _fail('METADATA', 'Document metadata differs from its canonical identity/source binding.')
         if verify_dependencies:
-            for declared, retained in zip(reference['dependencies'], manifest['dependencies']):
-                target = retained['target']
-                dependency = self.library.resolve(target)
-                if dependency['identity']['kind'] == 'document':
-                    if self._ref(dependency, verify_dependencies=False) != declared:
-                        _fail('METADATA', 'Document dependency differs from its exact canonical publication.')
-                elif self._native_dependency(declared, check_alias=False)[0] != target:
-                    _fail('METADATA', 'Native dependency differs from its owning canonical version.')
+            from asset_library import MAX_VERSIONS
+            pending, verified = [(manifest, reference)], set()
+            while pending:
+                current, current_ref = pending.pop()
+                if current['manifest_sha256'] in verified:
+                    continue
+                verified.add(current['manifest_sha256'])
+                if len(verified) > MAX_VERSIONS:
+                    _fail('LIMIT', 'Canonical document dependency closure exceeds its version bound.')
+                for declared, retained in zip(current_ref['dependencies'], current['dependencies']):
+                    target = retained['target']
+                    dependency = self.library.resolve(target)
+                    if dependency['identity']['kind'] == 'document':
+                        dependency_ref = self._ref(dependency, verify_dependencies=False)
+                        if dependency_ref != declared:
+                            _fail('METADATA', 'Document dependency differs from its exact canonical publication.')
+                        pending.append((dependency, dependency_ref))
+                    elif self._native_dependency(declared, check_alias=False)[0] != target:
+                        _fail('METADATA', 'Native dependency differs from its owning canonical version.')
         return reference
 
     def _check_path_alias(self, reference):

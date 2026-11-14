@@ -208,6 +208,40 @@ class DocumentPublicationTests(unittest.TestCase):
         self.assertEqual(self.publisher.read_ref(ref), b'{"kind":"director-project","id":"project"}')
         self.assertEqual(self.publish(), ref)
 
+    def test_raw_nested_dependency_mismatch_is_rejected_through_parent(self):
+        from asset_library_contracts import canonical_bytes, seal
+        from asset_library_documents import _identity
+        first = self.publish(b'{"first":true}', artifact_id='first')
+        second = self.publish(b'{"second":true}', artifact_id='second')
+        template = self.publish(b'{"template":true}', artifact_id='template', dependencies=[first])
+        def asset(reference):
+            return next(r for r in self.library.list_references() if r['id'] == _identity(reference['artifact_id']))
+        def raw(name, payload, declared, retained):
+            manifest = deepcopy(self.library.resolve(asset(template)))
+            manifest['identity'].update(id=_identity(name), slug=_identity(name), name=name)
+            ref = dict(template, artifact_id=name, sha256=hashlib.sha256(payload).hexdigest(),
+                       byte_size=len(payload), dependencies=declared)
+            ref['path'] = 'library/records/blobs/' + ref['sha256']
+            metadata = canonical_bytes(dict(adapter='asset-library-document-v1', artifact=ref))
+            for record, data in zip(manifest['files'], (payload, metadata)):
+                record.update(sha256=hashlib.sha256(data).hexdigest(), bytes=len(data))
+            manifest['provenance']['sources'] = [deepcopy(manifest['files'][0])]
+            manifest['provenance']['license_evidence'] = [deepcopy(manifest['files'][1])]
+            manifest['dependencies'][0]['target'] = retained
+            sources = {}
+            for record, data in zip(manifest['files'], (payload, metadata)):
+                path = self.root / (name + '-' + record['path'])
+                path.write_bytes(data)
+                sources[record['path']] = path
+            return ref, self.library.register(seal(manifest), sources)
+        child, child_asset = raw('bad-child', b'{"bad-child":true}', [first], asset(second))
+        parent, _ = raw('bad-root', b'{"bad-root":true}', [child], child_asset)
+        for ref in (child, parent):
+            with self.subTest(artifact=ref['artifact_id']), self.assertRaises(RigError) as caught:
+                self.publisher.read_ref(ref)
+            self.assertEqual(caught.exception.report['code'], 'LIBRARY_DOCUMENT_METADATA')
+        self.assertEqual(self.publisher.read_ref(first), b'{"first":true}')
+
     def test_stale_history_does_not_register_or_activate(self):
         register = self.library.register
         def race(manifest, sources, **kwargs):

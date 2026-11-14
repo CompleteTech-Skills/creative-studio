@@ -67,7 +67,10 @@ The entire nested ArtifactRef graph also obeys Director's path/identity uniquene
 NFC/case spelling, count, and aggregate byte bounds using its existing reference
 traversal authority. Malformed canonical document envelopes and identity/source/dependency bindings
 fail with typed metadata errors, including registrations made through the lower
-level canonical API.
+level canonical API. Dependency bindings are checked across the entire canonical
+document closure with a bounded iterative traversal; a parent cannot conceal a
+child's mismatched retained dependency. Unrelated malformed metadata or an
+unrelated native capability does not participate in exact source readback.
 
 By default dependencies must already be documents published by this adapter in
 the same configured library/root. A native owner can be injected explicitly as
