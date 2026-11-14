@@ -856,7 +856,7 @@
           ]
         },
         "semantic_model_called": {
-          "const": false
+          "type": "boolean"
         },
         "candidates": {
           "type": "array",

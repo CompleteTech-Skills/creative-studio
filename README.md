@@ -149,6 +149,10 @@ python scripts/validate_atlas.py assets/pet/spritesheet.webp
 
 That check does not recreate generation provenance or prove current app integration. New runs use the review and packaging gates described in [the workflow](references/workflow.md).
 
+## Optional image analysis
+
+[Resumable decomposition analysis](references/decomposition-analysis.md) can run a local OpenCV human face/eye detector or validate externally supplied proposals. It preserves original pixels and pending review. The local detector produces coarse photographic regions, not complete semantic character segmentation; the existing offline manual route remains available.
+
 ## Character state library
 
 Build custom character profiles from **416 canonical states across 16 categories**, with 408 aliases, sixteen composable packs, fifteen archetype presets, nine animation recipes and nine event/transition recipes. Discover states by action, emotion, family or tags, inspect their key poses and generation requirements, then compile only the states you need. The fixed Codex atlas above remains byte-for-byte unchanged; additional states are for custom profiles and exported consumers.
