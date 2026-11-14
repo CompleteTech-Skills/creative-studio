@@ -71,6 +71,42 @@ class EditorPrefabBrowserTests(unittest.TestCase):
                 finally:browser.close()
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
 
+    def test_rejected_old_prefab_import_does_not_clear_a_newer_saved_viewport(self):
+        from playwright.sync_api import sync_playwright
+        from browser_runtime import launch_chromium
+        fixture=prefab_tests.EditorPrefabProjectionTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
+        repository,snapshot,_=fixture.fixture(upright=True)
+        server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            with sync_playwright() as runtime:
+                browser=launch_chromium(runtime)
+                try:
+                    page=browser.new_page(viewport={'width':1400,'height':900});pending=[]
+                    page.route('**/editor/prefabs.js',lambda route:pending.append(route))
+                    page.goto(server.url)
+                    page.wait_for_function('() => window.hatchEditor?.snapshot?.viewport_prefabs !== undefined')
+                    for _ in range(100):
+                        if pending:break
+                        page.wait_for_timeout(50)
+                    self.assertEqual(len(pending),1)
+                    # A real owned-fixture edit creates the newer ordinary scene;
+                    # this cancellation control is not evidence of prefab display.
+                    commands=dict(schema_version=1,commands=[dict(operation='delete',parameters=dict(identifier=identifier,policy='subtree'))
+                        for identifier in ('instance-0','instance-1')])
+                    newer=repository.apply(0,commands,'newer-scene-during-import',expected_sha256=snapshot['sha256'])
+                    page.evaluate('window.hatchEditor.reload()')
+                    self.assertTrue(page.evaluate('window.editorReady'))
+                    self.assertEqual(page.evaluate('window.hatchEditor.objects.size'),3)
+                    pending.pop().abort();page.wait_for_timeout(250)
+                    self.assertTrue(page.evaluate('window.editorReady'))
+                    self.assertEqual(page.evaluate('window.hatchEditor.objects.size'),3)
+                    self.assertEqual(page.evaluate('window.hatchEditor.snapshot.sha256'),newer['sha256'])
+                    self.assertEqual(page.evaluate('window.hatchEditor.errors'),[])
+                    self.assertNotIn('prefab projection unavailable',page.locator('#status').inner_text())
+                    self.assertEqual(repository.snapshot(),newer)
+                finally:browser.close()
+        finally:server.shutdown();server.server_close();thread.join(timeout=5)
+
     def test_real_geometry_pick_edits_only_the_authored_anchor_and_reopens(self):
         from playwright.sync_api import sync_playwright
         from browser_runtime import launch_chromium

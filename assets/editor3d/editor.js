@@ -831,22 +831,32 @@ async function install(snapshot, assertCurrent = null) {
   }
   if (!doc?.nodes)
     throw Error("The repository supplied no native Scene3D scene.");
-  try {
-    if (snapshot.viewport_prefabs) {
-      const { createPrefabProjection } = await import("./prefabs.js");
-      assertCurrent?.();
-      if (epoch !== loadEpoch || disposed || lost) return false;
-      prefabProjection = createPrefabProjection(snapshot);
-      runtimeDoc = prefabProjection.scene;
-    } else if (doc.nodes.some(node => node.type === "prefab_instance")) {
-      throw Error("No canonical read-only prefab projection is available.");
-    }
-  } catch (error) {
+  function prefabUnavailable(error) {
     disposeContent(); evaluatedStates.clear(); selection.clear(); selectedBone = null;
     $("outliner").replaceChildren(); $("collections").replaceChildren();
     diagnostic(error); $("status").textContent = "Saved revision " + revision + "; prefab projection unavailable.";
     return false;
   }
+  let prefabModule = null;
+  if (snapshot.viewport_prefabs) {
+    try { prefabModule = await import("./prefabs.js"); }
+    catch (error) {
+      assertCurrent?.();
+      if (epoch !== loadEpoch || disposed || lost) return false;
+      return prefabUnavailable(error);
+    }
+    // A superseded import must never dispose a newer installed viewport.
+    assertCurrent?.();
+    if (epoch !== loadEpoch || disposed || lost) return false;
+  }
+  try {
+    if (prefabModule) {
+      prefabProjection = prefabModule.createPrefabProjection(snapshot);
+      runtimeDoc = prefabProjection.scene;
+    } else if (doc.nodes.some(node => node.type === "prefab_instance")) {
+      throw Error("No canonical read-only prefab projection is available.");
+    }
+  } catch (error) { return prefabUnavailable(error); }
   const authoredNodes = new Map(doc.nodes.map(node => [node.id, node]));
   disposeContent();
   unavailableNodes.clear();

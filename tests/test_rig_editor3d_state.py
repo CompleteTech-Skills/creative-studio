@@ -10,6 +10,7 @@ import numpy as np
 
 from editor3d_repository import EditorRepository
 from editor3d_viewer import EditorServer, preview_snapshot
+from rig_errors import RigError
 from rig_import import load_character_model
 from rig_math import transform_points
 from scene3d_example import build_example
@@ -93,11 +94,17 @@ class EditorNativeStateTests(unittest.TestCase):
         saved=snapshot_project(source,work/'portable',graph,scene_path='example-scene.json')
         return EditorRepository.create(work/'portable',work/'repo',scene_path=saved['active_scene']['path'])
 
-    def test_unexpanded_prefab_is_explicitly_unavailable_without_changing_saved_project(self):
+    def test_prefab_projection_preserves_authored_source_and_rejects_unexpanded_graph_state(self):
+        from editor3d_state import project_editor_state
         repository=self.prefab_fixture();before=repository.snapshot()
+        native=repository.native_snapshot(before['revision'],before['sha256'])
+        with self.assertRaises(RigError) as rejected:
+            project_editor_state(before,native['root'])
+        self.assertEqual(rejected.exception.report['code'],'SCENE3D_PREFAB')
         value=preview_snapshot(repository,before)
-        self.assertFalse(value['viewport_state']['available'])
-        self.assertEqual(value['viewport_state']['error']['code'],'SCENE3D_PREFAB')
+        self.assertTrue(value['viewport_state']['available'])
+        self.assertEqual(value['scene'],before['scene'])
+        self.assertTrue(value['viewport_prefabs']['readonly_nodes'])
         self.assertEqual(repository.snapshot(),before)
 
     def test_unused_generic_assets_are_not_decoded(self):
@@ -232,19 +239,26 @@ class EditorNativeStateTests(unittest.TestCase):
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
 
     @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
-    def test_unsupported_prefab_has_no_false_ready_or_saved_render_success(self):
+    def test_missing_prefab_projection_has_no_false_ready_or_saved_render_success(self):
         from playwright.sync_api import sync_playwright
         from browser_runtime import launch_chromium
         repository=self.prefab_fixture();before=repository.snapshot()
-        server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        server=EditorServer(repository)
+        actual_snapshot=server.snapshot
+        def missing_projection():
+            # Fault-inject absent derived metadata into the real backend response;
+            # actual prefab support is exercised by the separate vertex/UI tests.
+            value=dict(actual_snapshot());value.pop('viewport_prefabs',None);return value
+        server.snapshot=missing_projection
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         try:
             with sync_playwright() as runtime:
                 browser=launch_chromium(runtime)
                 try:
                     page=browser.new_page();page.goto(server.url)
-                    page.wait_for_function('() => document.querySelector("#status").textContent.includes("viewport unavailable")')
+                    page.wait_for_function('() => document.querySelector("#status").textContent.includes("prefab projection unavailable")')
                     self.assertIsNot(page.evaluate('window.editorReady'),True)
-                    self.assertIn('Expand prefab',page.locator('#diagnostic').inner_text())
+                    self.assertIn('No canonical read-only prefab projection',page.locator('#diagnostic').inner_text())
                     self.assertEqual(page.evaluate('window.hatchEditor.objects.size'),0)
                     self.assertEqual(page.evaluate('window.hatchEditor.snapshot.revision'),before['revision'])
                     self.assertEqual(repository.snapshot(),before)
@@ -256,7 +270,7 @@ class EditorNativeStateTests(unittest.TestCase):
                     page.wait_for_function('() => document.querySelector("#diagnostic").textContent.includes("context lost")')
                     page.wait_for_timeout(100)
                     page.evaluate('window.nativeContextControl.restoreContext()')
-                    page.wait_for_function('() => document.querySelector("#diagnostic").textContent.includes("Expand prefab") && document.querySelector("#status").textContent.includes("viewport unavailable")')
+                    page.wait_for_function('() => document.querySelector("#diagnostic").textContent.includes("No canonical read-only prefab projection") && document.querySelector("#status").textContent.includes("prefab projection unavailable")')
                     self.assertFalse(page.locator('#diagnostic').is_hidden())
                     self.assertIsNot(page.evaluate('window.editorReady'),True)
                 finally:browser.close()
@@ -299,7 +313,7 @@ class EditorNativeStateTests(unittest.TestCase):
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
 
     @unittest.skipUnless(os.environ.get('HATCH_EDITOR_BROWSER_TEST') == '1', 'Enable actual native-state browser proof explicitly.')
-    def test_history_preserves_unavailable_prefab_diagnostic_and_redo_recovers_view(self):
+    def test_history_preserves_missing_prefab_projection_diagnostic_and_redo_recovers_view(self):
         from scene3d_contracts import load_project
         from playwright.sync_api import sync_playwright
         from browser_runtime import launch_chromium
@@ -310,16 +324,21 @@ class EditorNativeStateTests(unittest.TestCase):
             graph.replace_document(document,expected_revision=graph.revision)
             return snapshot_project(source,destination,graph,scene_path=scene_path)['active_scene']['path']
         repository.transact_native(0,'remove-prefab',{'operation':'remove-prefab'},remove_prefab,expected_sha256=original['sha256'])
-        server=EditorServer(repository);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        server=EditorServer(repository)
+        actual_snapshot=server.snapshot
+        def missing_projection():
+            value=dict(actual_snapshot());value.pop('viewport_prefabs',None);return value
+        server.snapshot=missing_projection
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         try:
             with sync_playwright() as runtime:
                 browser=launch_chromium(runtime)
                 try:
                     page=browser.new_page();page.goto(server.url);page.wait_for_function('() => window.editorReady === true')
                     page.click('#undo')
-                    page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2 && document.querySelector("#status").textContent.includes("viewport unavailable")')
+                    page.wait_for_function('() => window.hatchEditor.snapshot.revision === 2 && document.querySelector("#status").textContent.includes("prefab projection unavailable")')
                     self.assertFalse(page.locator('#diagnostic').is_hidden())
-                    self.assertIn('Expand prefab',page.locator('#diagnostic').inner_text())
+                    self.assertIn('No canonical read-only prefab projection',page.locator('#diagnostic').inner_text())
                     self.assertIsNot(page.evaluate('window.editorReady'),True)
                     page.click('#redo');page.wait_for_function('() => window.editorReady === true && window.hatchEditor.snapshot.revision === 3')
                     self.assertTrue(page.locator('#diagnostic').is_hidden())
