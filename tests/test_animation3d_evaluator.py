@@ -62,4 +62,27 @@ class EvaluatorAdmissionTests(unittest.TestCase):
             self.assertGreaterEqual(len(calls),2)
             self.assertTrue(all(item['sha256']==evaluator._dependency for item in calls))
 
+
+class PoseLibraryCapacityTests(unittest.TestCase):
+    def test_bounded_immutable_named_pose_store_and_native_constraint_validation(self):
+        from animation3d_evaluator import PoseLibrary
+        from rig_skeleton import neutral_pose
+        with tempfile.TemporaryDirectory() as directory:
+            rig=fixture(directory,animated=False)
+            value=neutral_pose(rig.skeleton)
+            library=PoseLibrary(rig,max_entries=1)
+            digest=library.add(value)
+            self.assertEqual(digest,object_hash(value))
+            self.assertEqual(library.add(deepcopy(value)),digest)
+            with self.assertRaises(RigError) as rejected:library.duplicate(value['id'],digest,'new')
+            self.assertEqual(rejected.exception.report['code'],'ANIMATION_LIMIT')
+            self.assertEqual(library.get(value['id'],digest),value)
+            low=PoseLibrary(rig,max_pose_bytes=1)
+            with self.assertRaises(RigError):low.add(value)
+            self.assertEqual(low._poses,{})
+            with self.assertRaises(RigError):PoseLibrary(rig,max_entries=True)
+            edited=deepcopy(value);edited['bones']['b0']={'translation':[1,0,0]}
+            with self.assertRaises(RigError) as conflict:library.add(edited)
+            self.assertEqual(conflict.exception.report['code'],'ANIMATION_IDENTITY')
+
 if __name__=='__main__': unittest.main()

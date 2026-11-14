@@ -24,7 +24,8 @@ def main(argv=None):
             result=dict(schema_version=1,contracts=True,exact_frame_time=True,
                 target_adapters=['native-rig-bone','native-rig-morph','scene3d-node','camera3d-persisted-property','lookdev-material','lookdev-light'],
                 exact_project_admission=True, animated_weight_controllers=False, unsupported_target_domains=['environment','unrepresented-native-properties'],
-                interpolation=['step','linear','hermite','quaternion-slerp'],
+                interpolation=['step','linear','ease','bezier','hermite','catmull-rom','tcb','quaternion-slerp','quaternion-squad'],
+                detached_clip_edits=True, native_rig_clip_evaluation=True, edit_command_batch_limit=128,
                 constraints_executed=False,scene_evaluation=False,rendering=False,visual_approval=False)
         elif args.command=='admit-project':
             from animation3d_assets import load_project

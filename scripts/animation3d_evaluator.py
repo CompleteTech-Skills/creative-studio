@@ -43,6 +43,19 @@ class RigClipEvaluator:
         self._rig=deepcopy(rig); self._actor_id=actor_id
         self._dependency=source['sha256']
 
+    def validate_clip(self, clip):
+        """Validate all registered targets, including disabled channels, and
+        exercise the actual native deformation at the two terminal boundaries.
+        """
+        validate_contract(clip)
+        require(clip['kind']==KINDS['clip'],'ANIMATION_KIND','Expected a clip document.')
+        registry=_FrameRegistry(self._registry.root,self._registry.document)
+        for track in clip['tracks']:
+            registry.resolve(track['target'])
+        for time in ({'frame':0},{'frame':clip['duration_frames']}):
+            self.evaluate([clip],time)
+        return object_hash(clip)
+
     def evaluate(self, clips, time, *, pose=None):
         """Evaluate disjoint clip channels at one shared exact source timestamp.
 
@@ -116,16 +129,56 @@ class RigClipEvaluator:
 
 
 class PoseLibrary:
-    """Canonical rig poses with exact version/hash lookup and native validation."""
-    def __init__(self, rig): self._rig=deepcopy(rig); self._poses={}
+    """Bounded named native poses; cache policy covers stored pose JSON estimates.
+
+    The caller supplies an already admitted native rig; its independent geometry
+    memory and process RSS are outside the cached-pose allowance."""
+    def __init__(self, rig, *, max_entries=4096, max_pose_bytes=64*1024*1024):
+        require(type(max_entries) is int and 1<=max_entries<=4096,
+                'ANIMATION_LIMIT','Pose library entry policy must be within 1..4096.')
+        require(type(max_pose_bytes) is int and 1<=max_pose_bytes<=64*1024*1024,
+                'ANIMATION_LIMIT','Pose library cached-pose policy must be within 1..64 MiB.')
+        self._rig=deepcopy(rig); self._poses={}
+        self._max_entries=max_entries; self._max_pose_bytes=max_pose_bytes; self._memory=0
+
     def add(self, pose):
-        value=deepcopy(pose); validate_rig_contract(value,'Pose')
-        require(value['rig_version']==self._rig.skeleton['version'],'ANIMATION_IDENTITY','Pose rig version differs.')
-        evaluate_deformation(self._rig,value)
-        digest=object_hash(value); key=value['id']
-        require(key not in self._poses or self._poses[key][0]==digest,'ANIMATION_IDENTITY','Named pose already has different immutable content.')
-        self._poses[key]=(digest,value); return digest
+        import hashlib,json
+        from rig_load_limits import _JSON_FACTOR
+        from animation3d_poses import validate_pose
+        validate_rig_contract(pose,'Pose')
+        digest=hashlib.sha256(); encoded=0
+        for part in json.JSONEncoder(sort_keys=True,separators=(',',':'),allow_nan=False).iterencode(pose):
+            encoded+=len(part)
+            require(encoded*_JSON_FACTOR<=self._max_pose_bytes,
+                    'ANIMATION_LIMIT','Pose library entry exceeds its conservative JSON object allowance.')
+            digest.update(part.encode('utf-8'))
+        digest=digest.hexdigest(); key=pose['id']; found=self._poses.get(key)
+        require(found is None or found[0]==digest,'ANIMATION_IDENTITY','Named pose already has different immutable content.')
+        if found is not None: return digest
+        estimate=encoded*_JSON_FACTOR
+        require(len(self._poses)<self._max_entries and self._memory+estimate<=self._max_pose_bytes,
+                'ANIMATION_LIMIT','Pose library capacity exceeded; existing entries remain unchanged.')
+        value=validate_pose(self._rig,pose)
+        self._poses[key]=(digest,value); self._memory+=estimate
+        return digest
+
     def get(self, identifier, digest):
         found=self._poses.get(identifier)
         require(found is not None and found[0]==digest,'ANIMATION_HASH','Named pose hash differs or is unavailable.')
         return deepcopy(found[1])
+
+    def duplicate(self, identifier, digest, new_identifier):
+        from animation3d_poses import duplicate_pose
+        return self.add(duplicate_pose(self._rig,self.get(identifier,digest),new_identifier))
+
+    def load(self, path):
+        from animation3d_poses import load_pose
+        return self.add(load_pose(self._rig,path))
+
+    def save(self, identifier, digest, path):
+        from animation3d_poses import save_pose
+        save_pose(self._rig,path,self.get(identifier,digest))
+
+    def compare(self, first, first_digest, second, second_digest):
+        from animation3d_poses import compare_poses
+        return compare_poses(self._rig,self.get(first,first_digest),self.get(second,second_digest))
