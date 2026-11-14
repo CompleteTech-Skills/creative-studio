@@ -1,4 +1,11 @@
 {
+  "recovery_notice": {
+    "status": "Historical claims transcribed from PR #346; activation and enforcement readbacks have not been independently verified in this recovery.",
+    "source_commit": "6ef8647547d68af92c82ba0393e7edb28e29ede6",
+    "scope": "This receipt is not evidence of current repository settings. Retain all reported values below as historical assertions, not independently validated live readbacks.",
+    "baseline_correction": "The statement below that original before-settings responses were not archived as files reflects the original receipt. A later local commit fcbfc350879342f445b03771f723ca78f92a018a contains archived call/output excerpts for portions of the before state, including a projected security response and incomplete alerts HTTP response; it does not supply the activation after-readbacks.",
+    "missing_evidence": "Original activation-time protection, security, alerts and workflow registration readbacks, check-run responses and the mergeability evaluation are not present in this recovery. Current live state requires separate coordinator readback."
+  },
   "schema_version": 1,
   "repository": "CompleteTech-Skills/creative-studio",
   "recorded_at": "2026-11-13T12:40:44.345441+00:00",

@@ -28,9 +28,16 @@ found during this audit. They are not main release checks. Their task-specific
 transfer/capture work is superseded by normal Git publication and fresh live
 inventory. The proposed disposition is to disable these five registrations after
 review while retaining source branches, Git history and any available artifacts.
-Disabling has not yet occurred. Expired historical artifacts must not be claimed
-as newly verified evidence.
-This PR does not claim that reconciliation or live settings activation occurred.
+At policy preparation time, disabling had not yet occurred. Expired historical
+artifacts must not be claimed as newly verified evidence.
+
+[The activation receipt](activation-20261113.json) preserves later reported
+observations from PR #346, qualified as historical assertions. The original
+activation readbacks and rule evaluation are unavailable in this recovery; the
+receipt does not establish current settings. Local commit
+`fcbfc350879342f445b03771f723ca78f92a018a` separately preserves excerpts of
+earlier baseline calls, subject to the limitations described in the receipt.
+Current settings and workflow registrations require a fresh live readback.
 
 Before closing #216, append or link immutable evidence for current-head CI,
 independent policy review, final settings readback, a rejected direct update (or
