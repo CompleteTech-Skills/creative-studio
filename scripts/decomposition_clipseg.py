@@ -5,6 +5,7 @@ remote code or model download is supported by inference or discovery.
 """
 from __future__ import annotations
 import hashlib
+from contextlib import nullcontext
 import importlib.metadata
 import os
 from pathlib import Path
@@ -58,20 +59,29 @@ def _capture_model(directory):
     directory = Path(directory).absolute()
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError('CLIPSeg capture requires a real model directory')
+    # The shared Windows reader canonicalizes its root before comparing the
+    # opened file. Pin each original ancestor first so links and junctions
+    # cannot be hidden by that normalization or swapped during capture.
+    if os.name == 'nt':
+        from atomic_windows import pinned_directory
+        authority = pinned_directory(directory)
+    else:
+        authority = nullcontext()
     captured = {}
     total = 0
-    for name, expected in FILES.items():
-        maximum = MAX_MODEL_FILE_BYTES if name == 'model.safetensors' else MAX_CONFIG_FILE_BYTES
-        with open_payload(directory, name) as (stream, info):
-            if info.st_size > maximum or total + info.st_size > MAX_CAPTURE_BYTES:
-                raise ValueError('CLIPSeg captured snapshot exceeds byte bound')
-            data = stream.read(min(maximum, MAX_CAPTURE_BYTES - total) + 1)
-            total += len(data)
-            if len(data) > maximum or total > MAX_CAPTURE_BYTES:
-                raise ValueError('CLIPSeg captured snapshot grew past byte bound')
-        if hashlib.sha256(data).hexdigest() != expected:
-            raise ValueError('CLIPSeg captured file differs from pinned snapshot: ' + name)
-        captured[name] = data
+    with authority:
+        for name, expected in FILES.items():
+            maximum = MAX_MODEL_FILE_BYTES if name == 'model.safetensors' else MAX_CONFIG_FILE_BYTES
+            with open_payload(directory, name) as (stream, info):
+                if info.st_size > maximum or total + info.st_size > MAX_CAPTURE_BYTES:
+                    raise ValueError('CLIPSeg captured snapshot exceeds byte bound')
+                data = stream.read(min(maximum, MAX_CAPTURE_BYTES - total) + 1)
+                total += len(data)
+                if len(data) > maximum or total > MAX_CAPTURE_BYTES:
+                    raise ValueError('CLIPSeg captured snapshot grew past byte bound')
+            if hashlib.sha256(data).hexdigest() != expected:
+                raise ValueError('CLIPSeg captured file differs from pinned snapshot: ' + name)
+            captured[name] = data
     return captured
 
 

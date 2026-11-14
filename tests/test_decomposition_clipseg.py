@@ -63,6 +63,48 @@ class ClipSegContracts(unittest.TestCase):
                 with self.assertRaises(ValueError):clip._capture_model(alias/'model')
                 self.assertEqual(clip._capture_model((alias/'model').resolve()),{'config.json':b'{}'})
 
+    def test_capture_windows_holds_directory_authority_during_reads(self):
+        import hashlib
+        from contextlib import contextmanager
+        from types import SimpleNamespace
+        import atomic_windows
+        import rig_errors
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp).resolve();(root/'config.json').write_bytes(b'{}')
+            active=[]
+            original=rig_errors.open_payload
+            @contextmanager
+            def pin(path):
+                self.assertEqual(path,root)
+                active.append(True)
+                try: yield
+                finally: active.pop()
+            @contextmanager
+            def read(*args,**kwargs):
+                self.assertTrue(active)
+                with original(*args,**kwargs) as result: yield result
+            with patch.object(clip,'os',SimpleNamespace(name='nt')), \
+                 patch.object(atomic_windows,'pinned_directory',pin), \
+                 patch.object(rig_errors,'open_payload',read), \
+                 patch.object(clip,'FILES',{'config.json':hashlib.sha256(b'{}').hexdigest()}):
+                self.assertEqual(clip._capture_model(root),{'config.json':b'{}'})
+            self.assertFalse(active)
+
+    def test_capture_rejects_windows_junction_ancestor(self):
+        if os.name != 'nt':
+            return  # Native junction semantics require Windows.
+        import hashlib
+        import subprocess
+        with tempfile.TemporaryDirectory() as temp:
+            base=Path(temp).resolve();actual=base/'actual';actual.mkdir()
+            root=actual/'model';root.mkdir();(root/'config.json').write_bytes(b'{}')
+            junction=base/'junction'
+            subprocess.run(['cmd','/c','mklink','/J',str(junction),str(actual)],
+                           check=True,capture_output=True)
+            with patch.object(clip,'FILES',{'config.json':hashlib.sha256(b'{}').hexdigest()}):
+                with self.assertRaises(ValueError):clip._capture_model(junction/'model')
+                self.assertEqual(clip._capture_model(root),{'config.json':b'{}'})
+
     def test_capture_enforces_configuration_and_aggregate_bounds(self):
         import hashlib
         with tempfile.TemporaryDirectory() as temp:
