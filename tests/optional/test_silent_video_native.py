@@ -314,6 +314,91 @@ class SilentMedia(core.SilentContracts):
             receipt = video.encode(self.request, self.root, self.root/'no-late-callback.mp4', cancel=cancel)
         self.assertTrue(receipt['verified'])
 
+    def test_progress_cannot_change_an_unsampled_private_input(self):
+        changed = []
+        output = self.root / 'changed-input.mp4'
+
+        def progress(event):
+            if event['phase'] == 'encode':
+                frame = next(self.root.glob('.silent-export-*/frames/000001.png'))
+                with Image.new('RGB', (64, 48), (250, 0, 0)) as image:
+                    image.save(frame)
+                changed.append(frame.name)
+
+        with self.assertRaisesRegex(ValueError, 'private encoder input'):
+            video.encode(self.request, self.root, output, progress=progress)
+        self.assertEqual(changed, ['000001.png'])
+        self.assertFalse(output.exists())
+        video._snapshot(self.request, self.root, None)
+
+    def test_private_input_modify_restore_during_actual_encoding_is_rejected(self):
+        actual_run = video._run
+        mutations = []
+        output = self.root / 'restored-input.mp4'
+
+        def mutate_during_real_encoder(command, *args, **kwargs):
+            if '-framerate' not in command or mutations:
+                return actual_run(command, *args, **kwargs)
+            frame = next(self.root.glob('.silent-export-*/frames/000001.png'))
+            before, original = frame.stat(), frame.read_bytes()
+            with Image.new('RGB', (64, 48), (250, 0, 0)) as image:
+                image.save(frame)
+            try:
+                result = actual_run(command, *args, **kwargs)
+                artifact = next(self.root.glob('.silent-export-*/output.partial.mp4'))
+                decoded = subprocess.run([shutil.which('ffmpeg'), '-v', 'error', '-threads', '1', '-i', str(artifact),
+                    '-threads', '1', '-map', '0:v:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],
+                    capture_output=True, check=True, timeout=30).stdout
+                pixel = tuple(decoded[64 * 48 * 3:64 * 48 * 3 + 3])
+                self.assertGreater(pixel[0], 200)
+                self.assertLess(pixel[2], 40)
+                self.assertEqual(result['exit_status'], 0)
+                return result
+            finally:
+                frame.write_bytes(original)
+                os.utime(frame, ns=(before.st_atime_ns, before.st_mtime_ns))
+                after = frame.stat()
+                mutations.append({'bytes_restored': frame.read_bytes() == original,
+                                  'mtime_restored': after.st_mtime_ns == before.st_mtime_ns,
+                                  'ctime_changed': after.st_ctime_ns != before.st_ctime_ns})
+
+        with patch.object(video, '_run', side_effect=mutate_during_real_encoder):
+            with self.assertRaisesRegex(ValueError, 'private encoder input'):
+                video.encode(self.request, self.root, output)
+        self.assertEqual(mutations, [{'bytes_restored': True, 'mtime_restored': True, 'ctime_changed': True}])
+        self.assertFalse(output.exists())
+        video._snapshot(self.request, self.root, None)
+
+    def test_frame_directory_replacement_cannot_change_consumed_input(self):
+        changed = []
+        output = self.root / 'replaced-input-directory.mp4'
+
+        def progress(event):
+            if event['phase'] == 'encode':
+                folder = next(self.root.glob('.silent-export-*/frames'))
+                retained = folder.with_name('retained-frames')
+                folder.rename(retained)
+                shutil.copytree(retained, folder)
+                with Image.new('RGB', (64, 48), (250, 0, 0)) as image:
+                    image.save(folder / '000001.png')
+                changed.append(str(folder))
+
+        try:
+            receipt = video.encode(self.request, self.root, output, progress=progress)
+        except ValueError:
+            self.assertFalse(output.exists())
+        else:
+            self.assertTrue(receipt['verified'])
+            decoded = subprocess.run([shutil.which('ffmpeg'), '-v', 'error', '-threads', '1', '-i', str(output),
+                '-threads', '1', '-map', '0:v:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],
+                capture_output=True, check=True, timeout=30).stdout
+            actual = tuple(decoded[64 * 48 * 3:64 * 48 * 3 + 3])
+            with Image.open(self.root / self.paths[1]) as source:
+                expected = source.getpixel((0, 0))
+            self.assertLess(max(abs(a - b) for a, b in zip(actual, expected)), 10)
+        self.assertEqual(len(changed), 1)
+        video._snapshot(self.request, self.root, None)
+
     def test_output_size_budget_prevents_publication(self):
         output = self.root / 'oversize.mp4'
         request = deepcopy(self.request)
