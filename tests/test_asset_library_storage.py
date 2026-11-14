@@ -75,8 +75,11 @@ class StorageTests(unittest.TestCase):
         reference, = self.library.list_references()
         self.assertEqual(self.library.resolve(reference), self.fixture.manifest)
 
-    @unittest.skipUnless(os.name == 'posix', 'Actual POSIX descriptor namespace interleaving.')
     def test_canonical_publish_preserves_foreign_stage_replacements(self):
+        if os.name == 'nt':
+            self._assert_windows_canonical_stage_is_pinned()
+            return
+        self.assertEqual(os.name, 'posix')
         import atomic_publish
         actual = atomic_publish.rename_no_replace_at
         for interrupt in (False, True):
@@ -111,6 +114,51 @@ class StorageTests(unittest.TestCase):
                 preserved, sentinel = held[0]
                 self.assertEqual(sentinel.read_bytes(), b'foreign replacement must survive')
                 self.assertEqual(list(preserved.iterdir()), [])
+                if interrupt:
+                    self.assertFalse(destination.exists())
+                else:
+                    self.assertEqual(destination.read_bytes(), payload)
+
+    def _assert_windows_canonical_stage_is_pinned(self):
+        import atomic_windows
+        actual = atomic_windows._PrivateFile.publish_to
+        stage_root = self.library.storage.root/'staging'
+        foreign = stage_root/'.file-foreign'
+        foreign.mkdir()
+        sentinel = foreign/'foreign-sentinel'
+        sentinel.write_bytes(b'foreign replacement must survive')
+        for interrupt in (False, True):
+            with self.subTest(interrupt=interrupt):
+                payload = b'immutable native publication ' + str(interrupt).encode()
+                digest = hashlib.sha256(payload).hexdigest()
+                destination = self.library.storage.root/'blobs'/digest
+                before = set(stage_root.iterdir())
+                observed = []
+                def attempt_replacement(held, target):
+                    wrapper, = set(stage_root.iterdir()) - before
+                    moved = wrapper.with_name(wrapper.name+'-retained')
+                    # Windows denies delete sharing on both the wrapper and the
+                    # open file, preventing the POSIX namespace swap outright.
+                    with self.assertRaises(OSError):
+                        wrapper.rename(moved)
+                    self.assertFalse(moved.exists())
+                    staged_file = wrapper/'payload'/'file'
+                    with self.assertRaises(OSError):
+                        staged_file.rename(staged_file.with_name('foreign-file'))
+                    self.assertTrue(staged_file.is_file())
+                    observed.append(wrapper)
+                    if interrupt:
+                        raise OSError('injected publication interruption')
+                    return actual(held, target)
+                with patch.object(atomic_windows._PrivateFile, 'publish_to', attempt_replacement):
+                    if interrupt:
+                        with self.assertRaises(RigError):
+                            self.library.storage._publish(destination.parent, digest, payload)
+                    else:
+                        self.library.storage._publish(destination.parent, digest, payload)
+                self.assertEqual(len(observed), 1)
+                self.assertEqual(list(observed[0].iterdir()), [])
+                self.assertEqual(sentinel.read_bytes(), b'foreign replacement must survive')
                 if interrupt:
                     self.assertFalse(destination.exists())
                 else:
