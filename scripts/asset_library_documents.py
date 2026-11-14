@@ -108,6 +108,7 @@ class DocumentPublisher:
                 manifest['version'] != reference['semantic_version'] or
                 manifest['identity']['subtype'] != reference['kind'] or
                 manifest['provenance']['fixture'] != reference['fixture'] or
+                reference['provenance_ref'] is not None or
                 payload['sha256'] != reference['sha256'] or payload['bytes'] != reference['byte_size'] or
                 payload['mime_type'] != reference['media_type'] or
                 reference['path'] != self.prefix + 'records/blobs/' + payload['sha256'] or

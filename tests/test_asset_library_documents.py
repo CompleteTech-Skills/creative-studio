@@ -216,12 +216,13 @@ class DocumentPublicationTests(unittest.TestCase):
         template = self.publish(b'{"template":true}', artifact_id='template', dependencies=[first])
         def asset(reference):
             return next(r for r in self.library.list_references() if r['id'] == _identity(reference['artifact_id']))
-        def raw(name, payload, declared, retained):
+        def raw(name, payload, declared, retained, provenance=None):
             manifest = deepcopy(self.library.resolve(asset(template)))
             manifest['identity'].update(id=_identity(name), slug=_identity(name), name=name)
             ref = dict(template, artifact_id=name, sha256=hashlib.sha256(payload).hexdigest(),
                        byte_size=len(payload), dependencies=declared)
             ref['path'] = 'library/records/blobs/' + ref['sha256']
+            ref['provenance_ref'] = provenance
             metadata = canonical_bytes(dict(adapter='asset-library-document-v1', artifact=ref))
             for record, data in zip(manifest['files'], (payload, metadata)):
                 record.update(sha256=hashlib.sha256(data).hexdigest(), bytes=len(data))
@@ -236,11 +237,23 @@ class DocumentPublicationTests(unittest.TestCase):
             return ref, self.library.register(seal(manifest), sources)
         child, child_asset = raw('bad-child', b'{"bad-child":true}', [first], asset(second))
         parent, _ = raw('bad-root', b'{"bad-root":true}', [child], child_asset)
-        for ref in (child, parent):
+        bad_provenance, _ = raw('bad-provenance', b'{"bad-provenance":true}', [first], asset(first), first)
+        for ref in (child, parent, bad_provenance):
             with self.subTest(artifact=ref['artifact_id']), self.assertRaises(RigError) as caught:
                 self.publisher.read_ref(ref)
             self.assertEqual(caught.exception.report['code'], 'LIBRARY_DOCUMENT_METADATA')
         self.assertEqual(self.publisher.read_ref(first), b'{"first":true}')
+
+    def test_document_kind_requires_actual_source_provenance(self):
+        from asset_library_contracts import seal
+        ref = self.publish()
+        registered, = self.library.list_references()
+        manifest = deepcopy(self.library.resolve(registered))
+        manifest['provenance']['sources'] = [deepcopy(manifest['files'][1])]
+        with self.assertRaises(RigError) as caught:
+            seal(manifest)
+        self.assertEqual(caught.exception.report['code'], 'LIBRARY_DOCUMENT_SCHEMA')
+        self.assertEqual(self.publish(), ref)
 
     def test_stale_history_does_not_register_or_activate(self):
         register = self.library.register

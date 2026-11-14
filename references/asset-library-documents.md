@@ -32,7 +32,12 @@ The exact closed ArtifactRef schema remains owned by `director_schema`.
 The only backing authority is AssetLibrary. Each publication registers an explicit
 `document` AssetIdentity, a mandatory `document.payload`, mandatory
 `document-metadata.json` containing the complete ArtifactRef, exact source
-provenance, and canonical dependencies. The additive document kind preserves all
+provenance, and canonical dependencies. Canonical document-kind admission requires the exact
+mandatory payload record in source provenance. This document adapter emits
+`provenance_ref=None`; raw records advertising a non-null document provenance ref
+are rejected because no such publication API is supported. Native refs retain
+their own provenance contract through the injected owner. The additive document
+kind preserves all
 existing kinds and schema/type registrations. Director's broader artifact ID
 alphabet is encoded deterministically into a bounded portable canonical identity;
 the original ID, kind, schema, fixture flag, and dependencies remain exact in the
