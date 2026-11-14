@@ -66,11 +66,17 @@ Firefox and WebKit paths launch those actual Playwright engines and never fall
 back to Chromium. An unknown engine or a missing explicitly requested browser is
 an error. Browser launch and WebGL initialization failures remain failures.
 The suite prints the requested engine, actual driver engine, browser version and
-actual page user agent for each executed case.
+actual page user agent and WebGL2 availability before each editor startup,
+including startup diagnostics if readiness fails. `HATCH_EDITOR_BROWSER_HEADLESS=0`
+requests a display-backed Firefox/WebKit run; it requires a real display or Xvfb.
+The unchanged Chromium launcher remains headless.
 
 The dedicated `editor3d-cross-browser.yml` workflow installs Playwright's exact
 pinned Firefox/WebKit builds and their libraries on Ubuntu 24.04. It executes the
-same five native keyboard/persistence/focus cases, requires every collected case
+same five native keyboard/persistence/focus cases. Firefox uses an explicitly
+headed browser inside Xvfb; WebKit uses its headless mode. This is a Linux engine
+validation, not a claim of testing the macOS Safari application. The workflow
+requires every collected case
 to execute with zero skips, and retains the current source SHA, engine logs and a
 result receipt. Raw logs stay outside the uploaded artifact directory; published
 logs redact Authorization bearers and loopback launch URL fragment/query tokens,

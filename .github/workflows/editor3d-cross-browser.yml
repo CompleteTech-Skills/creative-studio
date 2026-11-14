@@ -25,6 +25,7 @@ jobs:
       PYTHONPATH: scripts:tests
       HATCH_EDITOR_BROWSER_TEST: '1'
       HATCH_EDITOR_BROWSER_ENGINE: ${{ matrix.engine }}
+      HATCH_EDITOR_BROWSER_HEADLESS: ${{ matrix.engine == 'firefox' && '0' || '1' }}
       OPENBLAS_NUM_THREADS: '1'
       OMP_NUM_THREADS: '1'
       MKL_NUM_THREADS: '1'
@@ -47,7 +48,11 @@ jobs:
           git rev-parse HEAD > editor-cross-browser-evidence/head.txt
           python -m playwright --version > editor-cross-browser-evidence/playwright-version.txt
           test_status=0
-          python - <<'PY' > editor-browser-private.log 2>&1 || test_status=$?
+          browser_runner=(python)
+          if [[ '${{ matrix.engine }}' == 'firefox' ]]; then
+            browser_runner=(xvfb-run --auto-servernum python)
+          fi
+          "${browser_runner[@]}" - <<'PY' > editor-browser-private.log 2>&1 || test_status=$?
           import json, os, unittest
           from pathlib import Path
           suite = unittest.defaultTestLoader.loadTestsFromName('test_rig_editor3d_accessibility')

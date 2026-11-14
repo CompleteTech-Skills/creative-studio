@@ -24,10 +24,20 @@ class EditorKeyboardAccessibilityTests(unittest.TestCase):
         from browser_runtime import launch_browser
         self.runtime=sync_playwright().start();self.addCleanup(self.runtime.stop)
         self.engine=os.environ.get('HATCH_EDITOR_BROWSER_ENGINE','chromium')
-        self.browser=launch_browser(self.runtime,engine=self.engine);self.addCleanup(self.browser.close)
+        headless=os.environ.get('HATCH_EDITOR_BROWSER_HEADLESS','1')
+        if headless not in ('0','1'): raise ValueError('HATCH_EDITOR_BROWSER_HEADLESS must be 0 or 1')
+        self.browser=launch_browser(self.runtime,engine=self.engine,headless=headless=='1');self.addCleanup(self.browser.close)
         self.page=self.browser.new_page(viewport={'width':1400,'height':900})
-        self.page.goto(self.server.url);self.page.wait_for_function('() => window.editorReady === true')
-        print(json.dumps(dict(test=self.id(),requested_engine=self.engine,actual_engine=self.browser.browser_type.name,version=self.browser.version,user_agent=self.page.evaluate('navigator.userAgent'))),flush=True)
+        page_errors=[];self.page.on('pageerror',lambda error:page_errors.append(str(error)))
+        self.page.goto(self.server.url)
+        print(json.dumps(dict(test=self.id(),requested_engine=self.engine,actual_engine=self.browser.browser_type.name,version=self.browser.version,
+                              headless=headless=='1',user_agent=self.page.evaluate('navigator.userAgent'),
+                              webgl2=self.page.evaluate("() => !!document.createElement('canvas').getContext('webgl2')"))),flush=True)
+        try:self.page.wait_for_function('() => window.editorReady === true')
+        except Exception:
+            print(json.dumps(dict(startup_diagnostic=self.page.locator('#diagnostic').inner_text(),
+                                  startup_status=self.page.locator('#status').inner_text(),page_errors=page_errors)),flush=True)
+            raise
 
     def stop(self):
         self.server.shutdown();self.server.server_close();self.thread.join(timeout=5)
