@@ -44,7 +44,7 @@ def release(*, impulse=(0, 0, 0), angular_impulse=(0, 0, 0)):
         impulse=impulse, angular_impulse=angular_impulse)
 
 
-def shot_inputs():
+def shot_inputs(count=1):
     """A real source-admissible primitive project with an incoming shot ref."""
     from scene3d_example import node, SETTINGS
     from scene3d_contracts import validate_document
@@ -53,20 +53,24 @@ def shot_inputs():
     camera = node('camera', 'camera')
     camera['camera'] = dict(projection='perspective', near=.1, far=100, vertical_fov=.8, orthographic_height=4)
     scene['nodes'].append(camera);scene['roots'].append('camera')
-    scene['cameras'] = ['camera'];scene['shots'] = ['shot']
+    shot_ids = ['shot'] if count == 1 else ['shot-%03d' % i for i in range(count)]
+    scene['cameras'] = ['camera'];scene['shots'] = shot_ids
     payloads['physics-scene.json'] = canonical(scene)
     old = {**world['scene'], 'kind':'scene3d-scene'}
     new = {**old, 'sha256':digest(payloads['physics-scene.json'])}
     world['scene'] = {**new, 'kind':'scene'}
-    shot = dict(schema_version=1, kind='scene3d-shot', id='shot', version='1.0.0', name='shot', scene=new,
-        duration_frames=49, fps=world['fps'], camera='camera', camera_overrides={}, tracks=[], bindings=[],
-        material_overrides=[], temporal_constraints=[], render=deepcopy(SETTINGS), continuity=[], dependencies=[], metadata={})
-    validate_document(shot, 'shot');payloads['shot.json'] = canonical(shot)
-    shot_ref = dict(id='shot', version='1.0.0', kind='scene3d-shot', path='shot.json', sha256=digest(payloads['shot.json']))
+    refs = []
+    for identifier in shot_ids:
+        shot = dict(schema_version=1, kind='scene3d-shot', id=identifier, version='1.0.0', name=identifier, scene=new,
+            duration_frames=49, fps=world['fps'], camera='camera', camera_overrides={}, tracks=[], bindings=[],
+            material_overrides=[], temporal_constraints=[], render=deepcopy(SETTINGS), continuity=[], dependencies=[], metadata={})
+        validate_document(shot, 'shot');path = identifier+'.json';payloads[path] = canonical(shot)
+        refs.append(dict(id=identifier, version='1.0.0', kind='scene3d-shot', path=path, sha256=digest(payloads[path])))
     project = parse(payloads['project.json'])
     for field in ('scenes', 'dependency_lock'):
         project[field] = [new if ref == old else ref for ref in project[field]]
-    project['shots'] = [shot_ref];project['dependency_lock'].append(shot_ref)
+    project['shots'] = refs;project['dependency_lock'].extend(refs)
+    if count > 1:project['budgets']['max_files'] = 1024
     payloads['project.json'] = canonical(project)
     return world, payloads
 
@@ -190,6 +194,14 @@ class ReleaseTests(unittest.TestCase):
         np.testing.assert_allclose(state['angular_velocity'], [0, 0, math.pi], atol=1e-12)
         np.testing.assert_allclose(state['linear_velocity'], [2-math.pi, 0, 0], atol=1e-12)
 
+    def test_tiny_rotation_over_short_exact_interval_keeps_com_velocity(self):
+        previous = dict(time=dict(numerator=0, denominator=1), transform=transform())
+        current = dict(time=dict(numerator=1, denominator=10**9),
+                       transform=transform(rotation=axis_angle([0, 0, 1], 1e-13).tolist()))
+        state = release_state(previous, current, center_of_mass=[1000, 0, 0])
+        np.testing.assert_allclose(state['angular_velocity'], [0, 0, 1e-4], rtol=1e-12, atol=0)
+        self.assertAlmostEqual(state['linear_velocity'][1], .1, delta=1e-12)
+
     def test_quaternion_sign_does_not_create_spurious_release_spin(self):
         previous = dict(time=dict(numerator=0, denominator=1), transform=transform())
         current = dict(time=dict(numerator=1, denominator=10), transform=transform(rotation=[0, 0, 0, -1]))
@@ -312,6 +324,20 @@ class ReleaseTests(unittest.TestCase):
         with patch('physics_grabbing.tempfile.TemporaryDirectory', side_effect=AssertionError('Snapshot must not start')):
             with self.assertRaises(BackendError) as error:compile_release(world, payloads, 'ball', release())
         self.assertEqual(error.exception.report['code'], 'PHYSICS_RESOURCE_LIMIT')
+
+    def test_promoted_incoming_shot_closure_respects_native_reserved_file_capacity(self):
+        from physics_backends import MAX_FILES
+        world, payloads = shot_inputs(MAX_FILES-32-6)
+        self.assertEqual(len(payloads), MAX_FILES-32)
+        assert_native_source_admission(payloads, world)
+        with self.assertRaises(RigError) as error:compile_release(world, payloads, 'ball', release())
+        self.assertEqual(error.exception.report['code'], 'PHYSICS_GRIP_SOURCE_LIMIT')
+        world, payloads = build_inputs(backend='pybullet')
+        for i in range(MAX_FILES-32-5):payloads['extra-%d.bin' % i] = b'x'
+        self.assertEqual(len(payloads), MAX_FILES-31)
+        with patch('physics_grabbing.tempfile.TemporaryDirectory', side_effect=AssertionError('Snapshot must not start')):
+            with self.assertRaises(RigError) as error:compile_release(world, payloads, 'ball', release())
+        self.assertEqual(error.exception.report['code'], 'PHYSICS_GRIP_SOURCE_LIMIT')
 
 
 if __name__ == '__main__':unittest.main()
