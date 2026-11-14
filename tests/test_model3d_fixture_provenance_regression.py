@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from asset_library_import import SourceSnapshot, normalize_gltf
 from model3d_interchange import export_mesh
-from model3d_mesh_import import import_mesh
+from model3d_mesh_import import import_mesh, import_canonical
 from model3d_mesh_asset import build_asset
 from model3d_primitives import primitive
 from rig_errors import RigError
@@ -22,7 +22,9 @@ from test_model3d_mesh_asset import record, provenance, source
 class FixtureProvenanceRegression(unittest.TestCase):
     def test_normalized_fixture_import_rig_export_and_spoof(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
+            # This fixture owns the temporary directory and explicitly admits
+            # its canonical location before creating any source files.
+            root = Path(tmp).resolve(strict=True)
             original = root / 'original.glb'
             export_geometry(primitive('box').geometry(), original)
             before = original.read_bytes()
@@ -52,6 +54,45 @@ class FixtureProvenanceRegression(unittest.TestCase):
                 self.assertFalse((root / 'spoof').exists())
             self.assertEqual(original.read_bytes(), before)
             self.assertEqual(normalized.read_bytes(), normalized_bytes)
+
+    def test_canonical_fixture_library_export_and_native_rig(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            from test_model3d_mesh_import import MeshImportTests
+            case = MeshImportTests(); case.root = root
+            library, manifest, ref = case.canonical()
+            originals = {item['path']: library.read_file(ref, item['path']) for item in manifest['files']}
+            self.assertTrue(manifest['provenance']['fixture'])
+            with import_canonical(library, ref) as captured:
+                self.assertIsNot(captured.model.report.get('fixture'), True)
+                for fmt in ('glb', 'gltf'):
+                    dest = root / fmt
+                    export_mesh(captured.model.geometry, dest, format=fmt, source_snapshot=captured)
+                    self.assertTrue(load_character_model(dest / ('model.' + fmt)).report['fixture'])
+                    for name, data in originals.items():
+                        self.assertEqual((dest / 'source' / name).read_bytes(), data)
+                rig = create_run(root / 'glb/model.glb', root / 'rig')
+                self.assertTrue(rig.manifest['source']['fixture'])
+                self.assertEqual(rig.manifest['source']['origin'], 'procedural-fixture')
+                with self.assertRaises(RigError):
+                    export_mesh(captured.model.geometry, root / 'obj', format='obj', source_snapshot=captured)
+                captured.provenance['manifest']['provenance']['fixture'] = False
+                with self.assertRaises(RigError):
+                    export_mesh(captured.model.geometry, root / 'tampered', source_snapshot=captured)
+                self.assertFalse((root / 'tampered').exists())
+
+    def test_claimed_canonical_manifest_cannot_taint_plain_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            from test_model3d_mesh_import import MeshImportTests
+            case = MeshImportTests(); case.root = root
+            _, manifest, ref = case.canonical()
+            export_geometry(primitive('box').geometry(), root / 'plain.glb')
+            with import_mesh(root / 'plain.glb') as captured:
+                captured.provenance.update(manifest=manifest, canonical_ref=ref)
+                with self.assertRaises(RigError):
+                    export_mesh(captured.model.geometry, root / 'spoof', source_snapshot=captured)
+                self.assertFalse((root / 'spoof').exists())
 
     def test_unmarked_source_cannot_be_spoofed_fixture(self):
         with tempfile.TemporaryDirectory() as tmp:

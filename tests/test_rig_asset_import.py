@@ -388,6 +388,11 @@ class ImportTests(unittest.TestCase):
         try:link.symlink_to(target,target_is_directory=True)
         except OSError:self.skipTest('No symlink permission')
         with self.assertRaises((RigError,OSError)):SourceSnapshot(link/'asset.glb',self.root/'linked-snapshot')
+        # An owner may explicitly admit the canonical directory, but the
+        # snapshot reader must never resolve the untrusted alias for them.
+        admitted=link.resolve(strict=True)/'asset.glb'
+        snapshot=SourceSnapshot(admitted,self.root/'canonical-snapshot')
+        self.assertEqual(snapshot.files[snapshot.entry],self.source.read_bytes())
 
     def test_corrupt_glb_and_case_aliases(self):
         corrupt=self.root/'broken.glb';corrupt.write_bytes(self.source.read_bytes()[:-1])

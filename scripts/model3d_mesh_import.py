@@ -39,6 +39,7 @@ class MeshImport:
     provenance: dict
     root: Path
     _temporary: Any = field(repr=False)
+    _canonical_binding: Any = field(default=None, repr=False)
 
     def close(self):
         self._temporary.cleanup()
@@ -146,6 +147,6 @@ def import_canonical(library, ref, *, entry=None, limits=None):
         return MeshImport(model, records, dict(authority='AssetLibrary.resolve/read_file',
                           canonical_ref=copy.deepcopy(ref), manifest=copy.deepcopy(manifest),
                           source_entry=entry, normalization='retained canonical bytes; no additional conversion'),
-                          root, temporary)
+                          root, temporary, (canonical_bytes(manifest), canonical_bytes(ref), entry))
     except BaseException:
         temporary.cleanup(); raise
