@@ -27,15 +27,17 @@ function glb(material) {
 }
 function parameters(material) {
   return {color:material.color.toArray(), opacity:material.opacity, metalness:material.metalness,
-    roughness:material.roughness, transparent:material.transparent, alphaTest:material.alphaTest, side:material.side};
+    roughness:material.roughness, emissive:material.emissive.toArray(), transparent:material.transparent, alphaTest:material.alphaTest, side:material.side};
 }
 const cases = [
-  [null, {color:[1,1,1],opacity:1,metalness:1,roughness:1,transparent:false,alphaTest:0,side:THREE.FrontSide}],
-  [{}, {color:[1,1,1],opacity:1,metalness:1,roughness:1,transparent:false,alphaTest:0,side:THREE.FrontSide}],
+  [{emissiveFactor:[1,0.25,0]}, {color:[1,1,1],opacity:1,metalness:1,roughness:1,emissive:[1,0.25,0],transparent:false,alphaTest:0,side:THREE.FrontSide}],
+  [{emissiveFactor:[0,0,0]}, {color:[1,1,1],opacity:1,metalness:1,roughness:1,emissive:[0,0,0],transparent:false,alphaTest:0,side:THREE.FrontSide}],
+  [null, {color:[1,1,1],opacity:1,metalness:1,roughness:1,emissive:[0,0,0],transparent:false,alphaTest:0,side:THREE.FrontSide}],
+  [{}, {color:[1,1,1],opacity:1,metalness:1,roughness:1,emissive:[0,0,0],transparent:false,alphaTest:0,side:THREE.FrontSide}],
   [{pbrMetallicRoughness:{baseColorFactor:[0.2,0.3,0.4,0.5],metallicFactor:0}},
-    {color:[0.2,0.3,0.4],opacity:0.5,metalness:0,roughness:1,transparent:false,alphaTest:0,side:THREE.FrontSide}],
+    {color:[0.2,0.3,0.4],opacity:0.5,metalness:0,roughness:1,emissive:[0,0,0],transparent:false,alphaTest:0,side:THREE.FrontSide}],
   [{pbrMetallicRoughness:{roughnessFactor:0},alphaMode:'BLEND',doubleSided:true},
-    {color:[1,1,1],opacity:1,metalness:1,roughness:0,transparent:true,alphaTest:0,side:THREE.DoubleSide}],
+    {color:[1,1,1],opacity:1,metalness:1,roughness:0,emissive:[0,0,0],transparent:true,alphaTest:0,side:THREE.DoubleSide}],
 ];
 for (const [material, expected] of cases) {
   const projected = await assetObject({format:'geometry', meshes:[{id:'triangle',positions:[[0,0,0],[1,0,0],[0,1,0]],triangles:[[0,1,2]],material:0}], materials:[material ?? {name:'Default material'}], images:[]});
@@ -44,4 +46,4 @@ for (const [material, expected] of cases) {
   assert.deepEqual(parameters(projected.children[0].material), expected);
   assert.deepEqual(parameters(glbMesh.material), expected);
 }
-console.log('Projected geometry and GLB PBR parameters match for absent, omitted, and explicit factors.');
+console.log('Projected geometry and GLB PBR parameters match for absent, omitted, explicit, and emissive factors.');

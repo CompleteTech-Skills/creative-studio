@@ -68,7 +68,8 @@ class EditorImportedComponentTests(unittest.TestCase):
         self.addCleanup(case.doCleanups)
         source = case.source('gltf')
         document = json.loads(source.read_text())
-        authored = {'name': 'Authored', 'pbrMetallicRoughness': {'metallicFactor': 0}}
+        authored = {'name': 'Authored', 'pbrMetallicRoughness': {'metallicFactor': 0},
+                    'emissiveFactor': [1, 0.25, 0]}
         document['materials'] = [authored]
         document['meshes'][0]['primitives'][0]['material'] = 0
         source.write_text(json.dumps(document))
@@ -90,6 +91,32 @@ class EditorImportedComponentTests(unittest.TestCase):
             self.assertEqual(projection['format'], 'geometry')
             self.assertEqual(projection['materials'], [authored])
             self.assertEqual(projection['meshes'][0]['material'], 0)
+
+    def test_unsupported_material_bindings_are_diagnosed(self):
+        from editor3d_components import _require_projectable_material
+        from rig_errors import RigError
+        for name, material in (
+            ('baseColorTexture', {'pbrMetallicRoughness': {'baseColorTexture': {'index': 0}}}),
+            ('metallicRoughnessTexture', {'pbrMetallicRoughness': {'metallicRoughnessTexture': {'index': 0}}}),
+            ('normalTexture', {'normalTexture': {'index': 0}}),
+            ('occlusionTexture', {'occlusionTexture': {'index': 0}}),
+            ('emissiveTexture', {'emissiveTexture': {'index': 0}}),
+            ('KHR_materials_emissive_strength', {'extensions': {'KHR_materials_emissive_strength': {'emissiveStrength': 2}}}),
+        ):
+            with self.subTest(name=name), self.assertRaises(RigError) as raised:
+                _require_projectable_material(material)
+            self.assertIn(name, str(raised.exception))
+
+    def test_material_capability_failure_becomes_unavailable_component(self):
+        from unittest.mock import patch
+        from rig_errors import RigError
+        with patch('editor3d_components._require_projectable_material',
+                   side_effect=RigError('EDITOR3D_VIEW_MATERIAL', 'emissiveTexture unsupported')):
+            value = preview_snapshot(self.repository, self.repository.snapshot())
+        for identifier in self.expected:
+            projection = value['viewport_nodes'][identifier]
+            self.assertEqual(projection['format'], 'unavailable')
+            self.assertIn('emissiveTexture unsupported', projection['message'])
 
     def test_shared_resource_payload_is_bounded_before_component_publication(self):
         from unittest.mock import patch

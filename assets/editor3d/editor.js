@@ -406,6 +406,7 @@ function materialFromNative(value, images) {
     rgba = pbr.baseColorFactor || [1, 1, 1, 1],
     m = new THREE.MeshStandardMaterial({
       color: new THREE.Color(...rgba.slice(0, 3)),
+      emissive: new THREE.Color(...(value.emissiveFactor ?? [0, 0, 0])),
       opacity: rgba[3],
       transparent: value.alphaMode === "BLEND",
       alphaTest: value.alphaMode === "MASK" ? (value.alphaCutoff ?? 0.5) : 0,

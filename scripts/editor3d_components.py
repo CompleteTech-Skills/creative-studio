@@ -15,6 +15,16 @@ from rig_contracts import DEFAULT_LIMITS
 from rig_errors import decode_json, require, safe_path, RigError
 
 
+def _require_projectable_material(material):
+    """Reject material behavior the component renderer cannot reproduce exactly."""
+    pbr = material.get('pbrMetallicRoughness', {})
+    unsupported = [name for name in ('baseColorTexture', 'metallicRoughnessTexture') if name in pbr]
+    unsupported += [name for name in ('normalTexture', 'occlusionTexture', 'emissiveTexture') if name in material]
+    unsupported += ['extensions.' + name for name in material.get('extensions', {})]
+    require(not unsupported, 'EDITOR3D_VIEW_MATERIAL',
+            'Imported component material projection does not support: ' + ', '.join(unsupported))
+
+
 def project_components(root, snapshot, *, max_vertices, max_resource_bytes, max_decoded_vertices):
     from scene3d_graph import SceneGraph
     from scene3d_import import ImportedScene, evaluate_imported_vertices
@@ -105,6 +115,7 @@ def project_components(root, snapshot, *, max_vertices, max_resource_bytes, max_
             source_meshes = geometry.by_id()
             for identifier, points in sampled[node['id']].items():
                 mesh = source_meshes[identifier]
+                _require_projectable_material(geometry.materials[mesh.material])
                 positions = transform_points(inverse, points)
                 require(len(positions) == len(mesh.positions), 'EDITOR3D_VIEW_COMPONENT', 'Native component topology differs.')
                 meshes.append(dict(id=identifier, name=mesh.name, positions=positions.tolist(),
