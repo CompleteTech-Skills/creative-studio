@@ -300,7 +300,10 @@ class SourceSnapshot:
         from rig_contracts import DEFAULT_LIMITS
         from rig_gltf import GltfDocument
         _,binary=_gltf_json(self.files[self.entry],self.format)
-        self.document=_integer_document(self.document)
+        try:self.document=_integer_document(self.document)
+        except RigError:raise
+        except (AttributeError,TypeError,ValueError,KeyError,IndexError) as exc:
+            fail('FORMAT','Invalid typed glTF records: '+str(exc)[:1024])
         limits={**DEFAULT_LIMITS,'source_bytes':MAX_FILE_BYTES,'dependency_bytes':self.maximum,'influences':8}
         buffers=[]
         for index,record in enumerate(self.document.get('buffers',[])):

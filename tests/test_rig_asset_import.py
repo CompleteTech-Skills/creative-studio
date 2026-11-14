@@ -161,6 +161,31 @@ class ImportTests(unittest.TestCase):
                 self.assertNotIn('Traceback',result.stderr)
                 self._assert_no_transform_publication(originals)
 
+    def test_malformed_scene_records_reject_api_and_actual_cli_without_publication(self):
+        import subprocess
+        import sys
+        request=self.request(blender_roundtrip=False);request['license_file']=str(self.license)
+        request_path=self.root/'request.json';request_path.write_text(json.dumps(request))
+        for scene in (None,True,1,'scene',[],[0]):
+            with self.subTest(scene=scene):
+                source=self.external();document=json.loads(source.read_bytes())
+                document['scenes']=[scene];source.write_text(json.dumps(document))
+                originals={path:path.read_bytes() for path in
+                           (source,self.source,self.root/'geometry.bin',self.license,request_path)}
+                with self.assertRaises(RigError) as caught:
+                    self.pipeline.import_asset(source,**self.request(blender_roundtrip=False))
+                self.assertEqual(caught.exception.report['code'],'LIBRARY_IMPORT_FORMAT')
+                self._assert_no_transform_publication(originals)
+                result=subprocess.run([sys.executable,str(ROOT/'scripts/asset_library_import.py'),
+                    'import','--library',str(self.library.root),'--source',str(source),
+                    '--request',str(request_path)],capture_output=True,text=True,timeout=30)
+                self.assertEqual(result.returncode,2,result.stderr)
+                report=json.loads(result.stdout)
+                self.assertEqual(report['status'],'failed')
+                self.assertEqual(report['diagnostic']['code'],'LIBRARY_IMPORT_FORMAT')
+                self.assertNotIn('Traceback',result.stderr)
+                self._assert_no_transform_publication(originals)
+
     def test_external_closure_and_exact_restore(self):
         source=self.external();original={p.name:p.read_bytes() for p in (source,self.root/'geometry.bin')}
         result=self.pipeline.import_asset(source,**self.request(blender_roundtrip=False))
