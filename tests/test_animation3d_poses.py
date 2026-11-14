@@ -88,6 +88,7 @@ class PoseManagementTests(unittest.TestCase):
         named = duplicate_pose(self.rig, moved, 'reach')
         path = self.root/'reach.json'
         save_pose(self.rig, path, named)
+        self.rig.manifest['limits']['memory_bytes'] = float(self.rig.manifest['limits']['memory_bytes'])
         loaded = load_pose(self.rig, path)
         self.assertEqual(loaded, named)
         saved = path.read_bytes()
@@ -147,6 +148,18 @@ class PoseManagementTests(unittest.TestCase):
         np.testing.assert_allclose(poses[1]['bones']['b0']['translation'], [1,0,0], atol=1e-12)
         poses[1]['bones']['b0']['translation'][0] = 99
         self.assertEqual(target['bones']['b0']['translation'], [2,0,0])
+
+    def test_snapshot_json_object_capacity_precedes_decoder_allocation(self):
+        from unittest.mock import patch
+        path = self.root/'too-large.json'
+        path.write_text(json.dumps(dict(padding='x'*10000)))
+        before = path.read_bytes()
+        self.rig.manifest['limits']['memory_bytes'] = 10000
+        with patch('animation3d_poses.decode_json', side_effect=AssertionError('decoder allocated before budget admission')):
+            with self.assertRaises(RigError) as rejected:
+                load_pose(self.rig, path)
+        self.assertEqual(rejected.exception.report['code'], 'ANIMATION_LIMIT')
+        self.assertEqual(path.read_bytes(), before)
 
     def test_snapshot_symlink_is_not_followed(self):
         path = self.root/'pose.json'; save_pose(self.rig, path, self.pose)

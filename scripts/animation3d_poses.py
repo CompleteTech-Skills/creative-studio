@@ -208,9 +208,14 @@ def save_pose(rig, path, pose):
 
 
 def load_pose(rig, path):
+    from rig_load_limits import _JSON_FACTOR
     path = Path(path).absolute()
+    retained = max((rig.resource_usage or {}).get('estimated_memory_bytes', 0), rig.geometry.vertex_count*256 + len(rig.skeleton['bones'])*2048)
+    remaining = rig.manifest['limits']['memory_bytes'] - retained
+    require(remaining > 0, 'ANIMATION_LIMIT', 'No pose JSON memory remains in the native reservation.')
+    byte_limit = min(MAX_JSON_BYTES, int(remaining // _JSON_FACTOR))
     with open_payload(path.parent.resolve(strict=True), path.name) as (stream, metadata):
-        require(metadata.st_size <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'Pose snapshot exceeds native JSON limit.')
-        payload = stream.read(MAX_JSON_BYTES+1)
+        require(metadata.st_size <= byte_limit, 'ANIMATION_LIMIT', 'Pose JSON object estimate exceeds the remaining native memory budget.')
+        payload = stream.read(byte_limit+1)
         require(len(payload) == metadata.st_size, 'ANIMATION_HASH', 'Pose snapshot changed while reading.')
     return validate_pose(rig, decode_json(payload))

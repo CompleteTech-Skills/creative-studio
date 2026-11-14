@@ -70,7 +70,9 @@ bones. Named expression presets remain the rig's own records.
 `save_pose` validates first and reuses the native atomic pose writer. Its destination
 is an editable snapshot in a caller-owned working directory, not an immutable
 publication API. `load_pose` uses the shared bounded, nonblocking descriptor reader
-and strict JSON decoder; symlink payloads and replaced/changed files reject.
+and strict JSON decoder. Before decoding, the canonical native JSON object factor
+is charged against memory remaining after the retained rig/geometry estimate;
+symlink payloads and replaced/changed files reject.
 Immutable source assets and named library records must continue through their
 existing owners. A snapshot roundtrip establishes document and geometry integrity,
 not visual approval.
