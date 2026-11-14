@@ -1,4 +1,5 @@
 """Actual Windows sharing, exact-handle publication, SQLite and reparse tests."""
+import contextlib
 import os
 import json
 from pathlib import Path
@@ -229,6 +230,36 @@ class ActualWindowsPublicationTests(unittest.TestCase):
             {'sha256': hashlib.sha256(b'original').hexdigest(), 'byte_size': 8})
         self.assertEqual(destination.read_bytes(), b'original')
 
+    def test_actual_verified_rename_then_destination_pin_exit_failure(self):
+        import hashlib
+        source = self.root / 'source'; source.write_bytes(b'original')
+        destination = self.root / 'result.zip'
+        digest = hashlib.sha256(b'original').hexdigest()
+        original_pin = windows.pinned_directory
+        original_rename = windows._rename_handle
+        committed = False
+        error = OSError('injected destination pin exit failure')
+
+        def rename(handle, target):
+            nonlocal committed
+            original_rename(handle, target)
+            committed = True
+
+        @contextlib.contextmanager
+        def pin(path):
+            with original_pin(path) as held:
+                yield held
+            if committed:
+                raise error
+
+        with source.open('rb') as stream, \
+             mock.patch.object(windows, 'pinned_directory', pin), \
+             mock.patch.object(windows, '_rename_handle', rename):
+            with self.assertRaises(publication.VerifiedFileCleanupError) as caught:
+                publication.publish_verified_file(stream.fileno(), destination,
+                    expected_sha256=digest, expected_size=8, max_bytes=1024)
+        self.assertEqual(caught.exception.receipt, {'sha256': digest, 'byte_size': 8})
+        self.assertEqual(destination.read_bytes(), b'original')
     def test_actual_separate_file_staging_pins_both_parents_and_keeps_inventory(self):
         import hashlib
         destination_parent = self.root / 'immutable'; destination_parent.mkdir()
