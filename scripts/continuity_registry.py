@@ -119,13 +119,14 @@ class IdentityRegistry:
             yield
             self.db.execute('COMMIT')
         except BaseException:
-            self.db.execute('ROLLBACK')
+            if self.db.in_transaction:
+                self.db.execute('ROLLBACK')
             raise
 
     def _history(self, action, subject, details):
         count = self.db.execute('SELECT count(*) FROM history').fetchone()[0]
         if count >= MAX_RECORDS * 10:
-            raise ValueError('CONTINUITY_LIMIT: history limit exceeded; archive before further changes')
+            raise ValueError('CONTINUITY_LIMIT: history limit exceeded; export history, then archive only non-promotion events; retain all promote bindings')
         self.db.execute('INSERT INTO history(action,subject,details) VALUES (?,?,?)',
                         (action, subject, canonical_bytes(details)))
 
@@ -176,7 +177,6 @@ class IdentityRegistry:
     def create_draft(self, draft_id, document):
         _id(draft_id)
         document = validate_document(document, 'revision')
-        self.identity(document['identity_id'])
         self._lineage(document)
         verify_references(self.asset_root, document)
         encoded, checksum = canonical_bytes(document), digest(document)
@@ -214,7 +214,7 @@ class IdentityRegistry:
         return checksum
 
     def _lineage(self, document):
-        identity = self.identity(document['identity_id'])['document']
+        identity = self._identity(document['identity_id'], verify_selected=False)['document']
         if identity['provenance']['fixture'] != document['source_provenance']['fixture']:
             raise ValueError('CONTINUITY_PROVENANCE: drafts must preserve logical identity fixture classification')
         parent = document['parent_revision_id']
@@ -267,7 +267,7 @@ class IdentityRegistry:
             # Re-read after obtaining the write lock so a concurrent draft edit
             # cannot promote bytes other than those actually verified above.
             latest = self.draft(draft_id)
-            if select and self.identity(document['identity_id'])['selected_revision'] != expected_selected_revision_id:
+            if select and self._identity(document['identity_id'], verify_selected=False)['selected_revision'] != expected_selected_revision_id:
                 raise ValueError('CONTINUITY_CONFLICT: stale promotion selection')
             if latest['sha256'] != checksum:
                 raise ValueError('CONTINUITY_CONFLICT: draft changed during promotion')

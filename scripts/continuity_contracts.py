@@ -35,7 +35,7 @@ _RESERVED = r'(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm
 _SEGMENT = (r'(?! )(?![.]{1,2}' + _BOUNDARY + r')(?!' + _RESERVED + r'(?:[.]|/|' + END + r'))'
             + r'(?![^/]*[. ]' + _BOUNDARY + r')[^/]+')
 PATH = dict(type='string', minLength=1, maxLength=1024,
-            pattern=r'^(?!.*[\\:<>\"|?*\x00-\x1f])(?:' + _SEGMENT + r'/)*' + _SEGMENT + END)
+            pattern=r'^(?!.*[\\:<>"|?*\x00-\x1f])(?:' + _SEGMENT + r'/)*' + _SEGMENT + END)
 BOOL = dict(type='boolean')
 NUMBER = dict(type='number', minimum=-1e12, maximum=1e12)
 STAMP = dict(type='string', pattern=r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z' + END)
@@ -331,8 +331,12 @@ def validate_document(value, kind=None):
             if math.gcd(item['numerator'], item['denominator']) != 1:
                 raise ValueError('CONTINUITY_TIME: rational times must be reduced')
         if declared_type == 'transform':
-            if abs(sum(x*x for x in item['rotation']) - 1) > 1e-8:
+            if abs(sum(x*x for x in item['rotation']) - 1) > 1e-6:
                 raise ValueError('CONTINUITY_TRANSFORM: quaternion must be normalized')
+        if declared_type == 'visual-spec':
+            ids = [constraint['id'] for constraint in item['constraints']]
+            if len(ids) != len(set(ids)):
+                raise ValueError('CONTINUITY_REFERENCE: duplicate constraints IDs')
         if declared_type == 'bounds':
             if any(a > b for a, b in zip(item['minimum'], item['maximum'])):
                 raise ValueError('CONTINUITY_BOUNDS: inverted bounds')

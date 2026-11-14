@@ -160,6 +160,45 @@ class ContractTests(unittest.TestCase):
         bad=sample('prop-state');bad['owner_socket_id']='hand'
         with self.assertRaisesRegex(ValueError,'owner'):validate_document(bad)
 
+    def test_generated_patterns_compile_as_ecmascript_unicode(self):
+        import shutil
+        node = shutil.which('node')
+        if node is None:
+            self.skipTest('ECMAScript schema interoperability requires Node.js')
+        source = """
+const schemas = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+let patterns = 0;
+function visit(value) {
+  if (!value || typeof value !== 'object') return;
+  if (typeof value.pattern === 'string') { new RegExp(value.pattern, 'u'); patterns++; }
+  for (const child of Object.values(value)) visit(child);
+}
+visit(schemas);
+if (!patterns) throw new Error('No generated patterns exercised');
+"""
+        result = subprocess.run([node, '-e', source], input=json.dumps(schemas()),
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_native_float32_unit_quaternions_and_nested_constraint_ids(self):
+        import struct
+        q = struct.unpack('f', struct.pack('f', 2 ** -0.5))[0]
+        revision = sample('revision')
+        revision['components'][0]['local_transform']['rotation'] = [0, q, 0, q]
+        validate_document(revision)
+        revision['components'][0]['local_transform']['rotation'] = [0, q * 1.001, 0, q]
+        with self.assertRaisesRegex(ValueError, 'quaternion'):
+            validate_document(revision)
+        for kind in ('identity', 'revision'):
+            value = sample(kind)
+            constraint = sample('constraint')
+            value['visual_spec']['constraints'] = [constraint, deepcopy(constraint)]
+            with self.subTest(kind=kind):
+                with self.assertRaisesRegex(ValueError, 'duplicate constraints'):
+                    validate_document(value)
+                value['visual_spec']['constraints'][1]['id'] = 'distinct'
+                validate_document(value)
+
     def test_semantics_follow_declared_types_not_mapping_keys(self):
         identity = sample('identity')
         identity['proportions'] = {'minimum': 0.5, 'maximum': 2, 'confidence': 0.7}
@@ -407,6 +446,70 @@ class RegistryTests(unittest.TestCase):
         (self.assets/'review2.json').write_bytes(b'corrupt')
         with self.assertRaisesRegex(ValueError, 'HASH'):
             self.registry.select('robot', 'robot-r2', expected_revision_id='robot-r2')
+
+    def test_replacement_can_recover_from_single_broken_selected_receipt(self):
+        revision, checksum = self.promote(select=True)
+        (self.assets / 'review1.json').unlink()
+        candidate = deepcopy(revision)
+        candidate.update(revision_id='replacement', semantic_version='2.0.0')
+        parented = deepcopy(candidate); parented['parent_revision_id'] = 'robot-r1'
+        with self.assertRaises(OSError):
+            self.registry.create_draft('broken-parent', parented)
+        draft_hash = self.registry.create_draft('replacement', candidate)
+        candidate['visual_spec']['description'] = 'Independent recovery revision'
+        draft_hash = self.registry.update_draft('replacement', candidate, expected_sha256=draft_hash)
+        review = review_for(self.assets, candidate, name='replacement')
+        before = list(self.registry.db.iterdump())
+        with self.assertRaisesRegex(ValueError, 'stale promotion selection'):
+            self.registry.promote('replacement', expected_sha256=draft_hash, review=review,
+                                  select=True, expected_selected_revision_id=None)
+        self.assertEqual(list(self.registry.db.iterdump()), before)
+        self.registry.promote('replacement', expected_sha256=draft_hash, review=review,
+                              select=True, expected_selected_revision_id='robot-r1')
+        self.assertEqual(self.registry.identity('robot')['selected_revision'], 'replacement')
+        self.assertEqual(self.registry.revision('robot-r1', verify=False)['sha256'], checksum)
+
+    def test_history_archival_retains_permanent_promotion_bindings(self):
+        revision, checksum = self.promote(select=True)
+        pin = dict(identity_id='robot', revision_id='robot-r1', semantic_version='1.0.0', sha256=checksum)
+        bindings = dict(schema_version='1.0.0', project_id='archived', project_revision=pointer(),
+            instances=[dict(instance_id='instance', entity_id='entity', shot_id='shot', revision=pin)])
+        self.registry.register_bindings(bindings)
+        for _ in range(10):
+            self.registry._history('audit-event', 'robot', {})
+        before = list(self.registry.db.iterdump())
+        with patch('continuity_registry.MAX_RECORDS', 1):
+            with self.assertRaisesRegex(ValueError, 'retain all promote bindings'):
+                self.registry.create_draft('capped', revision)
+        self.assertEqual(list(self.registry.db.iterdump()), before)
+        archived = self.registry.history()
+        with self.registry._transaction():
+            self.registry.db.execute("DELETE FROM history WHERE action <> 'promote' AND sequence < ?",
+                                     (archived[-1]['sequence'],))
+        self.assertEqual([entry['action'] for entry in self.registry.history()], ['promote', 'audit-event'])
+        self.assertEqual(self.registry.revision('robot-r1')['sha256'], checksum)
+        self.assertEqual(self.registry.revision('robot-r1', verify=False)['sha256'], checksum)
+        self.assertEqual(self.registry.identity('robot')['selected_revision'], 'robot-r1')
+        self.assertEqual(self.registry.bindings('archived')['document'], bindings)
+        self.registry.create_draft('after-archive', revision)
+        self.assertGreater(self.registry.history()[-1]['sequence'], archived[-1]['sequence'])
+
+    def test_sqlite_full_preserves_original_error_after_automatic_rollback(self):
+        import sqlite3
+        page_count = self.registry.db.execute('PRAGMA page_count').fetchone()[0]
+        maximum = self.registry.db.execute('PRAGMA max_page_count').fetchone()[0]
+        self.registry.db.execute('PRAGMA max_page_count=' + str(page_count))
+        before = list(self.registry.db.iterdump())
+        try:
+            with self.assertRaisesRegex(sqlite3.DatabaseError, 'database or disk is full'):
+                with self.registry._transaction():
+                    self.registry.db.execute('INSERT INTO history(action,subject,details) VALUES (?,?,?)',
+                                             ('large', 'robot', b'x' * (1024 * 1024)))
+            self.assertFalse(self.registry.db.in_transaction)
+            self.assertEqual(list(self.registry.db.iterdump()), before)
+        finally:
+            self.registry.db.execute('PRAGMA max_page_count=' + str(maximum))
+        self.registry.create_draft('after-full', sample('revision'))
 
     def test_draft_isolation_promotion_reload_compare_pin_and_rollback(self):
         r1,h1=self.promote(select=True)
