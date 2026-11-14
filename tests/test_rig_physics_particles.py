@@ -30,6 +30,27 @@ class ParticleTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
 
+    def test_actual_cache_publication_keeps_owned_payload_when_wrapper_changes(self):
+        import atomic_publish
+        from unittest.mock import patch
+        world,settings,payloads=fixture();backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
+        destination=self.root/'published';original=atomic_publish.rename_no_replace_at;changed=[]
+        def rename(source_fd,source_name,destination_fd,destination_name):
+            info=__import__('os').fstat(source_fd)
+            stage=next(p for p in self.root.iterdir() if (p.stat().st_dev,p.stat().st_ino)==(info.st_dev,info.st_ino))
+            stage.rename(self.root/'owned-moved');stage.mkdir()
+            (stage/'foreign-marker').write_bytes(b'preserve foreign wrapper');changed.append(stage)
+            return original(source_fd,source_name,destination_fd,destination_name)
+        try:
+            result=backend.simulate(prepared)
+            with patch.object(atomic_publish,'rename_no_replace_at',side_effect=rename):report=backend.bake(result,destination)
+            self.assertEqual(report['status'],'hash-and-state-verified')
+            self.assertEqual(verify(destination)['world_sha256'],prepared.world_sha256)
+            self.assertEqual(len(changed),1)
+            self.assertEqual((changed[0]/'foreign-marker').read_bytes(),b'preserve foreign wrapper')
+            self.assertFalse((destination/'foreign-marker').exists())
+        finally:backend.cleanup(prepared)
+
     def test_actual_subprocess_evolves_gravity_and_exact_birth_death_events(self):
         world,settings,payloads=fixture();backend=ParticleBackend();prepared=backend.prepare(world,settings,payloads)
         try:
@@ -177,7 +198,10 @@ class ParticleTests(unittest.TestCase):
             with self.assertRaises(core.BackendError) as caught:backend.bake(prepared,destination)
             self.assertEqual(caught.exception.report['code'],'PARTICLE_LIMIT')
             self.assertFalse(destination.exists())
-            self.assertFalse(list(self.root.glob('.bounded-cache.particle-*')))
+            # The canonical publisher retains empty wrappers to avoid removing
+            # a concurrently replaced public directory name. No payload leaks.
+            for wrapper in self.root.glob('.bounded-cache.particle-*'):
+                self.assertEqual(list(wrapper.iterdir()),[])
         finally:backend.cleanup(prepared)
 
     def test_retained_per_file_budget_includes_manifest_before_bulk_reads(self):

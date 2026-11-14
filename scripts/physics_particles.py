@@ -180,30 +180,37 @@ class ParticleBackend:
         return prepared
 
     def bake(self,result,destination):
+        from atomic_publish import private_stage_fd,rename_no_replace_at
         owner=self._owned.get(getattr(result,'token',None))
         core.require(owner is not None and owner['prepared']==result and 'result' in owner,'PARTICLE_STATE','Only completed owned results can be baked.')
         destination=core._new_destination(destination)
-        stage=Path(tempfile.mkdtemp(prefix='.'+destination.name+'.particle-',dir=destination.parent))
-        try:
-            with core._Reader(result.root) as reader:
-                for path in sorted(result.root.rglob('*')):
-                    if path.is_dir():continue
-                    name=path.relative_to(result.root).as_posix();data=reader.read(name)
-                    core.require(owner['completed_inventory'].get(name)==core.digest(data),'PARTICLE_SOURCE_CHANGED','Completed particle result changed before publication.')
-                    core._write(stage/name,data)
-            from physics_particle_worker import export_obj
-            for sample in owner['result']['particles']['samples']:
-                core._write(stage/'geometry'/('frame-%04d.obj'%sample['frame']),export_obj(sample))
-            files=[dict(path=p.relative_to(stage).as_posix(),bytes=p.stat().st_size,sha256=core.digest(p.read_bytes())) for p in sorted(stage.rglob('*')) if p.is_file()]
-            manifest=dict(schema_version=1,kind='hatch-physics-particle-cache',world_sha256=result.world_sha256,
-                settings_sha256=result.settings_sha256,files=files,fixture=owner['fixture'],review_status='unreviewed',
-                project_manifest=owner['project_manifest'],backend=self.capabilities(),execution=owner['result']['report'],usage=owner['result']['usage'])
-            core._write(stage/'particle-cache.json',core.canonical(manifest))
-            verify(stage)
-            core._publish(stage,destination)
-        finally:
-            if stage.exists():shutil.rmtree(stage)
-        return verify(destination)
+        with core._Reader(destination.parent) as parent, private_stage_fd(parent.fd,prefix='.'+destination.name+'.particle-') as stage_fd:
+            os.mkdir('payload',mode=0o700,dir_fd=stage_fd)
+            payload_fd=os.open('payload',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=stage_fd)
+            try:
+                with core._Reader(result.root) as reader:
+                    names=reader.names()
+                    core.require(names==set(owner['completed_inventory']),'PARTICLE_SOURCE_CHANGED','Completed particle inventory changed.')
+                    for name in sorted(names):
+                        data=reader.read(name)
+                        core.require(owner['completed_inventory'][name]==core.digest(data),'PARTICLE_SOURCE_CHANGED','Completed particle result changed before publication.')
+                        core._write_relative(payload_fd,name,data)
+                from physics_particle_worker import export_obj
+                for sample in owner['result']['particles']['samples']:
+                    core._write_relative(payload_fd,'geometry/frame-%04d.obj'%sample['frame'],export_obj(sample))
+                files=core._inventory_relative(payload_fd)
+                manifest=dict(schema_version=1,kind='hatch-physics-particle-cache',world_sha256=result.world_sha256,
+                    settings_sha256=result.settings_sha256,files=files,fixture=owner['fixture'],review_status='unreviewed',
+                    project_manifest=owner['project_manifest'],backend=self.capabilities(),execution=owner['result']['report'],usage=owner['result']['usage'])
+                core._write_relative(payload_fd,'particle-cache.json',core.canonical(manifest))
+                report=_verify_at(payload_fd)
+                try:rename_no_replace_at(stage_fd,'payload',parent.fd,destination.name)
+                except FileExistsError as exc:
+                    raise core.BackendError('PHYSICS_DESTINATION_EXISTS','A destination created during staging was preserved.',category='invalid-input') from exc
+                except OSError as exc:
+                    raise core.BackendError('PHYSICS_PUBLICATION_UNAVAILABLE','Exclusive output publication failed safely: '+str(exc)) from exc
+                return report
+            finally:os.close(payload_fd)
 
     def cleanup(self,prepared):
         owner=self._owned.get(getattr(prepared,'token',None))
@@ -290,8 +297,15 @@ def _verify_snapshot(root):
 
 def verify(root):
     """Verify a detached exact-byte snapshot, never a changing caller directory."""
-    root=Path(root)
-    with core._Reader(root) as reader:
+    return _verify_cache(root)
+
+
+def _verify_at(directory_fd):
+    return _verify_cache(None,directory_fd=directory_fd)
+
+
+def _verify_cache(root,*,directory_fd=None):
+    with (core._Reader(root) if directory_fd is None else core._Reader.from_descriptor(directory_fd)) as reader:
         manifest_bytes=reader.read('particle-cache.json',1024*1024)
         manifest=core.parse(manifest_bytes)
         core.require(type(manifest) is dict and type(manifest.get('files')) is list and len(manifest['files'])<=256,
@@ -304,10 +318,7 @@ def verify(root):
         core._paths(names)
         core.require(len(set(names))==len(names) and sum(item['bytes'] for item in manifest['files'])<=core.MAX_CACHE_BYTES,
             'PARTICLE_CACHE','Duplicate files or excessive cache bytes.')
-        actual=set()
-        for directory,dirs,files in os.walk(root,followlinks=False):
-            core.require(not any((Path(directory)/name).is_symlink() for name in dirs),'PARTICLE_CACHE','Linked cache directories are forbidden.')
-            actual.update((Path(directory)/name).relative_to(root).as_posix() for name in files)
+        actual=reader.names()
         core.require(actual==set(names)|{'particle-cache.json'},'PARTICLE_CACHE','Unexpected or missing cache content.')
         # Admit the small configuration before copying bulk payloads into a snapshot.
         entries={item['path']:item for item in manifest['files']};configuration={}
@@ -332,6 +343,7 @@ def verify(root):
                 if data is None:data=reader.read(item['path'],item['bytes'])
                 core.require(len(data)==item['bytes'] and core.digest(data)==item['sha256'],'PARTICLE_CACHE','Changed or corrupt particle cache payload.')
                 core._write(snapshot/item['path'],data)
+            core.require(reader.names()==set(names)|{'particle-cache.json'},'PARTICLE_CACHE','Particle inventory changed during snapshot reads.')
             return _verify_snapshot(snapshot)
 
 
