@@ -6,6 +6,7 @@ unchanged. GLB/glTF encoding remains owned by rig_gltf.
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -104,7 +105,7 @@ def _obj_payloads(geometry, limits):
     return payloads
 
 
-def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', limits=None, editable=None, source_snapshot=None):
+def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', limits=None, editable=None, source_snapshot=None, fixture=False):
     """Publish standalone native geometry as model.glb/.gltf or model.obj+MTL.
 
     No skin, animation, hierarchy or source polygon topology is implied by a
@@ -143,28 +144,38 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
             mesh=editable.mesh.id, positions=editable.source_positions.tolist(), faces=[list(face) for face in editable.faces],
             triangle_faces=editable.triangle_faces.tolist(), normal_mode=editable.normal_mode))
         editable_bytes = (json.dumps(editable_record, allow_nan=False, separators=(',', ':'))+'\n').encode()
-    fixture = False
+    require(type(fixture) is bool, 'MODEL3D_SOURCE', 'Fixture must be a boolean.')
+    require(not fixture or source_snapshot is None, 'MODEL3D_SOURCE', 'Imported fixture identity comes from its source.')
     if source_snapshot is not None:
         require(source_snapshot.model.geometry is geometry,
                 'MODEL3D_SOURCE', 'Source snapshot must own the exported geometry.')
+        from rig_source_snapshot import SourceSnapshot
+        from model3d_mesh_import import MeshImport
+        require(type(source_snapshot) in (SourceSnapshot, MeshImport),
+                'MODEL3D_SOURCE', 'Source snapshot must come from the import owner.')
+        provenance = copy.deepcopy(source_snapshot.provenance)
+        source_binding = getattr(source_snapshot, '_source_binding', None)
+        require(isinstance(source_binding, tuple) and len(source_binding) == 2
+                and provenance.get('source_entry') == source_binding[0],
+                'MODEL3D_SOURCE', 'Source entry no longer matches its captured identity.')
         fixture = source_snapshot.model.report.get('fixture') is True
         # Only the canonical import adapter establishes this binding; editable
         # provenance alone is never an authority for fixture classification.
         binding = getattr(source_snapshot, '_canonical_binding', None)
-        require(binding is not None or not any(key in source_snapshot.provenance
+        require(binding is not None or not any(key in provenance
                 for key in ('manifest', 'canonical_ref')),
                 'MODEL3D_SOURCE', 'Canonical claims require an authenticated import binding.')
         if binding is not None:
             from asset_library_contracts import canonical_bytes, load_manifest
             require(isinstance(binding, tuple) and len(binding) == 3
-                    and canonical_bytes(source_snapshot.provenance.get('manifest')) == binding[0]
-                    and canonical_bytes(source_snapshot.provenance.get('canonical_ref')) == binding[1]
-                    and source_snapshot.provenance.get('source_entry') == binding[2],
+                    and canonical_bytes(provenance.get('manifest')) == binding[0]
+                    and canonical_bytes(provenance.get('canonical_ref')) == binding[1]
+                    and provenance.get('source_entry') == binding[2],
                     'MODEL3D_SOURCE', 'Canonical provenance no longer matches its authenticated binding.')
             canonical = load_manifest(binding[0])
             fixture = fixture or canonical['provenance']['fixture'] is True
-        require(not fixture or format != 'obj', 'MODEL3D_EXPORT_LOSS',
-                'OBJ cannot preserve fixture provenance; use GLB or glTF.')
+    require(not fixture or format != 'obj', 'MODEL3D_EXPORT_LOSS',
+            'OBJ cannot preserve fixture provenance; use GLB or glTF.')
     payloads = _obj_payloads(geometry, limits) if format == 'obj' else None
     stage = Path(tempfile.mkdtemp(prefix='.model3d-export-', dir=parent))
     try:
@@ -217,8 +228,11 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
             records = source_snapshot.source_records
             require(isinstance(records, list) and 0 < len(records) <= limits['archive_files'],
                     'MODEL3D_SOURCE', 'Source inventory is missing or too large.')
+            require(tuple((r['path'], r['bytes'], r['sha256']) for r in records) == source_binding[1],
+                    'MODEL3D_SOURCE', 'Source inventory no longer matches its captured identity.')
             source_records = []
-            for record in records:
+            for path, size, sha256 in source_binding[1]:
+                record = dict(path=path, bytes=size, sha256=sha256)
                 name = 'source/' + record['path']
                 require(name not in files, 'MODEL3D_SOURCE', 'Source inventory contains duplicate paths.')
                 from rig_errors import safe_path
@@ -241,7 +255,9 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
                         'MODEL3D_EXPORT_LIMIT', 'Originals and export exceed dependency byte limits.')
             # Classify the verified copied bytes through the native authority,
             # not a caller-editable report or provenance receipt.
-            entry = source_snapshot.provenance.get('source_entry')
+            entry = source_binding[0]
+            require(source_snapshot.provenance.get('source_entry') == entry,
+                    'MODEL3D_SOURCE', 'Source entry changed during export.')
             require(isinstance(entry, str) and any(r['original_path'] == entry for r in source_records),
                     'MODEL3D_SOURCE', 'Source entry is absent from the verified inventory.')
             from rig_errors import safe_path
@@ -256,7 +272,7 @@ def export_mesh(geometry: Geometry, destination: str | Path, *, format='glb', li
             require((native_fixture or (binding is not None and canonical['provenance']['fixture'] is True)) == fixture,
                     'MODEL3D_SOURCE', 'Source fixture classification does not match verified bytes.')
             envelope = dict(schema_version=1, kind='hatch-model3d-source-snapshot',
-                            files=source_records, provenance=source_snapshot.provenance)
+                            files=source_records, provenance=provenance)
             data = (json.dumps(envelope, allow_nan=False, sort_keys=True)+'\n').encode('utf-8')
             require(len(data) <= limits['source_bytes'] and
                     len(data) + sum(f['bytes'] for f in files.values()) <= limits['dependency_bytes'],

@@ -55,10 +55,11 @@ Parts describe the native world-space mesh view with explicit identity transform
 Run `python scripts/demonstrate_model3d_mesh.py --destination output/new-mesh-demo`
 with the optional rig test dependencies installed. The destination must be new.
 The command builds six named editable shapes, applies explicit source-basis/unit/
-pivot conversion, writes and reimports all eighteen GLB/glTF/OBJ exports, then
+pivot conversion, writes and reimports twelve fixture-marked GLB/glTF exports, then
 imports one GLB through the immutable source pipeline. Its `acceptance.json`
 records actual topology and every generated payload hash. This is an engineering
-fixture demonstration; it supplies no artistic approval or provider claim.
+fixture demonstration; it supplies no artistic approval or provider claim. OBJ is
+omitted because it cannot carry the fixture marker; fixture exports to OBJ fail closed.
 
 Source snapshots canonicalize the explicitly selected root once so system path
 aliases work on macOS and Windows; descendant symlinks remain rejected. Native
