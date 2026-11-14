@@ -136,6 +136,10 @@ class StandaloneAdmissionTests(unittest.TestCase):
         self.assertEqual(len(calls),len(set(calls)))
         self.assertEqual(len(receipt['native_context']['rig_bindings']),1)
         self.assertEqual(receipt['roots'],refs)
+        self.assertIn('fixture/identity.json',receipt['root_inventory']['clip.json'])
+        self.assertNotIn('second.json',receipt['root_inventory']['clip.json'])
+        self.assertNotIn('clip.json',receipt['root_inventory']['second.json'])
+        self.assertIn('fixture/rig.json',receipt['root_inventory']['second.json'])
         self.assertEqual(receipt['bytes'],sum(len(files[name]) for name in receipt['inventory']))
         self.assertEqual(self.sources(),files)
         with self.assertRaises(RigError) as memory:
@@ -143,6 +147,46 @@ class StandaloneAdmissionTests(unittest.TestCase):
         self.assertEqual(memory.exception.report['code'],'ANIMATION_LIMIT')
         with self.assertRaises(RigError):admit_clips(None,refs,reader=original,budgets=dict(max_work_bytes=receipt['bytes']-1))
         with self.assertRaises(RigError):admit_clips(None,refs,reader=original,budgets=dict(max_tracks=1))
+
+    def test_selective_roots_bind_only_their_real_transitive_rig_inventory(self):
+        from unittest.mock import patch
+        from rig_models import load_rig
+        from rig_test_helpers import fixture
+        second_rig=fixture(self.f.root,name='different-rig',animated=False)
+        second_rig_ref=self.f.put('different-rig/rig.json',second_rig.manifest,'rig')
+        second=deepcopy(self.clip);second['id']='second';second['rig_binding']=second_rig_ref
+        second_ref=self.f.put('second.json',second,'clip')
+        with patch('rig_models.load_rig',wraps=load_rig) as native:
+            batch=admit_clips(self.f.root,[self.reference,second_ref])
+        self.assertEqual(native.call_count,2)
+        first_paths=set(batch['root_inventory']['clip.json']);second_paths=set(batch['root_inventory']['second.json'])
+        self.assertIn('fixture/identity.json',first_paths)
+        self.assertTrue(any(name.startswith('fixture/source/') for name in first_paths))
+        self.assertTrue(any(name.startswith('fixture/geometry/') for name in first_paths))
+        self.assertTrue(any(name.startswith('fixture/rig/weights/') for name in first_paths))
+        self.assertFalse(any(name.startswith('different-rig/') for name in first_paths))
+        self.assertFalse(any(name.startswith('fixture/') for name in second_paths))
+        self.assertEqual(first_paths|second_paths,set(batch['inventory']))
+        for root in batch['root_inventory'].values():
+            for path,record in root.items():self.assertEqual(record,batch['inventory'][path])
+        # Provenance is a real dependency of the derived root, never vice versa.
+        second['provenance']['sources']=[self.reference]
+        second_ref=self.f.put('second.json',second,'clip')
+        derived=admit_clips(self.f.root,[self.reference,second_ref])
+        self.assertLess(first_paths,set(derived['root_inventory']['second.json']))
+        self.assertEqual(first_paths,set(derived['root_inventory']['clip.json']))
+
+    def test_duplicate_and_same_identity_versions_share_the_policy_envelope(self):
+        from unittest.mock import patch
+        from rig_models import load_rig
+        newer=deepcopy(self.clip);newer['version']='2.0.0'
+        newer_ref=self.f.put('newer.json',newer,'clip')
+        with patch('rig_models.load_rig',wraps=load_rig) as native:
+            batch=admit_clips(self.f.root,[self.reference,self.reference,newer_ref])
+        self.assertEqual(native.call_count,1)
+        self.assertEqual(set(batch['clips']),{'clip.json','newer.json'})
+        self.assertEqual(len(batch['roots']),3)
+        self.assertNotIn('newer.json',batch['root_inventory']['clip.json'])
 
     def test_batch_root_count_is_bounded_before_iteration_or_source_read(self):
         from unittest.mock import Mock

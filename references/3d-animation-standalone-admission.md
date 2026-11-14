@@ -119,3 +119,24 @@ passes at most the smaller remaining work-byte and memory allowance, including
 already charged namespace and retained-native data. An oversized callback return
 fails before input materialization. Native data admission and fixed host callback
 bounds remain estimates and trust contracts, without a process RSS guarantee.
+
+### Selective per-root receipts
+
+The additive `root_inventory` maps each root clip path to only its transitive
+exact records, with the same record values as the global inventory. It includes
+native manifest, identity, binary geometry/skin, original sources and provenance
+that the shared visitor/native capture recorded. The owner derives reachability
+from those recorded edges; it performs no second source read, native decode or
+semantic validation. The receipt metadata is charged before allocation.
+
+A derived clip's provenance can make the original clip a real dependency, while
+the original's receipt excludes the derived clip. Independent rigs remain
+independent; shared rig dependencies can occur in both receipts while being read
+and decoded only once. Scene dependency receipts should use `root_inventory` for
+selective invalidation and the global inventory for complete batch accounting.
+
+Duplicate exact roots and multiple versions of the same clip ID are permitted.
+The in-memory envelope supplies policy and clocks, without declaring an active
+project clip selection; the common binder validates every captured clip. Caller
+root references stay exact and ordered, and `clips`/`root_inventory` are keyed by
+logical root path. No persisted source document is reserialized or relabeled.
