@@ -386,16 +386,24 @@ class NativeReviewJournal:
                 return copy.deepcopy(entry)
         return None
 
-    def _write(self, state):
+    @classmethod
+    def _admission(cls, admit):
+        cls._need(admit is None or callable(admit), 'INPUT',
+                  'Admission must be a trusted in-process callback, never JSON data.')
+
+    def _write(self, state, *, admit=None):
         self._need(len(state['reviews']) + len(state['validations']) <= self.MAX_RECORDS,
                    'LIMIT', 'Review history has reached its bounded record capacity.')
         self._bounded(state)
         self._check_context()
         self._need(not (self.root / WORKFLOW_FILE).is_symlink(), 'PATH', 'Review journal must not be a link.')
+        if admit is not None:
+            admit()
         _save(self.root, state)
 
-    def record(self, receipt, transaction_id, *, current_dependencies):
+    def record(self, receipt, transaction_id, *, current_dependencies, admit=None):
         self._name(transaction_id)
+        self._admission(admit)
         with hatch.ownership(self.root):
             state = self._load()
             current = self._dependencies(current_dependencies, verify=False)
@@ -414,7 +422,7 @@ class NativeReviewJournal:
             record['sha256'] = hash_object(record)
             state['reviews'].append(record)
             _event(state, 'native-review-recorded', receipt_sha256=record['sha256'], transaction_id=transaction_id)
-            self._write(state)
+            self._write(state, admit=admit)
             return copy.deepcopy(record)
 
     def status(self, current_dependencies):
@@ -449,8 +457,9 @@ class NativeReviewJournal:
                     current_pass=bool(result) and all(d['status'] == 'pass' for d in result.values()),
                     production_art_acceptance=False)
 
-    def append_validation(self, report, transaction_id):
+    def append_validation(self, report, transaction_id, *, admit=None):
         self._name(transaction_id)
+        self._admission(admit)
         self._bounded(report)
         self._need(isinstance(report, dict) and report.get('kind') == 'director-qa-report' and
                    type(report.get('schema_version')) in (int, float) and report['schema_version'] == 1 and report.get('project_id') == self.project_id and
@@ -499,7 +508,7 @@ class NativeReviewJournal:
             record['sha256'] = hash_object(record)
             state['validations'].append(record)
             _event(state, 'native-validation-recorded', receipt_sha256=record['sha256'], transaction_id=transaction_id)
-            self._write(state)
+            self._write(state, admit=admit)
             return copy.deepcopy(record)
 
     def _validation_references(self, report):

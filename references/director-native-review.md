@@ -113,6 +113,16 @@ identifier with different content fails. Concurrent writers share the existing
 nonblocking owner lock: busy callers must retry within their own bounded policy.
 Failures preserve old records. No compaction, deletion or relabeling occurs.
 
+Both append methods accept an optional keyword-only `admit=None` trusted
+in-process callback. The service can use it to recheck its deadline and current
+native binding after inspection has finished. It runs under the existing owner
+lock, after final context/size validation and immediately before atomic save;
+rejection must raise an exception, leaving the old file and history unchanged.
+It never comes from JSON, and a non-callable value is rejected. An exact retry
+that returns an existing immutable record does not invoke admission again;
+services still perform their own current context checks before requesting it.
+The default adds no admission action and does not change legacy v1 methods.
+
 Journal metadata is limited to 8 MiB and 4,096 total records. Each operation has
 bounded reference counts and byte totals; decoded inspected images have a
 128-megapixel aggregate limit per scoped review. Larger reviews must be split
