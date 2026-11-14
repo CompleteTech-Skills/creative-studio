@@ -67,6 +67,9 @@ to the applicable review authority and complete requirements.
 `status(current_dependencies)` reports each requested dimension as unreviewed,
 pass, fail or stale. It checks actual dependency and evidence bytes. Changing a
 camera input stales that scope; unrelated dimensions can retain their reviews.
+An empty read-only scope returns `current_pass: false`, including for structural
+profiles that declare no visual reviews. Recording a review still requires a
+nonempty explicit scope.
 An unrelated Director project metadata version does not become a whole-project
 review invalidation key. The active project identity and fixture status remain
 fixed, while each record preserves its exact historical project reference.
@@ -80,10 +83,26 @@ authority for native project state.
 
 `append_validation(report, transaction_id)` stores a separate structural report
 chain and event. Reports identify `schema_version: 1`, `kind:
-director-qa-report`, the current `project_id`, `fixture`, a status, nonempty exact
-`inputs`, and `checks`. A passed report needs nonempty passed checks; it cannot
-assert artistic acceptance. The QA implementation remains responsible for
-executing its checks. `validation_history()` explicitly returns historical
+director-qa-report`, the current `project_id`, `fixture`, exact `project` and
+`profile` references, a status, nonempty declared `inputs`, and `checks`.
+Each check identifies its target `artifact`, status and bounded `evidence` refs.
+A passed report needs nonempty passed checks, no cancellation/deadline failure,
+and verified bytes for every declared input and proof; it cannot assert artistic
+acceptance. The QA implementation remains responsible for executing its checks.
+
+Failed, partial, canceled, unavailable and unverified reports retain expected
+references to the broken or missing inputs they diagnose. Their references still
+undergo structural/path/size validation, but those failed input bytes are not
+required to verify before preserving the failure. The current project's and
+profile's primary bytes always verify, as do every check's primary target and
+evidence files when that check claims to have passed. Declared failed dependencies
+of a valid project/profile are retained without reading them. Native owner
+descriptors inside check details remain native metadata and are not reinterpreted
+as additional Director file-read authority. Non-passed records explicitly set
+`all_required_inputs_verified: false`; a historical failure never grants current
+execution or visual verification.
+
+`validation_history()` explicitly returns historical
 reports with `current_execution_verified: false`; reading a past report does
 not execute QA again or promote a visual milestone. `history()` returns both
 chains and their event references.
