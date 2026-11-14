@@ -75,6 +75,12 @@ jobs:
         run: |
           python -B scripts/physics_backends.py probe --smoke > physics-evidence/blender-probe.json
           python -B scripts/physics_backends.py probe --backend pybullet --python "$HATCH_PYBULLET_PYTHON" --smoke > physics-evidence/pybullet-probe.json
+      - name: Real rig socket release, impulse, collision and native replay
+        env:
+          HATCH_GRABBING_TEST: '1'
+          HATCH_GRABBING_EVIDENCE: physics-evidence/grabbing
+        run: |
+          python -B -m unittest discover -s tests/optional -p test_physics_grabbing_native.py -v 2>&1 | tee physics-evidence/grabbing-tests.log
       - name: Retain genuine native sources, real caches and transform exports
         run: |
           python -B scripts/physics_backends.py demo physics-evidence/blender-demo > physics-evidence/blender-demo.json
