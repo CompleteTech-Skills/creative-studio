@@ -62,7 +62,7 @@ jobs:
                          ran=result.testsRun, skipped=[(str(test), why) for test, why in result.skipped],
                          failures=len(result.failures), errors=len(result.errors), success=result.wasSuccessful())
           Path('editor-cross-browser-evidence/result.json').write_text(json.dumps(receipt, indent=2)+'\n')
-          raise SystemExit(not (expected >= 5 and result.testsRun == expected and result.wasSuccessful() and not result.skipped))
+          raise SystemExit(not (expected >= 6 and result.testsRun == expected and result.wasSuccessful() and not result.skipped))
           PY
           python scripts/editor3d_browser_evidence.py < editor-browser-private.log > editor-cross-browser-evidence/tests.redacted.log
           python - <<'PY'

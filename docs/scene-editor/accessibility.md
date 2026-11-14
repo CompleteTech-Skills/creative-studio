@@ -74,7 +74,8 @@ The unchanged Chromium launcher remains headless.
 
 The dedicated `editor3d-cross-browser.yml` workflow installs Playwright's exact
 pinned Firefox/WebKit builds and their libraries on Ubuntu 24.04. It executes the
-same five native keyboard/persistence/focus cases. Firefox uses an explicitly
+same six native keyboard/persistence/focus cases, including bare-page pending-edit
+feedback while preserving control-specific arrow navigation. Firefox uses an explicitly
 headed browser inside Xvfb; WebKit uses its headless mode. This is a Linux engine
 validation, not a claim of testing the macOS Safari application. The workflow
 requires every collected case
