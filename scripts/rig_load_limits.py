@@ -16,7 +16,7 @@ import zipfile
 import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS
-from rig_errors import RigError, MAX_JSON_BYTES, decode_json, require
+from rig_errors import RigError, MAX_JSON_BYTES, decode_json, require, open_payload
 
 
 # Includes streamed hash buffers, ZIP/header probes and the image header reader.
@@ -63,7 +63,8 @@ class LoadBudget:
                 asset=asset, expected=self.limits['memory_bytes'], observed=self.memory)
 
     def file(self, path: Path, *, source=False) -> int:
-        size = path.stat().st_size
+        with open_payload(path.parent, path.name) as (_, info):
+            size = info.st_size
         cap = self.limits['source_bytes'] if source else self.limits['dependency_bytes']
         require(size <= cap, 'RIG_LIMIT_BINARY', 'Input exceeds its byte budget.',
                 asset=path.name, expected=cap, observed=size)
@@ -77,6 +78,19 @@ class LoadBudget:
                     expected=self.limits['dependency_bytes'], observed=self.input_bytes)
         return size
 
+    def hash(self, path: Path):
+        size = self.file(path)
+        digest = hashlib.sha256()
+        with open_payload(path.parent, path.name) as (stream, _):
+            remaining = size
+            while remaining:
+                data = stream.read(min(1024 * 1024, remaining))
+                require(data, 'RIG_SOURCE_CHANGED', 'Input shrank during hashing.', asset=path.name)
+                digest.update(data)
+                remaining -= len(data)
+            require(stream.read(1) == b'', 'RIG_SOURCE_CHANGED', 'Input grew during hashing.', asset=path.name)
+        return digest.hexdigest()
+
     def charge_json(self, path: Path):
         size = self.file(path)
         require(size <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'JSON exceeds 32 MiB.', asset=path.name)
@@ -84,12 +98,14 @@ class LoadBudget:
         self.json_bytes += size
         return size
 
-    def json(self, path: Path):
+    def json(self, path: Path, *, expected_hash=None, hash_code='RIG_HASH'):
         size = self.charge_json(path)
         # Bounded read also rejects a file growing between stat and read.
-        with path.open('rb') as stream:
+        with open_payload(path.parent, path.name) as (stream, _):
             payload = stream.read(size + 1)
         require(len(payload) == size, 'RIG_SOURCE_CHANGED', 'JSON changed during admission.', asset=path.name)
+        require(expected_hash is None or hashlib.sha256(payload).hexdigest() == expected_hash,
+                hash_code, 'Native JSON bytes differ from their immutable reference.', asset=path.name)
         return decode_json(payload)
 
     def report(self):
@@ -97,6 +113,7 @@ class LoadBudget:
                     input_bytes=self.input_bytes, array_bytes=self.array_bytes,
                     texture_rgba_bytes=self.texture_rgba_bytes, json_bytes=self.json_bytes,
                     scope='loading only; not process RSS, evaluation or rendering')
+
 
 
 def _zip_directory(payload: bytes, budget: LoadBudget):
@@ -175,11 +192,49 @@ def image_dimensions(payload: bytes) -> tuple[int, int]:
     raise RigError('RIG_TEXTURE_FORMAT', 'Missing JPEG frame dimensions.')
 
 
+def read_bundle_member(archive, info):
+    """Read admitted logical bytes without unbounded ZipExtFile decompression.
+
+    read(-1) can allocate far beyond a forged central-directory file_size before
+    zipfile truncates the output. Fixed-size requests bound each decompressor
+    output independently of that untrusted declaration.
+    """
+    chunks = bytearray()
+    with archive.open(info) as stream:
+        remaining = info.file_size
+        while remaining:
+            chunk = stream.read(min(64 * 1024, remaining))
+            require(chunk, 'RIG_BINARY', 'Truncated native ZIP member.', asset=info.filename)
+            chunks.extend(chunk)
+            remaining -= len(chunk)
+        require(stream.read(1) == b'', 'RIG_BINARY', 'Native ZIP member exceeds its declared size.',
+                asset=info.filename)
+    return bytes(chunks)
+
+
+class _HeaderReader:
+    """Bound NumPy header reads before its parser consumes declared lengths."""
+    def __init__(self, stream):
+        self.stream = stream
+        self.total = 0
+
+    def read(self, size):
+        require(type(size) is int and 0 <= size <= 10000 and self.total + size <= 10032,
+                'RIG_BINARY', 'Native NumPy header exceeds its bounded profile.')
+        data = self.stream.read(size)
+        self.total += len(data)
+        return data
+
+    def tell(self):
+        return self.stream.tell()
+
+
+
 def scan_bundle(path: Path, limits: dict, budget: LoadBudget, expected_hash=None):
     """Inspect all headers and image dimensions without allocating NumPy arrays."""
     size = budget.file(path)
     budget.add(size, path.name + ': immutable encoded bundle snapshot')
-    with path.open('rb') as stream:
+    with open_payload(path.parent, path.name) as (stream, _):
         snapshot = stream.read(size + 1)
     require(len(snapshot) == size, 'RIG_SOURCE_CHANGED', 'Binary changed during admission.', asset=path.name)
     require(expected_hash is None or hashlib.sha256(snapshot).hexdigest() == expected_hash,
@@ -207,13 +262,14 @@ def scan_bundle(path: Path, limits: dict, budget: LoadBudget, expected_hash=None
             require(meta_info.file_size <= MAX_JSON_BYTES, 'RIG_LIMIT_JSON', 'Binary metadata exceeds 32 MiB.')
             budget.add(meta_info.file_size * _JSON_FACTOR, path.name + ': binary JSON estimate')
             budget.json_bytes += meta_info.file_size
-            metadata = decode_json(archive.read(meta_info))
+            metadata = decode_json(read_bundle_member(archive, meta_info))
             require(isinstance(metadata, dict), 'RIG_BINARY', 'Binary metadata must be an object.')
             headers = {}
             for info in infos:
                 if not info.filename.endswith('.npy'):
                     continue
-                with archive.open(info) as stream:
+                with archive.open(info) as raw:
+                    stream = _HeaderReader(raw)
                     version = np.lib.format.read_magic(stream)
                     require(version in ((1, 0), (2, 0)), 'RIG_BINARY', 'Unsupported NumPy array format.')
                     shape, fortran, dtype = (np.lib.format.read_array_header_1_0(stream) if version == (1, 0)

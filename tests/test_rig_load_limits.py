@@ -2,18 +2,22 @@
 from copy import deepcopy
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
+import zlib
 
 import numpy as np
 from PIL import Image, PngImagePlugin
 
-from rig_errors import RigError, sha256
+from rig_errors import RigError, sha256, directory_capability
 from rig_models import (TextureImage, load_rig, rig_signature, save_geometry,
                         _binary_bundle, _read_bundle, save_weights)
 from rig_contracts import DEFAULT_LIMITS
@@ -292,6 +296,86 @@ class NativeLoadLimitTests(unittest.TestCase):
         (self.root / 'rig.json').write_text(json.dumps(rig.manifest))
         self.assert_before_arrays({}, 'RIG_SKIN')
 
+    def test_clip_preflight_cannot_admit_unhashed_shorter_replacement(self):
+        import rig_models
+        manifest = json.loads((self.root / 'rig.json').read_bytes())
+        before = self.hashes()
+        original = rig_models._preflight_load
+        changed = []
+        def shorter_during_preflight(*args, **kwargs):
+            for descriptor in manifest['animations']:
+                path = self.root / descriptor['path']
+                payload = path.read_bytes()
+                value = json.loads(payload)
+                value['duration'] /= 10
+                for track in value['tracks']:
+                    track['times'] = [time / 10 for time in track['times']]
+                path.write_text(json.dumps(value))
+                changed.append((path, payload))
+            try:
+                return original(*args, **kwargs)
+            finally:
+                for path, payload in changed:
+                    path.write_bytes(payload)
+        with patch('rig_models._preflight_load', side_effect=shorter_during_preflight):
+            self.assert_before_arrays({'duration': 1}, 'RIG_HASH')
+        self.assertTrue(changed)
+        self.assertEqual(before, self.hashes())
+
+    def test_live_clip_load_reapplies_all_caller_caps(self):
+        # Exercise live admission independently of a cached preflight result.
+        # Real source-bound clips and arrays are still read and verified.
+        for cap, code in (({'duration': 1}, 'RIG_LIMIT_ANIMATION'),
+                          ({'fps': 1}, 'RIG_LIMIT_ANIMATION'),
+                          ({'keyframes': 1}, 'RIG_LIMIT_KEYFRAMES')):
+            with self.subTest(cap=cap), patch('rig_models._preflight_load', return_value=None):
+                with self.assertRaises(RigError) as caught:
+                    load_rig(self.root, limits=cap)
+                self.assertEqual(caught.exception.report['code'], code)
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'FIFO unavailable.')
+    def test_fifo_replacement_between_admission_and_read_is_bounded(self):
+        # A subprocess timeout turns a blocking path.open regression into a
+        # bounded failure instead of hanging the whole suite.
+        code = r'''
+import os, tempfile
+from pathlib import Path
+from rig_errors import RigError
+from rig_contracts import DEFAULT_LIMITS
+from rig_load_limits import LoadBudget, scan_bundle
+from rig_models import _binary_bundle
+for method in ('json', 'hash', 'bundle'):
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary).resolve()
+        path = root / 'payload'
+        payload = _binary_bundle({}, {}) if method == 'bundle' else b'{}'
+        path.write_bytes(payload)
+        original = root / 'original'
+        budget = LoadBudget(DEFAULT_LIMITS)
+        real_file = budget.file
+        def replaced_after_admission(selected, **kwargs):
+            size = real_file(selected, **kwargs)
+            selected.rename(original)
+            os.mkfifo(selected)
+            return size
+        budget.file = replaced_after_admission
+        try:
+            try:
+                if method == 'bundle': scan_bundle(path, DEFAULT_LIMITS, budget)
+                else: getattr(budget, method)(path)
+            except RigError as exc:
+                assert exc.report['code'] in ('RIG_MISSING_ASSET', 'RIG_PAYLOAD_TYPE'), exc.report
+            else:
+                raise AssertionError('FIFO admitted by ' + method)
+        finally:
+            path.unlink()
+            original.rename(path)
+        assert path.read_bytes() == payload
+'''
+        result = subprocess.run([sys.executable, '-c', code], capture_output=True,
+                                text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_runtime_bundle_snapshot_hash_is_checked_before_arrays(self):
         path = Path(self.temp.name) / 'valid.npz'
         path.write_bytes(_binary_bundle({}, {'safe': np.zeros(3)}))
@@ -300,6 +384,154 @@ class NativeLoadLimitTests(unittest.TestCase):
                 _read_bundle(path, DEFAULT_LIMITS, expected_hash='0' * 64)
             self.assertEqual(caught.exception.report['code'], 'RIG_HASH')
             materialize.assert_not_called()
+
+
+    @unittest.skipUnless(os.name == 'posix' and Path('/proc/self/fd').is_dir(),
+                         'Linux directory descriptor capability unavailable.')
+    def test_caller_budget_preserves_pinned_root_after_path_replacement(self):
+        before = self.hashes()
+        fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with directory_capability(fd) as capability:
+                kept = self.root.with_name('retained')
+                self.root.rename(kept)
+                self.root.mkdir()
+                (self.root / 'rig.json').write_bytes(b'foreign replacement')
+                with patch('rig_models._materialize_array', side_effect=AssertionError('unadmitted array')) as materialize:
+                    with self.assertRaises(RigError) as caught:
+                        load_rig(capability.path, limits={'memory_bytes': 3 * 1024**2})
+                    self.assertEqual(caught.exception.report['code'], 'RIG_LIMIT_MEMORY')
+                    materialize.assert_not_called()
+                rig = load_rig(capability.path, limits={'memory_bytes': 35 * 1024**2})
+                self.assertEqual(rig.geometry.vertex_count, 706)
+                self.assertEqual(rig.root, capability.path)
+                self.assertEqual((self.root / 'rig.json').read_bytes(), b'foreign replacement')
+                self.assertEqual(before, {str(path.relative_to(kept)): sha256(path)
+                                         for path in kept.rglob('*') if path.is_file()})
+        finally:
+            os.close(fd)
+
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'FIFO unavailable.')
+    def test_binary_fifo_is_rejected_by_shared_reader_before_snapshot(self):
+        path = Path(self.temp.name) / 'fifo.npz'
+        os.mkfifo(path)
+        with patch('rig_models._materialize_array', side_effect=AssertionError('unadmitted array')) as materialize:
+            with self.assertRaises(RigError) as caught:
+                _read_bundle(path, DEFAULT_LIMITS)
+            self.assertEqual(caught.exception.report['code'], 'RIG_MISSING_ASSET')
+            materialize.assert_not_called()
+
+
+    def test_forged_metadata_size_cannot_expand_beyond_bounded_read_requests(self):
+        path = Path(self.temp.name) / 'forged-metadata-size.npz'
+        with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('metadata.json', b'{}' + b' ' * (8 * 1024**2))
+        data = bytearray(path.read_bytes())
+        cursor = data.index(b'PK\x01\x02')
+        struct.pack_into('<I', data, cursor + 16, zlib.crc32(b'{}'))
+        struct.pack_into('<I', data, cursor + 24, 2)
+        path.write_bytes(data)
+        real = zipfile._get_decompressor
+        observations = []
+        class Observed:
+            def __init__(self, value): self.value = value
+            def __getattr__(self, name): return getattr(self.value, name)
+            def decompress(self, data, *args):
+                result = self.value.decompress(data, *args)
+                observations.append((args[0] if args else None, len(result)))
+                return result
+        with patch('zipfile._get_decompressor', side_effect=lambda *a, **kw: Observed(real(*a, **kw))):
+            metadata, arrays = _read_bundle(path, dict(DEFAULT_LIMITS, memory_bytes=5 * 1024**2))
+        self.assertEqual(metadata, {})
+        self.assertEqual(arrays, {})
+        self.assertTrue(observations)
+        self.assertTrue(all(request is not None and request <= 64 * 1024 and output <= 64 * 1024
+                            for request, output in observations), observations)
+
+
+    def test_forged_array_size_uses_bounded_materialization_reads(self):
+        path = Path(self.temp.name) / 'forged-array-size.npz'
+        stream = io.BytesIO()
+        np.lib.format.write_array(stream, np.zeros((0,), dtype='<f8'), allow_pickle=False)
+        admitted = stream.getvalue()
+        with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('metadata.json', '{}')
+            archive.writestr('empty.npy', admitted + b' ' * (8 * 1024**2))
+        data = bytearray(path.read_bytes())
+        cursor = data.index(b'PK\x01\x02')
+        while True:
+            name_size, extra_size, comment_size = struct.unpack_from('<3H', data, cursor + 28)
+            if data[cursor + 46:cursor + 46 + name_size] == b'empty.npy': break
+            cursor += 46 + name_size + extra_size + comment_size
+        struct.pack_into('<I', data, cursor + 16, zlib.crc32(admitted))
+        struct.pack_into('<I', data, cursor + 24, len(admitted))
+        path.write_bytes(data)
+        real = zipfile._get_decompressor
+        observations = []
+        class Observed:
+            def __init__(self, value): self.value = value
+            def __getattr__(self, name): return getattr(self.value, name)
+            def decompress(self, data, *args):
+                result = self.value.decompress(data, *args)
+                observations.append((args[0] if args else None, len(result)))
+                return result
+        with patch('zipfile._get_decompressor', side_effect=lambda *a, **kw: Observed(real(*a, **kw))):
+            _, arrays = _read_bundle(path, dict(DEFAULT_LIMITS, memory_bytes=5 * 1024**2))
+        self.assertEqual(arrays['empty'].shape, (0,))
+        self.assertTrue(observations)
+        self.assertTrue(all(request is not None and request <= 64 * 1024 and output <= 64 * 1024
+                            for request, output in observations), observations)
+
+
+    def test_forged_numpy_header_length_rejected_before_large_read(self):
+        path = Path(self.temp.name) / 'forged-header-length.npz'
+        fake = b'\x93NUMPY\x02\x00' + struct.pack('<I', 8 * 1024**2) + b' ' * (8 * 1024**2)
+        with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('metadata.json', '{}')
+            archive.writestr('data.npy', fake)
+        data = bytearray(path.read_bytes())
+        cursor = data.index(b'PK\x01\x02')
+        while True:
+            name_size, extra_size, comment_size = struct.unpack_from('<3H', data, cursor + 28)
+            if data[cursor + 46:cursor + 46 + name_size] == b'data.npy': break
+            cursor += 46 + name_size + extra_size + comment_size
+        struct.pack_into('<I', data, cursor + 16, zlib.crc32(fake[:32 * 1024]))
+        struct.pack_into('<I', data, cursor + 24, 32 * 1024)
+        path.write_bytes(data)
+        real = zipfile.ZipExtFile.read
+        requests = []
+        def observed(stream, size=-1):
+            requests.append(size)
+            self.assertGreaterEqual(size, 0)
+            self.assertLessEqual(size, 10032)
+            return real(stream, size)
+        with patch.object(zipfile.ZipExtFile, 'read', observed):
+            with self.assertRaises(RigError) as caught:
+                _read_bundle(path, dict(DEFAULT_LIMITS, memory_bytes=5 * 1024**2))
+            self.assertEqual(caught.exception.report['code'], 'RIG_BINARY')
+        self.assertTrue(requests)
+
+
+    def test_prefixed_decoy_directory_rejected_before_zipinfo_allocation(self):
+        path = Path(self.temp.name) / 'decoy-directory.npz'
+        with zipfile.ZipFile(path, 'w') as archive:
+            archive.writestr('metadata.json', '{}')
+            for i in range(30): archive.writestr(f'entry{i}.npy', b'')
+        data = bytearray(path.read_bytes())
+        eocd = data.rfind(b'PK\x05\x06')
+        directory_size, directory_offset = struct.unpack_from('<II', data, eocd + 12)
+        decoy = bytearray(data[directory_offset:directory_offset + 46])
+        struct.pack_into('<3H', decoy, 28, directory_size - 46, 0, 0)
+        decoy.extend(b'a' * (directory_size - 46))
+        struct.pack_into('<HH', data, eocd + 8, 1, 1)
+        struct.pack_into('<I', data, eocd + 16, 0)
+        path.write_bytes(decoy + data)
+        with patch('rig_load_limits.zipfile.ZipFile', side_effect=AssertionError('ZipInfo allocated before guard')):
+            with self.assertRaises(RigError) as caught:
+                _read_bundle(path, dict(DEFAULT_LIMITS, archive_files=1))
+            self.assertEqual(caught.exception.report['code'], 'RIG_BINARY')
+
 
 
 if __name__ == '__main__':

@@ -293,7 +293,7 @@ def _materialize_array(payload, shape, dtype, offset, fortran):
 
 
 def _read_bundle(path: Path, limits: dict, budget=None, kind=None, expected_hash=None, descriptor=None) -> tuple[dict, dict]:
-    from rig_load_limits import LoadBudget, scan_bundle
+    from rig_load_limits import LoadBudget, scan_bundle, read_bundle_member
     budget = budget if budget is not None else LoadBudget(limits)
     metadata, headers, snapshot = scan_bundle(path, limits, budget, expected_hash)
     _check_load_headers(metadata, headers, limits, kind, descriptor)
@@ -303,7 +303,7 @@ def _read_bundle(path: Path, limits: dict, budget=None, kind=None, expected_hash
             for name, (shape, dtype, offset, fortran) in headers.items():
                 # The verified header and byte payload are from the same immutable
                 # archive snapshot. No NumPy allocator consumes untrusted headers.
-                payload = archive.read(name + '.npy')
+                payload = read_bundle_member(archive, archive.getinfo(name + '.npy'))
                 arrays[name] = _materialize_array(payload, shape, dtype, offset, fortran)
     except (OSError, ValueError, EOFError, zipfile.BadZipFile, RuntimeError) as exc:
         from rig_errors import RigError
@@ -352,7 +352,6 @@ def save_geometry(root: Path, geometry: Geometry, limits=None) -> dict:
 def load_geometry(root: Path, descriptor: dict, limits=None, *, budget=None) -> Geometry:
     limits = limits or DEFAULT_LIMITS
     path = safe_path(root, descriptor['data']['path'], exists=True)
-    require(sha256(path) == descriptor['data']['sha256'], 'RIG_HASH', 'Geometry bytes differ from their manifest.')
     meta, arrays = _read_bundle(path, limits, budget, 'geometry', descriptor['data']['sha256'], descriptor)
     require(meta.get('schema_version') == 1, 'RIG_BINARY_VERSION', 'Unsupported geometry data version.')
     meshes = [Mesh(m['id'], arrays[m['positions']], arrays[m['triangles']], m['material'],
@@ -384,7 +383,6 @@ def save_weights(root: Path, weights: SkinWeights, version='1.0.0') -> dict:
 
 def load_weights(root: Path, descriptor: dict, limits=None, *, budget=None) -> SkinWeights:
     path = safe_path(root, descriptor['data']['path'], exists=True)
-    require(sha256(path) == descriptor['data']['sha256'], 'RIG_HASH', 'Skin bytes differ from their manifest.')
     meta, arrays = _read_bundle(path, limits or DEFAULT_LIMITS, budget, 'skin', descriptor['data']['sha256'], descriptor)
     require(meta == dict(schema_version=1, mesh=descriptor['mesh'], joints=descriptor['joints']),
             'RIG_SKIN', 'Skin metadata differs from the rig.')
@@ -433,11 +431,21 @@ def _check_load_headers(metadata, headers, limits, kind, descriptor):
         raise RigError('RIG_BINARY', 'Invalid native metadata/header inventory.') from exc
 
 
+def _check_clip_load_limits(clip, limits, keyframes):
+    require(clip['duration'] <= limits['duration'] and clip['fps'] <= limits['fps'],
+            'RIG_LIMIT_ANIMATION', 'Clip timing exceeds the caller/manifest budget.')
+    keyframes += sum(len(track['times']) for track in clip['tracks'])
+    require(keyframes <= limits['keyframes'], 'RIG_LIMIT_KEYFRAMES',
+            'Aggregate animation keys exceed the load budget.')
+    return keyframes
+
+
 def _preflight_load(root, manifest, limits, verify_source):
-    from rig_load_limits import LoadBudget, scan_bundle
+    from rig_load_limits import LoadBudget, scan_bundle, read_bundle_member
     budget = LoadBudget(limits)
     budget.charge_json(safe_path(root, 'rig.json', exists=True))
-    budget.json(safe_path(root, 'identity.json', exists=True))
+    budget.json(safe_path(root, 'identity.json', exists=True),
+                expected_hash=manifest['character']['identity_sha256'], hash_code='RIG_IDENTITY_CHANGED')
     if verify_source:
         for descriptor in manifest['source']['dependencies']:
             budget.file(safe_path(root, descriptor['path'], exists=True),
@@ -452,15 +460,14 @@ def _preflight_load(root, manifest, limits, verify_source):
         _check_load_headers(meta, headers, limits, kind, descriptor)
     keyframes = 0
     for descriptor in manifest['animations']:
-        clip = validate_contract(budget.json(safe_path(root, descriptor['path'], exists=True)), 'AnimationClip')
-        require(clip['duration'] <= limits['duration'] and clip['fps'] <= limits['fps'],
-                'RIG_LIMIT_ANIMATION', 'Clip timing exceeds the caller/manifest budget.')
-        keyframes += sum(len(track['times']) for track in clip['tracks'])
-        require(keyframes <= limits['keyframes'], 'RIG_LIMIT_KEYFRAMES', 'Aggregate animation keys exceed the load budget.')
+        clip = validate_contract(budget.json(safe_path(root, descriptor['path'], exists=True),
+                                 expected_hash=descriptor['sha256']), 'AnimationClip')
+        keyframes = _check_clip_load_limits(clip, limits, keyframes)
     for descriptor in manifest['validation']:
         budget.file(safe_path(root, descriptor['path'], exists=True))
     for descriptor in manifest['review']['receipts']:
-        receipt = validate_contract(budget.json(safe_path(root, descriptor['path'], exists=True)), 'RigReviewReceipt')
+        receipt = validate_contract(budget.json(safe_path(root, descriptor['path'], exists=True),
+                                          expected_hash=descriptor['sha256'], hash_code='RIG_EVIDENCE_CHANGED'), 'RigReviewReceipt')
         for evidence in receipt['evidence']:
             budget.file(safe_path(root, evidence['path'], exists=True))
     return budget.report()
@@ -482,9 +489,10 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
     budget = LoadBudget(limits)
     # Count the already parsed manifest in the live aggregate as well.
     budget.charge_json(safe_path(root, 'rig.json', exists=True))
-    require(sha256(safe_path(root, 'identity.json', exists=True)) == manifest['character']['identity_sha256'],
+    require(budget.hash(safe_path(root, 'identity.json', exists=True)) == manifest['character']['identity_sha256'],
             'RIG_IDENTITY_CHANGED', 'Character identity bytes differ from the manifest.')
-    identity=budget.json(safe_path(root, 'identity.json', exists=True))
+    identity=budget.json(safe_path(root, 'identity.json', exists=True),
+                expected_hash=manifest['character']['identity_sha256'], hash_code='RIG_IDENTITY_CHANGED')
     require(identity['id']==manifest['character']['id']==manifest['id'] and identity['fixture']==manifest['source']['fixture']
             and identity['source_sha256']==manifest['source']['sha256'] and identity['origin']==manifest['source']['origin'],
             'RIG_IDENTITY_CHANGED','Source origin, fixture classification and character identity must match their immutable record.')
@@ -499,29 +507,31 @@ def load_rig(root: str | Path, verify_source: bool = True, *, limits: dict | Non
         for descriptor in manifest['source']['dependencies']:
             path = safe_path(root, descriptor['path'], exists=True)
             budget.file(path, source=descriptor['path'] == manifest['source']['path'])
-            require(sha256(path) == descriptor['sha256'], 'RIG_SOURCE_CHANGED',
+            require(budget.hash(path) == descriptor['sha256'], 'RIG_SOURCE_CHANGED',
                     'Original source changed; dependent rig evidence is stale.', asset=descriptor['path'])
     geometry = load_geometry(root, manifest['geometry'], limits, budget=budget)
     weights = {d['mesh']: load_weights(root, d, limits, budget=budget) for d in manifest['skins']}
     clips = {}
+    keyframes = 0
     for descriptor in manifest['animations']:
         path = safe_path(root, descriptor['path'], exists=True)
-        require(sha256(path) == descriptor['sha256'], 'RIG_HASH', 'Animation content changed.', asset=descriptor['id'])
-        clip = validate_contract(budget.json(path), 'AnimationClip')
+        clip = validate_contract(budget.json(path, expected_hash=descriptor['sha256']), 'AnimationClip')
+        keyframes = _check_clip_load_limits(clip, limits, keyframes)
         require(clip['id'] == descriptor['id'] and clip['version'] == descriptor['version'],
                 'RIG_ANIMATION', 'Animation identity/version mismatch.')
         clips[clip['id']] = clip
     for descriptor in manifest['review']['receipts']+manifest['validation']:
         budget.file(safe_path(root, descriptor['path'], exists=True))
-        require(sha256(safe_path(root,descriptor['path'],exists=True))==descriptor['sha256'],
+        require(budget.hash(safe_path(root,descriptor['path'],exists=True))==descriptor['sha256'],
                 'RIG_EVIDENCE_CHANGED','Referenced review or validation evidence was modified.')
     receipts = []
     for descriptor in manifest['review']['receipts']:
-        receipt=validate_contract(budget.json(safe_path(root,descriptor['path'],exists=True)),'RigReviewReceipt')
+        receipt=validate_contract(budget.json(safe_path(root,descriptor['path'],exists=True),
+                                              expected_hash=descriptor['sha256'], hash_code='RIG_EVIDENCE_CHANGED'),'RigReviewReceipt')
         receipts.append(receipt)
         for evidence in receipt['evidence']:
             budget.file(safe_path(root, evidence['path'], exists=True))
-            require(sha256(safe_path(root,evidence['path'],exists=True))==evidence['sha256'],
+            require(budget.hash(safe_path(root,evidence['path'],exists=True))==evidence['sha256'],
                     'RIG_EVIDENCE_CHANGED','Evidence covered by a retained review was modified.')
     if manifest['review']['status']=='approved':
         from rig_validation import REVIEW_DIMENSIONS
