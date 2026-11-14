@@ -148,8 +148,7 @@ class EditorPrefabProjectionTests(unittest.TestCase):
                 transform=dict(translation=translation,rotation=[0,0,0,1],scale=[1,1,1]))
         reference = created['reference']
         saved = snapshot_project(native['root'],self.root/'component-portable',graph,
-            scene_path=original['scene_path'],derived_documents={reference['path']:created['prefab']},
-            extra_payloads={reference['path']:library.payloads()[reference['path']]})
+            scene_path=original['scene_path'],derived_documents={reference['path']:created['prefab']})
         repository = EditorRepository.create(self.root/'component-portable',self.root/'component-repo',scene_path=saved['active_scene']['path'])
         snapshot = repository.snapshot(); value = preview_snapshot(repository,snapshot)
         self.assertTrue(value['viewport_state']['available'])
