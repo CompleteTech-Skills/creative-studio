@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "kind": "silent-frame-transform",
+  "input_source": {
+    "schema_version": 1,
+    "kind": "silent-frame-source",
+    "origin": "synthetic",
+    "format": "png",
+    "precision": 8,
+    "alpha": "opaque",
+    "color": "untagged-sdr",
+    "width": 64,
+    "height": 48,
+    "fps": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "frames": [
+      {
+        "index": 0,
+        "path": "000000.png",
+        "sha256": "be3685c27a36af5d122ba65bc89216fe1f32a34f4971aa44d1caa732f68d7dfb",
+        "bytes": 169
+      },
+      {
+        "index": 1,
+        "path": "000001.png",
+        "sha256": "511bfedb862fe41218038b63f8efd619feb8c6c87389bbc5eac3033eb6d6c20c",
+        "bytes": 173
+      },
+      {
+        "index": 2,
+        "path": "000002.png",
+        "sha256": "21a58c964e1832bb707e8b9a26b2a109f316623e9af6d4edb43d65bd39f36eea",
+        "bytes": 172
+      },
+      {
+        "index": 3,
+        "path": "000003.png",
+        "sha256": "1ddc9d7be63f14d1ed0baab4419793d6726b24a911ce39d4727c0c725991bd9f",
+        "bytes": 170
+      }
+    ]
+  },
+  "input_source_sha256": "0e08098d0fc5efd545d20ad0d48cbdd67bd3f6da3614b4bfa6bc02c6e5fd8b53",
+  "profile": {
+    "schema_version": 1,
+    "kind": "silent-frame-profile",
+    "width": 3840,
+    "height": 2160,
+    "fps": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "fit": "letterbox",
+    "fps_policy": "preserve",
+    "background": [
+      0,
+      0,
+      0
+    ]
+  },
+  "profile_sha256": "f50d7c42511d78bf3591b8aad8c8a11f23afda38e2399c9e2981bbbc00956ff5",
+  "source": {
+    "schema_version": 1,
+    "kind": "silent-frame-source",
+    "origin": "transformed",
+    "format": "png",
+    "precision": 8,
+    "alpha": "opaque",
+    "color": "untagged-sdr",
+    "width": 3840,
+    "height": 2160,
+    "fps": {
+      "numerator": 24,
+      "denominator": 1
+    },
+    "frames": [
+      {
+        "index": 0,
+        "path": "frames/000000.png",
+        "sha256": "f80c81206185d13da9d4daa1b3529e2f9a1de20a5ccb833d38f6c931fa5bb7a1",
+        "bytes": 54531
+      },
+      {
+        "index": 1,
+        "path": "frames/000001.png",
+        "sha256": "65726f1cb97260201362fe9543a35ac58c5525fe493d6080d769940caed529fe",
+        "bytes": 74764
+      },
+      {
+        "index": 2,
+        "path": "frames/000002.png",
+        "sha256": "b9c95013e3747fc9022fdc7f7577fe5e60fe27d43c6d2656c96cb65fb13ca803",
+        "bytes": 73567
+      },
+      {
+        "index": 3,
+        "path": "frames/000003.png",
+        "sha256": "98f011642d428a469078e1b2f37005a81394b69fe490e18ef8e577ac7ac7cd8d",
+        "bytes": 70349
+      }
+    ]
+  },
+  "mapping": [
+    {
+      "index": 0,
+      "source_index": 0,
+      "pts": {
+        "numerator": 0,
+        "denominator": 1
+      }
+    },
+    {
+      "index": 1,
+      "source_index": 1,
+      "pts": {
+        "numerator": 1,
+        "denominator": 24
+      }
+    },
+    {
+      "index": 2,
+      "source_index": 2,
+      "pts": {
+        "numerator": 1,
+        "denominator": 12
+      }
+    },
+    {
+      "index": 3,
+      "source_index": 3,
+      "pts": {
+        "numerator": 1,
+        "denominator": 8
+      }
+    }
+  ],
+  "input_duration": {
+    "numerator": 1,
+    "denominator": 6
+  },
+  "output_duration": {
+    "numerator": 1,
+    "denominator": 6
+  },
+  "duration_delta": {
+    "numerator": 0,
+    "denominator": 1
+  },
+  "implementation": {
+    "id": "pillow-lanczos-center",
+    "pillow_version": "13.0.0",
+    "code_sha256": "94860778ec4be727114be6e98c4fa5583023c08133068d047bf6d0babcbc7e52"
+  },
+  "visual_review": "not-performed"
+}

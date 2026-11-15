@@ -1,0 +1,47 @@
+{
+  "code_head": "69a28c73b1223b0cf10c707fefd53757206b6ae4",
+  "source_hashes": {
+    "scripts/silent_video.py": "334b3a01e7851ee2bb2fc1d58c5c9061460b3c8d18d0a0717faef0b9ab5aa1a2",
+    "scripts/silent_transform.py": "94860778ec4be727114be6e98c4fa5583023c08133068d047bf6d0babcbc7e52",
+    "scripts/silent_profiles.py": "73cef513e2d360a2fff9dd264bc0107a7b14fd548dc1da030e1addd04c3f4131",
+    "scripts/rig_errors.py": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+    "scripts/portable_paths.py": "c50f1675449f3a037bc774342601bf1e0787b1cf4d936b5c2a85c339966e6b29"
+  },
+  "synthetic_fixture": true,
+  "scope": "actual bounded resolution encodes and explicit transforms; not native 3D film or visual acceptance",
+  "outputs": [
+    {
+      "profile": "720p",
+      "dimensions": [
+        1280,
+        720
+      ],
+      "frames": 4,
+      "audio_stream_count": 0,
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-delivery-evidence/resolution-69a28c73b122/720p.mp4",
+      "sha256": "eae11c565b9e24b37f1c4143a0e60d4a0bd59cd3caa7bd266361170216d20d53"
+    },
+    {
+      "profile": "1080p",
+      "dimensions": [
+        1920,
+        1080
+      ],
+      "frames": 4,
+      "audio_stream_count": 0,
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-delivery-evidence/resolution-69a28c73b122/1080p.mp4",
+      "sha256": "d18cda7fe0646a8bd65c79d0164197c47126bcd5c7d639e5bbb301afc2ee4e59"
+    },
+    {
+      "profile": "4k",
+      "dimensions": [
+        3840,
+        2160
+      ],
+      "frames": 4,
+      "audio_stream_count": 0,
+      "path": "/home/complete/.cache/hatch-coordination-20261112/silent-delivery-evidence/resolution-69a28c73b122/4k.mp4",
+      "sha256": "1b5b19631b34ec0b38834ae87e6d44db801e966582521fb732b80ff6199a7fe5"
+    }
+  ]
+}

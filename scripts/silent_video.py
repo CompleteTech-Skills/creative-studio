@@ -662,7 +662,10 @@ def validate_receipt(receipt, path, request, root=None, *, ffmpeg=None, ffprobe=
 
 
 def _destination(path):
-    path = Path(path).absolute()
+    try:
+        path = Path(path).absolute()
+    except TypeError as exc:
+        raise ValueError('destination must be a filesystem path') from exc
     for ancestor in [path, *path.parents]:
         if ancestor.is_symlink():
             raise ValueError('destination must not traverse symlinks')
@@ -672,7 +675,10 @@ def _destination(path):
 
 
 def _destination_name(value):
-    value = os.fspath(value)
+    try:
+        value = os.fspath(value)
+    except TypeError as exc:
+        raise ValueError('descriptor destination requires one portable filename') from exc
     if (not isinstance(value, str) or not 1 <= len(value) <= 255 or value in ('.', '..') or
             any(character in value for character in ('/', '\\', ':')) or value[-1] in (' ', '.') or
             any(ord(character) < 32 for character in value) or
@@ -754,7 +760,16 @@ def _encode_pinned(request, root, destination, parent_fd, *, ffmpeg=None, ffprob
         if two_pass:
             if progress is not None:
                 progress({'phase': 'encode-pass-1', 'total_frames': len(request['source']['frames'])})
-            passes.append(_run(command + ['-pass', '1', '-passlogfile', str(passlog), '-f', 'null', '-'],
+            # The private snapshot contains exactly the admitted finite input
+            # inventory. Let pass one reach its natural EOF: FFmpeg 6.1 writes
+            # duplicate/incomplete libvpx statistics when -frames:v terminates
+            # this stats-only pass, causing pass two to reject its EOS packet.
+            # The final encode retains the explicit frame limit and every
+            # timeout/output/log/statistics budget remains enforced.
+            first_pass = list(command)
+            frame_limit = first_pass.index('-frames:v')
+            del first_pass[frame_limit:frame_limit + 2]
+            passes.append(_run(first_pass + ['-pass', '1', '-passlogfile', str(passlog), '-f', 'null', '-'],
                 request['limits'], cancel=cancel, pass_fds=(source_fd,), progress=progress, scratch_prefix=passlog))
             command += ['-pass', '2', '-passlogfile', str(passlog)]
         if profile['container'] == 'mp4':
@@ -805,8 +820,9 @@ def destination_directory(destination, *, destination_dir_fd=None):
             os.close(descriptor)
     else:
         destination = _destination(destination)
+        name = _destination_name(destination.name)
         with _pin_directory(destination.parent) as parent_fd:
-            yield destination.name, parent_fd
+            yield name, parent_fd
 
 
 def encode(request, root, destination, *, destination_dir_fd=None, ffmpeg=None, ffprobe=None, cancel=None, progress=None):

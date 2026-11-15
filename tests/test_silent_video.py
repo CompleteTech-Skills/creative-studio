@@ -190,9 +190,12 @@ class SilentContracts(unittest.TestCase):
                     video.validate_request(request)
 
     def test_descriptor_destinations_reject_nonbasename_and_invalid_handles(self):
-        for name in ('../escape.mp4', 'nested/movie.mp4', 'CON.mp4', 'movie:.mp4', 'movie.mp4 '):
+        for name in ('../escape.mp4', 'nested/movie.mp4', 'CON.mp4', 'movie:.mp4', 'movie.mp4 ', None, [], {}, b'movie.mp4'):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 video.encode(self.request, self.root, name, destination_dir_fd=-1)
+        for invalid in (None, [], {}, 7):
+            with self.subTest(destination=invalid), self.assertRaises(ValueError):
+                video._destination(invalid)
         with self.assertRaises(ValueError):
             video.encode(self.request, self.root, 'movie.mp4', destination_dir_fd=True)
         descriptor = os.open(self.root / self.paths[0], os.O_RDONLY)

@@ -124,8 +124,9 @@ def capture_quality_profile(profile, quality='standard', *, fps=None, threads=1)
     codec = profile.get('codec')
     if codec not in SOFTWARE_ENCODERS or profile.get('encoder') != SOFTWARE_ENCODERS[codec]:
         raise ValueError('named quality profiles require a supported software encoder')
-    rate = {'numerator': 24, 'denominator': 1} if fps is None else copy.deepcopy(fps)
+    rate = {'numerator': 24, 'denominator': 1} if fps is None else fps
     _validate_rate(rate)
+    rate = copy.deepcopy(rate)
     settings = quality_settings(profile, quality, fps=rate, threads=threads)
     value = {'schema_version': QUALITY_PROFILE_VERSION, 'kind': 'silent-quality-profile',
              'codec': codec, 'encoder': profile['encoder'], 'name': quality,

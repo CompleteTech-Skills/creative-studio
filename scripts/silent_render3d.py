@@ -12,7 +12,8 @@ import os
 from pathlib import Path
 
 from PIL import Image
-from atomic_publish import _rename_no_replace, private_stage
+from atomic_publish import _rename_no_replace
+from production_contracts import MAX_MANIFEST_BYTES
 import silent_video as video
 
 
@@ -90,7 +91,7 @@ def composite_srgb(image, background):
     return result
 
 
-def prepare(request, result, render_root, destination, *, snapshot_root, expected_backend, background=None, cancel=None):
+def prepare(request, result, render_root, destination, *, snapshot_root, expected_backend, background=None, cancel=None, destination_dir_fd=None):
     """Return an admitted source and retained real-owner verification evidence.
 
     The observed backend identity must come from the renderer caller, rather
@@ -102,25 +103,24 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
     _preflight(request, result)
     if background is not None:
         _background(background)
-    destination = video._destination(destination)
     try:
         from render3d_verify import verify_result
     except ImportError as exc:
         raise ValueError('canonical Render3D verifier is unavailable') from exc
-    request, result = copy.deepcopy(request), copy.deepcopy(result)
-    _preflight(request, result)
-    verification = verify_result(request, result, render_root,
-                                 snapshot_root=snapshot_root, expected_backend=expected_backend)
-    if cancel is not None and cancel():
-        raise ValueError('silent source preparation cancelled')
-    output = request['settings']['output']
-    if output['format'] != 'png' or output['bit_depth'] != 8 or output['color_space'] != 'srgb':
-        raise ValueError('silent SDR adapter requires actual sRGB PNG8; EXR/HDR needs an explicit separate transform')
-    combined = sorted((item for item in result['images'] if item['pass_name'] == 'combined'), key=lambda item: item['frame'])
-    if not combined or len(combined) > video.MAX_FRAMES:
-        raise ValueError('complete bounded combined image inventory required')
-    with video._pin_directory(destination.parent) as parent_fd:
-        with private_stage(parent_fd, prefix='.silent-render3d-') as (private_path, wrapper_fd):
+    with video.destination_directory(destination, destination_dir_fd=destination_dir_fd) as (destination_name, parent_fd):
+        request, result = copy.deepcopy(request), copy.deepcopy(result)
+        _preflight(request, result)
+        verification = verify_result(request, result, render_root,
+                                     snapshot_root=snapshot_root, expected_backend=expected_backend)
+        if cancel is not None and cancel():
+            raise ValueError('silent source preparation cancelled')
+        output = request['settings']['output']
+        if output['format'] != 'png' or output['bit_depth'] != 8 or output['color_space'] != 'srgb':
+            raise ValueError('silent SDR adapter requires actual sRGB PNG8; EXR/HDR needs an explicit separate transform')
+        combined = sorted((item for item in result['images'] if item['pass_name'] == 'combined'), key=lambda item: item['frame'])
+        if not combined or len(combined) > video.MAX_FRAMES:
+            raise ValueError('complete bounded combined image inventory required')
+        with video._private_stage(parent_fd, prefix='.silent-render3d-') as (private_path, wrapper_fd):
             stage = private_path / 'payload'
             stage.mkdir(mode=0o700)
             (stage / 'frames').mkdir()
@@ -159,8 +159,21 @@ def prepare(request, result, render_root, destination, *, snapshot_root, expecte
                       'source_mapping': mapping, 'transform': {'kind': 'none' if background is None else 'srgb-linear-over',
                           'background_srgb8': background, 'alpha': 'straight-coverage', 'output_alpha': 'opaque'},
                       'visual_review': 'not-performed'}
-            (stage / 'source.json').write_text(json.dumps(report, indent=2, allow_nan=False) + '\n')
+            encoded = (json.dumps(report, indent=2, allow_nan=False) + '\n').encode('utf-8')
+            if len(encoded) > MAX_MANIFEST_BYTES:
+                raise ValueError('prepared source manifest exceeds byte budget')
+            (stage / 'source.json').write_bytes(encoded)
             if cancel is not None and cancel():
                 raise ValueError('silent source preparation cancelled before publication')
-            _rename_no_replace('payload', destination.name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
+            with video._open_source(stage, 'source.json') as stream:
+                if stream.read(len(encoded) + 1) != encoded:
+                    raise ValueError('prepared source manifest changed before publication')
+            if {path.name for path in stage.iterdir()} != {'frames', 'source.json'}:
+                raise ValueError('unexpected prepared source payload inventory')
+            verify_result(request, result, render_root,
+                          snapshot_root=snapshot_root, expected_backend=expected_backend)
+            video._snapshot(video.make_request(source), stage, None)
+            if {path.name for path in (stage / 'frames').iterdir()} != {'%06d.png' % i for i in range(len(paths))}:
+                raise ValueError('unexpected prepared source frame inventory')
+            _rename_no_replace('payload', destination_name, source_dir_fd=wrapper_fd, destination_dir_fd=parent_fd)
     return report

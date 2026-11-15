@@ -42,6 +42,10 @@ Deterministic scripts preserve motion, validate provenance, compose the atlas, a
 </tr>
 </table>
 
+## Animation3D foundation
+
+Validate separately versioned animation documents with `python scripts/animation3d.py validate --file FILE`; inspect supported operations with `python scripts/animation3d.py capabilities`. The [foundation guide](references/3d-animation-contracts.md) covers exact rational time, strict contracts and native rig channel sampling. Full timeline, scene evaluation and cinematic rendering remain downstream work.
+
 ## Model3D contract and payload verification
 
 The additive [Model3D foundation](references/model3d-contracts.md) validates strict
@@ -150,6 +154,10 @@ python scripts/validate_atlas.py assets/pet/spritesheet.webp
 ```
 
 That check does not recreate generation provenance or prove current app integration. New runs use the review and packaging gates described in [the workflow](references/workflow.md).
+
+## Optional image analysis
+
+[Resumable decomposition analysis](references/decomposition-analysis.md) can run a local OpenCV human face/eye detector or validate externally supplied proposals. It preserves original pixels and pending review. The local detector produces coarse photographic regions, not complete semantic character segmentation; the existing offline manual route remains available.
 
 ## Character state library
 

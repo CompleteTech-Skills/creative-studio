@@ -1,0 +1,31 @@
+HEAD f3af3c098bd256953aebacfb9839669ae3e182a4
+ffmpeg 7dd705cdbda877a090147f15cd8f070f1ae4485bd873d79b48c625cbdc8ffcea
+ffmpeg version 6.1.1 Copyright (c) 2000-2023 the FFmpeg developers
+built with gcc 16 (GCC)
+configuration: --disable-everything --disable-doc --disable-network --disable-x86asm --enable-ffmpeg --enable-ffprobe --enable-libvpx --enable-encoder='libvpx_vp9,png,wrapped_avframe' --enable-decoder='png,vp9' --enable-demuxer='image2,matroska' --enable-muxer='null,webm,image2' --enable-protocol='file,pipe' --enable-filter='scale,format,null,select,setsar' --enable-parser='png,vp9' --enable-bsf=vp9_superframe
+libavutil      58. 29.100 / 58. 29.100
+libavcodec     60. 31.102 / 60. 31.102
+libavformat    60. 16.100 / 60. 16.100
+libavdevice    60.  3.100 / 60.  3.100
+libavfilter     9. 12.100 /  9. 12.100
+libswscale      7.  5.100 /  7.  5.100
+libswresample   4. 12.100 /  4. 12.100
+
+ffprobe 32c98dbff3ccfa4259d6bd3bcaeab2c3e8430757341bc597d1b993903a9e5f14
+ffprobe version 6.1.1 Copyright (c) 2007-2023 the FFmpeg developers
+built with gcc 16 (GCC)
+configuration: --disable-everything --disable-doc --disable-network --disable-x86asm --enable-ffmpeg --enable-ffprobe --enable-libvpx --enable-encoder='libvpx_vp9,png,wrapped_avframe' --enable-decoder='png,vp9' --enable-demuxer='image2,matroska' --enable-muxer='null,webm,image2' --enable-protocol='file,pipe' --enable-filter='scale,format,null,select,setsar' --enable-parser='png,vp9' --enable-bsf=vp9_superframe
+libavutil      58. 29.100 / 58. 29.100
+libavcodec     60. 31.102 / 60. 31.102
+libavformat    60. 16.100 / 60. 16.100
+libavdevice    60.  3.100 / 60.  3.100
+libavfilter     9. 12.100 /  9. 12.100
+libswscale      7.  5.100 /  7.  5.100
+libswresample   4. 12.100 /  4. 12.100
+
+test_private_destination_fd_survives_parent_swap_through_both_passes (test_silent_video_native.SilentMedia.test_private_destination_fd_survives_parent_swap_through_both_passes) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.732s
+
+OK

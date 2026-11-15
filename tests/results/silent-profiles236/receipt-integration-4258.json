@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "kind": "silent-profiles-integrated-execution-evidence",
+  "candidate_source_head": "f3af3c098bd256953aebacfb9839669ae3e182a4",
+  "executed_media_head": "4258ef8418bdc5ce5bb76f7fbfef78d4d84dde43",
+  "created_utc": "2026-11-14T03:43:58.844588+00:00",
+  "fixture": "Synthetic engineering PNG/EXR/media fixtures; no native3Dfilm or visual approval claim.",
+  "runtime_byte_identity": true,
+  "runtime_sha256": {
+    "scripts/silent_video.py": "334b3a01e7851ee2bb2fc1d58c5c9061460b3c8d18d0a0717faef0b9ab5aa1a2",
+    "scripts/silent_profiles.py": "73cef513e2d360a2fff9dd264bc0107a7b14fd548dc1da030e1addd04c3f4131",
+    "scripts/silent_transform.py": "94860778ec4be727114be6e98c4fa5583023c08133068d047bf6d0babcbc7e52",
+    "scripts/silent_timeline.py": "bf6e9dbee79c7c78e01c0dda05544502355641a553a584cf80a9db2c88f38f24",
+    "scripts/silent_render3d.py": "b7729cedf38a666e40f2ab4938a3d84fccf7bd54ff1e72e3c972a93c74d6f513",
+    "scripts/silent_sequence.py": "4f2256bb6d27f5b0c811a4931a9a8a172f8d5ccbeb7b25f7ff0d918b7ae7ce8e",
+    "scripts/atomic_publish.py": "87db9162abd475cf0536183961ac24c6aaf0ddb7017be18f15556965a4446567",
+    "scripts/rig_errors.py": "d5140bf4b0ce887adfbb6670997ea38f18fd53495fcb5a36a6958263e488d39b",
+    "scripts/portable_paths.py": "c50f1675449f3a037bc774342601bf1e0787b1cf4d936b5c2a85c339966e6b29"
+  },
+  "dependencies": {
+    "base_pr": 399,
+    "source_pr417": "stacked on399; full original399 ancestry and precision workflow preserved",
+    "sequence_deadline": "released78848b63 files match authoritativeowner; no392jobcontroller features",
+    "callback_fix": "bdefac73",
+    "two_pass_fix": "8afcf3a8",
+    "canonical_directory_authority": "6ba61738"
+  },
+  "tests": {
+    "combined_actual_media_and_sequence": {
+      "count": 90,
+      "skips": 0,
+      "seconds": 170.01,
+      "log": "integrated-media-4258.log"
+    },
+    "independent_sequence_precision": {
+      "count": 26,
+      "skips": 0,
+      "seconds": 3.696,
+      "log": "integrated-sequence-4258.log"
+    },
+    "optional_numerical_composite": {
+      "count": 2,
+      "skips": 0,
+      "seconds": 0.169,
+      "log": "integrated-compositing-4258.log"
+    },
+    "overlap_note": "Individual focused suites overlap combined gate; do not add these as unique tests.",
+    "module_discovery_without_optional_deps": {
+      "discovered": 1115,
+      "failed_imports": 0,
+      "executed_tests": 0,
+      "log": "optional-import-discovery-4258.log"
+    },
+    "additional_all_seven_H264_rates": {
+      "count": 1,
+      "encodes": 7,
+      "skips": 0,
+      "seconds": 20.589,
+      "log": "all-seven-h264-rates-f3af.log",
+      "head": "f3af3c098bd256953aebacfb9839669ae3e182a4"
+    },
+    "older_FFmpeg6_complete_target": {
+      "count": 1,
+      "skips": 0,
+      "seconds": 0.732,
+      "log": "ffmpeg6-target-f3af.log",
+      "head": "f3af3c098bd256953aebacfb9839669ae3e182a4",
+      "test_adapter": "OfficialFFmpeg6.1.1 minimalGCC16build withtest-only-cpuflags0 toavoidseparatelyreproducedSIMDconversionbuildissue; no productflagorverificationthreshold change."
+    }
+  },
+  "actual_resolutions": {
+    "folder": "resolution-4258ef8418bd",
+    "outputs": 3,
+    "frames_per_output": 4,
+    "audio_streams_each": 0,
+    "independent_verification": "Fullprobe/decode,actualsourcepixelPSNR,dimensions,SAR,codec,framecount,durationandFPS."
+  },
+  "remaining": [
+    "Fresh independent wholecurrentcandidate review and requiredcurrent-headCI",
+    "Inherited399renderer backend is explicitly held for canonicalcorrectedunion fromrendererowner; obsolete embedded backend is not approved",
+    "Parentfullnative3Dfilm/HDR/CLIacceptance remainsopen withowners",
+    "Rootordinarydependencymerges/mainretarget/postverify and completeissueaudit beforeclosure"
+  ],
+  "evidence_sha256": {
+    "resolution-4258ef8418bd/1080p/frames/000000.png": "0c23adae7d62593a7f26f984694c92bc57a46b87fd52da64d5e6fd345f7a809a",
+    "resolution-4258ef8418bd/1080p/frames/000001.png": "5cccbe29872e55e44ba9fe0186eb4ff86d35289fb64c49e6552762f819d8e447",
+    "resolution-4258ef8418bd/1080p/frames/000002.png": "0303cf1bf5430023087cd31ad92528748a2b8a40f769ba5028b0bb97b93d3bda",
+    "resolution-4258ef8418bd/1080p/frames/000003.png": "c7baa627857dab06b33879c043a16e1621fc512429bf23775a8057ea79829c4a",
+    "resolution-4258ef8418bd/1080p/transform.json": "2b72415817fe44fba72eecbf2768dd4a68e6cf244536dddf3d67f97259f74e7d",
+    "resolution-4258ef8418bd/1080p-receipt.json": "da3535e388dd4bd2ced72cf5942480411b8b67e6d9e43582b445d9b329b9dafc",
+    "resolution-4258ef8418bd/1080p.mp4": "d18cda7fe0646a8bd65c79d0164197c47126bcd5c7d639e5bbb301afc2ee4e59",
+    "resolution-4258ef8418bd/4k/frames/000000.png": "f80c81206185d13da9d4daa1b3529e2f9a1de20a5ccb833d38f6c931fa5bb7a1",
+    "resolution-4258ef8418bd/4k/frames/000001.png": "65726f1cb97260201362fe9543a35ac58c5525fe493d6080d769940caed529fe",
+    "resolution-4258ef8418bd/4k/frames/000002.png": "b9c95013e3747fc9022fdc7f7577fe5e60fe27d43c6d2656c96cb65fb13ca803",
+    "resolution-4258ef8418bd/4k/frames/000003.png": "98f011642d428a469078e1b2f37005a81394b69fe490e18ef8e577ac7ac7cd8d",
+    "resolution-4258ef8418bd/4k/transform.json": "0a0052771b6a0d2ebdf0d55bdf692a29728e414c03906c5ef2c509b29ed6a591",
+    "resolution-4258ef8418bd/4k-receipt.json": "9b9880cdd5d1136b04484ceba18d0f6fa3b7ea7fc01c18f880a71fde5a1a56c0",
+    "resolution-4258ef8418bd/4k.mp4": "1b5b19631b34ec0b38834ae87e6d44db801e966582521fb732b80ff6199a7fe5",
+    "resolution-4258ef8418bd/720p/frames/000000.png": "843abb803e941dfceecfd90f953647c0153bc6541c488402effa3a5f0f786fdb",
+    "resolution-4258ef8418bd/720p/frames/000001.png": "3ba0fcdfc8cb291a862dbad534f198811ee38ab9ff86c50c3cbf8d7239440663",
+    "resolution-4258ef8418bd/720p/frames/000002.png": "0cf4413212211e691b87dfa38acbfa356194eb412342de091766839247a4f2d6",
+    "resolution-4258ef8418bd/720p/frames/000003.png": "14a9ebaf0563709444855053475cc1bcf657f01e5f54d759d606608d6b72112c",
+    "resolution-4258ef8418bd/720p/transform.json": "58a8339b436f1b4e756a066e8b27e88f573963eac3a4b9daaa08fe600cf7bfc0",
+    "resolution-4258ef8418bd/720p-receipt.json": "3214b70abba672f23fed20005032a661d99e098213d50be76f2f31e93bc2ffa3",
+    "resolution-4258ef8418bd/720p.mp4": "eae11c565b9e24b37f1c4143a0e60d4a0bd59cd3caa7bd266361170216d20d53",
+    "resolution-4258ef8418bd/acceptance.json": "fbde18afcf2399d90b4c085113132e06267e3c33cba71443f3fc7a6bbd127c5e",
+    "resolution-4258ef8418bd/original/000000.png": "be3685c27a36af5d122ba65bc89216fe1f32a34f4971aa44d1caa732f68d7dfb",
+    "resolution-4258ef8418bd/original/000001.png": "511bfedb862fe41218038b63f8efd619feb8c6c87389bbc5eac3033eb6d6c20c",
+    "resolution-4258ef8418bd/original/000002.png": "21a58c964e1832bb707e8b9a26b2a109f316623e9af6d4edb43d65bd39f36eea",
+    "resolution-4258ef8418bd/original/000003.png": "1ddc9d7be63f14d1ed0baab4419793d6726b24a911ce39d4727c0c725991bd9f",
+    "integrated-media-4258.log": "a94c6583ea74ae010b8cc6182dabdc1c32230901960a5ac917707a1ab8d64bf1",
+    "integrated-sequence-4258.log": "364c202c68e13e48d57cf1c0dbd7346f80507eed19073a2e91680b8128e5f04c",
+    "integrated-compositing-4258.log": "cbc756b538ea31c7f2bca7916d58960ec48ee495eb4f0c193ebd6ab366b2e1b1",
+    "optional-import-discovery-4258.log": "81f8ca100519f4811660fd315d18aa63ecc925ce220a1a169819a74a13748867",
+    "all-seven-h264-rates-f3af.log": "2ba3d2a2f11f00fe7475672eb2559b4b2759c2dd82238f337a4455daa80b9233",
+    "ffmpeg6-target-f3af.log": "22847af8b80217d951ea999097498b664c6140ff550ca53e698f3665097b518e"
+  }
+}

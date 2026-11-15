@@ -80,6 +80,13 @@ class ProfileControlTests(unittest.TestCase):
             with self.subTest(rate=rate), self.assertRaises(ValueError):
                 profiles.capture_quality_profile(video.PROFILES['h264-mp4'], fps=rate)
 
+    def test_profile_rate_is_admitted_before_copying_untrusted_nested_values(self):
+        nested = []
+        for _ in range(1500): nested = [nested]
+        with self.assertRaises(ValueError):
+            profiles.capture_quality_profile(video.PROFILES['h264-mp4'],
+                fps={'numerator': nested, 'denominator': 1})
+
     def test_storage_estimates_preserve_rational_duration_and_honest_uncertainty(self):
         profile = video.PROFILES['h264-mp4']
         settings = profiles.quality_settings(profile)
