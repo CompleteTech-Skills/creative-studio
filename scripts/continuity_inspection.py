@@ -391,6 +391,8 @@ def compare_assets(root, left, right):
                 attribute_morph_identity=x['attribute_morph_sha256']==y['attribute_morph_sha256'],
                 scale_normalized_geometry_identity=x['scale_normalized_sha256'] is not None and x['scale_normalized_sha256']==y['scale_normalized_sha256'],
                 material_identity=x['material_sha256']==y['material_sha256'],
+                facial_controls_identity=(x['facial_controls']==y['facial_controls']
+                    if x['facial_controls'] is not None and y['facial_controls'] is not None else None),
                 semantic_equivalence='unverified',visual_approval=False,needs_visual_review=True)
     return _finish_comparison(root,result,[a,b])
 
@@ -540,6 +542,7 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
         return finish()
     same=(x['skeleton']==y['skeleton'] and x['skins']==y['skins'] and
           x['controllers']==y['controllers'] and x['sockets']==y['sockets'] and
+          x['facial_controls']==y['facial_controls'] and
           x['geometry_sha256']==y['geometry_sha256'] and x['attribute_morph_sha256']==y['attribute_morph_sha256'])
     if same:
         result['status']='exact' if x['native_approval_status']==y['native_approval_status']=='approved' else 'unverified'
@@ -547,6 +550,8 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
         if result['status']=='unverified':
             result['issues'].append(dict(code='APPROVAL_REQUIRED',message='equal measured structures do not establish approved rig identity'))
         return finish()
+    if x['facial_controls']!=y['facial_controls']:
+        result['issues'].append(dict(code='FACIAL_CONTROLS_DIFFER',message='captured facial controls differ between rigs'))
     if profile is None or review is None:
         sb={v['id']:v for v in x['skeleton']['bones']}
         tb={v['id']:v for v in y['skeleton']['bones']}
@@ -571,12 +576,14 @@ def classify_rigs(root, source, target, *, required_bones=(), required_sockets=(
         fail('REVIEW','mapping decision must bind exact profile and both inspected rigs, preserving fixture provenance')
     from rig_contracts import validate_contract
     validate_contract(mapping,'RetargetProfile')
+    incompatible_socket=False
     for socket in required_sockets:
         old=source_sockets.get(socket)
         new=target_sockets[socket]
         if old is None or mapping['mapping'].get(old['bone'])!=new['bone'] or old['transform']!=new['transform']:
             result['issues'].append(dict(code='INCOMPATIBLE_SOCKET',id=socket))
-    if result['issues']:
+            incompatible_socket=True
+    if incompatible_socket:
         result['status']='incompatible'
         return finish()
     # Supported retarget execution belongs to the native rig authority. Imported

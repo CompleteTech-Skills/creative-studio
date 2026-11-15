@@ -177,6 +177,90 @@ class ContinuityInspectionTests(unittest.TestCase):
         result=classify_rigs(self.root,request,request)
         self.assertEqual(result['status'],'exact');self.assertFalse(result['production_artwork_approved'])
 
+    def test_separately_reviewed_native_facial_controls_affect_exact_identity(self):
+        from rig_review import apply_review
+        from rig_validation import REVIEW_DIMENSIONS
+        from rig_models import rig_signature
+
+        def reviewed(name, change=None):
+            rig=fixture(self.root,name=name,animated=True)
+            if change == 'expression':
+                rig.manifest['facial']['expressions']['blink']['morphs']['blink']=0.5
+            elif change == 'eyes':
+                rig.manifest['facial']['eyes']=['b1']
+            if change:
+                save_rig(rig,operation='simulated-fixture-facial-change')
+            decision=dict(schema_version=1,kind='hatch-3d-rig-review',rig_id=rig.manifest['id'],
+                rig_version=rig.manifest['version'],expected_sha256=rig_signature(rig.manifest),
+                author='Simulated fixture decision; no production artistic approval',reviewer_kind='agent',
+                created_at='2026-11-13T00:00:00Z',fixture=True,evidence=[rig.manifest['geometry']['data']],
+                dimensions={name:dict(verdict='approved',note='Simulated fixture decision') for name in REVIEW_DIMENSIONS})
+            self.assertFalse(apply_review(rig,decision)['production_artwork_approved'])
+            return native_request(self.root,rig)
+
+        base=reviewed('facial-base')
+        unchanged=reviewed('facial-unchanged')
+        result=classify_rigs(self.root,base,unchanged)
+        self.assertEqual(result['status'],'exact')
+        for change in ('expression','eyes'):
+            with self.subTest(change=change):
+                other=reviewed('facial-'+change,change)
+                result=classify_rigs(self.root,base,other)
+                self.assertEqual(result['source']['inspection']['native_approval_status'],'approved')
+                self.assertEqual(result['target']['inspection']['native_approval_status'],'approved')
+                self.assertNotEqual(result['status'],'exact')
+                self.assertEqual({issue['code'] for issue in result['issues']},
+                                 {'FACIAL_CONTROLS_DIFFER','APPROVED_MAPPING_REQUIRED'})
+                self.assertFalse(result['production_artwork_approved'])
+                self.assertFalse(compare_assets(self.root,base,other)['facial_controls_identity'])
+        self.assertTrue(compare_assets(self.root,base,unchanged)['facial_controls_identity'])
+
+    def test_approved_mapping_with_facial_difference_and_required_socket(self):
+        # All retained decisions below are simulated fixture decisions, not artwork approval.
+        a=fixture(self.root,name='map-face-base',animated=True)
+        socket=dict(schema_version=1,id='hand',bone='b2',role='hand',owner='fixture',
+                    transform=dict(translation=[0,0,0],rotation=[0,0,0,1],scale=[1,1,1]))
+        a.manifest['attachments']=[deepcopy(socket)]
+        save_rig(a,operation='fixture-socket')
+        left=native_request(self.root,a)
+        for change in ('expression','eyes','socket'):
+            with self.subTest(change=change):
+                b=fixture(self.root,name='map-face-'+change,animated=True)
+                b.manifest['attachments']=[deepcopy(socket)]
+                b.manifest['facial']['expressions']['blink']['morphs']['blink']=0.5
+                if change=='eyes':
+                    b.manifest['facial']['expressions']['blink']['morphs']['blink']=1.
+                    b.manifest['facial']['eyes']=['b1']
+                if change=='socket':
+                    b.manifest['attachments'][0]['transform']['translation']=[0.1,0,0]
+                save_rig(b,operation='simulated-fixture-change')
+                right=native_request(self.root,b)
+                profile=build_retarget_profile(a,b)
+                path=self.root/('map-'+change+'.json');path.write_bytes(canonical_bytes(profile))
+                mapref=pointer(self.root,path,kind='rig-retarget')
+                decision=sample('review');decision.update(reviewer_kind='assistant',fixture=True,verdict='approved',
+                    notes='Simulated fixture decision; no production or artistic approval',
+                    subject_sha256=mapref['sha256'],inspected=[mapref,left['source'],right['source']])
+                receipt=self.root/('retained-'+change+'.json')
+                receipt.write_bytes(canonical_bytes({k:v for k,v in decision.items() if k!='native_receipt'}))
+                decision['native_receipt']=pointer(self.root,receipt,kind='review-evidence')
+                review=self.root/('decision-'+change+'.json');review.write_bytes(canonical_bytes(decision))
+                result=classify_rigs(self.root,left,right,required_sockets=['hand'],profile=mapref,
+                                     review=pointer(self.root,review,kind='continuity-review'))
+                codes={issue['code'] for issue in result['issues']}
+                self.assertIn('FACIAL_CONTROLS_DIFFER',codes)
+                self.assertFalse(compare_assets(self.root,left,right)['facial_controls_identity'])
+                self.assertFalse(result['production_artwork_approved']);self.assertFalse(result['visual_approval'])
+                if change=='socket':
+                    self.assertEqual(result['status'],'incompatible')
+                    self.assertIn('INCOMPATIBLE_SOCKET',codes)
+                    self.assertNotIn('native_pose_proof',result)
+                else:
+                    self.assertEqual(result['status'],'retargetable')
+                    self.assertEqual(codes,{'FACIAL_CONTROLS_DIFFER'})
+                    self.assertEqual(result['native_pose_proof']['deformed_vertices'],4)
+                    self.assertGreater(result['native_pose_proof']['maximum_displacement_m'],0)
+
     def test_supported_approved_mapping_executes_native_retarget_and_deformation(self):
         a=fixture(self.root,name='a',animated=False);b=fixture(self.root,name='b',animated=False)
         b.geometry.meshes[0].positions*=2
