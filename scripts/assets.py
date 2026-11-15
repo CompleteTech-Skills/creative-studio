@@ -61,8 +61,8 @@ def parser():
     return root
 
 
-def run(argv=None):
-    args=parser().parse_args(argv);p={}
+def _run(args):
+    p={}
     if hasattr(args,'request'):
         p=decode_json(read_source_bytes(args.request,MAX_REQUEST_BYTES))
         if not isinstance(p,dict):fail('REQUEST','Request file must contain an object.')
@@ -98,21 +98,35 @@ def run(argv=None):
             else:
                 identifier=getattr(args,'job',None)
                 if identifier is None:fail('REQUEST','Supply --job.')
-                if action in ('cancel','resume','run') and not apply:fail('APPLY','Job mutation requires --apply.')
+                if action in ('cancel','resume','run') and not apply and not dry_run:fail('APPLY','Job mutation requires --apply.')
                 function={'status':owner.job_status,'cancel':owner.cancel_job,
                     'resume':owner.resume_job,'run':owner.run_job}[action]
-                result=function(identifier)
+                result=dict(status='plan',job=identifier,operation=action,executed=False) if dry_run and action in ('cancel','resume','run') else function(identifier)
         else:
             if operation=='storage.gc' and apply:
                 operation='storage.gc.apply'
             result=owner.execute(operation,p,apply=apply,dry_run=dry_run)
     document=dict(ok=True,result=result)
-    if hasattr(args,'output'):
-        from asset_library_operations import _path
-        path=_path(args.output)
-        # Reports are explicitly exclusive; no approved artifact can be replaced.
+    return document
+
+
+def run(argv=None):
+    args=parser().parse_args(argv)
+    if not hasattr(args,'output'):
+        return _run(args)
+    from asset_library_operations import _path
+    path=_path(args.output)
+    completed=False
+    try:
         with path.open('xb') as stream:
+            document=_run(args)
+            completed=True
             stream.write(json.dumps(document,ensure_ascii=False,allow_nan=False,indent=2).encode('utf-8')+b'\n')
+    except (OSError,TypeError,ValueError) as exc:
+        if completed:
+            raise RigError('LIBRARY_OPERATIONS_IO',
+                'Operation completed, but its reserved report could not be written: '+str(exc),stage='asset-cli') from exc
+        raise
     return document
 
 

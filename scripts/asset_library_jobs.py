@@ -329,6 +329,8 @@ class JobManager:
             record = self._read(identifier)
             if record['status'] == 'published':
                 fail('PUBLISHED', 'Published output cannot be cancelled; use its canonical lifecycle API.')
+            if record['verified'] is not None:
+                fail('RECOVERY', 'Publication state must be resolved before cancellation.')
             atomic_json(self._cancel_path(identifier), {'id': identifier, 'at': timestamp()})
             if record['status'] in ('queued', 'failed', 'interrupted', 'cancelled'):
                 record['status'] = 'cancelled'
@@ -342,7 +344,7 @@ class JobManager:
                 record = self._read(identifier)
                 if record['status'] == 'published':
                     return deepcopy(record)
-                if record['attempts'] >= record['limits']['attempts']:
+                if record['attempts'] >= record['limits']['attempts'] and (record['staged'] is None or record['verified'] is None):
                     fail('ATTEMPTS', 'Job retry ceiling exhausted; submit a corrected request with a new key.')
                 self._cancel_path(identifier).unlink(missing_ok=True)
                 record['status'] = 'queued'
@@ -410,8 +412,10 @@ class JobManager:
                         except RigError as exc:
                             if exc.report['code'] != 'ASSET_JOB_BUSY': raise
                     if not acquired: fail('BUSY', 'Requested worker pool is at capacity: ' + resource)
-                if record['attempts'] >= record['limits']['attempts']: fail('ATTEMPTS', 'Job retry ceiling exhausted.')
-                record.update(status='running', attempts=record['attempts'] + 1, started_at=timestamp(), finished_at=None, error=None)
+                recovery_only = record['attempts'] >= record['limits']['attempts']
+                if recovery_only and (record['staged'] is None or record['verified'] is None):
+                    fail('ATTEMPTS', 'Job retry ceiling exhausted.')
+                record.update(status='running', attempts=record['attempts'] + (not recovery_only), started_at=timestamp(), finished_at=None, error=None)
                 record['history'] = [*record['history'], dict(status='running', at=record['started_at'], attempt=record['attempts'])][-100:]
                 self._write(record)
             context = JobContext(self, identifier, time.monotonic() + record['limits']['runtime_seconds'])
@@ -439,6 +443,8 @@ class JobManager:
                 recovered = adapter.recover(context, deepcopy(staged['data']), deepcopy(verified))
                 if not isinstance(recovered, dict) or recovered.get('status') not in ('published', 'unpublished'):
                     fail('RECOVERY', 'Publisher could not establish authoritative publication state.')
+                if recovery_only and recovered['status'] != 'published':
+                    fail('ATTEMPTS', 'Job retry ceiling exhausted; no further publication is permitted.')
                 with _lock(self.root / 'journal'):
                     context.check_cancelled()
                     current = self._read(identifier)

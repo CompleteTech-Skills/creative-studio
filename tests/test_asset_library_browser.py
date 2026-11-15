@@ -215,3 +215,66 @@ class BrowserTests(unittest.TestCase):
             fpage=fallback.new_page();fpage.goto(f'http://127.0.0.1:{self.server.server_port}/');fpage.locator('#token').fill(self.server.token);fpage.get_by_role('button',name='Connect',exact=True).click();fpage.wait_for_function('window.assetBrowserReady === true');fpage.get_by_role('button',name='Animated fixture · 1.0.0',exact=True).click()
             self.assertIn('WebGL unavailable',fpage.locator('#model-status').inner_text());fpage.locator('#note').fill('Fallback repair');fpage.get_by_role('button',name='Save annotations').click();fpage.wait_for_function("document.querySelector('#error').textContent==='Annotations saved.'")
             self.assertEqual(self.library.annotations(ref)['note'],'Fallback repair');fallback.close()
+
+
+class BrowserCLIJobTests(unittest.TestCase):
+    """CLI construction and real local job operations without opening a socket."""
+
+    def setUp(self):
+        from unittest.mock import patch
+        import asset_library_browser as browser
+        self.fixture=foundation_fixture.AssetLibraryTests()
+        self.fixture.setUp();self.addCleanup(self.fixture.doCleanups)
+        self.fixture.register()
+        self.root=self.fixture.root
+        self.intake=self.root/'intake';self.intake.mkdir()
+        self.output=self.root/'output';self.output.mkdir()
+        self.jobs=self.output/'jobs'
+        SearchIndex(self.root/'index',{'local':self.fixture.library},create=True)
+        self.servers=[]
+        servers=self.servers
+        class Server:
+            def __init__(self,libraries,index,*,port,operations):
+                self.operations=operations;self.server_port=port;self.token='fixture-token'
+                servers.append(self)
+            def serve_forever(self): pass
+            def server_close(self): pass
+        self.browser=browser
+        patcher=patch.object(browser,'AssetBrowserServer',Server)
+        patcher.start();self.addCleanup(patcher.stop)
+
+    def start(self,roots=()):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        args=['--library',str(self.fixture.library.root),'--index',str(self.root/'index'),*roots]
+        with redirect_stdout(StringIO()): self.browser.main(args)
+        return self.servers[-1].operations
+
+    def root_args(self):
+        return ['--jobs-root',str(self.jobs),'--intake-root',str(self.intake),'--output-root',str(self.output)]
+
+    def test_first_use_and_existing_store_index_lifecycle(self):
+        operations=self.start(self.root_args())
+        self.assertEqual(operations.list_jobs(),[])
+        target=self.output/'managed-index'
+        job=operations.submit('index',{'index':str(target)})
+        self.assertEqual(operations.job_status(job['id'])['status'],'queued')
+        self.assertEqual(operations.owner.run_job(job['id'])['status'],'published')
+        self.assertEqual(SearchIndex(target,{'local':self.fixture.library}).search('triangle')['total'],1)
+        reopened=self.start(self.root_args())
+        self.assertEqual(reopened.job_status(job['id'])['status'],'published')
+        self.assertEqual([item['id'] for item in reopened.list_jobs()],[job['id']])
+
+    def test_default_and_partial_roots(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from itertools import combinations
+        self.assertIsNone(self.start())
+        pairs=list(zip(self.root_args()[::2],self.root_args()[1::2]))
+        for count in (1,2):
+            for subset in combinations(pairs,count):
+                with self.subTest(roots=subset),redirect_stderr(StringIO()):
+                    with self.assertRaises(SystemExit) as error:
+                        self.start([part for pair in subset for part in pair])
+                    self.assertEqual(error.exception.code,2)
+        self.assertFalse(self.jobs.exists())

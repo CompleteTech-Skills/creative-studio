@@ -12,6 +12,15 @@ from asset_library_jobs import JobManager
 from rig_errors import RigError, atomic_json
 
 
+def child_environment():
+    root = Path(__file__).absolute().parent.parent
+    env = os.environ.copy()
+    paths = [str(root / 'scripts'), str(root / 'tests')]
+    paths.extend(part for part in env.get('PYTHONPATH', '').split(os.pathsep) if part)
+    env['PYTHONPATH'] = os.pathsep.join(paths)
+    return env
+
+
 class FileAdapter:
     def __init__(self, destination, *, crash=None):
         self.destination = Path(destination)
@@ -60,7 +69,7 @@ class JobTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve(strict=True)
         self.manager = JobManager(self.root / 'jobs', create=True)
         self.adapter = FileAdapter(self.root / 'published')
 
@@ -68,6 +77,61 @@ class JobTests(unittest.TestCase):
         with self.assertRaises(RigError) as caught:
             function()
         self.assertEqual(caught.exception.report['code'], code)
+
+    def test_exhausted_receipt_recovery_and_holds(self):
+        manager = JobManager(self.root / 'one', limits={'attempts': 1}, create=True)
+        manager.submit('preview', {'text': 'immutable'}, key='last')
+        class ReceiptException(FileAdapter):
+            def publish(self, *args):
+                super().publish(*args)
+                raise RuntimeError('receipt interrupted')
+        self.error('ASSET_JOB_ADAPTER', lambda: manager.run('last', ReceiptException(self.root / 'published')))
+        self.error('ASSET_JOB_RECOVERY', lambda: manager.cancel('last'))
+        manager.resume('last')
+        class Ambiguous(FileAdapter):
+            def recover(self, *args):
+                self.calls.append('recover')
+                return {'status': 'unknown'}
+        ambiguous = Ambiguous(self.root / 'published')
+        self.error('ASSET_JOB_RECOVERY', lambda: manager.run('last', ambiguous))
+        self.assertEqual(ambiguous.calls, ['recover'])
+        self.error('ASSET_JOB_RECOVERY', lambda: manager.cancel('last'))
+        manager.resume('last')
+        class Unpublished(FileAdapter):
+            def recover(self, *args):
+                self.calls.append('recover')
+                return {'status': 'unpublished'}
+        unpublished = Unpublished(self.root / 'published')
+        self.error('ASSET_JOB_ATTEMPTS', lambda: manager.run('last', unpublished))
+        self.assertEqual(unpublished.calls, ['recover'])
+        manager.resume('last')
+        result = manager.run('last', self.adapter)
+        self.assertEqual(result['status'], 'published')
+        self.assertEqual(result['attempts'], 1)
+        self.assertEqual(self.adapter.calls, ['recover'])
+        self.assertEqual(len(list(self.adapter.destination.glob('*.txt'))), 1)
+
+    def test_exhausted_receipt_is_recovered_without_another_attempt(self):
+        manager = JobManager(self.root / 'one', limits={'attempts': 1}, create=True)
+        manager.submit('preview', {'text': 'immutable'}, key='last')
+        class ReceiptException(FileAdapter):
+            def publish(self, *args):
+                super().publish(*args)
+                raise RuntimeError('receipt interrupted')
+        self.error('ASSET_JOB_ADAPTER', lambda: manager.run('last', ReceiptException(self.root / 'published')))
+        manager.resume('last')
+        result = manager.run('last', self.adapter)
+        self.assertEqual(result['status'], 'published')
+        self.assertEqual(result['attempts'], 1)
+        self.assertEqual(self.adapter.calls, ['recover'])
+
+    def test_exhausted_unstaged_work_cannot_resume(self):
+        manager = JobManager(self.root / 'one', limits={'attempts': 1}, create=True)
+        manager.submit('preview', {'text': 'input'}, key='last')
+        class Failure(FileAdapter):
+            def stage(self, context): raise RuntimeError('stage failed')
+        self.error('ASSET_JOB_ADAPTER', lambda: manager.run('last', Failure(self.root / 'published')))
+        self.error('ASSET_JOB_ATTEMPTS', lambda: manager.resume('last'))
 
     def test_real_exact_publication_idempotency_and_fifo(self):
         first = self.manager.submit('import', {'text': 'source bytes'}, key='one')
@@ -119,7 +183,7 @@ root=Path(sys.argv[1])
 JobManager(root/'jobs').run('crash',FileAdapter(root/'published',crash='published'))
 """
         completed = subprocess.run([sys.executable, '-c', code, str(self.root)], check=False,
-                                   env={**os.environ, 'PYTHONPATH': 'scripts:tests'})
+                                   env=child_environment())
         self.assertEqual(completed.returncode, 72)
         self.assertEqual(self.manager.status('crash')['status'], 'interrupted')
         self.manager.resume('crash')
@@ -147,7 +211,7 @@ class CrashManager(JobManager):
 root=Path(sys.argv[1]);CrashManager(root/'jobs').run(sys.argv[3],FileAdapter(root/'published'))
 """
                 result = subprocess.run([sys.executable, '-c', code, str(self.root), checkpoint, name],
-                                        env={**os.environ, 'PYTHONPATH': 'scripts:tests'})
+                                        env=child_environment())
                 self.assertEqual(result.returncode, 73)
                 self.assertEqual(self.manager.status(name)['status'], 'interrupted')
                 self.manager.resume(name)
@@ -228,7 +292,7 @@ class Blocking(FileAdapter):
 root=Path(sys.argv[1]);JobManager(root/'jobs').run('first',Blocking(root/'published'))
 """
         worker = subprocess.Popen([sys.executable, '-c', code, str(self.root)],
-                                  env={**os.environ, 'PYTHONPATH': 'scripts:tests'})
+                                  env=child_environment())
         try:
             deadline = time.monotonic() + 5
             while not (self.root / 'started').exists() and time.monotonic() < deadline:

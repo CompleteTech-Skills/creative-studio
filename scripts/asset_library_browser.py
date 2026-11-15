@@ -305,8 +305,10 @@ def main(argv=None):
     operations=None
     if all(roots):
         from asset_library_operations import AssetOperations, ScopedAssetOperations
+        from asset_library_jobs import JobManager
         operations=ScopedAssetOperations(AssetOperations(libraries['local'],jobs_root=args.jobs_root),
                                         intake_root=args.intake_root,output_root=args.output_root)
+        JobManager(operations.owner.jobs_root,limits=operations.owner.job_limits,create=True)
     server=AssetBrowserServer(libraries,index,port=args.port,operations=operations)
     print(json.dumps(dict(url=f'http://127.0.0.1:{server.server_port}/',token=server.token)),flush=True)
     try: server.serve_forever()

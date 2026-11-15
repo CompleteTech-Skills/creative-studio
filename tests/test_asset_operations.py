@@ -23,6 +23,49 @@ class AssetOperationsTests(unittest.TestCase):
         self.owner=AssetOperations(self.library)
         self.addCleanup(self.fixture.doCleanups)
 
+    def test_job_dry_runs_need_no_apply_and_do_not_mutate(self):
+        job=self.owner.submit('index',dict(index=str(self.root/'index'),locations=[]))
+        before=self.owner.job_status(job['id'])
+        for action in ('cancel','resume','run'):
+            result=assets.run(['--library',str(self.library.root),'jobs',action,'--job',job['id'],'--dry-run'])
+            self.assertEqual(result['result'],dict(status='plan',job=job['id'],operation=action,executed=False))
+            self.assertEqual(self.owner.job_status(job['id']),before)
+        self.assertFalse((self.root/'index').exists())
+
+    def test_report_collision_prevents_mutation(self):
+        report=self.root/'existing.json';report.write_text('keep')
+        destination=self.root/'new-library'
+        with self.assertRaises(FileExistsError):
+            assets.run(['library','create','--library',str(destination),'--apply','--output',str(report)])
+        self.assertFalse(destination.exists())
+        self.assertEqual(report.read_text(),'keep')
+
+    def test_report_failure_reports_completed_operation(self):
+        from unittest.mock import patch
+        destination=self.root/'new-library'; report=self.root/'report.json'
+        original=json.dumps
+        def serialize(value, *args, **kwargs):
+            if isinstance(value, dict) and value.get('ok') is True:
+                raise ValueError('simulated report serialization failure')
+            return original(value, *args, **kwargs)
+        with patch.object(assets.json, 'dumps', side_effect=serialize):
+            with self.assertRaises(RigError) as caught:
+                assets.run(['library','create','--library',str(destination),'--apply','--output',str(report)])
+        self.assertTrue(destination.is_dir())
+        self.assertEqual(caught.exception.report['code'], 'LIBRARY_OPERATIONS_IO')
+        self.assertIn('Operation completed', caught.exception.report['message'])
+
+    def test_scoped_index_submit_run_reopen_status(self):
+        intake=self.root/'intake';intake.mkdir();output=self.root/'output';output.mkdir()
+        owner=AssetOperations(self.library,jobs_root=output/'jobs')
+        scoped=ScopedAssetOperations(owner,intake_root=intake,output_root=output)
+        job=scoped.submit('index',dict(index=str(output/'index'),locations=[]))
+        self.assertEqual(scoped.job_status(job['id'])['status'],'queued')
+        self.assertEqual(owner.run_job(job['id'])['status'],'published')
+        reopened=ScopedAssetOperations(AssetOperations(self.library.root,jobs_root=output/'jobs'),intake_root=intake,output_root=output)
+        self.assertEqual(reopened.job_status(job['id'])['status'],'published')
+        self.assertTrue((output/'index').is_dir())
+
     def test_apply_dry_run_exact_read_and_registry_reopen(self):
         p=dict(manifest=self.fixture.manifest,sources={k:str(v) for k,v in self.fixture.sources.items()})
         with self.assertRaises(RigError) as caught:self.owner.execute('register',p)
@@ -116,6 +159,7 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
 class NativeOperationsTests(unittest.TestCase):
     setUp=AssetOperationsTests.setUp
     # Avoid inheriting the ordinary cases twice while sharing the real fixture.
+    @unittest.skipUnless(os.environ.get('HATCH_BLENDER'), 'Pinned Blender native integration not configured')
     def test_real_obj_import_private_stage_preserves_original_and_exact_publication(self):
         p=dict(source=str(self.fixture.mesh),identity=self.fixture.manifest['identity'],version='1.0.0',
                metadata=self.fixture.manifest['metadata'],license_file=str(self.fixture.license),fixture=True,blender_roundtrip=False)
