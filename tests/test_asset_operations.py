@@ -159,6 +159,7 @@ owner.jobs.run(record['id'],ExitAfterPublish(owner,'index',record['parameters'])
 class NativeOperationsTests(unittest.TestCase):
     setUp=AssetOperationsTests.setUp
     # Avoid inheriting the ordinary cases twice while sharing the real fixture.
+    @unittest.skipUnless(os.environ.get('HATCH_BLENDER'), 'Pinned Blender native integration not configured')
     def test_real_obj_import_private_stage_preserves_original_and_exact_publication(self):
         p=dict(source=str(self.fixture.mesh),identity=self.fixture.manifest['identity'],version='1.0.0',
                metadata=self.fixture.manifest['metadata'],license_file=str(self.fixture.license),fixture=True,blender_roundtrip=False)
