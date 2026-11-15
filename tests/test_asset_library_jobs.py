@@ -69,6 +69,61 @@ class JobTests(unittest.TestCase):
             function()
         self.assertEqual(caught.exception.report['code'], code)
 
+    def test_exhausted_receipt_recovery_and_holds(self):
+        manager = JobManager(self.root / 'one', limits={'attempts': 1}, create=True)
+        manager.submit('preview', {'text': 'immutable'}, key='last')
+        class ReceiptException(FileAdapter):
+            def publish(self, *args):
+                super().publish(*args)
+                raise RuntimeError('receipt interrupted')
+        self.error('ASSET_JOB_ADAPTER', lambda: manager.run('last', ReceiptException(self.root / 'published')))
+        self.error('ASSET_JOB_RECOVERY', lambda: manager.cancel('last'))
+        manager.resume('last')
+        class Ambiguous(FileAdapter):
+            def recover(self, *args):
+                self.calls.append('recover')
+                return {'status': 'unknown'}
+        ambiguous = Ambiguous(self.root / 'published')
+        self.error('ASSET_JOB_RECOVERY', lambda: manager.run('last', ambiguous))
+        self.assertEqual(ambiguous.calls, ['recover'])
+        self.error('ASSET_JOB_RECOVERY', lambda: manager.cancel('last'))
+        manager.resume('last')
+        class Unpublished(FileAdapter):
+            def recover(self, *args):
+                self.calls.append('recover')
+                return {'status': 'unpublished'}
+        unpublished = Unpublished(self.root / 'published')
+        self.error('ASSET_JOB_ATTEMPTS', lambda: manager.run('last', unpublished))
+        self.assertEqual(unpublished.calls, ['recover'])
+        manager.resume('last')
+        result = manager.run('last', self.adapter)
+        self.assertEqual(result['status'], 'published')
+        self.assertEqual(result['attempts'], 1)
+        self.assertEqual(self.adapter.calls, ['recover'])
+        self.assertEqual(len(list(self.adapter.destination.glob('*.txt'))), 1)
+
+    def test_exhausted_receipt_is_recovered_without_another_attempt(self):
+        manager = JobManager(self.root / 'one', limits={'attempts': 1}, create=True)
+        manager.submit('preview', {'text': 'immutable'}, key='last')
+        class ReceiptException(FileAdapter):
+            def publish(self, *args):
+                super().publish(*args)
+                raise RuntimeError('receipt interrupted')
+        self.error('ASSET_JOB_ADAPTER', lambda: manager.run('last', ReceiptException(self.root / 'published')))
+        manager.resume('last')
+        result = manager.run('last', self.adapter)
+        self.assertEqual(result['status'], 'published')
+        self.assertEqual(result['attempts'], 1)
+        self.assertEqual(self.adapter.calls, ['recover'])
+
+    def test_exhausted_unstaged_work_cannot_resume(self):
+        manager = JobManager(self.root / 'one', limits={'attempts': 1}, create=True)
+        manager.submit('preview', {'text': 'input'}, key='last')
+        class Failure(FileAdapter):
+            def stage(self, context): raise RuntimeError('stage failed')
+        self.error('ASSET_JOB_ADAPTER', lambda: manager.run('last', Failure(self.root / 'published')))
+        self.error('ASSET_JOB_ATTEMPTS', lambda: manager.resume('last'))
+
     def test_real_exact_publication_idempotency_and_fifo(self):
         first = self.manager.submit('import', {'text': 'source bytes'}, key='one')
         self.assertEqual(first, self.manager.submit('import', {'text': 'source bytes'}, key='one'))
