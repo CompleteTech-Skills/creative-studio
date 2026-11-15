@@ -12,6 +12,15 @@ from asset_library_jobs import JobManager
 from rig_errors import RigError, atomic_json
 
 
+def child_environment():
+    root = Path(__file__).absolute().parent.parent
+    env = os.environ.copy()
+    paths = [str(root / 'scripts'), str(root / 'tests')]
+    paths.extend(part for part in env.get('PYTHONPATH', '').split(os.pathsep) if part)
+    env['PYTHONPATH'] = os.pathsep.join(paths)
+    return env
+
+
 class FileAdapter:
     def __init__(self, destination, *, crash=None):
         self.destination = Path(destination)
@@ -60,7 +69,7 @@ class JobTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve(strict=True)
         self.manager = JobManager(self.root / 'jobs', create=True)
         self.adapter = FileAdapter(self.root / 'published')
 
@@ -174,7 +183,7 @@ root=Path(sys.argv[1])
 JobManager(root/'jobs').run('crash',FileAdapter(root/'published',crash='published'))
 """
         completed = subprocess.run([sys.executable, '-c', code, str(self.root)], check=False,
-                                   env={**os.environ, 'PYTHONPATH': 'scripts:tests'})
+                                   env=child_environment())
         self.assertEqual(completed.returncode, 72)
         self.assertEqual(self.manager.status('crash')['status'], 'interrupted')
         self.manager.resume('crash')
@@ -202,7 +211,7 @@ class CrashManager(JobManager):
 root=Path(sys.argv[1]);CrashManager(root/'jobs').run(sys.argv[3],FileAdapter(root/'published'))
 """
                 result = subprocess.run([sys.executable, '-c', code, str(self.root), checkpoint, name],
-                                        env={**os.environ, 'PYTHONPATH': 'scripts:tests'})
+                                        env=child_environment())
                 self.assertEqual(result.returncode, 73)
                 self.assertEqual(self.manager.status(name)['status'], 'interrupted')
                 self.manager.resume(name)
@@ -283,7 +292,7 @@ class Blocking(FileAdapter):
 root=Path(sys.argv[1]);JobManager(root/'jobs').run('first',Blocking(root/'published'))
 """
         worker = subprocess.Popen([sys.executable, '-c', code, str(self.root)],
-                                  env={**os.environ, 'PYTHONPATH': 'scripts:tests'})
+                                  env=child_environment())
         try:
             deadline = time.monotonic() + 5
             while not (self.root / 'started').exists() and time.monotonic() < deadline:
