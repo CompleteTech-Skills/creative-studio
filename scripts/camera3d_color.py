@@ -35,13 +35,13 @@ def apply_camera_with_color(scene, optics, render, *, world_matrix,
     choose conflicting values. Native backend availability is enforced by the
     respective owners, including the pinned physical Cycles camera capability.
     """
-    from lookdev_color import apply_configuration
+    from lookdev_color import configured_color
     color = validate_color_binding(optics, render, world_matrix, color_configuration,
                                    motion_blur=motion_blur, shutter_frames=shutter_frames)
-    camera = apply_camera(scene, optics, render, world_matrix=world_matrix,
-                          name=name, camera_object=camera_object,
-                          exposure=color['exposure_stops'], motion_blur=motion_blur,
-                          shutter_frames=shutter_frames)
-    receipt = apply_configuration(scene, color)
+    with configured_color(scene, color) as receipt:
+        camera = apply_camera(scene, optics, render, world_matrix=world_matrix,
+                              name=name, camera_object=camera_object,
+                              exposure=color['exposure_stops'], motion_blur=motion_blur,
+                              shutter_frames=shutter_frames)
     camera['hatch_color_sha256'] = color['sha256']
     return camera, receipt

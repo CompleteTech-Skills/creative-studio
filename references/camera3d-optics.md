@@ -100,9 +100,12 @@ supply a competing exposure value.
 Blender 4.5 is required for explicit native view white balance. The transform
 affects PNG output once; scene-linear EXR preserves unmodified radiance. This
 API changes neither source materials nor light energy. Backend RNA bounds and
-view availability can further constrain the validated portable profile. Other
-renderers must provide an explicit color-management adapter. Browser white
-balance remains unsupported by this binding.
+view availability can further constrain the validated portable profile. A native
+color rejection preserves the current camera and scene settings. If camera
+setup rejects the optical or render state after color setup, the adapter
+restores the prior scene color settings and hash. Other renderers must provide
+an explicit color-management adapter. Browser white balance remains
+unsupported by this binding.
 
 Actual acceptance: `HATCH_CAMERA3D_COLOR_TEST=1 python -m unittest discover -s
 tests -p test_rig_camera3d_color.py -v`. Set `HATCH_BLENDER`, and optionally

@@ -137,6 +137,13 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
     for key, value in render_values.items():
         _preflight(scene.render, key, value)
     _preflight(scene.view_settings, 'exposure', plan['exposure'])
+    pose = Matrix(matrix.tolist())
+    previous_render = {key: getattr(scene.render, key) for key in render_values}
+    previous_exposure = scene.view_settings.exposure
+    previous_active = scene.camera
+    previous_data = None if camera_object is None else camera_object.data
+    previous_pose = None if camera_object is None else camera_object.matrix_basis.copy()
+    new_object = None
     camera = bpy.data.cameras.new(name)
     try:
         for key in ('sensor_width', 'shift_x', 'shift_y', 'clip_start', 'clip_end'):
@@ -146,21 +153,37 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
         for key in ('use_dof', 'focus_distance', 'aperture_fstop', 'aperture_blades', 'aperture_rotation', 'aperture_ratio'):
             _preflight(camera.dof, key, plan[key])
         _configure_camera(camera, plan)
+        # Finish the range-sensitive writes before swapping the active camera.
+        for key, value in render_values.items():
+            _set_exact(scene.render, key, value)
+        _set_exact(scene.view_settings, 'exposure', plan['exposure'])
+        if camera_object is None:
+            new_object = bpy.data.objects.new(name, camera)
+            scene.collection.objects.link(new_object)
+            camera_object = new_object
+        else:
+            camera_object.data = camera
+        camera_object.matrix_world = pose
+        scene.camera = camera_object
+        bpy.context.view_layer.update()
     except Exception:
+        if scene.camera != previous_active:
+            scene.camera = previous_active
+        if new_object is not None:
+            bpy.data.objects.remove(new_object, do_unlink=True)
+        elif previous_data is not None:
+            if camera_object.data != previous_data:
+                camera_object.data = previous_data
+            if camera_object.matrix_basis != previous_pose:
+                camera_object.matrix_basis = previous_pose
+        for key, value in previous_render.items():
+            if getattr(scene.render, key) != value:
+                setattr(scene.render, key, value)
+        if scene.view_settings.exposure != previous_exposure:
+            scene.view_settings.exposure = previous_exposure
         bpy.data.cameras.remove(camera)
         raise
-    if camera_object is None:
-        camera_object = bpy.data.objects.new(name, camera)
-        scene.collection.objects.link(camera_object)
-    else:
-        previous = camera_object.data
-        camera_object.data = camera
-        if previous.get('hatch_camera3d_owned') and previous.users == 0:
-            bpy.data.cameras.remove(previous)
-    camera_object.matrix_world = Matrix(matrix.tolist())
-    for key, value in render_values.items():
-        _set_exact(scene.render, key, value)
-    _set_exact(scene.view_settings, 'exposure', plan['exposure'])
-    scene.camera = camera_object
-    bpy.context.view_layer.update()
+    if (previous_data is not None and previous_data.get('hatch_camera3d_owned')
+            and previous_data.users == 0):
+        bpy.data.cameras.remove(previous_data)
     return camera_object

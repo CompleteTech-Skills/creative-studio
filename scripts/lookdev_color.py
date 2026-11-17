@@ -3,6 +3,7 @@
 White balance is a view transform, never a rewrite of source lights/materials.
 The pinned Blender backend performs its own OCIO transform exactly once.
 """
+from contextlib import contextmanager
 from copy import deepcopy
 import math
 from lookdev_contracts import content_hash
@@ -39,11 +40,19 @@ def validate_configuration(value):
 
 
 def apply_configuration(scene, value):
+    """Apply shared native color settings and return their receipt."""
+    with configured_color(scene, value) as receipt:
+        return receipt
+
+
+@contextmanager
+def configured_color(scene, value):
     """Configure actual Blender OCIO and file encoding, rejecting unknown views.
 
     EXR remains scene-linear: display exposure/white balance/view metadata is
     retained in the scene but is not baked into the HDR payload by Blender.
-    No compositor nodes are introduced, avoiding a second transform.
+    Restore the original scene settings if the native assignments or the
+    caller's dependent setup raises.
     """
     value=validate_configuration(value)
     settings=scene.view_settings
@@ -52,25 +61,53 @@ def apply_configuration(scene, value):
     for name,requested in [('exposure',value['exposure_stops']),('white_balance_temperature',value['temperature_kelvin']),('white_balance_tint',value['tint'])]:
         prop=settings.bl_rna.properties[name]
         require(prop.hard_min<=requested<=prop.hard_max,'LOOKDEV_COLOR_BACKEND','Color setting exceeds actual backend bounds.')
+    display = scene.display_settings
+    image = scene.render.image_settings
+    # Device and format determine which dependent enum values can be restored.
+    properties = [
+        (display, ('display_device',)),
+        (settings, ('view_transform', 'look', 'exposure', 'gamma', 'use_curve_mapping',
+                    'use_white_balance', 'white_balance_temperature', 'white_balance_tint')),
+        (image, ('color_management', 'file_format', 'color_depth', 'color_mode', 'exr_codec')),
+    ]
+    if hasattr(settings, 'use_hdr_view'):
+        properties.append((settings, ('use_hdr_view',)))
+    previous = [(owner, name, getattr(owner, name))
+                for owner, names in properties for name in names]
+    hash_property = 'hatch_color_sha256'
+    previous_hash = scene.get(hash_property)
     try:
-        settings.view_transform=value['view']
-        scene.display_settings.display_device='sRGB'
-        settings.look='None'
-    except (TypeError,ValueError) as exc:
-        raise RigError('LOOKDEV_COLOR_BACKEND','Requested OCIO view/look unavailable.') from exc
-    settings.exposure=value['exposure_stops'];settings.gamma=1.
-    settings.use_curve_mapping=False
-    if hasattr(settings,'use_hdr_view'):settings.use_hdr_view=False
-    settings.use_white_balance=True
-    settings.white_balance_temperature=value['temperature_kelvin'];settings.white_balance_tint=value['tint']
-    image=scene.render.image_settings
-    image.color_management='FOLLOW_SCENE'
-    if value['output']=='scene-linear-exr':
-        image.file_format='OPEN_EXR';image.color_depth='32';image.exr_codec='ZIP'
-    else:
-        image.file_format='PNG';image.color_depth='16'
-    # Blender filters the color-mode enum by the current file format.
-    image.color_mode='RGBA'
-    scene['hatch_color_sha256']=value['sha256']
-    return {'configuration_sha256':value['sha256'],'view':settings.view_transform,
-            'output_encoding':value['output'],'display_transform_baked':value['output']=='srgb-png'}
+        try:
+            display.display_device = 'sRGB'
+            settings.view_transform = value['view']
+            settings.look = 'None'
+        except (TypeError, ValueError) as exc:
+            raise RigError('LOOKDEV_COLOR_BACKEND', 'Requested OCIO view/look unavailable.') from exc
+        settings.exposure = value['exposure_stops']
+        settings.gamma = 1.
+        settings.use_curve_mapping = False
+        if hasattr(settings, 'use_hdr_view'):
+            settings.use_hdr_view = False
+        settings.use_white_balance = True
+        settings.white_balance_temperature = value['temperature_kelvin']
+        settings.white_balance_tint = value['tint']
+        image.color_management = 'FOLLOW_SCENE'
+        linear = value['output'] == 'scene-linear-exr'
+        image.file_format = 'OPEN_EXR' if linear else 'PNG'
+        image.color_depth = '32' if linear else '16'
+        if linear:
+            image.exr_codec = 'ZIP'
+        image.color_mode = 'RGBA'
+        scene[hash_property] = value['sha256']
+        yield {'configuration_sha256': value['sha256'], 'view': settings.view_transform,
+               'output_encoding': value['output'], 'display_transform_baked': not linear}
+    except Exception:
+        for owner, name, original in previous:
+            if getattr(owner, name) != original:
+                setattr(owner, name, original)
+        if scene.get(hash_property) != previous_hash:
+            if previous_hash is None:
+                del scene[hash_property]
+            else:
+                scene[hash_property] = previous_hash
+        raise
