@@ -25,6 +25,23 @@ class NativeCapabilityTests(unittest.TestCase):
             self.assertEqual(geometry.vertex_count, receipt['execution']['vertices'])
             self.assertEqual(geometry.triangle_count, receipt['execution']['triangles'])
 
+    def test_real_blend_import_through_native_blender_worker(self):
+        if cap._executable('blender', {}) is None:
+            self.skipTest('Blender is not installed; importer.blend is covered by mocked worker tests')
+        from rig_import import load_character_model
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()/'proof'
+            result = cap.probe(request(['importer.blend'], ['importer.blend']), root,
+                               configuration={'timeout_seconds': 120})
+            self.assertTrue(result['value']['capabilities'][0]['execution_verified'], result['diagnostics'])
+            receipt = json.loads((root/result['artifacts'][0]['path']).read_text())
+            self.assertEqual((receipt['execution']['vertices'], receipt['execution']['triangles']), (3, 1))
+            payload = receipt['payloads'][0]
+            self.assertEqual(payload['media_type'], 'application/x-blender')
+            cap.assert_admission(result, ['importer.blend'], evidence_root=root)
+            geometry = load_character_model(root/payload['path']).geometry
+            self.assertEqual((geometry.vertex_count, geometry.triangle_count), (3, 1))
+
     def test_three_real_native_importers_and_exact_evidence(self):
         operations=['importer.obj','importer.glb','importer.gltf']
         with tempfile.TemporaryDirectory() as directory:

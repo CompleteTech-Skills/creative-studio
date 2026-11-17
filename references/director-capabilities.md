@@ -51,13 +51,29 @@ Declared formats are not execution proof; availability and execution verificatio
 remain separate. New probes retain the v1 request/result interface and existing
 capability names.
 
-`importer.blend`, `native.acquisition`, `module.scene3d`, `module.camera3d`,
-`module.lookdev3d`, `module.animation3d`, `module.render3d`, `module.editor3d`,
-and `planning.provider` return explicit unavailable/untested evidence. Finding
-a contract module never proves a production implementation. Native acquisition
-is not started by this probe. No 2D substitute is offered for a missing 3D
-capability. Missing GPU may suggest **separately probed** CPU execution only
-under the caller's explicit device policy.
+`importer.blend` uses Blender to author one real triangle and save a `.blend`
+project, then decodes it through the existing native importer
+(`rig_import.load_character_model`, which routes `.blend` through the pinned
+`rig_blender` worker) and checks three vertices/one triangle. The `.blend`
+payload is retained as `application/x-blender`.
+
+Discovery, initialization and execution are three separate receipt fields.
+`module.scene3d`, `module.camera3d`, `module.lookdev3d`, `module.animation3d`,
+`module.render3d`, `module.editor3d` and `native.acquisition` are *discovered*
+when their owner module file exists. When explicitly listed in `local_probes`
+they are *initialized* in a fresh, bounded interpreter: the module is imported
+and one dry, side-effect-free constructor runs (`<module>.schemas()` checked as
+Draft 2020-12 schemas; for acquisition, `asset_contracts.versions()` with no
+model call and no generation). A successful initialization records
+`initialized: true`, `execution_verified: false`, status `untested` and reason
+`initialized-not-executed`; it can never satisfy admission. A missing owner gives
+`missing-native-module`; a failed import or constructor gives
+`initialization-failed` (or `initialization-timeout`) without retaining worker
+output. Finding or initializing a contract module never proves a production
+implementation, and native acquisition generation is never started.
+`planning.provider` remains explicit unavailable/untested evidence. No 2D
+substitute is offered for a missing 3D capability. Missing GPU may suggest
+**separately probed** CPU execution only under the caller's explicit device policy.
 
 Executable configuration accepts trusted local `blender`, `ffmpeg`, `ffprobe`
 paths (null explicitly disables a tool), `timeout_seconds` (1–120), bounded
@@ -71,9 +87,20 @@ Worker probes have a separate timeout, bounded output, one compute thread,
 process-group termination, no stdin and a minimal environment without secrets.
 On POSIX they also have CPU/output/core limits. They execute only fixed trusted
 code in an owned temporary directory; failure text from executables is not
-copied into public receipts. Required files are hash-bound and published through
-the repository's exclusive rename primitive. A racing or existing destination
-is preserved. Retained payloads are explicitly synthetic engineering fixtures.
+copied into public receipts. Worker scratch directories live outside the
+evidence stage. Required files are hash-bound and published through the shared
+`atomic_publish` primitives: the evidence parent is pinned before the first
+write (`pinned_directory`/`private_stage` on Linux, the descriptor-only
+`pinned_directory_fd`/`private_stage_fd` on other POSIX hosts, and the
+handle-pinned `atomic_windows` stage on Windows), and the payload is published
+by exclusive rename into that pinned directory. If the parent pathname was
+swapped for another directory between staging and publication, the probe
+refuses with `DIRECTOR_CAPABILITY_DESTINATION` and publishes nothing; on
+Windows the held handles prevent the swap. Hosts without one of these adapters
+fail closed with `DIRECTOR_CAPABILITY_PLATFORM`. A racing or existing destination
+is preserved. As in the shared primitive, an empty private `.director-probe-*`
+wrapper remains in the parent after publication. Retained payloads are
+explicitly synthetic engineering fixtures.
 
 The production admission policy defaults to 3,600 CPU/GPU seconds, 1.5 GiB RAM,
 1 GiB storage and zero provider calls. Callers may configure positive bounded

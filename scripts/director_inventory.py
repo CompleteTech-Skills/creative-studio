@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import platform
-import shutil
 import sys
 
 
@@ -40,6 +39,15 @@ def metadata(operation):
                 performance=None)
 
 
+def sysconf_memory(sysconf):
+    """POSIX available/total physical bytes, or ValueError when unsupported."""
+    try:
+        page = int(sysconf('SC_PAGE_SIZE'))
+        return int(sysconf('SC_AVPHYS_PAGES')) * page, int(sysconf('SC_PHYS_PAGES')) * page
+    except (KeyError, AttributeError, TypeError, OSError) as error:
+        raise ValueError('memory observation unavailable') from error
+
+
 def memory_observation():
     if sys.platform.startswith('linux'):
         # This kernel interface has a fixed local source and bounded input.
@@ -59,7 +67,8 @@ def memory_observation():
             raise ValueError('kernel memory availability is unsupported')
         available, total = fields['MemAvailable'], fields['MemTotal']
         source = 'linux-proc-meminfo-MemAvailable'
-    elif os.name == 'nt':
+    elif sys.platform == 'win32':
+        # Dispatch on sys.platform alone so one value selects exactly one API.
         import ctypes
         from ctypes import wintypes
         class MemoryStatus(ctypes.Structure):
@@ -79,11 +88,7 @@ def memory_observation():
     else:
         # Some supported POSIX hosts expose actual available physical pages;
         # others explicitly return unavailable, rather than invented free RAM.
-        try:
-            available = int(os.sysconf('SC_AVPHYS_PAGES')) * int(os.sysconf('SC_PAGE_SIZE'))
-            total = int(os.sysconf('SC_PHYS_PAGES')) * int(os.sysconf('SC_PAGE_SIZE'))
-        except (KeyError, AttributeError) as error:
-            raise ValueError('memory observation unavailable') from error
+        available, total = sysconf_memory(getattr(os, 'sysconf', None))
         source = 'posix-sysconf-available-physical-pages'
     if not 0 <= available <= total or total <= 0:
         raise ValueError('invalid memory observation')
@@ -92,7 +97,8 @@ def memory_observation():
                 reservation=False)
 
 
-def measure(operation, directory):
+def measure(operation, usage):
+    """``usage()`` returns (free, total) bytes for the pinned evidence parent."""
     if operation == 'runtime.python':
         # The actual Director validators have already imported in this process.
         # Report the executed interpreter, not the documented pinned CI version.
@@ -104,11 +110,66 @@ def measure(operation, directory):
     if operation == 'resource.memory':
         return dict(success=True, version='local-inventory-v1', **memory_observation())
     if operation == 'resource.storage':
-        usage = shutil.disk_usage(directory)
-        return dict(success=True, version='local-inventory-v1', available_bytes=usage.free,
-                    total_bytes=usage.total, source='shutil.disk_usage',
+        free, total = usage()
+        return dict(success=True, version='local-inventory-v1', available_bytes=int(free),
+                    total_bytes=int(total), source='pinned-evidence-parent-filesystem',
                     scope='probe-destination-filesystem', reservation=False)
     raise ValueError('unsupported local measurement')
+
+
+# Dry initialization imports each owner in a fresh interpreter and calls one
+# read-only constructor. It is initialization evidence only: it never runs
+# production work, downloads models, or calls a provider.
+INITIALIZED = frozenset(('module.scene3d', 'module.camera3d', 'module.lookdev3d',
+                         'module.animation3d', 'module.render3d', 'module.editor3d',
+                         'native.acquisition'))
+
+_CONTRACT_INIT = '''import importlib,json
+from jsonschema import Draft202012Validator
+module=importlib.import_module(%r)
+documents=module.schemas()
+assert isinstance(documents,dict) and documents
+for schema in documents.values():Draft202012Validator.check_schema(schema)
+version=getattr(module,'VERSION',None)
+print('DIRECTOR_PROBE='+json.dumps({'success':True,'initialization_only':True,'executed':False,
+ 'version':version if isinstance(version,str) else None,'call':%r,'schemas_checked':len(documents)}))
+'''
+
+_ACQUISITION_INIT = '''import json
+import asset_contracts,hatch
+value=asset_contracts.versions()
+assert callable(hatch.main) and value['model_call']['model'] is None
+print('DIRECTOR_PROBE='+json.dumps({'success':True,'initialization_only':True,'executed':False,
+ 'version':str(value['hatch']),'call':'asset_contracts.versions','model_call':None,
+ 'generation_backend':'installed-imagegen-not-invoked'}))
+'''
+
+# A real triangle authored by Blender, then decoded by the existing native rig
+# importer, which routes .blend input through the pinned rig_blender worker.
+BLEND_AUTHOR = '''import bpy,json,os
+bpy.ops.wm.read_factory_settings(use_empty=True)
+mesh=bpy.data.meshes.new('probe');mesh.from_pydata([(0,0,0),(1,0,0),(0,1,0)],[],[(0,1,2)]);mesh.update()
+bpy.context.scene.collection.objects.link(bpy.data.objects.new('probe',mesh))
+bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath('triangle.blend'),compress=False)
+print('DIRECTOR_PROBE='+json.dumps({'version':bpy.app.version_string}))
+'''
+
+
+def blend_reader(blender):
+    return '''import json
+from rig_import import load_character_model
+a=load_character_model('triangle.blend',blender=%r)
+print('DIRECTOR_PROBE='+json.dumps({'vertices':a.geometry.vertex_count,'triangles':a.geometry.triangle_count}))
+''' % str(blender)
+
+
+def initializer_script(operation, module):
+    """Fixed dry-initialization worker for one discovered owner module name."""
+    if operation not in INITIALIZED or not isinstance(module, str) or not module.isidentifier():
+        raise ValueError('unsupported initialization probe')
+    if operation == 'native.acquisition':
+        return _ACQUISITION_INIT
+    return _CONTRACT_INIT % (module, module + '.schemas')
 
 
 def worker_script(operation):

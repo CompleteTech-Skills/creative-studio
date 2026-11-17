@@ -24,7 +24,8 @@ import sys
 import tempfile
 import time
 
-from atomic_publish import _rename_no_replace
+from contextlib import contextmanager
+import atomic_publish
 from director_contracts import validate_method_request, validate_method_result, validate_document
 from director_schema import schemas
 from rig_errors import RigError, decode_json, object_hash, require, sha256
@@ -203,9 +204,50 @@ def _codec_probe(ffmpeg, ffprobe, operation, directory, timeout):
     return result
 
 
+def _marker(text, message):
+    marker=next((line.removeprefix('DIRECTOR_PROBE=') for line in text.splitlines()
+                 if line.startswith('DIRECTOR_PROBE=')),None)
+    _need(marker is not None,'WORKER',message)
+    value=decode_json(marker)
+    _need(isinstance(value,dict),'WORKER',message)
+    return value
+
+
+def _blend_import_probe(executable, directory, timeout):
+    """Blender authors one triangle; the native importer decodes it via rig_blender."""
+    directory=Path(directory)
+    author=directory/'author.py';author.write_text(inventory.BLEND_AUTHOR,encoding='utf-8')
+    outcome,text=_worker([executable,'--background','--factory-startup','--disable-autoexec','--threads','1',
+                          '--python-exit-code','1','--python',author],directory,timeout)
+    if not outcome['success']:return {**outcome,'reason':'blend-authoring-failed'}
+    version=_marker(text,'Missing Blender authoring result.').get('version')
+    source=directory/'triangle.blend'
+    _need(source.is_file() and not source.is_symlink(),'WORKER','Blender did not save the probe project.')
+    reader=directory/'probe.py';reader.write_text(inventory.blend_reader(executable),encoding='utf-8')
+    outcome,text=_worker([sys.executable,reader],directory,timeout)
+    if not outcome['success']:return {**outcome,'reason':'native-blend-import-failed'}
+    value=_marker(text,'Missing native .blend import result.')
+    _need(value.get('vertices')==3 and value.get('triangles')==1,'GEOMETRY','Native .blend import did not decode triangle geometry.')
+    outcome.update(vertices=3,triangles=1,version=version if isinstance(version,str) else None,
+                   source_sha256=sha256(source),importer='rig_import.load_character_model',formats=['BLEND'])
+    return outcome
+
+
+def _init_probe(operation, directory, timeout):
+    """Fresh-interpreter import plus one dry constructor; never execution evidence."""
+    script=Path(directory)/'probe.py'
+    script.write_text(inventory.initializer_script(operation,MODULES[operation]),encoding='utf-8')
+    outcome,text=_worker([sys.executable,script],directory,timeout)
+    if not outcome['success']:
+        return {**outcome,'reason':'initialization-timeout' if outcome['reason']=='timeout' else 'initialization-failed'}
+    value=_marker(text,'Missing initialization result.')
+    _need(value.get('initialization_only') is True and value.get('executed') is False,'WORKER','Initialization probe must not claim execution.')
+    return {**outcome,**value}
+
+
 def _import_probe(operation,directory,timeout):
     suffix=operation.split('.')[1]
-    if suffix=='blend':return {'success':False,'reason':'native-blend-roundtrip-not-exercised'}
+    _need(suffix!='blend','INPUT','Blender project import uses its own probe.')
     # A real triangle in each supported interchange format, decoded by the native owner.
     source=Path(directory)/('triangle.'+suffix)
     if suffix=='obj':source.write_text('v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n',encoding='ascii')
@@ -234,9 +276,9 @@ def _import_probe(operation,directory,timeout):
     return outcome
 
 
-def _inventory_probe(operation, executable, directory, timeout):
+def _inventory_probe(operation, executable, directory, timeout, usage):
     if operation in ('runtime.python', 'resource.memory', 'resource.storage'):
-        return inventory.measure(operation, directory)
+        return inventory.measure(operation, usage)
     script = inventory.worker_script(operation)
     if script is None:
         return {'success': False, 'reason': 'native-execution-adapter-unavailable'}
@@ -248,16 +290,101 @@ def _inventory_probe(operation, executable, directory, timeout):
     outcome, text = _worker(argv, directory, timeout)
     if not outcome['success']:
         return outcome
-    marker = next((line.removeprefix('DIRECTOR_PROBE=') for line in text.splitlines()
-                   if line.startswith('DIRECTOR_PROBE=')), None)
-    _need(marker is not None, 'WORKER', 'Missing inventory probe result.')
-    return {**outcome, **decode_json(marker)}
+    return {**outcome, **_marker(text, 'Missing inventory probe result.')}
+
+
+PAYLOAD_TYPES={'.png':'image/png','.mp4':'video/mp4','.webm':'video/webm','.obj':'text/plain',
+               '.glb':'model/gltf-binary','.gltf':'model/gltf+json','.blend':'application/x-blender'}
 
 
 def _reference(path, stage, dependencies=()):
     return dict(artifact_id='probe-'+path.stem,kind='capability-probe-evidence',schema_version=1,
                 semantic_version='1.0.0',path=path.relative_to(stage).as_posix(),sha256=sha256(path),
-                byte_size=path.stat().st_size,media_type={'.png':'image/png','.mp4':'video/mp4','.webm':'video/webm','.obj':'text/plain','.glb':'model/gltf-binary','.gltf':'model/gltf+json'}.get(path.suffix,'application/json'),provenance_ref=None,fixture=True,dependencies=list(dependencies))
+                byte_size=path.stat().st_size,media_type=PAYLOAD_TYPES.get(path.suffix,'application/json'),provenance_ref=None,fixture=True,dependencies=list(dependencies))
+
+
+class _Stage:
+    """Evidence written at ``path``; ``publish_to`` exclusively renames it."""
+    def __init__(self, path, usage, publish):
+        self.path=path;self.usage=usage;self._publish=publish
+
+    def publish_to(self, destination):
+        self._publish(Path(destination))
+
+
+def _rename_no_replace(stage, destination):
+    """Exclusive publication of a pinned stage; never replaces a racing entry."""
+    stage.publish_to(destination)
+
+
+def _same_parent(parent, parent_fd, pin):
+    """Refuse when the public parent pathname no longer names the pinned directory."""
+    try:
+        with pin(parent) as current:
+            same=os.path.samestat(os.fstat(current),os.fstat(parent_fd))
+    except (OSError,ValueError) as error:
+        raise RigError('DIRECTOR_CAPABILITY_DESTINATION','Evidence parent was replaced during probing; nothing was published.',stage='capability') from error
+    _need(same,'DESTINATION','Evidence parent was replaced during probing; nothing was published.')
+
+
+def _copy_tree_fd(source, parent_fd, name, depth=0):
+    """Copy the bounded build tree into a pinned private stage by descriptor."""
+    _need(depth<=2,'DESTINATION','Evidence tree is deeper than its fixed layout.')
+    os.mkdir(name,0o777,dir_fd=parent_fd)
+    descriptor=os.open(name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parent_fd)
+    try:
+        for child in sorted(Path(source).iterdir()):
+            if child.is_dir() and not child.is_symlink():
+                _copy_tree_fd(child,descriptor,child.name,depth+1);continue
+            _need(child.is_file() and not child.is_symlink(),'DESTINATION','Evidence build tree holds an unsupported entry.')
+            data=child.read_bytes()
+            with os.fdopen(os.open(child.name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o666,dir_fd=descriptor),'wb') as stream:
+                stream.write(data)
+            with os.fdopen(os.open(child.name,os.O_RDONLY|os.O_NOFOLLOW,dir_fd=descriptor),'rb') as stream:
+                _need(stream.read(len(data)+1)==data,'HASH','Staged evidence bytes changed before publication.')
+    finally:
+        os.close(descriptor)
+
+
+def _disk(path):
+    usage=shutil.disk_usage(path);return usage.free,usage.total
+
+
+@contextmanager
+def _evidence_stage(destination):
+    """Pin the evidence parent before any write and publish only into that directory.
+
+    Linux uses the procfd private stage, other descriptor-capable POSIX hosts a
+    descriptor-only stage, and Windows the handle-pinned adapter. Hosts without
+    one of these fail closed rather than fall back to an unpinned pathname.
+    """
+    parent=destination.parent
+    if os.name=='nt':
+        _need(atomic_publish.windows_private_stage_supported(),'PLATFORM','Pinned Windows evidence publication is unavailable.')
+        with atomic_publish.windows_private_stage(parent,prefix='.director-probe-') as stage:
+            yield _Stage(stage.path,lambda:_disk(stage.path),stage.publish_to)
+        return
+    if atomic_publish.private_stage_supported():
+        pin=atomic_publish.pinned_directory
+        with pin(parent) as parent_fd, atomic_publish.private_stage(parent_fd,prefix='.director-probe-') as (wrapper,_):
+            pinned=Path('/proc/self/fd')/str(parent_fd);payload=wrapper/'published';payload.mkdir()
+            def publish(target):
+                _same_parent(parent,parent_fd,pin)
+                atomic_publish._rename_no_replace(payload,pinned/target.name)
+            yield _Stage(payload,lambda:_disk(pinned),publish)
+        return
+    _need(atomic_publish.private_stage_fd_supported(),'PLATFORM','Pinned evidence publication is unavailable on this platform.')
+    pin=atomic_publish.pinned_directory_fd
+    with pin(parent) as parent_fd, atomic_publish.private_stage_fd(parent_fd,prefix='.director-probe-') as stage_fd, \
+            tempfile.TemporaryDirectory(prefix='director-build-') as build:
+        payload=Path(build)/'published';payload.mkdir()
+        def publish(target):
+            _copy_tree_fd(payload,stage_fd,'published')
+            _same_parent(parent,parent_fd,pin)
+            atomic_publish._rename_no_replace('published',target.name,source_dir_fd=stage_fd,destination_dir_fd=parent_fd)
+        def usage():
+            state=os.statvfs(parent_fd);return state.f_bavail*state.f_frsize,state.f_blocks*state.f_frsize
+        yield _Stage(payload,usage,publish)
 
 
 def probe(request, evidence_root, *, configuration=None):
@@ -276,8 +403,8 @@ def probe(request, evidence_root, *, configuration=None):
     stamp=datetime.now(timezone.utc)
     _need(_date(request['context']['deadline'])>stamp,'DEADLINE','Operation deadline has expired.')
     records=[];diagnostics=[];refs=[]
-    with tempfile.TemporaryDirectory(prefix='.director-probe-',dir=destination.parent) as tmp:
-        stage=Path(tmp)/'published';stage.mkdir();(stage/'receipts').mkdir();(stage/'payloads').mkdir()
+    with _evidence_stage(destination) as pinned_stage:
+        stage=pinned_stage.path;(stage/'receipts').mkdir();(stage/'payloads').mkdir()
         for operation in sorted(ops):
             _need(_date(request['context']['deadline'])>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired during probing.')
             payloads=[]
@@ -298,6 +425,8 @@ def probe(request, evidence_root, *, configuration=None):
                 elif operation.startswith('blender.') or operation=='importer.blend':
                     executable=_executable('blender',config)
                     record['discovered']=executable is not None;record['reason']='missing-blender' if not executable else 'execution-not-requested'
+                    if executable and operation=='importer.blend' and not all(importlib.util.find_spec(name) is not None for name in ('numpy','pygltflib')):
+                        record['discovered']=False;record['reason']='missing-native-importer-dependency'
                 elif operation.startswith('codec.'):
                     executable=_executable('ffmpeg',config);verifier=_executable('ffprobe',config)
                     record['discovered']=executable is not None and verifier is not None
@@ -308,8 +437,13 @@ def probe(request, evidence_root, *, configuration=None):
                     record['reason']='missing-native-importer-dependency' if not record['discovered'] else 'execution-not-requested'
                 elif operation in MODULES:
                     module=ROOT/'scripts'/(MODULES[operation]+'.py');record['discovered']=module.is_file()
-                    record['reason']='missing-native-module' if not record['discovered'] else 'contract-module-only'
+                    record['reason']='missing-native-module' if not record['discovered'] else (
+                        'initialization-not-requested' if operation in inventory.INITIALIZED else 'execution-not-requested')
                     if module.is_file():record['dependencies']['native_module']=sha256(module)
+                    if operation in inventory.INITIALIZED:
+                        for package in ('jsonschema','Pillow'):
+                            try:record['dependencies'][package]=importlib.metadata.version(package)
+                            except importlib.metadata.PackageNotFoundError:pass
                 elif operation=='planning.provider' or operation in inventory.PROVIDERS:
                     provider=config.get(inventory.PROVIDERS.get(operation, 'planning_provider'))
                     record['discovered']=bool(provider and provider['configured'])
@@ -335,24 +469,33 @@ def probe(request, evidence_root, *, configuration=None):
                 if record['discovered']:
                     record['status']='untested'
                     if operation in allowed:
-                        with tempfile.TemporaryDirectory(prefix='worker-',dir=tmp) as worker:
-                            if operation in inventory.OPERATIONS:outcome=_inventory_probe(operation,executable,worker,config.get('timeout_seconds',45))
-                            elif operation in ('blender.cpu','blender.gpu'):outcome=_blender_probe(executable,operation,worker,config.get('timeout_seconds',45))
-                            elif operation in ('codec.h264','codec.vp9','codec.av1'):outcome=_codec_probe(executable,verifier,operation,worker,config.get('timeout_seconds',45))
-                            elif operation.startswith('importer.'):outcome=_import_probe(operation,worker,config.get('timeout_seconds',45))
+                        # Worker scratch stays outside the pinned stage: subprocesses
+                        # never receive a procfd pathname or the stage descriptor.
+                        timeout=config.get('timeout_seconds',45)
+                        with tempfile.TemporaryDirectory(prefix='director-worker-') as worker:
+                            if operation in inventory.INITIALIZED:outcome=_init_probe(operation,worker,timeout)
+                            elif operation in inventory.OPERATIONS:outcome=_inventory_probe(operation,executable,worker,timeout,pinned_stage.usage)
+                            elif operation in ('blender.cpu','blender.gpu'):outcome=_blender_probe(executable,operation,worker,timeout)
+                            elif operation in ('codec.h264','codec.vp9','codec.av1'):outcome=_codec_probe(executable,verifier,operation,worker,timeout)
+                            elif operation=='importer.blend':outcome=_blend_import_probe(executable,worker,timeout)
+                            elif operation.startswith('importer.'):outcome=_import_probe(operation,worker,timeout)
                             else:outcome={'success':False,'reason':'native-execution-adapter-unavailable'}
-                            if outcome['success']:
+                            initialized=bool(outcome['success'])
+                            executed=initialized and not outcome.get('initialization_only',False)
+                            if executed:
                                 for original in sorted(Path(worker).glob('*')):
-                                    if original.is_file() and original.suffix in ('.png','.mp4','.webm','.obj','.glb','.gltf'):
+                                    if original.is_file() and original.suffix in PAYLOAD_TYPES:
                                         target=stage/'payloads'/(sha256(original)+original.suffix)
                                         shutil.copyfile(original,target)
                                         payloads.append(_reference(target,stage))
-                        record['initialized']=bool(outcome['success'])
-                        record['execution_verified']=bool(outcome['success'])
-                        record['status']='available' if outcome['success'] else 'unavailable'
-                        record['reason']='executed' if outcome['success'] else outcome['reason'];record['execution']=outcome
+                        # Initialization is reported separately; it never admits work.
+                        record['initialized']=initialized
+                        record['execution_verified']=executed
+                        record['status']='available' if executed else 'untested' if initialized else 'unavailable'
+                        record['reason']='executed' if executed else 'initialized-not-executed' if initialized else outcome['reason']
+                        record['execution']=outcome
                         version=outcome.get('version')
-                        if outcome['success']:
+                        if executed:
                             record['supported_formats'] = outcome.get('formats', record['supported_formats'])
             except (OSError,ValueError,ImportError) as error:
                 record.update(status='unavailable',reason='local-probe-failed')
@@ -378,7 +521,7 @@ def probe(request, evidence_root, *, configuration=None):
                     artifacts=refs,diagnostics=diagnostics,usage=_unknown_usage(),provenance_receipts=refs)
         validate_method_result('CapabilityRegistry.probe',result,request)
         (stage/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
-        _rename_no_replace(stage,destination)
+        _rename_no_replace(pinned_stage,destination)
     return result
 
 
