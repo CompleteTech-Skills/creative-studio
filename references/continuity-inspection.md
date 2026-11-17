@@ -57,13 +57,17 @@ are represented by fingerprints.
 
 Texture slot color spaces describe portable
 glTF semantics. Optional extensions outside supported coverage yield partial
-evidence. The native reader rejects unsupported required extensions.
+evidence. Recognized material extensions with semantics beyond the projected
+fields also yield partial material coverage. The native reader rejects
+unsupported required extensions.
 
 The comparison reports main-file byte identity and full closure byte identity.
 It measures triangle surfaces, attributes and morphs, height-normalized
-surfaces, and materials and textures. Material identity includes the slot
-assigned to each source node and primitive index. A position-only change
-leaves those assignments intact. The surface fingerprint uses coordinates
+surfaces, and materials and textures. `observed_material_identity` compares the
+projected material fields, texture bytes, sampler settings, and the slot at
+each source node and primitive index. A position-only change leaves those
+assignments intact. `material_identity` uses that result within the supported
+profile and is `null` if either input's material coverage is partial. The surface fingerprint uses coordinates
 quantized to 1e-9 meters and is independent of winding and triangle order.
 Separate index fingerprints preserve connectivity evidence, including
 distinctions between shared indices and coincident vertices.
@@ -87,11 +91,10 @@ python tests/continuity_inspection_probe.py new-evidence-directory
 
 The probe writes portable source and receipt hashes for procedural fixtures
 with actual skinning, positions, morphs, and PNG texture bytes. It includes
-geometry and texture changes, exact external closure acceptance and missing
-pin rejection, and aggregate image capacity acceptance and rejection. These
-observations are local to the canonical Python readers. Registering the new
-suite or probe with the shared rig interoperability gate and obtaining
-independent Khronos Validator, Blender, and Three.js evidence remain follow-up
-work. Native `rig.json`, owner capability registration, rig compatibility and
+geometry and texture changes, partial material-extension comparison, exact
+external closure acceptance and missing pin rejection, and aggregate image
+capacity acceptance and rejection. The shared rig interoperability gate
+registers the inspection suite. Hosted probe evidence and independent
+Khronos Validator, Blender, and Three.js observations remain follow-up work. Native `rig.json`, owner capability registration, rig compatibility and
 facial classification, renderer-specific outputs, and production artwork
 review are outside this slice.

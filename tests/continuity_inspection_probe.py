@@ -33,6 +33,14 @@ def main():
     two = root / 'capacity-two.glb'
     builder.write(two)
 
+    ior_left, ior_builder = gltf(root, 'ior-left.glb')
+    ior_builder.json['extensionsUsed'] = ['KHR_materials_ior']
+    ior_builder.json['materials'][0]['extensions'] = {'KHR_materials_ior': {'ior': 1.3}}
+    ior_builder.write(ior_left)
+    ior_right = root / 'ior-right.glb'
+    ior_builder.json['materials'][0]['extensions']['KHR_materials_ior']['ior'] = 1.7
+    ior_builder.write(ior_right)
+
     fixture_paths = sorted(root.iterdir())
     original = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in fixture_paths}
     baseline = dict(source=pointer(root, base))
@@ -44,6 +52,11 @@ def main():
     )
     geometry = compare_assets(root, baseline, dict(source=pointer(root, changed)))
     material = compare_assets(root, baseline, dict(source=pointer(root, recolored)))
+    partial_material = compare_assets(root, dict(source=pointer(root, ior_left)),
+                                      dict(source=pointer(root, ior_right)))
+    assert partial_material['observed_material_identity']
+    assert partial_material['material_identity'] is None
+    assert partial_material['left']['inspection']['material_coverage'] == 'partial'
     external_request = dict(source=pointer(root, external),
                             dependencies=[pointer(root, external_texture, kind='texture')])
     exact = inspect_asset(root, **external_request)
@@ -78,6 +91,7 @@ def main():
         'inspection': measured,
         'geometry-comparison': geometry,
         'texture-comparison': material,
+        'partial-material-comparison': partial_material,
         'external-closure-inspection': exact,
         'missing-dependency-rejection': missing,
         'capacity-one-inspection': admitted,

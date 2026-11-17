@@ -106,10 +106,32 @@ class ContinuityInspectionTests(unittest.TestCase):
         self.assertFalse(r['byte_identity'])
         self.assertFalse(r['geometry_identity'])
         self.assertTrue(r['material_identity'])
+        self.assertTrue(r['observed_material_identity'])
         self.assertTrue(r['needs_visual_review'])
         c,_=gltf(self.root,'c.glb',color=(200,30,10))
         r=compare_assets(self.root,dict(source=pointer(self.root,a)),dict(source=pointer(self.root,c)))
         self.assertTrue(r['geometry_identity']);self.assertFalse(r['material_identity']);self.assertFalse(r['visual_approval'])
+        self.assertFalse(r['observed_material_identity'])
+
+    def test_unobserved_recognized_extension_scalar_leaves_material_identity_unknown(self):
+        left, builder = gltf(self.root, 'ior-left.glb')
+        builder.json['extensionsUsed'] = ['KHR_materials_ior']
+        builder.json['materials'][0]['extensions'] = {'KHR_materials_ior': {'ior': 1.3}}
+        builder.write(left)
+        right = self.root / 'ior-right.glb'
+        builder.json['materials'][0]['extensions']['KHR_materials_ior']['ior'] = 1.7
+        builder.write(right)
+        result = compare_assets(self.root, dict(source=pointer(self.root, left)),
+                                dict(source=pointer(self.root, right)))
+        self.assertFalse(result['source_byte_identity'])
+        self.assertTrue(result['observed_material_identity'])
+        self.assertIsNone(result['material_identity'])
+        for side in ('left', 'right'):
+            report = result[side]['inspection']
+            self.assertEqual(report['status'], 'partial')
+            self.assertEqual(report['material_coverage'], 'partial')
+            self.assertEqual(report['source_features']['partial_material_extensions'], ['KHR_materials_ior'])
+            self.assertNotIn('KHR_materials_ior', report['materials'][0]['inputs'].get('extensions', {}))
 
     def test_assignment_changes_material_identity_with_equal_slot_inventory(self):
         baseline, builder = gltf(self.root, 'baseline.glb')

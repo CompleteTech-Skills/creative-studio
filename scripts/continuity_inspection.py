@@ -179,13 +179,21 @@ def _source_features(document):
         if not isinstance(extensions,dict):
             fail('NATIVE_DOCUMENT','invalid extension object')
         unsupported.update(category+'/'+name for name in extensions)
-    for material in body.get('materials',[]):
-        unsupported.update(set(material.get('extensions',{}))-MATERIAL_EXTENSIONS)
+    material_extensions = set(used) | set(required)
+    for material in body.get('materials', []):
+        declared = set(material.get('extensions', {}))
+        material_extensions.update(declared)
+        unsupported.update(declared - MATERIAL_EXTENSIONS)
+    # The projector captures unlit presence and texture transforms. Other
+    # recognized material extensions have semantics beyond the observed slots.
+    partial_material_extensions = ((material_extensions & MATERIAL_EXTENSIONS)
+                                   - {'KHR_materials_unlit', 'KHR_texture_transform'})
     channels=[dict(animation=i,target_node=c['target']['node'],path=c['target']['path'])
               for i,a in enumerate(body.get('animations',[])) for c in a.get('channels',[])]
     return dict(extensions_used=sorted(set(used) & MATERIAL_EXTENSIONS),
                 extensions_required=sorted(set(required) & MATERIAL_EXTENSIONS),
                 unsupported_extensions=sorted(digest(name) for name in unsupported),
+                partial_material_extensions=sorted(partial_material_extensions),
                 animation_channels=channels)
 
 
@@ -372,6 +380,7 @@ def _inspect_asset(root, root_identity, source, *, dependencies=(), landmarks=No
                        maximum_weight_sum_error=float(abs(value.weights.sum(axis=1)-1).max()))
                 for key,value in model.weights.items()}
         features = model.report['source_features']
+        material_partial = bool(features['unsupported_extensions'] or features['partial_material_extensions'])
         measurements = _measure(geometry, mesh_ids, {} if landmarks is None else landmarks,
                                 {} if distances is None else distances, height)
         # Variant references serve as evidence pointers.
@@ -391,7 +400,8 @@ def _inspect_asset(root, root_identity, source, *, dependencies=(), landmarks=No
             textures=textures, texture_bindings=texture_bindings, samplers=samplers,
             texture_color_spaces=_color_spaces(material_inputs),
             extensions=features['extensions_used'], skeleton=skeleton, skins=skin,
-            source_features=features,status='partial' if features['unsupported_extensions'] else 'inspected-supported-data',
+            source_features=features, status='partial' if material_partial else 'inspected-supported-data',
+            material_coverage='partial' if material_partial else 'supported-profile',
             native_load_admission=model.report['source_preflight'],
             native_image_admission=model.report['image_preflight'], measurements=measurements,
             variant_references=list(variants),
@@ -426,12 +436,15 @@ def compare_assets(root, left, right):
                       for ref in value['dependencies'][1:])
 
     same_source = x['source']['sha256'] == y['source']['sha256']
+    observed_material_identity = x['material_sha256'] == y['material_sha256']
+    material_complete = x['material_coverage'] == y['material_coverage'] == 'supported-profile'
     result = dict(left=a,right=b,byte_identity=same_source and closure(x) == closure(y),
                 source_byte_identity=same_source,
                 geometry_identity=x['geometry_sha256']==y['geometry_sha256'],
                 attribute_morph_identity=x['attribute_morph_sha256']==y['attribute_morph_sha256'],
                 scale_normalized_geometry_identity=x['scale_normalized_sha256'] is not None and x['scale_normalized_sha256']==y['scale_normalized_sha256'],
-                material_identity=x['material_sha256']==y['material_sha256'],
+                observed_material_identity=observed_material_identity,
+                material_identity=observed_material_identity if material_complete else None,
                 semantic_equivalence='unverified',visual_approval=False,needs_visual_review=True)
     return _finish_comparison(root, root_identity, result, [a, b])
 
