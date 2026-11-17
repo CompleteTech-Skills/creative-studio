@@ -1,0 +1,49 @@
+name: Optional foreground instance segmentation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  foreground:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements-foreground.txt
+      - name: Download explicit pinned model and evaluation photograph
+        run: |
+          mkdir -p foreground-inputs
+          curl --fail --location --retry 2 https://download.pytorch.org/models/maskrcnn_resnet50_fpn_coco-bf2d0c1e.pth -o foreground-inputs/model.pth
+          echo 'bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0  foreground-inputs/model.pth' | sha256sum -c -
+          curl --fail --location --retry 2 https://www.cis.upenn.edu/~jshi/ped_html/PennFudanPed.zip -o foreground-inputs/data.zip
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          with ZipFile('foreground-inputs/data.zip') as archive:
+              for relative in ('PNGImages/FudanPed00001.png', 'PedMasks/FudanPed00001_mask.png'):
+                  Path('foreground-inputs', Path(relative).name).write_bytes(archive.read('PennFudanPed/' + relative))
+          PY
+      - name: Strict contracts and actual model masks
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests -p test_decomposition_foreground.py -v 2>&1 | tee foreground-tests.log
+          python -m unittest discover -s tests/optional -p test_decomposition_foreground_backend.py -v 2>&1 | tee foreground-native-tests.log
+        env:
+          HATCH_FOREGROUND_BACKEND_TEST: '1'
+          HATCH_FOREGROUND_WEIGHTS: ${{ github.workspace }}/foreground-inputs/model.pth
+          HATCH_FOREGROUND_PENNFUDAN: ${{ github.workspace }}/foreground-inputs
+          HATCH_FOREGROUND_EVIDENCE_DIRECTORY: ${{ github.workspace }}/foreground-evidence
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: foreground-instance-${{ github.sha }}
+          path: |
+            foreground-tests.log
+            foreground-native-tests.log
+            foreground-evidence
+          if-no-files-found: error
+          retention-days: 30
