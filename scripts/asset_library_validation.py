@@ -3,6 +3,7 @@ from fractions import Fraction
 import hashlib
 import math
 from pathlib import Path
+import re
 import tempfile
 
 from asset_library_import import EXTENSIONS
@@ -156,7 +157,7 @@ def _measure_rig(model, limits):
                 rigid_bindings += 1
             elif skin.method == 'imported':
                 skins.append(dict(mesh=index, joints=len(skin.joints), metrics=metrics,
-                                  inverse_bind_sha256=hashlib.sha256(skin.inverse_bind.tobytes()).hexdigest()))
+                                  native_inverse_bind_sha256=hashlib.sha256(skin.inverse_bind.tobytes()).hexdigest()))
             else:
                 raise RigError('ASSET_TECHNICAL_SKIN', 'Unknown native GLB binding classification.')
     clips = []
@@ -185,6 +186,10 @@ def _native_report(path, record, limits):
             'ASSET_TECHNICAL_VALIDATION', 'Independent Khronos validation must pass.')
     require(independent['asset_sha256'] == record['sha256'], 'ASSET_TECHNICAL_HASH',
             'Independent validation must check the exact registered bytes.')
+    version = independent.get('validator')
+    require(isinstance(version, str)
+            and re.fullmatch(r'[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}(?:-dev(?:\.[0-9]{1,4}){1,4})?', version),
+            'ASSET_TECHNICAL_VALIDATION', 'Independent validator version must use a recognized format.')
     model = load_character_model(path, limits=decode_limits)
     require(model.report['source_sha256'] == record['sha256'], 'ASSET_TECHNICAL_HASH',
             'Native import must decode the exact registered bytes.')
@@ -212,7 +217,7 @@ def _native_report(path, record, limits):
     return dict(geometry=geometry, meshes=meshes, hierarchy=hierarchy, authored_materials=materials,
                 textures=textures, skeleton=skeleton, skins=skins, native_rigid_bindings=rigid_bindings, clips=clips,
                 capabilities=sorted(capabilities),
-                independent_validation=dict(status='passed', asset_sha256=record['sha256'],
+                independent_validation=dict(status='passed', version=version, asset_sha256=record['sha256'],
                                             errors=0, warnings=independent['issues']['numWarnings']))
 
 

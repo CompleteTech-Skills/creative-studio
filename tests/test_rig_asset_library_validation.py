@@ -102,6 +102,8 @@ class NativeVerificationTests(unittest.TestCase):
         self.assertEqual(report['reference'], reference)
         self.assertEqual(report['payload'], {key: record[key] for key in ('path', 'bytes', 'sha256')})
         self.assertEqual(report['independent_validation']['status'], 'passed')
+        pinned = json.loads((import_fixture.ROOT / 'tools/rig/package.json').read_bytes())
+        self.assertEqual(report['independent_validation']['version'], pinned['dependencies']['gltf-validator'])
         self.assertEqual(report['independent_validation']['asset_sha256'], record['sha256'])
         self.assertEqual(report['status'], 'technically-verified')
         self.assertFalse(report['production_approved'])
@@ -135,6 +137,7 @@ class NativeVerificationTests(unittest.TestCase):
         self.assertEqual((report['skeleton']['bones'], report['skeleton']['deform_bones']), (57, 56))
         self.assertEqual(len(report['skins']), 31)
         self.assertEqual(report['native_rigid_bindings'], 0)
+        self.assertRegex(report['skins'][0]['native_inverse_bind_sha256'], r'^[0-9a-f]{64}$')
         self.assertEqual((report['skins'][0]['joints'], report['skins'][0]['metrics']['vertices'],
                           report['skins'][0]['metrics']['influences']), (56, 146, 4))
         self.assertIn('morph', report['capabilities'])
@@ -236,6 +239,15 @@ class NativeVerificationTests(unittest.TestCase):
         self.assertEqual(error.exception.report['code'], 'ASSET_TECHNICAL_VALIDATION')
         self.assertNotIn(str(self.root), json.dumps(error.exception.report))
         native.assert_not_called()
+
+        payload = self.library.read_file(reference, 'normalized.glb')
+        unknown_version = dict(ok=True, issues=dict(numErrors=0), validator=str(self.root),
+                               asset_sha256=hashlib.sha256(payload).hexdigest())
+        with (patch('asset_library_validation.validate_gltf', return_value=unknown_version),
+              self.assertRaises(RigError) as error):
+            validate_asset(self.library, reference)
+        self.assertEqual(error.exception.report['code'], 'ASSET_TECHNICAL_VALIDATION')
+        self.assertNotIn(str(self.root), json.dumps(error.exception.report))
 
         with patch('asset_library_validation.load_character_model',
                    side_effect=RigError('RIG_TEXTURE_DECODE', str(self.root))) as native:
