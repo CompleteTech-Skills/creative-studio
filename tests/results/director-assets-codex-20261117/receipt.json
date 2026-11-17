@@ -1,0 +1,57 @@
+{
+  "scope": "offline local native engineering fixtures",
+  "python": "3.12.15",
+  "source_sha256": {
+    "scripts/director_assets.py": "89cbc28f241806bb674e600b045876e14e30c085662f1fa9282938ca897143dc",
+    "scripts/rig_demo.py": "0f01c3808ca86c84a46328afba093bc5a016d70bb10c87a5b35c13f661009716",
+    "scripts/model3d_geometry.py": "302691c945809ca45513dfba568bb5a5376902650aaacbe626423101716379e1"
+  },
+  "fixture": true,
+  "provider_executed": false,
+  "production_approved": false,
+  "seed": 42,
+  "decoded_vertices": 7764,
+  "decoded_triangles": 15228,
+  "static_route_samples": 204,
+  "assets": {
+    "aster": {
+      "source_sha256": "4d779a9029d9c0c9d27ac491104f362c98b80f68c861def8138c27585d3f247a",
+      "normalized_geometry_sha256": "0dbb9f9ee3aa6f779e550e07bc6db2bd2e119e36f5a9fbceb45d147390e59304",
+      "identity_sha256": "feffb1fb83e798cadb5c92b89cbd3ff1dbf55d44c66b86deacedaa231824c94f",
+      "resolved_manifest_sha256": "8ff38ff2d0e911d49828aca5385ccda3b1b5a69fd0d350ff54190e467a6f5bf5",
+      "registered_files": 5
+    },
+    "moss": {
+      "source_sha256": "72f5d219ed04eba9d23b599612cab324884af083952febb6e58ae148272d0e6c",
+      "normalized_geometry_sha256": "c55e4baf32c413a26d5ea7b8e9333ee20eeb357d09f11e620c70c254ec812208",
+      "identity_sha256": "d3a092575b55864b94a4d47e75c83e7d6312bf23debcea4e89414a3876962b50",
+      "resolved_manifest_sha256": "745308f80709a939766235010c495b01e40bfc331c22e71ab2f72aae0c37c993",
+      "registered_files": 5
+    },
+    "laboratory": {
+      "source_sha256": "897e387a9a7602c84a571eecb57ad3fc5d7cbd7bf3f4807b2485460b2b31a5a5",
+      "normalized_geometry_sha256": "43baa1cf48889f70f03623aac498036a4a060cb750019e8979f1b76b9f49dd9e",
+      "identity_sha256": "bd52a5d30b3fbeda7cb747ecfc2045ca070b729b7742d033999a949ae00bf48e",
+      "resolved_manifest_sha256": "1a7f1725ec2af1ec493882c5c5260af673d469d797976feab7d6d09cab634809",
+      "registered_files": 4
+    },
+    "access-key": {
+      "source_sha256": "68f364b3e7cf6de39927690bde40c8ca871eaeabe77daba8597e9ba5c6d62f94",
+      "normalized_geometry_sha256": "35b84ebc1b9125eea486357d66587533c3fc11f97cd792ff9454477116d13f83",
+      "identity_sha256": "bf5d014267d89112f14e0ef4a53fd8bd95529ea97cecaa392c19bd258a0948f8",
+      "resolved_manifest_sha256": "b0814d51715ec315560763bcf97218d813cc471e0b19d85c24d5eab118dc9e9c",
+      "registered_files": 4
+    }
+  },
+  "reproduce_cli": "PYTHONPATH=scripts python scripts/director_assets.py --destination NEW_DIRECTORY --seed 42",
+  "execution": "Called build_assets(seed=42), reopened AssetLibrary, resolved all four manifests, and verified every registered payload against its published file.",
+  "platform": "Linux",
+  "base_commit": "6f73b6279847a2262a7d5c4e7f10b6f826ace396",
+  "focused_validation": {
+    "command": "PYTHONPATH=scripts:tests python -m unittest test_rig_director_assets -v",
+    "module_sha256": "3206b728f51c978252b0828fe18b65739844b7a0c6abeb1c57ed3e84df37f4fb",
+    "passed": 18,
+    "skipped": 0,
+    "exit_code": 0
+  }
+}
