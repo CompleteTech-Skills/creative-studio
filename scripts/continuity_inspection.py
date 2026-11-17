@@ -1,4 +1,5 @@
 """Inspect exact GLB/glTF source closures through the canonical native readers."""
+from collections import defaultdict
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 import hashlib
@@ -53,7 +54,7 @@ def _references(source, dependencies):
     return refs
 
 
-def _read_closure(root, refs, limits, snapshot=None):
+def _read_closure(root, root_identity, refs, limits, snapshot=None):
     """Hash the exact bytes read from the owning descriptor; optionally copy them."""
     from rig_load_limits import _JSON_FACTOR
     total = 0
@@ -63,7 +64,7 @@ def _read_closure(root, refs, limits, snapshot=None):
         maximum = min(limits['source_bytes'], closure_cap - total)
         try:
             with ExitStack() as scope:
-                stream, info = scope.enter_context(open_payload(root, relative))
+                stream, info = scope.enter_context(open_payload(root, relative, root_identity=root_identity))
                 if info.st_size > maximum:
                     fail('LIMIT', 'encoded closure exceeds its byte budget: ' + relative)
                 if snapshot is not None:
@@ -90,7 +91,7 @@ def _read_closure(root, refs, limits, snapshot=None):
 
 
 @contextmanager
-def _loaded(root, source, dependencies, requested):
+def _loaded(root, root_identity, source, dependencies, requested):
     from rig_gltf import read_gltf, scene_graph, node_matrix, preflight_gltf
     from rig_import import load_character_model
 
@@ -101,7 +102,7 @@ def _loaded(root, source, dependencies, requested):
         fail('ADAPTER_REQUIRED', 'inspection requires a GLB or glTF source')
     with tempfile.TemporaryDirectory(prefix='continuity-inspect-') as scratch:
         snapshot = Path(scratch).resolve()
-        total = _read_closure(root, refs, limits, snapshot)
+        total = _read_closure(root, root_identity, refs, limits, snapshot)
         path = snapshot / path_name
         try:
             document = read_gltf(path, limits)
@@ -117,7 +118,7 @@ def _loaded(root, source, dependencies, requested):
                      ', '.join(sorted(expected ^ observed)))
             parents, world, order = scene_graph(document)
             nodes = document.json['nodes']
-            hierarchy = [dict(node_id=i, name=nodes[i].get('name'), parent=parents.get(i),
+            hierarchy = [dict(node_id=i, parent=parents.get(i),
                               local_matrix=node_matrix(nodes[i]).tolist(), world_matrix=world[i].tolist(),
                               mesh=nodes[i].get('mesh'), skin=nodes[i].get('skin')) for i in order]
             features = _source_features(document)
@@ -130,7 +131,7 @@ def _loaded(root, source, dependencies, requested):
         except (KeyError, IndexError, TypeError, AttributeError, OverflowError, RecursionError) as exc:
             fail('NATIVE_DOCUMENT', 'native structure is invalid: ' + type(exc).__name__)
         finally:
-            _read_closure(root, refs, limits)
+            _read_closure(root, root_identity, refs, limits)
 
 
 def _image_admission(document,geometry_admission,limits):
@@ -182,8 +183,10 @@ def _source_features(document):
         unsupported.update(set(material.get('extensions',{}))-MATERIAL_EXTENSIONS)
     channels=[dict(animation=i,target_node=c['target']['node'],path=c['target']['path'])
               for i,a in enumerate(body.get('animations',[])) for c in a.get('channels',[])]
-    return dict(extensions_used=used,extensions_required=required,
-                unsupported_extensions=sorted(unsupported),animation_channels=channels)
+    return dict(extensions_used=sorted(set(used) & MATERIAL_EXTENSIONS),
+                extensions_required=sorted(set(required) & MATERIAL_EXTENSIONS),
+                unsupported_extensions=sorted(digest(name) for name in unsupported),
+                animation_channels=channels)
 
 
 def _array(array):
@@ -199,7 +202,7 @@ def _array(array):
 
 
 def _surface(mesh, scale=1.):
-    """Topology-sensitive quantized triangle surface; not semantic equivalence."""
+    """Quantized triangle coordinates, independent of winding and ordering."""
     import numpy as np
     values = np.round(mesh.positions[mesh.triangles]/scale, 9)
     values[values == 0] = 0
@@ -212,15 +215,16 @@ def _surface(mesh, scale=1.):
     return hashlib.sha256(flat.tobytes()).hexdigest()
 
 
-def _measure(geometry, landmarks, distances, height):
+def _measure(geometry, mesh_ids, landmarks, distances, height):
     import numpy as np
     if not isinstance(landmarks, dict) or len(landmarks) > 256 or not isinstance(distances, dict) or len(distances) > 256:
         fail('LANDMARK', 'bounded named vertex landmarks and pair distances are required')
     points = {}
+    meshes = {mesh_ids[mesh.id]: mesh for mesh in geometry.meshes}
     for name, item in landmarks.items():
         if not isinstance(name, str) or not 1 <= len(name) <= 128 or not isinstance(item, dict) or set(item) != {'mesh_id', 'vertex_index'}:
             fail('LANDMARK', 'landmark must identify an actual mesh vertex')
-        mesh = geometry.by_id().get(item['mesh_id'])
+        mesh = meshes.get(item['mesh_id'])
         index = item['vertex_index']
         if mesh is None or type(index) is not int or not 0 <= index < len(mesh.positions):
             fail('LANDMARK', 'landmark vertex does not exist')
@@ -233,6 +237,54 @@ def _measure(geometry, landmarks, distances, height):
         value = float(np.linalg.norm(np.asarray(points[pair[0]]['position_m'])-points[pair[1]]['position_m']))
         values[name] = dict(landmarks=pair, distance_m=value, relative_to_height=value/height if height > 1e-9 else None)
     return dict(landmarks=points, distances=values)
+
+
+def _material_inputs(material):
+    """Project the canonical validator's observed shader fields."""
+    from rig_models import _MATERIAL_TEXTURE_SLOTS
+
+    def select(obj, fields):
+        return {key: obj[key] for key in fields if key in obj}
+
+    def binding(slot, info):
+        value = select(info, ('index', 'texCoord'))
+        if slot in ('normalTexture', 'clearcoatNormalTexture') and 'scale' in info:
+            value['scale'] = info['scale']
+        if slot == 'occlusionTexture' and 'strength' in info:
+            value['strength'] = info['strength']
+        transform = info.get('extensions', {}).get('KHR_texture_transform')
+        if transform is not None:
+            value['extensions'] = {'KHR_texture_transform': select(transform, ('offset', 'scale', 'rotation', 'texCoord'))}
+        return value
+
+    def bindings(obj, slots):
+        return {slot: binding(slot, obj[slot]) for slot in slots if slot in obj}
+
+    observed = select(material, ('emissiveFactor', 'alphaCutoff', 'alphaMode', 'doubleSided'))
+    observed.update(bindings(material, ('normalTexture', 'occlusionTexture', 'emissiveTexture')))
+    if 'pbrMetallicRoughness' in material:
+        pbr = material['pbrMetallicRoughness']
+        pbr_inputs = dict(select(pbr, ('baseColorFactor', 'metallicFactor', 'roughnessFactor')),
+                          **bindings(pbr, ('baseColorTexture', 'metallicRoughnessTexture')))
+        if pbr_inputs:
+            observed['pbrMetallicRoughness'] = pbr_inputs
+    extensions = material.get('extensions', {})
+    observed_extensions = {name: bindings(extensions[name], slots)
+                           for name, slots in _MATERIAL_TEXTURE_SLOTS.items() if name in extensions}
+    if 'KHR_materials_unlit' in extensions:
+        observed_extensions['KHR_materials_unlit'] = {}
+    if observed_extensions:
+        observed['extensions'] = observed_extensions
+    return observed
+
+
+def _admitted_root(root):
+    root = Path(root).absolute()
+    try:
+        info = root.stat()
+    except OSError as exc:
+        raise RigError('RIG_DIRECTORY_PATH', 'Inspection root is unavailable.') from exc
+    return root, (info.st_dev, info.st_ino)
 
 
 def _color_spaces(materials):
@@ -257,38 +309,75 @@ def _color_spaces(materials):
 
 def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=None, limits=None, variants=()):
     """Inspect exact file closure. No source mutation or automatic approvals."""
+    root, root_identity = _admitted_root(root)
+    return _inspect_asset(root, root_identity, source, dependencies=dependencies, landmarks=landmarks,
+                          distances=distances, limits=limits, variants=variants)
+
+
+def _inspect_asset(root, root_identity, source, *, dependencies=(), landmarks=None, distances=None, limits=None, variants=()):
     if not isinstance(variants,(list,tuple)) or len(variants)>64:
         fail('REFERENCE','variants must be a bounded list of existing exact references')
     canonical_bytes(dict(landmarks=landmarks,distances=distances,variants=variants))
     landmarks,distances,variants=deepcopy((landmarks,distances,variants))
-    with _loaded(root, source, dependencies, limits) as (model, hierarchy, refs, caps, encoded):
+    with _loaded(root, root_identity, source, dependencies, limits) as (model, hierarchy, refs, caps, encoded):
         source=refs[0]
         from rig_geometry import analyze_geometry
         geometry = model.geometry
         analysis = analyze_geometry(geometry, caps)
         height = analysis['dimensions_m'][1]
         meshes = []
+        primitive_counts = defaultdict(int)
+        mesh_ids = {}
         for mesh in geometry.meshes:
-            meshes.append(dict(id=mesh.id, name=mesh.name, semantic_region=mesh.region,
-                source_node=mesh.source_node, positions=_array(mesh.positions), triangles=_array(mesh.triangles),
+            primitive_index = primitive_counts[mesh.source_node]
+            primitive_counts[mesh.source_node] += 1
+            mesh_id = f'mesh-{mesh.source_node}-{primitive_index}'
+            mesh_ids[mesh.id] = mesh_id
+            morph_ids = {name: digest(name) for name in mesh.morphs}
+            meshes.append(dict(id=mesh_id,
+                source_node=mesh.source_node, primitive_index=primitive_index, positions=_array(mesh.positions), triangles=_array(mesh.triangles),
                 attributes={key:_array(value) for key,value in mesh.attributes.items()},
-                morphs={name:{key:_array(value) for key,value in fields.items()} for name,fields in mesh.morphs.items()},
-                morph_defaults=deepcopy(mesh.morph_defaults), material_slot=mesh.material,
-                geometry_sha256=_surface(mesh), scale_normalized_sha256=_surface(mesh, height) if height > 1e-9 else None))
-        materials = [dict(slot=i, inputs=deepcopy(material), graph_sha256=digest(material)) for i,material in enumerate(geometry.materials)]
-        textures = [dict(index=i, name=image.name, mime_type=image.mime_type,
-                         sha256=hashlib.sha256(image.data).hexdigest(), bytes=len(image.data)) for i,image in enumerate(geometry.images)]
-        skin = {key:dict(joints=list(value.joints), indices=_array(value.indices), weights=_array(value.weights),
+                morphs={morph_ids[name]:{key:_array(value) for key,value in fields.items()} for name,fields in mesh.morphs.items()},
+                morph_defaults={morph_ids[name]: weight for name, weight in mesh.morph_defaults.items()},
+                material_slot=mesh.material, geometry_sha256=_surface(mesh),
+                scale_normalized_sha256=_surface(mesh, height) if height > 1e-9 else None))
+        for observation in analysis['meshes']:
+            observation['id'] = mesh_ids[observation['id']]
+            observation.pop('region')
+        material_inputs = [_material_inputs(material) for material in geometry.materials]
+        materials = [dict(slot=i, inputs=material, graph_sha256=digest(material))
+                     for i, material in enumerate(material_inputs)]
+        textures = [dict(index=i, mime_type=image.mime_type,
+                         sha256=hashlib.sha256(image.data).hexdigest(), bytes=len(image.data))
+                    for i, image in enumerate(geometry.images)]
+        texture_bindings = [{key: texture[key] for key in ('source', 'sampler') if key in texture}
+                            for texture in geometry.textures]
+        samplers = [{key: sampler[key] for key in ('magFilter', 'minFilter', 'wrapS', 'wrapT') if key in sampler}
+                    for sampler in geometry.samplers]
+
+        skeleton = deepcopy(model.skeleton)
+        bone_ids = {}
+        if skeleton is not None:
+            bone_ids = {bone['id']: f'bone-{i}' for i, bone in enumerate(skeleton['bones'])}
+            skeleton['root'] = bone_ids[skeleton['root']]
+            for bone in skeleton['bones']:
+                bone['id'] = bone_ids[bone['id']]
+                bone['parent'] = bone_ids.get(bone['parent'])
+                bone['mirror'] = bone_ids.get(bone['mirror'])
+                bone['role_sha256'] = digest(bone.pop('role'))
+        skin = {mesh_ids[key]:dict(method=value.method, joints=[bone_ids[joint] for joint in value.joints],
+                       indices=_array(value.indices), weights=_array(value.weights),
                        inverse_bind_matrices=value.inverse_bind.tolist(),
+                       inverse_bind_space='normalized importer rest space',
                        maximum_weight_sum_error=float(abs(value.weights.sum(axis=1)-1).max()))
                 for key,value in model.weights.items()}
         features = model.report['source_features']
-        measurements = _measure(geometry, {} if landmarks is None else landmarks,
+        measurements = _measure(geometry, mesh_ids, {} if landmarks is None else landmarks,
                                 {} if distances is None else distances, height)
         # Variant references serve as evidence pointers.
         if variants:
             _references(source, variants)
-            _read_closure(root, variants, caps)
+            _read_closure(root, root_identity, variants, caps)
         result = dict(schema_version='1.0.0', kind='continuity-asset-inspection',
             source=deepcopy(source), dependencies=refs, coordinates='right-handed Y-up meters; native importer scale 1',
             owners=['rig_import.load_character_model', 'rig_gltf.read_gltf/preflight_gltf/scene_graph'],
@@ -296,11 +385,12 @@ def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=No
                           Pillow=importlib.metadata.version('Pillow'),
                           source_sha256={name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
                             for name in ('continuity_inspection.py','continuity_contracts.py','rig_errors.py','rig_gltf.py',
-                                         'rig_import.py','rig_geometry.py','rig_skeleton.py','rig_skinning.py','rig_load_limits.py')}),
+                                         'rig_import.py','rig_geometry.py','rig_models.py','rig_skeleton.py','rig_skinning.py',
+                                         'rig_load_limits.py','rig_jpeg.py')}),
             analysis=analysis, hierarchy=hierarchy, meshes=meshes, materials=materials,
-            textures=textures, texture_bindings=deepcopy(geometry.textures), samplers=deepcopy(geometry.samplers),
-            texture_color_spaces=_color_spaces(geometry.materials),
-            extensions=list(geometry.extensions_used), skeleton=deepcopy(model.skeleton), skins=skin,
+            textures=textures, texture_bindings=texture_bindings, samplers=samplers,
+            texture_color_spaces=_color_spaces(material_inputs),
+            extensions=features['extensions_used'], skeleton=skeleton, skins=skin,
             source_features=features,status='partial' if features['unsupported_extensions'] else 'inspected-supported-data',
             native_load_admission=model.report['source_preflight'],
             native_image_admission=model.report['image_preflight'], measurements=measurements,
@@ -308,22 +398,25 @@ def inspect_asset(root, source, *, dependencies=(), landmarks=None, distances=No
             geometry_sha256=digest(sorted(m['geometry_sha256'] for m in meshes)),
             attribute_morph_sha256=digest([dict(attributes=m['attributes'],morphs=m['morphs'],defaults=m['morph_defaults']) for m in meshes]),
             scale_normalized_sha256=digest(sorted(m['scale_normalized_sha256'] for m in meshes)) if height > 1e-9 else None,
-            material_sha256=digest(dict(materials=materials,textures=textures,bindings=geometry.textures,samplers=geometry.samplers,
-                                       assignments=[dict(geometry=m['geometry_sha256'],slot=m['material_slot']) for m in meshes])),
+            material_sha256=digest(dict(materials=materials,textures=textures,bindings=texture_bindings,samplers=samplers,
+                                       assignments=sorted((m['source_node'], m['primitive_index'], m['material_slot']) for m in meshes))),
             fixture=bool(model.report['fixture']),
             bytes_inspected=encoded, visual_approval=False, semantic_equivalence='unverified',
             unavailable_fields=['subjective-visual-identity','renderer-specific-displacement/subsurface-node-graphs','native-rig-controllers-and-sockets'],
-            limitations=['Material evidence describes portable glTF shader inputs.',
-                         'Shape fingerprint quantizes triangles to 1e-9 m and preserves topology, independently of winding and serialization.',
+            limitations=['Material evidence covers core inputs and validated extension texture bindings.',
+                         'Shape fingerprint quantizes triangle coordinates to 1e-9 m. Mesh index fingerprints record connectivity separately.',
                          'Scale-normalized fingerprint divides by measured height. Scale variation requires review.',
                          'Anatomical labels and production artwork require human review.'])
-        return dict(inspection=result, sha256=digest(result))
+        receipt = dict(inspection=result, sha256=digest(result))
+        _read_closure(root, root_identity, variants, caps)
+        return receipt
 
 
 def compare_assets(root, left, right):
     """Execute both inspections; never trust caller-supplied measurement receipts."""
-    a = inspect_asset(root, **left)
-    b = inspect_asset(root, **right)
+    root, root_identity = _admitted_root(root)
+    a = _inspect_asset(root, root_identity, **left)
+    b = _inspect_asset(root, root_identity, **right)
     x, y = a['inspection'], b['inspection']
 
     def closure(value):
@@ -340,17 +433,17 @@ def compare_assets(root, left, right):
                 scale_normalized_geometry_identity=x['scale_normalized_sha256'] is not None and x['scale_normalized_sha256']==y['scale_normalized_sha256'],
                 material_identity=x['material_sha256']==y['material_sha256'],
                 semantic_equivalence='unverified',visual_approval=False,needs_visual_review=True)
-    return _finish_comparison(root,result,[a,b])
+    return _finish_comparison(root, root_identity, result, [a, b])
 
 
-def _finish_comparison(root,result,receipts):
+def _finish_comparison(root, root_identity, result, receipts):
     """Recheck both exact closures together at the result publication boundary."""
     canonical_bytes(result)
     for receipt in receipts:
         inspection = receipt['inspection']
         caps = inspection['native_load_admission']['limits']
-        _read_closure(root, inspection['dependencies'], caps)
-        _read_closure(root, inspection['variant_references'], caps)
+        _read_closure(root, root_identity, inspection['dependencies'], caps)
+        _read_closure(root, root_identity, inspection['variant_references'], caps)
     return result
 
 

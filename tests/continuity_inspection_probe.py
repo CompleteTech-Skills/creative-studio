@@ -68,8 +68,9 @@ def main():
     assert inspection['fixture'] and not inspection['visual_approval']
     assert inspection['measurements']['distances']['height']['distance_m'] == 2
     assert inspection['skins']['mesh-1-0']['weights']['shape'] == [3, 4]
+    assert inspection['skins']['mesh-1-0']['method'] == 'imported'
     assert admitted['inspection']['native_image_admission']['images'][0]['width'] == 512
-    assert not geometry['geometry_identity'] and geometry['needs_visual_review']
+    assert not geometry['geometry_identity'] and geometry['material_identity'] and geometry['needs_visual_review']
     assert material['geometry_identity'] and not material['material_identity']
     assert original == {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in fixture_paths}
 
@@ -88,9 +89,12 @@ def main():
         filename = name + '.json'
         (root / filename).write_bytes(payload)
         receipt_hashes[filename] = hashlib.sha256(payload).hexdigest()
+    probe_files = [Path(__file__), Path(__file__).with_name('test_rig_continuity_inspection.py')]
     report = dict(
         status='passed-local-fixture-inspection', fixture=True, production_artwork_approved=False,
         sources_unchanged=original, receipt_sha256=receipt_hashes, software=inspection['software'],
+        fixture_implementation_sha256={path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                                       for path in probe_files},
         vertices=inspection['analysis']['vertices'], triangles=inspection['analysis']['triangles'],
         authored_skin_joints=len(inspection['skins']['mesh-1-0']['joints']),
         texture_bytes=inspection['textures'][0]['bytes'], combined_image_memory_limit=limits['memory_bytes'],

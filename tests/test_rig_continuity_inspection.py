@@ -16,7 +16,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
 from continuity_inspection import inspect_asset, compare_assets
 from continuity_contracts import canonical_bytes,digest
-from rig_gltf import GltfBuilder
+from rig_gltf import GltfBuilder, read_gltf
 
 
 def pointer(root,path,*,kind='mesh',identity='fixture',version='1.0.0'):
@@ -27,10 +27,10 @@ def pointer(root,path,*,kind='mesh',identity='fixture',version='1.0.0'):
 
 def gltf(root,name='source.glb',*,color=(20,40,60),width=1.,external=False, skinned=False):
     b=GltfBuilder(); image=io.BytesIO();Image.new('RGB',(2,2),color).save(image,format='PNG')
-    attrs=dict(POSITION=b.accessor([[0,0,0],[width,0,0],[0,2,0]],'VEC3'),
+    attrs=dict(POSITION=b.accessor([[0,0,0],[width,0,0],[0,2,0]],'VEC3', bounds=True),
                NORMAL=b.accessor([[0,0,1]]*3,'VEC3'),TANGENT=b.accessor([[1,0,0,1]]*3,'VEC4'),
                TEXCOORD_0=b.accessor([[0,0],[1,0],[0,1]],'VEC2'))
-    primitive=dict(attributes=attrs,material=0,targets=[dict(POSITION=b.accessor([[0,0,.1]]*3,'VEC3'))])
+    primitive=dict(attributes=attrs,material=0,targets=[dict(POSITION=b.accessor([[0,0,.1]]*3,'VEC3', bounds=True))])
     images=[dict(uri='texture.png')] if external else [dict(mimeType='image/png',bufferView=b.view(image.getvalue()))]
     b.json.update(nodes=[dict(name='Actual parent',translation=[3,0,0],children=[1]),dict(name='Actual mesh',mesh=0)],
                   meshes=[dict(name='same descriptive metadata',extras=dict(targetNames=['smile']),primitives=[primitive])],
@@ -70,17 +70,31 @@ class ContinuityInspectionTests(unittest.TestCase):
         self.assertEqual(d['analysis']['vertices'],3);self.assertEqual(d['analysis']['triangles'],1)
         self.assertEqual(d['meshes'][0]['attributes']['TEXCOORD_0']['shape'],[3,2])
         self.assertIn('NORMAL',d['meshes'][0]['attributes']);self.assertIn('TANGENT',d['meshes'][0]['attributes'])
-        self.assertIn('smile',d['meshes'][0]['morphs']);self.assertEqual(d['textures'][0]['bytes'],len(self.image_bytes(path)))
+        self.assertIn(digest('smile'),d['meshes'][0]['morphs']);self.assertEqual(d['textures'][0]['bytes'],len(self.image_bytes(path)))
         self.assertIn('sRGB',d['texture_color_spaces'][0]['color_space'])
         self.assertEqual(d['materials'][0]['inputs']['pbrMetallicRoughness']['baseColorTexture']['index'],0)
         self.assertEqual(d['measurements']['distances']['height']['distance_m'],2.)
         self.assertEqual(d['measurements']['distances']['height']['relative_to_height'],1.)
         skin = d['skins']['mesh-1-0']
+        self.assertEqual(skin['method'], 'imported')
+        self.assertEqual(skin['inverse_bind_space'], 'normalized importer rest space')
+        self.assertEqual(skin['inverse_bind_matrices'][0][0][3], -3.)
         self.assertEqual(len(skin['joints']), 2)
         self.assertEqual(skin['weights']['shape'], [3, 4])
         self.assertEqual(skin['maximum_weight_sum_error'], 0.)
         self.assertEqual(d['hierarchy'][1]['skin'], 0)
         self.assertFalse(d['visual_approval']);self.assertEqual(d['semantic_equivalence'],'unverified')
+
+    def test_fixture_position_accessors_retain_bounds(self):
+        path, _ = gltf(self.root, skinned=True)
+        document = read_gltf(path)
+        primitive = document.json['meshes'][0]['primitives'][0]
+        base = document.json['accessors'][primitive['attributes']['POSITION']]
+        morph = document.json['accessors'][primitive['targets'][0]['POSITION']]
+        self.assertEqual(base['min'], [0., 0., 0.])
+        self.assertEqual(base['max'], [1., 2., 0.])
+        np.testing.assert_allclose(morph['min'], [0., 0., .1])
+        np.testing.assert_allclose(morph['max'], [0., 0., .1])
 
     def image_bytes(self,path):
         from rig_import import load_character_model
@@ -89,10 +103,37 @@ class ContinuityInspectionTests(unittest.TestCase):
     def test_changed_geometry_and_texture_with_identical_names_require_real_review(self):
         a,_=gltf(self.root,'a.glb');b,_=gltf(self.root,'b.glb',width=1.5)
         r=compare_assets(self.root,dict(source=pointer(self.root,a)),dict(source=pointer(self.root,b)))
-        self.assertFalse(r['byte_identity']);self.assertFalse(r['geometry_identity']);self.assertTrue(r['needs_visual_review'])
+        self.assertFalse(r['byte_identity'])
+        self.assertFalse(r['geometry_identity'])
+        self.assertTrue(r['material_identity'])
+        self.assertTrue(r['needs_visual_review'])
         c,_=gltf(self.root,'c.glb',color=(200,30,10))
         r=compare_assets(self.root,dict(source=pointer(self.root,a)),dict(source=pointer(self.root,c)))
         self.assertTrue(r['geometry_identity']);self.assertFalse(r['material_identity']);self.assertFalse(r['visual_approval'])
+
+    def test_assignment_changes_material_identity_with_equal_slot_inventory(self):
+        baseline, builder = gltf(self.root, 'baseline.glb')
+        builder.json['materials'].append(dict(name='Alternate slot'))
+        builder.write(baseline)
+        changed = self.root / 'changed.glb'
+        builder.json['meshes'][0]['primitives'][0]['material'] = 1
+        builder.write(changed)
+        result = compare_assets(self.root, dict(source=pointer(self.root, baseline)),
+                                dict(source=pointer(self.root, changed)))
+        self.assertTrue(result['geometry_identity'])
+        self.assertFalse(result['material_identity'])
+        self.assertEqual(result['left']['inspection']['materials'], result['right']['inspection']['materials'])
+
+    def test_unskinned_instance_gets_importer_generated_rigid_binding(self):
+        path, builder = gltf(self.root, skinned=True)
+        builder.json['nodes'][0]['children'].append(4)
+        builder.json['nodes'].append(dict(name='Unskinned instance', mesh=0))
+        builder.write(path)
+        result = inspect_asset(self.root, pointer(self.root, path))['inspection']
+        self.assertEqual(result['skins']['mesh-1-0']['method'], 'imported')
+        rigid = result['skins']['mesh-4-0']
+        self.assertEqual(rigid['method'], 'rigid')
+        self.assertEqual(len(rigid['joints']), 1)
 
     def test_container_and_vertex_serialization_are_separate_from_surface_identity(self):
         a,b=gltf(self.root,'a.glb');b.write(self.root/'b.gltf')
@@ -110,11 +151,12 @@ class ContinuityInspectionTests(unittest.TestCase):
 
     def test_comparison_rechecks_left_source_after_actual_right_inspection(self):
         from unittest.mock import patch
+        from continuity_inspection import _inspect_asset
         a,_=gltf(self.root,'a.glb');b,_=gltf(self.root,'b.glb')
         calls=0
         def actual_inspection_then_external_change(*args,**kwargs):
             nonlocal calls
-            result=inspect_asset(*args,**kwargs)
+            result=_inspect_asset(*args,**kwargs)
             calls+=1
             if calls==2:
                 a.write_bytes(a.read_bytes()+b' ')
@@ -122,10 +164,70 @@ class ContinuityInspectionTests(unittest.TestCase):
         # Both native inspections execute. The wrapper injects an external
         # source mutation at the publication race boundary; it supplies no fake
         # parsed geometry, capability snapshot or positive execution result.
-        with patch('continuity_inspection.inspect_asset',actual_inspection_then_external_change):
+        with patch('continuity_inspection._inspect_asset',actual_inspection_then_external_change):
             with self.assertRaisesRegex(ValueError,'CONTINUITY_INSPECTION_HASH'):
                 compare_assets(self.root,dict(source=pointer(self.root,a)),dict(source=pointer(self.root,b)))
         self.assertEqual(calls,2)
+
+    def test_receipt_omits_authored_labels_and_resource_extras(self):
+        baseline, builder = gltf(self.root, 'baseline.glb', skinned=True)
+        label = 'private fixture metadata'
+        builder.json['nodes'][0]['name'] = label
+        builder.json['nodes'][2]['name'] = label
+        builder.json['meshes'][0]['name'] = label
+        builder.json['meshes'][0]['extras'].update(hatchRegion=label, hatchMeshId=label)
+        builder.json['images'][0]['name'] = label
+        material = builder.json['materials'][0]
+        material.update(name=label, extras={'arbitrary': label})
+        material['pbrMetallicRoughness']['baseColorTexture']['scale'] = label
+        builder.json['textures'][0]['extras'] = {'arbitrary': label}
+        builder.json['samplers'] = [dict(name=label, extras={'arbitrary': label})]
+        changed = self.root / 'metadata.glb'
+        builder.write(changed)
+        report = inspect_asset(self.root, pointer(self.root, changed), landmarks={
+            'point': dict(mesh_id='mesh-1-0', vertex_index=0),
+        })['inspection']
+        self.assertNotIn(label, canonical_bytes(report).decode())
+        plain = inspect_asset(self.root, pointer(self.root, baseline))['inspection']
+        self.assertEqual(report['materials'], plain['materials'])
+        self.assertEqual(report['texture_color_spaces'], plain['texture_color_spaces'])
+
+    def test_comparison_rejects_directory_replacement_with_identical_bytes(self):
+        from shutil import copytree
+        from unittest.mock import patch
+        from continuity_inspection import _inspect_asset
+
+        directory = self.root / 'assets'
+        directory.mkdir()
+        path, _ = gltf(directory)
+        spec = dict(source=pointer(directory, path))
+        original = self.root / 'original'
+        def inspect_then_replace(*args, **kwargs):
+            receipt = _inspect_asset(*args, **kwargs)
+            if not original.exists():
+                directory.rename(original)
+                copytree(original, directory)
+            return receipt
+
+        with patch('continuity_inspection._inspect_asset', inspect_then_replace):
+            with self.assertRaisesRegex(ValueError, 'Selected source directory changed'):
+                compare_assets(directory, spec, spec)
+
+    def test_standalone_receipt_rechecks_variant_before_return(self):
+        from unittest.mock import patch
+
+        path, _ = gltf(self.root)
+        alternate, _ = gltf(self.root, 'alternate.glb')
+        variant = pointer(self.root, alternate)
+        def hash_then_change(value):
+            result = digest(value)
+            if isinstance(value, dict) and value.get('kind') == 'continuity-asset-inspection':
+                alternate.write_bytes(alternate.read_bytes() + b' ')
+            return result
+
+        with patch('continuity_inspection.digest', hash_then_change):
+            with self.assertRaisesRegex(ValueError, 'HASH.*alternate[.]glb'):
+                inspect_asset(self.root, pointer(self.root, path), variants=[variant])
 
     def test_missing_texture_corrupt_glb_and_skin_reference_fail_precisely(self):
         path,b=gltf(self.root,'missing.gltf',external=True)
@@ -167,7 +269,7 @@ class ContinuityInspectionTests(unittest.TestCase):
         b.write(path);source=pointer(self.root,path)
         result=inspect_asset(self.root,source)['inspection']
         self.assertEqual(result['status'],'partial')
-        self.assertIn('EXT_fixture_unknown',result['source_features']['unsupported_extensions'])
+        self.assertIn(digest('EXT_fixture_unknown'),result['source_features']['unsupported_extensions'])
 
     def test_combined_texture_capacity_precedes_pixel_decode(self):
         from unittest.mock import patch
