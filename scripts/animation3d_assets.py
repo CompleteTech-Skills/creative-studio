@@ -58,20 +58,23 @@ class Snapshot:
         self.native_morphs = 0
         self.project_budgets = None
         self.memory_charges = {}
+        self.inspected_payloads = set()
 
-    def copy(self, name, digest=None):
+    def copy(self, name, digest=None, *, mode='auto', hash_code='ANIMATION_HASH'):
         source = safe_path(self.root, name, exists=True)
         require(not any(getattr(p, 'is_junction', lambda: False)() for p in (source, *source.parents) if p != self.root.parent),
                 'ANIMATION_PATH', 'Junction sources are not supported.')
         alias = name.casefold()
         require(self.aliases.get(alias, name) == name, 'ANIMATION_PATH', 'Portable path alias collision.')
         self.aliases[alias] = name
+        target = self.destination / name
         if name in self.inventory:
             require(digest is None or self.inventory[name]['sha256'] == digest,
-                    'ANIMATION_HASH', 'Conflicting exact dependency hash.')
-            return self.destination / name
+                    hash_code, 'Conflicting exact dependency hash.', asset=name)
+            if mode != 'opaque' and (name, mode) not in self.inspected_payloads:
+                self._charge_copy(name, target, self.inventory[name]['bytes'], mode=mode)
+            return target
         require(len(self.inventory) < MAX_FILES, 'ANIMATION_LIMIT', 'Dependency file limit exceeded.')
-        target = self.destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
         hashed = hashlib.sha256(); count = 0
         with open_payload(self.root, name) as (inp, metadata):
@@ -83,17 +86,23 @@ class Snapshot:
                     require(self.total <= self.max_bytes, 'ANIMATION_LIMIT', 'Dependency grew beyond byte limit.')
                     hashed.update(block); out.write(block)
         actual = hashed.hexdigest()
-        require(digest is None or actual == digest, 'ANIMATION_HASH', 'Dependency hash differs from reference.')
+        require(digest is None or actual == digest, hash_code, 'Dependency hash differs from reference.', asset=name)
         self.inventory[name] = {'sha256': actual, 'bytes': count}
+        self._charge_copy(name, target, count, mode=mode)
+        return target
+
+    def _charge_copy(self, name, target, count, *, mode):
         # Account before JSON/NumPy decoders allocate. Compressed rig bundles
         # expand independently of their on-disk byte budget.
-        remaining = self.memory_limit - self.expanded_bytes - self.native_memory
+        previous = self.memory_charges.get(name, 0)
+        remaining = self.memory_limit - self.expanded_bytes - self.native_memory + previous
         require(count <= remaining, 'ANIMATION_LIMIT', 'Encoded dependency exceeds memory admission budget.')
         expanded = count
-        if target.suffix == '.json':
+        json_suffix = mode == 'auto' and target.suffix == '.json'
+        if json_suffix:
             from rig_load_limits import _JSON_FACTOR
             expanded = count * _JSON_FACTOR
-        if target.suffix == '.npz' or zipfile.is_zipfile(target):
+        if mode == 'bundle' or (mode == 'auto' and (target.suffix == '.npz' or zipfile.is_zipfile(target))):
             from rig_contracts import DEFAULT_LIMITS
             from rig_load_limits import _zip_directory
             payload = target.read_bytes()  # Private regular snapshot; encoded allocation already admitted.
@@ -123,16 +132,18 @@ class Snapshot:
                             array_count *= size
                         require(not dtype.hasobject and array_count * dtype.itemsize * 3 + directory_bytes <= remaining,
                                 'ANIMATION_LIMIT', 'Binary array header exceeds memory admission budget.')
-        self.expanded_bytes += expanded
-        require(self.expanded_bytes + self.native_memory <= self.memory_limit, 'ANIMATION_LIMIT', 'Dependency memory admission budget exceeded.')
-        self.memory_charges[name] = expanded
-        require(target.suffix != '.json' or count <= 16 * 1024**2,
+        expanded = max(expanded, previous)
+        require(expanded <= remaining, 'ANIMATION_LIMIT', 'Dependency memory admission budget exceeded.')
+        require(not json_suffix or count <= 16 * 1024**2,
                 'ANIMATION_LIMIT', 'JSON document exceeds 16 MiB.')
-        return target
+        self.expanded_bytes += expanded - previous
+        self.memory_charges[name] = expanded
+        if mode != 'opaque':
+            self.inspected_payloads.add((name, mode))
 
-    def json(self, name, digest=None):
+    def charge_json(self, name, digest=None, *, hash_code='ANIMATION_HASH'):
         """Admit the actual JSON decoder independently of a filename suffix."""
-        path = self.copy(name, digest)
+        path = self.copy(name, digest, mode='opaque', hash_code=hash_code)
         from rig_load_limits import _JSON_FACTOR
         count = self.inventory[name]['bytes']
         require(count <= 16 * 1024**2, 'ANIMATION_LIMIT', 'JSON document exceeds 16 MiB.')
@@ -141,40 +152,53 @@ class Snapshot:
                 'ANIMATION_LIMIT', 'JSON object capacity exceeds project memory budget.')
         self.expanded_bytes += extra
         self.memory_charges[name] += extra
-        return decode_json(path.read_bytes())
+        return path
+
+    def json(self, name, digest=None, *, hash_code='ANIMATION_HASH'):
+        return decode_json(self.charge_json(name, digest, hash_code=hash_code).read_bytes())
 
     def native(self, name, expected=None, depth=0):
         require(depth <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Native dependency depth exceeded.')
-        path = self.copy(name, None if expected is None else expected['sha256'])
         value = self.json(name, None if expected is None else expected['sha256'])
+        path = self.destination / name
         require(isinstance(value, dict), 'ANIMATION_KIND', 'Native source must be an object.')
         if expected is not None:
             require(value.get('id') == expected['id'] and value.get('version') == expected['version'],
                     'ANIMATION_IDENTITY', 'Native source identity/version differs.')
         parent = Path(name).parent
         kind = value.get('kind')
-        # Native reference paths are relative to the owner root, not each nested document.
-        owner_prefix = parent.as_posix() if parent != Path('.') else ''
-        seen = set()
-        def capture(document, document_name, level):
-            require(level <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Native dependency depth exceeded.')
-            if document_name in seen: return
-            seen.add(document_name)
-            for node in _walk(document):
-                if not {'path','sha256'} <= node.keys(): continue
-                relative = str(Path(owner_prefix) / node['path'])
-                child = self.copy(relative, node['sha256'])
-                if child.suffix == '.json':
-                    payload = self.json(relative, node['sha256'])
-                    require(isinstance(payload, dict), 'ANIMATION_KIND', 'Native dependency must be an object.')
-                    capture(payload, relative, level+1)
-        capture(value, name, depth)
         if kind == 'hatch-3d-rig':
-            identity = str(parent / 'identity.json')
-            self.copy(identity, value['character']['identity_sha256'])
-            from rig_contracts import DEFAULT_LIMITS
+            from rig_contracts import DEFAULT_LIMITS, validate_contract as validate_rig_contract
             from rig_models import load_rig
             from rig_skeleton import validate_skeleton
+
+            require(path.name == 'rig.json', 'ANIMATION_OWNER', 'Rig source must be a native rig.json.')
+            validate_rig_contract(value, 'Rig')
+            identity = str(parent / 'identity.json')
+            self.copy(identity, value['character']['identity_sha256'], mode='opaque',
+                      hash_code='RIG_IDENTITY_CHANGED')
+
+            # Only the manifest, identity, clips and retained receipts are JSON
+            # documents to the rig owner. Evidence and source files are byte pins.
+            def copy_descriptor(descriptor, hash_code, *, mode='opaque'):
+                return self.copy(str(parent / descriptor['path']), descriptor['sha256'],
+                                 mode=mode, hash_code=hash_code)
+
+            for descriptor in value['source']['dependencies']:
+                copy_descriptor(descriptor, 'RIG_SOURCE_CHANGED')
+            for descriptor in [value['geometry'], *value['skins']]:
+                copy_descriptor(descriptor['data'], 'RIG_HASH', mode='bundle')
+            for descriptor in value['animations']:
+                copy_descriptor(descriptor, 'RIG_HASH')
+            for descriptor in value['validation']:
+                copy_descriptor(descriptor, 'RIG_EVIDENCE_CHANGED')
+            for descriptor in value['review']['receipts']:
+                receipt = self.json(str(parent / descriptor['path']), descriptor['sha256'],
+                                    hash_code='RIG_EVIDENCE_CHANGED')
+                validate_rig_contract(receipt, 'RigReviewReceipt')
+                for evidence in receipt['evidence']:
+                    copy_descriptor(evidence, 'RIG_EVIDENCE_CHANGED')
+
             remaining = self.memory_limit - self.expanded_bytes - self.native_memory
             require(remaining > 0, 'ANIMATION_LIMIT', 'No native load memory remains in project budget.')
             limits = {'memory_bytes': remaining}
@@ -187,7 +211,6 @@ class Snapshot:
                 limits.update(bones=min(DEFAULT_LIMITS['bones'], int(budgets['max_bones_per_rig'])),
                               vertices=min(DEFAULT_LIMITS['vertices'], remaining_vertices))
                 remaining_morphs = int(budgets['max_morph_targets']) - self.native_morphs
-            require(path.name == 'rig.json', 'ANIMATION_OWNER', 'Rig source must be a native rig.json.')
             try:
                 rig = load_rig(path.parent, limits=limits,
                                expected_manifest_sha256=self.inventory[name]['sha256'],
@@ -217,26 +240,71 @@ class Snapshot:
                     'ANIMATION_LIMIT', 'Retained native rigs exceed aggregate project memory budget.')
             validate_skeleton(rig.skeleton, rig.manifest['limits'])
             return kind, rig
+        lookdev_kinds = ('material3d', 'material-instance3d', 'material-variant3d',
+                         'light3d', 'lighting-rig3d', 'look3d')
+        if kind in lookdev_kinds:
+            from lookdev_contracts import Registry, validate_resource
+
+            entries, payloads = {}, {}
+            payload_bytes = 0
+
+            def capture_lookdev(document, local, level):
+                nonlocal payload_bytes
+                require(level <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Native dependency depth exceeded.')
+                if local in entries:
+                    return
+                validate_resource(document)
+                entries[local] = (self.destination / parent / local).read_bytes()
+                for descriptor in document['dependencies']:
+                    dependency = descriptor['path']
+                    payload = self.json(str(parent / dependency), descriptor['sha256'])
+                    capture_lookdev(payload, dependency, level + 1)
+                if document['kind'] == 'texture3d':
+                    descriptor = document['file']
+                    payload = self.copy(str(parent / descriptor['path']), descriptor['sha256'], mode='opaque')
+                    if descriptor['path'] not in payloads:
+                        payload_bytes += payload.stat().st_size
+                        require(payload_bytes <= 64 * 1024**2, 'LOOKDEV_LIMIT', 'Registry payloads exceed 64 MiB.')
+                        payloads[descriptor['path']] = payload.read_bytes()
+
+            capture_lookdev(value, path.name, depth)
+            return kind, Registry(list(entries.items()), payloads=payloads)
+
+        if kind == 'camera3d-registry':
+            from camera3d_contracts import load_registry, validate as validate_camera
+            validate_camera(value, 'registry')
+            for descriptor in value['resources']:
+                relative = str(parent / descriptor['path'])
+                resource_kind = descriptor['kind']
+                if resource_kind.startswith('camera3d-') or resource_kind == 'hatch-production-shot':
+                    self.charge_json(relative, descriptor['sha256'])
+                else:
+                    self.copy(relative, descriptor['sha256'], mode='opaque')
+            return kind, load_registry(path.parent, value)
+
+        # Scene owner references are relative to their owner root.
+        seen = set()
+
+        def capture(document, document_name, level):
+            require(level <= MAX_DEPTH, 'ANIMATION_LIMIT', 'Native dependency depth exceeded.')
+            if document_name in seen:
+                return
+            seen.add(document_name)
+            for node in _walk(document):
+                if not {'path', 'sha256'} <= node.keys():
+                    continue
+                relative = str(parent / node['path'])
+                child = self.copy(relative, node['sha256'])
+                if child.suffix == '.json':
+                    payload = self.json(relative, node['sha256'])
+                    require(isinstance(payload, dict), 'ANIMATION_KIND', 'Native dependency must be an object.')
+                    capture(payload, relative, level + 1)
+
+        capture(value, name, depth)
         if isinstance(kind, str) and kind.startswith('scene3d-'):
             from scene3d_contracts import load_project
             require(kind == 'scene3d-project', 'ANIMATION_OWNER', 'Scene source must name its owner project closure.')
             return kind, load_project(path.parent, path.name)
-        if kind == 'camera3d-registry':
-            from camera3d_contracts import load_registry
-            return kind, load_registry(path.parent, value)
-        if kind in ('material3d','material-instance3d','material-variant3d','light3d','lighting-rig3d','look3d'):
-            from lookdev_contracts import Registry
-            entries, payloads = [], {}
-            for relative in seen:
-                local = (self.destination / relative).relative_to(path.parent).as_posix()
-                data = (self.destination / relative).read_bytes()
-                entries.append((local, data))
-            for relative in self.inventory:
-                target = self.destination / relative
-                if target.is_relative_to(path.parent) and relative not in seen:
-                    payloads[target.relative_to(path.parent).as_posix()] = target.read_bytes()
-            registry = Registry(entries, payloads=payloads)
-            return kind, registry
         raise RigError('ANIMATION_OWNER', 'No registered native source owner for '+str(kind), stage='animation3d')
 
 
@@ -314,6 +382,8 @@ def load_project(root, name='animation-project.json'):
 
 def _validate_bindings(project, documents, native, snapshot_root):
     budgets = project['budgets']
+    require(not project.get('character_state_bindings'), 'ANIMATION_OWNER',
+            'Character state bindings need a canonical character-to-actor owner.')
     # Every typed frame coordinate participates in the same project admission
     # bound, including auxiliary tracks, interactions and nested controls.
     for document_value in documents.values():
@@ -562,6 +632,10 @@ def _validate_bindings(project, documents, native, snapshot_root):
                         bone(rig, identifier)
                     for value in layer['placements']: placement(value, d, actor, layer)
                     for value in layer.get('affected_targets', []): target(value, rig, d, actor['actor_id'])
+                if 'retarget_profile' in actor:
+                    profile = document(actor['retarget_profile'], 'retarget')
+                    require(rig is not None and rig is rig_for(profile['target_rig']),
+                            'ANIMATION_TARGET', 'Actor rig differs from the retarget profile target rig.')
                 if 'state_machine' not in actor:
                     require(not actor.get('initial_state_parameters'), 'ANIMATION_REFERENCE',
                             'Initial state parameters need an explicitly bound state machine.')

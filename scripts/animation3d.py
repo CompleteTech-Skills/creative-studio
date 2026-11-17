@@ -45,6 +45,8 @@ def main(argv=None):
         return 0
     except (RigError,OSError) as exc:
         report=exc.report if isinstance(exc,RigError) else dict(code='ANIMATION_IO',message=str(exc))
+        if args.command == 'admit-project':
+            report = dict(code=report['code'], message='Animation3D project admission failed.')
         print(json.dumps(dict(error=report),sort_keys=True,allow_nan=False))
         return 2
 

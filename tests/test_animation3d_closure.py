@@ -138,6 +138,112 @@ class NativeClosureRegressionTests(unittest.TestCase):
         self.assertNotIn('animation3d-project-', invalid.stdout)
         self.assertNotEqual(hashlib.sha256(manifest.read_bytes()).hexdigest(), reference['sha256'])
 
+    def test_rig_opaque_source_and_evidence_follow_native_hash_authority(self):
+        from animation3d_registry import TargetRegistry
+        from rig_models import load_rig
+
+        rig, clip, _ = self.bound_clip()
+
+        def opaque(name, value):
+            path = rig.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(value))
+            return dict(path=name, sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+
+        sidecar = opaque('source/sidecar.json', [{'value': 'opaque source'}])
+        validation = opaque('validation/report.json', ['opaque validation'])
+        evidence = opaque('evidence/data.json', [{'path': 'unrelated.json', 'sha256': '0' * 64}])
+        review = opaque('review/receipt', dict(schema_version=1, kind='hatch-3d-rig-review',
+            rig_id=rig.manifest['id'], rig_version=rig.manifest['version'], expected_sha256='0' * 64,
+            author='synthetic fixture', reviewer_kind='synthetic-test', created_at='2026-10-23T00:00:00Z',
+            fixture=True, evidence=[evidence], dimensions={}))
+        rig.manifest['source']['dependencies'].append(sidecar)
+        rig.manifest['validation'].append(validation)
+        rig.manifest['review']['receipts'].append(review)
+        reference = self.put('fixture/rig.json', rig.manifest, 'rig')
+        clip['rig_binding'] = reference
+        self.project['rig_assets'] = [reference]
+        self.project['clips'] = [self.put('clip.json', clip, 'clip')]
+
+        load_rig(rig.root)
+        admitted = self.check()
+        self.assertTrue(admitted['source_ready'])
+        self.assertTrue(TargetRegistry.from_rig(rig.root, 'actor').document['entries'])
+        cases = [(sidecar, 'RIG_SOURCE_CHANGED'), (validation, 'RIG_EVIDENCE_CHANGED'),
+                 (review, 'RIG_EVIDENCE_CHANGED'), (evidence, 'RIG_EVIDENCE_CHANGED')]
+        for descriptor, code in cases:
+            with self.subTest(descriptor=descriptor['path']):
+                path = rig.root / descriptor['path']
+                original = path.read_bytes()
+                self.assertEqual(admitted['inventory']['fixture/' + descriptor['path']],
+                                 {'sha256': descriptor['sha256'], 'bytes': len(original)})
+                path.write_bytes(original + b' ')
+                try:
+                    for load in (lambda: load_rig(rig.root), self.check,
+                                 lambda: TargetRegistry.from_rig(rig.root, 'actor')):
+                        with self.assertRaises(RigError) as rejected:
+                            load()
+                        self.assertEqual(rejected.exception.report['code'], code)
+                finally:
+                    path.write_bytes(original)
+
+    def test_cli_admission_errors_do_not_emit_upstream_paths(self):
+        missing_root = self.root / 'source-host-directory'
+        invoked = [sys.executable, str(Path(__file__).resolve().parents[1] / 'scripts/animation3d.py'),
+                   'admit-project', '--root', str(missing_root)]
+        result = subprocess.run(invoked, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stdout)['error']['code'], 'ANIMATION_OWNER')
+        self.assertNotIn(str(missing_root), result.stdout)
+
+    def test_lookdev_receives_only_its_own_payloads_in_either_owner_order(self):
+        from unittest.mock import patch
+        from animation3d_assets import Snapshot
+        from lookdev_contracts import Registry
+        self.bound_clip()
+        references = self.project['rig_assets']
+        base = Path(__file__).resolve().parents[1] / 'examples/lookdev-contracts'
+        material = json.loads((base / 'ceramic.json').read_bytes())
+        texture = json.loads((base / 'albedo.json').read_bytes())
+        pixels = (base / texture['file']['path']).read_bytes()
+        texture['file']['path'] = 'albedo-pixels.json'
+        (self.root / texture['file']['path']).write_bytes(pixels)
+        texture_ref = self.put('albedo-descriptor', texture)
+        material['dependencies'] = [texture_ref]
+        material_ref = self.put('material.json', material)
+
+        for refs in ([*references, material_ref], [material_ref, *references]):
+            with self.subTest(order=[ref['kind'] for ref in refs]), tempfile.TemporaryDirectory() as capture:
+                snapshot = Snapshot(self.root, capture)
+                with patch('lookdev_contracts.Registry', wraps=Registry) as native_registry:
+                    for reference in refs:
+                        snapshot.native(reference['path'], reference)
+                self.assertEqual(native_registry.call_count, 1)
+                self.assertEqual(native_registry.call_args.kwargs['payloads'], {'albedo-pixels.json': pixels})
+                self.assertIn('fixture/rig.json', snapshot.inventory)
+
+    def test_camera_suffixless_documents_keep_exact_project_inventory_and_charge(self):
+        from rig_load_limits import _JSON_FACTOR
+
+        base = Path(__file__).resolve().parents[1] / 'examples/camera3d'
+        shutil.copytree(base, self.root / 'camera')
+        registry_path = self.root / 'camera/registry.json'
+        registry = json.loads(registry_path.read_bytes())
+        original = self.root / 'camera/main-camera.json'
+        new_name = 'main-camera'
+        original.rename(original.with_name(new_name))
+        next(ref for ref in registry['resources'] if ref['path'] == original.name)['path'] = new_name
+        reference = self.put('camera/registry.json', registry, 'render-profile')
+        self.project['default_render_profile'] = reference
+        admitted = self.check()
+        paths = {'animation-project.json', 'camera/registry.json'}
+        paths.update('camera/' + ref['path'] for ref in registry['resources'])
+        expected = {name: dict(sha256=hashlib.sha256((self.root / name).read_bytes()).hexdigest(),
+                               bytes=(self.root / name).stat().st_size) for name in paths}
+        self.assertEqual(admitted['inventory'], expected)
+        expected_memory = sum(item['bytes'] for item in expected.values()) * _JSON_FACTOR
+        self.assertEqual(admitted['memory_admission']['estimated_bytes'], expected_memory)
+
     def test_project_pins_rig_manifest_and_applies_remaining_geometry_caps(self):
         from unittest.mock import patch
         from rig_models import load_geometry, load_rig
@@ -245,6 +351,44 @@ class NativeClosureRegressionTests(unittest.TestCase):
         del clip['rig_binding'];self.project['clips']=[self.put('clip.json',clip,'clip')]
         value['clip']=self.project['clips'][0];refresh()
         self.assertTrue(self.check()['source_ready'])
+
+    def test_actor_retarget_profile_pins_its_actual_target_rig(self):
+        from rig_errors import object_hash
+
+        actor_rig, _, actor_ref = self.bound_clip()
+        source = fixture(self.root, name='retarget-source', animated=False)
+        source_ref = self.put('retarget-source/rig.json', source.manifest, 'rig')
+        profile = self.values['retarget']
+        profile.update(source_rig=source_ref, target_rig=actor_ref,
+                       source_skeleton_signature=object_hash(source.skeleton),
+                       target_skeleton_signature=object_hash(actor_rig.skeleton))
+        profile['mappings'][0].update(source_bone='b0', target_bone='b0')
+        profile_ref = self.put('retarget.json', profile, 'retarget')
+        scene, native = self.native_scene()
+        actor = dict(actor_id='actor', model={**native, 'kind': 'model'}, rig=actor_ref,
+                     initial_transform=dict(position=[0, 0, 0], rotation=[0, 0, 0, 1], scale=[1, 1, 1]),
+                     animation_layers=[], constraints=[], retarget_profile=profile_ref)
+        scene['actors'] = [actor]
+        self.project['scene_assets'] = [self.put('scene.json', scene, 'scene')]
+        self.assertTrue(self.check()['source_ready'])
+        actor['rig'] = source_ref
+        self.project['scene_assets'] = [self.put('scene.json', scene, 'scene')]
+        with self.assertRaisesRegex(RigError, 'retarget profile target rig') as rejected:
+            self.check()
+        self.assertEqual(rejected.exception.report['code'], 'ANIMATION_TARGET')
+
+    def test_character_state_binding_requires_canonical_assignment_owner(self):
+        _, _, rig_ref = self.bound_clip()
+        self.project['character_assets'] = [{**rig_ref, 'kind': 'character'}]
+        machine = self.values['state-machine']
+        machine['states'][0]['clip'] = self.project['clips'][0]
+        reference = self.put('machine.json', machine, 'state-machine')
+        self.project['state_machines'] = [reference]
+        self.assertTrue(self.check()['source_ready'])
+        self.project['character_state_bindings'] = {rig_ref['id']: reference}
+        with self.assertRaisesRegex(RigError, 'character-to-actor owner') as rejected:
+            self.check()
+        self.assertEqual(rejected.exception.report['code'], 'ANIMATION_OWNER')
 
     def test_scene_track_rejects_missing_native_node(self):
         scene,_=self.native_scene();track=deepcopy(self.values['clip']['tracks'][0])
