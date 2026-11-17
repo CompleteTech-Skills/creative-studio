@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "repository": "CompleteTech-Skills/creative-studio",
+  "main": "62dc9f9a9cae319933c9f0bc8c39fcde9d26663a",
+  "protection_observed_at": "2026-11-17T19:38:02+00:00",
+  "branch_protection": {
+    "required_status_checks": {
+      "strict": true,
+      "checks": [
+        {
+          "context": "3D contracts and mathematical expectations",
+          "app_id": 15368
+        },
+        {
+          "context": "Animation, constraints, contacts and IK",
+          "app_id": 15368
+        },
+        {
+          "context": "Blender headless save/reopen and deformation",
+          "app_id": 15368
+        },
+        {
+          "context": "Delivery (macos-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Delivery (ubuntu-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Delivery (windows-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Existing 2D compatibility",
+          "app_id": 15368
+        },
+        {
+          "context": "Import/export and Khronos interoperability",
+          "app_id": 15368
+        },
+        {
+          "context": "Model3D real payloads (macos-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Model3D real payloads (ubuntu-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Model3D real payloads (windows-latest)",
+          "app_id": 15368
+        },
+        {
+          "context": "Operations, local API and archive restoration",
+          "app_id": 15368
+        },
+        {
+          "context": "Rig generation and real skinning",
+          "app_id": 15368
+        },
+        {
+          "context": "Three-character and mechanical demonstrations",
+          "app_id": 15368
+        },
+        {
+          "context": "Three.js browser playback and vertex comparison",
+          "app_id": 15368
+        }
+      ]
+    },
+    "enforce_admins": true,
+    "required_pull_request_reviews": {
+      "dismiss_stale_reviews": true,
+      "require_code_owner_reviews": false,
+      "require_last_push_approval": false,
+      "required_approving_review_count": 0
+    },
+    "required_conversation_resolution": true,
+    "allow_force_pushes": false,
+    "allow_deletions": false
+  },
+  "successful_main_run_count": 35,
+  "required_contexts_successful_on_main": 15,
+  "security_settings": {
+    "private_vulnerability_reporting": true,
+    "vulnerability_alerts": true,
+    "secret_scanning": "enabled",
+    "secret_scanning_push_protection": "enabled"
+  },
+  "workflow_registrations": [
+    {
+      "id": 394350696,
+      "state": "disabled_manually",
+      "path": ".github/workflows/model3d-source-transfer.yml"
+    },
+    {
+      "id": 394394294,
+      "state": "disabled_manually",
+      "path": ".github/workflows/model3d-stat-transfer.yml"
+    },
+    {
+      "id": 394370612,
+      "state": "disabled_manually",
+      "path": ".github/workflows/model3d-test-fixture-transfer.yml"
+    },
+    {
+      "id": 394264892,
+      "state": "disabled_manually",
+      "path": ".github/workflows/roadmap-capture.yml"
+    },
+    {
+      "id": 394275719,
+      "state": "disabled_manually",
+      "path": ".github/workflows/roadmap-test-tools.yml"
+    }
+  ],
+  "rule_evaluation": {
+    "observed_at": "2026-11-17T19:37:13+00:00",
+    "pull_request": 274,
+    "headRefOid": "8060dd7aba0f442327ce76b935a9c557108fd336",
+    "baseRefOid": "62dc9f9a9cae319933c9f0bc8c39fcde9d26663a",
+    "isDraft": false,
+    "mergeStateStatus": "BLOCKED",
+    "mergeable": "MERGEABLE",
+    "reviewDecision": null,
+    "required_checks_not_completed": [
+      {
+        "app_id": 15368,
+        "conclusion": null,
+        "name": "Delivery (windows-latest)",
+        "status": "in_progress"
+      },
+      {
+        "app_id": 15368,
+        "conclusion": null,
+        "name": "Delivery (ubuntu-latest)",
+        "status": "in_progress"
+      },
+      {
+        "app_id": 15368,
+        "conclusion": null,
+        "name": "Delivery (macos-latest)",
+        "status": "in_progress"
+      }
+    ],
+    "interpretation": "GitHub reported BLOCKED for a non-draft, conflict-free PR containing current main while the listed required checks were incomplete."
+  }
+}
