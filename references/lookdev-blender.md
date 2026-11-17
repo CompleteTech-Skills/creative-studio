@@ -21,6 +21,12 @@ The trusted worker sets the planned engine and calls `build_material(plan)`.
 data before assignment, preserving other linked object instances.
 The plan is an internal handoff; external JSON still enters through the canonical
 LookDev `Registry`. Inherited materials never mutate the base resource.
+The plan's `sha256` is an integrity digest anyone can recompute, not a
+signature, so `build_material` and `gltf_material` revalidate the full surface
+against the canonical `Surface` schema (without needing jsonschema inside
+Blender), the contract invariants, and the same per-engine feature and closure
+restrictions `material_plan` applies. Editing the engine or nested fields and
+recomputing the digest cannot widen what executes.
 
 ## Mappings
 

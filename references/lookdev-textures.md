@@ -75,8 +75,13 @@ Default admission is 64 MiB encoded / 4,194,304 pixels / 512 MiB working memory 
 `publish_texture` writes exact originals plus attribution, license, operation
 history, hash and decoded metadata to a new directory. Linux/macOS use held
 no-follow directory descriptors and exclusive native rename; a racing path is
-not replaced. Windows publication explicitly rejects until equivalent anchored
-publication is provided by the asset-store owner. Decode/transform operations
+not replaced. Every ancestor of the destination must be a real directory:
+symlinked components reject with `TEXTURE_PATH`, so pass an already resolved
+path (on macOS the default temporary directory sits below the `/var` ->
+`/private/var` symlink; use `Path(...).resolve()`). CI exercises publication on
+Linux (Ubuntu) only; the macOS `renameatx_np` path is implemented but not
+CI-verified. Windows publication explicitly rejects with `TEXTURE_PLATFORM`
+until equivalent anchored publication is provided by the asset-store owner. Decode/transform operations
 are portable independently of this publication restriction.
 
 The shared AssetLibrary remains the authority for blob deduplication, cache

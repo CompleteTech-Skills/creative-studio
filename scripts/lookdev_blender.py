@@ -9,8 +9,9 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import math
+import re
 
-from lookdev_contracts import content_hash
+from lookdev_contracts import _surface_checks, _surface_features, content_hash, definitions
 from rig_errors import RigError, finite_json, require
 
 VERSION = '1.0.0'
@@ -58,21 +59,61 @@ def probe():
         bpy.data.materials.remove(material)
 
 
-def material_plan(registry, reference, *, engine='CYCLES'):
-    """Resolve/validate complete native inheritance before any Blender mutation.
+def _schema_check(value, schema, defs, where='surface'):
+    """Dependency-free check of the contract's Surface schema subset.
 
-    Texture/graph requests are rejected here until a verified corresponding owner
-    has supplied an execution adapter. They never silently become flat materials.
+    Blender's bundled Python has no jsonschema, so the execution boundary
+    interprets the same canonical definitions directly and fails closed on any
+    keyword it does not implement.
     """
-    require(engine in ('CYCLES', 'BLENDER_EEVEE_NEXT'), 'LOOKDEV_BLENDER_ENGINE', 'Choose Cycles or EEVEE.')
-    effective = registry.effective_material(reference)
-    features = _features(engine)
-    compatibility = registry.check_material_compatibility(reference, features)
-    require(not compatibility['missing'], 'LOOKDEV_BLENDER_UNSUPPORTED',
-            'Material requires unimplemented mappings: ' + ', '.join(compatibility['missing']))
-    require(not effective['texture_slots'] and not effective.get('graph'),
-            'LOOKDEV_BLENDER_UNSUPPORTED', 'Texture and graph execution require their dedicated adapters.')
-    surface = effective['surface']
+    if '$ref' in schema:
+        return _schema_check(value, defs[schema['$ref'].rsplit('/', 1)[1]], defs, where)
+    known = {'type', 'properties', 'required', 'additionalProperties', 'items', 'minItems',
+             'maxItems', 'minimum', 'maximum', 'exclusiveMinimum', 'enum', 'const',
+             'pattern', 'minLength', 'maxLength'}
+    require(set(schema) <= known, 'LOOKDEV_BLENDER_PLAN', 'Unsupported surface schema keyword at ' + where)
+    def fail():
+        raise RigError('LOOKDEV_BLENDER_PLAN', 'Invalid material surface field: ' + where)
+    kind = schema.get('type')
+    if kind == 'object':
+        if not isinstance(value, dict) or not set(schema.get('required', ())) <= set(value):
+            fail()
+        properties = schema.get('properties', {})
+        if schema.get('additionalProperties') is False and not set(value) <= set(properties):
+            fail()
+        for key, child in value.items():
+            _schema_check(child, properties[key], defs, where + '.' + key)
+    elif kind == 'array':
+        if not isinstance(value, list) or not schema.get('minItems', 0) <= len(value) <= schema.get('maxItems', len(value)):
+            fail()
+        for index, child in enumerate(value):
+            _schema_check(child, schema['items'], defs, where + '[%d]' % index)
+    elif kind in ('number', 'integer'):
+        if type(value) not in ((int,) if kind == 'integer' else (int, float)) or not math.isfinite(value):
+            fail()
+        if ('minimum' in schema and value < schema['minimum'] or 'maximum' in schema and value > schema['maximum']
+                or 'exclusiveMinimum' in schema and value <= schema['exclusiveMinimum']):
+            fail()
+    elif kind == 'boolean':
+        if type(value) is not bool:
+            fail()
+    elif kind == 'string':
+        if (not isinstance(value, str) or not schema.get('minLength', 0) <= len(value) <= schema.get('maxLength', len(value))
+                or 'pattern' in schema and not re.search(schema['pattern'], value)):
+            fail()
+    elif kind is not None:
+        fail()
+    if 'enum' in schema and not any(type(value) is type(x) and value == x for x in schema['enum']):
+        fail()
+    if 'const' in schema and not (type(value) is type(schema['const']) and value == schema['const']):
+        fail()
+
+
+def _admit_surface(surface, engine):
+    """Surface restrictions shared by planning and the execution boundary."""
+    missing = sorted(_surface_features(surface) - _features(engine))
+    require(not missing, 'LOOKDEV_BLENDER_UNSUPPORTED',
+            'Material requires unimplemented mappings: ' + ', '.join(missing))
     require(not surface.get('subsurface', {}).get('weight', 0) or (surface['metallic'] == 0 and surface.get('transmission', 0) == 0),
             'LOOKDEV_BLENDER_UNSUPPORTED', 'Subsurface scattering with metallic or transmission mixtures requires a separate verified closure adapter.')
     def contains_map(value):
@@ -93,6 +134,24 @@ def material_plan(registry, reference, *, engine='CYCLES'):
             'LOOKDEV_BLENDER_UNSUPPORTED', 'Embedded maps require the texture adapter.')
     require(surface.get('volume', {}).get('thickness_meters', 0) == 0,
             'LOOKDEV_BLENDER_UNSUPPORTED', 'Volume attenuation needs verified solid geometry and a volume adapter.')
+
+
+def material_plan(registry, reference, *, engine='CYCLES'):
+    """Resolve/validate complete native inheritance before any Blender mutation.
+
+    Texture/graph requests are rejected here until a verified corresponding owner
+    has supplied an execution adapter. They never silently become flat materials.
+    """
+    require(engine in ('CYCLES', 'BLENDER_EEVEE_NEXT'), 'LOOKDEV_BLENDER_ENGINE', 'Choose Cycles or EEVEE.')
+    effective = registry.effective_material(reference)
+    features = _features(engine)
+    compatibility = registry.check_material_compatibility(reference, features)
+    require(not compatibility['missing'], 'LOOKDEV_BLENDER_UNSUPPORTED',
+            'Material requires unimplemented mappings: ' + ', '.join(compatibility['missing']))
+    require(not effective['texture_slots'] and not effective.get('graph'),
+            'LOOKDEV_BLENDER_UNSUPPORTED', 'Texture and graph execution require their dedicated adapters.')
+    surface = effective['surface']
+    _admit_surface(surface, engine)
     # Blender 4.5 has no user-selectable backface culling in Cycles; preserve a
     # one-sided canonical surface with an explicit Geometry/Transparent mix.
     plan = {'adapter_version': VERSION, 'engine': engine, 'reference': deepcopy(reference),
@@ -111,20 +170,20 @@ def _validate_plan(plan):
     payload = {k: v for k, v in plan.items() if k != 'sha256'}
     require(content_hash(payload) == plan['sha256'], 'LOOKDEV_BLENDER_PLAN', 'Material plan was altered.')
     # Plans are internal values constructed by material_plan, not a replacement
-    # external admission API. Recheck physical fields at the execution boundary.
+    # external admission API, and sha256 is an integrity digest rather than a
+    # signature. Recheck the complete surface schema, contract invariants and
+    # engine-specific admission so a recomputed digest cannot widen support.
+    require(isinstance(plan['reference'], dict) and
+            isinstance(plan['reference'].get('id'), str) and plan['reference']['id'],
+            'LOOKDEV_BLENDER_PLAN', 'Invalid material reference.')
     s = plan['surface']
-    require(isinstance(s, dict), 'LOOKDEV_BLENDER_PLAN', 'Invalid material surface.')
-    for key in ('metallic', 'roughness', 'opacity', 'alpha_cutoff'):
-        require(type(s.get(key)) in (float, int) and 0 <= s[key] <= 1,
-                'LOOKDEV_BLENDER_PLAN', 'Invalid unit scalar: ' + key)
-    require(type(s.get('ior')) in (float, int) and 1 <= s['ior'] <= 4,
-            'LOOKDEV_BLENDER_PLAN', 'Invalid IOR.')
-    require(s.get('alpha_mode') in ('OPAQUE', 'MASK', 'BLEND') and
-            s.get('base_color_space') == 'linear-srgb' and type(s.get('double_sided')) is bool,
-            'LOOKDEV_BLENDER_PLAN', 'Invalid surface modes.')
-    c = s.get('base_color')
-    require(isinstance(c, list) and len(c) == 4 and all(type(x) in (int, float) and 0 <= x <= 1 for x in c),
-            'LOOKDEV_BLENDER_PLAN', 'Invalid base color.')
+    defs = definitions()
+    _schema_check(s, defs['Surface'], defs)
+    try:
+        _surface_checks(s)
+    except RigError as exc:
+        raise RigError('LOOKDEV_BLENDER_PLAN', 'Invalid material surface: ' + exc.report['message']) from exc
+    _admit_surface(s, plan['engine'])
     return s
 
 

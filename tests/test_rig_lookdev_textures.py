@@ -227,15 +227,33 @@ class TextureTests(unittest.TestCase):
 
     def test_source_publication_is_exact_and_never_overwrites(self):
         data=png(np.zeros((2,2,3),np.uint8))
-        with tempfile.TemporaryDirectory() as root:
-            destination=Path(root)/'new'
+        with tempfile.TemporaryDirectory() as temporary:
+            # Every destination ancestor must be a real directory. Resolve the
+            # temporary root because macOS places it below the /var symlink.
+            root=Path(temporary).resolve()
+            destination=root/'new'
+            if not (sys.platform.startswith('linux') or sys.platform=='darwin'):
+                with self.assertRaises(RigError) as caught:
+                    t.publish_texture(data,destination,role='base-color',encoding='srgb',attribution='fixture',license_id='CC0')
+                self.assertEqual(caught.exception.report['code'],'TEXTURE_PLATFORM')
+                self.assertFalse(destination.exists())
+                return
             receipt=t.publish_texture(data,destination,role='base-color',encoding='srgb',attribution='self-authored fixture',license_id='CC0')
             self.assertEqual((destination/'source.bin').read_bytes(),data)
             self.assertEqual(receipt['source']['sha256'],hashlib.sha256(data).hexdigest())
-            with self.assertRaises(RigError):t.publish_texture(data,destination,role='base-color',encoding='srgb',attribution='fixture',license_id='CC0')
-            link=Path(root)/'link'
-            try:link.symlink_to(destination,target_is_directory=True)
-            except OSError:return
-            with self.assertRaises(RigError):t.publish_texture(data,link/'escape',role='base-color',encoding='srgb',attribution='fixture',license_id='CC0')
+            with self.assertRaises(RigError) as caught:
+                t.publish_texture(data,destination,role='base-color',encoding='srgb',attribution='fixture',license_id='CC0')
+            self.assertEqual(caught.exception.report['code'],'TEXTURE_EXISTS')
+            (root/'real'/'nested').mkdir(parents=True)
+            link=root/'link'
+            try:link.symlink_to(root/'real',target_is_directory=True)
+            except OSError:self.skipTest('Symbolic links are unavailable on this filesystem.')
+            # Both a symlinked parent and a symlinked higher ancestor reject.
+            for target in (link/'escape',link/'nested'/'escape'):
+                with self.subTest(target=target),self.assertRaises(RigError) as caught:
+                    t.publish_texture(data,target,role='base-color',encoding='srgb',attribution='fixture',license_id='CC0')
+                self.assertEqual(caught.exception.report['code'],'TEXTURE_PATH')
+            self.assertEqual(sorted(x.name for x in (root/'real').iterdir()),['nested'])
+            self.assertEqual(list((root/'real'/'nested').iterdir()),[])
 
 if __name__=='__main__':unittest.main()

@@ -95,6 +95,42 @@ class BlenderMaterialAdmissionTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(RigError):
                 _validate_plan(altered)
 
+    def test_recomputed_digest_cannot_move_plan_to_unsupported_engine(self):
+        sss = {'weight': 0.8, 'radius_meters': [0.1, 0.2, 0.3], 'color': [0.2, 0.3, 0.4], 'method': 'random-walk'}
+        for changes in ({'subsurface': sss}, {'transmission': 0.8},
+                        {'sheen': {'weight': 0.5, 'color': [1, 1, 1], 'roughness': 0.5}}):
+            altered = plan(surface_resource(**changes))
+            self.assertEqual(_validate_plan(altered), altered['surface'])
+            altered['engine'] = 'BLENDER_EEVEE_NEXT'
+            altered['sha256'] = content_hash({k: v for k, v in altered.items() if k != 'sha256'})
+            with self.subTest(changes=changes), self.assertRaises(RigError) as caught:
+                _validate_plan(altered)
+            self.assertEqual(caught.exception.report['code'], 'LOOKDEV_BLENDER_UNSUPPORTED')
+
+    def test_nested_and_planning_restrictions_reject_with_recomputed_digest(self):
+        sss = {'weight': 0.8, 'radius_meters': [0.1, 0.2, 0.3], 'color': [0.2, 0.3, 0.4], 'method': 'random-walk'}
+        cases = [
+            ({}, lambda s: s.update(specular={'strength': 'x', 'color': [1, 1, 1]}), 'LOOKDEV_BLENDER_PLAN'),
+            ({}, lambda s: s.update(specular={'strength': 1}), 'LOOKDEV_BLENDER_PLAN'),
+            ({}, lambda s: s.update(emission={'color': [1, 1], 'strength_watts_per_square_meter': 1}), 'LOOKDEV_BLENDER_PLAN'),
+            ({}, lambda s: s.update(clearcoat={'weight': 2, 'roughness': 0}), 'LOOKDEV_BLENDER_PLAN'),
+            ({}, lambda s: s.update(anisotropy={'strength': 0.5, 'direction': [2, 0], 'rotation_radians': 0}),
+             'LOOKDEV_BLENDER_PLAN'),
+            ({}, lambda s: s.update(unknown_lobe=1), 'LOOKDEV_BLENDER_PLAN'),
+            ({}, lambda s: s.pop('normal_orientation'), 'LOOKDEV_BLENDER_PLAN'),
+            ({'subsurface': sss}, lambda s: s['subsurface'].update(method='diffusion'), 'LOOKDEV_BLENDER_PLAN'),
+            ({'subsurface': sss}, lambda s: s.update(metallic=1), 'LOOKDEV_BLENDER_UNSUPPORTED'),
+            ({}, lambda s: s.update(volume={'thickness_meters': 0.2, 'attenuation_distance_meters': 1,
+                                            'attenuation_color': [0.2, 0.3, 0.4]}), 'LOOKDEV_BLENDER_UNSUPPORTED'),
+        ]
+        for index, (changes, mutate, code) in enumerate(cases):
+            altered = plan(surface_resource(**changes))
+            mutate(altered['surface'])
+            altered['sha256'] = content_hash({k: v for k, v in altered.items() if k != 'sha256'})
+            with self.subTest(index=index), self.assertRaises(RigError) as caught:
+                _validate_plan(altered)
+            self.assertEqual(caught.exception.report['code'], code, index)
+
     def test_engine_capabilities_match_admission(self):
         self.assertTrue({'subsurface', 'transmission', 'iridescence', 'anisotropy', 'sheen'} <= _features('CYCLES'))
         self.assertFalse({'subsurface', 'transmission', 'iridescence', 'anisotropy', 'sheen'} & _features('BLENDER_EEVEE_NEXT'))
