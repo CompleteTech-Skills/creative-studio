@@ -1,0 +1,297 @@
+{
+  "recorded_at": "2026-10-25T04:58:49.344579+00:00",
+  "issue": "https://github.com/CompleteTech-Skills/creative-studio/issues/58",
+  "base_commit": "bb5a6810afd06cf57185ffdfe2234e0fdc6e6240",
+  "change": "requirements-rig-test.txt: Pillow==12.3.0 to Pillow==13.0.0",
+  "requirements_sha256": "f28e9f27c225023a4531ba3019f040d90e4c2870e2392687601c391ad62e070e",
+  "environment": {
+    "python": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+    "executable": "/tmp/hatch-58-venv/bin/python",
+    "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+    "olefile_available": false
+  },
+  "resolved_distributions": [
+    {
+      "name": "attrs",
+      "version": "26.1.0"
+    },
+    {
+      "name": "dataclasses-json",
+      "version": "0.6.7"
+    },
+    {
+      "name": "Deprecated",
+      "version": "3.0.0"
+    },
+    {
+      "name": "greenlet",
+      "version": "3.5.6"
+    },
+    {
+      "name": "jsonschema",
+      "version": "4.25.1"
+    },
+    {
+      "name": "jsonschema-specifications",
+      "version": "2025.9.1"
+    },
+    {
+      "name": "marshmallow",
+      "version": "3.26.2"
+    },
+    {
+      "name": "mypy_extensions",
+      "version": "1.1.0"
+    },
+    {
+      "name": "numpy",
+      "version": "2.3.5"
+    },
+    {
+      "name": "packaging",
+      "version": "26.3"
+    },
+    {
+      "name": "pillow",
+      "version": "13.0.0"
+    },
+    {
+      "name": "playwright",
+      "version": "1.55.0"
+    },
+    {
+      "name": "pyee",
+      "version": "13.0.1"
+    },
+    {
+      "name": "pygltflib",
+      "version": "1.16.5"
+    },
+    {
+      "name": "referencing",
+      "version": "0.37.0"
+    },
+    {
+      "name": "rpds-py",
+      "version": "2026.9.1"
+    },
+    {
+      "name": "typing-inspect",
+      "version": "0.9.0"
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.16.0"
+    },
+    {
+      "name": "wrapt",
+      "version": "2.5.1"
+    }
+  ],
+  "schema_and_template_checks": {
+    "commands": [
+      "python scripts/generate_schemas.py --check",
+      "python scripts/generate_rig_templates.py --check"
+    ],
+    "exit_code": 0
+  },
+  "tests": [
+    {
+      "name": "schema-math",
+      "command": "python scripts/test_rig_gate.py schema-math",
+      "tests": 31,
+      "seconds": 3.212,
+      "outcome": "OK",
+      "log_file": "schema-math.log",
+      "sha256": "7da37bf36e4d363b55bb00b3d3db97f1a4dddca0b0faeaa53be0b5a0da0a72c4"
+    },
+    {
+      "name": "raster",
+      "command": "python -m unittest discover -s tests -p 'test_raster*.py' -v",
+      "tests": 34,
+      "seconds": 1.545,
+      "outcome": "OK",
+      "log_file": "raster.log",
+      "sha256": "76833c6691bffb9532493e0ba9d121752940e828f45cb775154d221c92a8d18a"
+    },
+    {
+      "name": "skinning",
+      "command": "python scripts/test_rig_gate.py skinning",
+      "tests": 7,
+      "seconds": 0.133,
+      "outcome": "OK",
+      "log_file": "skinning.log",
+      "sha256": "208060c7c5ae8ef11837174cf3f85b2878d324518fe53862935e25c275b8b41c"
+    },
+    {
+      "name": "animation-ik",
+      "command": "python scripts/test_rig_gate.py animation-ik",
+      "tests": 27,
+      "seconds": 2.506,
+      "outcome": "OK",
+      "log_file": "animation-ik.log",
+      "sha256": "dd8e3b5b29dc05000ce16ddbaaa59b630a2e93fe4709e55d73658893cad96eee"
+    },
+    {
+      "name": "operations-archive",
+      "command": "python scripts/test_rig_gate.py operations-archive",
+      "tests": 26,
+      "seconds": 3.405,
+      "outcome": "OK",
+      "log_file": "operations-archive.log",
+      "sha256": "cc91178b43dd71dfadf95cccbc1c67d225775aade4c3e2752676471e558e6410"
+    },
+    {
+      "name": "interoperability",
+      "command": "HATCH_BLENDER=/usr/bin/blender HATCH_RIG_BLENDER_TEST=1 HATCH_RIG_INTEROP_TEST=1 python scripts/test_rig_gate.py interoperability",
+      "tests": 18,
+      "seconds": 4.552,
+      "outcome": "FAILED (errors=3, skipped=1)",
+      "log_file": "interoperability.log",
+      "sha256": "962d3346064929a4aeadf7e86fbee48d9914a23ce057ac8818b1394978af7583"
+    },
+    {
+      "name": "interoperability-browser",
+      "command": "HATCH_RIG_BROWSER_TEST=1 HATCH_RIG_INTEROP_TEST=1 PLAYWRIGHT_BROWSERS_PATH=/tmp/hatch-58-browsers python scripts/test_rig_gate.py interoperability",
+      "tests": 18,
+      "seconds": 4.074,
+      "outcome": "OK (skipped=3)",
+      "log_file": "interoperability-browser.log",
+      "sha256": "86ff0b1fb8b4d9784b426681e337033c0a42169d33ad1568ea0a4522ce418361"
+    },
+    {
+      "name": "compatibility",
+      "command": "HATCH_DECOMPOSITION_BROWSER_TEST=1 PLAYWRIGHT_BROWSERS_PATH=/tmp/hatch-58-browsers python scripts/test_rig_gate.py compatibility",
+      "tests": 831,
+      "seconds": 300.894,
+      "outcome": "FAILED (failures=4, errors=1, skipped=1)",
+      "log_file": "compatibility.log",
+      "sha256": "7abb8c9e6b32aae0cc0141d5bbfe9414a16b5fca5896573e17ee00a3e9897d3f"
+    },
+    {
+      "name": "compatibility-delivery",
+      "command": "HATCH_DECOMPOSITION_BROWSER_TEST=1 PLAYWRIGHT_BROWSERS_PATH=/tmp/hatch-58-delivery-browsers /tmp/hatch-58-delivery-venv/bin/python scripts/test_rig_gate.py compatibility",
+      "tests": 831,
+      "seconds": 272.054,
+      "outcome": "OK (skipped=1)",
+      "log_file": "compatibility-delivery.log",
+      "sha256": "8a87abf994ae6b46d6d8f858aaf8b408acec176e57ada434b8e4e3b4db0ed1af"
+    }
+  ],
+  "source_preservation": {
+    "tracked_files": 1709,
+    "all_hashes_unchanged_during_tests": true,
+    "aggregate_sha256": "ab2ce537497be92cfbfe7450b87336fceaad25194fe4d1ec5905683c6a14b4a7"
+  },
+  "independent_security": {
+    "report_sha256": "737b464ffca60916962071bba14e2765dcd003b673b5381d4ed6b1ea62665265",
+    "resolved_python_distributions": 19,
+    "pypi_matching_advisories": 0,
+    "baseline_pillow123_advisory_matches": 37,
+    "npm_lock_matching_advisories": 0,
+    "mic_execution_record_sha256": "ab9fdd2ec762f1a22e749da70d1f7e4db64c8ce6f703beeaf0198109d99ffdf3"
+  },
+  "limitations": [
+    "Exact Blender4.5.3 download returned HTTP403; installed4.3.2 is rejected by unchanged native worker. Initial native-enabled run retains3errors; browser/Khronos run skips3native tests.",
+    "OSV independent queries denied by network proxy HTTP403; no retry or bypass.",
+    "No production visual approval, OS/browser-binary audit, all-platform guarantee or full issue58 completion.",
+    "Required GitHub check policy unavailable: branch-protection endpoint returned403. Local tests do not establish hosted CI."
+  ],
+  "browser_baseline_controls": [
+    {
+      "label": "baseline-pillow123",
+      "command": [
+        "/tmp/hatch-58-baseline-venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "test_decomposition_review.DecompositionReviewTests.test_browser_edits_split_merge_masks_pivots_verdicts_and_applies_receipt",
+        "test_playback_extended.ExtendedBrowser.test_review_ui_steps_frames_and_binds_downloaded_evidence",
+        "test_production_preview.ProductionPreviewTests.test_audio_seek_is_stable_and_reduced_motion_does_not_autoplay",
+        "test_production_preview.ProductionPreviewTests.test_playback_catches_up_after_main_thread_stall_and_stops_at_boundary",
+        "test_production_preview.ProductionPreviewTests.test_scrub_step_clamps_timing_and_actual_source_inspection"
+      ],
+      "env": {
+        "PYTHONPATH": "scripts:tests",
+        "HATCH_DECOMPOSITION_BROWSER_TEST": "1",
+        "PLAYWRIGHT_BROWSERS_PATH": "/tmp/hatch-58-browsers"
+      },
+      "exit_code": 1,
+      "seconds": 38.76236421300007,
+      "log_sha256": "b63c7d83aa6839f3ebc27364c9e4c81afa93a2070bc045bfd54d316a66476f47",
+      "outcome": "5 tests: 4 failures, 1 error, Chromium 140.0.7339.16"
+    },
+    {
+      "label": "candidate-pillow130",
+      "command": [
+        "/tmp/hatch-58-venv/bin/python",
+        "-m",
+        "unittest",
+        "-v",
+        "test_decomposition_review.DecompositionReviewTests.test_browser_edits_split_merge_masks_pivots_verdicts_and_applies_receipt",
+        "test_playback_extended.ExtendedBrowser.test_review_ui_steps_frames_and_binds_downloaded_evidence",
+        "test_production_preview.ProductionPreviewTests.test_audio_seek_is_stable_and_reduced_motion_does_not_autoplay",
+        "test_production_preview.ProductionPreviewTests.test_playback_catches_up_after_main_thread_stall_and_stops_at_boundary",
+        "test_production_preview.ProductionPreviewTests.test_scrub_step_clamps_timing_and_actual_source_inspection"
+      ],
+      "env": {
+        "PYTHONPATH": "scripts:tests",
+        "HATCH_DECOMPOSITION_BROWSER_TEST": "1",
+        "PLAYWRIGHT_BROWSERS_PATH": "/tmp/hatch-58-browsers"
+      },
+      "exit_code": 1,
+      "seconds": 38.12491382200005,
+      "log_sha256": "b1ffd6a95c2af23638c8bf00d1a9469c2cd1a834e168b00289687992dc8c9cc7",
+      "outcome": "5 tests: 4 failures, 1 error, Chromium 140.0.7339.16"
+    }
+  ],
+  "browser_environment_note": "The 831-case initial run used the optional rig-test environment (Playwright1.55). Configured 2D CI uses the separate delivery environment (Playwright1.64). The same five failing cases reproduce with both Pillow12.3 and13 in the optional environment. All five formerly failing cases pass in the configured delivery environment; its complete831-case run has0failures/0errors/1skip.",
+  "delivery_environment": {
+    "python": "3.12.14",
+    "playwright": "1.64.0",
+    "chromium": "156.0.8078.4",
+    "resolved_distributions": [
+      {
+        "name": "attrs",
+        "version": "26.1.0"
+      },
+      {
+        "name": "greenlet",
+        "version": "3.5.6"
+      },
+      {
+        "name": "jsonschema",
+        "version": "4.26.0"
+      },
+      {
+        "name": "jsonschema-specifications",
+        "version": "2025.9.1"
+      },
+      {
+        "name": "pillow",
+        "version": "13.0.0"
+      },
+      {
+        "name": "playwright",
+        "version": "1.64.0"
+      },
+      {
+        "name": "pyee",
+        "version": "14.0.0"
+      },
+      {
+        "name": "referencing",
+        "version": "0.37.0"
+      },
+      {
+        "name": "rpds-py",
+        "version": "2026.9.1"
+      },
+      {
+        "name": "typing_extensions",
+        "version": "4.16.0"
+      }
+    ]
+  },
+  "independent_image_probe_record_sha256": "25f62ed9abae3edfab073396e7d70c71520921bd351d55ff652f8869cc8ec082"
+}
