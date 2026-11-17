@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "kind": "editor3d-derived",
+  "project_id": "project",
+  "project_sha256": "62ca33b39a103db474de2a1e5f285a7bdc95d4d6d90550a2c716ca2826a57562",
+  "frame": 0,
+  "frame_rate": {
+    "numerator": 24,
+    "denominator": 1
+  },
+  "native_dependencies": [
+    {
+      "owner": "scene3d",
+      "id": "native-scene",
+      "version": "1.0.0",
+      "native_kind": "scene3d-scene",
+      "file": {
+        "path": "unavailable/scene.json",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "bytes": 1,
+        "media_type": "application/json"
+      }
+    }
+  ],
+  "evidence": [],
+  "status": "unavailable"
+}
