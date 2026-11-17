@@ -143,6 +143,9 @@
       ],
       "additionalProperties": false
     },
+    "output_encoding_verified": {
+      "type": "boolean"
+    },
     "output_alpha": {
       "enum": [
         "straight",
@@ -188,6 +191,7 @@
     "exposure_stops",
     "output_transfer",
     "output_primaries",
+    "output_encoding_verified",
     "output_alpha",
     "rgb_min",
     "rgb_max",

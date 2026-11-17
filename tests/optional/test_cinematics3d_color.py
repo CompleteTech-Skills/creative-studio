@@ -236,5 +236,41 @@ class ColorTests(unittest.TestCase):
                 self.assertEqual(float(graded[0, 3]), .5)
 
 
+    def test_ocio_environment_view_filters_fail_closed_instead_of_changing_capabilities(self):
+        for name in ('OCIO_ACTIVE_DISPLAYS', 'OCIO_ACTIVE_VIEWS', 'OCIO_INACTIVE_COLORSPACES'):
+            with self.subTest(variable=name), patch.dict(os.environ, {name: 'Unused LUT calibration fixture'}):
+                for operation in (lambda: color.inspect_config(self.root, self.inventory), self.plan,
+                                  lambda: color.probe_scene_linear(self.root, self.inventory)):
+                    with self.assertRaisesRegex(ValueError, 'OCIO environment filters are unsupported'):
+                        operation()
+        with patch.dict(os.environ, {name: '' for name in ('OCIO_ACTIVE_DISPLAYS', 'OCIO_ACTIVE_VIEWS', 'OCIO_INACTIVE_COLORSPACES')}):
+            self.assertEqual(len(color.inspect_config(self.root, self.inventory)['color_spaces']), 4)
+
+    def test_tone_mapped_views_need_no_standard_view_and_are_not_labelled_as_calibrated(self):
+        self.assertTrue(self.plan()['output_encoding_verified'])
+        self.assertTrue(self.plan(target='scene-linear', display='', view='')['output_encoding_verified'])
+        original = (self.root/'config.ocio').read_text()
+        # Deliberately mislabelled tone-mapped views: another gamut and another transfer under sRGB.
+        text = original.replace('    - !<View> {name: Standard, colorspace: sRGB}',
+                                '    - !<View> {name: AgX, colorspace: XYZ D65}\n    - !<View> {name: Filmic, colorspace: Linear Rec.709}')
+        text = text.replace('active_views: [Standard]', 'active_views: [AgX, Filmic]')
+        (self.root/'config.ocio').write_text(text)
+        self.inventory = color.capture_config(self.root)
+        self.source['config_closure_sha256'] = self.inventory['closure_sha256']
+        with self.assertRaises(ValueError):
+            self.plan(view='Standard')
+        for view in ('AgX', 'Filmic'):
+            with self.subTest(view=view):
+                plan = self.plan(view=view)
+                self.assertFalse(plan['output_encoding_verified'])
+                self.assertIsNone(plan['output_calibration_max_error'])
+                _, receipt = color.transform_pixels(self.root, plan, np.array([[.18, .2, .5, 1.]], dtype=np.float32))
+                self.assertFalse(receipt['output_encoding_verified'])
+                forged = deepcopy(plan); forged['output_encoding_verified'] = True
+                forged['plan_sha256'] = color.object_hash({k: v for k, v in forged.items() if k != 'plan_sha256'})
+                with self.assertRaises(ValueError):
+                    color.transform_pixels(self.root, forged, np.zeros((1, 4), dtype=np.float32))
+
+
 if __name__ == '__main__':
     unittest.main()

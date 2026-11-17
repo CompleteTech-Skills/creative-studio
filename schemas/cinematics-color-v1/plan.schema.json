@@ -343,6 +343,9 @@
     "output_range": {
       "const": "full"
     },
+    "output_encoding_verified": {
+      "type": "boolean"
+    },
     "measured_source_primaries": {
       "type": "object",
       "properties": {
@@ -425,6 +428,7 @@
     "output_transfer",
     "output_matrix",
     "output_range",
+    "output_encoding_verified",
     "measured_source_primaries",
     "output_calibration_max_error",
     "plan_sha256"

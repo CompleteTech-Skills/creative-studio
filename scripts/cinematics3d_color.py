@@ -27,6 +27,9 @@ REC709_D65 = {'r': [0.64, 0.33], 'g': [0.30, 0.60], 'b': [0.15, 0.06], 'w': [0.3
 _ALLOWED_SUFFIXES = {'.ocio', '.cube', '.spi1d', '.spimtx'}
 _SHA = re.compile(r'^[0-9a-f]{64}$')
 _PORTABLE = re.compile(r'^[A-Za-z0-9._/-]+$')
+# OCIO reads these at config load and silently hides displays, views or color
+# spaces. Nothing in the hash-bound closure records them, so they fail closed.
+_OCIO_FILTER_ENV = ('OCIO_ACTIVE_DISPLAYS', 'OCIO_ACTIVE_VIEWS', 'OCIO_INACTIVE_COLORSPACES')
 _RESERVED = {'con', 'prn', 'aux', 'nul', *('com'+str(i) for i in range(1, 10)), *('lpt'+str(i) for i in range(1, 10))}
 
 
@@ -355,6 +358,8 @@ def _config(root, inventory):
     inventory = validate_inventory(inventory)
     _need(capture_config(root, inventory['config_path']) == inventory, 'stale color profile inventory')
     ocio = _ocio()
+    overrides = sorted(name for name in _OCIO_FILTER_ENV if os.environ.get(name))
+    _need(not overrides, 'OCIO environment filters are unsupported; unset '+', '.join(overrides))
     with snapshot_config(root, inventory) as stage:
         try:
             config = ocio.Config.CreateFromFile(str(stage/inventory['config_path']))
@@ -505,13 +510,17 @@ def make_plan(root, inventory, source, *, target='sdr-srgb', display='sRGB', vie
              'target': target, 'display': display, 'view': view, 'look': look, 'exposure_stops': exposure_stops,
              'output_alpha': output_alpha, 'ocio_version': OCIO_VERSION, 'arithmetic': 'float32',
              'output_primaries': deepcopy(source['primaries'] if target == 'scene-linear' else REC709_D65),
-             'output_transfer': 'linear' if target == 'scene-linear' else 'srgb', 'output_matrix': 'rgb', 'output_range': 'full'}
+             'output_transfer': 'linear' if target == 'scene-linear' else 'srgb', 'output_matrix': 'rgb', 'output_range': 'full',
+             # Only identity linear output and the Standard view are checked against
+             # an independent oracle; AgX/Filmic labels are the view's declared intent.
+             'output_encoding_verified': target == 'scene-linear' or view == 'Standard'}
     with _config(root, inventory) as (config, ocio):
         measured = _measure(config, source['working_space'])
         _need(max(abs(a-b) for key in measured for a, b in zip(measured[key], source['primaries'][key])) < 5e-5,
               'declared source primaries disagree with the actual OCIO transform to CIE XYZ D65')
         value['measured_source_primaries'] = measured
-        value['output_calibration_max_error'] = None if target == 'scene-linear' else _calibrate_srgb(config, ocio, source['working_space'])
+        value['output_calibration_max_error'] = (_calibrate_srgb(config, ocio, source['working_space'])
+                                                 if target == 'sdr-srgb' and view == 'Standard' else None)
         _processor(config, ocio, value)
     value['plan_sha256'] = object_hash(value)
     return value
@@ -522,7 +531,8 @@ def transform_pixels(root, plan, rgba, *, max_work_bytes=MAX_WORK_BYTES):
     import numpy as np
     _exact(plan, ['kind', 'schema_version', 'config', 'source', 'target', 'display', 'view', 'look', 'exposure_stops',
                   'output_alpha', 'ocio_version', 'arithmetic', 'output_primaries', 'output_transfer', 'output_matrix',
-                  'output_range', 'measured_source_primaries', 'output_calibration_max_error', 'plan_sha256'], 'color plan')
+                  'output_range', 'output_encoding_verified', 'measured_source_primaries', 'output_calibration_max_error',
+                  'plan_sha256'], 'color plan')
     _need(isinstance(rgba, np.ndarray) and rgba.dtype.kind == 'f' and rgba.dtype.isnative and rgba.dtype.itemsize in (2, 4, 8)
           and rgba.ndim in (2, 3) and rgba.shape[-1] == 4 and rgba.flags.c_contiguous,
           'expected floating Nx4 or HxWx4 RGBA pixels')
@@ -569,8 +579,8 @@ def transform_pixels(root, plan, rgba, *, max_work_bytes=MAX_WORK_BYTES):
                'source_context_sha256': object_hash(plan['source']), 'source_render_verified': False,
                'pixel_transform_executed': True, 'view_applied': plan['target'] != 'scene-linear',
                'exposure_applications': 1, 'exposure_stops': plan['exposure_stops'], 'output_transfer': plan['output_transfer'],
-               'output_primaries': plan['output_primaries'], 'output_alpha': plan['output_alpha'],
-               'rgb_min': float(output[..., :3].min()), 'rgb_max': float(output[..., :3].max()),
+               'output_primaries': plan['output_primaries'], 'output_encoding_verified': plan['output_encoding_verified'],
+               'output_alpha': plan['output_alpha'], 'rgb_min': float(output[..., :3].min()), 'rgb_max': float(output[..., :3].max()),
                'rgb_below_zero': int((output[..., :3] < 0).sum()), 'rgb_above_one': int((output[..., :3] > 1).sum())}
     return output, receipt
 
@@ -609,7 +619,8 @@ def schemas():
                 'exposure_stops': {'type': 'number', 'minimum': -24, 'maximum': 24},
                 'output_alpha': {'enum': ['straight', 'premultiplied']}, 'ocio_version': {'const': OCIO_VERSION},
                 'arithmetic': {'const': 'float32'}, 'output_primaries': primaries, 'output_transfer': {'enum': ['linear', 'srgb']},
-                'output_matrix': {'const': 'rgb'}, 'output_range': {'const': 'full'}, 'measured_source_primaries': primaries,
+                'output_matrix': {'const': 'rgb'}, 'output_range': {'const': 'full'},
+                'output_encoding_verified': {'type': 'boolean'}, 'measured_source_primaries': primaries,
                 'output_calibration_max_error': {'type': ['number', 'null'], 'minimum': 0, 'exclusiveMaximum': .0005}, 'plan_sha256': sha})
     execution = obj({'kind': kind('cinematics-color-execution'), 'schema_version': version, 'plan_sha256': sha,
                      'config_closure_sha256': sha, 'ocio_version': {'const': OCIO_VERSION}, 'numpy_version': name,
@@ -619,7 +630,7 @@ def schemas():
                      'source_context_sha256': sha, 'source_render_verified': {'const': False}, 'pixel_transform_executed': {'const': True},
                      'view_applied': {'type': 'boolean'}, 'exposure_applications': {'const': 1}, 'exposure_stops': {'type': 'number', 'minimum': -24, 'maximum': 24},
                      'output_transfer': {'enum': ['linear', 'srgb']}, 'output_primaries': primaries,
-                     'output_alpha': {'enum': ['straight', 'premultiplied']}, 'rgb_min': {'type': 'number'}, 'rgb_max': {'type': 'number'},
+                     'output_encoding_verified': {'type': 'boolean'}, 'output_alpha': {'enum': ['straight', 'premultiplied']}, 'rgb_min': {'type': 'number'}, 'rgb_max': {'type': 'number'},
                      'rgb_below_zero': {'type': 'integer', 'minimum': 0, 'maximum': MAX_PIXELS*3}, 'rgb_above_one': {'type': 'integer', 'minimum': 0, 'maximum': MAX_PIXELS*3}})
     capabilities = obj({'kind': kind('cinematics-color-capabilities'), 'schema_version': version,
                         'ocio_version': {'const': OCIO_VERSION}, 'config': inventory,
