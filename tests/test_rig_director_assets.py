@@ -1,5 +1,7 @@
 """Actual geometry/export/registration acceptance for Director #28."""
+from contextlib import contextmanager, redirect_stdout
 from copy import deepcopy
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -244,3 +246,55 @@ class DirectorAssetTests(unittest.TestCase):
         self.assertEqual(caught.exception.report['code'], 'DIRECTOR_ASSET_PLATFORM')
         generate.assert_not_called()
         self.assertFalse(target.exists())
+
+    def test_build_scratch_cleanup_failure_cannot_publish(self):
+        target = self.parent/'scratch-cleanup-failed'
+        original = da.tempfile.TemporaryDirectory
+
+        @contextmanager
+        def cleanup_fails(*args, **kwargs):
+            with original(*args, **kwargs) as temporary:
+                yield temporary
+            raise OSError('synthetic scratch cleanup failure')
+
+        def generate(root, seed):
+            (root/'fixture.txt').write_text('fixture')
+            return {'fixture': True}
+
+        with patch.object(da.tempfile,'TemporaryDirectory',side_effect=cleanup_fails), \
+                patch.object(da,'_generate_assets',side_effect=generate), \
+                patch.object(da,'rename_no_replace_at') as promote:
+            with self.assertRaisesRegex(OSError,'synthetic scratch cleanup failure'):
+                da.build_assets(target, seed=42)
+        promote.assert_not_called()
+        self.assertFalse(target.exists())
+
+    def test_publication_cleanup_failure_reports_completed_bundle(self):
+        target = self.parent/'publication-cleanup-warning'
+        original = da.private_stage
+
+        @contextmanager
+        def cleanup_fails(*args, **kwargs):
+            with original(*args, **kwargs) as stage:
+                yield stage
+            raise OSError('synthetic publication cleanup failure')
+
+        def generate(root, seed):
+            (root/'fixture.txt').write_text('fixture')
+            return {'fixture': True}
+
+        with patch.object(da,'private_stage',side_effect=cleanup_fails), patch.object(da,'_generate_assets',side_effect=generate):
+            report = da.build_assets(target, seed=42)
+        self.assertEqual((target/'fixture.txt').read_text(), 'fixture')
+        self.assertTrue(report['fixture'])
+        self.assertEqual(report['publication_warning']['code'], 'DIRECTOR_ASSET_CLEANUP')
+        self.assertNotIn('synthetic', json.dumps(report))
+
+    def test_cli_io_failure_uses_path_free_diagnostic(self):
+        output = io.StringIO()
+        with patch.object(da,'build_assets',side_effect=OSError(13, 'Permission denied', str(self.parent/'private'))), \
+                redirect_stdout(output):
+            result = da._main(['--destination', str(self.parent/'unused'), '--seed', '42'])
+        self.assertEqual(result, 1)
+        self.assertEqual(json.loads(output.getvalue())['diagnostic']['code'], 'DIRECTOR_ASSET_IO')
+        self.assertNotIn(str(self.parent), output.getvalue())

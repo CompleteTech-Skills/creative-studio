@@ -42,7 +42,9 @@ Generation accepts a new destination beneath an existing nonsymlink parent. The
 Linux writer uses owned ordinary scratch paths for the registry and rig owners,
 then verifies the exact copied bundle, including SQLite, inside descriptor-pinned
 staging. The repository's exclusive rename preserves occupied destinations.
-Only owned staging contents are cleaned. The empty staging wrappers remain for
+Build scratch cleanup finishes before promotion. A cleanup problem after
+promotion adds a warning to the returned report, and the verified bundle stays
+published. Only owned staging contents are cleaned. The empty wrappers remain for
 owned maintenance under the shared publication contract. Other platforms receive
 a typed unsupported diagnostic when that adapter is unavailable.
 
@@ -59,8 +61,9 @@ clearance bounds, and 51 samples per segment. Camera positions must have
 0.12 m clearance within the room. This evidence covers static feasibility.
 Physics, moving bodies, line of sight and framing belong to subsequent work.
 
-Tests independently load every GLB through `pygltflib`, decode real vertex
-buffers and indices, reopen native rigs, evaluate actual skinned deformation,
+Tests independently load every GLB through `pygltflib`, decode positions and
+check index counts. Native import and geometry validation check the indices.
+Tests also reopen native rigs, evaluate actual skinned deformation,
 reopen the registered library, compare repeated source identities/normalized
 geometry and exercise occupied/racing destinations, unsafe paths and layout
 obstacles. They run in the optional 3D operations gate:
