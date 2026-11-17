@@ -37,11 +37,13 @@ The importer combines buffers and embeds URI-backed PNG or JPEG images, then
 reopens the result using the native geometry and rig reader. It keeps source
 node indices, materials, skins, morph targets and animation declarations.
 A non-default source unit scale in the range `[0.001, 1000000]` applies an
-explicit uniform transform above the source scene roots. The source and
+explicit uniform transform above the source scene roots and scales reserved
+native world-space bone tails. Camera clipping planes, orthographic camera
+magnitudes and punctual light ranges retain their declared values. The source and
 output convention is glTF right-handed Y-up. The retained conversion and
 `import-report.json` record the requested scale and checked hashes.
-`diagnostic.png` shows the imported rest geometry as a wireframe and ships as
-technical evidence. Reviewed preview production remains in #145.
+`diagnostic.png` shows the imported base mesh vertices before applying morph weights or skinning
+and ships as technical evidence. Reviewed preview production remains in #145.
 
 This profile accepts native triangle geometry and the recognized glTF material
 and texture transform extensions. Optional punctual light declarations can
@@ -49,8 +51,9 @@ be retained in the GLB. The native reader's declared extension, geometry,
 rig and texture restrictions still apply. Unknown extensions require a
 separate adapter. Input limits are the tighter of the library, snapshot
 and caller limits. The native preflight estimates aggregate geometry
-work before decoding and the native texture reader enforces its decoding
-limits. Blender, OBJ, basis changes, batch import and generation remain
+work before decoding. The importer checks the projected packed GLB size and
+reserves combined geometry and preview memory before assigning the remaining
+budget to the native texture reader. Blender, OBJ, basis changes, batch import and generation remain
 outside this slice of #139.
 
 Run the focused tests with the optional rig Python dependencies, Node.js,

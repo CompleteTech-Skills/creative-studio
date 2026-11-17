@@ -7,6 +7,7 @@ from pathlib import Path
 import struct
 import shutil
 import tempfile
+import traceback
 import unittest
 from unittest.mock import patch
 
@@ -98,6 +99,8 @@ class NativeImportTests(unittest.TestCase):
         self.assertEqual(manifest['provenance']['conversions'][0]['outputs'][0]['sha256'],
                          report['normalized_sha256'])
         self.assertFalse(report['diagnostic']['visual_approval'])
+        self.assertEqual(report['diagnostic']['geometry'], 'base-mesh-before-morphs-and-skinning')
+        self.assertIn('punctual light range', report['unchanged_metadata_lengths'])
         with Image.open(BytesIO(reopened.read_file(reference, 'diagnostic.png'))) as preview:
             self.assertEqual(preview.size, (256, 256))
         normalized = self.root / 'normalized.glb'
@@ -129,8 +132,9 @@ class NativeImportTests(unittest.TestCase):
     def test_missing_resource_and_invalid_units_leave_library_empty(self):
         path = self.external_source()
         (self.root / 'resources/paint.png').unlink()
-        with self.assertRaisesRegex(RigError, 'missing|read|source|Source'):
+        with self.assertRaises(RigError) as error:
             self.import_source(path)
+        self.assertEqual(error.exception.report['code'], 'LIBRARY_SOURCE')
         with self.assertRaises(RigError) as error:
             self.import_source(path, unit_scale=10**400)
         self.assertEqual(error.exception.report['code'], 'ASSET_IMPORT_SCALE')
@@ -158,4 +162,72 @@ class NativeImportTests(unittest.TestCase):
         with self.assertRaises(RigError) as error:
             self.pipeline.probe(path)
         self.assertEqual(error.exception.report['code'], 'ASSET_IMPORT_FORMAT')
+        self.assertEqual(self.library.list_references(), [])
+
+    def test_projected_output_and_combined_memory_fail_before_writing_or_validation(self):
+        source = self.external_source()
+        closure_bytes = sum(entry['bytes'] for entry in self.pipeline.probe(source)['files'])
+        cases = (
+            (dict(source_bytes=source.stat().st_size), 'ASSET_IMPORT_LIMIT'),
+            (dict(dependency_bytes=closure_bytes), 'ASSET_IMPORT_LIMIT'),
+            (dict(memory_bytes=2 * 1024**2 + 100_000), 'RIG_LIMIT_MEMORY'),
+        )
+        for limits, code in cases:
+            with self.subTest(limits=limits):
+                self.pipeline = ImportPipeline(self.library, limits=limits)
+                with patch('asset_library_import._write_glb') as write, \
+                     patch('asset_library_import.validate_gltf') as validator:
+                    with self.assertRaises(RigError) as error:
+                        self.import_source(source, unit_scale=2.0, fixture=True)
+                self.assertEqual(error.exception.report['code'], code)
+                write.assert_not_called()
+                validator.assert_not_called()
+        self.assertEqual(self.library.list_references(), [])
+
+    def test_postcommit_cleanup_does_not_fail_import_after_canonical_registration(self):
+        source = self.external_source()
+        cleanup = tempfile.TemporaryDirectory.cleanup
+
+        def cleanup_error(directory):
+            cleanup(directory)
+            raise OSError('synthetic temporary cleanup failure')
+
+        with patch.object(tempfile.TemporaryDirectory, 'cleanup', autospec=True, side_effect=cleanup_error):
+            with patch.object(self.library, 'resolve', side_effect=OSError('synthetic resolution failure')) as resolve:
+                reference = self.import_source(source)
+                resolve.assert_not_called()
+        reopened = AssetLibrary(self.library_path)
+        self.assertEqual(reopened.list_references(), [reference])
+        self.assertTrue(reopened.read_file(reference, 'normalized.glb').startswith(b'glTF'))
+
+    def test_source_license_and_validator_failures_do_not_disclose_private_paths(self):
+        source = self.external_source()
+        marker = 'private-path-marker'
+        missing_path = self.root / marker / 'missing.gltf'
+        try:
+            self.pipeline.probe(missing_path)
+        except RigError as error:
+            self.assertEqual(error.report['code'], 'LIBRARY_SOURCE')
+            self.assertNotIn(marker, traceback.format_exc())
+            self.assertNotIn(str(self.root), json.dumps(error.report))
+        else:
+            self.fail('Missing private source must fail')
+
+        license = self.license
+        self.license = self.root / marker / 'license.txt'
+        with self.assertRaises(RigError) as error:
+            self.import_source(source)
+        self.assertEqual(error.exception.report['code'], 'LIBRARY_SOURCE')
+        self.assertEqual(error.exception.report['asset'], 'license evidence')
+        self.assertNotIn(marker, json.dumps(error.exception.report))
+        self.license = license
+
+        synthetic = RigError('RIG_VALIDATOR_MISSING', f'Cannot open {missing_path}',
+                             asset=str(missing_path), observed=f'Module stack: {missing_path}')
+        with patch('asset_library_import.validate_gltf', side_effect=synthetic):
+            with self.assertRaises(RigError) as error:
+                self.import_source(source)
+        self.assertEqual(error.exception.report['code'], 'RIG_VALIDATOR_MISSING')
+        self.assertNotIn(marker, json.dumps(error.exception.report))
+        self.assertTrue(error.exception.__suppress_context__)
         self.assertEqual(self.library.list_references(), [])

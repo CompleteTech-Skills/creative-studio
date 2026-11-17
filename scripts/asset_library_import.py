@@ -1,18 +1,20 @@
 """Bounded, offline glTF 2.0 ingestion into the canonical AssetLibrary."""
+from contextlib import contextmanager
 from copy import deepcopy
 import hashlib
+import json
 from pathlib import Path
 import struct
 import tempfile
 
 from asset_library import AssetLibrary, detect_format, file_record, read_source_bytes
-from asset_library_contracts import MAX_FILE_BYTES, canonical_bytes, seal, validate
+from asset_library_contracts import MAX_FILE_BYTES, seal, validate
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError, decode_json, require, timestamp
 from rig_gltf import MATERIAL_EXTENSIONS, preflight_gltf, read_gltf
 from rig_import import load_character_model
 from rig_interop import validate_gltf
-from rig_load_limits import effective_limits
+from rig_load_limits import _JSON_FACTOR, effective_limits
 from scene3d_import import _dump, _local_uri, _wireframe_preview, source_snapshot
 
 TOOL = 'hatch-native-gltf-import'
@@ -20,6 +22,34 @@ VERSION = '1.0.0'
 # These extensions use retained node/material/texture indices and do not
 # introduce additional external resources or buffer offsets.
 EXTENSIONS = MATERIAL_EXTENSIONS | {'KHR_lights_punctual'}
+
+
+@contextmanager
+def _private_diagnostics(asset):
+    """Report typed failures without echoing private paths or arbitrary input."""
+    try:
+        yield
+    except RigError as exc:
+        code = exc.report['code']
+        numbers = {key: exc.report[key] for key in ('expected', 'observed')
+                   if type(exc.report[key]) is int}
+        raise RigError(code, f'Cannot process {asset} ({code}).', stage='asset-import',
+                       asset=asset, retryable=exc.report['retryable'], **numbers) from None
+    except MemoryError:
+        raise RigError('RIG_LIMIT_MEMORY', f'Cannot allocate working memory for {asset}.',
+                       stage='asset-import', asset=asset) from None
+    except OSError:
+        raise RigError('ASSET_IMPORT_IO', f'Cannot access {asset}.',
+                       stage='asset-import', asset=asset) from None
+    except (TypeError, ValueError, AttributeError, KeyError, IndexError, OverflowError, RecursionError):
+        raise RigError('ASSET_IMPORT_FORMAT', f'Malformed metadata in {asset}.',
+                       stage='asset-import', asset=asset) from None
+
+
+def _admit_memory(estimated, limits, stage):
+    require(estimated <= limits['memory_bytes'], 'RIG_LIMIT_MEMORY',
+            'Combined working set exceeds the native import budget.',
+            asset=stage, expected=limits['memory_bytes'], observed=estimated)
 
 
 def _inspect(snapshot, limits):
@@ -35,6 +65,7 @@ def _inspect(snapshot, limits):
     embedded = []
     images = {}
     image_bytes = 0
+    buffer_bytes = sum(map(len, document.buffers))
     for collection, role in (('buffers', 'buffer'), ('images', 'texture')):
         for index, item in enumerate(value.get(collection, [])):
             uri = item.get('uri')
@@ -51,6 +82,8 @@ def _inspect(snapshot, limits):
                 image_bytes += size
                 require(image_bytes <= limits['dependency_bytes'], 'RIG_LIMIT_DEPENDENCIES',
                         'Expanded texture bytes exceed the dependency budget.')
+                _admit_memory(preflight['estimated_memory_bytes'] + 2 * (buffer_bytes + image_bytes),
+                              limits, 'source resources')
                 if uri is not None:
                     data = document.uri(uri)
                     images[index] = data
@@ -68,34 +101,41 @@ def _inspect(snapshot, limits):
     return document, images, inventory, embedded, preflight
 
 
-def _normalize(document, images, output, scale, fixture):
-    """Pack explicit glTF references, preserving the source scene and indices."""
-    value = deepcopy(document.json)
-    # glTF permits trailing bytes in URI-backed buffers. The native reader
-    # exposes their declared lengths. Exact full files remain in provenance.
-    binary = bytearray()
+def _normalization_plan(document, images, scale, fixture, preflight):
+    """Project the GLB layout while retaining the source scene and indices."""
+    chunks = [*document.buffers, *images.values()]
     offsets = []
-    for buffer in document.buffers:
-        binary.extend(b'\0' * (-len(binary) % 4))
-        offsets.append(len(binary))
-        binary.extend(buffer)
+    end = 0
+    for chunk in chunks:
+        end += -end % 4
+        offsets.append(end)
+        end += len(chunk)
+    packed_bytes = end + (-end % 4)
+    limits = document.limits
+    output_limit = min(MAX_FILE_BYTES, limits['source_bytes'], limits['dependency_bytes'])
+    require(20 + (8 + packed_bytes if packed_bytes else 0) <= output_limit,
+            'ASSET_IMPORT_LIMIT', 'Packed binary cannot fit in the normalized GLB budget.')
+    # Source estimates include the original parsed JSON and geometry work.
+    # Charge a second JSON object and up to three encoded JSON copies for
+    # normalization alongside the captured buffer/texture bytes.
+    _admit_memory(preflight['estimated_memory_bytes'] + _JSON_FACTOR * preflight['json_bytes']
+                  + 2 * packed_bytes + 3 * output_limit, limits, 'GLB normalization')
+    value = deepcopy(document.json)
     for view in value.get('bufferViews', []):
         view['byteOffset'] = offsets[view['buffer']] + view.get('byteOffset', 0)
         view['buffer'] = 0
-    for index, data in images.items():
+    for (index, data), offset in zip(images.items(), offsets[len(document.buffers):]):
         image = value['images'][index]
         mime = detect_format(data)[1]
         require(mime in ('image/png', 'image/jpeg'), 'ASSET_IMPORT_TEXTURE',
                 'Normalization accepts PNG or JPEG texture bytes.')
-        binary.extend(b'\0' * (-len(binary) % 4))
         views = value.setdefault('bufferViews', [])
         image['bufferView'] = len(views)
-        views.append(dict(buffer=0, byteOffset=len(binary), byteLength=len(data)))
-        binary.extend(data)
+        views.append(dict(buffer=0, byteOffset=offset, byteLength=len(data)))
         image['mimeType'] = mime
         del image['uri']
-    if binary:
-        value['buffers'] = [dict(byteLength=len(binary))]
+    if packed_bytes:
+        value['buffers'] = [dict(byteLength=end)]
     if scale != 1.0:
         nodes = value['nodes']
         wrapped = {}
@@ -119,18 +159,33 @@ def _normalize(document, images, output, scale, fixture):
                 ]
     if fixture:
         value['asset'].setdefault('extras', {}).setdefault('hatchSource', {})['fixture'] = True
-    encoded = canonical_bytes(value)
-    encoded += b' ' * (-len(encoded) % 4)
-    binary.extend(b'\0' * (-len(binary) % 4))
-    length = 20 + len(encoded) + (8 + len(binary) if binary else 0)
-    require(length <= min(MAX_FILE_BYTES, document.limits['source_bytes']),
-            'ASSET_IMPORT_LIMIT', 'Normalized GLB exceeds the output byte limit.')
+    container_bytes = 20 + (8 + packed_bytes if packed_bytes else 0)
+    json_budget = (output_limit - container_bytes) // 4 * 4
+    encoded = bytearray()
+    encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False)
+    for fragment in encoder.iterencode(value):
+        data = fragment.encode('utf-8')
+        require(len(encoded) + len(data) <= json_budget, 'ASSET_IMPORT_LIMIT',
+                'Normalized GLB exceeds the effective output byte budget.')
+        encoded.extend(data)
+    encoded.extend(b' ' * (-len(encoded) % 4))
+    length = container_bytes + len(encoded)
+    return encoded, chunks, offsets, packed_bytes, length
+
+
+def _write_glb(output, plan):
+    encoded, chunks, offsets, packed_bytes, length = plan
     with output.open('xb') as stream:
         stream.write(struct.pack('<4sIIII', b'glTF', 2, length, len(encoded), 0x4E4F534A))
         stream.write(encoded)
-        if binary:
-            stream.write(struct.pack('<II', len(binary), 0x004E4942))
-            stream.write(binary)
+        if packed_bytes:
+            stream.write(struct.pack('<II', packed_bytes, 0x004E4942))
+            end = 0
+            for offset, chunk in zip(offsets, chunks):
+                stream.write(b'\0' * (offset - end))
+                stream.write(chunk)
+                end = offset + len(chunk)
+            stream.write(b'\0' * (packed_bytes - end))
 
 
 def _checked(path, limits):
@@ -154,24 +209,20 @@ class ImportPipeline:
             self.limits['dependency_bytes'], self.limits['memory_bytes'] // 66)
 
     def _snapshot(self, source, root):
-        return source_snapshot(source, root,
+        snapshot = source_snapshot(source, root,
             maximum_file_bytes=min(MAX_FILE_BYTES, self.limits['source_bytes']),
             maximum_total_bytes=self.limits['dependency_bytes'])
+        snapshot.pop('document')
+        return snapshot
 
     def probe(self, source):
         """Inspect declarations and report exact closure prior to geometry decoding."""
-        with tempfile.TemporaryDirectory(prefix='asset-gltf-probe-') as temporary:
-            try:
+        with _private_diagnostics('source'):
+            with tempfile.TemporaryDirectory(prefix='asset-gltf-probe-') as temporary:
                 snapshot = self._snapshot(source, Path(temporary) / 'source')
                 _, _, inventory, embedded, preflight = _inspect(snapshot, self.limits)
                 return dict(format=snapshot['path'].suffix[1:], original_filename=snapshot['original_filename'],
                             files=inventory, embedded=embedded, preflight=preflight, geometry_validated=False)
-            except RigError:
-                raise
-            except (TypeError, ValueError, AttributeError, KeyError, IndexError,
-                    OverflowError, RecursionError) as exc:
-                raise RigError('ASSET_IMPORT_FORMAT', 'Malformed native glTF metadata.',
-                               stage='asset-import') from exc
 
     def import_asset(self, source, *, identity, version, metadata, license_file,
                      unit_scale=1.0, fixture=False):
@@ -182,22 +233,25 @@ class ImportPipeline:
         validate(identity, 'AssetIdentity')
         validate(metadata, 'AssetMetadata')
         validate(dict(id=identity['id'], version=version, sha256='0'*64), 'AssetRef')
-        license_bytes = read_source_bytes(license_file, 1024 * 1024)
-        with tempfile.TemporaryDirectory(prefix='asset-gltf-import-') as temporary:
+        with _private_diagnostics('license evidence'):
+            license_bytes = read_source_bytes(license_file, 1024 * 1024)
+        with _private_diagnostics('staged import'):
+            temporary = tempfile.TemporaryDirectory(prefix='asset-gltf-import-')
             try:
-                return self._import(source, Path(temporary), identity, version, metadata,
-                                    license_bytes, float(unit_scale), fixture)
-            except RigError:
-                raise
-            except (TypeError, ValueError, AttributeError, KeyError, IndexError,
-                    OverflowError, RecursionError) as exc:
-                raise RigError('ASSET_IMPORT_FORMAT', 'Malformed native glTF metadata.',
-                               stage='asset-import') from exc
+                manifest, paths = self._stage(source, Path(temporary.name), identity, version,
+                                              metadata, license_bytes, float(unit_scale), fixture)
+                return self.library.register(manifest, paths)
+            finally:
+                try:
+                    temporary.cleanup()
+                except OSError:
+                    # Cleanup must preserve the original failure or the
+                    # exact reference returned by the canonical store.
+                    pass
 
-    def _import(self, source, root, identity, version, metadata, license_bytes, scale, fixture):
+    def _stage(self, source, root, identity, version, metadata, license_bytes, scale, fixture):
         snapshot = self._snapshot(source, root / 'source')
         document, images, inventory, embedded, preflight = _inspect(snapshot, self.limits)
-        source_validation = _checked(snapshot['path'], self.limits)
         declarations = {name: len(document.json.get(name, []))
                         for name in ('skins', 'animations', 'materials', 'textures')}
         extras = document.json['asset'].get('extras', {})
@@ -205,13 +259,25 @@ class ImportPipeline:
             fixture = fixture or any(isinstance(extras.get(key), dict) and
                 extras[key].get('fixture') is True for key in ('hatchSource', 'hatchRig'))
         normalized = root / 'normalized.glb'
-        _normalize(document, images, normalized, scale, fixture)
-        del document, images
-        output_validation = _checked(normalized, self.limits)
+        plan = _normalization_plan(document, images, scale, fixture, preflight)
+        del document, images, extras
+        _write_glb(normalized, plan)
+        del plan
+        output_size = normalized.stat().st_size
         output = read_gltf(normalized, self.limits)
-        preflight_gltf(output, encoded_bytes=normalized.stat().st_size, limits=self.limits)
+        output_preflight = preflight_gltf(output, encoded_bytes=output_size, limits=self.limits)
+        # Reserve geometry work, extra encoded copies and the wireframe
+        # working set before allowing the decoder its texture allocation.
+        encoded_images = sum(output.view(image['bufferView'])[2] for image in output.json.get('images', []))
+        decode_reserved = (output_preflight['estimated_memory_bytes'] + 4 * output_size
+                           + encoded_images + 120 * output_preflight['vertices']
+                           + 256 * 256 * 12 + len(license_bytes))
+        _admit_memory(decode_reserved + 1, self.limits, 'native decode')
+        decode_limits = {**self.limits, 'memory_bytes': self.limits['memory_bytes'] - decode_reserved}
         del output
-        model = load_character_model(normalized, limits=self.limits)
+        source_validation = _checked(snapshot['path'], self.limits)
+        output_validation = _checked(normalized, self.limits)
+        model = load_character_model(normalized, limits=decode_limits)
         preview = _wireframe_preview(model.geometry, root / 'diagnostic.png')
         (root / 'license.txt').write_bytes(license_bytes)
         _dump(root / 'source-khronos.json', source_validation)
@@ -221,14 +287,18 @@ class ImportPipeline:
             operation='pack glTF buffers and textures into GLB and apply explicit scene-root units',
             coordinate_system='glTF right-handed Y-up', source_unit_scale=scale,
             source_sha256=source_validation['asset_sha256'], normalized_sha256=output_validation['asset_sha256'],
-            declarations=declarations,
-            diagnostic=dict(preview, width=256, height=256, visual_approval=False),
+            declarations=declarations, native_decode_reserved_bytes=decode_reserved,
+            unit_scale_scope='scene-root transforms and native world-space bone tails',
+            unchanged_metadata_lengths=['camera clipping planes', 'orthographic camera magnitudes',
+                                        'punctual light range'],
+            diagnostic=dict(preview, width=256, height=256, visual_approval=False,
+                            geometry='base-mesh-before-morphs-and-skinning'),
             native_observation=dict(vertices=model.geometry.vertex_count, triangles=model.geometry.triangle_count,
                 morph_targets=sum(len(mesh.morphs) for mesh in model.geometry.meshes), clips=sorted(model.clips))))
-        return self._publish(root, snapshot, inventory, identity, version, metadata, scale, fixture, model,
+        return self._manifest(root, snapshot, inventory, identity, version, metadata, scale, fixture, model,
                              output_validation['validator'])
 
-    def _publish(self, root, snapshot, inventory, identity, version, metadata, scale, fixture, model, validator):
+    def _manifest(self, root, snapshot, inventory, identity, version, metadata, scale, fixture, model, validator):
         original = {f'source/{entry["path"]}': entry for entry in inventory}
         roles = {path: 'source' for path in original}
         roles.update({'normalized.glb': 'payload', 'license.txt': 'license', 'diagnostic.png': 'evidence',
@@ -258,9 +328,7 @@ class ImportPipeline:
                     inputs=sources, outputs=[records['normalized.glb'], records['import-report.json']])]),
             publication=dict(visibility='project-local', distribution='restricted', license_evaluation='evidence-retained',
                 inventory=list(records), verification='payload-verified', integration='native-reference')))
-        reference = self.library.register(manifest, paths)
-        self.library.resolve(reference)
-        return reference
+        return manifest, paths
 
 
 def resolve_import(library: AssetLibrary, reference):
