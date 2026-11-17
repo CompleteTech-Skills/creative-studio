@@ -18,9 +18,11 @@ JSON Schema definitions, followed by semantic evidence/inventory/reference check
 conceptual contracts, including optional evidence fields and explicit status enums.
 Public registration, resolution, annotation and scene-reference methods use these
 records in their annotations. A parity regression checks fields, required/optional
-keys and enums against the canonical schemas. These are static typing aids; runtime
-validation remains the schema and semantic validator, and annotations grant no
-payload, geometry, licensing or review approval.
+keys, literal values and nested provenance records against the canonical schemas.
+It also checks the public return annotations, including the scene reference shape.
+Registration accepts logical-path dictionaries with string paths, path-like objects
+or a mix of both. Runtime admission still uses the schema and semantic validators,
+and annotations grant no payload, geometry, licensing or review approval.
 
 Timestamps are checked with a built-in RFC3339 spelling/calendar validator,
 including standalone identity/provenance contracts, without optional format packages.

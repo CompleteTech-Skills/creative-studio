@@ -14,9 +14,10 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
-from typing import Protocol
+import sys
+from typing import Iterator, Literal, NoReturn, Protocol, TypeVar, cast
 
-from asset_library_types import (AssetAnnotations, AssetFile, AssetRef, AssetVersion,
+from asset_library_types import (AssetAnnotations, AssetFile, AssetFormat, AssetRef, AssetVersion,
                                  SceneAssetReference)
 
 from asset_library_contracts import (MAX_FILE_BYTES, MAX_MANIFEST_BYTES,
@@ -26,17 +27,21 @@ from rig_errors import RigError, decode_json, object_hash
 MAX_LIBRARY_BYTES = 1024 * 1024 * 1024
 MAX_VERSIONS = 4096
 
+_SourcePath = str | os.PathLike[str]
+_SourcePathType = TypeVar("_SourcePathType", bound=_SourcePath)
+
 
 class AssetResolver(Protocol):
     def resolve(self, reference: AssetRef) -> AssetVersion: ...
     def read_file(self, reference: AssetRef, path: str) -> bytes: ...
 
 
-def _fail(code, message, path=None):
+def _fail(code: str, message: str, path: str | Path | None = None) -> NoReturn:
     raise RigError('LIBRARY_' + code, message, asset=str(path) if path else None)
 
 
-def _bounded_integer(value, minimum, maximum, *, code, label):
+def _bounded_integer(value: int | float, minimum: int, maximum: int, *,
+                     code: str, label: str) -> int:
     """Normalize a validated numeric copy, preserving original manifest values.
 
     JSON Schema integer includes finite mathematically whole floating values.
@@ -48,7 +53,7 @@ def _bounded_integer(value, minimum, maximum, *, code, label):
     return int(value)
 
 
-def _read_source_bytes(path, limit=MAX_FILE_BYTES):
+def _read_source_bytes(path: _SourcePath, limit: int | float = MAX_FILE_BYTES) -> bytes:
     """Reject symlink/reparse components, bound allocation, detect changed files."""
     limit = _bounded_integer(limit, 1, MAX_FILE_BYTES, code='LIMIT', label='Source read bound')
     path = Path(path).absolute()
@@ -57,7 +62,7 @@ def _read_source_bytes(path, limit=MAX_FILE_BYTES):
         if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
             _fail('SYMLINK', 'Source paths cannot contain symlinks or reparse points.', component)
     flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
-    if os.name == 'posix':
+    if sys.platform != 'win32' and os.name == 'posix':
         # Walk using retained directory descriptors so a concurrently replaced
         # ancestor cannot redirect an untrusted source read outside that tree.
         parent_fd = os.open(path.anchor, os.O_RDONLY | os.O_DIRECTORY)
@@ -73,7 +78,7 @@ def _read_source_bytes(path, limit=MAX_FILE_BYTES):
     else:
         fd = os.open(path, flags)
     with os.fdopen(fd, 'rb') as stream:
-        if os.name == 'nt':
+        if sys.platform == 'win32':
             # Check the kernel handle's normalized final location before any
             # bytes are read. This catches a raced junction/ancestor redirect.
             # Canonical long source paths are required on Windows; aliases fail
@@ -109,7 +114,7 @@ def _read_source_bytes(path, limit=MAX_FILE_BYTES):
     return payload
 
 
-def read_source_bytes(path: str | Path, limit: int | float = MAX_FILE_BYTES) -> bytes:
+def read_source_bytes(path: _SourcePath, limit: int | float = MAX_FILE_BYTES) -> bytes:
     """Read exact bounded source bytes or return a structured library diagnostic."""
     try:
         return _read_source_bytes(path, limit)
@@ -118,7 +123,7 @@ def read_source_bytes(path: str | Path, limit: int | float = MAX_FILE_BYTES) -> 
                        asset=str(path)) from exc
 
 
-def detect_format(payload: bytes) -> tuple[str, str]:
+def detect_format(payload: bytes) -> tuple[AssetFormat, str]:
     """Header recognition, not a geometric/semantic format validator."""
     if payload.startswith(b'glTF'): return 'glb', 'model/gltf-binary'
     if payload.startswith(b'\x89PNG\r\n\x1a\n'): return 'png', 'image/png'
@@ -139,13 +144,13 @@ def detect_format(payload: bytes) -> tuple[str, str]:
     return 'binary', 'application/octet-stream'
 
 
-def file_record(source: str | Path, path: str, role: str = 'source',
+def file_record(source: _SourcePath, path: str, role: str = 'source',
                 required: bool = True) -> AssetFile:
     portable_path(path)
     payload = read_source_bytes(source, MAX_FILE_BYTES)
     fmt, mime = detect_format(payload)
-    return dict(path=path, role=role, sha256=hashlib.sha256(payload).hexdigest(),
-                bytes=len(payload), format=fmt, mime_type=mime, required=required)
+    return AssetFile(path=path, role=role, sha256=hashlib.sha256(payload).hexdigest(),
+                     bytes=len(payload), format=fmt, mime_type=mime, required=required)
 
 
 class AssetLibrary:
@@ -156,14 +161,14 @@ class AssetLibrary:
     caller owns the private library directory; moving or concurrently replacing
     that directory is unsupported. #141 adds broader storage/recovery controls.
     """
-    def __init__(self, root, *, create=False):
+    def __init__(self, root: _SourcePath, *, create: bool = False) -> None:
         self.root = Path(root).absolute()
         if create:
             self.root.mkdir(mode=0o700, parents=False, exist_ok=False)
         info = self.root.lstat()
         if not stat.S_ISDIR(info.st_mode) or self.root.is_symlink() or getattr(info, 'st_file_attributes', 0) & 0x400:
             _fail('ROOT', 'Library root must be an owned private directory.')
-        if os.name != 'nt' and (info.st_uid != os.geteuid() or info.st_mode & 0o077):
+        if sys.platform != 'win32' and (info.st_uid != os.geteuid() or info.st_mode & 0o077):
             _fail('ROOT', 'Library root must be owned by this user with mode 0700.')
         self._root_identity = (info.st_dev, info.st_ino)
         self.database = self.root / 'library.sqlite3'
@@ -187,17 +192,17 @@ class AssetLibrary:
                 _fail('VERSION', 'Unsupported library storage schema.')
 
     @contextmanager
-    def _connect(self, initial=False):
+    def _connect(self, initial: bool = False) -> Iterator[sqlite3.Connection]:
         info = self.root.lstat()
         if ((info.st_dev, info.st_ino) != self._root_identity or not stat.S_ISDIR(info.st_mode) or
             self.root.is_symlink() or getattr(info, 'st_file_attributes', 0) & 0x400):
             _fail('ROOT', 'Library directory was replaced.')
-        if os.name != 'nt' and (info.st_uid != os.geteuid() or info.st_mode & 0o077):
+        if sys.platform != 'win32' and (info.st_uid != os.geteuid() or info.st_mode & 0o077):
             _fail('ROOT', 'Library directory no longer has private ownership.')
         info = self.database.lstat()
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or getattr(info, 'st_file_attributes', 0) & 0x400:
             _fail('DATABASE', 'Library database must be a regular unlinked-owned file.')
-        if os.name != 'nt' and (info.st_uid != os.geteuid() or info.st_mode & 0o077):
+        if sys.platform != 'win32' and (info.st_uid != os.geteuid() or info.st_mode & 0o077):
             _fail('DATABASE', 'Library database must remain private to its owner.')
         # mode=rw prevents accidental recreation of a removed library database.
         uri = self.database.as_uri() + '?mode=rw'
@@ -214,14 +219,14 @@ class AssetLibrary:
         finally:
             db.close()
 
-    def register(self, manifest: AssetVersion, sources: dict[str, str | Path]) -> AssetRef:
+    def register(self, manifest: AssetVersion, sources: dict[str, _SourcePathType]) -> AssetRef:
         """Register all inventoried logical files from explicit source paths.
 
         Files are always re-read and hashed; a supplied manifest never certifies
         its own payload. Missing optional inventoried files also fail this initial
         exact-byte store (optional dependency resolution is a later policy).
         """
-        manifest = load_manifest(canonical_bytes(manifest))
+        manifest = cast(AssetVersion, load_manifest(canonical_bytes(manifest)))
         if not isinstance(sources, dict):
             _fail('INVENTORY', 'Sources must be an explicit logical-path mapping.')
         if set(sources) != {f['path'] for f in manifest['files']}:
@@ -237,7 +242,7 @@ class AssetLibrary:
                 _fail('FORMAT', 'Payload header does not match the recorded format.', f['path'])
             payloads[f['sha256']] = payload
         identity, version = manifest['identity']['id'], manifest['version']
-        reference = dict(id=identity, version=version, sha256=manifest['manifest_sha256'])
+        reference = AssetRef(id=identity, version=version, sha256=manifest['manifest_sha256'])
         with self._connect() as db:
             db.execute('BEGIN IMMEDIATE')
             if db.execute('SELECT 1 FROM versions WHERE id=? AND version=?', (identity, version)).fetchone():
@@ -246,8 +251,11 @@ class AssetLibrary:
                 _fail('LIMIT', 'Library version limit exceeded.')
             prior = db.execute('SELECT manifest FROM versions WHERE id=? LIMIT 1', (identity,)).fetchone()
             if prior:
-                old_identity = load_manifest(prior[0])['identity']
-                if any(old_identity[k] != manifest['identity'][k] for k in ('namespace', 'library', 'kind', 'created_at')):
+                old_identity = cast(AssetVersion, load_manifest(prior[0]))['identity']
+                identity_fields: tuple[Literal['namespace', 'library', 'kind', 'created_at'], ...] = (
+                    'namespace', 'library', 'kind', 'created_at',
+                )
+                if any(old_identity[k] != manifest['identity'][k] for k in identity_fields):
                     _fail('IDENTITY', 'Stable identity cannot move namespace/library, change kind or rewrite original creation time.')
             pending = ([x['target'] for x in manifest['dependencies']] +
                        manifest['provenance']['parents'] + manifest['metadata']['style_refs'])
@@ -279,24 +287,25 @@ class AssetLibrary:
                     db.execute('INSERT INTO blobs VALUES(?,?)', (digest, payload))
             db.execute('INSERT INTO versions VALUES(?,?,?,?)',
                        (identity, version, reference['sha256'], canonical_bytes(manifest)))
-            annotations = dict(schema_version=1, asset=reference, revision=0, tags=[], favorite=False, note='')
+            annotations = AssetAnnotations(schema_version=1, asset=reference, revision=0,
+                                           tags=[], favorite=False, note='')
             db.execute('INSERT INTO annotations VALUES(?,?,?,?)',
                        (identity, version, 0, canonical_bytes(annotations)))
         return reference
 
-    def _lookup(self, db, reference):
+    def _lookup(self, db: sqlite3.Connection, reference: AssetRef) -> AssetVersion:
         validate(reference, 'AssetRef')
         row = db.execute('SELECT sha256,manifest FROM versions WHERE id=? AND version=?',
                          (reference['id'], reference['version'])).fetchone()
         if not row: _fail('MISSING', 'The exact asset version is absent.')
-        manifest = load_manifest(row[1])
+        manifest = cast(AssetVersion, load_manifest(row[1]))
         if row[0] != reference['sha256'] or manifest['manifest_sha256'] != reference['sha256']:
             _fail('HASH', 'Exact version hash does not match the stored manifest.')
         if (manifest['identity']['id'], manifest['version']) != (reference['id'], reference['version']):
             _fail('IDENTITY', 'Stored identity/version is inconsistent.')
         return manifest
 
-    def _verify_payloads(self, db, manifest):
+    def _verify_payloads(self, db: sqlite3.Connection, manifest: AssetVersion) -> None:
         for f in manifest['files']:
             row = db.execute('SELECT payload FROM blobs WHERE sha256=? AND length(payload)=?', (f['sha256'], f['bytes'])).fetchone()
             if not row or len(row[0]) != f['bytes'] or hashlib.sha256(row[0]).hexdigest() != f['sha256']:
@@ -319,6 +328,7 @@ class AssetLibrary:
                 pending.extend(x['target'] for x in manifest['dependencies'])
                 pending.extend(manifest['provenance']['parents'])
                 pending.extend(manifest['metadata']['style_refs'])
+            assert first is not None  # The requested reference seeds the traversal.
             return first
 
     def read_file(self, reference: AssetRef, path: str) -> bytes:
@@ -330,7 +340,7 @@ class AssetLibrary:
             row = db.execute('SELECT payload FROM blobs WHERE sha256=? AND length(payload)=?', (f['sha256'], f['bytes'])).fetchone()
             if not row or len(row[0]) != f['bytes'] or hashlib.sha256(row[0]).hexdigest() != f['sha256']:
                 _fail('CORRUPT', 'Payload changed during retrieval.', path)
-            return row[0]
+            return cast(bytes, row[0])
 
     def annotations(self, reference: AssetRef) -> AssetAnnotations:
         with self._connect() as db:
@@ -338,32 +348,34 @@ class AssetLibrary:
             row = db.execute('SELECT document FROM annotations WHERE id=? AND version=?',
                              (reference['id'], reference['version'])).fetchone()
             if not row: _fail('CORRUPT', 'Mutable annotation record is absent.')
-            result = validate(decode_json(row[0]), 'AssetAnnotations')
+            result = cast(AssetAnnotations, validate(decode_json(row[0]), 'AssetAnnotations'))
             if result['asset'] != reference: _fail('CORRUPT', 'Annotation identity differs from its asset.')
             return result
 
     def update_annotations(self, reference: AssetRef, *, expected_revision: int | float,
                            tags: list[str], favorite: bool, note: str) -> AssetAnnotations:
-        expected_revision = _bounded_integer(expected_revision, 0, 2**53-1,
-                                             code='REVISION', label='Expected revision')
-        replacement = dict(schema_version=1, asset=reference, revision=expected_revision + 1,
-                           tags=tags, favorite=favorite, note=note)
+        revision = _bounded_integer(expected_revision, 0, 2**53-1,
+                                    code='REVISION', label='Expected revision')
+        replacement = AssetAnnotations(schema_version=1, asset=reference, revision=revision + 1,
+                                       tags=tags, favorite=favorite, note=note)
         validate(replacement, 'AssetAnnotations')
         with self._connect() as db:
             db.execute('BEGIN IMMEDIATE')
             self._lookup(db, reference)
             count = db.execute('UPDATE annotations SET revision=?,document=? WHERE id=? AND version=? AND revision=?',
                                (replacement['revision'], canonical_bytes(replacement), reference['id'],
-                                reference['version'], expected_revision)).rowcount
+                                reference['version'], revision)).rowcount
             if count != 1: _fail('CONFLICT', 'Annotation revision is stale; reload before editing.')
         return replacement
 
     def scene_reference(self, reference: AssetRef, path: str) -> SceneAssetReference:
         manifest = self.resolve(reference)
         self.read_file(reference, path)
-        return dict(id=reference['id'], version=reference['version'], path=path,
-                    sha256=next(f['sha256'] for f in manifest['files'] if f['path'] == path),
-                    kind=manifest['identity']['kind'])
+        return SceneAssetReference(
+            id=reference['id'], version=reference['version'], path=path,
+            sha256=next(f['sha256'] for f in manifest['files'] if f['path'] == path),
+            kind=manifest['identity']['kind'],
+        )
 
 
 def legacy_roundtrip(kind: str, payload: bytes) -> bytes:

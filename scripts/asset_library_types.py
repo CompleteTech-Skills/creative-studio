@@ -9,6 +9,7 @@ from typing import Literal, TypedDict
 
 Parameter = str | int | float | bool | list[str | int | float | bool]
 Parameters = dict[str, Parameter]
+AssetFormat = Literal['glb', 'gltf', 'obj', 'png', 'jpeg', 'webp', 'json', 'binary']
 
 
 class AssetRef(TypedDict):
@@ -27,7 +28,7 @@ class AssetFile(_AssetFileOptional):
     role: str
     sha256: str
     bytes: int | float
-    format: Literal['glb', 'gltf', 'obj', 'png', 'jpeg', 'webp', 'json', 'binary']
+    format: AssetFormat
     mime_type: str
     required: bool
 

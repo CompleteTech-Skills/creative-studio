@@ -274,28 +274,59 @@ class AssetLibraryTests(unittest.TestCase):
         self.assertIn('LIBRARY_IMMUTABLE', results)
 
     def test_public_static_types_match_schema_fields_and_optional_contract(self):
-        from typing import get_args, get_origin, get_type_hints, Literal
+        from typing import Literal, get_args, get_origin, get_type_hints
         import asset_library_types as public_types
-        from asset_library import AssetResolver
+        from asset_library import AssetResolver, detect_format
         from asset_library_contracts import definitions
 
-        for name, contract in definitions().items():
+        contracts = definitions()
+        provenance_fields = contracts['AssetProvenance']['properties']
+        provenance_hints = get_type_hints(public_types.AssetProvenance)
+        for field, name in {
+            'provider': 'AssetProvider',
+            'tools': 'AssetTool',
+            'source_records': 'AssetSourceRecord',
+            'conversions': 'AssetConversion',
+            'edit_history': 'AssetEdit',
+        }.items():
+            contracts[name] = provenance_fields[field]['items']
+            self.assertEqual(provenance_hints[field], list[getattr(public_types, name)])
+
+        for name, contract in contracts.items():
             record = getattr(public_types, name)
-            hints = get_type_hints(record, include_extras=True)
+            hints = get_type_hints(record)
             with self.subTest(contract=name):
                 self.assertEqual(set(hints), set(contract['properties']))
                 self.assertEqual(record.__required_keys__, set(contract['required']))
                 self.assertEqual(record.__optional_keys__,
                                  set(contract['properties']) - set(contract['required']))
                 for field, schema in contract['properties'].items():
-                    if 'enum' in schema:
+                    if 'enum' in schema or 'const' in schema:
+                        values = schema['enum'] if 'enum' in schema else [schema['const']]
                         self.assertIs(get_origin(hints[field]), Literal)
-                        self.assertEqual(set(get_args(hints[field])), set(schema['enum']))
-        self.assertIs(get_type_hints(AssetResolver.resolve)['return'], public_types.AssetVersion)
-        self.assertIs(get_type_hints(AssetLibrary.resolve)['return'], public_types.AssetVersion)
-        self.assertIs(get_type_hints(AssetLibrary.register)['return'], public_types.AssetRef)
-        self.assertIs(get_type_hints(AssetLibrary.annotations)['return'], public_types.AssetAnnotations)
-        self.assertIs(get_type_hints(AssetLibrary.update_annotations)['return'], public_types.AssetAnnotations)
+                        self.assertEqual(set(get_args(hints[field])), set(values))
+
+        for api, result in (
+            (AssetResolver.resolve, public_types.AssetVersion),
+            (AssetResolver.read_file, bytes),
+            (AssetLibrary.register, public_types.AssetRef),
+            (AssetLibrary.resolve, public_types.AssetVersion),
+            (AssetLibrary.read_file, bytes),
+            (AssetLibrary.annotations, public_types.AssetAnnotations),
+            (AssetLibrary.update_annotations, public_types.AssetAnnotations),
+            (AssetLibrary.scene_reference, public_types.SceneAssetReference),
+            (file_record, public_types.AssetFile),
+            (read_source_bytes, bytes),
+            (legacy_roundtrip, bytes),
+        ):
+            with self.subTest(api=api.__qualname__):
+                self.assertIs(get_type_hints(api)['return'], result)
+
+        self.assertEqual(get_type_hints(detect_format)['return'], tuple[public_types.AssetFormat, str])
+        self.assertEqual(get_type_hints(public_types.SceneAssetReference),
+                         dict(id=str, version=str, path=str, sha256=str, kind=str))
+        self.assertEqual(public_types.SceneAssetReference.__required_keys__,
+                         {'id', 'version', 'path', 'sha256', 'kind'})
 
     def test_every_conceptual_contract_roundtrips_and_rejects_unknown_fields(self):
         reference = dict(id='triangle', version='1.0.0', sha256=self.manifest['manifest_sha256'])
