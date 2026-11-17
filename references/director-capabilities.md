@@ -81,7 +81,10 @@ paths (null explicitly disables a tool), `timeout_seconds` (1–120), bounded
 `configured`, `price_per_call`, `currency`). It accepts no provider credential,
 endpoint, arbitrary command, worker code or environment overrides. Provider
 configuration is an assertion supplied by the caller, never authenticated
-credential or live-provider proof. Unknown price is recorded as unknown.
+credential or live-provider proof. Public IDs start with an ASCII letter or digit,
+followed by up to 127 ASCII letters, digits, periods, underscores, colons or
+hyphens. A known price requires a currency of three uppercase ASCII letters.
+Invalid descriptors raise `DIRECTOR_CAPABILITY_CONFIG` before staging.
 
 Worker probes have a separate timeout, bounded output, one compute thread,
 no stdin and a minimal environment without secrets. On POSIX they also have
@@ -90,8 +93,9 @@ timeout terminates the launched process. They execute only fixed trusted
 code in an owned temporary directory; failure text from executables is not
 copied into public receipts. Worker scratch directories live outside the
 evidence stage. Required files are hash-bound and published through the shared
-`atomic_publish` primitives: the evidence parent is pinned before the first
-write (`pinned_directory`/`private_stage` on Linux, the descriptor-only
+`atomic_publish` primitives. The pinned authority must match the parent directory
+identity captured during destination admission before the stage is created
+(`pinned_directory`/`private_stage` on Linux, the descriptor-only
 `pinned_directory_fd`/`private_stage_fd` on other POSIX hosts, and the
 handle-pinned `atomic_windows` stage on Windows), and the payload is published
 by exclusive rename. On POSIX a parent identity check immediately before the
@@ -137,11 +141,14 @@ recorded as reported during the probe, reported by an initialized component,
 a probe protocol label, or unknown. The codec smoke tests have an unknown
 execution version. The BLEND receipt records the versions reported during
 authoring and native import as separate execution details. The combined
-authoring/import operation has an unknown version. Matching receipt and snapshot versions verifies
-their recorded agreement. Admission evaluates the retained smoke test and
-its expiry. Establishing the identity of dependencies in the running process,
-their deployed versions, or the current execution host requires separate
-verification.
+authoring/import operation has an unknown version. Matching receipt and snapshot
+versions verifies their recorded agreement. The caller must retain and trust
+the original snapshot or pin its digest independently. The expiry bounds use of
+that snapshot, whose references pin its exact receipt bytes. Rebuilding a
+snapshot around older standalone receipts and assigning a new expiry provides
+no evidence of fresh execution. Establishing the age of independent receipts,
+the identity of dependencies in the running process, their deployed versions,
+or the current execution host requires separate verification.
 Reordered requests produce the same ordered capability entries and
 fingerprints when the observed inputs stay the same. A new expiry changes the
 snapshot hash. Do not treat a receipt as a cryptographic signature or a

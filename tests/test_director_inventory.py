@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shutil
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -115,6 +116,49 @@ class InventoryTests(unittest.TestCase):
                                      resources={'max_memory_bytes': 129})
             self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_RESOURCE')
 
+    def test_invalid_public_provider_fields_fail_before_staging(self):
+        fields = ('planning_provider', *inventory.PROVIDERS.values())
+        invalid = ({'id': 'fixture with space'}, {'id': 'fixture\n'},
+                   {'id': 'éclair'}, {'id': 'a' * 129},
+                   {'price_per_call': 1, 'currency': 'usd'},
+                   {'price_per_call': 1, 'currency': 'ÉUR'},
+                   {'price_per_call': 1, 'currency': 'U1D'})
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(cap, '_evidence_stage', side_effect=AssertionError('stage opened')):
+            parent = Path(directory).resolve()
+            for field in fields:
+                for values in invalid:
+                    with self.subTest(field=field, values=values), self.assertRaises(RigError) as error:
+                        cap.probe(request([]), parent/'evidence', configuration={
+                            field: {'id': 'fixture.dev:owner_1', 'configured': False, **values}})
+                    self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_CONFIG')
+                    self.assertEqual(error.exception.report['message'],
+                                     'Provider descriptor requires a valid public ID.' if 'id' in values
+                                     else 'Provider descriptor currency must contain three uppercase ASCII letters.')
+            self.assertEqual(list(parent.iterdir()), [])
+
+    def test_malformed_resource_measurement_is_typed_evidence_failure(self):
+        if not director_contracts.artifact_reads_supported():
+            self.skipTest('exact receipt comparisons need secure Director artifact reads')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            for operation in ('resource.memory', 'resource.storage'):
+                for measurement in (None, [], 'fixture', 1, True, {}):
+                    with self.subTest(operation=operation, measurement=measurement):
+                        receipt = dict(operation=operation, status='available', execution_verified=True,
+                                       version='fixture', policy_limits=cap.LIMITS, payloads=[],
+                                       execution=measurement)
+                        path = root/'receipt.json'
+                        path.write_text(json.dumps(receipt), encoding='utf-8')
+                        snapshot = dict(capabilities=[dict(operation=operation, status='available',
+                            execution_verified=True, version='fixture', limits=cap.LIMITS,
+                            probe_evidence=[cap._reference(path, root)])],
+                            expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat())
+                        snapshot['digest'] = object_hash(snapshot)
+                        with self.assertRaises(RigError) as error:
+                            cap.assert_admission(snapshot, [operation], evidence_root=root)
+                        self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_EVIDENCE')
+
     def test_provider_descriptors_are_public_unverified_and_never_invoked(self):
         for operation, field in inventory.PROVIDERS.items():
             with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory, patch.object(cap, '_worker', side_effect=AssertionError('provider called')):
@@ -200,6 +244,17 @@ class PublicationTests(unittest.TestCase):
     def setUp(self):
         if not _pinned_publication_supported():
             self.skipTest('pinned evidence publication is unavailable on this host; probe fails closed')
+
+    def test_parent_identity_must_match_before_staging_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory).resolve()
+            identity = parent.stat()
+            different = SimpleNamespace(st_dev=identity.st_dev, st_ino=identity.st_ino + 1)
+            with patch.object(cap, '_destination_parent', return_value=different), \
+                    self.assertRaises(RigError) as error:
+                cap.probe(request(['runtime.python'], ['runtime.python']), parent/'proof')
+            self.assertEqual(error.exception.report['code'], 'DIRECTOR_CAPABILITY_DESTINATION')
+            self.assertEqual(list(parent.iterdir()), [])
 
     def test_parent_swap_between_stage_and_publish_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:

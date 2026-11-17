@@ -19,12 +19,13 @@ import re
 from pathlib import Path
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import time
 
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import atomic_publish
 from director_contracts import validate_method_request, validate_method_result, validate_document
 from director_schema import schemas
@@ -72,6 +73,14 @@ def _unknown_usage():
                 currency=None, measurement_source='director-local-probe-v1')
 
 
+def _valid_provider_id(value):
+    return isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', value) is not None
+
+
+def _valid_currency(value):
+    return isinstance(value, str) and re.fullmatch(r'[A-Z]{3}', value) is not None
+
+
 def _config(configuration):
     value = dict(configuration or {})
     _need(not set(value)-{'blender','ffmpeg','ffprobe','timeout_seconds','planning_provider','production_limits',
@@ -90,11 +99,12 @@ def _config(configuration):
         if provider is None:
             continue
         _need(isinstance(provider,dict) and not set(provider)-{'id','configured','price_per_call','currency'},'CONFIG','Provider descriptor accepts no credentials or endpoints.')
-        _need(isinstance(provider.get('id'),str) and provider['id'] and len(provider['id'])<=128,'CONFIG','Provider ID is required.')
+        _need(_valid_provider_id(provider.get('id')), 'CONFIG', 'Provider descriptor requires a valid public ID.')
         _need(type(provider.get('configured')) is bool,'CONFIG','Provider availability must be explicit.')
         price=provider.get('price_per_call')
         _need(price is None or type(price) in (int,float) and 0<=price<=1e9,'CONFIG','Invalid provider price.')
-        _need(provider.get('currency') is None or isinstance(provider['currency'],str) and len(provider['currency'])==3,'CONFIG','Currency must be a three-letter code.')
+        _need(provider.get('currency') is None or _valid_currency(provider['currency']),
+              'CONFIG', 'Provider descriptor currency must contain three uppercase ASCII letters.')
         _need((price is None)==(provider.get('currency') is None),'CONFIG','Known price and currency must be supplied together.')
     return value
 
@@ -355,8 +365,32 @@ def _disk(path):
     usage=shutil.disk_usage(path);return usage.free,usage.total
 
 
+def _destination_parent(parent):
+    message = 'Evidence parent must be an existing canonical directory without symlinks.'
+    try:
+        identity = parent.stat(follow_symlinks=False)
+        canonical = parent.resolve(strict=True)
+    except (OSError, ValueError) as error:
+        raise RigError('DIRECTOR_CAPABILITY_DESTINATION', message, stage='capability') from error
+    _need(stat.S_ISDIR(identity.st_mode) and canonical == parent, 'DESTINATION', message)
+    return identity
+
+
 @contextmanager
-def _evidence_stage(destination):
+def _checked_parent(parent, expected, pin, inspect_pin):
+    message = 'Evidence parent changed before staging.'
+    with ExitStack() as stack:
+        try:
+            authority = stack.enter_context(pin(parent))
+            pinned_identity = inspect_pin(authority)
+        except (OSError, ValueError) as error:
+            raise RigError('DIRECTOR_CAPABILITY_DESTINATION', message, stage='capability') from error
+        _need(os.path.samestat(expected, pinned_identity), 'DESTINATION', message)
+        yield authority
+
+
+@contextmanager
+def _evidence_stage(destination, expected_parent):
     """Pin the evidence parent before any write and publish only into that directory.
 
     Linux uses the procfd private stage, other descriptor-capable POSIX hosts a
@@ -366,12 +400,16 @@ def _evidence_stage(destination):
     parent=destination.parent
     if os.name=='nt':
         _need(atomic_publish.windows_private_stage_supported(),'PLATFORM','Pinned Windows evidence publication is unavailable.')
-        with atomic_publish.windows_private_stage(parent,prefix='.director-probe-') as stage:
+        from atomic_windows import pinned_directory as windows_pin
+        with _checked_parent(parent, expected_parent, windows_pin,
+                             lambda pin: pin.path.stat(follow_symlinks=False)) as parent_pin, \
+                atomic_publish.windows_private_stage(parent_pin.path, prefix='.director-probe-') as stage:
             yield _Stage(stage.path,lambda:_disk(stage.path),stage.publish_to)
         return
     if atomic_publish.private_stage_supported():
         pin=atomic_publish.pinned_directory
-        with pin(parent) as parent_fd, atomic_publish.private_stage(parent_fd,prefix='.director-probe-') as (wrapper,_):
+        with _checked_parent(parent, expected_parent, pin, os.fstat) as parent_fd, \
+                atomic_publish.private_stage(parent_fd, prefix='.director-probe-') as (wrapper, _):
             pinned=Path('/proc/self/fd')/str(parent_fd);payload=wrapper/'published';payload.mkdir()
             def publish(target):
                 _same_parent(parent,parent_fd,pin)
@@ -380,7 +418,8 @@ def _evidence_stage(destination):
         return
     _need(atomic_publish.private_stage_fd_supported(),'PLATFORM','Pinned evidence publication is unavailable on this platform.')
     pin=atomic_publish.pinned_directory_fd
-    with pin(parent) as parent_fd, atomic_publish.private_stage_fd(parent_fd,prefix='.director-probe-') as stage_fd, \
+    with _checked_parent(parent, expected_parent, pin, os.fstat) as parent_fd, \
+            atomic_publish.private_stage_fd(parent_fd, prefix='.director-probe-') as stage_fd, \
             tempfile.TemporaryDirectory(prefix='director-build-') as build:
         payload=Path(build)/'published';payload.mkdir()
         def publish(target):
@@ -403,12 +442,12 @@ def probe(request, evidence_root, *, configuration=None):
     _need(len(ops)==len(set(ops)) and len(allowed)==len(set(allowed)),'INPUT','Duplicate operations/probes.')
     _need(set(allowed)<=set(ops),'INPUT','Local probes must name requested operations.')
     destination=Path(evidence_root).absolute()
+    expected_parent = _destination_parent(destination.parent)
     _need(not destination.exists() and not destination.is_symlink(),'DESTINATION','Evidence destination must be new.')
-    _need(destination.parent.is_dir() and destination.parent.resolve()==destination.parent,'DESTINATION','Evidence parent must be an existing canonical directory without symlinks.')
     stamp=datetime.now(timezone.utc)
     _need(_date(request['context']['deadline'])>stamp,'DEADLINE','Operation deadline has expired.')
     records=[];diagnostics=[];refs=[]
-    with _evidence_stage(destination) as pinned_stage:
+    with _evidence_stage(destination, expected_parent) as pinned_stage:
         stage=pinned_stage.path;(stage/'receipts').mkdir();(stage/'payloads').mkdir()
         for operation in sorted(ops):
             _need(_date(request['context']['deadline'])>datetime.now(timezone.utc),'DEADLINE','Operation deadline expired during probing.')
@@ -548,8 +587,8 @@ def _provider_receipt_price(evidence, limits):
     price=evidence.get('price_per_call');currency=evidence.get('currency')
     _need(type(price) in (int,float) and 0<=price<=1e9 and math.isfinite(price),
           'PRICE','Retained provider price must be finite and nonnegative.')
-    _need(isinstance(currency,str) and len(currency)==3 and currency.isalpha() and currency.isupper()
-          and currency==limits['currency'], 'PRICE','Retained provider currency differs from policy.')
+    _need(_valid_currency(currency) and currency==limits['currency'],
+          'PRICE','Retained provider currency differs from policy.')
     return price,currency
 
 
@@ -560,7 +599,8 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                      verified_provider_costs=None):
     """Verify retained smoke-test evidence and policy on a supported reader.
 
-    Admission checks recorded execution and expiry. It does not identify the
+    The caller supplies the original trusted snapshot. Its expiry bounds use
+    of that snapshot; it does not date independent receipts or identify the
     current dependencies, executing process, or execution host.
     """
     _need(isinstance(snapshot,dict),'SCHEMA','Capability snapshot must be an object.')
@@ -597,14 +637,16 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
                 for payload in payloads:_read_artifact(evidence_root,payload)
                 if operation in ('resource.memory', 'resource.storage'):
                     key = 'max_memory_bytes' if operation == 'resource.memory' else 'max_storage_bytes'
-                    observed = evidence.get('execution', {}).get('available_bytes')
+                    measurement = evidence.get('execution')
+                    _need(isinstance(measurement, dict), 'EVIDENCE', 'Resource measurement is missing.')
+                    observed = measurement.get('available_bytes')
                     _need(type(observed) is int and observed >= 0, 'EVIDENCE', 'Resource measurement is missing.')
                     amount = (resources or {}).get(key, 0)
                     _need(type(amount) in (int, float) and 0 <= amount <= observed,
                           'RESOURCE', 'Resource estimate exceeds the measured available capacity: '+key)
                 if operation in REMOTE_OPERATIONS:
                     provider=evidence.get('provider_id')
-                    _need(isinstance(provider,str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}',provider) is not None,
+                    _need(_valid_provider_id(provider),
                           'POLICY','Executed provider receipt requires a valid provider identity.')
                     receipt_providers.append(provider)
                     receipt_prices.append(_provider_receipt_price(evidence,item['limits']))
@@ -614,7 +656,7 @@ def assert_admission(snapshot, required_operations, *, evidence_root=None, now=N
             _need(maximum is not None and amount<=maximum,'RESOURCE','Resource estimate exceeds capability bound: '+resource)
         if operation in REMOTE_OPERATIONS:
             _need(isinstance(allowed_providers,(list,tuple)) and
-                  all(isinstance(p,str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}',p) is not None for p in allowed_providers),
+                  all(_valid_provider_id(p) for p in allowed_providers),
                   'POLICY','Provider allowlist must contain exact provider identities.')
             _need(len(set(receipt_providers))==1 and receipt_providers[0] in allowed_providers,
                   'POLICY','Executed provider identity is not permitted by the operation policy.')
