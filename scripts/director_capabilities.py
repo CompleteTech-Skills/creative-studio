@@ -110,6 +110,10 @@ def _executable(name, config):
     except OSError:return None
 
 
+def _native_importer_discovered():
+    return all(importlib.util.find_spec(name) is not None for name in ('numpy', 'pygltflib'))
+
+
 def _worker(argv, directory, timeout):
     """Bound output/runtime; do not persist subprocess text or inherited secrets."""
     output=Path(directory)/'worker-output.txt'
@@ -426,7 +430,7 @@ def probe(request, evidence_root, *, configuration=None):
                 elif operation.startswith('blender.') or operation=='importer.blend':
                     executable=_executable('blender',config)
                     record['discovered']=executable is not None;record['reason']='missing-blender' if not executable else 'execution-not-requested'
-                    if executable and operation=='importer.blend' and not all(importlib.util.find_spec(name) is not None for name in ('numpy','pygltflib')):
+                    if executable and operation=='importer.blend' and not _native_importer_discovered():
                         record['discovered']=False;record['reason']='missing-native-importer-dependency'
                 elif operation.startswith('codec.'):
                     executable=_executable('ffmpeg',config);verifier=_executable('ffprobe',config)
@@ -434,7 +438,7 @@ def probe(request, evidence_root, *, configuration=None):
                     record['reason']='missing-ffmpeg-or-ffprobe' if not record['discovered'] else 'execution-not-requested'
                     if verifier:record['dependencies']['ffprobe']=sha256(verifier)
                 elif operation.startswith('importer.'):
-                    record['discovered']=all(importlib.util.find_spec(name) is not None for name in ('numpy','pygltflib'))
+                    record['discovered']=_native_importer_discovered()
                     record['reason']='missing-native-importer-dependency' if not record['discovered'] else 'execution-not-requested'
                 elif operation in MODULES:
                     module=ROOT/'scripts'/(MODULES[operation]+'.py');record['discovered']=module.is_file()

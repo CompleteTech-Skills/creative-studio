@@ -439,7 +439,9 @@ class MissingDependencyTests(unittest.TestCase):
             self.assertIn(repr(str(Path(sys.executable).resolve())), source)
             return {'success': True, 'reason': None, 'exit_code': 0}, 'DIRECTOR_PROBE={"vertices": 3, "triangles": 1, "importing_blender_version": "4.5.4 LTS"}\n'
 
-        with tempfile.TemporaryDirectory() as directory, patch.object(cap, '_worker', side_effect=worker):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(cap, '_native_importer_discovered', return_value=True), \
+                patch.object(cap, '_worker', side_effect=worker):
             root = Path(directory).resolve()/'evidence'
             result = cap.probe(request(['importer.blend'], ['importer.blend']), root,
                                configuration={'blender': sys.executable})
@@ -470,6 +472,7 @@ class MissingDependencyTests(unittest.TestCase):
                 return {'success': True, 'reason': None, 'exit_code': 0}, 'DIRECTOR_PROBE={"version": "4.5.3"}\n'
 
             with self.subTest(reason=reason), tempfile.TemporaryDirectory() as directory, \
+                    patch.object(cap, '_native_importer_discovered', return_value=True), \
                     patch.object(cap, '_worker', side_effect=worker):
                 root = Path(directory).resolve()/'evidence'
                 result = cap.probe(request(['importer.blend'], ['importer.blend']), root,
