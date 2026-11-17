@@ -4437,45 +4437,7 @@
               ]
             },
             "outputs": {},
-            "diagnostics": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
-                  },
-                  "path": {
-                    "type": "string",
-                    "maxLength": 1024
-                  },
-                  "message": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4096
-                  },
-                  "correction": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4096
-                  },
-                  "retryable": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "code",
-                  "path",
-                  "message",
-                  "correction",
-                  "retryable"
-                ]
-              },
-              "minItems": 0,
-              "maxItems": 128
-            },
+            "diagnostics": {},
             "executed": {
               "type": "boolean"
             },
@@ -4515,9 +4477,8 @@
                 "status": {
                   "const": "accepted"
                 },
-                "job_id": {
-                  "type": "string",
-                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                "executed": {
+                  "const": false
                 },
                 "outputs": {
                   "type": "array",
@@ -4564,12 +4525,26 @@
                   },
                   "minItems": 0,
                   "maxItems": 0
+                },
+                "diagnostics": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Diagnostic"
+                  },
+                  "minItems": 0,
+                  "maxItems": 128
+                },
+                "job_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
                 }
               },
               "required": [
                 "status",
-                "job_id",
-                "outputs"
+                "executed",
+                "outputs",
+                "diagnostics",
+                "job_id"
               ]
             },
             {
@@ -4577,6 +4552,9 @@
               "properties": {
                 "status": {
                   "const": "complete"
+                },
+                "executed": {
+                  "const": true
                 },
                 "outputs": {
                   "type": "array",
@@ -4623,22 +4601,31 @@
                   },
                   "minItems": 0,
                   "maxItems": 4096
+                },
+                "diagnostics": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Diagnostic"
+                  },
+                  "minItems": 0,
+                  "maxItems": 128
                 }
               },
               "required": [
                 "status",
-                "outputs"
+                "executed",
+                "outputs",
+                "diagnostics"
               ]
             },
             {
               "type": "object",
               "properties": {
                 "status": {
-                  "enum": [
-                    "rejected",
-                    "unavailable",
-                    "cancelled"
-                  ]
+                  "const": "cancelled"
+                },
+                "executed": {
+                  "const": false
                 },
                 "outputs": {
                   "type": "array",
@@ -4685,11 +4672,100 @@
                   },
                   "minItems": 0,
                   "maxItems": 0
+                },
+                "diagnostics": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Diagnostic"
+                  },
+                  "minItems": 0,
+                  "maxItems": 128
                 }
               },
               "required": [
                 "status",
-                "outputs"
+                "executed",
+                "outputs",
+                "diagnostics"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "enum": [
+                    "rejected",
+                    "unavailable"
+                  ]
+                },
+                "executed": {
+                  "const": false
+                },
+                "outputs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024,
+                        "pattern": "^(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .](?:/(?!(?:[aA][uU][xX]|[cC][oO][mM]1|[cC][oO][mM]2|[cC][oO][mM]3|[cC][oO][mM]4|[cC][oO][mM]5|[cC][oO][mM]6|[cC][oO][mM]7|[cC][oO][mM]8|[cC][oO][mM]9|[cC][oO][nN]|[cC][oO][nN][iI][nN]\\$|[cC][oO][nN][oO][uU][tT]\\$|[lL][pP][tT]1|[lL][pP][tT]2|[lL][pP][tT]3|[lL][pP][tT]4|[lL][pP][tT]5|[lL][pP][tT]6|[lL][pP][tT]7|[lL][pP][tT]8|[lL][pP][tT]9|[nN][uU][lL]|[pP][rR][nN])(?:[./]|(?![\\s\\S])))[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff]*[^/\\\\:<>\"|?*\\x00-\\x1f\\x7f\\ud800-\\udfff .])*(?![\\s\\S])"
+                      },
+                      "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                      },
+                      "bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 268435456
+                      },
+                      "media_type": {
+                        "enum": [
+                          "model/gltf-binary",
+                          "model/gltf+json",
+                          "model/obj",
+                          "application/octet-stream",
+                          "application/json",
+                          "image/png",
+                          "image/jpeg",
+                          "image/webp",
+                          "text/plain",
+                          "application/zip"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "sha256",
+                      "bytes",
+                      "media_type"
+                    ]
+                  },
+                  "minItems": 0,
+                  "maxItems": 0
+                },
+                "diagnostics": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/Diagnostic"
+                  },
+                  "minItems": 1,
+                  "maxItems": 128,
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/Diagnostic"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "status",
+                "executed",
+                "outputs",
+                "diagnostics"
               ]
             }
           ]

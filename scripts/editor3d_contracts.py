@@ -176,18 +176,29 @@ def _definitions():
     response = _doc('response', dict(request_id=ident,
         status={'enum': ['accepted', 'complete', 'rejected', 'unavailable', 'cancelled']},
         project_revision=nullable(integer), project_sha256=nullable(digest),
-        outputs={}, diagnostics=arr(diagnostic, 0, 128),
-        executed={'type': 'boolean'}, review_status={'const': 'unreviewed'}))
+        outputs={}, diagnostics={}, executed={'type': 'boolean'},
+        review_status={'const': 'unreviewed'}))
     response['properties']['job_id'] = nullable(ident)
+
+    def response_case(status, *, executed, outputs, diagnostics, **fields):
+        properties = dict(status=status, executed={'const': executed},
+            outputs=outputs, diagnostics=diagnostics, **fields)
+        return dict(type='object', properties=properties, required=list(properties))
+
     # Keep the base closed and narrow the fields together for each status.
+    diagnostic_ref = ref('Diagnostic')
+    diagnostics = arr(diagnostic_ref, 0, 128)
+    no_outputs = arr(file, 0, 0)
     response = {'allOf': [response, {'anyOf': [
-        dict(type='object', properties=dict(status={'const': 'accepted'},
-            job_id=ident, outputs=arr(file, 0, 0)), required=['status', 'job_id', 'outputs']),
-        dict(type='object', properties=dict(status={'const': 'complete'},
-            outputs=arr(file, 0, 4096)), required=['status', 'outputs']),
-        dict(type='object', properties=dict(
-            status={'enum': ['rejected', 'unavailable', 'cancelled']},
-            outputs=arr(file, 0, 0)), required=['status', 'outputs']),
+        response_case({'const': 'accepted'}, executed=False, outputs=no_outputs,
+            diagnostics=diagnostics, job_id=ident),
+        response_case({'const': 'complete'}, executed=True, outputs=arr(file, 0, 4096),
+            diagnostics=diagnostics),
+        response_case({'const': 'cancelled'}, executed=False, outputs=no_outputs,
+            diagnostics=diagnostics),
+        response_case({'enum': ['rejected', 'unavailable']}, executed=False,
+            outputs=no_outputs, diagnostics=dict(arr(diagnostic_ref, 1, 128),
+                prefixItems=[diagnostic_ref])),
     ]}]}
     return dict(project=project, scene=scene, node=node, asset=asset, animation=animation,
         command=command, revision=revision, session=session, derived=derived, request=request,
@@ -241,6 +252,19 @@ def validate_contract(value):
                                     format_checker=FormatChecker())
     error = next(validator.iter_errors(value), None)
     if error:
+        if kind == 'response' and error.validator == 'anyOf' and not error.absolute_path:
+            # Preserve specific service diagnostics for the selected status case.
+            wrong_status = {item.schema_path[0] for item in error.context
+                            if tuple(item.absolute_path) == ('status',)}
+            selected = [item for item in error.context if item.schema_path[0] not in wrong_status]
+            paths = {tuple(item.absolute_path) for item in selected}
+            if paths <= {('diagnostics',), ('executed',)}:
+                if any(item.validator == 'minItems' for item in selected):
+                    _error('DIAGNOSTIC', 'Failed or unavailable requests need an actionable diagnostic.')
+                if paths == {('executed',)}:
+                    if value['status'] == 'complete':
+                        _error('STATUS', 'Complete means the declared operation actually executed.')
+                    _error('STATUS', 'Only complete responses may declare execution.')
         _error('SCHEMA', error.message, '/' + '/'.join(map(str, error.absolute_path)))
     for child, path in _walk(value):
         for field in ('created_at', 'updated_at'):
@@ -314,12 +338,6 @@ def validate_contract(value):
             _error('JOB', 'Accepted asynchronous work requires an explicit job identity.', '/job_id')
         if value['status'] in ('accepted', 'cancelled', 'rejected', 'unavailable') and value['outputs']:
             _error('OUTPUT', 'Only completed work may publish output references.', '/outputs')
-        if value['status'] in ('rejected', 'unavailable') and not value['diagnostics']:
-            _error('DIAGNOSTIC', 'Failed or unavailable requests need an actionable diagnostic.')
-        if value['status'] != 'complete' and value['executed']:
-            _error('STATUS', 'Only complete responses may declare execution.')
-        if value['status'] == 'complete' and not value['executed']:
-            _error('STATUS', 'Complete means the declared operation actually executed.')
     if kind == 'derived' and value['status'] == 'verified' and not value['evidence']:
         _error('EVIDENCE', 'Verified derived state requires exact artifact evidence.')
     return value
@@ -502,6 +520,9 @@ def _ts(schema):
         return '{ ' + '; '.join(json.dumps(k) + ('' if k in required else '?') + ': ' + _ts(v) for k, v in fields.items()) + ' }'
     if kind == 'array':
         item = _ts(schema['items'])
+        if 'prefixItems' in schema:
+            prefix = [_ts(part) for part in schema['prefixItems']]
+            return '[' + ', '.join([*prefix, '...Array<' + item + '>']) + ']'
         if schema.get('minItems') == schema.get('maxItems'):
             return '[' + ', '.join(item for _ in range(schema['minItems'])) + ']'
         return 'Array<' + item + '>'

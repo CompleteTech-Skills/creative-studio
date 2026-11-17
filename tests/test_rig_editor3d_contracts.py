@@ -268,12 +268,36 @@ class EditorContractTests(unittest.TestCase):
         generated = generated_files()[ROOT / 'assets/editor3d/contracts.ts']
         declaration = next(line for line in generated.splitlines()
                            if line.startswith('export type response ='))
-        self.assertIn('{ "status": "accepted"; "job_id": string; "outputs": [] }', declaration)
-        self.assertIn('{ "status": "complete"; "outputs": Array<', declaration)
-        self.assertIn(
-            '{ "status": "rejected" | "unavailable" | "cancelled"; "outputs": [] }',
-            declaration,
-        )
+        self.assertIn('"status": "accepted"; "executed": false; "outputs": []; '
+                      '"diagnostics": Array<Diagnostic>; "job_id": string', declaration)
+        self.assertIn('"status": "complete"; "executed": true; "outputs": Array<', declaration)
+        self.assertIn('"status": "cancelled"; "executed": false; "outputs": []; '
+                      '"diagnostics": Array<Diagnostic>', declaration)
+        self.assertIn('"status": "rejected" | "unavailable"; "executed": false; '
+                      '"outputs": []; "diagnostics": [Diagnostic, ...Array<Diagnostic>]',
+                      declaration)
+
+    def test_response_status_execution_and_diagnostics_match_schema(self):
+        validator = Draft202012Validator(schemas()['editor3d.schema.json'])
+        example_response = example('response')
+        for status in ('accepted', 'complete', 'rejected', 'unavailable', 'cancelled'):
+            for executed in (False, True):
+                for diagnostics in ([], example_response['diagnostics']):
+                    response = dict(example_response, status=status, executed=executed,
+                                    diagnostics=diagnostics, job_id='render-job-001')
+                    valid = (executed == (status == 'complete') and
+                             (status not in ('rejected', 'unavailable') or bool(diagnostics)))
+                    with self.subTest(status=status, executed=executed,
+                                      diagnostics=bool(diagnostics)):
+                        self.assertEqual(validator.is_valid(response), valid)
+                        if valid:
+                            self.assertEqual(validate_contract(response), response)
+                        else:
+                            with self.assertRaises(RigError) as raised:
+                                validate_contract(response)
+                            code = ('EDITOR3D_DIAGNOSTIC' if status in ('rejected', 'unavailable')
+                                    and not diagnostics else 'EDITOR3D_STATUS')
+                            self.assertEqual(raised.exception.report['code'], code)
 
     def test_rig_asset_binding_requires_actual_rig_owner(self):
         value = example('asset'); value['asset_type'] = 'rig'
