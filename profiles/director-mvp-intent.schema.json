@@ -1,0 +1,504 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "director-mvp-intent"
+    },
+    "project_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+    },
+    "interpretation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "original_prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "parser": {
+          "const": "restricted-two-robot-laboratory-v1"
+        },
+        "inference_kind": {
+          "const": "deterministic"
+        },
+        "character_count": {
+          "const": 2
+        },
+        "setting": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "explicit": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 256
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "original_prompt",
+        "parser",
+        "inference_kind",
+        "character_count",
+        "setting",
+        "explicit",
+        "assumptions"
+      ]
+    },
+    "state": {
+      "enum": [
+        "planned",
+        "admitted"
+      ]
+    },
+    "production_complete": {
+      "const": false
+    },
+    "audio_policy": {
+      "const": "zero-audio-streams"
+    },
+    "frame_rate": {
+      "const": {
+        "numerator": 24,
+        "denominator": 1
+      }
+    },
+    "duration_frames": {
+      "const": 120
+    },
+    "resolution": {
+      "const": [
+        640,
+        360
+      ]
+    },
+    "characters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "enum": [
+              "aster",
+              "moss"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "required_action": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "required_action"
+        ]
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "props": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "const": "access-key"
+          },
+          "motion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "id",
+          "motion"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 1
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "const": "laboratory"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ]
+    },
+    "story": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "logline": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "beginning": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "middle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "end": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "communication": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 1,
+          "maxItems": 16
+        },
+        "unresolved_assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "logline",
+        "beginning",
+        "middle",
+        "end",
+        "communication",
+        "unresolved_assumptions"
+      ]
+    },
+    "shots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "start_frame": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000000000
+          },
+          "end_frame": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000000000
+          },
+          "duration_frames": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000000000
+          },
+          "camera_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+          },
+          "actors": {
+            "const": [
+              "aster",
+              "moss"
+            ]
+          },
+          "props": {
+            "const": [
+              "access-key"
+            ]
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "minItems": 1,
+            "maxItems": 16
+          },
+          "composition": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "transition": {
+            "const": "cut"
+          },
+          "markers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?![\\s\\S])"
+                },
+                "frame": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2000000000
+                },
+                "target": {
+                  "enum": [
+                    "aster",
+                    "moss",
+                    "access-key"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "frame",
+                "target"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 16
+          }
+        },
+        "required": [
+          "id",
+          "start_frame",
+          "end_frame",
+          "duration_frames",
+          "camera_id",
+          "actors",
+          "props",
+          "actions",
+          "composition",
+          "transition",
+          "markers"
+        ]
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "required_capabilities": {
+      "const": [
+        "model3d.procedural",
+        "scene3d.assemble",
+        "animation3d.evaluate",
+        "render3d.blender.cpu",
+        "export.silent.mp4"
+      ]
+    },
+    "estimates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider_calls": {
+          "const": 0
+        },
+        "frames": {
+          "const": 120
+        },
+        "pixels": {
+          "const": 27648000
+        }
+      },
+      "required": [
+        "provider_calls",
+        "frames",
+        "pixels"
+      ]
+    },
+    "admission": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "input_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+            },
+            "capability_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+            },
+            "required_operations": {
+              "const": [
+                "blender.cpu",
+                "codec.h264",
+                "importer.glb"
+              ]
+            },
+            "resources": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "max_cpu_seconds": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "max_memory_bytes": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "max_storage_bytes": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                },
+                "max_provider_calls": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1000000000000000.0
+                }
+              },
+              "required": [
+                "max_cpu_seconds",
+                "max_memory_bytes",
+                "max_storage_bytes",
+                "max_provider_calls"
+              ]
+            },
+            "budget_snapshot": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "schema_version": {
+                  "const": 1
+                },
+                "kind": {
+                  "const": "director-local-budget"
+                },
+                "limits": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "max_cpu_seconds": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000000000000.0
+                    },
+                    "max_memory_bytes": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000000000000.0
+                    },
+                    "max_storage_bytes": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000000000000.0
+                    },
+                    "max_provider_calls": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1000000000000000.0
+                    }
+                  },
+                  "required": [
+                    "max_cpu_seconds",
+                    "max_memory_bytes",
+                    "max_storage_bytes",
+                    "max_provider_calls"
+                  ]
+                },
+                "revision_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+                }
+              },
+              "required": [
+                "schema_version",
+                "kind",
+                "limits",
+                "revision_sha256"
+              ]
+            }
+          },
+          "required": [
+            "input_sha256",
+            "capability_sha256",
+            "required_operations",
+            "resources",
+            "budget_snapshot"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "project_id",
+    "interpretation",
+    "state",
+    "production_complete",
+    "audio_policy",
+    "frame_rate",
+    "duration_frames",
+    "resolution",
+    "characters",
+    "props",
+    "environment",
+    "story",
+    "shots",
+    "required_capabilities",
+    "estimates",
+    "admission"
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Director local MVP intent v1"
+}
