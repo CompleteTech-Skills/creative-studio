@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "kind": "render3d-snapshot",
+  "adapter": {
+    "id": "native-rig-preview",
+    "version": "1.0.0"
+  },
+  "source": {
+    "id": "render91-fixture",
+    "version": "1.0.1"
+  },
+  "coordinate_system": {
+    "handedness": "right",
+    "right": "+X",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "angles": "radian",
+    "quaternion": "XYZW",
+    "matrices": "column-vectors",
+    "time": "second"
+  },
+  "entrypoint": "rig.json",
+  "files": [
+    {
+      "path": "animations/bend-20802b5cd0729607761906c0e16682afc8877f0f88687c860f5182ae41e2f390.json",
+      "sha256": "e7e040d5440b48f2e48a6719e776dc5a6adb1b1e73eb96031649d9fd57765f4e",
+      "bytes": 1035
+    },
+    {
+      "path": "animations/neutral-ae1629a932398c53d8d74e4c892c4d9cf877a0d94ba23c003fd1ea11ebc448bb.json",
+      "sha256": "ff74cd6704e29e26cc530b7a4d7787054448e923df11dc8574289a7da2da846a",
+      "bytes": 915
+    },
+    {
+      "path": "geometry/f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a.npz",
+      "sha256": "f645f5c75876b29d182745a3b377ef1cf18839fe80365bcfe76cca192a229d9a",
+      "bytes": 1110
+    },
+    {
+      "path": "identity.json",
+      "sha256": "5f68d79d97facf6b4d98bb55ca1f4142e19e7837bd123c380a1b66f354239be9",
+      "bytes": 553
+    },
+    {
+      "path": "rig.json",
+      "sha256": "b872f5a5e934f07a7d7772683e15dc2c3e54b5f41472ed7265e7f8043684707e",
+      "bytes": 6599
+    },
+    {
+      "path": "rig/weights/aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66.npz",
+      "sha256": "aed6dc8cfc2b0789f0d021d29ec005eeebfaeb328b83a3d7ea0f01e3a5856a66",
+      "bytes": 978
+    },
+    {
+      "path": "source/render91-fixture.glb",
+      "sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e",
+      "bytes": 1340
+    }
+  ],
+  "total_bytes": 12530,
+  "fixture": true,
+  "scope": "native-rig-preview",
+  "snapshot_sha256": "9f765b27ebe9a4e4feb5a36d8b9f7edf8c587f59798275b4cfe53af87c22de77"
+}
