@@ -73,12 +73,13 @@ def _local_uri(uri):
     return path
 
 
-def source_snapshot(source, destination, *, maximum_file_bytes=MAX_FILE_BYTES,
-                    maximum_total_bytes=MAX_SOURCE_BYTES):
-    """Safely read explicit source dependencies once into an owned private tree."""
+def source_snapshot(source, destination, *, maximum_file_bytes=None, maximum_total_bytes=None):
+    """Safely capture local dependencies under the active Scene3D limits."""
+    file_limit = MAX_FILE_BYTES if maximum_file_bytes is None else min(MAX_FILE_BYTES, maximum_file_bytes)
+    total_limit = MAX_SOURCE_BYTES if maximum_total_bytes is None else min(MAX_SOURCE_BYTES, maximum_total_bytes)
     source = Path(source).absolute()
     require(source.suffix.lower() in ('.glb', '.gltf'), 'Import accepts GLB or glTF.', 'SCENE3D_IMPORT_FORMAT')
-    payload = read_source_bytes(source, min(maximum_file_bytes, maximum_total_bytes))
+    payload = read_source_bytes(source, min(file_limit, total_limit))
     document = _json(payload, source.suffix.lower())
     require(isinstance(document, dict), 'glTF root must be an object.', 'SCENE3D_IMPORT_FORMAT')
     primary = 'model'+source.suffix.lower()
@@ -106,11 +107,11 @@ def source_snapshot(source, destination, *, maximum_file_bytes=MAX_FILE_BYTES,
             require('/'.join(parts[:index]) not in {n.casefold() for n in names},
                     'File/directory resource alias.', 'SCENE3D_IMPORT_URI')
     files, total = {primary: payload}, len(payload)
-    require(total <= maximum_total_bytes, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
+    require(total <= total_limit, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
     for path, target in sorted(resources.items()):
-        data = read_source_bytes(target, min(maximum_file_bytes, maximum_total_bytes-total))
+        data = read_source_bytes(target, min(file_limit, total_limit-total))
         total += len(data)
-        require(total <= maximum_total_bytes, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
+        require(total <= total_limit, 'Aggregate source byte budget exceeded.', 'SCENE3D_IMPORT_LIMIT')
         files[path] = data
     destination = Path(destination)
     destination.mkdir(mode=0o700)
