@@ -7,7 +7,8 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from rig_gltf import GltfBuilder,read_gltf,preflight_gltf
+from rig_gltf import GltfBuilder,GltfDocument,read_gltf,preflight_gltf
+from rig_import import load_character_model
 from rig_contracts import DEFAULT_LIMITS
 from rig_errors import RigError
 
@@ -25,6 +26,75 @@ class GltfPreflightTests(unittest.TestCase):
         for _ in range(accessor_copies):builder.json['accessors'].append(deepcopy(builder.json['accessors'][0]))
         path=self.root/'actual.glb';builder.write(path);size=path.stat().st_size
         return read_gltf(path),size
+
+    def animated_document(self, *, primitives=1, keys=2, width=1, cubic=False, channels=1):
+        builder=GltfBuilder()
+        position=builder.accessor([[0,0,0],[1,0,0],[0,1,0]],'VEC3')
+        times=builder.accessor([[float(i)] for i in range(keys)],'SCALAR')
+        values=builder.accessor([[0.] for _ in range(keys*width*(3 if cubic else 1))],'SCALAR')
+        primitive=dict(attributes=dict(POSITION=position), targets=[dict(POSITION=position) for _ in range(width)])
+        builder.json.update(nodes=[dict(mesh=0) for _ in range(channels)],
+            meshes=[dict(primitives=[deepcopy(primitive) for _ in range(primitives)])],
+            scenes=[dict(nodes=list(range(channels)))],
+            animations=[dict(samplers=[dict(input=times,output=values,interpolation='CUBICSPLINE' if cubic else 'LINEAR')],
+                channels=[dict(sampler=0,target=dict(node=i,path='weights')) for i in range(channels)])])
+        path=self.root/'animation.glb';builder.write(path)
+        return read_gltf(path),path.stat().st_size
+
+    def test_real_200_track_animation_rejected_before_accessor_decode(self):
+        document,size=self.animated_document(primitives=200,keys=3000)
+        with patch.object(document,'accessor',side_effect=AssertionError('decoded before admission')) as decode:
+            with self.assertRaises(RigError) as caught:
+                preflight_gltf(document,encoded_bytes=size,limits=dict(memory_bytes=5*1024**2))
+        self.assertEqual(caught.exception.report['code'],'RIG_LIMIT_MEMORY')
+        decode.assert_not_called()
+
+    def test_cumulative_shared_sampler_cubic_and_exact_key_boundary(self):
+        document,size=self.animated_document(primitives=2,keys=3,width=2,cubic=True,channels=2)
+        with patch.object(document,'accessor',side_effect=AssertionError('decoded before admission')) as decode:
+            result=preflight_gltf(document,encoded_bytes=size,limits=dict(keyframes=12))
+            self.assertEqual((result['animation_tracks'],result['animation_keyframes']),(4,12))
+            with self.assertRaises(RigError) as caught:
+                preflight_gltf(document,encoded_bytes=size,limits=dict(keyframes=11))
+            self.assertEqual(caught.exception.report['code'],'RIG_LIMIT_KEYFRAMES')
+        decode.assert_not_called()
+        linear,linear_size=self.animated_document(primitives=2,keys=3,width=2,channels=2)
+        linear_result=preflight_gltf(linear,encoded_bytes=linear_size)
+        self.assertGreater(result['estimated_memory_bytes'],linear_result['estimated_memory_bytes'])
+        boundary=linear_result['estimated_memory_bytes']
+        self.assertEqual(preflight_gltf(linear,encoded_bytes=linear_size,
+                                       limits=dict(memory_bytes=boundary))['estimated_memory_bytes'],boundary)
+        with self.assertRaises(RigError) as caught:
+            preflight_gltf(linear,encoded_bytes=linear_size,limits=dict(memory_bytes=boundary-1))
+        self.assertEqual(caught.exception.report['code'],'RIG_LIMIT_MEMORY')
+
+    def test_animation_time_metadata_rejected_before_import_decodes_accessors(self):
+        for kind,component in [('VEC2',5126),('SCALAR',5123)]:
+            with self.subTest(kind=kind,component=component):
+                builder=GltfBuilder()
+                position=builder.accessor([[0,0,0],[1,0,0],[0,1,0]],'VEC3')
+                times=builder.accessor([[0,1],[2,3],[4,5]] if kind == 'VEC2' else [0,1,2],kind,component=component)
+                values=builder.accessor([0.]*6,'SCALAR')
+                builder.json.update(nodes=[dict(mesh=0)],meshes=[dict(primitives=[dict(
+                    attributes=dict(POSITION=position),targets=[dict(POSITION=position)]*2)])],
+                    scenes=[dict(nodes=[0])],animations=[dict(samplers=[dict(input=times,output=values)],
+                    channels=[dict(sampler=0,target=dict(node=0,path='weights'))])])
+                path=self.root/'invalid-time.glb';builder.write(path)
+                with patch.object(GltfDocument,'accessor',side_effect=AssertionError('decoded before admission')) as decode:
+                    with self.assertRaises(RigError) as caught:
+                        load_character_model(path,limits=dict(DEFAULT_LIMITS,keyframes=3))
+                self.assertEqual(caught.exception.report['code'],'RIG_GLTF_ACCESSOR')
+                decode.assert_not_called()
+
+    def test_animation_scalar_time_import_at_key_boundary(self):
+        for cubic in (False,True):
+            with self.subTest(cubic=cubic):
+                document,_=self.animated_document(primitives=2,keys=3,width=2,cubic=cubic,channels=2)
+                model=load_character_model(document.path,limits=dict(DEFAULT_LIMITS,keyframes=12))
+                tracks=next(iter(model.clips.values()))['tracks']
+                self.assertEqual(len(tracks),4)
+                self.assertEqual(sum(len(track['times']) for track in tracks),12)
+                self.assertEqual('in_tangents' in tracks[0],cubic)
 
     def test_counts_actual_selected_mesh_instances_and_restrictive_limits(self):
         document,size=self.document()

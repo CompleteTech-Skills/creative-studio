@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "issue": "https://github.com/CompleteTech-Skills/hatch-pet/issues/139",
+  "scope": "local implementation candidate; not independent review or GitHub CI",
+  "base_stack_sha": "209569fa29d8be1b25b9a8cd014c26399e68a71b",
+  "source_sha256": {
+    "scripts/asset_library_import.py": "0d4aea45bd71a6b461f0a73bfd904fddc1d3a762dd9c34ebf82ce26c3d2c9a6c",
+    "scripts/asset_import_worker.py": "e24a6ab8e42fb93ce0b05d26a6a9c7e8dc2342fd2d6354498561fc083e17839a",
+    "scripts/test_rig_gate.py": "2ddf8a8cbabc7989046c8094a1327a935c21087be900d9916d634e44c888cc5d",
+    "tests/test_rig_asset_import.py": "af1303887a12f3cafad60a9799a6ef2689eee6c97d75cbf17323028f372459a7",
+    ".github/workflows/rig-3d.yml": "04889f8b49d0d51271f55fe5c932cf569f1e6d7804af1464b6905860f0caf252",
+    "references/asset-library/import.md": "13be08fc1f5f1b0c8d68f33218c517683a584aa7f7a85e52243498e71c7a3ad7"
+  },
+  "observed_import_suite": "12 tests PASS, actual Blender4.5.3 save/reopen, trustedpacked blend/scripted rejection, generation, Khronos reader; see import-tests.txt",
+  "limitations": [
+    "final completePNG/strictJPEG decoder dependency awaiting owner reviewed candidate",
+    "independentAstra review pending",
+    "no GitHub writes authorized for this candidate",
+    "Linux-only Blender resource backend; otherhosts unavailable"
+  ],
+  "dependencies": [
+    "PR207 4c744e593dced4e74af0d06f5eeb2dd3687cef79",
+    "PR205 91d14b8339eb16a6285969d9bc772b11bdfec3ec",
+    "PR206 1d3480f0e4cb0a0431ab86120f65e25048badac6",
+    "PR204 145e6867b07b39f53290141e2348fa1268ab547f"
+  ]
+}

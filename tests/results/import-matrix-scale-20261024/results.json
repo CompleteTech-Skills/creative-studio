@@ -1,0 +1,34 @@
+{
+  "source_sha": "5e1568269273d6330b70caf28b98b97980c7a740",
+  "tests_run": 111,
+  "failures": 0,
+  "errors": 0,
+  "skips": 5,
+  "seconds": 22.528422659961507,
+  "tracked_source_files": 1668,
+  "source_unchanged": true,
+  "environment": "rig Python3.12.15 pinned; external native flags disabled; no backend execution claimed",
+  "scope": "Partial44/52 glTF node invertibility only; no parent closure, primitive/import backend or native interoperability approval",
+  "reproduction": {
+    "baseline": "dcba9123c4b70fc2caa7b56267920f239fb35c12",
+    "uniform_scale": [
+      1e-06,
+      1e-06,
+      1e-06
+    ],
+    "determinant": 1.0000000000000014e-18,
+    "baseline_error": "RIG_SINGULAR_TRANSFORM",
+    "inverse_finite": true
+  },
+  "code_sha256": {
+    "scripts/rig_gltf.py": "d9cacbc709ed501ce43f0ca5fd726442bde6bd769b47918119cac687e009b050",
+    "tests/test_rig_math.py": "dcfbf967772bf30abbda36920092525562a2a5e20e214c8fc86afe36c009213b",
+    "references/3d-rigging.md": "ba39ed6629cabb801d2ad75fb1e7e05cf458e0d84454a17f2e572c74ac38ba4c"
+  },
+  "limitations": [
+    "External Blender/Chromium/Khronos tests gated off during this run; five declared skips retained.",
+    "Skeletal rest transforms continue to reject shear/reflection.",
+    "Existing extent and geometry resource bounds still apply beyond node admission.",
+    "No visual/production approval."
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "repository": "CompleteTech-Skills/creative-studio",
+  "issue": 216,
+  "scope": "Recovered exact observed before-settings evidence; supplements activation-20261113.json without rewriting historical evidence.",
+  "acceptance_text": "Retain exact before/after settings and a genuine rejected-merge or equivalent rule evaluation demonstrating enforcement, without merging during triage.",
+  "before": {
+    "main_branch_protection": {
+      "observation": "HTTP404 Branch not protected",
+      "complete_body": {
+        "message": "Branch not protected",
+        "documentation_url": "https://docs.github.com/rest/branches/branch-protection#get-branch-protection",
+        "status": "404"
+      }
+    },
+    "repository_rulesets": [],
+    "private_vulnerability_reporting": {
+      "enabled": false
+    },
+    "security_and_analysis": {
+      "dependabot_security_updates": {
+        "status": "disabled"
+      },
+      "secret_scanning": {
+        "status": "disabled"
+      },
+      "secret_scanning_non_provider_patterns": {
+        "status": "disabled"
+      },
+      "secret_scanning_push_protection": {
+        "status": "disabled"
+      },
+      "secret_scanning_validity_checks": {
+        "status": "disabled"
+      }
+    },
+    "vulnerability_alerts": {
+      "state": "disabled",
+      "cli_observation": "gh: Vulnerability alerts are disabled. (HTTP 404)",
+      "http_status_line": "HTTP/2.0 404 Not Found",
+      "complete_http_response_retained": false
+    }
+  },
+  "original_evidence": [
+    {
+      "path": "tests/results/governance-baseline-20261113/original-before-security.jsonl",
+      "sha256": "26906c9051cd21220fb51e3a813a684192efcc9a7d8b53c82d7e6b0633b63fb2",
+      "bytes": 5414,
+      "preservation": "verbatim original archived call and response-item lines"
+    },
+    {
+      "path": "tests/results/governance-baseline-20261113/original-before-protection-rulesets.jsonl",
+      "sha256": "0b58496485f1b5713a03a4b95161826a4a81e78f79102455c7b778fadd99bbd8",
+      "bytes": 15298,
+      "preservation": "verbatim original archived call and response-item lines"
+    },
+    {
+      "path": "tests/results/governance-baseline-20261113/original-before-alerts.jsonl",
+      "sha256": "df7e27e57e3d7adc2fe53c77d96a22c37a8a3b92bfd1d728abcd77060da21d4b",
+      "bytes": 3354,
+      "preservation": "verbatim original response-item lines selected by original call ID; terminal command intentionally retained only first12 HTTP lines"
+    }
+  ],
+  "limitations": [
+    "The original repository GET was projected with --jq to full_name/security_and_analysis. All returned security settings were retained; unrelated whole-repository fields were not captured.",
+    "The original alerts command piped the response to head -12. Its disabled CLI result and HTTP404 status survive; a complete HTTP header/body capture does not.",
+    "These archived observations do not establish completion of a secret scan, direct protected-ref rejection, an independent GitHub account approval, or artistic approval."
+  ],
+  "after_and_enforcement_reference": "docs/governance/activation-20261113.json",
+  "adjudication": {
+    "status": "Pending fresh independent acceptance review and ordinary merge/postverification",
+    "reasoning": "The literal requirement asks for exact before/after settings. The genuine archived projections retain the actual setting values; the absent unrelated repository fields and unretained remainder of an HTTP404 response must not be described as recovered. No acceptance exception is presumed.",
+    "issue_closure": "Keep216open until independent scope adjudication, merged evidence and current-main readbacks/checks."
+  }
+}

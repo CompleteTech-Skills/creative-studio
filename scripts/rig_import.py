@@ -8,12 +8,13 @@ from pathlib import Path
 import struct
 import warnings
 import zlib
+import uuid
 import numpy as np
 
 from rig_contracts import DEFAULT_LIMITS
-from rig_errors import RigError, require, sha256, slug, timestamp
+from rig_errors import RigError, require, slug, timestamp
 from rig_geometry import analyze_geometry, vertex_normals
-from rig_gltf import GltfDocument, _index, node_matrix, read_gltf, scene_graph
+from rig_gltf import GltfDocument, _index, node_matrix, preflight_gltf, read_gltf, scene_graph
 from rig_math import decompose, transform_points
 from rig_models import Geometry, Mesh, SkinWeights, TextureImage, validate_geometry
 from rig_skeleton import validate_skeleton
@@ -111,7 +112,7 @@ def _verify_png_raster(data: bytes, size: tuple[int, int]) -> None:
     require(inflater.eof and decoded == expected, 'RIG_TEXTURE_DECODE', 'PNG raster or zlib footer is incomplete.')
 
 
-def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0) -> tuple[str, int]:
+def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0, *, budget=None, reservation_key=None, encoded_reserved=False) -> tuple[str, int]:
     """Verify containers and decode pixels before accepting immutable source bytes.
 
     ``verify`` alone does not decode JPEG entropy data. Keep the existing
@@ -131,6 +132,8 @@ def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0) -> tuple[s
                 pixels = image.width * image.height
                 require(0 < pixels <= 16_777_216 and (total_pixels + pixels) * 16 <= limits['memory_bytes'] // 2,
                         'RIG_LIMIT_TEXTURE', 'Decoded textures exceed the pixel/memory budget.')
+                if budget is not None:
+                    budget.image(key=reservation_key, encoded_bytes=0 if encoded_reserved else len(data), pixels=pixels)
                 mime = 'image/png' if image.format == 'PNG' else 'image/jpeg'
                 if image.format == 'PNG':
                     _verify_png_raster(data, image.size)
@@ -155,16 +158,22 @@ def _decode_texture(data: bytes, limits: dict, total_pixels: int = 0) -> tuple[s
         raise RigError('RIG_TEXTURE_DECODE', 'Texture pixels or container cannot be decoded: ' + str(exc)) from exc
 
 
-def _images(document: GltfDocument) -> list[TextureImage]:
+def _images(document: GltfDocument, *, budget=None, reservation_prefix=None) -> list[TextureImage]:
     images = []
     total_pixels = 0
     for i, item in enumerate(document.json.get('images', [])):
+        encoded_reserved = False
         if 'uri' in item:
             data = document.uri(item['uri'])
         else:
             buffer, offset, length, _ = document.view(item['bufferView'])
+            if budget is not None:
+                budget.reserve(f'{reservation_prefix}:image-bytes:{i}', length, 'image buffer slice')
+                encoded_reserved = True
             data = buffer[offset:offset+length]
-        mime, pixels = _decode_texture(data, document.limits, total_pixels)
+        mime, pixels = _decode_texture(data, document.limits, total_pixels, budget=budget,
+                                       reservation_key=f'{reservation_prefix}:image:{i}' if budget else None,
+                                       encoded_reserved=encoded_reserved)
         total_pixels += pixels
         require(item.get('mimeType', mime) == mime, 'RIG_TEXTURE_FORMAT', 'Texture MIME does not match its actual bytes.')
         images.append(TextureImage(item.get('name', f'image-{i}'), mime, data))
@@ -266,21 +275,49 @@ def _animations(document, ids, node_meshes, geometry, parents, scale):
                 tracks.append(item)
         if tracks:
             require(duration <= document.limits['duration'], 'RIG_LIMIT_DURATION', 'Imported animation exceeds the duration limit.')
+            require(isinstance(document.source_sha256, str) and len(document.source_sha256) == 64
+                    and all(c in '0123456789abcdef' for c in document.source_sha256),
+                    'RIG_SOURCE', 'Captured source digest is unavailable for animation provenance.')
             clips[name] = dict(schema_version=1, kind='hatch-3d-animation', id=name, version='1.0.0',
                 rig_id='imported', skeleton_version='1.0.0', duration=max(duration, 1/24), fps=24,
                 loop=False, tracks=tracks, events=[], contacts=[], root_motion='embedded', interruptible=True,
                 reduced_motion_pose='neutral', provenance=dict(schema_version=1, tool_version='1.0.0',
                 operation='Imported existing glTF animation', created_at=timestamp(),
-                input_hashes={'source': sha256(document.path)}, ancestry=[]))
+                input_hashes={'source': document.source_sha256}, ancestry=[]))
     return clips
 
 
-def _gltf_model(path, *, scale=1., limits=None) -> ImportedModel:
-    document = read_gltf(path, limits)
+def _gltf_model(path, *, scale=1., limits=None, source_reader=None, budget=None) -> ImportedModel:
+    document = read_gltf(path, limits, source_reader=source_reader, budget=budget)
+    # Capture external image bytes too, so admission measures the exact closure
+    # consumed by this document without reopening mutable source paths.
+    for image in document.json.get('images', []):
+        if 'uri' in image:
+            require(isinstance(image['uri'], str), 'RIG_GLTF_URI', 'A glTF URI must be text.')
+            if not image['uri'].startswith('data:'):
+                document.uri(image['uri'])
+    preflight_gltf(document, encoded_bytes=sum(document.encoded_sources.values()), budget=budget)
+    # Reserve synthetic rigid skin, default morph positions, normalized output
+    # and geometry analysis alongside the preflight's accessor work. Each scene
+    # instance has its own retained arrays even when accessors are shared.
+    if budget is not None:
+        _, _, active = scene_graph(document)
+        for node_id in active:
+            node = document.json['nodes'][node_id]
+            if 'mesh' not in node: continue
+            mesh = document.json['meshes'][node['mesh']]
+            for primitive in mesh['primitives']:
+                accessor = document.json['accessors'][primitive['attributes']['POSITION']]
+                count = accessor['count']
+                targets = primitive.get('targets', [])
+                budget.add(count * (512 + 96 * len(targets)),
+                           'normalized geometry, synthetic arrays and analysis')
     require(np.isfinite(scale) and 0 < scale <= 10000, 'RIG_SCALE', 'Import scale must be finite and positive.')
-    parents, world, order = scene_graph(document)
+    parents, world, order = scene_graph(document, import_scale=scale)
     skeleton, ids, normalized = _import_skeleton(document, parents, world, order, scale)
-    geometry = Geometry([], deepcopy(document.json.get('materials', [])), _images(document),
+    image_prefix = uuid.uuid4().hex if budget is not None else None
+    geometry = Geometry([], deepcopy(document.json.get('materials', [])),
+                        _images(document, budget=budget, reservation_prefix=image_prefix),
                         deepcopy(document.json.get('textures', [])), deepcopy(document.json.get('samplers', [])),
                         [x for x in document.json.get('extensionsUsed', []) if x in document.json.get('extensionsRequired', []) or x.startswith('KHR_materials') or x == 'KHR_texture_transform'])
     default_material = len(geometry.materials)
@@ -387,21 +424,64 @@ def _gltf_model(path, *, scale=1., limits=None) -> ImportedModel:
     report = analyze_geometry(geometry, document.limits)
     report.update(import_format=Path(path).suffix.lower(), scale_conversion=scale,
                   preserved_existing_rig=skeleton is not None, preserved_animation_clips=len(clips),
-                  source_sha256=sha256(path), warnings=document.warnings)
-    extra = document.json.get('asset', {}).get('extras', {})
-    report['fixture'] = bool(extra.get('hatchSource', {}).get('fixture', False) or extra.get('hatchRig', {}).get('fixture', False))
+                  source_sha256=document.source_sha256, warnings=document.warnings)
+    # Use the same reserved-marker authority as AssetLibrary normalization.
+    from asset_library_import import document_fixture
+    report['fixture'] = document_fixture(document.json)
     return ImportedModel(geometry, document.dependencies, skeleton, weights, clips, report)
 
 
-def load_character_model(path: str | Path, *, scale=1., limits=None, blender=None) -> ImportedModel:
+def load_character_model(path: str | Path, *, scale=1., limits=None, blender=None, source_reader=None, budget=None) -> ImportedModel:
     path = Path(path)
     require(path.is_file() and not path.is_symlink(), 'RIG_SOURCE', 'Choose a regular model file.')
     suffix = path.suffix.lower()
     if suffix == '.obj':
         from rig_obj import import_obj
-        return import_obj(path, scale=scale, limits=limits)
+        from rig_load_limits import LoadBudget, effective_limits
+        from rig_errors import open_payload, normalize_root
+        if source_reader is None:
+            path = normalize_root(path.parent) / path.name
+        if budget is None:
+            ceiling = {**DEFAULT_LIMITS, 'influences': 8} if isinstance(limits, dict) and limits.get('influences') == 8 else DEFAULT_LIMITS
+            budget = LoadBudget(effective_limits(ceiling, limits))
+        child = budget.fork(limits or budget.limits)
+        prefix = uuid.uuid4().hex
+        reads = 0
+
+        def admitted_read(source, maximum):
+            nonlocal reads
+            source = Path(source)
+            with open_payload(source.parent, source.name) as (stream, info):
+                size = info.st_size
+                require(size <= maximum, 'RIG_LIMIT_SOURCE', 'OBJ source exceeds its byte budget.')
+                child.captured_input(key=f'{prefix}:input:{reads}', size=size, source=reads == 0)
+                # Text tokens, triangulated corners, Python containers, NumPy
+                # output and analysis may coexist. Charge before parser reads.
+                child.add(size * 1024, 'OBJ parsing and normalized geometry output')
+                reads += 1
+                if source_reader is None:
+                    data = stream.read(size + 1)
+            # A controlled reader reopens and validates its own source. Close
+            # the admission handle first: Windows otherwise denies renaming
+            # the source directory while that file is open.
+            if source_reader is not None:
+                data = source_reader(source, size)
+            require(len(data) == size, 'RIG_SOURCE_CHANGED', 'OBJ source size changed during reading.')
+            return data
+
+        model = import_obj(path, scale=scale, limits=child.limits, source_reader=admitted_read, budget=child)
+        budget.commit(child)
+        return model
     if suffix == '.blend':
+        require(source_reader is None, 'RIG_SOURCE_READER', 'Controlled source readers support GLB, glTF and OBJ only.')
         from rig_blender import import_blend
         return import_blend(path, scale=scale, limits=limits, executable=blender)
     require(suffix in ('.gltf', '.glb'), 'RIG_FORMAT', 'Supported model inputs are GLB, glTF, OBJ and Blender.')
-    return _gltf_model(path, scale=scale, limits=limits)
+    if budget is None:
+        from rig_load_limits import LoadBudget, effective_limits
+        ceiling = {**DEFAULT_LIMITS, 'influences': 8} if isinstance(limits, dict) and limits.get('influences') == 8 else DEFAULT_LIMITS
+        budget = LoadBudget(effective_limits(ceiling, limits))
+    child = budget.fork(limits or budget.limits)
+    model = _gltf_model(path, scale=scale, limits=child.limits, source_reader=source_reader, budget=child)
+    budget.commit(child)
+    return model

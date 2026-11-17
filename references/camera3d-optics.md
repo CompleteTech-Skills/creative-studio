@@ -52,7 +52,8 @@ Orthographic physical DOF, blade counts one/two, non-Cycles engines, unsupported
 RNA ranges and silent numeric clamping fail instead of producing a misleading
 render. Exposure is a separate scene color-management value; motion shutter is
 measured in frame intervals. Exposure is bounded to ±32 stops and shutter to
-zero through one frame. ISO/white-balance simulation is not claimed.
+zero through one frame. ISO-equivalent simulation is not claimed. Explicit
+shared native view white balance is exposed by the color binding below.
 
 A supplied camera must be unparented and free of animation/constraints: its
 already evaluated world matrix is authoritative. Repeated updates replace only
@@ -84,3 +85,29 @@ hashes. The native automated test is enabled by `HATCH_CAMERA3D_BLENDER_TEST=1`
 with `HATCH_BLENDER` and `HATCH_CAMERA_TEST_SITE` set. Without that explicit flag,
 the Blender case reports a skip; numerical tests still run with the optional rig
 dependencies. A successful numerical test alone does not establish rendered DOF.
+
+
+## Shared white balance
+
+`camera3d_color.apply_camera_with_color` binds resolved camera optics to the
+canonical `lookdev_color.configuration` profile. Supply its hash-bound
+`temperature_kelvin`, `tint`, exposure, OCIO view and output encoding. Optical
+state remains separate from global lighting. The adapter rejects mismatched
+PNG/sRGB and EXR/linear-sRGB output settings before native scene mutation.
+Exposure and white balance come from the shared profile; the camera cannot
+supply a competing exposure value.
+
+Blender 4.5 is required for explicit native view white balance. The transform
+affects PNG output once; scene-linear EXR preserves unmodified radiance. This
+API changes neither source materials nor light energy. Backend RNA bounds and
+view availability can further constrain the validated portable profile. Other
+renderers must provide an explicit color-management adapter. Browser white
+balance remains unsupported by this binding.
+
+Actual acceptance: `HATCH_CAMERA3D_COLOR_TEST=1 python -m unittest discover -s
+tests -p test_rig_camera3d_color.py -v`. Set `HATCH_BLENDER`, and optionally
+`HATCH_CAMERA_TEST_SITE` to a schema-validator installation usable by Blender.
+`HATCH_CAMERA_COLOR_EVIDENCE` must name a new directory. The engineering fixture
+renders independent temperature/tint PNG controls, identical linear EXR
+controls, saves and reopens the native project, and records input/source/output
+hashes. Fixture success supplies no production-art visual approval.

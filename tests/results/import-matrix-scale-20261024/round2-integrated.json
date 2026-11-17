@@ -1,0 +1,11 @@
+{
+  "source_sha": "4d19c23e57668216c6c446e9b685ec1116a6d558",
+  "tests_run": 113,
+  "failures": 0,
+  "errors": 0,
+  "skips": 5,
+  "seconds": 24.177599354996346,
+  "tracked_source_files": 1672,
+  "source_unchanged": true,
+  "environment": "rig Python3.12.15 pinned; external native flags disabled; no backend execution claimed"
+}

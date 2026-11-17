@@ -21,7 +21,7 @@ MAX_MANIFEST_BYTES = 1024 * 1024
 ID_PATTERN = r'^[a-z][a-z0-9_-]{0,63}$(?![\s\S])'
 VERSION_PATTERN = r'^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$(?![\s\S])'
 KINDS = ('character', 'rig', 'animation', 'prop', 'material', 'texture', 'environment',
-         'light', 'camera', 'prefab', 'reference', 'legacy-pet', 'legacy-cast', 'legacy-clip')
+         'light', 'camera', 'prefab', 'reference', 'legacy-pet', 'legacy-cast', 'legacy-clip', 'document')
 
 
 def obj(fields, required=None):
@@ -251,6 +251,14 @@ def validate(value, kind='AssetVersion'):
         if not any(f['required'] for f in value['files']):
             raise RigError('LIBRARY_REQUIRED', 'At least one runtime payload must be required.')
         files = {f['path']: f for f in value['files']}
+        if value['identity']['kind'] == 'document':
+            mandatory = ('document.payload', 'document-metadata.json')
+            if any(name not in files or not files[name]['required'] for name in mandatory):
+                raise RigError('LIBRARY_DOCUMENT_SCHEMA', 'Document versions require complete mandatory source and metadata files.')
+            if files['document-metadata.json']['format'] != 'json':
+                raise RigError('LIBRARY_DOCUMENT_SCHEMA', 'Document metadata must be retained as JSON.')
+            if files['document.payload'] not in value['provenance']['sources']:
+                raise RigError('LIBRARY_DOCUMENT_SCHEMA', 'Document provenance must retain its exact mandatory source payload.')
         if set(value['publication']['inventory']) != set(files):
             raise RigError('LIBRARY_INVENTORY', 'Publication inventory must exactly match the payloads.')
         p = value['provenance']

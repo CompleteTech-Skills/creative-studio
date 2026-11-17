@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "id": "render91-fixture",
+  "source_sha256": "f100c5e75113a23c9eeffea151154070fd216d9bc0afc53192612a549f269a2e",
+  "fixture": true,
+  "origin": "procedural-fixture",
+  "attribution": "User-supplied model; see original source files.",
+  "coordinate_system": {
+    "handedness": "right",
+    "right": "+X",
+    "up": "+Y",
+    "forward": "+Z",
+    "unit": "meter",
+    "angles": "radian",
+    "quaternion": "XYZW",
+    "matrices": "column-vectors",
+    "time": "second"
+  },
+  "import_scale": 1.0,
+  "approved_artwork": false
+}

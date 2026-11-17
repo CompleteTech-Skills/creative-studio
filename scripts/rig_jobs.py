@@ -4,7 +4,10 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 import shutil
+import tempfile
 import uuid
+
+from atomic_publish import _rename_no_replace
 
 from rig_contracts import COORDINATES, DEFAULT_LIMITS, validate_contract
 from rig_errors import (VERSION, RigError, atomic_bytes, atomic_json, job_lock,
@@ -66,59 +69,100 @@ def save_rig(rig: RigAsset, *, bump=True, operation='save') -> dict:
     return manifest
 
 
+class CanonicalArtifact:
+    """Explicit registry-bound input; a bare path never implies this authority."""
+    def __init__(self, library, reference, *, entry=None):
+        self.library = library
+        self.reference = deepcopy(reference)
+        self.entry = entry
+
+
 def create_run(model, root, *, identifier=None, scale=1., limits=None, fixture=False,
                origin='import', attribution='User-supplied model; see original source files.', blender=None) -> RigAsset:
-    from rig_import import load_character_model
-    root = Path(root).absolute();model = Path(model).absolute()
+    """Publish a validated run whose geometry and provenance share frozen bytes.
+
+    CanonicalArtifact binds an AssetLibrary reference and optional exact inventory
+    entry. Its authenticated classification and source bytes are retained in the
+    rig. Bare paths retain their existing import semantics.
+    """
+    from rig_source_snapshot import import_snapshot
+    bound = isinstance(model, CanonicalArtifact)
+    if bound:
+        require(scale == 1. and blender is None, 'RIG_CANONICAL',
+                'Canonical geometry already has normalized coordinates.')
+        from model3d_mesh_import import import_canonical
+        from asset_library import AssetLibrary
+        require(type(model.library) is AssetLibrary, 'RIG_CANONICAL',
+                'Canonical inputs require the authoritative AssetLibrary reader.')
+        model_name = Path(model.entry or 'model')
+    else:
+        model = Path(model).absolute()
+        model = normalize_root(model.parent)/model.name
+        model_name = model
+    root = Path(root).absolute()
     require(not root.is_symlink(), 'RIG_RUN_PATH', 'Run directories cannot be symbolic links.')
     root = normalize_root(root)
-    model = normalize_root(model.parent)/model.name
     limits = {**DEFAULT_LIMITS, **(limits or {})};validate_contract(limits, 'Limits')
     require(limits['influences'] in (4, 8), 'RIG_INFLUENCES', 'Choose four or eight influences.')
     with job_lock(root):
-        require(not root.exists() or not any(root.iterdir()), 'RIG_RUN_EXISTS', 'Import into a new empty directory.', preserved=str(root))
-        imported = load_character_model(model, scale=scale, limits=limits, blender=blender)
-        fixture = bool(fixture or imported.report.get('fixture'))
-        if fixture:origin = 'procedural-fixture'
-        identifier = slug(identifier or model.stem)
-        root.mkdir(parents=True, exist_ok=True)
-        dependencies = []
-        for source in sorted(set(imported.source_files)):
-            source = Path(source)
-            require(not source.is_symlink(), 'RIG_SOURCE_PATH', 'Original dependencies cannot be symlinks.')
-            try:relative = (normalize_root(source.parent)/source.name).relative_to(normalize_root(model.parent)).as_posix()
-            except ValueError as exc:raise RigError('RIG_SOURCE_PATH', 'A dependency lies outside the model directory.') from exc
-            name = 'source/'+relative;target = safe_path(root, name)
-            target.parent.mkdir(parents=True, exist_ok=True);shutil.copyfile(source, target)
-            digest = sha256(source)
-            require(sha256(target) == digest, 'RIG_SOURCE_COPY', 'Source copy failed its byte hash.')
-            dependencies.append(dict(path=name, sha256=digest))
-        source_name = 'source/'+model.name
-        require(any(d['path'] == source_name for d in dependencies), 'RIG_SOURCE_INVENTORY', 'Import did not retain the original model.')
-        identity = dict(schema_version=1, id=identifier, source_sha256=sha256(model), fixture=fixture,
-                        origin=origin, attribution=attribution, coordinate_system=COORDINATES,
-                        import_scale=scale, approved_artwork=False)
-        atomic_json(root/'identity.json', identity)
-        facial = dict(schema_version=1, eyes=[], morph_targets={m.id:list(m.morphs) for m in imported.geometry.meshes if m.morphs}, expressions={})
-        manifest = dict(schema_version=1, kind='hatch-3d-rig', id=identifier, version='1.0.0', revision=0,
-            character=dict(schema_version=1, id=identifier, version='1.0.0', identity_sha256=sha256(root/'identity.json')),
-            source=dict(schema_version=1, path=source_name, sha256=sha256(model), origin=origin,
-                        fixture=fixture, attribution=attribution, dependencies=dependencies),
-            coordinate_system=deepcopy(COORDINATES), archetype='custom', geometry={}, skeleton=imported.skeleton,
-            skins=[], controllers=dict(ik=[], constraints=[]), facial=facial, attachments=[], animations=[],
-            state_mapping={}, uncertainties=[], provenance=provenance('import', {'source':sha256(model)}),
-            limits=limits, review=dict(status='pending', receipts=[]), validation=[])
-        rig = RigAsset(manifest, imported.geometry, imported.weights, imported.clips, root)
-        for clip in rig.clips.values():
-            clip['rig_id']=identifier
-            if rig.manifest['skeleton']:clip['skeleton_version']=rig.skeleton['version']
-        save_rig(rig, bump=False)
-        atomic_json(root/'validation/import.json', imported.report)
-        job = dict(schema_version=1, kind='hatch-3d-rig-job', id=identifier, status='imported',
-                   rig_sha256=rig_signature(rig.manifest), steps={}, limits=limits,
-                   history=[dict(operation='import', at=timestamp(), signature=rig_signature(rig.manifest))])
-        atomic_json(root/'job.json', validate_contract(job, 'RigJob'))
-        return rig
+        require(not root.exists() and not root.is_symlink(), 'RIG_RUN_EXISTS',
+                'Import into a new destination; existing directories are preserved.', preserved=str(root))
+        with (import_canonical(model.library, model.reference, entry=model.entry, limits=limits) if bound else
+              import_snapshot(model, scale=scale, limits=limits, blender=blender)) as snapshot:
+            imported = snapshot.model
+            fixture = bool(fixture or imported.report.get('fixture') or (bound and snapshot.provenance['manifest']['provenance']['fixture']))
+            imported.report['fixture'] = fixture
+            if fixture:origin = 'procedural-fixture'
+            identifier = slug(identifier or model_name.stem)
+            records = {record['path']: record for record in snapshot.source_records}
+            entry = snapshot.provenance['source_entry']
+            require(entry in records, 'RIG_SOURCE_INVENTORY', 'Import did not retain the original model.')
+            source_hash = records[entry]['sha256']
+            # The original source can change now without altering the captured
+            # model or the provenance published for it.
+            with tempfile.TemporaryDirectory(prefix='.rig-import-', dir=root.parent) as temporary:
+                stage = Path(temporary)/'run';stage.mkdir()
+                dependencies = []
+                for relative, record in sorted(records.items()):
+                    name = 'source/'+relative
+                    source = safe_path(snapshot.root, relative, exists=True)
+                    target = safe_path(stage, name);target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, target)
+                    require(target.stat().st_size == record['bytes'] and sha256(target) == record['sha256'],
+                            'RIG_SOURCE_COPY', 'Captured source copy failed its byte hash.', asset=relative)
+                    dependencies.append(dict(path=name, sha256=record['sha256']))
+                source_name = 'source/'+entry
+                identity = dict(schema_version=1, id=identifier, source_sha256=source_hash, fixture=fixture,
+                                origin=origin, attribution=attribution, coordinate_system=COORDINATES,
+                                import_scale=scale, approved_artwork=False)
+                atomic_json(stage/'identity.json', identity)
+                facial = dict(schema_version=1, eyes=[], morph_targets={m.id:list(m.morphs) for m in imported.geometry.meshes if m.morphs}, expressions={})
+                manifest = dict(schema_version=1, kind='hatch-3d-rig', id=identifier, version='1.0.0', revision=0,
+                    character=dict(schema_version=1, id=identifier, version='1.0.0', identity_sha256=sha256(stage/'identity.json')),
+                    source=dict(schema_version=1, path=source_name, sha256=source_hash, origin=origin,
+                                fixture=fixture, attribution=attribution, dependencies=dependencies),
+                    coordinate_system=deepcopy(COORDINATES), archetype='custom', geometry={}, skeleton=imported.skeleton,
+                    skins=[], controllers=dict(ik=[], constraints=[]), facial=facial, attachments=[], animations=[],
+                    state_mapping={}, uncertainties=[], provenance=provenance('import', {'source':source_hash}),
+                    limits=limits, review=dict(status='pending', receipts=[]), validation=[])
+                rig = RigAsset(manifest, imported.geometry, imported.weights, imported.clips, stage)
+                for clip in rig.clips.values():
+                    clip['rig_id']=identifier
+                    if rig.manifest['skeleton']:clip['skeleton_version']=rig.skeleton['version']
+                save_rig(rig, bump=False)
+                atomic_json(stage/'validation/import.json', imported.report)
+                job = dict(schema_version=1, kind='hatch-3d-rig-job', id=identifier, status='imported',
+                           rig_sha256=rig_signature(rig.manifest), steps={}, limits=limits,
+                           history=[dict(operation='import', at=timestamp(), signature=rig_signature(rig.manifest))])
+                atomic_json(stage/'job.json', validate_contract(job, 'RigJob'))
+                # Reopen the complete staged run before the only publication.
+                load_rig(stage)
+                try:
+                    _rename_no_replace(stage, root)
+                except FileExistsError as exc:
+                    raise RigError('RIG_RUN_EXISTS', 'Another writer created the destination; it was preserved.',
+                                   preserved=str(root)) from exc
+                return load_rig(root)
 
 
 def code_signature():

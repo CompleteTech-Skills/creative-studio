@@ -1,0 +1,9 @@
+{
+  "scope": "actualpre-fixworktreeownedtest,notapproval",
+  "probe_sha256": "ee4d856fc69603587adc0ebada829efc83f0d79890b5ad60d3323a285eeba6a1",
+  "unrequested_file": "/tmp/hatch139-compositor-gw2d1sfx/outside-quarantine/Image0001.png",
+  "bytes": 16615,
+  "sha256": "18f92c3a745c126a4bfb767f649a89c44664217872cbe031182da488360c6d37",
+  "old_observed_status": "imported-payload-verified",
+  "corrected_regression": "test_native_compositor_cannot_publish_unrequested_files PASS in interoperability-r7.txt"
+}
