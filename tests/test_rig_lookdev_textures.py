@@ -242,6 +242,18 @@ class TextureTests(unittest.TestCase):
                 report = t.validate_uvs([uv + offset], [first, separated])['sets'][0]
                 self.assertEqual(report['overlap_pairs'], [])
 
+    def test_uv_mixed_scales_preserve_small_face_position(self):
+        large = [[-1e16, -1e16], [1e16, -1e16], [-1e16, 1e16]]
+        small = [[.25, .25], [.5, .25], [.25, .5]]
+        for direction, expected in ((1, []), (-1, [[0, 1]])):
+            uv = large + [[direction * x, direction * y] for x, y in small]
+            for faces in ([[0, 1, 2], [3, 4, 5]], [[3, 4, 5], [0, 1, 2]]):
+                with self.subTest(direction=direction, faces=faces):
+                    report = t.validate_uvs([uv], faces)['sets'][0]
+                    self.assertEqual(report['overlap_pairs'], expected)
+                    self.assertEqual(report['overlap_pairs_tested'], 1)
+                    self.assertTrue(report['overlap_complete'])
+
     def test_uv_clip_normalizes_large_opposite_edge_distances(self):
         # The first vertical clip edge has signed distances of +/-1e308
         # to the horizontal subject edge endpoints.

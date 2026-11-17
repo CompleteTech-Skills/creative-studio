@@ -570,11 +570,33 @@ def validate_uvs(uv_sets, triangles, *, tangents=None, max_pairs=1_000_000):
     def cross(a, b):
         return a[0] * b[1] - a[1] * b[0]
 
+    roundoff = 4 * np.finfo(np.float64).eps
+
     def overlap(a, b):
-        # Clip relative to a vertex so intersections keep the local UV precision.
-        origin = a[0]
-        poly = list(a - origin)
-        b = b - origin
+        # Use the same origin for either face order. If shifting the pair loses
+        # more than roundoff at a face's own scale, clip the six input vertices
+        # as exact binary rationals. The clipper still has only three edges.
+        origin = np.minimum(a.min(axis=0), b.min(axis=0))
+        shifted_a, shifted_b = a - origin, b - origin
+        if (np.any(abs(shifted_a + origin - a) > roundoff * np.ptp(a, axis=0))
+                or np.any(abs(shifted_b + origin - b) > roundoff * np.ptp(b, axis=0))):
+            from fractions import Fraction
+
+            exact_origin = [Fraction(float(value)) for value in origin]
+            shifted_a, shifted_b = (
+                np.array([[Fraction(float(value)) - offset
+                           for value, offset in zip(point, exact_origin)]
+                          for point in triangle], dtype=object)
+                for triangle in (a, b)
+            )
+            if cross(shifted_a[1] - shifted_a[0], shifted_a[2] - shifted_a[0]) == 0:
+                return False
+            winding = cross(shifted_b[1] - shifted_b[0], shifted_b[2] - shifted_b[0])
+            if winding == 0:
+                return False
+            if winding < 0:
+                shifted_b = shifted_b[::-1]
+        poly, b = list(shifted_a), shifted_b
         for j in range(3):
             if not poly:
                 return False
