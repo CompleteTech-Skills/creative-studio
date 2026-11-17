@@ -104,14 +104,16 @@ def _configure_camera(camera, plan):
 
 
 def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
-                 camera_object=None, exposure=0.0, motion_blur=False, shutter_frames=0.5):
+                 camera_object=None, exposure=0.0, motion_blur=False, shutter_frames=0.5,
+                 color_sha256=None):
     """Apply resolved physical state, returning an actual Blender camera object.
 
     World transforms are canonical Y-up. Blender uses its native -Z-view/+Y-up
     camera local frame; only the world basis is converted. Target tracking and
     animation must be sampled by their owners before this call. A supplied
     camera must be unparented, unanimated and unconstrained to avoid hidden
-    Blender evaluation overriding authoritative sampled state.
+    Blender evaluation overriding authoritative sampled state. The shared color
+    binding can include its validated hash in the same camera activation.
     """
     import bpy
     from mathutils import Matrix
@@ -143,6 +145,10 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
     previous_active = scene.camera
     previous_data = None if camera_object is None else camera_object.data
     previous_pose = None if camera_object is None else camera_object.matrix_basis.copy()
+    hash_property = 'hatch_color_sha256'
+    missing_hash = object()
+    previous_hash = (camera_object.get(hash_property, missing_hash)
+                     if camera_object is not None and color_sha256 is not None else missing_hash)
     new_object = None
     camera = bpy.data.cameras.new(name)
     try:
@@ -166,6 +172,8 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
         camera_object.matrix_world = pose
         scene.camera = camera_object
         bpy.context.view_layer.update()
+        if color_sha256 is not None:
+            camera_object[hash_property] = color_sha256
     except Exception:
         if scene.camera != previous_active:
             scene.camera = previous_active
@@ -181,9 +189,20 @@ def apply_camera(scene, optics, render, *, world_matrix, name='Camera3D',
                 setattr(scene.render, key, value)
         if scene.view_settings.exposure != previous_exposure:
             scene.view_settings.exposure = previous_exposure
+        if previous_data is not None and color_sha256 is not None:
+            if camera_object.get(hash_property, missing_hash) != previous_hash:
+                if previous_hash is missing_hash:
+                    del camera_object[hash_property]
+                else:
+                    camera_object[hash_property] = previous_hash
         bpy.data.cameras.remove(camera)
         raise
-    if (previous_data is not None and previous_data.get('hatch_camera3d_owned')
-            and previous_data.users == 0):
-        bpy.data.cameras.remove(previous_data)
+    # Reclaiming an unused datablock is best-effort after camera activation.
+    # The previous datablock must stay available until rollback is unnecessary.
+    try:
+        if (previous_data is not None and previous_data.get('hatch_camera3d_owned')
+                and previous_data.users == 0):
+            bpy.data.cameras.remove(previous_data)
+    except Exception:
+        pass
     return camera_object

@@ -55,6 +55,7 @@ Implementation: `camera3d_blender.optical_plan` and `apply_camera`;
 | Camera takes exposure only from the shared profile | `tests/test_rig_camera3d_color.py`: `test_uses_shared_hash_and_exposure_without_mutating_inputs`, `test_shared_exposure_supports_the_existing_camera_domain` |
 | PNG/sRGB and EXR/linear-sRGB output agreement | `tests/test_rig_camera3d_color.py`: `test_matches_native_output_contracts_and_rejects_disagreements` |
 | Tampered color or nonrigid pose rejected before native mutation | `tests/test_rig_camera3d_color.py`: `test_rejects_tampered_color_before_touching_the_native_scene`, `test_rejects_nonrigid_pose_before_native_mutation` |
+| Synthetic backend failures preserve the previous state or the completed activation | `tests/test_rig_camera3d_color.py`: `test_native_color_rejections_preserve_existing_camera_and_scene`, `test_late_render_clamp_rolls_back_shared_color_and_render`, `test_late_camera_hash_failure_restores_existing_camera`, `test_old_camera_cleanup_failure_keeps_committed_camera_and_color` |
 
 **ISO is unsupported.** No ISO or ISO-equivalent sensitivity simulation is
 implemented or claimed. Exposure is expressed only in stops through the shared
@@ -78,13 +79,12 @@ rendered files, the reopened `.blend`, `resolved-inputs.json` and an
 `acceptance.json` containing the observed pixel differences, projection errors,
 Blender version and the SHA-256 of every output file and of the source scripts.
 
-Hosted CI (`.github/workflows/rig-3d.yml`, job running Blender 4.5.3) uploads
-these directories in the `blender-evidence` artifact:
+The schema-math gate runs the Camera3D and LookDev color test modules. The
+Blender 4.5.3 job in `.github/workflows/rig-3d.yml` enables both native gates
+and uploads these directories in the `blender-evidence` artifact:
 
 - `camera-optics-gate/`: the optics gate's `acceptance.json` and outputs.
-- `camera-color-gate/`: the white balance gate's `acceptance.json` and
-  outputs, once the workflow step for `test_rig_camera3d_color.py` is
-  registered.
+- `camera-color-gate/`: the white balance gate's `acceptance.json` and outputs.
 
 Cite a specific CI run and artifact when claiming independent verification; a
 passing host-only run establishes *tested*, not native behavior.

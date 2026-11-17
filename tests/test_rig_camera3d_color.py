@@ -1,5 +1,6 @@
 """Shared color/camera binding contracts and optional actual native WB proof."""
 from builtins import __import__ as native_import
+from contextlib import contextmanager
 from copy import deepcopy
 import json
 import os
@@ -75,6 +76,63 @@ class ColorScene(dict):
                          vars(self.render), self.camera))
 
 
+class CameraObject(dict):
+    type = 'CAMERA'
+    name = 'Existing camera'
+    parent = None
+    constraints = ()
+    animation_data = None
+    library = None
+
+    def __init__(self):
+        super().__init__()
+        self.data = SimpleNamespace(animation_data=None, users=0, get={'hatch_camera3d_owned': True}.get)
+        self.matrix_basis = ['original pose']
+        self.fail_hash = False
+
+    @property
+    def matrix_world(self):
+        return self.matrix_basis
+
+    @matrix_world.setter
+    def matrix_world(self, value):
+        self.matrix_basis = value
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        if key == 'hatch_color_sha256' and self.fail_hash:
+            self.fail_hash = False
+            raise RuntimeError('camera metadata rejected')
+
+
+@contextmanager
+def synthetic_backend():
+    native_bounds = SimpleNamespace(hard_min=-1e9, hard_max=1e9)
+    optics_rna = SimpleNamespace(properties={
+        name: native_bounds
+        for name in ('sensor_width', 'shift_x', 'shift_y', 'clip_start', 'clip_end', 'lens',
+                     'use_dof', 'focus_distance', 'aperture_fstop', 'aperture_blades',
+                     'aperture_rotation', 'aperture_ratio')
+    })
+    new_camera = SimpleNamespace(bl_rna=optics_rna, dof=SimpleNamespace(bl_rna=optics_rna))
+    cameras = Mock()
+    cameras.new.return_value = new_camera
+    bpy = SimpleNamespace(data=SimpleNamespace(cameras=cameras, objects=Mock()),
+                          context=SimpleNamespace(view_layer=Mock()))
+    mathutils = SimpleNamespace(Matrix=list)
+
+    def import_backend(name, *args, **kwargs):
+        if name == 'bpy':
+            return bpy
+        if name == 'mathutils':
+            return mathutils
+        return native_import(name, *args, **kwargs)
+
+    with (patch('builtins.__import__', new=import_backend),
+          patch('camera3d_blender._configure_camera')):
+        yield bpy, new_camera
+
+
 class CameraColorTests(unittest.TestCase):
     def setUp(self):
         self.optics = json.loads((ROOT / 'examples/camera3d/optics.json').read_text())
@@ -143,36 +201,59 @@ class CameraColorTests(unittest.TestCase):
         scene = ColorScene()
         original = scene.state()
         active_camera = scene.camera
-        native_bounds = SimpleNamespace(hard_min=-1e9, hard_max=1e9)
-        optics_rna = SimpleNamespace(properties={
-            name: native_bounds
-            for name in ('sensor_width', 'shift_x', 'shift_y', 'clip_start', 'clip_end', 'lens',
-                         'use_dof', 'focus_distance', 'aperture_fstop', 'aperture_blades',
-                         'aperture_rotation', 'aperture_ratio')
-        })
-        new_camera = SimpleNamespace(bl_rna=optics_rna, dof=SimpleNamespace(bl_rna=optics_rna))
-        cameras = Mock()
-        cameras.new.return_value = new_camera
-        bpy = SimpleNamespace(data=SimpleNamespace(cameras=cameras, objects=Mock()))
-        mathutils = SimpleNamespace(Matrix=Mock())
         color = configuration(exposure=2, output='scene-linear-exr')
         render = dict(self.render, width=96, height=64, output='exr', color_space='linear-srgb')
-        def import_backend(name, *args, **kwargs):
-            if name == 'bpy':
-                return bpy
-            if name == 'mathutils':
-                return mathutils
-            return native_import(name, *args, **kwargs)
-
-        with (patch('builtins.__import__', new=import_backend),
-              patch('camera3d_blender._configure_camera')):
+        with synthetic_backend() as (bpy, new_camera):
             with self.assertRaisesRegex(ValueError, 'cannot represent resolution_y=64'):
                 apply_camera_with_color(scene, self.optics, render, world_matrix=self.world,
                                         color_configuration=color)
+        cameras = bpy.data.cameras
         cameras.remove.assert_called_once_with(new_camera)
         bpy.data.objects.new.assert_not_called()
         self.assertIs(scene.camera, active_camera)
         self.assertEqual(scene.state(), original)
+
+    def test_late_camera_hash_failure_restores_existing_camera(self):
+        for original_metadata in ({}, {'hatch_color_sha256': 'previous-camera-hash'}):
+            with self.subTest(original_metadata=original_metadata):
+                scene = ColorScene()
+                camera = CameraObject()
+                camera.update(original_metadata)
+                camera.fail_hash = True
+                scene.objects = {camera.name: camera}
+                previous_data = camera.data
+                previous_active = scene.camera
+                original = scene.state()
+                with synthetic_backend() as (bpy, new_camera):
+                    with self.assertRaisesRegex(RuntimeError, 'camera metadata rejected'):
+                        apply_camera_with_color(scene, self.optics, self.render, world_matrix=self.world,
+                                                color_configuration=configuration(), camera_object=camera)
+                bpy.data.cameras.remove.assert_called_once_with(new_camera)
+                self.assertIs(camera.data, previous_data)
+                self.assertIs(scene.camera, previous_active)
+                self.assertEqual(camera.matrix_basis, ['original pose'])
+                self.assertEqual(dict(camera), original_metadata)
+                self.assertEqual(scene.state(), original)
+
+    def test_old_camera_cleanup_failure_keeps_committed_camera_and_color(self):
+        scene = ColorScene()
+        camera = CameraObject()
+        scene.objects = {camera.name: camera}
+        previous_data = camera.data
+        color = configuration(exposure=2)
+        with synthetic_backend() as (bpy, new_camera):
+            bpy.data.cameras.remove.side_effect = RuntimeError('cannot reclaim old camera')
+            activated, receipt = apply_camera_with_color(
+                scene, self.optics, self.render, world_matrix=self.world,
+                color_configuration=color, camera_object=camera)
+        bpy.data.cameras.remove.assert_called_once_with(previous_data)
+        self.assertIs(activated, camera)
+        self.assertIs(scene.camera, camera)
+        self.assertIs(camera.data, new_camera)
+        self.assertEqual(camera['hatch_color_sha256'], color['sha256'])
+        self.assertEqual(scene['hatch_color_sha256'], color['sha256'])
+        self.assertEqual(receipt['configuration_sha256'], color['sha256'])
+        self.assertEqual(scene.view_settings.exposure, 2)
 
     def test_traceability_names_existing_tests(self):
         """Every test cited in the #76 traceability table must exist in its file."""

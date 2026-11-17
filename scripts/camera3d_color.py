@@ -42,6 +42,5 @@ def apply_camera_with_color(scene, optics, render, *, world_matrix,
         camera = apply_camera(scene, optics, render, world_matrix=world_matrix,
                               name=name, camera_object=camera_object,
                               exposure=color['exposure_stops'], motion_blur=motion_blur,
-                              shutter_frames=shutter_frames)
-    camera['hatch_color_sha256'] = color['sha256']
+                              shutter_frames=shutter_frames, color_sha256=color['sha256'])
     return camera, receipt

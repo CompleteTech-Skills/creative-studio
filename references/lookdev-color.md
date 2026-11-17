@@ -26,12 +26,13 @@ materials. The function resets unmanaged grading curves/export overrides and
 sets exactly one scene exposure. PNG is display-transformed 16-bit sRGB; 32-bit
 EXR remains scene-linear and does not bake view WB/exposure/tone mapping.
 
-A camera composition must validate the shared profile and its render contract
-before mutation, pass the **same** `exposure_stops` into the authoritative
-`apply_camera`, then call `apply_configuration`. Match `png`+`srgb` to
-`srgb-png`, or `exr`+`linear-srgb` to `scene-linear-exr`; reject incompatible
-pairs. Bind the shared config hash into the camera/receipt. Camera geometry,
-physical optics, transparency and full renderer lifecycle remain their owners'
+Use `camera3d_color.apply_camera_with_color` to apply camera optics and shared
+color settings together. Supply the matching render and color profile pair
+(`png` and `srgb` with `srgb-png`, or `exr` and `linear-srgb` with
+`scene-linear-exr`). The adapter validates the pair before mutation, uses the
+profile's exposure, and records its hash on the scene, camera and receipt.
+Camera geometry, physical optics, transparency and the renderer lifecycle
+remain their owners'
 responsibility. The shared profile's encoded PNG/scene-linear EXR policy is not
 a promise that WB changes will be baked into linear masters.
 
