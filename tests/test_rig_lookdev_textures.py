@@ -228,6 +228,43 @@ class TextureTests(unittest.TestCase):
                 self.assertEqual(report['degenerate_triangles'], [])
                 self.assertEqual(report['overlap_pairs'], [[0, 1]])
 
+    def test_uv_overlap_is_translation_invariant(self):
+        uv = np.array([[0, 0], [1, 0], [0, 1],
+                       [.25, .25], [1.25, .25], [.25, 1.25],
+                       [.75, .75], [1.75, .75], [.75, 1.75]])
+        first, overlapping, separated = [0, 1, 2], [3, 4, 5], [6, 7, 8]
+        for offset in (0, 1e9, -1e12):
+            for faces in ([first, overlapping], [overlapping, first]):
+                with self.subTest(offset=offset, faces=faces):
+                    report = t.validate_uvs([uv + offset], faces)['sets'][0]
+                    self.assertEqual(report['overlap_pairs'], [[0, 1]])
+            with self.subTest(offset=offset, faces=[first, separated]):
+                report = t.validate_uvs([uv + offset], [first, separated])['sets'][0]
+                self.assertEqual(report['overlap_pairs'], [])
+
+    def test_uv_clip_normalizes_large_opposite_edge_distances(self):
+        # The first vertical clip edge has signed distances of +/-1e308
+        # to the horizontal subject edge endpoints.
+        uv = [[-1e154, 0], [1e154, 0], [0, .5e154],
+              [0, .5e154], [0, -.5e154], [.6e154, 0]]
+        for faces in ([[0, 1, 2], [3, 4, 5]], [[3, 4, 5], [0, 1, 2]]):
+            with self.subTest(faces=faces):
+                report = t.validate_uvs([uv], faces)['sets'][0]
+                self.assertEqual(report['overlap_pairs'], [[0, 1]])
+
+    def test_uv_arithmetic_overflow_is_a_typed_failure(self):
+        cases = [
+            ([[-1e308, 0], [1e308, 0], [0, 1]], [[0, 1, 2]]),
+            ([[0, 0], [1e200, 0], [0, 1e200]], [[0, 1, 2]]),
+            ([[0, 0], [1e200, 0], [0, 1e-100], [1e-100, 0], [0, 1e200]],
+             [[0, 1, 2], [0, 3, 4]]),
+        ]
+        for uv, faces in cases:
+            with self.subTest(uv=uv):
+                with self.assertRaises(RigError) as caught:
+                    t.validate_uvs([uv], faces)
+                self.assertEqual(caught.exception.report['code'], 'TEXTURE_UV')
+
     def test_uv_adjacent_edges_are_not_overlap_and_work_is_bounded(self):
         uv=[[0,0],[1,0],[0,1],[1,1]]
         self.assertEqual(t.validate_uvs([uv],[[0,1,2],[1,3,2]])['sets'][0]['overlap_pairs'],[])
