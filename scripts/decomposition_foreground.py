@@ -12,19 +12,26 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
 from PIL import Image, ImageDraw
+
+import decomposition_package as package
 from asset_contracts import MAX_SOURCE_BYTES
 from atomic_publish import pinned_directory, private_stage, private_stage_supported, _rename_no_replace
-from rig_errors import directory_capability, normalize_root
-from character_decomposition import create_decomposition
-from decomposition_analysis import MAX_RESPONSE_BYTES, _record_bytes, _record_json as read_json
-from decomposition_masks import binary, count, intersect, union, mask_to_runs
+from character_decomposition import (
+    create_decomposition, load_decomposition, read_json as read_run_json, save_manifest,
+)
+from decomposition_analysis import (
+    MAX_RESPONSE_BYTES, _parse_record_json, _record_bytes, _record_json as read_json,
+)
+from decomposition_masks import MAX_TOTAL_RUNS, binary, count, intersect, mask_to_runs, union
 from decomposition_spec import (ASSET, BOOLEAN, CONFIDENCE, HASH, TEXT, array,
                                 obj, safe_path, validate_structure)
 from extract_strip_frames import atomic_json
+from rig_errors import directory_capability, normalize_root
 
 MODEL_NAME = 'maskrcnn_resnet50_fpn_coco-bf2d0c1e.pth'
 MODEL_SHA256 = 'bf2d0c1efbc936eeee2bc95a48e80ebc86b891f61b0106485937fc29f9315fc0'
@@ -32,6 +39,12 @@ MODEL_URL = 'https://download.pytorch.org/models/' + MODEL_NAME
 MAX_CANDIDATES = 32
 MAX_PIXELS = 1_500_000
 VERSIONS = {'torch': '2.10.0', 'torchvision': '0.25.0'}
+IMAGE_SUFFIXES = {'.png', '.webp', '.jpg', '.jpeg'}
+RECEIPT_NAME = 'foreground-proposals.json'
+RETAINED_DIRECTORY = 'foreground-analysis'
+RETAINED_RECEIPT = f'{RETAINED_DIRECTORY}/{RECEIPT_NAME}'
+OVERLAP_NOTE = 'Selected pixels shared with another candidate; not owned by this selection.'
+
 CANDIDATE = obj({'id': TEXT, 'category': TEXT, 'confidence': CONFIDENCE,
                  'mask': ASSET, 'bbox': array({'type': 'integer', 'minimum': 0}, 4, 4),
                  'pixels': {'type': 'integer', 'minimum': 1}})
@@ -57,10 +70,10 @@ def _safe_sha(path, maximum=MAX_SOURCE_BYTES):
     return hashlib.sha256(_record_bytes(path, maximum)).hexdigest()
 
 
-def _verified_image(path, expected_hash=None):
+def _verified_image(path, expected_hash=None, *, png_only=False):
     """Hash and decode the same bounded admitted bytes, never reopening a path."""
     path = Path(path)
-    if path.suffix.lower() not in ('.png', '.webp', '.jpg', '.jpeg'):
+    if path.suffix.lower() not in IMAGE_SUFFIXES:
         raise ValueError('unsupported foreground image type')
     data = _record_bytes(path, MAX_SOURCE_BYTES)
     if expected_hash is not None and hashlib.sha256(data).hexdigest() != expected_hash:
@@ -69,6 +82,8 @@ def _verified_image(path, expected_hash=None):
         with Image.open(io.BytesIO(data)) as image:
             if image.format not in ('PNG', 'WEBP', 'JPEG') or getattr(image, 'n_frames', 1) != 1:
                 raise ValueError('foreground requires a single PNG/WebP/JPEG image')
+            if png_only and (path.suffix != '.png' or image.format != 'PNG'):
+                raise ValueError('foreground artifact must be encoded as PNG')
             if image.width * image.height > MAX_PIXELS:
                 raise ValueError('source exceeds foreground pixel bound')
             return image.copy()
@@ -116,17 +131,43 @@ def _asset(root, relative):
 
 def _mask(root, descriptor, size):
     path = safe_path(root, descriptor['path'])
-    image = _verified_image(path, descriptor['sha256'])
+    image = _verified_image(path, descriptor['sha256'], png_only=True)
     if image.mode != 'L' or image.size != size or any(image.histogram()[1:255]):
         raise ValueError('proposal masks must be binary source-sized grayscale PNGs')
     return image
 
 
 
+def _receipt_assets(receipt):
+    # Fixed role names also keep every path distinct under transport case folding.
+    validate_structure(receipt, RECEIPT, 'foreground proposal receipt')
+    source = receipt['source']['asset']
+    if source['path'] not in {'source/original' + suffix for suffix in IMAGE_SUFFIXES}:
+        raise ValueError('foreground receipt has a noncanonical source path')
+    assets = [source]
+    for index, candidate in enumerate(receipt['candidates'], 1):
+        identifier = f'candidate-{index}'
+        if candidate['id'] != identifier:
+            raise ValueError('invalid or duplicate candidate identity')
+        if candidate['mask']['path'] != f'masks/{identifier}.png':
+            raise ValueError('foreground receipt has a noncanonical candidate mask path')
+        assets.append(candidate['mask'])
+    for role, expected in (('overlap', 'masks/overlap.png'), ('overlay', 'overlay.png')):
+        if receipt[role]['path'] != expected:
+            raise ValueError(f'foreground receipt has a noncanonical {role} path')
+        assets.append(receipt[role])
+    return assets
+
+
 def load(root):
     root = normalize_root(root)
-    receipt = read_json(safe_path(root, 'foreground-proposals.json'))
-    validate_structure(receipt, RECEIPT, 'foreground proposal receipt')
+    receipt_bytes = _record_bytes(safe_path(root, RECEIPT_NAME), MAX_RESPONSE_BYTES)
+    return _validate_receipt(root, receipt_bytes)
+
+
+def _validate_receipt(root, receipt_bytes):
+    receipt = _parse_record_json(receipt_bytes)
+    _receipt_assets(receipt)
     if not .05 <= receipt['parameters']['score_threshold'] <= .99:
         raise ValueError('invalid recorded score threshold')
     if receipt['elapsed_seconds'] > receipt['parameters']['max_seconds'] + 5:
@@ -147,11 +188,7 @@ def load(root):
         raise ValueError('source size mismatch')
     support = binary(image.convert('RGBA').getchannel('A'))
     occupied = Image.new('L', size); overlaps = Image.new('L', size)
-    ids = set()
-    for index, candidate in enumerate(receipt['candidates'], 1):
-        if candidate['id'] != f'candidate-{index}' or candidate['id'] in ids:
-            raise ValueError('invalid or duplicate candidate identity')
-        ids.add(candidate['id'])
+    for candidate in receipt['candidates']:
         if candidate['confidence'] < receipt['parameters']['score_threshold']:
             raise ValueError('candidate below recorded score threshold')
         mask = _mask(root, candidate['mask'], size)
@@ -163,7 +200,7 @@ def load(root):
     overlap = _mask(root, receipt['overlap'], size)
     if overlap.tobytes() != overlaps.tobytes():
         raise ValueError('overlap mask disagrees with independent candidate masks')
-    overlay = _verified_image(safe_path(root, receipt['overlay']['path']), receipt['overlay']['sha256'])
+    overlay = _verified_image(safe_path(root, receipt['overlay']['path']), receipt['overlay']['sha256'], png_only=True)
     if overlay.size != size:
         raise ValueError('overlay size mismatch')
     return receipt
@@ -286,6 +323,95 @@ def propose(source, destination, *, weights, enabled=False, origin, fixture=Fals
         raise ValueError('foreground runtime limit reached; manual selection remains available') from exc
 
 
+def _selected_geometry(root, receipt, identifiers):
+    by_id = {candidate['id']: candidate for candidate in receipt['candidates']}
+    if (not isinstance(identifiers, list) or not 1 <= len(identifiers) <= MAX_CANDIDATES or
+            any(not isinstance(item, str) for item in identifiers) or len(identifiers) != len(set(identifiers))):
+        raise ValueError('select one or more unique candidate IDs')
+    if any(identifier not in by_id for identifier in identifiers):
+        raise ValueError('unknown foreground candidate')
+    source = receipt['source']
+    size = (source['width'], source['height'])
+    selected = Image.new('L', size)
+    for identifier in identifiers:
+        selected = union(selected, _mask(root, by_id[identifier]['mask'], size))
+    return selected, intersect(selected, _mask(root, receipt['overlap'], size))
+
+
+def _ambiguity(overlap, descriptor):
+    return {'status': 'unresolved', 'pixels': count(overlap), 'runs': mask_to_runs(overlap),
+            'overlap_mask': {'path': f"{RETAINED_DIRECTORY}/{descriptor['path']}",
+                             'sha256': descriptor['sha256']},
+            'note': OVERLAP_NOTE}
+
+
+SELECTION = obj({'receipt': {'const': RETAINED_RECEIPT}, 'receipt_sha256': HASH,
+                 'selected_ids': array(TEXT, MAX_CANDIDATES, 1), 'selected_mask': ASSET,
+                 'ambiguous_overlap': obj({'status': {'const': 'unresolved'},
+                     'pixels': {'type': 'integer', 'minimum': 0, 'maximum': MAX_PIXELS},
+                     'runs': array(array({'type': 'integer', 'minimum': 0}, 3, 3), MAX_TOTAL_RUNS),
+                     'overlap_mask': ASSET, 'note': {'const': OVERLAP_NOTE}})})
+
+
+def verify_selection(root, manifest, annotation):
+    """Verify the retained instance decision separately from current semantic review."""
+    missing = object()
+    record = annotation.get('extensions', {}).get('foreground_analysis', missing)
+    manifest_record = manifest.get('extensions', {}).get('foreground_analysis', missing)
+    retained = root / RETAINED_DIRECTORY
+    if record is missing and manifest_record is missing and not (retained.exists() or retained.is_symlink()):
+        return
+    if record is missing or manifest_record is missing or record != manifest_record:
+        raise ValueError('foreground selection lineage disagrees with canonical annotation')
+    validate_structure(record, SELECTION, 'foreground selection')
+    receipt_path = safe_path(root, RETAINED_RECEIPT)
+    receipt_bytes = _record_bytes(receipt_path, MAX_RESPONSE_BYTES)
+    if hashlib.sha256(receipt_bytes).hexdigest() != record['receipt_sha256']:
+        raise ValueError('foreground receipt digest differs from the canonical selection')
+    receipt = _validate_receipt(retained, receipt_bytes)
+    source = receipt['source']
+    if (source['asset']['sha256'] != manifest['source']['sha256'] or
+            (source['width'], source['height']) != (manifest['canvas']['width'], manifest['canvas']['height']) or
+            any(source[key] != manifest['source'][key] for key in ('origin', 'fixture'))):
+        raise ValueError('foreground receipt source disagrees with canonical source')
+    selected, ambiguous = _selected_geometry(retained, receipt, record['selected_ids'])
+    selected_mask = record['selected_mask']
+    path = selected_mask['path']
+    if not re.fullmatch(r'masks/foreground-[0-9a-f]{24}\.png', path):
+        raise ValueError('foreground selection mask must be a canonical foreground artifact')
+    if _mask(root, selected_mask, selected.size).tobytes() != selected.tobytes():
+        raise ValueError('foreground selection geometry disagrees with retained candidates')
+    if (manifest['revision'] == 1 or manifest['foreground']['method'] != 'manually-corrected-mask') and (
+            manifest['foreground']['mask'] != selected_mask):
+        raise ValueError('canonical foreground mask disagrees with retained selection')
+    if _ambiguity(ambiguous, receipt['overlap']) != record['ambiguous_overlap']:
+        raise ValueError('foreground overlap provenance disagrees with retained candidates')
+
+
+def _capture_snapshot(root, snapshot):
+    receipt_bytes = _record_bytes(safe_path(root, RECEIPT_NAME), min(MAX_RESPONSE_BYTES, package.MAX_PACKAGE_BYTES))
+    assets = _receipt_assets(_parse_record_json(receipt_bytes))
+    remaining = package.MAX_PACKAGE_BYTES - len(receipt_bytes)
+    for asset in assets:
+        if remaining <= 0:
+            raise ValueError('foreground snapshot exceeds decomposition package size bound')
+        relative = asset['path']
+        try:
+            data = _record_bytes(safe_path(root, relative), min(MAX_SOURCE_BYTES, remaining))
+        except ValueError as exc:
+            if remaining < MAX_SOURCE_BYTES:
+                raise ValueError('foreground artifact exceeds remaining package budget or cannot be read safely') from exc
+            raise
+        if hashlib.sha256(data).hexdigest() != asset['sha256']:
+            raise ValueError('proposal artifact hash mismatch: ' + relative)
+        target = safe_path(snapshot, relative)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        remaining -= len(data)
+    (snapshot / RECEIPT_NAME).write_bytes(receipt_bytes)
+    return _validate_receipt(snapshot, receipt_bytes), hashlib.sha256(receipt_bytes).hexdigest()
+
+
 def select(root, identifiers, destination, *, name=None):
     """Explicitly select candidate union, preserving alpha and unassigned semantics."""
     root = Path(root).resolve()
@@ -294,64 +420,39 @@ def select(root, identifiers, destination, *, name=None):
         raise ValueError('decomposition destination must be new')
     with pinned_directory(destination.parent) as parent_fd, private_stage(parent_fd, prefix='.selection-') as (_, stage_fd), directory_capability(stage_fd) as capability:
         stage = capability.path
-        snapshot = stage / 'snapshot'; snapshot.mkdir()
-        receipt_bytes = _record_bytes(safe_path(root, 'foreground-proposals.json'), MAX_RESPONSE_BYTES)
-        (snapshot / 'foreground-proposals.json').write_bytes(receipt_bytes)
-        receipt = read_json(snapshot / 'foreground-proposals.json')
-        validate_structure(receipt, RECEIPT, 'foreground proposal receipt')
+        snapshot = stage / 'snapshot'
+        snapshot.mkdir()
+        receipt, receipt_hash = _capture_snapshot(root, snapshot)
+        selected, ambiguous = _selected_geometry(snapshot, receipt, identifiers)
         source = receipt['source']
-        paths = {source['asset']['path'], receipt['overlap']['path'], receipt['overlay']['path']}
-        paths.update(c['mask']['path'] for c in receipt['candidates'])
-        for relative in sorted(paths):
-            target = safe_path(snapshot, relative)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(_record_bytes(safe_path(root, relative), MAX_SOURCE_BYTES))
-        receipt = load(snapshot)
-        if (not isinstance(identifiers, list) or not identifiers or
-                any(not isinstance(item, str) for item in identifiers) or len(identifiers) != len(set(identifiers))):
-            raise ValueError('select one or more unique candidate IDs')
-        by_id = {c['id']: c for c in receipt['candidates']}
-        if any(identifier not in by_id for identifier in identifiers):
-            raise ValueError('unknown foreground candidate')
-        source = receipt['source']; size = (source['width'], source['height'])
-        selected = Image.new('L', size)
-        for identifier in identifiers:
-            selected = union(selected, _mask(snapshot, by_id[identifier]['mask'], size))
-        ambiguous = intersect(selected, _mask(snapshot, receipt['overlap'], size))
         ambiguous_pixels = count(ambiguous)
-        receipt_hash = hashlib.sha256(receipt_bytes).hexdigest()
         annotation = {'schema_version': 1, 'source_sha256': source['asset']['sha256'],
             'author': 'Explicit foreground candidate selection',
             'note': 'Only foreground selected; semantic components remain unassigned.' + (
                 f' {ambiguous_pixels} selected pixels overlap other candidates and remain ambiguous.'
                 if ambiguous_pixels else ''),
-            'components': [],
-            'extensions': {'foreground_analysis': {'receipt': 'foreground-analysis/foreground-proposals.json',
-                'receipt_sha256': receipt_hash, 'selected_ids': identifiers,
-                'ambiguous_overlap': {'status': 'unresolved', 'pixels': ambiguous_pixels,
-                    'runs': mask_to_runs(ambiguous),
-                    'overlap_mask': {'path': 'foreground-analysis/' + receipt['overlap']['path'],
-                                     'sha256': receipt['overlap']['sha256']},
-                    'note': 'Selected pixels shared with another candidate; not owned by this selection.'}}}}
+            'components': []}
         run = stage / 'run'
         result = create_decomposition(safe_path(snapshot, source['asset']['path']), run,
             annotations=annotation, foreground_mask={'runs': mask_to_runs(selected)},
             name=name, origin=source['origin'], fixture=source['fixture'])
-        kept = run / 'foreground-analysis'
-        snapshot.rename(kept)
-        if _safe_sha(kept / 'foreground-proposals.json') != receipt_hash or load(kept) != receipt:
-            raise ValueError('proposal snapshot changed during selection')
-        verified = Image.new('L', size)
-        for identifier in identifiers:
-            verified = union(verified, _mask(kept, by_id[identifier]['mask'], size))
-        if verified.tobytes() != selected.tobytes():
-            raise ValueError('proposal masks changed during selection')
-        verified_overlap = intersect(verified, _mask(kept, receipt['overlap'], size))
-        if verified_overlap.tobytes() != ambiguous.tobytes():
-            raise ValueError('proposal overlap changed during selection')
+        # Build the ordinary run first, then attach and verify lineage while
+        # the complete run is still inside the pinned private staging directory.
+        snapshot.rename(run / RETAINED_DIRECTORY)
+        record = {'receipt': RETAINED_RECEIPT, 'receipt_sha256': receipt_hash,
+                  'selected_ids': identifiers, 'selected_mask': result['foreground']['mask'],
+                  'ambiguous_overlap': _ambiguity(ambiguous, receipt['overlap'])}
+        annotation_path = safe_path(run, result['annotation']['path'])
+        canonical = read_run_json(annotation_path)
+        canonical['extensions']['foreground_analysis'] = record
+        atomic_json(annotation_path, canonical)
+        result['annotation']['sha256'] = _safe_sha(annotation_path)
+        result['extensions']['foreground_analysis'] = record
+        save_manifest(run, result, transactional=False)
+        package._inventory(run)
+        result = load_decomposition(run)
         _rename_no_replace('run', destination.name, source_dir_fd=stage_fd, destination_dir_fd=parent_fd)
         return result
-
 
 
 def main(argv=None):

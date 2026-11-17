@@ -83,7 +83,12 @@ masks and overlay in `foreground-analysis/`. Its annotation records the digest
 of the validated receipt bytes and the selected IDs. The
 `ambiguous_overlap` record gives the unresolved pixel count, source-space runs
 and retained overlap-mask digest for selected pixels shared with another
-candidate. Ownership of those pixels remains unresolved.
+candidate. Ownership of those pixels remains unresolved. Run loading and package
+export or import verify the retained receipt, original source, selected masks
+and overlap. Manual corrections preserve the original selection as provenance
+while allowing the current foreground mask to change. Proposal masks and the
+overlay use canonical PNG filenames, and selection admits only matching
+artifact digests within the package's cumulative size limit.
 The run has source-bound unassigned foreground,
 zero-error recomposition of selected pixels, and pending semantic review.
 The run's `analysis.semantic_model_called` remains false because this stage does

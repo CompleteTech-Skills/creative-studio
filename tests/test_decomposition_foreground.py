@@ -8,11 +8,12 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
-from PIL import Image
+from PIL import Image, PngImagePlugin
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import decomposition_foreground as fg
 from asset_contracts import sha
-from character_decomposition import load_decomposition
+from character_decomposition import load_decomposition, rebuild_from_annotation, save_manifest
+from decomposition_package import export_decomposition, import_decomposition
 
 def requires_foreground_publication(test):
     @functools.wraps(test)
@@ -97,6 +98,125 @@ class ForegroundContracts(unittest.TestCase):
         self.assertEqual(ambiguous['runs'], [[y, 3, 5] for y in range(6)])
         self.assertEqual(ambiguous['overlap_mask']['sha256'],
                          sha(destination / ambiguous['overlap_mask']['path']))
+
+    @requires_foreground_publication
+    def test_selected_lineage_survives_package_round_trip_and_manual_correction(self):
+        home = Path(self.temp.name)
+        run = home / 'selected'
+        selected = fg.select(self.root, ['candidate-1'], run)
+        record = selected['extensions']['foreground_analysis']
+        archive = home / 'selected.zip'
+        export_decomposition(run, archive)
+        restored = home / 'restored'
+        import_decomposition(archive, restored)
+        current = load_decomposition(restored)
+        self.assertEqual(current['extensions']['foreground_analysis'], record)
+
+        # A manual correction changes the current mask while preserving the
+        # historical source-bound instance decision.
+        correction = {'schema_version': 1, 'source_sha256': current['source']['sha256'],
+                      'author': 'Synthetic reviewer', 'note': 'Correct mask membership',
+                      'foreground_mask': {'runs': [[y, 0, 2] for y in range(6)]}, 'components': []}
+        corrected = rebuild_from_annotation(restored, correction)
+        self.assertEqual(corrected['foreground']['method'], 'manually-corrected-mask')
+        self.assertNotEqual(corrected['foreground']['mask'], record['selected_mask'])
+        self.assertEqual(load_decomposition(restored)['extensions']['foreground_analysis'], record)
+
+    @requires_foreground_publication
+    def test_retained_receipt_changes_are_refused_by_run_load_and_package_export(self):
+        home = Path(self.temp.name)
+        run = home / 'selected'
+        fg.select(self.root, ['candidate-1'], run)
+        receipt_path = run / fg.RETAINED_RECEIPT
+        original = receipt_path.read_bytes()
+        receipt_path.write_bytes(original + b'\n')
+        with self.assertRaisesRegex(ValueError, 'foreground receipt digest'):
+            load_decomposition(run)
+        archive = home / 'archive.zip'
+        with self.assertRaisesRegex(ValueError, 'foreground receipt digest'):
+            export_decomposition(run, archive)
+        self.assertFalse(archive.exists())
+
+        receipt_path.write_bytes(original)
+        (run / fg.RETAINED_DIRECTORY / 'masks/overlap.png').unlink()
+        with self.assertRaisesRegex(ValueError, 'cannot be opened safely'):
+            load_decomposition(run)
+
+    @requires_foreground_publication
+    def test_retained_selection_geometry_and_overlap_are_recomputed(self):
+        run = Path(self.temp.name) / 'selected'
+        original = fg.select(self.root, ['candidate-1'], run)
+        annotation_path = run / original['annotation']['path']
+        original_annotation = json.loads(annotation_path.read_text())
+        for update, message in [
+            ({'selected_ids': ['candidate-2']}, 'selection geometry'),
+            ({'ambiguous_overlap': {**original['extensions']['foreground_analysis']['ambiguous_overlap'],
+                                    'pixels': 0}}, 'overlap provenance'),
+        ]:
+            with self.subTest(field=next(iter(update))):
+                manifest = copy.deepcopy(original)
+                annotation = copy.deepcopy(original_annotation)
+                for record in (manifest, annotation):
+                    record['extensions']['foreground_analysis'].update(update)
+                fg.atomic_json(annotation_path, annotation)
+                manifest['annotation']['sha256'] = sha(annotation_path)
+                save_manifest(run, manifest, transactional=False)
+                with self.assertRaisesRegex(ValueError, message):
+                    load_decomposition(run)
+
+    @requires_foreground_publication
+    def test_current_source_pin_is_verified_with_retained_receipt(self):
+        run = Path(self.temp.name) / 'selected'
+        manifest = fg.select(self.root, ['candidate-1'], run)
+        receipt_path = run / fg.RETAINED_RECEIPT
+        receipt = json.loads(receipt_path.read_text())
+        source_path = receipt_path.parent / receipt['source']['asset']['path']
+        with Image.open(source_path) as opened:
+            image = opened.copy()
+        metadata = PngImagePlugin.PngInfo()
+        metadata.add_text('fixture', 'Equivalent pixels with different encoded metadata')
+        image.save(source_path, pnginfo=metadata)
+        receipt['source']['asset']['sha256'] = sha(source_path)
+        self.assertNotEqual(manifest['source']['sha256'], receipt['source']['asset']['sha256'])
+        fg.atomic_json(receipt_path, receipt)
+        annotation_path = run / manifest['annotation']['path']
+        annotation = json.loads(annotation_path.read_text())
+        for record in (manifest, annotation):
+            record['extensions']['foreground_analysis']['receipt_sha256'] = sha(receipt_path)
+        fg.atomic_json(annotation_path, annotation)
+        manifest['annotation']['sha256'] = sha(annotation_path)
+        save_manifest(run, manifest, transactional=False)
+        with self.assertRaisesRegex(ValueError, 'receipt source disagrees'):
+            load_decomposition(run)
+
+    @requires_foreground_publication
+    def test_capture_rejects_artifacts_over_cumulative_package_bound(self):
+        archive_bytes = sum(path.stat().st_size for path in self.root.rglob('*') if path.is_file())
+        home = Path(self.temp.name)
+        destination = home / 'oversized'
+        with patch.object(fg.package, 'MAX_PACKAGE_BYTES', archive_bytes - 1), \
+             patch.object(fg, 'create_decomposition', side_effect=AssertionError('unexpected create')):
+            with self.assertRaisesRegex(ValueError, 'package budget'):
+                fg.select(self.root, ['candidate-1'], destination)
+        self.assertFalse(destination.exists())
+        self.assertTrue(all(not list(wrapper.iterdir()) for wrapper in home.glob('.selection-*')))
+
+    def test_asset_paths_are_role_specific_and_mask_bytes_must_be_png(self):
+        original = copy.deepcopy(self.receipt)
+        for role, path in [('overlay', 'masks/overlap.png'), ('overlap', 'masks/OVERLAP.png')]:
+            with self.subTest(role=role):
+                self.receipt = copy.deepcopy(original)
+                self.receipt[role]['path'] = path
+                self.save()
+                with self.assertRaisesRegex(ValueError, f'noncanonical {role} path'):
+                    fg.load(self.root)
+        self.receipt = original
+        mask = self.root / 'masks/candidate-1.png'
+        Image.new('L', (8, 6), 255).save(mask, format='JPEG')
+        self.receipt['candidates'][0]['mask']['sha256'] = sha(mask)
+        self.save()
+        with self.assertRaisesRegex(ValueError, 'encoded as PNG'):
+            fg.load(self.root)
 
     def test_current_runtime_counts_are_bound_and_historical_threads_remain_readable(self):
         self.assertEqual(fg.load(self.root)['parameters']['threads'],2)

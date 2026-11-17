@@ -586,6 +586,8 @@ def _load_checked(root, verify):
         validate_structure(annotation, ANNOTATION_SCHEMA, 'current annotation')
         if annotation['source_sha256'] != source['sha256']:
             raise ValueError('current annotation names another source')
+        from decomposition_foreground import verify_selection
+        verify_selection(root, manifest, annotation)
         from decomposition_analysis import provenance as analysis_provenance
         analysis_record = analysis_provenance(root, annotation, source['sha256'])
         expected_call = bool(analysis_record and analysis_record['evidence']['execution'] == 'local')
@@ -828,6 +830,8 @@ def rebuild_from_annotation(root, annotation, reason='Component correction', aut
     base = Path(annotation).resolve().parent if isinstance(annotation, (str, Path)) else root
     normalized = _annotation(annotation, previous['source']['sha256'], original, base)
     normalized['author'], normalized['note'] = author, reason
+    if 'foreground_analysis' in previous['extensions']:
+        normalized['extensions']['foreground_analysis'] = copy.deepcopy(previous['extensions']['foreground_analysis'])
     validate_structure(normalized, ANNOTATION_SCHEMA, 'corrected annotation')
     supplied = normalized.get('foreground_mask')
     old_mask = _image(root, previous['foreground']['mask']).convert('L')
