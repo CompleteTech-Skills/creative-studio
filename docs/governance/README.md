@@ -56,4 +56,8 @@ GitHub reported a conflict-free, up-to-date non-draft PR as blocked while
 required Delivery jobs were in progress. The receipt records the exact base,
 candidate head, evaluated state, and check observations. The readback used
 read-only requests. The older activation receipt documents which activation-time
-responses could not be recovered.
+responses could not be recovered. The live record also identifies the archived
+November 13 evidence by SHA-256. That archive contains activation-time readbacks,
+the exact original before setting values, and the reviewed workflow retirement
+disposition. The complete security and alerts response envelopes from before
+activation remain incomplete.
